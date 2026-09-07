@@ -7,6 +7,8 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('offlineSync');
 
+export const OFFLINE_QUEUE_CHANGED_EVENT = 'iassetspro:offline-queue-changed';
+
 export interface SyncRecord {
   id: string;
   operation: 'create' | 'update' | 'delete';
@@ -177,6 +179,7 @@ export class OfflineSyncService {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+      window.dispatchEvent(new Event(OFFLINE_QUEUE_CHANGED_EVENT));
     } catch {
       logger.error('Failed to save offline queue to localStorage');
     }

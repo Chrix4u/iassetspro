@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api, useAbortRef } from '@/lib/api';
 import { toast } from 'sonner';
-import { OfflineSyncService } from '@/services/offlineSync.service';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -163,7 +162,7 @@ export interface WODetail {
     status: string;
     source: string | null;
     reason: string | null;
-    requestedById: string | null;
+    requesterId: string | null;
     supervisorApprovedById: string | null;
     storekeeperApprovedById: string | null;
     issuedById: string | null;
@@ -557,6 +556,10 @@ export function useWorkOrderExecution(
     try {
       const res = await api.post(`/api/work-orders/${workOrderId}/comments`, { content });
       if (res.success) {
+        if (res.offlineQueued) {
+          toast.success('Comment saved offline — will sync when connected');
+          return true;
+        }
         toast.success('Comment added');
         await refetch();
         return true;
@@ -564,17 +567,6 @@ export function useWorkOrderExecution(
       toast.error(res.error || 'Failed to add comment');
       return false;
     } catch (err: any) {
-      const isNetworkError = !err?.message || err?.message === 'Network error' || err?.message === 'Failed to fetch';
-      if (isNetworkError && typeof navigator !== 'undefined' && !navigator.onLine) {
-        OfflineSyncService.queueOperation(
-          'create',
-          'work_order_comment',
-          workOrderId,
-          { content, idempotencyKey: `comment-${workOrderId}-${Date.now()}` },
-        );
-        toast.success('Saved offline — will sync when connected');
-        return true;
-      }
       toast.error(err?.message || 'Failed to add comment');
       return false;
     }
@@ -648,6 +640,22 @@ export function useWorkOrderExecution(
         status: completed ? 'completed' : 'pending',
       });
       if (res.success) {
+        if (res.offlineQueued) {
+          const completedAt = completed ? new Date().toISOString() : null;
+          setTasks((previous) => previous.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  status: completed ? 'completed' : 'pending',
+                  completedAt,
+                  completedById: completed ? task.completedById : null,
+                  completedBy: completed ? task.completedBy : null,
+                }
+              : task,
+          ));
+          toast.success('Task update saved offline — will sync when connected');
+          return true;
+        }
         await fetchTasks();
         return true;
       }

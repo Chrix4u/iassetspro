@@ -34,7 +34,7 @@ export async function GET(
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true, location: true } },
         requester: { select: { id: true, fullName: true, username: true, department: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },
@@ -83,7 +83,25 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({ success: true, data: mr });
+    // MaintenanceRequest stores departmentId as a scalar rather than a Prisma relation.
+    // Resolve the persisted request department so the UI does not have to infer it
+    // from the requester's current profile (which may have changed after submission).
+    let department: { id: string; name: string; code: string } | null = null;
+    if (mr.departmentId) {
+      const requestDepartment = await db.department.findUnique({
+        where: { id: mr.departmentId },
+        select: { id: true, name: true, code: true, plantId: true },
+      });
+      if (requestDepartment && (!mr.plantId || requestDepartment.plantId === mr.plantId)) {
+        department = {
+          id: requestDepartment.id,
+          name: requestDepartment.name,
+          code: requestDepartment.code,
+        };
+      }
+    }
+
+    return NextResponse.json({ success: true, data: { ...mr, department } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -175,7 +193,7 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true, location: true } },
         requester: { select: { id: true, fullName: true, username: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },

@@ -89,9 +89,10 @@ describe('mergeStartReadiness', () => {
     expect(result).toBe(denied);
   });
 
-  it('fails open to the write endpoint when the advisory readiness GET is unavailable', () => {
+  it('fails closed when the start-readiness result is unavailable', () => {
     const result = mergeStartReadiness(BASE_CAPABILITIES, null);
 
-    expect(result.canStart).toBe(true);
+    expect(result.canStart).toBe(false);
+    expect(result.canRequestMaterials).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,15 +38,23 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Apply plant scoping: scope takes precedence over search param plantId
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.plantId = plantScope.plantId;
-    } else if (searchPlantId) {
+    // Inventory must always remain inside the authenticated user's plant scope.
+    // An explicit plant query is allowed only when that plant is accessible;
+    // otherwise the normal scope helper limits the list to assigned plants.
+    if (searchPlantId) {
+      if (!canAccessPlant(plantScope, searchPlantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      if (plantScope.isScoped && plantScope.plantId && plantScope.plantId !== searchPlantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
       where.plantId = searchPlantId;
+    } else {
+      applyPlantScope(where, plantScope);
     }
 
     const items = await db.inventoryItem.findMany({
-      where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
+      where,
       include: {
         plant: { select: { id: true, name: true, code: true } },
       },

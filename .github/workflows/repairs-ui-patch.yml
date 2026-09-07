@@ -68,13 +68,13 @@ jobs:
                   1,
               ),
               (
-                  '<Label className="text-xs">Delivery Date</Label>',
-                  '<Label className="text-xs">Expected End Date</Label>',
+                  "                <div className=\"space-y-1.5 sm:col-span-2\">\n                  <Label className=\"text-xs\">Scheduled Date</Label>\n                  <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />\n                </div>\n                <div className=\"space-y-1.5\">\n                  <Label className=\"text-xs\">Delivery Date</Label>",
+                  "                <div className=\"space-y-1.5 sm:col-span-2\">\n                  <Label className=\"text-xs\">Scheduled Date</Label>\n                  <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />\n                </div>\n                <div className=\"space-y-1.5\">\n                  <Label className=\"text-xs\">Expected End Date</Label>",
                   1,
               ),
               (
-                  '<Label className="text-xs font-medium">Delivery Date</Label>',
-                  '<Label className="text-xs font-medium">Expected End Date</Label>',
+                  "              <div className=\"space-y-2\">\n                <Label className=\"text-xs font-medium\">Scheduled</Label>\n                <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />\n              </div>\n            </div>\n            <div className=\"space-y-2\">\n              <Label className=\"text-xs font-medium\">Delivery Date</Label>",
+                  "              <div className=\"space-y-2\">\n                <Label className=\"text-xs font-medium\">Scheduled</Label>\n                <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />\n              </div>\n            </div>\n            <div className=\"space-y-2\">\n              <Label className=\"text-xs font-medium\">Expected End Date</Label>",
                   1,
               ),
           ]
@@ -82,7 +82,7 @@ jobs:
           for old, new, expected in replacements:
               actual = text.count(old)
               if actual != expected:
-                  raise SystemExit(f'Guard failed: expected {expected} occurrence(s), found {actual}: {old[:120]!r}')
+                  raise SystemExit(f'Guard failed: expected {expected} occurrence(s), found {actual}: {old[:140]!r}')
               text = text.replace(old, new, expected)
 
           path.write_text(text)

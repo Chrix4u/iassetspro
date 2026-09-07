@@ -262,6 +262,11 @@ jobs:
       - name: Run Repairs RC1 MariaDB/Redis/BullMQ preflight
         run: bun run test:repairs-rc1-preflight
 
+      - name: Run Repairs notification BullMQ burst validation
+        env:
+          REPAIRS_NOTIFICATION_LOAD_JOBS: 100
+        run: bun run test:repairs-notification-load
+
       - name: Download production standalone build
         uses: actions/download-artifact@v4
         with:

@@ -263,6 +263,21 @@ export interface ReadinessResult {
   warnings: ReadinessItem[];
 }
 
+export function buildUnverifiedCompletionReadiness(message?: string): ReadinessResult {
+  return {
+    ready: false,
+    blockers: [
+      {
+        code: 'COMPLETION_READINESS_UNVERIFIED',
+        category: 'system',
+        message: message || 'Completion readiness has not been verified. Retry the readiness check before submitting.',
+        severity: 'blocker',
+      },
+    ],
+    warnings: [],
+  };
+}
+
 interface UseWorkOrderExecutionReturn {
   workOrder: WODetail | null;
   tasks: WOTask[];
@@ -391,15 +406,34 @@ export function useWorkOrderExecution(
   }, [workOrderId, abortRef]);
 
   const fetchReadiness = useCallback(async () => {
-    if (!workOrderId) return;
+    const checking = buildUnverifiedCompletionReadiness(
+      'Checking completion readiness. Submission remains disabled until verification completes.',
+    );
+    setReadiness(checking);
+
+    if (!workOrderId) {
+      setReadiness(buildUnverifiedCompletionReadiness('Completion readiness cannot be verified without a work order.'));
+      return;
+    }
+
     try {
       const res = await api.get<ReadinessResult>(`/api/work-orders/${workOrderId}/readiness?phase=complete`, {
         signal: abortRef.current.signal,
         timeout: 10_000,
       });
-      if (res.success && res.data) setReadiness(res.data as ReadinessResult);
-    } catch {
-      /* Read-only readiness is advisory; completion will enforce it again server-side. */
+      if (res.success && res.data) {
+        setReadiness(res.data as ReadinessResult);
+        return;
+      }
+
+      setReadiness(buildUnverifiedCompletionReadiness(
+        'Completion readiness could not be verified. Check your connection and retry before submitting.',
+      ));
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      setReadiness(buildUnverifiedCompletionReadiness(
+        'Completion readiness could not be verified. Check your connection and retry before submitting.',
+      ));
     }
   }, [workOrderId, abortRef]);
 

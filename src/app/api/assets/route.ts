@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import {
+  applyPlantScope,
+  canAccessPlantStrict,
+  getPlantScope,
+} from '@/lib/plant-scope';
 
 // Helper: generate asset tag AST-YYYYMM-NNNN
 async function generateAssetTag(): Promise<string> {
@@ -43,7 +47,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    // Resolve plant scope (validates X-Plant-ID against user's plant access)
+    // Resolve plant scope (validates X-Plant-ID against user's plant access).
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
@@ -67,16 +71,25 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Apply plant scoping: scope takes precedence over search param plantId
+    // Plant isolation rules:
+    // - an explicit X-Plant-ID remains the authoritative selected context;
+    // - otherwise a plant query parameter must itself be accessible;
+    // - otherwise regular users are filtered to all assigned plants;
+    // - system-wide users remain unrestricted when no plant filter is supplied.
     if (plantScope.isScoped && plantScope.plantId) {
       where.plantId = plantScope.plantId;
     } else if (searchPlantId) {
+      if (!canAccessPlantStrict(plantScope, searchPlantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
       where.plantId = searchPlantId;
+    } else {
+      applyPlantScope(where, plantScope);
     }
 
     const [assets, total] = await Promise.all([
       db.asset.findMany({
-        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
+        where,
         include: {
           category: { select: { id: true, name: true, code: true } },
           plant: { select: { id: true, name: true, code: true } },
@@ -87,9 +100,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.asset.count({
-        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
-      }),
+      db.asset.count({ where }),
     ]);
 
     return NextResponse.json({
@@ -163,6 +174,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plant is required' }, { status: 400 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied for target plant' }, { status: 403 });
+    }
+
     // Validate category exists
     const categoryExists = await db.assetCategory.findUnique({ where: { id: categoryId } });
     if (!categoryExists) {
@@ -173,6 +189,23 @@ export async function POST(request: NextRequest) {
     const plantExists = await db.plant.findUnique({ where: { id: plantId } });
     if (!plantExists) {
       return NextResponse.json({ success: false, error: 'Plant not found' }, { status: 400 });
+    }
+
+    // Parent/child hierarchy cannot cross a plant boundary.
+    if (parentId) {
+      const parent = await db.asset.findUnique({
+        where: { id: parentId },
+        select: { id: true, plantId: true },
+      });
+      if (!parent) {
+        return NextResponse.json({ success: false, error: 'Parent asset not found' }, { status: 400 });
+      }
+      if (parent.plantId !== plantId) {
+        return NextResponse.json(
+          { success: false, error: 'Parent asset must belong to the same plant' },
+          { status: 400 },
+        );
+      }
     }
 
     const assetTag = await generateAssetTag();

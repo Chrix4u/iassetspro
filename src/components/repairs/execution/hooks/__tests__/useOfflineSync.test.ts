@@ -5,7 +5,7 @@ import {
 } from '@/components/repairs/execution/hooks/useOfflineSync';
 import type { SyncRecord } from '@/services/offlineSync.service';
 
-function record(index: number, originUserId: string | undefined = 'user-a'): SyncRecord {
+function record(index: number, originUserId: string | null = 'user-a'): SyncRecord {
   return {
     id: `sync-${index}`,
     operation: 'create',
@@ -15,7 +15,7 @@ function record(index: number, originUserId: string | undefined = 'user-a'): Syn
     timestamp: new Date(2026, 0, 1, 0, 0, index % 60).toISOString(),
     synced: false,
     syncAttempts: 0,
-    originUserId,
+    ...(originUserId ? { originUserId } : {}),
   };
 }
 
@@ -63,7 +63,7 @@ describe('partitionSyncRecordsByActor', () => {
   });
 
   it('fails closed for legacy records that have no originating user', () => {
-    const legacy = record(1, undefined);
+    const legacy = record(1, null);
     const result = partitionSyncRecordsByActor([legacy], 'user-a');
 
     expect(result.owned).toEqual([]);

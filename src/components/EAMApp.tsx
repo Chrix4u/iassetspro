@@ -579,6 +579,7 @@ function AppShell() {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
+  const authVerification = useAuthStore((s) => s.authVerification);
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
@@ -730,6 +731,17 @@ function AppShell() {
             </DropdownMenu>
           </div>
         </header>
+
+        {authVerification === 'cached' && (
+          <div
+            role="status"
+            data-testid="cached-auth-banner"
+            className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            <span className="font-semibold">Offline session:</span>{' '}
+            using your last verified identity. Server-only actions remain subject to verification when connectivity returns.
+          </div>
+        )}
 
         {/* Page Content */}
         <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">

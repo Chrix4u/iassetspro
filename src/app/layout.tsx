@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { OfflineStorageBootstrap } from "@/components/core/OfflineStorageBootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -65,6 +66,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <OfflineStorageBootstrap />
           {children}
           <Toaster position="top-right" richColors closeButton />
         </ThemeProvider>

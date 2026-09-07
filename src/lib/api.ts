@@ -167,10 +167,10 @@ function buildOfflineSyntheticData(
   };
 }
 
-function queueOfflineMutationIfSupported<T>(
+async function queueOfflineMutationIfSupported<T>(
   endpoint: string,
   options: RequestInit,
-): ApiResponse<T> | null {
+): Promise<ApiResponse<T> | null> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined' || navigator.onLine !== false) {
     return null;
   }
@@ -178,20 +178,29 @@ function queueOfflineMutationIfSupported<T>(
   const descriptor = buildOfflineMutationDescriptor(endpoint, options.method, options.body);
   if (!descriptor) return null;
 
-  const record = OfflineSyncService.queueOperation(
-    descriptor.operation,
-    descriptor.entityType,
-    descriptor.entityId,
-    descriptor.data,
-  );
+  try {
+    const record = await OfflineSyncService.queueOperation(
+      descriptor.operation,
+      descriptor.entityType,
+      descriptor.entityId,
+      descriptor.data,
+    );
 
-  return {
-    success: true,
-    status: 202,
-    offlineQueued: true,
-    offlineRecordId: record.id,
-    data: buildOfflineSyntheticData(descriptor, record.id, record.timestamp) as T,
-  };
+    return {
+      success: true,
+      status: 202,
+      offlineQueued: true,
+      offlineRecordId: record.id,
+      data: buildOfflineSyntheticData(descriptor, record.id, record.timestamp) as T,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Browser storage failure';
+    return {
+      success: false,
+      status: 503,
+      error: `Offline work could not be saved safely: ${message}`,
+    };
+  }
 }
 
 export function getAuthHeaders(): Record<string, string> {
@@ -211,7 +220,7 @@ export async function apiFetch<T = any>(
   const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
   const isFormData = restOptions.body instanceof FormData;
 
-  const offlineResponse = queueOfflineMutationIfSupported<T>(endpoint, restOptions);
+  const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);
   if (offlineResponse) return offlineResponse;
 
   const headers: Record<string, string> = {

@@ -9,9 +9,8 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+import { OfflineQueueStorage, LEGACY_OFFLINE_QUEUE_KEY } from '@/lib/offline-queue-storage';
 import { OfflineSyncService } from '@/services/offlineSync.service';
-
-const STORAGE_KEY = 'iassetspro_offline_queue';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -33,60 +32,74 @@ class MemoryStorage {
   }
 }
 
-describe('OfflineSyncService cleanup', () => {
+describe('OfflineSyncService durable queue semantics', () => {
   let storage: MemoryStorage;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     storage = new MemoryStorage();
     vi.stubGlobal('window', {});
     vi.stubGlobal('localStorage', storage);
     vi.stubGlobal('navigator', { onLine: true });
+    await OfflineQueueStorage.resetForTests();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await OfflineQueueStorage.resetForTests();
     vi.unstubAllGlobals();
   });
 
-  it('removes successfully synced records from local storage', () => {
-    const synced = OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-1', { content: 'done' });
-    const pending = OfflineSyncService.queueOperation('update', 'work_order_task', 'task-1', { status: 'completed' });
+  it('uses the fail-safe localStorage backend when IndexedDB is unavailable', async () => {
+    expect(await OfflineSyncService.getStorageBackend()).toBe('localstorage');
+  });
 
-    OfflineSyncService.markSynced(synced.id);
+  it('removes successfully synced records from durable storage', async () => {
+    const synced = await OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-1', { content: 'done' });
+    const pending = await OfflineSyncService.queueOperation('update', 'work_order_task', 'task-1', { status: 'completed' });
 
-    expect(OfflineSyncService.cleanup()).toBe(1);
-    expect(OfflineSyncService.getPendingRecords().map(record => record.id)).toEqual([pending.id]);
+    await OfflineSyncService.markSynced(synced.id);
 
-    const persisted = JSON.parse(storage.getItem(STORAGE_KEY) || '[]');
+    expect(await OfflineSyncService.cleanup()).toBe(1);
+    expect((await OfflineSyncService.getPendingRecords()).map(record => record.id)).toEqual([pending.id]);
+
+    const persisted = JSON.parse(storage.getItem(LEGACY_OFFLINE_QUEUE_KEY) || '[]');
     expect(persisted).toHaveLength(1);
     expect(persisted[0].id).toBe(pending.id);
   });
 
-  it('never drops unsynced records merely because they reached a high retry count', () => {
-    const pending = OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-2', { content: 'field note' });
+  it('never drops unsynced records merely because they reached a high retry count', async () => {
+    const pending = await OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-2', { content: 'field note' });
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      OfflineSyncService.markFailed(pending.id, `attempt-${attempt + 1}`);
+      await OfflineSyncService.markFailed(pending.id, `attempt-${attempt + 1}`);
     }
 
-    expect(OfflineSyncService.cleanup()).toBe(0);
+    expect(await OfflineSyncService.cleanup()).toBe(0);
 
-    const remaining = OfflineSyncService.getPendingRecords();
+    const remaining = await OfflineSyncService.getPendingRecords();
     expect(remaining).toHaveLength(1);
     expect(remaining[0].id).toBe(pending.id);
     expect(remaining[0].syncAttempts).toBe(12);
     expect(remaining[0].lastError).toBe('attempt-12');
   });
 
-  it('removes only synced records from a mixed queue', () => {
-    const first = OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-3', { content: 'first' });
-    const second = OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-3', { content: 'second' });
-    const third = OfflineSyncService.queueOperation('delete', 'work_order_attachment', 'att-1', {});
+  it('removes only synced records from a mixed queue', async () => {
+    const first = await OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-3', { content: 'first' });
+    const second = await OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-3', { content: 'second' });
+    const third = await OfflineSyncService.queueOperation('delete', 'work_order_attachment', 'att-1', {});
 
-    OfflineSyncService.markFailed(first.id, 'temporary network failure');
-    OfflineSyncService.markSynced(second.id);
-    OfflineSyncService.markSynced(third.id);
+    await OfflineSyncService.markFailed(first.id, 'temporary network failure');
+    await OfflineSyncService.markSynced(second.id);
+    await OfflineSyncService.markSynced(third.id);
 
-    expect(OfflineSyncService.cleanup()).toBe(2);
-    expect(OfflineSyncService.getPendingRecords().map(record => record.id)).toEqual([first.id]);
+    expect(await OfflineSyncService.cleanup()).toBe(2);
+    expect((await OfflineSyncService.getPendingRecords()).map(record => record.id)).toEqual([first.id]);
+  });
+
+  it('preserves authenticated actor binding with the async storage path', async () => {
+    storage.setItem('eam_user_id', 'tech-123');
+    const record = await OfflineSyncService.queueOperation('create', 'work_order_comment', 'wo-4', { content: 'bound note' });
+
+    expect(record.originUserId).toBe('tech-123');
+    expect((await OfflineSyncService.getPendingRecords())[0].originUserId).toBe('tech-123');
   });
 });

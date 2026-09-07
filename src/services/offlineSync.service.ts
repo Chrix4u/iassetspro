@@ -1,9 +1,10 @@
 // ============================================================================
 // OFFLINE-FIRST SERVICE — Offline sync engine for field execution
-// Uses localStorage on client + queue-based server sync
+// Uses IndexedDB on capable browsers + fail-safe localStorage fallback
 // ============================================================================
 
 import { createLogger } from '@/lib/logger';
+import { OfflineQueueStorage } from '@/lib/offline-queue-storage';
 
 const logger = createLogger('offlineSync');
 
@@ -35,9 +36,13 @@ export interface SyncStatus {
   deviceOnline: boolean;
 }
 
-const STORAGE_KEY = 'iassetspro_offline_queue';
 const ACTOR_USER_ID_KEY = 'eam_user_id';
 const UNBOUND_ACTOR_ERROR = 'Offline record has no authenticated user binding and cannot be synced safely';
+
+function notifyQueueChanged(): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  window.dispatchEvent(new Event(OFFLINE_QUEUE_CHANGED_EVENT));
+}
 
 export class OfflineSyncService {
   /** Return the authenticated user id persisted by the auth store. */
@@ -48,7 +53,7 @@ export class OfflineSyncService {
   }
 
   /**
-   * Add an operation to the offline queue.
+   * Add an operation to the durable offline queue.
    *
    * Every new record is bound to the authenticated user that created it when
    * that identity is available. If auth restoration has not completed yet, we
@@ -56,12 +61,12 @@ export class OfflineSyncService {
    * it; the sync layer will fail closed and refuse to replay it under a guessed
    * user identity.
    */
-  static queueOperation(
+  static async queueOperation(
     operation: 'create' | 'update' | 'delete',
     entityType: string,
     entityId: string,
     data: Record<string, unknown>
-  ): SyncRecord {
+  ): Promise<SyncRecord> {
     const originUserId = this.getCurrentActorUserId();
 
     const record: SyncRecord = {
@@ -78,9 +83,8 @@ export class OfflineSyncService {
         : { lastError: UNBOUND_ACTOR_ERROR }),
     };
 
-    const queue = this.getQueue();
-    queue.push(record);
-    this.saveQueue(queue);
+    await OfflineQueueStorage.put(record as SyncRecord & Record<string, unknown>);
+    notifyQueueChanged();
 
     if (originUserId) {
       logger.info('Operation queued for sync', { operation, entityType, entityId, originUserId });
@@ -90,20 +94,17 @@ export class OfflineSyncService {
     return record;
   }
 
-  /**
-   * Get all pending sync records
-   */
-  static getPendingRecords(): SyncRecord[] {
-    return this.getQueue().filter(r => !r.synced);
+  /** Get all pending sync records. */
+  static async getPendingRecords(): Promise<SyncRecord[]> {
+    const queue = await OfflineQueueStorage.getAll<SyncRecord & Record<string, unknown>>();
+    return queue.filter((record) => !record.synced);
   }
 
-  /**
-   * Get queue status
-   */
-  static getStatus(): SyncStatus {
-    const queue = this.getQueue();
-    const pending = queue.filter(r => !r.synced);
-    const lastSynced = queue.filter(r => r.synced).sort((a, b) =>
+  /** Get queue status. */
+  static async getStatus(): Promise<SyncStatus> {
+    const queue = await OfflineQueueStorage.getAll<SyncRecord & Record<string, unknown>>();
+    const pending = queue.filter((record) => !record.synced);
+    const lastSynced = queue.filter((record) => record.synced).sort((a, b) =>
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     )[0];
 
@@ -111,34 +112,31 @@ export class OfflineSyncService {
       pendingCount: pending.length,
       lastSyncAt: lastSynced?.timestamp || null,
       syncInProgress: false,
-      lastError: pending.find(r => r.lastError)?.lastError || null,
+      lastError: pending.find((record) => record.lastError)?.lastError || null,
       deviceOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
     };
   }
 
-  /**
-   * Mark a record as synced
-   */
-  static markSynced(recordId: string): void {
-    const queue = this.getQueue();
-    const record = queue.find(r => r.id === recordId);
-    if (record) {
-      record.synced = true;
-      this.saveQueue(queue);
-    }
+  /** Mark a record as synced. */
+  static async markSynced(recordId: string): Promise<void> {
+    const updated = await OfflineQueueStorage.mutate<SyncRecord & Record<string, unknown>>(
+      recordId,
+      (record) => ({ ...record, synced: true }),
+    );
+    if (updated) notifyQueueChanged();
   }
 
-  /**
-   * Mark a record as failed
-   */
-  static markFailed(recordId: string, error: string): void {
-    const queue = this.getQueue();
-    const record = queue.find(r => r.id === recordId);
-    if (record) {
-      record.lastError = error;
-      record.syncAttempts++;
-      this.saveQueue(queue);
-    }
+  /** Mark a record as failed. */
+  static async markFailed(recordId: string, error: string): Promise<void> {
+    const updated = await OfflineQueueStorage.mutate<SyncRecord & Record<string, unknown>>(
+      recordId,
+      (record) => ({
+        ...record,
+        lastError: error,
+        syncAttempts: record.syncAttempts + 1,
+      }),
+    );
+    if (updated) notifyQueueChanged();
   }
 
   /**
@@ -147,41 +145,24 @@ export class OfflineSyncService {
    * Failed/unsynced records must remain in the queue regardless of retry count;
    * dropping them here would silently lose field activity that still needs to
    * reach the server. Retry/dead-letter policy belongs to the sync processor,
-   * not local storage cleanup.
+   * not browser storage cleanup.
    */
-  static cleanup(): number {
-    const queue = this.getQueue();
-    const before = queue.length;
-    const pendingOnly = queue.filter(r => !r.synced);
-    this.saveQueue(pendingOnly);
-    return before - pendingOnly.length;
+  static async cleanup(): Promise<number> {
+    const queue = await OfflineQueueStorage.getAll<SyncRecord & Record<string, unknown>>();
+    const syncedIds = queue.filter((record) => record.synced).map((record) => record.id);
+    if (syncedIds.length === 0) return 0;
+    await OfflineQueueStorage.deleteMany(syncedIds);
+    notifyQueueChanged();
+    return syncedIds.length;
   }
 
-  /**
-   * Get queue size
-   */
-  static getQueueSize(): number {
-    return this.getPendingRecords().length;
+  /** Get pending queue size. */
+  static async getQueueSize(): Promise<number> {
+    return (await this.getPendingRecords()).length;
   }
 
-  // Storage helpers (client-side only)
-  private static getQueue(): SyncRecord[] {
-    if (typeof window === 'undefined') return [];
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private static saveQueue(queue: SyncRecord[]): void {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-      window.dispatchEvent(new Event(OFFLINE_QUEUE_CHANGED_EVENT));
-    } catch {
-      logger.error('Failed to save offline queue to localStorage');
-    }
+  /** Surface the active persistence backend for diagnostics and tests. */
+  static async getStorageBackend(): Promise<'indexeddb' | 'localstorage'> {
+    return OfflineQueueStorage.getBackend();
   }
 }

@@ -1,0 +1,94 @@
+name: One-shot Repairs UI acceptance
+
+on:
+  push:
+    branches:
+      - fix/repairs-request-plant-and-conversion-defaults
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[repairs-ui-acceptance]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/repairs-request-plant-and-conversion-defaults
+          fetch-depth: 0
+      - name: Tighten Repairs UI acceptance
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/components/modules/MaintenancePages.tsx')
+          text = path.read_text()
+
+          def once(old, new, label):
+              global text
+              n = text.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {n}')
+              text = text.replace(old, new, 1)
+
+          once(
+              """    const now = new Date();\n    const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString();\n    const defaultScheduledDate = localIso.slice(0, 16);\n    const defaultDeliveryDate = localIso.slice(0, 10);""",
+              """    const nowIso = new Date().toISOString();""",
+              'shared current instant',
+          )
+          once(
+              """      scheduledDate: defaultScheduledDate,\n      deliveryDate: defaultDeliveryDate,""",
+              """      scheduledDate: nowIso,\n      deliveryDate: nowIso,""",
+              'date defaults from same instant',
+          )
+
+          once(
+              """      if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);""",
+              """      if (invRes.success && invRes.data) {\n        const items = Array.isArray(invRes.data) ? invRes.data : [];\n        setInventoryItems(requestPlantId ? items.filter((item: any) => String(item.plantId) === requestPlantId) : []);\n      }""",
+              'client plant inventory guard',
+          )
+
+          once(
+              """                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Location</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              """                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Asset Location</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).asset?.location || '-'}</p>\n                </div>\n                {mr.location && (\n                  <div>\n                    <p className=\"text-[11px] text-blue-600 font-medium uppercase\">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>\n                    <p className=\"text-sm font-semibold\">{mr.location}</p>\n                  </div>\n                )}""",
+              'desktop location distinction',
+          )
+
+          once(
+              """                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              """                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Asset Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).asset?.location || '-'}</p>\n                </div>\n                {mr.location && (\n                  <div>\n                    <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>\n                    <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{mr.location}</p>\n                  </div>\n                )}""",
+              'mobile location distinction',
+          )
+
+          once(
+              """              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Department</span><span className=\"font-medium text-right\">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Location</span><span className=\"font-medium text-right\">{(mr as any).asset?.location || mr.location || '-'}</span></div>""",
+              """              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Department</span><span className=\"font-medium text-right\">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">{(mr as any).asset?.location ? 'Asset Location' : 'Location'}</span><span className=\"font-medium text-right\">{(mr as any).asset?.location || mr.location || '-'}</span></div>\n              {(mr as any).asset?.location && mr.location && (\n                <>\n                  <Separator />\n                  <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Reported Location</span><span className=\"font-medium text-right\">{mr.location}</span></div>\n                </>\n              )}""",
+              'detail asset/reported location distinction',
+          )
+
+          path.write_text(text)
+
+      - name: Verify acceptance invariants
+        shell: python
+        run: |
+          from pathlib import Path
+          text = Path('src/components/modules/MaintenancePages.tsx').read_text()
+          required = [
+              'scheduledDate: nowIso',
+              'deliveryDate: nowIso',
+              "items.filter((item: any) => String(item.plantId) === requestPlantId)",
+              '>Asset Location</p>',
+              '>Reported Location</span>',
+              "(mr as any).department?.name || mr.requester?.department || '-'",
+          ]
+          missing = [x for x in required if x not in text]
+          if missing:
+              raise SystemExit('Acceptance invariant missing: ' + repr(missing))
+      - name: Commit acceptance patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/modules/MaintenancePages.tsx
+          git diff --cached --quiet && { echo 'No acceptance changes produced'; exit 1; }
+          git commit -m 'fix(repairs): satisfy conversion UI acceptance [repairs-ui-acceptance]'
+          git push origin HEAD:fix/repairs-request-plant-and-conversion-defaults

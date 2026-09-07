@@ -1,0 +1,112 @@
+name: One-shot Repairs UI closure
+
+on:
+  push:
+    branches:
+      - fix/repairs-request-plant-and-conversion-defaults
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[repairs-ui-patch]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/repairs-request-plant-and-conversion-defaults
+          fetch-depth: 0
+
+      - name: Apply fail-closed Repairs UI patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/components/modules/MaintenancePages.tsx')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          # Default conversion scheduling to the user's current local date/time.
+          replace_once(
+              """  const openConvertDialog = async () => {\n    if (!mr) return;\n    setConvertForm({""",
+              """  const openConvertDialog = async () => {\n    if (!mr) return;\n    const now = new Date();\n    const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString();\n    const defaultScheduledDate = localIso.slice(0, 16);\n    const defaultDeliveryDate = localIso.slice(0, 10);\n    setConvertForm({""",
+              'conversion local-date defaults prelude',
+          )
+          replace_once(
+              """      scheduledDate: '',\n      deliveryDate: '',\n      estimatedHours: '',""",
+              """      scheduledDate: defaultScheduledDate,\n      deliveryDate: defaultDeliveryDate,\n      estimatedHours: '',""",
+              'conversion local-date defaults values',
+          )
+
+          # Never offer cross-plant inventory in the conversion UI. Missing request plant => empty parts list.
+          replace_once(
+              """    try {\n      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([\n        api.get('/api/departments?limit=100'),\n        api.get('/api/inventory?limit=100'),\n        api.get('/api/tools?limit=100'),\n        api.get('/api/users?limit=100'),\n      ]);""",
+              """    try {\n      const requestPlantId = (mr as any).plantId ? String((mr as any).plantId) : '';\n      const inventoryRequest = requestPlantId\n        ? api.get(`/api/inventory?limit=100&plantId=${encodeURIComponent(requestPlantId)}`)\n        : Promise.resolve({ success: true, data: [] as any[] });\n      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([\n        api.get('/api/departments?limit=100'),\n        inventoryRequest,\n        api.get('/api/tools?limit=100'),\n        api.get('/api/users?limit=100'),\n      ]);""",
+              'plant-scoped conversion inventory',
+          )
+
+          # Current physical location belongs to the asset; preserve the request location only as a legacy fallback.
+          location_old = "{mr.location || '-'}"
+          location_new = "{(mr as any).asset?.location || mr.location || '-'}"
+          location_count = text.count(location_old)
+          if location_count != 3:
+              raise SystemExit(f'current asset location: expected 3 matches, found {location_count}')
+          text = text.replace(location_old, location_new)
+
+          # Desktop conversion summary: show organizational department separately from physical location.
+          replace_once(
+              """                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Location</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              """                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Department</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).department?.name || mr.requester?.department || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Location</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              'desktop department/location distinction',
+          )
+
+          # Mobile conversion summary gets the same distinction.
+          replace_once(
+              """                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              """                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Department</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).department?.name || mr.requester?.department || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).asset?.location || mr.location || '-'}</p>\n                </div>""",
+              'mobile department/location distinction',
+          )
+
+          # Main request detail card must also keep Department and Location conceptually separate.
+          replace_once(
+              """              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Category</span><span className=\"font-medium capitalize\">{mr.category || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Location</span><span className=\"font-medium\">{(mr as any).asset?.location || mr.location || '-'}</span></div>""",
+              """              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Category</span><span className=\"font-medium capitalize\">{mr.category || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Department</span><span className=\"font-medium text-right\">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between gap-4\"><span className=\"text-muted-foreground\">Location</span><span className=\"font-medium text-right\">{(mr as any).asset?.location || mr.location || '-'}</span></div>""",
+              'detail department/location distinction',
+          )
+
+          path.write_text(text)
+
+      - name: Verify patch invariants
+        shell: python
+        run: |
+          from pathlib import Path
+          text = Path('src/components/modules/MaintenancePages.tsx').read_text()
+          checks = {
+              'plant-scoped inventory': 'plantId=${encodeURIComponent(requestPlantId)}',
+              'scheduled current-date default': 'scheduledDate: defaultScheduledDate',
+              'delivery current-date default': 'deliveryDate: defaultDeliveryDate',
+              'resolved department': "(mr as any).department?.name || mr.requester?.department || '-'",
+              'asset current location': "(mr as any).asset?.location || mr.location || '-'",
+          }
+          missing = [name for name, needle in checks.items() if needle not in text]
+          if missing:
+              raise SystemExit('Missing invariants: ' + ', '.join(missing))
+
+      - name: Commit patch
+        run: |
+          if git diff --quiet -- src/components/modules/MaintenancePages.tsx; then
+            echo 'No patch changes produced'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/modules/MaintenancePages.tsx
+          git commit -m 'fix(repairs): close plant-scoped conversion UI [repairs-ui-patch]'
+          git push origin HEAD:fix/repairs-request-plant-and-conversion-defaults

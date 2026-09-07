@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:repairs-uat": "playwright test --project=repairs-uat --workers=1 --timeout=120000",
-    "test:repairs-rc1-preflight": "tsx scripts/repairs-rc1-preflight.ts"
+    "test:repairs-rc1-preflight": "tsx scripts/repairs-rc1-preflight.ts",
+    "test:repairs-notification-load": "tsx scripts/repairs-notification-queue-load.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

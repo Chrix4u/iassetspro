@@ -28,6 +28,7 @@ interface SyncRecord {
   data: Record<string, unknown>;
   timestamp: string;
   idempotencyKey?: string;
+  originUserId?: string;
 }
 
 interface SyncResult {
@@ -45,6 +46,7 @@ type OfflineWorkOrder = {
   assignedTo: string | null;
   teamLeaderId: string | null;
   teamMembers: Array<{ userId: string; accessLevel: string }>;
+  workOrderComponents: Array<{ componentRegistryId: string }>;
 };
 
 function sha256(value: string): string {
@@ -85,6 +87,7 @@ async function loadWorkOrder(tx: Prisma.TransactionClient, workOrderId: string):
       assignedTo: true,
       teamLeaderId: true,
       teamMembers: { select: { userId: true, accessLevel: true } },
+      workOrderComponents: { select: { componentRegistryId: true } },
     },
   });
   if (!wo) throw new Error('Work order not found');
@@ -215,20 +218,23 @@ async function handleMeasurementCreate(
   assertMutable(wo);
   if (!isExecutionActor(wo, session)) throw new Error('You do not have execution access to this work order');
 
-  const componentId = data.componentId;
   const parameterKey = data.parameterKey;
   const value = data.value;
   const unit = data.unit;
-  if (typeof componentId !== 'string' || !componentId) throw new Error('componentId is required');
   if (typeof parameterKey !== 'string' || !parameterKey) throw new Error('parameterKey is required');
   if (typeof value !== 'number') throw new Error('Measurement value is required');
   if (typeof unit !== 'string' || !unit) throw new Error('Measurement unit is required');
 
-  const link = await tx.workOrderComponent.findUnique({
-    where: { workOrderId_componentRegistryId: { workOrderId: wo.id, componentRegistryId: componentId } },
-    select: { id: true },
-  });
-  if (!link) throw new Error('Component is not linked to this work order');
+  const requestedComponentId = typeof data.componentId === 'string' && data.componentId
+    ? data.componentId
+    : null;
+  const componentId = requestedComponentId || wo.workOrderComponents[0]?.componentRegistryId;
+  if (!componentId) {
+    throw new Error('No components linked to this work order. Provide a componentId.');
+  }
+  if (!wo.workOrderComponents.some((component) => component.componentRegistryId === componentId)) {
+    throw new Error('Component is not linked to this work order');
+  }
 
   const minThreshold = typeof data.minThreshold === 'number' ? data.minThreshold : null;
   const maxThreshold = typeof data.maxThreshold === 'number' ? data.maxThreshold : null;
@@ -297,6 +303,10 @@ async function processRecord(
   session: SessionData,
   plantScope: Awaited<ReturnType<typeof getPlantScope>>,
 ): Promise<{ replayed: boolean }> {
+  if (record.originUserId && record.originUserId !== session.userId) {
+    throw new Error('Offline record belongs to a different authenticated user');
+  }
+
   const idempotencyKey = record.idempotencyKey ||
     (typeof record.data.idempotencyKey === 'string' ? record.data.idempotencyKey : undefined);
   const recordTimestamp = new Date(record.timestamp);

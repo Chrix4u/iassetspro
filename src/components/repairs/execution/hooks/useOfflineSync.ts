@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { OfflineSyncService, type SyncRecord } from '@/services/offlineSync.service';
+import {
+  OFFLINE_QUEUE_CHANGED_EVENT,
+  OfflineSyncService,
+  type SyncRecord,
+} from '@/services/offlineSync.service';
 import { api } from '@/lib/api';
 import { createLogger } from '@/lib/logger';
 
@@ -186,15 +190,23 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       setIsOnline(false);
     };
 
+    const handleQueueChanged = () => {
+      refreshPendingCount();
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, handleQueueChanged);
 
+    // Retain a low-frequency fallback in case another tab modifies storage;
+    // same-window writes are reflected immediately by the queue-change event.
     const interval = setInterval(refreshPendingCount, 5000);
     refreshPendingCount();
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, handleQueueChanged);
       clearInterval(interval);
     };
   }, [refreshPendingCount, syncNow]);

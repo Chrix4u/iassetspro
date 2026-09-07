@@ -827,13 +827,14 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
 
   const openConvertDialog = async () => {
     if (!mr) return;
+    const nowIso = new Date().toISOString();
     setConvertForm({
       workOrderType: 'corrective',
       priority: mr.priority === 'urgent' ? 'high' : mr.priority,
       tradeActivity: 'mechanical',
       technicalDescription: mr.title,
-      scheduledDate: '',
-      deliveryDate: '',
+      scheduledDate: nowIso,
+      deliveryDate: nowIso,
       estimatedHours: '',
       estimatedHoursDisplay: '',
       departmentIds: mr.departmentId ? [mr.departmentId] : [],
@@ -848,14 +849,21 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     });
     // Load dropdown data
     try {
+      const requestPlantId = (mr as any).plantId ? String((mr as any).plantId) : '';
+      const inventoryRequest = requestPlantId
+        ? api.get(`/api/inventory?limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
+        : Promise.resolve({ success: true, data: [] as any[] });
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?limit=100'),
+        inventoryRequest,
         api.get('/api/tools?limit=100'),
         api.get('/api/users?limit=100'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
-      if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);
+      if (invRes.success && invRes.data) {
+        const items = Array.isArray(invRes.data) ? invRes.data : [];
+        setInventoryItems(requestPlantId ? items.filter((item: any) => String(item.plantId) === requestPlantId) : []);
+      }
       if (toolsRes.success && toolsRes.data) setToolsData(Array.isArray(toolsRes.data) ? toolsRes.data : []);
       if (usersRes.success && usersRes.data) {
         const users = Array.isArray(usersRes.data) ? usersRes.data : [];
@@ -1321,9 +1329,19 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-semibold">{mr.asset?.name || mr.assetName || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-blue-600 font-medium uppercase">Location</p>
-                  <p className="text-sm font-semibold">{mr.location || '-'}</p>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Department</p>
+                  <p className="text-sm font-semibold">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Asset Location</p>
+                  <p className="text-sm font-semibold">{(mr as any).asset?.location || '-'}</p>
+                </div>
+                {mr.location && (
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>
+                    <p className="text-sm font-semibold">{mr.location}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-[11px] text-blue-600 font-medium uppercase">Breakdown</p>
                   <Badge variant={mr.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
@@ -1567,9 +1585,19 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-bold text-blue-900 mt-0.5 truncate">{mr.asset?.name || mr.assetName || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Location</p>
-                  <p className="text-sm font-bold text-blue-900 mt-0.5">{mr.location || '-'}</p>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Department</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Asset Location</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{(mr as any).asset?.location || '-'}</p>
+                </div>
+                {mr.location && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>
+                    <p className="text-sm font-bold text-blue-900 mt-0.5">{mr.location}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Breakdown</p>
                   <Badge variant={mr.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
@@ -1868,7 +1896,15 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Category</span><span className="font-medium capitalize">{mr.category || '-'}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Location</span><span className="font-medium">{mr.location || '-'}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Department</span><span className="font-medium text-right">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">{(mr as any).asset?.location ? 'Asset Location' : 'Location'}</span><span className="font-medium text-right">{(mr as any).asset?.location || mr.location || '-'}</span></div>
+              {(mr as any).asset?.location && mr.location && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Reported Location</span><span className="font-medium text-right">{mr.location}</span></div>
+                </>
+              )}
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{mr.asset?.name || mr.assetName || '-'}</span></div>
               <Separator />

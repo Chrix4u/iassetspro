@@ -34,7 +34,7 @@ export async function GET(
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true, location: true } },
         requester: { select: { id: true, fullName: true, username: true, department: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },
@@ -83,7 +83,17 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({ success: true, data: mr });
+    // MaintenanceRequest.departmentId is a legacy scalar without a Prisma relation.
+    // Resolve the department explicitly so the detail UI can distinguish the
+    // employee/request department from the physical asset/request location.
+    const department = mr.departmentId
+      ? await db.department.findFirst({
+          where: { id: mr.departmentId, ...(mr.plantId ? { plantId: mr.plantId } : {}) },
+          select: { id: true, name: true, code: true, plantId: true },
+        })
+      : null;
+
+    return NextResponse.json({ success: true, data: { ...mr, department } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

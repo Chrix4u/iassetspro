@@ -100,6 +100,10 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
 
       if (!res.ok || !json.success) {
         setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
+        setStartReadiness(null);
+        setStartReadinessError(null);
+        readinessNoticeRef.current = '';
+        toast.dismiss(`start-readiness-${workOrderId}`);
         setError(json.error || 'Failed to fetch capabilities');
         return;
       }
@@ -108,7 +112,11 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
       let readiness: StartReadiness | null = null;
 
       if (rawCapabilities.canStart) {
-        setStartReadinessError(null);
+        // The previously verified readiness result must never keep Start enabled
+        // while a new readiness request is still in flight. Fail closed until
+        // the fresh read proves that this work order is currently startable.
+        setCapabilities(mergeStartReadiness(rawCapabilities, null));
+        setStartReadiness(null);
 
         try {
           const readinessRes = await fetch(
@@ -184,6 +192,10 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
     } catch (err) {
       if (!mountedRef.current) return;
       setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
+      setStartReadiness(null);
+      setStartReadinessError(null);
+      readinessNoticeRef.current = '';
+      toast.dismiss(`start-readiness-${workOrderId}`);
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {
       if (mountedRef.current) setIsLoading(false);

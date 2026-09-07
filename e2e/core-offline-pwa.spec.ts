@@ -39,6 +39,45 @@ test.describe('CORE offline PWA platform', () => {
     expect(stores).toEqual(expect.arrayContaining(['sync_records', 'api_snapshots']));
   });
 
+  test('keeps a persistent stale-data warning until each cached endpoint refreshes live', async ({ page }) => {
+    await page.goto('/');
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('iassetspro:offline-cache-state', {
+        detail: {
+          endpoint: '/api/work-orders/wo-1',
+          cached: true,
+          cachedAt: '2026-09-07T20:00:00.000Z',
+        },
+      }));
+      window.dispatchEvent(new CustomEvent('iassetspro:offline-cache-state', {
+        detail: {
+          endpoint: '/api/work-orders/wo-1/tasks',
+          cached: true,
+          cachedAt: '2026-09-07T20:05:00.000Z',
+        },
+      }));
+    });
+
+    const banner = page.getByTestId('offline-cached-data-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('2 sections may be stale');
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('iassetspro:offline-cache-state', {
+        detail: { endpoint: '/api/work-orders/wo-1', cached: false },
+      }));
+    });
+    await expect(banner).toContainText('1 section may be stale');
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('iassetspro:offline-cache-state', {
+        detail: { endpoint: '/api/work-orders/wo-1/tasks', cached: false },
+      }));
+    });
+    await expect(banner).toBeHidden();
+  });
+
   test('serves the cached shell offline without caching API responses', async ({ page, context }) => {
     await page.goto('/');
 

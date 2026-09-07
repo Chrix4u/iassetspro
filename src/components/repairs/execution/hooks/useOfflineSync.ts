@@ -82,12 +82,14 @@ export function useOfflineSync(): UseOfflineSyncReturn {
   const [lastError, setLastError] = useState<string | null>(null);
   const syncInProgressRef = useRef(false);
 
-  const refreshPendingCount = useCallback(() => {
+  const refreshPendingCount = useCallback(async () => {
     try {
-      const count = OfflineSyncService.getPendingRecords().length;
+      const count = (await OfflineSyncService.getPendingRecords()).length;
       setPendingCount(count);
       return count;
-    } catch {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to read offline queue';
+      logger.error('Failed to refresh offline queue count', { error: message });
       return 0;
     }
   }, []);
@@ -95,17 +97,17 @@ export function useOfflineSync(): UseOfflineSyncReturn {
   const syncNow = useCallback(async () => {
     if (syncInProgressRef.current) return;
 
-    const records = OfflineSyncService.getPendingRecords();
+    const records = await OfflineSyncService.getPendingRecords();
     if (records.length === 0) {
-      OfflineSyncService.cleanup();
-      refreshPendingCount();
+      await OfflineSyncService.cleanup();
+      await refreshPendingCount();
       return;
     }
 
     const currentUserId = OfflineSyncService.getCurrentActorUserId();
     if (!currentUserId) {
       setLastError('Offline work cannot sync until the authenticated user identity is available');
-      refreshPendingCount();
+      await refreshPendingCount();
       return;
     }
 
@@ -133,10 +135,10 @@ export function useOfflineSync(): UseOfflineSyncReturn {
         if (res.success && res.data?.results) {
           for (const result of res.data.results) {
             if (result.success) {
-              OfflineSyncService.markSynced(result.id);
+              await OfflineSyncService.markSynced(result.id);
             } else {
               const message = result.error || 'Sync failed';
-              OfflineSyncService.markFailed(result.id, message);
+              await OfflineSyncService.markFailed(result.id, message);
               hasFailure = true;
               firstFailure ||= message;
             }
@@ -144,7 +146,7 @@ export function useOfflineSync(): UseOfflineSyncReturn {
 
           // Purge only server-acknowledged records after every successful
           // batch. Failed/unsynced records are intentionally preserved.
-          OfflineSyncService.cleanup();
+          await OfflineSyncService.cleanup();
           continue;
         }
 
@@ -152,7 +154,7 @@ export function useOfflineSync(): UseOfflineSyncReturn {
         // batches untouched so no unsent field activity is mislabeled failed.
         const errorMsg = res.error || 'Sync request failed';
         for (const record of batch) {
-          OfflineSyncService.markFailed(record.id, errorMsg);
+          await OfflineSyncService.markFailed(record.id, errorMsg);
         }
         hasFailure = true;
         firstFailure ||= errorMsg;
@@ -166,15 +168,15 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       const errorMsg = err instanceof Error ? err.message : 'Network error during sync';
       setLastError(errorMsg);
       logger.error('Sync failed', { error: errorMsg });
-      // Network failures are not recorded as mutation failures. Records stay
-      // pending and can be retried when connectivity is restored.
+      // Network/storage failures do not relabel pending field mutations. They
+      // remain durable and can be retried when the underlying cause is fixed.
     } finally {
       // A final cleanup is safe because cleanup removes only records already
       // acknowledged as synced by the server.
-      OfflineSyncService.cleanup();
+      await OfflineSyncService.cleanup();
       syncInProgressRef.current = false;
       setSyncInProgress(false);
-      refreshPendingCount();
+      await refreshPendingCount();
     }
   }, [refreshPendingCount]);
 
@@ -191,17 +193,19 @@ export function useOfflineSync(): UseOfflineSyncReturn {
     };
 
     const handleQueueChanged = () => {
-      refreshPendingCount();
+      void refreshPendingCount();
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, handleQueueChanged);
 
-    // Retain a low-frequency fallback in case another tab modifies storage;
-    // same-window writes are reflected immediately by the queue-change event.
-    const interval = setInterval(refreshPendingCount, 5000);
-    refreshPendingCount();
+    // Retain a low-frequency fallback for cross-tab changes; same-window writes
+    // are reflected immediately by the queue-change event.
+    const interval = setInterval(() => {
+      void refreshPendingCount();
+    }, 5000);
+    void refreshPendingCount();
 
     return () => {
       window.removeEventListener('online', handleOnline);

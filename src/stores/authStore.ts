@@ -4,13 +4,15 @@ import { api } from '@/lib/api';
 
 // --- localStorage keys ---
 const LS_TOKEN = 'eam_token';
+const LS_USER_ID = 'eam_user_id';
 const LS_PERMISSIONS = 'user_permissions';
 const LS_ROLES = 'user_roles';
 const LS_PLANT_ID = 'user_plant_id';
 const LS_PLANT_ACCESS = 'user_plant_access';
 
-/** Persist auth-related data to localStorage so the usePermissions hook can read it */
+/** Persist auth-related data to localStorage so client-side guards can read it. */
 function persistAuthData(user: User, permissions: string[]): void {
+  localStorage.setItem(LS_USER_ID, user.id);
   localStorage.setItem(LS_PERMISSIONS, JSON.stringify(permissions));
   localStorage.setItem(LS_ROLES, JSON.stringify((user.roles || []).map(r => r.slug)));
   localStorage.setItem(LS_PLANT_ID, user.plantId || '');
@@ -20,6 +22,7 @@ function persistAuthData(user: User, permissions: string[]): void {
 /** Clear all auth-related localStorage entries */
 function clearAuthData(): void {
   localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_USER_ID);
   localStorage.removeItem(LS_PERMISSIONS);
   localStorage.removeItem(LS_ROLES);
   localStorage.removeItem(LS_PLANT_ID);

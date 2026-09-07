@@ -99,7 +99,7 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
       if (!mountedRef.current) return;
 
       if (!res.ok || !json.success) {
-        setCapabilities(null);
+        setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
         setError(json.error || 'Failed to fetch capabilities');
         return;
       }
@@ -183,7 +183,7 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
       }
     } catch (err) {
       if (!mountedRef.current) return;
-      setCapabilities(null);
+      setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {
       if (mountedRef.current) setIsLoading(false);

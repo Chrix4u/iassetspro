@@ -10,13 +10,53 @@ const CACHE_PREFIX = 'iassetspro-shell-';
 const CACHE_NAME = `${CACHE_PREFIX}v1`;
 const APP_SHELL = ['/', '/logo.svg', '/manifest.webmanifest'];
 
+function extractNextStaticAssets(html) {
+  const urls = new Set();
+  const pattern = /(?:src|href)=["']([^"']*\/_next\/static\/[^"']+)["']/g;
+  let match;
+  while ((match = pattern.exec(html)) !== null) {
+    try {
+      const url = new URL(match[1], self.location.origin);
+      if (url.origin === self.location.origin && url.pathname.startsWith('/_next/static/')) {
+        urls.add(url.pathname + url.search);
+      }
+    } catch {
+      // Ignore malformed asset references instead of failing installation.
+    }
+  }
+  return Array.from(urls);
+}
+
+async function cacheRootAndStaticAssets(cache, response) {
+  await cache.put('/', response.clone());
+
+  try {
+    const html = await response.clone().text();
+    const assets = extractNextStaticAssets(html);
+    await Promise.all(
+      assets.map(async (asset) => {
+        try {
+          const assetResponse = await fetch(asset, { cache: 'reload' });
+          if (assetResponse.ok) await cache.put(asset, assetResponse.clone());
+        } catch {
+          // One optional chunk must not block the rest of the shell install.
+        }
+      }),
+    );
+  } catch {
+    // Root HTML is still useful as an offline fallback even if parsing fails.
+  }
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     for (const url of APP_SHELL) {
       try {
         const response = await fetch(url, { cache: 'reload' });
-        if (response.ok) await cache.put(url, response.clone());
+        if (!response.ok) continue;
+        if (url === '/') await cacheRootAndStaticAssets(cache, response);
+        else await cache.put(url, response.clone());
       } catch {
         // A transient install-time network failure must not brick registration.
       }
@@ -54,7 +94,7 @@ self.addEventListener('fetch', (event) => {
         const response = await fetch(request);
         if (response.ok && url.pathname === '/') {
           const cache = await caches.open(CACHE_NAME);
-          await cache.put('/', response.clone());
+          await cacheRootAndStaticAssets(cache, response);
         }
         return response;
       } catch {

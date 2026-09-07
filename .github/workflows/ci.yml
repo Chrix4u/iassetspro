@@ -2,7 +2,7 @@
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
 # Triggers on pushes to main/develop and all pull requests.
-# Jobs: lint/typecheck/unit → app build + container build → Repairs UAT (PR) / E2E (push)
+# Jobs: lint/typecheck/unit → app build + container build → Repairs UAT + platform E2E
 # Full-repository TypeScript debt is reported separately inside the typecheck job.
 # =============================================================================
 
@@ -284,12 +284,51 @@ jobs:
             test-results/
           retention-days: 14
 
+  # Platform E2E is a second hard gate, separate from Repairs UAT. It gets its
+  # own fresh database so the destructive full demo seed is deterministic and
+  # cannot interfere with Repairs scenarios. Running it on PRs prevents broken
+  # platform-test infrastructure from reaching main and blocking deployments.
   e2e-tests:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [build, container-build]
-    if: github.event_name == 'push'
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: platform_e2e_root
+          MARIADB_DATABASE: platform_e2e
+          MARIADB_USER: platform_e2e
+          MARIADB_PASSWORD: platform_e2e_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: mysql://platform_e2e:platform_e2e_pass@127.0.0.1:3306/platform_e2e
+      REDIS_URL: redis://127.0.0.1:6379
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+      NEXTAUTH_SECRET: platform-e2e-ci-nextauth-secret-not-for-production
+      JWT_SECRET: platform-e2e-ci-jwt-secret-not-for-production-32-bytes-minimum
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
     steps:
       - name: Checkout repository
@@ -311,18 +350,25 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright Chromium browser with system dependencies
-        run: bunx playwright install --with-deps chromium
+      - name: Generate Prisma client
+        run: bunx prisma generate
 
-      - name: Download build artifacts
+      - name: Create isolated platform E2E schema
+        run: bunx prisma db push
+
+      - name: Seed full platform demo data
+        run: bun run seed
+
+      - name: Download production standalone build
         uses: actions/download-artifact@v4
         with:
           name: build-output
           path: .next/standalone
 
-      - name: Run Playwright E2E tests (Chromium only)
-        env:
-          PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
+      - name: Install Playwright Chromium browser with system dependencies
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run platform Playwright E2E (Chromium only)
         run: bun run test:e2e --project=chromium
 
       - name: Upload Playwright test results

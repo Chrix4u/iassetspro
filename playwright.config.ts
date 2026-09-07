@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
 const useProductionServer = process.env.PLAYWRIGHT_USE_PRODUCTION_SERVER === '1';
+const repairsTests = /repairs\/.*\.spec\.ts/;
 
 export default defineConfig({
   testDir: './e2e',
@@ -18,11 +19,19 @@ export default defineConfig({
     actionTimeout: 10_000,
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+    {
+      name: 'chromium',
+      testIgnore: repairsTests,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'Mobile Chrome',
+      testIgnore: repairsTests,
+      use: { ...devices['Pixel 5'] },
+    },
     {
       name: 'repairs-uat',
-      testMatch: /repairs\/.*\.spec\.ts/,
+      testMatch: repairsTests,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

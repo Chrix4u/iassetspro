@@ -43,8 +43,8 @@ jobs:
                   1,
               ),
               (
-                  "        api.get('/api/inventory?limit=100'),",
-                  "        api.get(getRequestInventoryUrl((mr as any).plantId)),",
+                  "      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([\n        api.get('/api/departments?limit=100'),\n        api.get('/api/inventory?limit=100'),\n        api.get('/api/tools?limit=100'),\n        api.get('/api/users?limit=100'),\n      ]);",
+                  "      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([\n        api.get('/api/departments?limit=100'),\n        api.get(getRequestInventoryUrl((mr as any).plantId)),\n        api.get('/api/tools?limit=100'),\n        api.get('/api/users?limit=100'),\n      ]);",
                   1,
               ),
               (
@@ -82,7 +82,7 @@ jobs:
           for old, new, expected in replacements:
               actual = text.count(old)
               if actual != expected:
-                  raise SystemExit(f'Guard failed: expected {expected} occurrence(s), found {actual}: {old[:100]!r}')
+                  raise SystemExit(f'Guard failed: expected {expected} occurrence(s), found {actual}: {old[:120]!r}')
               text = text.replace(old, new, expected)
 
           path.write_text(text)
@@ -91,9 +91,9 @@ jobs:
         run: |
           grep -F "getRequestInventoryUrl((mr as any).plantId)" src/components/modules/MaintenancePages.tsx
           grep -F "scheduledDate: conversionDefaults.scheduledDate" src/components/modules/MaintenancePages.tsx
-          grep -F "Expected End Date" src/components/modules/MaintenancePages.tsx
-          grep -F "Asset / Request Location" src/components/modules/MaintenancePages.tsx
-          grep -F "Department" src/components/modules/MaintenancePages.tsx
+          grep -F "deliveryDate: conversionDefaults.expectedEndDate" src/components/modules/MaintenancePages.tsx
+          test "$(grep -F -c 'Expected End Date' src/components/modules/MaintenancePages.tsx)" -eq 2
+          test "$(grep -F -c 'Asset / Request Location' src/components/modules/MaintenancePages.tsx)" -eq 3
 
       - name: Commit UI patch and remove runner
         run: |

@@ -1,0 +1,46 @@
+name: Repairs offline parity replay
+
+on:
+  push:
+    branches:
+      - fix/repairs-request-plant-scope-convert-defaults
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    if: github.event.head_commit.message == 'Replay final Repairs offline parity'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/repairs-request-plant-scope-convert-defaults
+          fetch-depth: 0
+
+      - name: Replay previously validated final Repairs commits
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git cherry-pick \
+            939cde94405ad0ed4c93a23a3443ff06e9906bbe \
+            1ea4e255afe9be2bc73c9a7083ac795f3f1a9e75 \
+            cb299b4e58825b0962d92e467815a2a49453aa7e \
+            710fafd5e5a01b120dae8f3f5d1be76091c6b677 \
+            b29be27d4fa76820c9ea97263fe0d07a8e09939c \
+            c3767c5b12b7538bcaf6d9626017c270078dcf1a \
+            ec5b7cd31c9e35866840e1f8560478b03672c44d \
+            1eec66173f950c81b2803190a9899bb19d4f6424 \
+            bfcaca9e308730989819c0083bdf56dd440ba376 \
+            0b63f5e5aae2fe9e5fd3c8504f39a36b34ccb6dd \
+            a2c3538f43d44d7510ac15794d28f0a4b047f412 \
+            9cb76d3607a8183efa17a3cfa39355731c9407c2 \
+            91430042705f85324120192eae02f851392e0172
+
+      - name: Remove temporary replay workflow and publish
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/repairs-offline-parity-replay.yml
+          git commit -m "Finalize Repairs offline field-action parity"
+          git push origin HEAD:fix/repairs-request-plant-scope-convert-defaults

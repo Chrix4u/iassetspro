@@ -39,39 +39,49 @@ export interface StartReadiness {
 interface CapabilitiesResult {
   capabilities: Capabilities | null;
   startReadiness: StartReadiness | null;
+  startReadinessError: string | null;
   isLoading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 }
 
 /**
  * Apply the server-authoritative start-readiness result to the capability set.
- * Capabilities still determine who may start; readiness determines whether the
+ * Capabilities determine who may start; readiness determines whether the
  * currently authorised user may start this work order right now.
+ *
+ * A missing readiness result fails closed for Start. The mutation endpoint is
+ * still authoritative, but the UI must not invite a technician to start work
+ * while the preflight cannot be verified.
  */
 export function mergeStartReadiness(
   capabilities: Capabilities,
   readiness: StartReadiness | null,
 ): Capabilities {
-  if (!capabilities.canStart || !readiness || readiness.ready) {
+  if (!capabilities.canStart) {
     return capabilities;
   }
 
-  return { ...capabilities, canStart: false };
+  if (!readiness || !readiness.ready) {
+    return { ...capabilities, canStart: false };
+  }
+
+  return capabilities;
 }
 
 /**
  * Fetches server-authoritative capabilities for a work order and, whenever the
  * user is otherwise allowed to start, also checks phase=start readiness.
  *
- * Readiness failures fail open to the existing /start endpoint: a transient
- * read-only readiness request must not strand a technician, while the write
- * endpoint remains the final enforcement point. Confirmed blockers, however,
- * suppress Start immediately and are surfaced to the technician before any
- * execution request is made.
+ * Start preflight is fail-safe: loading/transport/API failures never create a
+ * Start capability. Confirmed blockers and readiness failures remain visible
+ * as persistent notices until a later successful refresh clears them. POST
+ * /start remains the final enforcement point for races after the read check.
  */
 export function useCapabilities(workOrderId: string | undefined): CapabilitiesResult {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [startReadiness, setStartReadiness] = useState<StartReadiness | null>(null);
+  const [startReadinessError, setStartReadinessError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,11 +94,16 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
     setError(null);
 
     try {
-      const res = await fetch(`/api/work-orders/${workOrderId}/capabilities`);
+      const res = await fetch(`/api/work-orders/${workOrderId}/capabilities`, { cache: 'no-store' });
       const json = await res.json();
       if (!mountedRef.current) return;
 
-      if (!json.success) {
+      if (!res.ok || !json.success) {
+        setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
+        setStartReadiness(null);
+        setStartReadinessError(null);
+        readinessNoticeRef.current = '';
+        toast.dismiss(`start-readiness-${workOrderId}`);
         setError(json.error || 'Failed to fetch capabilities');
         return;
       }
@@ -97,6 +112,12 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
       let readiness: StartReadiness | null = null;
 
       if (rawCapabilities.canStart) {
+        // The previously verified readiness result must never keep Start enabled
+        // while a new readiness request is still in flight. Fail closed until
+        // the fresh read proves that this work order is currently startable.
+        setCapabilities(mergeStartReadiness(rawCapabilities, null));
+        setStartReadiness(null);
+
         try {
           const readinessRes = await fetch(
             `/api/work-orders/${workOrderId}/readiness?phase=start`,
@@ -104,40 +125,65 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
           );
           const readinessJson = await readinessRes.json();
 
-          if (mountedRef.current && readinessJson.success && readinessJson.data) {
+          if (!mountedRef.current) return;
+
+          if (!readinessRes.ok || !readinessJson.success || !readinessJson.data) {
+            const message = readinessJson.error || 'Unable to verify start readiness';
+            setStartReadiness(null);
+            setStartReadinessError(message);
+            readinessNoticeRef.current = '';
+            toast.error('Start preflight unavailable', {
+              description: `${message}. Start is disabled until readiness can be verified.`,
+              duration: Infinity,
+              id: `start-readiness-${workOrderId}`,
+            });
+          } else {
             readiness = readinessJson.data as StartReadiness;
             setStartReadiness(readiness);
+            setStartReadinessError(null);
 
             const blockerMessages = readiness.blockers.map((item) => item.message);
             const warningMessages = readiness.warnings.map((item) => item.message);
             const noticeSignature = JSON.stringify({ blockerMessages, warningMessages });
 
-            if (noticeSignature !== readinessNoticeRef.current) {
+            if (readiness.ready && blockerMessages.length === 0 && warningMessages.length === 0) {
+              readinessNoticeRef.current = '';
+              toast.dismiss(`start-readiness-${workOrderId}`);
+            } else if (noticeSignature !== readinessNoticeRef.current) {
               readinessNoticeRef.current = noticeSignature;
 
               if (blockerMessages.length > 0) {
                 toast.error('Work is not ready to start', {
                   description: blockerMessages.join(' • '),
-                  duration: 10_000,
+                  duration: Infinity,
                   id: `start-readiness-${workOrderId}`,
                 });
               } else if (warningMessages.length > 0) {
                 toast.warning('Start readiness warnings', {
                   description: warningMessages.join(' • '),
-                  duration: 8_000,
+                  duration: 12_000,
                   id: `start-readiness-${workOrderId}`,
                 });
               }
             }
           }
-        } catch {
-          // Advisory GET failed. Do not remove a capability solely because the
-          // network/readiness read failed; POST /start remains authoritative.
-          if (mountedRef.current) setStartReadiness(null);
+        } catch (err) {
+          if (!mountedRef.current) return;
+          const message = err instanceof Error ? err.message : 'Unable to verify start readiness';
+          setStartReadiness(null);
+          setStartReadinessError(message);
+          readinessNoticeRef.current = '';
+          toast.error('Start preflight unavailable', {
+            description: 'Start is disabled until readiness can be verified. The check will retry automatically.',
+            duration: Infinity,
+            id: `start-readiness-${workOrderId}`,
+          });
         }
       } else {
         setStartReadiness(null);
+        setStartReadinessError(null);
         readinessNoticeRef.current = '';
+        toast.dismiss(`start-readiness-${workOrderId}`);
       }
 
       if (mountedRef.current) {
@@ -145,6 +191,11 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
       }
     } catch (err) {
       if (!mountedRef.current) return;
+      setCapabilities((previous) => previous ? mergeStartReadiness(previous, null) : null);
+      setStartReadiness(null);
+      setStartReadinessError(null);
+      readinessNoticeRef.current = '';
+      toast.dismiss(`start-readiness-${workOrderId}`);
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {
       if (mountedRef.current) setIsLoading(false);
@@ -155,28 +206,35 @@ export function useCapabilities(workOrderId: string | undefined): CapabilitiesRe
     mountedRef.current = true;
     setCapabilities(null);
     setStartReadiness(null);
+    setStartReadinessError(null);
     setError(null);
     readinessNoticeRef.current = '';
     void fetchCapabilities();
 
-    // Refresh unconditionally while the workspace is mounted. The previous
-    // implementation closed over the initial capabilities=null value, so its
-    // 30-second refresh never actually ran. Regular refresh also lets Start
-    // reappear automatically after a blocker is resolved by another role.
+    // Refresh unconditionally while the workspace is mounted so readiness can
+    // recover automatically after another role resolves a blocker.
     intervalRef.current = setInterval(() => {
       void fetchCapabilities();
     }, 30_000);
 
     return () => {
       mountedRef.current = false;
+      toast.dismiss(`start-readiness-${workOrderId}`);
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
-  }, [fetchCapabilities]);
+  }, [fetchCapabilities, workOrderId]);
 
-  return { capabilities, startReadiness, isLoading, error };
+  return {
+    capabilities,
+    startReadiness,
+    startReadinessError,
+    isLoading,
+    error,
+    refetch: fetchCapabilities,
+  };
 }
 
 export default useCapabilities;

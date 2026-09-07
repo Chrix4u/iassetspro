@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { notifyUser } from '@/lib/notifications';
-import { executeTransition } from '@/lib/state-machine';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { extractAuditContext } from '@/lib/audit-helpers';
+import {
+  cancelRepairWorkOrder,
+  type CancellationSessionContext,
+  type CancellationAuditContext,
+} from '@/services/workOrderCancellation.service';
 
 /**
  * POST /api/work-orders/[id]/cancel
  *
- * Cancels a work order (draft/requested/approved → cancelled).
- * Always requires a reason (configured in transition rules).
+ * Cancels a work order through the canonical cancellation service. The service
+ * owns transition, event-log, audit and notification side effects atomically.
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = getSession(request);
@@ -30,96 +34,22 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { reason } = body;
-
-    if (!reason) {
-      return NextResponse.json(
-        { success: false, error: 'A reason is required to cancel a work order' },
-        { status: 400 }
-      );
-    }
-
-    const wo = await db.workOrder.findUnique({ where: { id } });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
-    // Only allow cancellation from non-terminal states
-    const cancellableStates = ['draft', 'requested', 'approved', 'planned', 'assigned', 'on_hold'];
-    if (!cancellableStates.includes(wo.status)) {
-      return NextResponse.json(
-        { success: false, error: `Cannot cancel a work order in "${wo.status}" status. Only ${cancellableStates.join(', ')} can be cancelled.` },
-        { status: 400 }
-      );
-    }
-
-    const result = await executeTransition(
-      'work_order',
+    const auditCtx = extractAuditContext(request);
+    const result = await cancelRepairWorkOrder(
       id,
-      'cancelled',
-      session,
-      { reason, extraData: { notes: `[Cancelled] ${reason}` } },
+      session as CancellationSessionContext,
+      {
+        reason: typeof body.reason === 'string' ? body.reason : '',
+        auditCtx: auditCtx as CancellationAuditContext,
+      },
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      const status = result.error === 'Work order not found' ? 404 : 400;
+      return NextResponse.json({ success: false, error: result.error }, { status });
     }
 
-    // Create time log
-    await db.workOrderTimeLog.create({
-      data: {
-        workOrderId: id,
-        userId: session.userId,
-        action: 'cancel',
-        notes: reason,
-        timestamp: new Date(),
-      },
-    });
-
-    // Notify all team members and requester
-    const notifyTargets: string[] = [];
-
-    // Add team members
-    const teamMembers = await db.workOrderTeamMember.findMany({
-      where: { workOrderId: id },
-      select: { userId: true },
-    });
-    for (const member of teamMembers) {
-      if (member.userId !== session.userId && !notifyTargets.includes(member.userId)) {
-        notifyTargets.push(member.userId);
-      }
-    }
-
-    // Add assignee
-    if (wo.assignedTo && wo.assignedTo !== session.userId && !notifyTargets.includes(wo.assignedTo)) {
-      notifyTargets.push(wo.assignedTo);
-    }
-
-    // Add requester from linked MR
-    if (wo.maintenanceRequestId) {
-      const linkedMR = await db.maintenanceRequest.findUnique({
-        where: { id: wo.maintenanceRequestId },
-        select: { requestedBy: true },
-      });
-      if (linkedMR?.requestedBy && linkedMR.requestedBy !== session.userId && !notifyTargets.includes(linkedMR.requestedBy)) {
-        notifyTargets.push(linkedMR.requestedBy);
-      }
-    }
-
-    for (const targetId of notifyTargets) {
-      await notifyUser(
-        targetId,
-        'wo_cancelled',
-        'Work Order Cancelled',
-        `${session.fullName} cancelled ${wo.woNumber}. Reason: ${reason}`,
-        'work_order',
-        id,
-        `wo-detail?id=${id}`,
-        { forceSms: true },
-      );
-    }
-
-    // Re-fetch with includes
+    // Preserve the existing Repairs UI response contract.
     const updated = await db.workOrder.findUnique({
       where: { id },
       include: {

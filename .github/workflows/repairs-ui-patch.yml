@@ -1,0 +1,105 @@
+name: Repairs UI patch runner
+
+on:
+  push:
+    branches:
+      - fix/repairs-request-plant-scope-convert-defaults
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Apply Repairs UI patch runner'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/repairs-request-plant-scope-convert-defaults
+          fetch-depth: 0
+
+      - name: Apply assertion-guarded UI replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/components/modules/MaintenancePages.tsx')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "import { api } from '@/lib/api';\n",
+                  "import { api } from '@/lib/api';\nimport { getRequestInventoryUrl, getWorkOrderConversionDefaults } from '@/lib/maintenanceRequestPlanning';\n",
+                  1,
+              ),
+              (
+                  "  const openConvertDialog = async () => {\n    if (!mr) return;\n    setConvertForm({",
+                  "  const openConvertDialog = async () => {\n    if (!mr) return;\n    const conversionDefaults = getWorkOrderConversionDefaults();\n    setConvertForm({",
+                  1,
+              ),
+              (
+                  "      scheduledDate: '',\n      deliveryDate: '',",
+                  "      scheduledDate: conversionDefaults.scheduledDate,\n      deliveryDate: conversionDefaults.expectedEndDate,",
+                  1,
+              ),
+              (
+                  "        api.get('/api/inventory?limit=100'),",
+                  "        api.get(getRequestInventoryUrl((mr as any).plantId)),",
+                  1,
+              ),
+              (
+                  "      if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);",
+                  "      if (invRes.success && invRes.data) {\n        const items = Array.isArray(invRes.data) ? invRes.data : [];\n        const requestPlantId = (mr as any).plantId as string | undefined;\n        setInventoryItems(requestPlantId ? items.filter((item: any) => item.plantId === requestPlantId) : items);\n      }",
+                  1,
+              ),
+              (
+                  "                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Location</p>\n                  <p className=\"text-sm font-semibold\">{mr.location || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Breakdown</p>",
+                  "                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Department</p>\n                  <p className=\"text-sm font-semibold\">{(mr as any).department?.name || (typeof mr.requester?.department === 'string' ? mr.requester.department : mr.requester?.department?.name) || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Asset / Request Location</p>\n                  <p className=\"text-sm font-semibold\">{mr.location || (mr as any).asset?.location || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[11px] text-blue-600 font-medium uppercase\">Breakdown</p>",
+                  1,
+              ),
+              (
+                  "                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{mr.location || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Breakdown</p>",
+                  "                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Department</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{(mr as any).department?.name || (typeof mr.requester?.department === 'string' ? mr.requester.department : mr.requester?.department?.name) || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Asset / Request Location</p>\n                  <p className=\"text-sm font-bold text-blue-900 mt-0.5\">{mr.location || (mr as any).asset?.location || '-'}</p>\n                </div>\n                <div>\n                  <p className=\"text-[10px] font-semibold uppercase text-blue-500 tracking-wider\">Breakdown</p>",
+                  1,
+              ),
+              (
+                  "              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Location</span><span className=\"font-medium\">{mr.location || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Asset</span>",
+                  "              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Department</span><span className=\"font-medium\">{(mr as any).department?.name || (typeof mr.requester?.department === 'string' ? mr.requester.department : mr.requester?.department?.name) || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Asset / Request Location</span><span className=\"font-medium\">{mr.location || (mr as any).asset?.location || '-'}</span></div>\n              <Separator />\n              <div className=\"flex justify-between\"><span className=\"text-muted-foreground\">Asset</span>",
+                  1,
+              ),
+              (
+                  '<Label className="text-xs">Delivery Date</Label>',
+                  '<Label className="text-xs">Expected End Date</Label>',
+                  1,
+              ),
+              (
+                  '<Label className="text-xs font-medium">Delivery Date</Label>',
+                  '<Label className="text-xs font-medium">Expected End Date</Label>',
+                  1,
+              ),
+          ]
+
+          for old, new, expected in replacements:
+              actual = text.count(old)
+              if actual != expected:
+                  raise SystemExit(f'Guard failed: expected {expected} occurrence(s), found {actual}: {old[:100]!r}')
+              text = text.replace(old, new, expected)
+
+          path.write_text(text)
+
+      - name: Verify intended UI markers
+        run: |
+          grep -F "getRequestInventoryUrl((mr as any).plantId)" src/components/modules/MaintenancePages.tsx
+          grep -F "scheduledDate: conversionDefaults.scheduledDate" src/components/modules/MaintenancePages.tsx
+          grep -F "Expected End Date" src/components/modules/MaintenancePages.tsx
+          grep -F "Asset / Request Location" src/components/modules/MaintenancePages.tsx
+          grep -F "Department" src/components/modules/MaintenancePages.tsx
+
+      - name: Commit UI patch and remove runner
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/repairs-ui-patch.yml
+          git add src/components/modules/MaintenancePages.tsx
+          git commit -m "Fix Repairs request details and WO conversion defaults"
+          git push origin HEAD:fix/repairs-request-plant-scope-convert-defaults

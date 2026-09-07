@@ -1,0 +1,62 @@
+name: One-shot CORE offline API async patch
+
+on:
+  push:
+    branches:
+      - feat/core-offline-indexeddb-v1
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[core-offline-api-async]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/core-offline-indexeddb-v1
+          fetch-depth: 0
+      - name: Patch API adapter
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/lib/api.ts')
+          text = path.read_text()
+
+          old = '''function queueOfflineMutationIfSupported<T>(\n  endpoint: string,\n  options: RequestInit,\n): ApiResponse<T> | null {\n  if (typeof window === 'undefined' || typeof navigator === 'undefined' || navigator.onLine !== false) {\n    return null;\n  }\n\n  const descriptor = buildOfflineMutationDescriptor(endpoint, options.method, options.body);\n  if (!descriptor) return null;\n\n  const record = OfflineSyncService.queueOperation(\n    descriptor.operation,\n    descriptor.entityType,\n    descriptor.entityId,\n    descriptor.data,\n  );\n\n  return {\n    success: true,\n    status: 202,\n    offlineQueued: true,\n    offlineRecordId: record.id,\n    data: buildOfflineSyntheticData(descriptor, record.id, record.timestamp) as T,\n  };\n}'''
+
+          new = '''async function queueOfflineMutationIfSupported<T>(\n  endpoint: string,\n  options: RequestInit,\n): Promise<ApiResponse<T> | null> {\n  if (typeof window === 'undefined' || typeof navigator === 'undefined' || navigator.onLine !== false) {\n    return null;\n  }\n\n  const descriptor = buildOfflineMutationDescriptor(endpoint, options.method, options.body);\n  if (!descriptor) return null;\n\n  try {\n    const record = await OfflineSyncService.queueOperation(\n      descriptor.operation,\n      descriptor.entityType,\n      descriptor.entityId,\n      descriptor.data,\n    );\n\n    return {\n      success: true,\n      status: 202,\n      offlineQueued: true,\n      offlineRecordId: record.id,\n      data: buildOfflineSyntheticData(descriptor, record.id, record.timestamp) as T,\n    };\n  } catch (error: unknown) {\n    const message = error instanceof Error ? error.message : 'Browser storage failure';\n    return {\n      success: false,\n      status: 503,\n      error: `Offline work could not be saved safely: ${message}`,\n    };\n  }\n}'''
+
+          if text.count(old) != 1:
+              raise SystemExit(f'queue adapter expected 1 match, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old_call = '  const offlineResponse = queueOfflineMutationIfSupported<T>(endpoint, restOptions);\n'
+          new_call = '  const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);\n'
+          if text.count(old_call) != 1:
+              raise SystemExit(f'offline adapter call expected 1 match, found {text.count(old_call)}')
+          text = text.replace(old_call, new_call, 1)
+
+          path.write_text(text)
+      - name: Verify async durability invariant
+        shell: python
+        run: |
+          from pathlib import Path
+          text = Path('src/lib/api.ts').read_text()
+          required = [
+            'async function queueOfflineMutationIfSupported',
+            'const record = await OfflineSyncService.queueOperation(',
+            'const offlineResponse = await queueOfflineMutationIfSupported<T>',
+            'Offline work could not be saved safely:',
+          ]
+          missing = [x for x in required if x not in text]
+          if missing:
+              raise SystemExit('Missing async durability invariant: ' + repr(missing))
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/api.ts
+          git commit -m 'feat(core): await durable offline mutation persistence [core-offline-api-async]'
+          git push origin HEAD:feat/core-offline-indexeddb-v1

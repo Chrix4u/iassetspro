@@ -39,8 +39,12 @@ function currentActorContext(): { userId: string; plantId: string | null } | nul
   return { userId, plantId: rawPlantId || null };
 }
 
-function makeSnapshotId(userId: string, plantId: string | null, endpoint: string): string {
-  return `${encodeURIComponent(userId)}|${encodeURIComponent(plantId || '-') }|${encodeURIComponent(endpoint)}`;
+export function buildOfflineSnapshotId(
+  userId: string,
+  plantId: string | null,
+  endpoint: string,
+): string {
+  return `${encodeURIComponent(userId)}|${encodeURIComponent(plantId || '-')}|${encodeURIComponent(endpoint)}`;
 }
 
 /**
@@ -78,7 +82,7 @@ export async function saveOfflineApiSnapshot<TResponse extends Record<string, un
     const transaction = database.transaction(OFFLINE_API_SNAPSHOT_STORE, 'readwrite');
     const complete = transactionComplete(transaction);
     const snapshot: OfflineApiSnapshot<TResponse> = {
-      id: makeSnapshotId(actor.userId, actor.plantId, endpoint),
+      id: buildOfflineSnapshotId(actor.userId, actor.plantId, endpoint),
       userId: actor.userId,
       plantId: actor.plantId,
       endpoint,
@@ -108,7 +112,7 @@ export async function loadOfflineApiSnapshot<TResponse extends Record<string, un
     const complete = transactionComplete(transaction);
     const snapshot = await requestResult(
       transaction.objectStore(OFFLINE_API_SNAPSHOT_STORE).get(
-        makeSnapshotId(actor.userId, actor.plantId, endpoint),
+        buildOfflineSnapshotId(actor.userId, actor.plantId, endpoint),
       ),
     ) as OfflineApiSnapshot<TResponse> | undefined;
     await complete;

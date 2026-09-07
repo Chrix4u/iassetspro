@@ -10,7 +10,7 @@ export async function registerCoreServiceWorker(): Promise<ServiceWorkerRegistra
   if (
     typeof window === 'undefined' ||
     !('serviceWorker' in navigator) ||
-    process.env.NODE_ENV !== 'production'
+    process.env.NODE_ENV === 'development'
   ) {
     return null;
   }

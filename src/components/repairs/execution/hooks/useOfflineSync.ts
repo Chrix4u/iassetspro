@@ -1,16 +1,21 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { OFFLINE_QUEUE_CHANGED_EVENT, OfflineSyncService } from '@/services/offlineSync.service';
 import {
-  OFFLINE_QUEUE_CHANGED_EVENT,
-  OfflineSyncService,
-  type SyncRecord,
-} from '@/services/offlineSync.service';
-import { api } from '@/lib/api';
+  replayPendingOfflineWork,
+  chunkSyncRecords,
+  partitionSyncRecordsByActor,
+} from '@/services/offlineSyncReplay.service';
+import {
+  isRemoteOfflineSyncActive,
+  subscribeOfflineSyncMessages,
+} from '@/lib/offline-sync-coordinator';
 import { createLogger } from '@/lib/logger';
 
+export { chunkSyncRecords, partitionSyncRecordsByActor };
+
 const logger = createLogger('useOfflineSync');
-const MAX_SYNC_BATCH = 100;
 
 export type OfflineStatus = 'online' | 'offline' | 'pending_sync' | 'sync_failed';
 
@@ -23,64 +28,15 @@ interface UseOfflineSyncReturn {
   status: OfflineStatus;
 }
 
-/**
- * Split queued records into server-safe batches. The offline endpoint enforces
- * a maximum of 100 records per request, so the client must never submit the
- * whole local queue blindly.
- */
-export function chunkSyncRecords(
-  records: SyncRecord[],
-  batchSize = MAX_SYNC_BATCH,
-): SyncRecord[][] {
-  if (batchSize <= 0) throw new Error('batchSize must be greater than zero');
-  const batches: SyncRecord[][] = [];
-  for (let i = 0; i < records.length; i += batchSize) {
-    batches.push(records.slice(i, i + batchSize));
-  }
-  return batches;
-}
-
-/**
- * Separate records created by the current authenticated user from records that
- * must not be replayed under this login. Missing originUserId is treated as
- * unsafe legacy data rather than guessed from the current session.
- */
-export function partitionSyncRecordsByActor(
-  records: SyncRecord[],
-  currentUserId: string,
-): { owned: SyncRecord[]; blocked: SyncRecord[] } {
-  const owned: SyncRecord[] = [];
-  const blocked: SyncRecord[] = [];
-
-  for (const record of records) {
-    if (record.originUserId && record.originUserId === currentUserId) {
-      owned.push(record);
-    } else {
-      blocked.push(record);
-    }
-  }
-
-  return { owned, blocked };
-}
-
-function blockedRecordsMessage(records: SyncRecord[], currentUserId: string): string {
-  if (records.some((record) => !record.originUserId)) {
-    return 'Some legacy offline work cannot be safely attributed to a user and was not synced';
-  }
-  if (records.some((record) => record.originUserId !== currentUserId)) {
-    return 'Some pending offline work belongs to a different signed-in user and was not synced';
-  }
-  return 'Some pending offline work could not be safely synced';
-}
-
 export function useOfflineSync(): UseOfflineSyncReturn {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
   const [pendingCount, setPendingCount] = useState(0);
-  const [syncInProgress, setSyncInProgress] = useState(false);
+  const [localSyncInProgress, setLocalSyncInProgress] = useState(false);
+  const [remoteSyncInProgress, setRemoteSyncInProgress] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const syncInProgressRef = useRef(false);
+  const localSyncRef = useRef(false);
 
   const refreshPendingCount = useCallback(async () => {
     try {
@@ -88,97 +44,48 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       setPendingCount(count);
       return count;
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to read offline queue';
-      logger.error('Failed to refresh offline queue count', { error: message });
+      logger.error('Failed to refresh offline queue count', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return 0;
     }
   }, []);
 
+  const refreshRemoteSyncState = useCallback(async () => {
+    setRemoteSyncInProgress(await isRemoteOfflineSyncActive());
+  }, []);
+
   const syncNow = useCallback(async () => {
-    if (syncInProgressRef.current) return;
+    if (localSyncRef.current) return;
 
-    const records = await OfflineSyncService.getPendingRecords();
-    if (records.length === 0) {
-      await OfflineSyncService.cleanup();
-      await refreshPendingCount();
-      return;
-    }
-
-    const currentUserId = OfflineSyncService.getCurrentActorUserId();
-    if (!currentUserId) {
-      setLastError('Offline work cannot sync until the authenticated user identity is available');
-      await refreshPendingCount();
-      return;
-    }
-
-    const { owned, blocked } = partitionSyncRecordsByActor(records, currentUserId);
-
-    syncInProgressRef.current = true;
-    setSyncInProgress(true);
-    setLastError(null);
+    localSyncRef.current = true;
+    setLocalSyncInProgress(true);
 
     try {
-      let hasFailure = blocked.length > 0;
-      let firstFailure: string | null = blocked.length > 0
-        ? blockedRecordsMessage(blocked, currentUserId)
-        : null;
+      const result = await replayPendingOfflineWork();
 
-      for (const batch of chunkSyncRecords(owned)) {
-        const res = await api.post<{
-          results: Array<{ id: string; success: boolean; replayed?: boolean; error?: string }>;
-        }>(
-          '/api/sync/offline',
-          { records: batch },
-          { timeout: 30_000 },
-        );
-
-        if (res.success && res.data?.results) {
-          for (const result of res.data.results) {
-            if (result.success) {
-              await OfflineSyncService.markSynced(result.id);
-            } else {
-              const message = result.error || 'Sync failed';
-              await OfflineSyncService.markFailed(result.id, message);
-              hasFailure = true;
-              firstFailure ||= message;
-            }
-          }
-
-          // Purge only server-acknowledged records after every successful
-          // batch. Failed/unsynced records are intentionally preserved.
-          await OfflineSyncService.cleanup();
-          continue;
-        }
-
-        // A request-level API failure affects only this batch. Preserve later
-        // batches untouched so no unsent field activity is mislabeled failed.
-        const errorMsg = res.error || 'Sync request failed';
-        for (const record of batch) {
-          await OfflineSyncService.markFailed(record.id, errorMsg);
-        }
-        hasFailure = true;
-        firstFailure ||= errorMsg;
-        break;
+      if (result.outcome === 'busy') {
+        setRemoteSyncInProgress(true);
+        return;
       }
 
-      if (hasFailure) {
-        setLastError(firstFailure || 'Some records failed to sync');
+      if (result.outcome === 'failed') {
+        setLastError(result.error || 'Offline sync failed');
+        return;
       }
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Network error during sync';
-      setLastError(errorMsg);
-      logger.error('Sync failed', { error: errorMsg });
-      // Network/storage failures do not relabel pending field mutations. They
-      // remain durable and can be retried when the underlying cause is fixed.
+
+      setLastError(null);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Network error during sync';
+      setLastError(message);
+      logger.error('Sync failed', { error: message });
     } finally {
-      // A final cleanup is safe because cleanup removes only records already
-      // acknowledged as synced by the server.
-      await OfflineSyncService.cleanup();
-      syncInProgressRef.current = false;
-      setSyncInProgress(false);
+      localSyncRef.current = false;
+      setLocalSyncInProgress(false);
       await refreshPendingCount();
+      await refreshRemoteSyncState();
     }
-  }, [refreshPendingCount]);
+  }, [refreshPendingCount, refreshRemoteSyncState]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -196,29 +103,42 @@ export function useOfflineSync(): UseOfflineSyncReturn {
       void refreshPendingCount();
     };
 
+    const unsubscribeBroadcast = subscribeOfflineSyncMessages((message) => {
+      if (message.type === 'queue-changed') {
+        void refreshPendingCount();
+        return;
+      }
+      if (message.type === 'sync-started') {
+        setRemoteSyncInProgress(true);
+        return;
+      }
+      setRemoteSyncInProgress(false);
+      void refreshPendingCount();
+    });
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener(OFFLINE_QUEUE_CHANGED_EVENT, handleQueueChanged);
 
-    // Retain a low-frequency fallback for cross-tab changes; same-window writes
-    // are reflected immediately by the queue-change event.
     const interval = setInterval(() => {
       void refreshPendingCount();
+      void refreshRemoteSyncState();
     }, 5000);
+
     void refreshPendingCount();
+    void refreshRemoteSyncState();
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener(OFFLINE_QUEUE_CHANGED_EVENT, handleQueueChanged);
+      unsubscribeBroadcast();
       clearInterval(interval);
     };
-  }, [refreshPendingCount, syncNow]);
+  }, [refreshPendingCount, refreshRemoteSyncState, syncNow]);
 
-  // If the app opens while already online with queued field work, do not wait
-  // for a synthetic browser "online" event. One automatic attempt is made.
-  // A server-level or actor-binding failure sets lastError and stops automatic
-  // retry loops; the user can explicitly retry after resolving the cause.
+  const syncInProgress = localSyncInProgress || remoteSyncInProgress;
+
   useEffect(() => {
     if (!isOnline || pendingCount === 0 || syncInProgress || lastError) return;
     void syncNow();

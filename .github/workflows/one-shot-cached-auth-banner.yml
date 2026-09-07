@@ -1,0 +1,53 @@
+name: One-shot cached auth banner
+
+on:
+  push:
+    branches:
+      - feat/core-offline-auth-cold-start
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[cached-auth-banner]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/core-offline-auth-cold-start
+          fetch-depth: 0
+      - name: Patch app shell cached-session notice
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('src/components/EAMApp.tsx')
+          text = path.read_text()
+
+          old = """  const isLoading = useAuthStore((s) => s.isLoading);\n  const logout = useAuthStore((s) => s.logout);"""
+          new = """  const isLoading = useAuthStore((s) => s.isLoading);\n  const authVerification = useAuthStore((s) => s.authVerification);\n  const logout = useAuthStore((s) => s.logout);"""
+          if text.count(old) != 1:
+              raise SystemExit(f'auth selector match count={text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old = """        </header>\n\n        {/* Page Content */}\n        <main className=\"flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0\">"""
+          new = """        </header>\n\n        {authVerification === 'cached' && (\n          <div\n            role=\"status\"\n            data-testid=\"cached-auth-banner\"\n            className=\"shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200\"\n          >\n            <span className=\"font-semibold\">Offline session:</span>{' '}\n            using your last verified identity. Server-only actions remain subject to verification when connectivity returns.\n          </div>\n        )}\n\n        {/* Page Content */}\n        <main className=\"flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0\">"""
+          if text.count(old) != 1:
+              raise SystemExit(f'banner insertion match count={text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+      - name: Verify banner
+        shell: python
+        run: |
+          from pathlib import Path
+          text = Path('src/components/EAMApp.tsx').read_text()
+          for needle in ["authVerification = useAuthStore", "data-testid=\"cached-auth-banner\"", "using your last verified identity"]:
+              if needle not in text:
+                  raise SystemExit(f'missing: {needle}')
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/EAMApp.tsx
+          git commit -m 'feat(core): surface cached offline auth state [cached-auth-banner]'
+          git push origin HEAD:feat/core-offline-auth-cold-start

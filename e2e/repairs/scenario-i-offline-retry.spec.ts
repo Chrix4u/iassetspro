@@ -8,6 +8,7 @@
  *   - a new idempotency key creates a new record;
  *   - offline labor accepts closed retrospective start/resume rows only;
  *   - exact labor replay does not duplicate hours;
+ *   - actor-bound records cannot replay under another authenticated user;
  *   - server batch limit remains 100 records.
  */
 import { test, expect } from '@playwright/test';
@@ -240,7 +241,27 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
     expect(Number(after.data.data.summary.totalHours || 0)).toBeCloseTo(beforeHours + 0.5, 2);
   });
 
-  await test.step('I6: Server rejects oversized sync batches so clients must chunk at 100', async () => {
+  await test.step('I6: Actor-bound offline records fail closed under another login', async () => {
+    const techToken = await getToken('tech_single');
+    const { status, data } = await apiCall(techToken, 'POST', '/api/sync/offline', {
+      records: [{
+        id: `offline-wrong-actor-${Date.now()}`,
+        operation: 'create',
+        entityType: 'work_order_comment',
+        entityId: woId,
+        originUserId: 'different-technician-id',
+        idempotencyKey: generateIdempotencyKey(),
+        data: { content: 'This must never be attributed to the current technician' },
+        timestamp: new Date().toISOString(),
+      }],
+    });
+
+    expect(status).toBe(200);
+    expect(data.results[0].success).toBe(false);
+    expect(String(data.results[0].error)).toContain('different authenticated user');
+  });
+
+  await test.step('I7: Server rejects oversized sync batches so clients must chunk at 100', async () => {
     const techToken = await getToken('tech_single');
     const records = Array.from({ length: 101 }, (_, index) => ({
       id: `oversize-${Date.now()}-${index}`,
@@ -257,7 +278,7 @@ test('UAT-10: Scenario I — Offline Replay / Idempotency', async () => {
     expect(String(data.error)).toContain('Maximum 100 records');
   });
 
-  await test.step('I7: Stop the original live session after replay verification', async () => {
+  await test.step('I8: Stop the original live session after replay verification', async () => {
     const techToken = await getToken('tech_single');
     const { status, data } = await apiCall(
       techToken,

@@ -19,6 +19,7 @@ export interface WOMeasurement {
   recordedById: string | null;
   recordedBy: { id: string; fullName: string; username: string } | null;
   component: { id: string; name: string; componentCode: string | null } | null;
+  pendingSync?: boolean;
 }
 
 export interface AddMeasurementParams {
@@ -26,7 +27,7 @@ export interface AddMeasurementParams {
   parameterKey: string;
   value: number;
   unit: string;
- beforeAfter?: 'before' | 'after';
+  beforeAfter?: 'before' | 'after';
   acceptableMin?: number;
   acceptableMax?: number;
   notes?: string;
@@ -88,7 +89,11 @@ export function useWOMeasurements(workOrderId: string): UseWOMeasurementsReturn 
       );
       if (res.success && res.data && mountedRef.current) {
         setMeasurements(prev => [res.data!, ...prev]);
-        toast.success('Measurement recorded');
+        toast.success(
+          res.offlineQueued
+            ? 'Reading saved offline — will sync when connected'
+            : 'Measurement recorded',
+        );
         return res.data;
       }
       toast.error(res.error || 'Failed to record measurement');

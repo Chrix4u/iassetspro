@@ -5,10 +5,17 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, type SessionData } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { createLogger } from '@/lib/logger';
+import { notifyUser } from '@/lib/notifications';
 import {
   buildOfflineRequestHash,
   isOfflineReplayMatch,
 } from '@/lib/offline-idempotency';
+import {
+  WORK_ORDER_TASK_STATUSES,
+  canTransitionWorkOrderTask,
+  isWorkOrderTaskStatus,
+  taskTransitionError,
+} from '@/lib/work-order-task-transitions';
 
 const logger = createLogger('sync:offline');
 
@@ -28,6 +35,7 @@ interface SyncRecord {
   data: Record<string, unknown>;
   timestamp: string;
   idempotencyKey?: string;
+  originUserId?: string;
 }
 
 interface SyncResult {
@@ -37,14 +45,28 @@ interface SyncResult {
   error?: string;
 }
 
+type DeferredNotification = {
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  entityType: string;
+  entityId: string;
+  actionUrl: string;
+};
+
 type OfflineWorkOrder = {
   id: string;
+  woNumber: string | null;
   plantId: string | null;
   isLocked: boolean;
   status: string;
   assignedTo: string | null;
+  assignedBy: string | null;
+  plannerId: string | null;
   teamLeaderId: string | null;
   teamMembers: Array<{ userId: string; accessLevel: string }>;
+  workOrderComponents: Array<{ componentRegistryId: string }>;
 };
 
 function sha256(value: string): string {
@@ -79,12 +101,16 @@ async function loadWorkOrder(tx: Prisma.TransactionClient, workOrderId: string):
     where: { id: workOrderId },
     select: {
       id: true,
+      woNumber: true,
       plantId: true,
       isLocked: true,
       status: true,
       assignedTo: true,
+      assignedBy: true,
+      plannerId: true,
       teamLeaderId: true,
       teamMembers: { select: { userId: true, accessLevel: true } },
+      workOrderComponents: { select: { componentRegistryId: true } },
     },
   });
   if (!wo) throw new Error('Work order not found');
@@ -120,16 +146,25 @@ async function handleTaskUpdate(
   const taskId = data.taskId;
   if (typeof taskId !== 'string' || !taskId) throw new Error('taskId is required in data');
 
-  const validStatuses = ['pending', 'in_progress', 'completed', 'skipped', 'failed'];
-  const status = typeof data.status === 'string' ? data.status : 'completed';
-  if (!validStatuses.includes(status)) throw new Error(`Invalid status: ${status}`);
+  const status = data.status;
+  if (!isWorkOrderTaskStatus(status)) {
+    throw new Error(`Invalid status. Must be one of: ${WORK_ORDER_TASK_STATUSES.join(', ')}`);
+  }
 
   const task = await tx.workOrderTaskExecution.findUnique({ where: { id: taskId } });
   if (!task || task.workOrderId !== wo.id) throw new Error('Task not found or does not belong to this work order');
 
-  const updateData: Prisma.WorkOrderTaskExecutionUpdateInput = { status };
+  if (!canTransitionWorkOrderTask(task.status, status)) {
+    throw new Error(taskTransitionError(task.status, status));
+  }
+
+  const now = new Date();
+  const updateData: Prisma.WorkOrderTaskExecutionUpdateInput = {
+    status,
+    updatedAt: now,
+  };
   if (['completed', 'skipped', 'failed'].includes(status)) {
-    updateData.completedAt = new Date();
+    updateData.completedAt = now;
     updateData.completedBy = { connect: { id: session.userId } };
   } else {
     updateData.completedAt = null;
@@ -138,10 +173,32 @@ async function handleTaskUpdate(
 
   if (typeof data.notes === 'string' && data.notes.trim()) {
     const prefix = task.notes ? `${task.notes}\n` : '';
-    updateData.notes = `${prefix}[${new Date().toISOString()}] ${data.notes.trim()}`;
+    updateData.notes = `${prefix}[${now.toISOString()}] ${session.username}: ${data.notes.trim()}`;
+  }
+
+  if (data.findings !== undefined) {
+    updateData.findings = typeof data.findings === 'string' && data.findings.trim()
+      ? data.findings.trim()
+      : null;
   }
 
   await tx.workOrderTaskExecution.update({ where: { id: taskId }, data: updateData });
+
+  await tx.auditLog.create({
+    data: {
+      userId: session.userId,
+      action: 'update',
+      entityType: 'wo_task_execution',
+      entityId: taskId,
+      oldValues: JSON.stringify({ status: task.status }),
+      newValues: JSON.stringify({
+        status,
+        notes: typeof data.notes === 'string' ? data.notes : undefined,
+        findings: typeof data.findings === 'string' ? data.findings : undefined,
+        source: 'offline_replay',
+      }),
+    },
+  });
 }
 
 async function handleTimeLogCreate(
@@ -215,20 +272,23 @@ async function handleMeasurementCreate(
   assertMutable(wo);
   if (!isExecutionActor(wo, session)) throw new Error('You do not have execution access to this work order');
 
-  const componentId = data.componentId;
   const parameterKey = data.parameterKey;
   const value = data.value;
   const unit = data.unit;
-  if (typeof componentId !== 'string' || !componentId) throw new Error('componentId is required');
   if (typeof parameterKey !== 'string' || !parameterKey) throw new Error('parameterKey is required');
   if (typeof value !== 'number') throw new Error('Measurement value is required');
   if (typeof unit !== 'string' || !unit) throw new Error('Measurement unit is required');
 
-  const link = await tx.workOrderComponent.findUnique({
-    where: { workOrderId_componentRegistryId: { workOrderId: wo.id, componentRegistryId: componentId } },
-    select: { id: true },
-  });
-  if (!link) throw new Error('Component is not linked to this work order');
+  const requestedComponentId = typeof data.componentId === 'string' && data.componentId
+    ? data.componentId
+    : null;
+  const componentId = requestedComponentId || wo.workOrderComponents[0]?.componentRegistryId;
+  if (!componentId) {
+    throw new Error('No components linked to this work order. Provide a componentId.');
+  }
+  if (!wo.workOrderComponents.some((component) => component.componentRegistryId === componentId)) {
+    throw new Error('Component is not linked to this work order');
+  }
 
   const minThreshold = typeof data.minThreshold === 'number' ? data.minThreshold : null;
   const maxThreshold = typeof data.maxThreshold === 'number' ? data.maxThreshold : null;
@@ -255,48 +315,117 @@ async function handleAssistanceCreate(
   wo: OfflineWorkOrder,
   data: Record<string, unknown>,
   session: SessionData,
-): Promise<void> {
+): Promise<DeferredNotification | null> {
   assertMutable(wo);
   if (!isExecutionActor(wo, session)) throw new Error('You do not have execution access to this work order');
 
-  const reason = data.reason;
-  if (typeof reason !== 'string' || !reason.trim()) throw new Error('Assistance reason is required');
+  const requestedTrade = typeof data.requestedTrade === 'string' && data.requestedTrade.trim()
+    ? data.requestedTrade.trim()
+    : typeof data.tradeSkill === 'string' && data.tradeSkill.trim()
+      ? data.tradeSkill.trim()
+      : null;
+  const requestedUserId = typeof data.requestedUserId === 'string' && data.requestedUserId.trim()
+    ? data.requestedUserId.trim()
+    : null;
+  const role = typeof data.role === 'string' && data.role.trim() ? data.role.trim() : 'assistant';
+  const reason = typeof data.reason === 'string' && data.reason.trim() ? data.reason.trim() : null;
 
-  const requestedUserId = typeof data.requestedUserId === 'string' ? data.requestedUserId : null;
+  if (!requestedTrade && !requestedUserId) {
+    throw new Error('requestedTrade or requestedUserId is required');
+  }
+
+  let targetUser: { id: string; fullName: string } | null = null;
   if (requestedUserId) {
     const requestedUser = await tx.user.findUnique({
       where: { id: requestedUserId },
       select: {
         id: true,
+        fullName: true,
         status: true,
         plantAccess: wo.plantId
           ? { where: { plantId: wo.plantId }, select: { id: true } }
           : { select: { id: true } },
       },
     });
-    if (!requestedUser || requestedUser.status !== 'active') throw new Error('Requested technician is not active');
+    if (!requestedUser) throw new Error('Requested user not found');
+    if (requestedUser.status !== 'active') throw new Error('Requested user is not active');
     if (wo.plantId && requestedUser.plantAccess.length === 0) {
       throw new Error('Requested technician does not have access to the work order plant');
     }
+    if (wo.teamMembers.some((member) => member.userId === requestedUserId)) {
+      throw new Error('User is already a team member of this work order');
+    }
+    targetUser = { id: requestedUser.id, fullName: requestedUser.fullName };
   }
 
-  await tx.woTeamMemberRequest.create({
+  const duplicateWhere: Prisma.WoTeamMemberRequestWhereInput = {
+    workOrderId: wo.id,
+    status: 'pending',
+  };
+  if (requestedUserId) {
+    duplicateWhere.requestedUserId = requestedUserId;
+  } else if (requestedTrade) {
+    duplicateWhere.requestedTrade = requestedTrade;
+  }
+
+  const existingPending = await tx.woTeamMemberRequest.findFirst({ where: duplicateWhere });
+  if (existingPending) {
+    throw new Error('A pending request already exists for this on this work order');
+  }
+
+  const teamRequest = await tx.woTeamMemberRequest.create({
     data: {
       workOrderId: wo.id,
       requestedBy: session.userId,
-      requestedTrade: typeof data.tradeSkill === 'string' ? data.tradeSkill : null,
+      requestedTrade,
       requestedUserId,
-      role: typeof data.role === 'string' ? data.role : 'assistant',
-      reason: reason.trim(),
+      role,
+      reason,
     },
   });
+
+  await tx.auditLog.create({
+    data: {
+      userId: session.userId,
+      action: 'create',
+      entityType: 'wo_team_member_request',
+      entityId: teamRequest.id,
+      newValues: JSON.stringify({
+        workOrderId: wo.id,
+        requestedTrade,
+        requestedUser: targetUser?.fullName || null,
+        role,
+        reason,
+        source: 'offline_replay',
+      }),
+    },
+  });
+
+  const approverId = wo.plannerId || wo.assignedBy;
+  if (!approverId || approverId === session.userId) return null;
+
+  return {
+    userId: approverId,
+    type: 'wo_team_request',
+    title: 'Team Member Request',
+    message: requestedTrade
+      ? `${session.fullName} requested a ${requestedTrade} for WO ${wo.woNumber || 'Work Order'}`
+      : `${session.fullName} requested ${targetUser?.fullName || 'a team member'} for WO ${wo.woNumber || 'Work Order'}`,
+    entityType: 'work_order',
+    entityId: wo.id,
+    actionUrl: `wo-detail?id=${wo.id}`,
+  };
 }
 
 async function processRecord(
   record: SyncRecord,
   session: SessionData,
   plantScope: Awaited<ReturnType<typeof getPlantScope>>,
-): Promise<{ replayed: boolean }> {
+): Promise<{ replayed: boolean; notification?: DeferredNotification | null }> {
+  if (record.originUserId && record.originUserId !== session.userId) {
+    throw new Error('Offline record belongs to a different authenticated user');
+  }
+
   const idempotencyKey = record.idempotencyKey ||
     (typeof record.data.idempotencyKey === 'string' ? record.data.idempotencyKey : undefined);
   const recordTimestamp = new Date(record.timestamp);
@@ -313,7 +442,7 @@ async function processRecord(
           if (!isOfflineReplayMatch(existing, record, session.userId)) {
             throw new Error(conflictMessage);
           }
-          return { replayed: true };
+          return { replayed: true, notification: null };
         }
       }
 
@@ -322,6 +451,7 @@ async function processRecord(
         throw new Error('Access denied: work order is outside your plant scope');
       }
 
+      let notification: DeferredNotification | null = null;
       const key = `${record.entityType}+${record.operation}`;
       switch (key) {
         case 'work_order_comment+create':
@@ -337,7 +467,7 @@ async function processRecord(
           await handleMeasurementCreate(tx, wo, record.data, session, recordTimestamp);
           break;
         case 'work_order_assistance+create':
-          await handleAssistanceCreate(tx, wo, record.data, session);
+          notification = await handleAssistanceCreate(tx, wo, record.data, session);
           break;
         default:
           throw new Error(`Operation not supported for offline execution: ${record.entityType}/${record.operation}`);
@@ -358,7 +488,7 @@ async function processRecord(
         });
       }
 
-      return { replayed: false };
+      return { replayed: false, notification };
     });
   } catch (error: unknown) {
     // Concurrent duplicate requests may race on the unique idempotency key.
@@ -368,7 +498,7 @@ async function processRecord(
       const existing = await db.idempotencyRecord.findUnique({ where: { key: idempotencyKey } });
       if (existing) {
         if (isOfflineReplayMatch(existing, record, session.userId)) {
-          return { replayed: true };
+          return { replayed: true, notification: null };
         }
         throw new Error(conflictMessage);
       }
@@ -412,6 +542,19 @@ export async function POST(request: NextRequest) {
 
       try {
         const processed = await processRecord(record, session, plantScope);
+
+        if (!processed.replayed && processed.notification) {
+          await notifyUser(
+            processed.notification.userId,
+            processed.notification.type,
+            processed.notification.title,
+            processed.notification.message,
+            processed.notification.entityType,
+            processed.notification.entityId,
+            processed.notification.actionUrl,
+          );
+        }
+
         results.push({ id: record.id, success: true, replayed: processed.replayed });
         logger.info(processed.replayed ? 'Offline record replayed idempotently' : 'Offline record processed', {
           recordId: record.id,

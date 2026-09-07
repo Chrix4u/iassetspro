@@ -18,7 +18,8 @@ export interface SyncRecord {
   syncAttempts: number;
   lastError?: string;
   /**
-   * User that created the offline action. Older queue entries may not have this
+   * User that created the offline action. Older queue entries, or records
+   * created before client auth identity has been restored, may not have this
    * field and must never be replayed under an arbitrary later login.
    */
   originUserId?: string;
@@ -34,6 +35,7 @@ export interface SyncStatus {
 
 const STORAGE_KEY = 'iassetspro_offline_queue';
 const ACTOR_USER_ID_KEY = 'eam_user_id';
+const UNBOUND_ACTOR_ERROR = 'Offline record has no authenticated user binding and cannot be synced safely';
 
 export class OfflineSyncService {
   /** Return the authenticated user id persisted by the auth store. */
@@ -46,9 +48,11 @@ export class OfflineSyncService {
   /**
    * Add an operation to the offline queue.
    *
-   * Every new record is permanently bound to the authenticated user that
-   * created it. This prevents a queued field action from being attributed to a
-   * different technician after logout/login on a shared device.
+   * Every new record is bound to the authenticated user that created it when
+   * that identity is available. If auth restoration has not completed yet, we
+   * preserve the field action locally as explicitly unbound rather than losing
+   * it; the sync layer will fail closed and refuse to replay it under a guessed
+   * user identity.
    */
   static queueOperation(
     operation: 'create' | 'update' | 'delete',
@@ -57,9 +61,6 @@ export class OfflineSyncService {
     data: Record<string, unknown>
   ): SyncRecord {
     const originUserId = this.getCurrentActorUserId();
-    if (!originUserId) {
-      throw new Error('Cannot queue offline work without an authenticated user identity');
-    }
 
     const record: SyncRecord = {
       id: `sync-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -70,14 +71,20 @@ export class OfflineSyncService {
       timestamp: new Date().toISOString(),
       synced: false,
       syncAttempts: 0,
-      originUserId,
+      ...(originUserId
+        ? { originUserId }
+        : { lastError: UNBOUND_ACTOR_ERROR }),
     };
 
     const queue = this.getQueue();
     queue.push(record);
     this.saveQueue(queue);
 
-    logger.info('Operation queued for sync', { operation, entityType, entityId, originUserId });
+    if (originUserId) {
+      logger.info('Operation queued for sync', { operation, entityType, entityId, originUserId });
+    } else {
+      logger.error('Operation queued without authenticated actor binding', { operation, entityType, entityId });
+    }
     return record;
   }
 

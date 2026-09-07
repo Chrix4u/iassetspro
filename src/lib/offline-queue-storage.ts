@@ -101,6 +101,7 @@ async function migrateLegacyQueue(database: IDBDatabase): Promise<void> {
   if (legacyRecords.length === 0) return;
 
   const transaction = database.transaction(QUEUE_STORE, 'readwrite');
+  const complete = transactionComplete(transaction);
   const store = transaction.objectStore(QUEUE_STORE);
   const existingKeys = new Set((await requestResult(store.getAllKeys())).map(String));
 
@@ -109,7 +110,7 @@ async function migrateLegacyQueue(database: IDBDatabase): Promise<void> {
     if (!existingKeys.has(record.id)) store.put(record);
   }
 
-  await transactionComplete(transaction);
+  await complete;
   // Remove the legacy copy only after the IndexedDB transaction commits.
   getLocalStorage()?.removeItem(LEGACY_OFFLINE_QUEUE_KEY);
 }
@@ -136,24 +137,27 @@ async function resolveBackend(): Promise<OfflineQueueStorageBackend> {
 async function indexedDbGetAll<T extends QueueRecord>(): Promise<T[]> {
   const database = await openDatabase();
   const transaction = database.transaction(QUEUE_STORE, 'readonly');
+  const complete = transactionComplete(transaction);
   const result = await requestResult(transaction.objectStore(QUEUE_STORE).getAll());
-  await transactionComplete(transaction);
+  await complete;
   return result as T[];
 }
 
 async function indexedDbGet<T extends QueueRecord>(id: string): Promise<T | null> {
   const database = await openDatabase();
   const transaction = database.transaction(QUEUE_STORE, 'readonly');
+  const complete = transactionComplete(transaction);
   const result = await requestResult(transaction.objectStore(QUEUE_STORE).get(id));
-  await transactionComplete(transaction);
+  await complete;
   return (result as T | undefined) || null;
 }
 
 async function indexedDbPut<T extends QueueRecord>(record: T): Promise<void> {
   const database = await openDatabase();
   const transaction = database.transaction(QUEUE_STORE, 'readwrite');
+  const complete = transactionComplete(transaction);
   transaction.objectStore(QUEUE_STORE).put(record);
-  await transactionComplete(transaction);
+  await complete;
 }
 
 async function indexedDbMutate<T extends QueueRecord>(
@@ -162,15 +166,16 @@ async function indexedDbMutate<T extends QueueRecord>(
 ): Promise<T | null> {
   const database = await openDatabase();
   const transaction = database.transaction(QUEUE_STORE, 'readwrite');
+  const complete = transactionComplete(transaction);
   const store = transaction.objectStore(QUEUE_STORE);
   const current = await requestResult(store.get(id)) as T | undefined;
   if (!current) {
-    await transactionComplete(transaction);
+    await complete;
     return null;
   }
   const updated = mutate(current);
   store.put(updated);
-  await transactionComplete(transaction);
+  await complete;
   return updated;
 }
 
@@ -178,9 +183,10 @@ async function indexedDbDeleteMany(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const database = await openDatabase();
   const transaction = database.transaction(QUEUE_STORE, 'readwrite');
+  const complete = transactionComplete(transaction);
   const store = transaction.objectStore(QUEUE_STORE);
   ids.forEach((id) => store.delete(id));
-  await transactionComplete(transaction);
+  await complete;
 }
 
 function localMutate<T extends QueueRecord>(id: string, mutate: (record: T) => T): T | null {

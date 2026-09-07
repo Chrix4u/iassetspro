@@ -17,6 +17,11 @@ export interface SyncRecord {
   synced: boolean;
   syncAttempts: number;
   lastError?: string;
+  /**
+   * User that created the offline action. Older queue entries may not have this
+   * field and must never be replayed under an arbitrary later login.
+   */
+  originUserId?: string;
 }
 
 export interface SyncStatus {
@@ -28,10 +33,22 @@ export interface SyncStatus {
 }
 
 const STORAGE_KEY = 'iassetspro_offline_queue';
+const ACTOR_USER_ID_KEY = 'eam_user_id';
 
 export class OfflineSyncService {
+  /** Return the authenticated user id persisted by the auth store. */
+  static getCurrentActorUserId(): string | null {
+    if (typeof window === 'undefined') return null;
+    const value = localStorage.getItem(ACTOR_USER_ID_KEY)?.trim();
+    return value || null;
+  }
+
   /**
-   * Add an operation to the offline queue
+   * Add an operation to the offline queue.
+   *
+   * Every new record is permanently bound to the authenticated user that
+   * created it. This prevents a queued field action from being attributed to a
+   * different technician after logout/login on a shared device.
    */
   static queueOperation(
     operation: 'create' | 'update' | 'delete',
@@ -39,6 +56,11 @@ export class OfflineSyncService {
     entityId: string,
     data: Record<string, unknown>
   ): SyncRecord {
+    const originUserId = this.getCurrentActorUserId();
+    if (!originUserId) {
+      throw new Error('Cannot queue offline work without an authenticated user identity');
+    }
+
     const record: SyncRecord = {
       id: `sync-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       operation,
@@ -48,13 +70,14 @@ export class OfflineSyncService {
       timestamp: new Date().toISOString(),
       synced: false,
       syncAttempts: 0,
+      originUserId,
     };
 
     const queue = this.getQueue();
     queue.push(record);
     this.saveQueue(queue);
 
-    logger.info('Operation queued for sync', { operation, entityType, entityId });
+    logger.info('Operation queued for sync', { operation, entityType, entityId, originUserId });
     return record;
   }
 

@@ -9,6 +9,7 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 const DEFAULT_TIMEOUT_MS = 15_000; // 15 second default timeout
+export const OFFLINE_CACHE_STATE_EVENT = 'iassetspro:offline-cache-state';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -36,6 +37,17 @@ export interface OfflineMutationDescriptor {
   entityType: string;
   entityId: string;
   data: Record<string, unknown>;
+}
+
+export interface OfflineCacheStateEventDetail {
+  endpoint: string;
+  cached: boolean;
+  cachedAt?: string;
+}
+
+function emitOfflineCacheState(detail: OfflineCacheStateEventDetail): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<OfflineCacheStateEventDetail>(OFFLINE_CACHE_STATE_EVENT, { detail }));
 }
 
 function parseJsonBody(body: BodyInit | null | undefined): Record<string, unknown> | null {
@@ -215,6 +227,7 @@ async function queueOfflineMutationIfSupported<T>(
 async function loadCachedRead<T>(endpoint: string): Promise<ApiResponse<T> | null> {
   const snapshot = await loadOfflineApiSnapshot<ApiResponse<T>>(endpoint);
   if (!snapshot) return null;
+  emitOfflineCacheState({ endpoint, cached: true, cachedAt: snapshot.cachedAt });
   return {
     ...snapshot.response,
     success: true,
@@ -336,6 +349,7 @@ export async function apiFetch<T = any>(
 
     if (cacheableRead) {
       await saveOfflineApiSnapshot(endpoint, result);
+      emitOfflineCacheState({ endpoint, cached: false });
     }
 
     return result;

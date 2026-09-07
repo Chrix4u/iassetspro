@@ -89,10 +89,25 @@ export async function POST(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { requestedTrade, requestedUserId, role, reason } = body;
 
-    // Accept either requestedTrade (from technician) or requestedUserId (from admin/planner direct add)
+    // POST must enforce the same plant boundary as GET and other Repairs mutations.
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
+    const body = await request.json();
+    const requestedTrade = typeof body.requestedTrade === 'string' && body.requestedTrade.trim()
+      ? body.requestedTrade.trim()
+      : typeof body.tradeSkill === 'string' && body.tradeSkill.trim()
+        ? body.tradeSkill.trim()
+        : null;
+    const requestedUserId = typeof body.requestedUserId === 'string' && body.requestedUserId.trim()
+      ? body.requestedUserId.trim()
+      : null;
+    const role = typeof body.role === 'string' && body.role.trim() ? body.role.trim() : 'assistant';
+    const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null;
+
+    // `tradeSkill` is accepted as a compatibility alias for the Technician Workspace,
+    // but the canonical persisted/API field is requestedTrade.
     if (!requestedTrade && !requestedUserId) {
       return NextResponse.json({ success: false, error: 'requestedTrade or requestedUserId is required' }, { status: 400 });
     }
@@ -108,7 +123,7 @@ export async function POST(
         plannerId: true,
         isLocked: true,
         assigner: { select: { id: true, fullName: true } },
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, accessLevel: true } },
       },
     });
     if (!wo) {
@@ -119,15 +134,19 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    // Only allow if user is a team member, assignee, or admin/planner
-    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === session.userId);
+    // Only writable team members, assignee, or admin/planner can request assistance.
+    const isWritableTeamMember = wo.teamMembers?.some(
+      tm => tm.userId === session.userId && tm.accessLevel !== 'read_only',
+    );
     const isAssignee = wo.assignedTo === session.userId;
-    const isAdminUser = isAdmin(session);
+    const isAdminUser = isAdmin(session) || session.roles.some(roleName =>
+      ['maintenance_manager', 'plant_manager'].includes(roleName),
+    );
     const canManageTeam = hasAnyPermission(session, ['work_orders.assign_supervisor']) || isAdminUser;
 
-    if (!isTeamMember && !isAssignee && !canManageTeam) {
+    if (!isWritableTeamMember && !isAssignee && !canManageTeam) {
       return NextResponse.json(
-        { success: false, error: 'Only team members or the assigned technician can request additional members.' },
+        { success: false, error: 'Only writable team members or the assigned technician can request additional members.' },
         { status: 403 }
       );
     }
@@ -160,9 +179,9 @@ export async function POST(
     // Check for duplicate pending request (same trade or same user)
     const existingWhere: Record<string, unknown> = { workOrderId: id, status: 'pending' };
     if (requestedUserId) {
-      (existingWhere as Record<string, unknown>).requestedUserId = requestedUserId;
+      existingWhere.requestedUserId = requestedUserId;
     } else if (requestedTrade) {
-      (existingWhere as Record<string, unknown>).requestedTrade = requestedTrade;
+      existingWhere.requestedTrade = requestedTrade;
     }
 
     const existingPending = await db.woTeamMemberRequest.findFirst({ where: existingWhere });
@@ -178,10 +197,10 @@ export async function POST(
       data: {
         workOrderId: id,
         requestedBy: session.userId,
-        requestedUserId: requestedUserId || null,
-        requestedTrade: requestedTrade || null,
-        role: role || 'assistant',
-        reason: reason || null,
+        requestedUserId,
+        requestedTrade,
+        role,
+        reason,
       },
       include: {
         requestedByUser: { select: { id: true, fullName: true, username: true } },
@@ -198,10 +217,10 @@ export async function POST(
         entityId: teamRequest.id,
         newValues: JSON.stringify({
           workOrderId: id,
-          requestedTrade: requestedTrade || null,
+          requestedTrade,
           requestedUser: targetUser?.fullName || null,
-          role: role || 'assistant',
-          reason: reason || null,
+          role,
+          reason,
         }),
       },
     });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -44,9 +44,9 @@ export async function GET(
       );
     }
 
-    // IDOR protection: ensure user has access to this asset's plant
+    // Assets are operational entities and must always have a valid plant.
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, asset.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
@@ -104,6 +104,69 @@ export async function PUT(
       );
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Assets are required to remain plant-owned. Any move must also target a
+    // plant the current user is authorized to access.
+    const targetPlantId = body.plantId !== undefined ? (body.plantId || null) : existing.plantId;
+    if (!targetPlantId) {
+      return NextResponse.json({ success: false, error: 'Plant is required' }, { status: 400 });
+    }
+    if (!canAccessPlantStrict(plantScope, targetPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied for target plant' }, { status: 403 });
+    }
+
+    if (body.plantId !== undefined && targetPlantId !== existing.plantId) {
+      const targetPlant = await db.plant.findUnique({
+        where: { id: targetPlantId },
+        select: { id: true },
+      });
+      if (!targetPlant) {
+        return NextResponse.json({ success: false, error: 'Plant not found' }, { status: 400 });
+      }
+    }
+
+    // Prevent self-parent and cross-plant hierarchy links.
+    if (body.parentId === id) {
+      return NextResponse.json(
+        { success: false, error: 'Asset cannot be its own parent' },
+        { status: 400 }
+      );
+    }
+    if (body.parentId) {
+      const parent = await db.asset.findUnique({
+        where: { id: body.parentId },
+        select: { id: true, plantId: true },
+      });
+      if (!parent) {
+        return NextResponse.json({ success: false, error: 'Parent asset not found' }, { status: 400 });
+      }
+      if (parent.plantId !== targetPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Parent asset must belong to the same plant' },
+          { status: 400 },
+        );
+      }
+    }
+
+    // If an asset with an existing parent is moved to another plant, verify the
+    // existing hierarchy remains valid even when parentId was not in the body.
+    if (targetPlantId !== existing.plantId && body.parentId === undefined && existing.parentId) {
+      const existingParent = await db.asset.findUnique({
+        where: { id: existing.parentId },
+        select: { id: true, plantId: true },
+      });
+      if (!existingParent || existingParent.plantId !== targetPlantId) {
+        return NextResponse.json(
+          { success: false, error: 'Move would create a cross-plant asset hierarchy' },
+          { status: 400 },
+        );
+      }
+    }
+
     // Build update data — Prisma .update() uses scalar FK fields (not connect syntax)
     const updateData: Record<string, unknown> = {};
     const scalarFields = [
@@ -112,8 +175,9 @@ export async function PUT(
       'building', 'floor', 'area', 'imageUrl',
       'drawingsUrl', 'manualUrl', 'specification', 'isActive',
     ];
-    // FK scalar fields — empty string must become null to avoid FK constraint violation
-    const fkFields = ['categoryId', 'plantId', 'departmentId', 'assignedToId', 'parentId'];
+    // FK scalar fields — empty string must become null to avoid FK constraint violation.
+    // plantId is handled separately above because it is mandatory for assets.
+    const fkFields = ['categoryId', 'departmentId', 'assignedToId', 'parentId'];
     const dateFields = ['purchaseDate', 'warrantyExpiry', 'installedDate'];
     const numberFields = ['yearManufactured', 'purchaseCost', 'expectedLifeYears', 'currentValue', 'depreciationRate'];
 
@@ -123,19 +187,14 @@ export async function PUT(
     for (const field of fkFields) {
       if (body[field] !== undefined) updateData[field] = body[field] || null;
     }
+    if (body.plantId !== undefined) {
+      updateData.plantId = targetPlantId;
+    }
     for (const field of dateFields) {
       if (body[field] !== undefined) updateData[field] = body[field] ? new Date(body[field]) : null;
     }
     for (const field of numberFields) {
       if (body[field] !== undefined) updateData[field] = body[field] !== null && body[field] !== '' ? Number(body[field]) : null;
-    }
-
-    // Prevent self-parent
-    if (body.parentId === id) {
-      return NextResponse.json(
-        { success: false, error: 'Asset cannot be its own parent' },
-        { status: 400 }
-      );
     }
 
     const updated = await db.asset.update({
@@ -156,7 +215,7 @@ export async function PUT(
         action: 'update',
         entityType: 'asset',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, status: existing.status }),
+        oldValues: JSON.stringify({ name: existing.name, status: existing.status, plantId: existing.plantId }),
         newValues: JSON.stringify(updateData),
       },
     });
@@ -192,6 +251,11 @@ export async function DELETE(
       );
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     // Soft delete (isActive=false)
     const deactivated = await db.asset.update({
       where: { id },
@@ -205,7 +269,7 @@ export async function DELETE(
         action: 'delete',
         entityType: 'asset',
         entityId: id,
-        oldValues: JSON.stringify({ assetTag: existing.assetTag, isActive: existing.isActive }),
+        oldValues: JSON.stringify({ assetTag: existing.assetTag, isActive: existing.isActive, plantId: existing.plantId }),
         newValues: JSON.stringify({ isActive: false }),
       },
     });

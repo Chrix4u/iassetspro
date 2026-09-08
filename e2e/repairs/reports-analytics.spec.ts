@@ -74,7 +74,7 @@ test.describe('Repairs Reports & Analytics', () => {
 
     await page.getByRole('button', { name: /Generate$/ }).click();
 
-    await expect(page.getByText('Maintenance Requests')).toBeVisible();
+    await expect(page.getByText('Maintenance Requests', { exact: true })).toBeVisible();
     await expect(page.getByText('MR-REPORT-001')).toBeVisible();
     await expect(page.getByText('Conveyor bearing noise')).toBeVisible();
     await expect(page.locator('.recharts-wrapper').first()).toBeVisible();

@@ -1,14 +1,12 @@
 # =============================================================================
-# iAssetsPro EAM — Deployment Pipeline
+# iAssetsPro EAM — Production Deployment Pipeline
 # =============================================================================
-# Automatic production deployment is triggered only after the main CI workflow
-# completes successfully. The workflow builds an immutable GHCR image for the
-# exact CI-tested SHA, deploys it via Compose, then runs a production smoke test.
+# Production topology:
+#   Nginx -> 127.0.0.1:3001 -> PM2 process "iassetspro" -> Next.js standalone
 #
-# Deployment secret compatibility:
-#   Preferred: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PORT, DEPLOY_PATH
-#   Legacy:    VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT, VPS_APP_PATH
-# Existing VPS_* installations remain valid while new setups can use DEPLOY_*.
+# The Webuzo VPS does not use Docker for iAssetsPro. The exact CI-validated
+# commit is built on the server, verified on a temporary canary port, and then
+# promoted by replacing only the named PM2 production process.
 # =============================================================================
 
 name: Deploy
@@ -25,35 +23,25 @@ on:
         type: boolean
         default: false
 
-# Least privileges required to verify checks, read source, and publish/pull the
-# deployment image from this repository's GHCR namespace.
 permissions:
   checks: read
   contents: read
-  packages: write
 
-# Only one production deployment at a time.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 env:
-  NEXT_TELEMETRY_DISABLED: 1
-  DOCKER_REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/iassetspro-eam
-  # workflow_run.github.sha points to the workflow definition/default branch,
-  # not necessarily the CI-tested application commit. Always carry the tested
-  # head SHA explicitly through build, image tag, VPS deployment, and summary.
   RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
   RELEASE_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+  PRODUCTION_PORT: 3001
+  DEFAULT_DEPLOY_PATH: /home/lightworld/webapps/iassetspro
 
 jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    # Failed/cancelled automatic CI can never create a production deployment job.
-    # Manual dispatch is an explicit operator action and is restricted to main.
+    timeout-minutes: 60
     if: >-
       ${{
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
@@ -61,22 +49,15 @@ jobs:
       }}
 
     steps:
-      # Automatic workflow_run deploys arrive only after CI is already green.
-      # Manual deployment defaults to fail-closed verification of the exact
-      # commit's final E2E check. The explicit skip_tests switch is the only
-      # bypass; timeouts, cancellations, skipped checks and failures all stop.
       - name: Verify successful E2E check for manual deploy
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.skip_tests }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           CHECK_NAME='E2E Tests (Playwright)'
           DEADLINE=$((SECONDS + 2400))
           API_URL="${{ github.api_url }}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?per_page=100&filter=latest"
-
-          echo "Verifying '$CHECK_NAME' for ${RELEASE_SHA}..."
 
           while (( SECONDS < DEADLINE )); do
             PAYLOAD="$(curl --fail-with-body --silent --show-error \
@@ -84,7 +65,6 @@ jobs:
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "$API_URL")"
-
             CHECK="$(jq -c \
               '[.check_runs[] | select(.name == "E2E Tests (Playwright)")] | sort_by(.started_at // .created_at // "") | last // {}' \
               <<< "$PAYLOAD")"
@@ -92,230 +72,166 @@ jobs:
             CONCLUSION="$(jq -r '.conclusion // ""' <<< "$CHECK")"
 
             if [[ "$STATUS" == "completed" ]]; then
-              if [[ "$CONCLUSION" == "success" ]]; then
-                echo "E2E verification passed for ${RELEASE_SHA}."
-                exit 0
-              fi
-
-              echo "E2E verification failed closed: conclusion='${CONCLUSION:-unknown}'." >&2
+              [[ "$CONCLUSION" == "success" ]] && exit 0
+              echo "E2E verification failed closed: ${CONCLUSION:-unknown}" >&2
               exit 1
-            fi
-
-            if [[ -z "$STATUS" ]]; then
-              echo "E2E check not created yet; retrying..."
-            else
-              echo "E2E check status='$STATUS'; retrying..."
             fi
             sleep 15
           done
 
-          echo "Timed out waiting for a successful E2E check for ${RELEASE_SHA}; deployment blocked." >&2
+          echo "Timed out waiting for E2E verification." >&2
           exit 1
 
-      # Validate SSH configuration before checkout, Docker setup, registry login,
-      # or image build/push. This prevents a missing secret from wasting a full
-      # release build and makes the operator action immediately obvious.
       - name: Validate VPS deployment configuration
         env:
-          RESOLVED_DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
-          RESOLVED_DEPLOY_USER: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
-          RESOLVED_DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST || secrets.SERVER_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER || secrets.VPS_USER || secrets.SERVER_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD || secrets.VPS_PASSWORD || secrets.SSH_PASSWORD }}
         run: |
           set -euo pipefail
+          [[ -n "$DEPLOY_HOST" ]] || { echo "Missing deploy host"; exit 1; }
+          [[ -n "$DEPLOY_USER" ]] || { echo "Missing deploy user"; exit 1; }
+          [[ -n "$DEPLOY_KEY" || -n "$DEPLOY_PASSWORD" ]] || { echo "Missing SSH key or password"; exit 1; }
 
-          missing=()
-          [[ -n "$RESOLVED_DEPLOY_HOST" ]] || missing+=("DEPLOY_HOST or VPS_HOST")
-          [[ -n "$RESOLVED_DEPLOY_USER" ]] || missing+=("DEPLOY_USER or VPS_USER")
-          [[ -n "$RESOLVED_DEPLOY_SSH_KEY" ]] || missing+=("DEPLOY_SSH_KEY or VPS_SSH_KEY")
-
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error title=Production deployment configuration missing::Required GitHub Actions deployment secret(s) are not configured."
-            printf 'Missing: %s\n' "${missing[@]}"
-            echo "Configure either the preferred DEPLOY_* names or the compatible legacy VPS_* names."
-            exit 1
-          fi
-
-          echo "VPS deployment credentials are configured."
-
-      - name: Checkout validated release commit
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_SHA }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.DOCKER_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Generate immutable version tag
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=sha-${{ env.RELEASE_SHA }}
-
-      - name: Build and push validated Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            NEXT_PUBLIC_BUILD_VERSION=${{ env.RELEASE_SHA }}
-
-      - name: Prepare VPS deployment directory
+      - name: Deploy exact validated commit with PM2 canary
         uses: appleboy/ssh-action@v1
+        env:
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || env.DEFAULT_DEPLOY_PATH }}
+          PRODUCTION_PORT: ${{ env.PRODUCTION_PORT }}
         with:
-          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
-          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
-          script: mkdir -p "${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
-
-      - name: Upload production Compose manifest
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
-          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
-          source: docker-compose.yml
-          target: ${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}
-          overwrite: true
-
-      - name: Deploy immutable image to VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
-          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST || secrets.SERVER_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER || secrets.SERVER_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD || secrets.VPS_PASSWORD || secrets.SSH_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || secrets.SSH_PORT || 22 }}
+          command_timeout: 50m
+          envs: RELEASE_SHA,DEPLOY_PATH,PRODUCTION_PORT
           script: |
             set -euo pipefail
+            APP="$DEPLOY_PATH"
+            PROD_PORT="$PRODUCTION_PORT"
+            PM2_NAME="iassetspro"
+            CANARY_NAME="iassetspro-canary"
 
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
-            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ env.RELEASE_SHA }}"
-
-            echo "========================================="
-            echo "  iAssetsPro EAM — Production Deploy"
-            echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
-            echo "  Commit: ${{ env.RELEASE_SHA }}"
-            echo "  Image: $IMAGE_TAG"
-            echo "========================================="
-
-            cd "$DEPLOY_PATH"
-            test -f docker-compose.yml
+            cd "$APP"
             test -f .env
+            test -d .git
+            command -v git >/dev/null
+            command -v node >/dev/null
+            command -v bun >/dev/null
+            command -v pm2 >/dev/null
+            command -v curl >/dev/null
+            command -v ss >/dev/null
 
-            # Use the short-lived workflow token to pull the exact immutable
-            # image built for this CI-tested commit, then remove credentials.
-            echo "${{ github.token }}" | docker login ${{ env.DOCKER_REGISTRY }} \
-              -u "${{ github.actor }}" --password-stdin
+            echo "[1/8] Backing up environment"
+            cp -a .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
 
-            echo ""
-            echo "[1/3] Pulling immutable release image..."
-            APP_IMAGE="$IMAGE_TAG" docker compose pull app
-            docker logout ${{ env.DOCKER_REGISTRY }} >/dev/null 2>&1 || true
-            echo "  Image pulled successfully"
+            echo "[2/8] Checking out validated release"
+            git fetch origin main
+            git cat-file -e "${RELEASE_SHA}^{commit}"
+            git checkout -B main origin/main
+            git reset --hard "$RELEASE_SHA"
+            git restore playwright-report/index.html 2>/dev/null || true
 
-            echo ""
-            echo "[2/3] Recreating application from validated image..."
-            APP_IMAGE="$IMAGE_TAG" docker compose up -d --no-build --force-recreate app
-            echo "  Application service recreated"
+            echo "[3/8] Building production application"
+            bun install --frozen-lockfile
+            rm -rf .next
+            bun run build
+            test -f .next/standalone/server.js
 
-            echo ""
-            echo "[3/3] Cleaning up unused images..."
-            docker image prune -f
+            echo "[4/8] Selecting canary port"
+            CANARY_PORT=""
+            for p in $(seq 3100 3199); do
+              if ! ss -ltn | grep -q ":${p} "; then
+                CANARY_PORT="$p"
+                break
+              fi
+            done
+            test -n "$CANARY_PORT"
 
-            echo ""
-            echo "========================================="
-            echo "  Deploy Complete!"
-            echo "========================================="
+            echo "[5/8] Starting and validating canary on $CANARY_PORT"
+            pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+            PORT="$CANARY_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
+              pm2 start "$APP/.next/standalone/server.js" \
+                --name "$CANARY_NAME" --cwd "$APP" \
+                --node-args="--env-file=$APP/.env" --time
 
-      - name: Run smoke test against production
-        run: |
-          PRODUCTION_URL="${{ secrets.PRODUCTION_URL }}"
-          if [ -z "$PRODUCTION_URL" ]; then
-            echo "⚠️  PRODUCTION_URL secret not set — skipping smoke test"
-            exit 0
-          fi
+            CANARY_OK=0
+            for i in $(seq 1 18); do
+              CODE=$(curl -s -o /tmp/iassetspro-canary-health.json -w "%{http_code}" \
+                --max-time 10 "http://127.0.0.1:${CANARY_PORT}/api/health" || true)
+              echo "Canary attempt $i/18 -> HTTP $CODE"
+              if [[ "$CODE" == "200" ]]; then CANARY_OK=1; break; fi
+              sleep 5
+            done
+            [[ "$CANARY_OK" == "1" ]] || { pm2 logs "$CANARY_NAME" --lines 100 --nostream || true; exit 1; }
 
-          echo "Running smoke test against $PRODUCTION_URL ..."
-
-          MAX_RETRIES=12
-          RETRY_DELAY=10
-
-          for i in $(seq 1 $MAX_RETRIES); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-              "${PRODUCTION_URL}/api/health" --max-time 10 2>/dev/null || echo "000")
-
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Smoke test PASSED — API health endpoint returned HTTP 200"
-              exit 0
+            echo "[6/8] Promoting canary build to production"
+            pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
+            sleep 2
+            if ss -ltn | grep -q ":${PROD_PORT} "; then
+              echo "Production port ${PROD_PORT} is occupied by a non-PM2-managed process; refusing unsafe cutover."
+              ss -ltnp | grep ":${PROD_PORT}" || true
+              exit 1
             fi
 
-            echo "  Attempt $i/$MAX_RETRIES: HTTP $HTTP_CODE (retrying in ${RETRY_DELAY}s)..."
-            sleep $RETRY_DELAY
-          done
+            PORT="$PROD_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
+              pm2 start "$APP/.next/standalone/server.js" \
+                --name "$PM2_NAME" --cwd "$APP" \
+                --node-args="--env-file=$APP/.env" --time
 
-          echo "❌ Smoke test FAILED — health endpoint did not return 200 after $MAX_RETRIES attempts"
+            PROD_OK=0
+            for i in $(seq 1 18); do
+              CODE=$(curl -s -o /tmp/iassetspro-production-health.json -w "%{http_code}" \
+                --max-time 10 "http://127.0.0.1:${PROD_PORT}/api/health" || true)
+              echo "Production attempt $i/18 -> HTTP $CODE"
+              if [[ "$CODE" == "200" ]]; then PROD_OK=1; break; fi
+              sleep 5
+            done
+            [[ "$PROD_OK" == "1" ]] || { pm2 logs "$PM2_NAME" --lines 100 --nostream || true; exit 1; }
+
+            echo "[7/8] Removing canary and persisting PM2 state"
+            pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+            pm2 save
+
+            echo "[8/8] Final production status"
+            pm2 status "$PM2_NAME"
+            ss -ltnp | grep ":${PROD_PORT}" || true
+            git log -1 --oneline
+
+      - name: Run public production smoke test
+        env:
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL || 'https://iassetspro.lightworldtech.com' }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" \
+              "${PRODUCTION_URL}/api/health" --max-time 10 2>/dev/null || echo "000")
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              echo "Production smoke test passed."
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Attempt $i/12 returned HTTP $HTTP_CODE"
+            sleep 10
+          done
           exit 1
 
       - name: Deployment summary — Success
         if: success()
         run: |
-          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ env.RELEASE_SHA }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | \`${{ env.RELEASE_BRANCH }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Image tag** | \`sha-${{ env.RELEASE_SHA }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployment Successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: \`${RELEASE_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime: PM2 + Next.js standalone" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Production port: \`${PRODUCTION_PORT}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deployment summary — Failure
         if: failure()
         run: |
-          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ env.RELEASE_SHA }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | \`${{ env.RELEASE_BRANCH }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Failed step** | ${{ github.job }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Action required** | Check logs above for details |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ⚡ [View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-
-      - name: Notify Slack on success
-        if: success() && env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          curl -s -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' \
-            -d '{
-              "text": "✅ *iAssetsPro EAM* deployed to production\nCommit: `'${{ env.RELEASE_SHA }}'` by '${{ github.actor }}'\nBranch: `${{ env.RELEASE_BRANCH }}`"
-            }' || true
-
-      - name: Notify Slack on failure
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          curl -s -X POST "$SLACK_WEBHOOK_URL" \
-            -H 'Content-type: application/json' \
-            -d '{
-              "text": "❌ *iAssetsPro EAM* deployment FAILED\nCommit: `'${{ env.RELEASE_SHA }}'`\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
-            }' || true
+          echo "## ❌ Deployment Failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the failed step logs before retrying." >> "$GITHUB_STEP_SUMMARY"

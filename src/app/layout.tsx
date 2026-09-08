@@ -15,9 +15,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const buildVersion = process.env.NEXT_PUBLIC_BUILD_VERSION || "local";
+
 export const metadata: Metadata = {
   title: "iAssetsPro - Enterprise Asset Management",
   description: "Intelligent Enterprise Asset Management System",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/logo.svg",
   },
@@ -31,18 +34,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Cache-busting: force browsers to never cache _next/ assets.
-            This inline script runs BEFORE any React code loads, so it catches
-            stale bundles immediately on page load. */}
+        {/* Cache-busting: clear prior Cache Storage after a deployed build changes.
+            IndexedDB business snapshots are intentionally preserved separately. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                // Version marker — changes on every build, busting any cache
-                var BUILD_VERSION = "20250620-v1";
+                var BUILD_VERSION = ${JSON.stringify(buildVersion)};
                 var stored = sessionStorage.getItem('_eam_bv');
                 if (stored && stored !== BUILD_VERSION) {
-                  // Build version changed — clear all caches to force fresh load
                   if ('caches' in window) {
                     caches.keys().then(function(names) {
                       names.forEach(function(n) { caches.delete(n); });

@@ -29,7 +29,9 @@ test('CORE offline storage migrates the legacy queue into IndexedDB on app boot'
   await expect.poll(async () => page.evaluate(
     async ({ dbName, storeName, legacyKey, expectedId }) => {
       const database = await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(dbName, 1);
+        // Open the current database without pinning a version so this migration
+        // assertion remains valid when CORE legitimately upgrades the schema.
+        const request = indexedDB.open(dbName);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

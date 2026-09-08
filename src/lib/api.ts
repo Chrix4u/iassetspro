@@ -1,9 +1,15 @@
 // API wrapper with auth headers, timeout, and AbortController support
 import React from 'react';
 import { OfflineSyncService } from '@/services/offlineSync.service';
+import {
+  isOfflineSnapshotEndpoint,
+  loadOfflineApiSnapshot,
+  saveOfflineApiSnapshot,
+} from '@/lib/offline-api-cache';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 const DEFAULT_TIMEOUT_MS = 15_000; // 15 second default timeout
+export const OFFLINE_CACHE_STATE_EVENT = 'iassetspro:offline-cache-state';
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -17,6 +23,10 @@ export interface ApiResponse<T = any> {
   offlineQueued?: boolean;
   /** Local queue record id for an offline mutation. */
   offlineRecordId?: string;
+  /** True when a read was served from an actor-bound IndexedDB snapshot. */
+  offlineCached?: boolean;
+  /** ISO timestamp for the cached response used by an offline read. */
+  cachedAt?: string;
   // Preserve structured domain metadata returned by APIs (for example
   // readiness blockers, active-session conflicts, validation details).
   [key: string]: any;
@@ -27,6 +37,17 @@ export interface OfflineMutationDescriptor {
   entityType: string;
   entityId: string;
   data: Record<string, unknown>;
+}
+
+export interface OfflineCacheStateEventDetail {
+  endpoint: string;
+  cached: boolean;
+  cachedAt?: string;
+}
+
+function emitOfflineCacheState(detail: OfflineCacheStateEventDetail): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<OfflineCacheStateEventDetail>(OFFLINE_CACHE_STATE_EVENT, { detail }));
 }
 
 function parseJsonBody(body: BodyInit | null | undefined): Record<string, unknown> | null {
@@ -203,6 +224,18 @@ async function queueOfflineMutationIfSupported<T>(
   }
 }
 
+async function loadCachedRead<T>(endpoint: string): Promise<ApiResponse<T> | null> {
+  const snapshot = await loadOfflineApiSnapshot<ApiResponse<T>>(endpoint);
+  if (!snapshot) return null;
+  emitOfflineCacheState({ endpoint, cached: true, cachedAt: snapshot.cachedAt });
+  return {
+    ...snapshot.response,
+    success: true,
+    offlineCached: true,
+    cachedAt: snapshot.cachedAt,
+  };
+}
+
 export function getAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem('eam_token');
@@ -219,6 +252,22 @@ export async function apiFetch<T = any>(
 ): Promise<ApiResponse<T>> {
   const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
   const isFormData = restOptions.body instanceof FormData;
+  const normalizedMethod = (restOptions.method || 'GET').toUpperCase();
+  const cacheableRead = normalizedMethod === 'GET' && isOfflineSnapshotEndpoint(endpoint);
+
+  if (
+    cacheableRead &&
+    typeof navigator !== 'undefined' &&
+    navigator.onLine === false
+  ) {
+    const cached = await loadCachedRead<T>(endpoint);
+    if (cached) return cached;
+    return {
+      success: false,
+      status: 503,
+      error: 'Offline and no cached work-order snapshot is available for this view',
+    };
+  }
 
   const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);
   if (offlineResponse) return offlineResponse;
@@ -297,16 +346,32 @@ export async function apiFetch<T = any>(
       status: res.status,
       data: payload.data !== undefined ? payload.data : json,
     };
+
+    if (cacheableRead) {
+      await saveOfflineApiSnapshot(endpoint, result);
+      emitOfflineCacheState({ endpoint, cached: false });
+    }
+
     return result;
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
       const msg = err?.message || '';
       if (msg.includes('timed out') || msg.includes('Timeout')) {
+        if (cacheableRead) {
+          const cached = await loadCachedRead<T>(endpoint);
+          if (cached) return cached;
+        }
         return { success: false, error: 'Request timed out' };
       }
       return { success: false, error: 'Request was cancelled' };
     }
+
+    if (cacheableRead) {
+      const cached = await loadCachedRead<T>(endpoint);
+      if (cached) return cached;
+    }
+
     return { success: false, error: err.message || 'Network error' };
   }
 }

@@ -6,8 +6,9 @@
 // ============================================================================
 
 const DB_NAME = 'iassetspro_offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const QUEUE_STORE = 'sync_records';
+export const OFFLINE_API_SNAPSHOT_STORE = 'api_snapshots';
 export const LEGACY_OFFLINE_QUEUE_KEY = 'iassetspro_offline_queue';
 
 export type OfflineQueueStorageBackend = 'indexeddb' | 'localstorage';
@@ -74,6 +75,9 @@ async function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(QUEUE_STORE)) {
         database.createObjectStore(QUEUE_STORE, { keyPath: 'id' });
       }
+      if (!database.objectStoreNames.contains(OFFLINE_API_SNAPSHOT_STORE)) {
+        database.createObjectStore(OFFLINE_API_SNAPSHOT_STORE, { keyPath: 'id' });
+      }
     };
 
     request.onsuccess = () => {
@@ -94,6 +98,11 @@ async function openDatabase(): Promise<IDBDatabase> {
   });
 
   return databasePromise;
+}
+
+/** Shared IndexedDB handle for other CORE offline stores. */
+export async function getOfflineDatabase(): Promise<IDBDatabase> {
+  return openDatabase();
 }
 
 async function migrateLegacyQueue(database: IDBDatabase): Promise<void> {

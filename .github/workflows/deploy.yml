@@ -4,6 +4,11 @@
 # Automatic production deployment is triggered only after the main CI workflow
 # completes successfully. The workflow builds an immutable GHCR image for the
 # exact CI-tested SHA, deploys it via Compose, then runs a production smoke test.
+#
+# Deployment secret compatibility:
+#   Preferred: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PORT, DEPLOY_PATH
+#   Legacy:    VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT, VPS_APP_PATH
+# Existing VPS_* installations remain valid while new setups can use DEPLOY_*.
 # =============================================================================
 
 name: Deploy
@@ -107,6 +112,31 @@ jobs:
           echo "Timed out waiting for a successful E2E check for ${RELEASE_SHA}; deployment blocked." >&2
           exit 1
 
+      # Validate SSH configuration before checkout, Docker setup, registry login,
+      # or image build/push. This prevents a missing secret from wasting a full
+      # release build and makes the operator action immediately obvious.
+      - name: Validate VPS deployment configuration
+        env:
+          RESOLVED_DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          RESOLVED_DEPLOY_USER: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          RESOLVED_DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          [[ -n "$RESOLVED_DEPLOY_HOST" ]] || missing+=("DEPLOY_HOST or VPS_HOST")
+          [[ -n "$RESOLVED_DEPLOY_USER" ]] || missing+=("DEPLOY_USER or VPS_USER")
+          [[ -n "$RESOLVED_DEPLOY_SSH_KEY" ]] || missing+=("DEPLOY_SSH_KEY or VPS_SSH_KEY")
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error title=Production deployment configuration missing::Required GitHub Actions deployment secret(s) are not configured."
+            printf 'Missing: %s\n' "${missing[@]}"
+            echo "Configure either the preferred DEPLOY_* names or the compatible legacy VPS_* names."
+            exit 1
+          fi
+
+          echo "VPS deployment credentials are configured."
+
       - name: Checkout validated release commit
         uses: actions/checkout@v4
         with:
@@ -146,34 +176,34 @@ jobs:
       - name: Prepare VPS deployment directory
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: mkdir -p "${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}"
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
+          script: mkdir -p "${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
 
       - name: Upload production Compose manifest
         uses: appleboy/scp-action@v1
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
           source: docker-compose.yml
-          target: ${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}
+          target: ${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}
           overwrite: true
 
       - name: Deploy immutable image to VPS
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
           script: |
             set -euo pipefail
 
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}"
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
             IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ env.RELEASE_SHA }}"
 
             echo "========================================="

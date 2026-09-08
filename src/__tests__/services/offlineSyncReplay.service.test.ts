@@ -144,4 +144,42 @@ describe('offline cross-tab replay orchestration', () => {
     expect(postMock).not.toHaveBeenCalled();
     expect(releaseLeaseMock).toHaveBeenCalledWith('tab-a');
   });
+
+  it('never applies an acknowledgement for a record outside the submitted batch', async () => {
+    getPendingRecordsMock.mockResolvedValue([record('r-1')]);
+    postMock.mockResolvedValue({
+      success: true,
+      data: { results: [{ id: 'different-record', success: true }] },
+    });
+
+    const result = await replayPendingOfflineWork();
+
+    expect(result.outcome).toBe('failed');
+    expect(result.error).toContain('outside the submitted batch');
+    expect(markSyncedMock).not.toHaveBeenCalled();
+    expect(markFailedMock).toHaveBeenCalledWith(
+      'r-1',
+      expect.stringContaining('did not acknowledge every submitted record'),
+    );
+    expect(markFailedMock).not.toHaveBeenCalledWith('different-record', expect.anything());
+  });
+
+  it('preserves and flags submitted records omitted from an otherwise successful response', async () => {
+    getPendingRecordsMock.mockResolvedValue([record('r-1'), record('r-2')]);
+    postMock.mockResolvedValue({
+      success: true,
+      data: { results: [{ id: 'r-1', success: true }] },
+    });
+
+    const result = await replayPendingOfflineWork();
+
+    expect(result.outcome).toBe('failed');
+    expect(result.error).toContain('did not acknowledge every submitted record');
+    expect(markSyncedMock).toHaveBeenCalledTimes(1);
+    expect(markSyncedMock).toHaveBeenCalledWith('r-1');
+    expect(markFailedMock).toHaveBeenCalledWith(
+      'r-2',
+      expect.stringContaining('did not acknowledge every submitted record'),
+    );
+  });
 });

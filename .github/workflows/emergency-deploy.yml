@@ -1,0 +1,139 @@
+name: Emergency Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/emergency-deploy.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/iassetspro-eam
+  RELEASE_SHA: ${{ github.sha }}
+
+jobs:
+  deploy-production:
+    name: Emergency Deploy to Production
+    if: ${{ github.actor == github.repository_owner && contains(github.event.head_commit.message, '[deploy-now]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Validate VPS deployment configuration
+        env:
+          RESOLVED_DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          RESOLVED_DEPLOY_USER: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          RESOLVED_DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$RESOLVED_DEPLOY_HOST" ]] || missing+=("DEPLOY_HOST or VPS_HOST")
+          [[ -n "$RESOLVED_DEPLOY_USER" ]] || missing+=("DEPLOY_USER or VPS_USER")
+          [[ -n "$RESOLVED_DEPLOY_SSH_KEY" ]] || missing+=("DEPLOY_SSH_KEY or VPS_SSH_KEY")
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Generate immutable version tag
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=sha-${{ env.RELEASE_SHA }}
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_BUILD_VERSION=${{ env.RELEASE_SHA }}
+
+      - name: Prepare VPS deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
+          script: mkdir -p "${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
+
+      - name: Upload production Compose manifest
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
+          source: docker-compose.yml
+          target: ${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}
+          overwrite: true
+
+      - name: Deploy immutable image to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST }}
+          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || '/opt/iassetspro' }}"
+            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ env.RELEASE_SHA }}"
+            cd "$DEPLOY_PATH"
+            test -f docker-compose.yml
+            test -f .env
+            echo "${{ github.token }}" | docker login ${{ env.DOCKER_REGISTRY }} -u "${{ github.actor }}" --password-stdin
+            APP_IMAGE="$IMAGE_TAG" docker compose pull app
+            docker logout ${{ env.DOCKER_REGISTRY }} >/dev/null 2>&1 || true
+            APP_IMAGE="$IMAGE_TAG" docker compose up -d --no-build --force-recreate app
+            docker image prune -f
+
+      - name: Run production smoke test
+        run: |
+          set -euo pipefail
+          PRODUCTION_URL="${{ secrets.PRODUCTION_URL }}"
+          if [ -z "$PRODUCTION_URL" ]; then
+            echo "PRODUCTION_URL not configured; deployment completed without external smoke test."
+            exit 0
+          fi
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${PRODUCTION_URL}/api/health" --max-time 10 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Production health check passed."
+              exit 0
+            fi
+            echo "Attempt $i/12 returned HTTP $HTTP_CODE"
+            sleep 10
+          done
+          echo "Production health check failed."
+          exit 1

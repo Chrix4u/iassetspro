@@ -5,6 +5,7 @@
 
 import { createLogger } from '@/lib/logger';
 import { OfflineQueueStorage } from '@/lib/offline-queue-storage';
+import { broadcastOfflineSyncMessage } from '@/lib/offline-sync-coordinator';
 
 const logger = createLogger('offlineSync');
 
@@ -40,8 +41,11 @@ const ACTOR_USER_ID_KEY = 'eam_user_id';
 const UNBOUND_ACTOR_ERROR = 'Offline record has no authenticated user binding and cannot be synced safely';
 
 function notifyQueueChanged(): void {
-  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
-  window.dispatchEvent(new Event(OFFLINE_QUEUE_CHANGED_EVENT));
+  if (typeof window === 'undefined') return;
+  if (typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event(OFFLINE_QUEUE_CHANGED_EVENT));
+  }
+  broadcastOfflineSyncMessage('queue-changed');
 }
 
 export class OfflineSyncService {

@@ -1,15 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const postMock = vi.fn();
-const getPendingRecordsMock = vi.fn();
-const cleanupMock = vi.fn();
-const markSyncedMock = vi.fn();
-const markFailedMock = vi.fn();
-const getCurrentActorUserIdMock = vi.fn();
-const acquireLeaseMock = vi.fn();
-const renewLeaseMock = vi.fn();
-const releaseLeaseMock = vi.fn();
-const broadcastMock = vi.fn();
+const {
+  postMock,
+  getPendingRecordsMock,
+  cleanupMock,
+  markSyncedMock,
+  markFailedMock,
+  getCurrentActorUserIdMock,
+  acquireLeaseMock,
+  renewLeaseMock,
+  releaseLeaseMock,
+  broadcastMock,
+} = vi.hoisted(() => ({
+  postMock: vi.fn(),
+  getPendingRecordsMock: vi.fn(),
+  cleanupMock: vi.fn(),
+  markSyncedMock: vi.fn(),
+  markFailedMock: vi.fn(),
+  getCurrentActorUserIdMock: vi.fn(),
+  acquireLeaseMock: vi.fn(),
+  renewLeaseMock: vi.fn(),
+  releaseLeaseMock: vi.fn(),
+  broadcastMock: vi.fn(),
+}));
 
 vi.mock('@/lib/api', () => ({
   api: { post: postMock },

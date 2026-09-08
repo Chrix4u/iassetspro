@@ -104,6 +104,24 @@ export async function PUT(
       );
     }
 
+    // Apply the same plant authorization used by GET so update permissions do
+    // not become a cross-plant IDOR bypass.
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    if (body.plantId !== undefined && body.plantId && !canAccessPlant(plantScope, body.plantId)) {
+      return NextResponse.json({ success: false, error: 'Destination plant access denied' }, { status: 403 });
+    }
+
+    if (body.parentId) {
+      const parent = await db.asset.findUnique({ where: { id: body.parentId }, select: { plantId: true } });
+      if (!parent || !canAccessPlant(plantScope, parent.plantId)) {
+        return NextResponse.json({ success: false, error: 'Parent asset not found or access denied' }, { status: 403 });
+      }
+    }
+
     // Build update data — Prisma .update() uses scalar FK fields (not connect syntax)
     const updateData: Record<string, unknown> = {};
     const scalarFields = [
@@ -190,6 +208,11 @@ export async function DELETE(
         { success: false, error: 'Asset not found' },
         { status: 404 }
       );
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, existing.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Soft delete (isActive=false)

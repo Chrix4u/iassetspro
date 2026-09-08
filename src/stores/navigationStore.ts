@@ -70,11 +70,9 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   refreshModules: async () => {
-    // Force re-fetch from API (bypasses cache)
+    // Force re-fetch from API (bypasses cache). Module provisioning belongs to
+    // deployment/admin workflows; ordinary users must not call admin-only setup routes.
     try {
-      // Ensure repairs module exists in DB (idempotent, admin-only)
-      try { await api.post('/api/modules/ensure-repairs', {}); } catch { /* non-admin or not ready yet */ }
-
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();

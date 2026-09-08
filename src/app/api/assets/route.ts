@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
 
 // Helper: generate asset tag AST-YYYYMM-NNNN
 async function generateAssetTag(): Promise<string> {
@@ -67,16 +67,25 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Apply plant scoping: scope takes precedence over search param plantId
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.plantId = plantScope.plantId;
-    } else if (searchPlantId) {
-      where.plantId = searchPlantId;
+    // Always apply the authenticated user's plant scope. Previously, a regular
+    // user with no X-Plant-ID header received an unrestricted asset list and
+    // then hit a 403 when opening an out-of-scope asset by ID.
+    applyPlantScope(where, plantScope);
+
+    // Optional plantId query filtering may narrow a non-explicit scope, but it
+    // must never widen access beyond the user's assigned plants. An explicit
+    // X-Plant-ID scope remains authoritative and takes precedence.
+    if (searchPlantId && !plantScope.isScoped) {
+      if (plantScope.isSystemWide || plantScope.accessiblePlantIds.includes(searchPlantId)) {
+        where.plantId = searchPlantId;
+      } else {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     const [assets, total] = await Promise.all([
       db.asset.findMany({
-        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
+        where,
         include: {
           category: { select: { id: true, name: true, code: true } },
           plant: { select: { id: true, name: true, code: true } },
@@ -87,9 +96,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.asset.count({
-        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
-      }),
+      db.asset.count({ where }),
     ]);
 
     return NextResponse.json({
@@ -163,6 +170,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plant is required' }, { status: 400 });
     }
 
+    // Enforce plant authorization on writes as well as reads. This prevents a
+    // user with assets.create from creating records in an unassigned plant.
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     // Validate category exists
     const categoryExists = await db.assetCategory.findUnique({ where: { id: categoryId } });
     if (!categoryExists) {
@@ -173,6 +187,14 @@ export async function POST(request: NextRequest) {
     const plantExists = await db.plant.findUnique({ where: { id: plantId } });
     if (!plantExists) {
       return NextResponse.json({ success: false, error: 'Plant not found' }, { status: 400 });
+    }
+
+    // Parent assets must also be visible to the current user.
+    if (parentId) {
+      const parent = await db.asset.findUnique({ where: { id: parentId }, select: { plantId: true } });
+      if (!parent || !canAccessPlant(plantScope, parent.plantId)) {
+        return NextResponse.json({ success: false, error: 'Parent asset not found or access denied' }, { status: 403 });
+      }
     }
 
     const assetTag = await generateAssetTag();

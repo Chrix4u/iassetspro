@@ -145,11 +145,16 @@ describe('offline cross-tab replay orchestration', () => {
     expect(releaseLeaseMock).toHaveBeenCalledWith('tab-a');
   });
 
-  it('never applies an acknowledgement for a record outside the submitted batch', async () => {
-    getPendingRecordsMock.mockResolvedValue([record('r-1')]);
+  it('preserves the whole batch when the server acknowledges an unrelated record', async () => {
+    getPendingRecordsMock.mockResolvedValue([record('r-1'), record('r-2')]);
     postMock.mockResolvedValue({
       success: true,
-      data: { results: [{ id: 'different-record', success: true }] },
+      data: {
+        results: [
+          { id: 'r-1', success: true },
+          { id: 'different-record', success: true },
+        ],
+      },
     });
 
     const result = await replayPendingOfflineWork();
@@ -157,14 +162,13 @@ describe('offline cross-tab replay orchestration', () => {
     expect(result.outcome).toBe('failed');
     expect(result.error).toContain('outside the submitted batch');
     expect(markSyncedMock).not.toHaveBeenCalled();
-    expect(markFailedMock).toHaveBeenCalledWith(
-      'r-1',
-      expect.stringContaining('did not acknowledge every submitted record'),
-    );
+    expect(markFailedMock).toHaveBeenCalledTimes(2);
+    expect(markFailedMock).toHaveBeenCalledWith('r-1', expect.stringContaining('outside the submitted batch'));
+    expect(markFailedMock).toHaveBeenCalledWith('r-2', expect.stringContaining('outside the submitted batch'));
     expect(markFailedMock).not.toHaveBeenCalledWith('different-record', expect.anything());
   });
 
-  it('preserves and flags submitted records omitted from an otherwise successful response', async () => {
+  it('preserves the whole batch when an otherwise successful response omits a record', async () => {
     getPendingRecordsMock.mockResolvedValue([record('r-1'), record('r-2')]);
     postMock.mockResolvedValue({
       success: true,
@@ -175,11 +179,36 @@ describe('offline cross-tab replay orchestration', () => {
 
     expect(result.outcome).toBe('failed');
     expect(result.error).toContain('did not acknowledge every submitted record');
-    expect(markSyncedMock).toHaveBeenCalledTimes(1);
-    expect(markSyncedMock).toHaveBeenCalledWith('r-1');
+    expect(markSyncedMock).not.toHaveBeenCalled();
+    expect(markFailedMock).toHaveBeenCalledTimes(2);
+    expect(markFailedMock).toHaveBeenCalledWith(
+      'r-1',
+      expect.stringContaining('did not acknowledge every submitted record'),
+    );
     expect(markFailedMock).toHaveBeenCalledWith(
       'r-2',
       expect.stringContaining('did not acknowledge every submitted record'),
     );
+  });
+
+  it('preserves the whole batch when the response contains duplicate acknowledgements', async () => {
+    getPendingRecordsMock.mockResolvedValue([record('r-1')]);
+    postMock.mockResolvedValue({
+      success: true,
+      data: {
+        results: [
+          { id: 'r-1', success: true },
+          { id: 'r-1', success: true },
+        ],
+      },
+    });
+
+    const result = await replayPendingOfflineWork();
+
+    expect(result.outcome).toBe('failed');
+    expect(result.error).toContain('duplicate acknowledgements');
+    expect(markSyncedMock).not.toHaveBeenCalled();
+    expect(markFailedMock).toHaveBeenCalledTimes(1);
+    expect(markFailedMock).toHaveBeenCalledWith('r-1', expect.stringContaining('duplicate acknowledgements'));
   });
 });

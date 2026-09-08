@@ -54,6 +54,11 @@ function blockedRecordsMessage(records: SyncRecord[], currentUserId: string): st
   return 'Some pending offline work could not be safely synced';
 }
 
+const INVALID_ACKNOWLEDGEMENT_ERROR =
+  'Offline sync returned an acknowledgement outside the submitted batch; pending work was preserved';
+const MISSING_ACKNOWLEDGEMENT_ERROR =
+  'Offline sync did not acknowledge every submitted record; unacknowledged work was preserved';
+
 export async function replayPendingOfflineWork(): Promise<OfflineReplayResult> {
   const records = await OfflineSyncService.getPendingRecords();
   if (records.length === 0) {
@@ -105,15 +110,42 @@ export async function replayPendingOfflineWork(): Promise<OfflineReplayResult> {
       );
 
       if (response.success && response.data?.results) {
+        const batchIds = new Set(batch.map((record) => record.id));
+        const acknowledgedIds = new Set<string>();
+        let invalidAcknowledgement = false;
+
         for (const result of response.data.results) {
-          if (result.success) await OfflineSyncService.markSynced(result.id);
-          else {
+          // Never let a malformed, stale, or duplicated server result mutate a
+          // queue record that this request did not uniquely submit. This keeps
+          // wrong-user/blocked records and unrelated pending field work durable.
+          if (!batchIds.has(result.id) || acknowledgedIds.has(result.id)) {
+            invalidAcknowledgement = true;
+            continue;
+          }
+
+          acknowledgedIds.add(result.id);
+          if (result.success) {
+            await OfflineSyncService.markSynced(result.id);
+          } else {
             const message = result.error || 'Sync failed';
             await OfflineSyncService.markFailed(result.id, message);
             hasFailure = true;
             firstFailure ||= message;
           }
         }
+
+        if (invalidAcknowledgement) {
+          hasFailure = true;
+          firstFailure ||= INVALID_ACKNOWLEDGEMENT_ERROR;
+        }
+
+        for (const record of batch) {
+          if (acknowledgedIds.has(record.id)) continue;
+          await OfflineSyncService.markFailed(record.id, MISSING_ACKNOWLEDGEMENT_ERROR);
+          hasFailure = true;
+          firstFailure ||= MISSING_ACKNOWLEDGEMENT_ERROR;
+        }
+
         await OfflineSyncService.cleanup();
         continue;
       }

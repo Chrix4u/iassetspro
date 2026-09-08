@@ -4,11 +4,12 @@ import { getSessionAsync } from '@/lib/auth';
 /**
  * Auth & Plant-Scoping Proxy (Next.js 16 convention)
  *
- * Protects all /api/* routes (except public auth endpoints) by validating the Bearer token.
+ * Protects all /api/* routes (except public endpoints) by validating the Bearer token.
  * Applies security headers to all API responses.
  *
  * Public routes (no auth required):
- * - /api/auth/* — all auth endpoints
+ * - /api/auth/* — selected auth endpoints
+ * - /api/health — infrastructure/application health probe
  *
  * Internal routes (X-PM-Cron-Secret header for server-to-server):
  * - /api/pm-schedules/check-due — PM cron job trigger
@@ -19,6 +20,7 @@ const PUBLIC_PATHS = [
   '/api/auth/register',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/health',
 ];
 const INTERNAL_SECRET = process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025';
 
@@ -46,7 +48,7 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow public auth endpoints
+  // Allow explicitly public endpoints
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
     return withSecurityHeaders(NextResponse.next());
   }

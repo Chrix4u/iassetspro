@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { authenticateAs } from './helpers/auth';
+import { expectFailure, getToken, lookupPlantId } from './helpers/api';
 
 test.describe('Repairs Reports & Analytics', () => {
   test('renders graphical and tabular lifecycle reporting with export actions', async ({ page, context }) => {
@@ -86,5 +87,25 @@ test.describe('Repairs Reports & Analytics', () => {
     await page.getByPlaceholder('Filter the table...').fill('Pump seal');
     await expect(page.getByText('Pump seal leakage')).toBeVisible();
     await expect(page.getByText('Conveyor bearing noise')).toHaveCount(0);
+  });
+
+  test('enforces report RBAC and plant scope for data and PDF export', async () => {
+    const plannerAToken = await getToken('planner_plant_a');
+    const technicianAToken = await getToken('plant_a_user');
+    const systemPlannerToken = await getToken('planner');
+    const plantBId = await lookupPlantId(systemPlannerToken, 'PLANT-B');
+
+    for (const path of [
+      `/api/repairs/reports?type=lifecycle&plantId=${encodeURIComponent(plantBId)}`,
+      `/api/repairs/reports?type=lifecycle&plantId=${encodeURIComponent(plantBId)}&format=pdf`,
+    ]) {
+      const blocked = await expectFailure(plannerAToken, 'GET', path);
+      expect(blocked.status).toBe(403);
+      expect(blocked.data.success).toBe(false);
+    }
+
+    const roleBlocked = await expectFailure(technicianAToken, 'GET', '/api/repairs/reports?type=lifecycle');
+    expect(roleBlocked.status).toBe(403);
+    expect(roleBlocked.data.success).toBe(false);
   });
 });

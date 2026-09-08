@@ -163,7 +163,10 @@ function runLeaseMutation(
       const current = request.result as SyncLeaseRecord | undefined;
 
       if (mode === 'acquire') {
-        if (!current || current.expiresAt <= now || current.holderId === holderId) {
+        // Acquisition is deliberately non-reentrant. Two hook/component
+        // instances in the same tab share a tab id and must still not replay
+        // concurrently. A crashed/reloaded owner is recovered by lease expiry.
+        if (!current || current.expiresAt <= now) {
           store.put({
             id: SYNC_LEASE_KEY,
             holderId,

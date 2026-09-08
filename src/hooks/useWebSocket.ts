@@ -11,15 +11,24 @@ interface UseWebSocketReturn {
   emit: (event: string, ...args: unknown[]) => void;
 }
 
+const notificationSocketUrl = process.env.NEXT_PUBLIC_NOTIFICATION_SOCKET_URL?.trim();
+const notificationHealthUrl = process.env.NEXT_PUBLIC_NOTIFICATION_HEALTH_URL?.trim();
+
 /**
- * Check if the notification service is available by hitting its health endpoint.
- * Uses the admin port (3005) to avoid socket.io 404 noise on the WS port.
+ * Check an explicitly configured notification-service health endpoint.
+ *
+ * When no health URL is configured we allow a connection attempt to the
+ * explicitly configured socket URL. When no socket URL is configured at all,
+ * the hook remains disabled and callers fall back to their REST polling path.
  */
 async function checkServiceHealth(): Promise<boolean> {
+  if (!notificationHealthUrl) return true;
+
   try {
-    const res = await fetch('/health?XTransformPort=3005', {
+    const res = await fetch(notificationHealthUrl, {
       method: 'GET',
       signal: AbortSignal.timeout(3000),
+      cache: 'no-store',
     });
     return res.ok;
   } catch {
@@ -28,10 +37,13 @@ async function checkServiceHealth(): Promise<boolean> {
 }
 
 /**
- * WebSocket hook — connects to the notification service (port 3004) via gateway.
- * Performs a pre-flight health check before connecting to avoid 404 spam.
- * Gracefully degrades when the service is unavailable.
- * Periodically re-checks health and connects when the service comes online.
+ * Optional WebSocket hook for real-time notifications.
+ *
+ * Production no longer guesses internal Webuzo/PM2 ports. A socket connection
+ * is attempted only when NEXT_PUBLIC_NOTIFICATION_SOCKET_URL is explicitly
+ * configured at build time. Notification consumers already provide REST
+ * polling, so an unconfigured or unavailable socket service degrades cleanly
+ * without generating repeated /health or Socket.IO 404s.
  */
 export function useWebSocket(): UseWebSocketReturn {
   const user = useAuthStore((s) => s.user);
@@ -44,17 +56,17 @@ export function useWebSocket(): UseWebSocketReturn {
   const connectingRef = useRef(false);
 
   const connectSocket = useCallback((userId: string) => {
-    if (connectingRef.current || socketRef.current?.connected) return;
+    if (!notificationSocketUrl || connectingRef.current || socketRef.current?.connected) return;
     connectingRef.current = true;
 
-    const socket = io('/?XTransformPort=3004', {
+    const socket = io(notificationSocketUrl, {
       transports: ['websocket', 'polling'],
-      upgrade: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 5000,
       reconnectionDelayMax: 30000,
       timeout: 10000,
+      withCredentials: true,
     });
 
     socketRef.current = socket;
@@ -66,7 +78,6 @@ export function useWebSocket(): UseWebSocketReturn {
       socket.emit('auth', { userId });
       socket.emit('subscribe:notifications', userId);
 
-      // Re-register all stored handlers
       for (const [event, handlers] of handlersRef.current) {
         for (const handler of handlers) {
           socket.on(event, handler);
@@ -82,7 +93,6 @@ export function useWebSocket(): UseWebSocketReturn {
     socket.on('connect_error', () => {
       if (!mountedRef.current) return;
       connectingRef.current = false;
-      // If we fail to connect, destroy socket and retry health check later
       socket.disconnect();
       socketRef.current = null;
       setConnected(false);
@@ -103,11 +113,16 @@ export function useWebSocket(): UseWebSocketReturn {
     setConnected(false);
   }, []);
 
-  // Main effect: health check + connection lifecycle
   useEffect(() => {
     mountedRef.current = true;
 
-    if (!isAuthenticated || !user?.id) return;
+    // No explicit real-time service configured: remain in polling mode.
+    if (!notificationSocketUrl || !isAuthenticated || !user?.id) {
+      return () => {
+        mountedRef.current = false;
+        cleanupSocket();
+      };
+    }
 
     const userId = user.id;
 
@@ -119,12 +134,11 @@ export function useWebSocket(): UseWebSocketReturn {
       if (healthy) {
         connectSocket(userId);
       } else {
-        // Service not available — schedule retry in 30s
         healthTimerRef.current = setTimeout(tryConnect, 30_000);
       }
     };
 
-    tryConnect();
+    void tryConnect();
 
     return () => {
       mountedRef.current = false;

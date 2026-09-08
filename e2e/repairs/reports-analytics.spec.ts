@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
-import { loginViaUI } from './helpers/auth';
+import { authenticateAs } from './helpers/auth';
 
 test.describe('Repairs Reports & Analytics', () => {
-  test('renders graphical and tabular lifecycle reporting with export actions', async ({ page }) => {
-    await loginViaUI(page, 'planner');
+  test('renders graphical and tabular lifecycle reporting with export actions', async ({ page, context }) => {
+    // Authenticate through the stable API helper, then navigate inside the SPA.
+    // A hard reload directly onto a protected hash route can race the auth-store
+    // hydration/permission guard and redirect to Dashboard before /api/auth/me
+    // has restored the persisted permission set.
+    await authenticateAs(context, 'planner');
+    await page.goto('/');
+    await expect(page.getByText('UAT Planner', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 
     await page.route('**/api/repairs/reports?**', async (route) => {
       const url = new URL(route.request().url());
@@ -57,7 +63,11 @@ test.describe('Repairs Reports & Analytics', () => {
       });
     });
 
-    await page.goto('/#/repairs-reports');
+    // Use the application's own navigation action instead of performing a
+    // second document load. This exercises the same route users select from
+    // the Reports menu and avoids testing an unrelated auth-hydration race.
+    await page.getByRole('button', { name: /^Reports$/ }).click();
+    await page.getByRole('button', { name: /^Repair Lifecycle$/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Repairs Reports & Analytics' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Tabular and graphical maintenance intelligence')).toBeVisible();

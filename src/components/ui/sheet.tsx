@@ -44,6 +44,41 @@ function SheetOverlay({
   )
 }
 
+function SheetTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Title>) {
+  return (
+    <SheetPrimitive.Title
+      data-slot="sheet-title"
+      className={cn("text-foreground font-semibold", className)}
+      {...props}
+    />
+  )
+}
+
+function SheetDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Description>) {
+  return (
+    <SheetPrimitive.Description
+      data-slot="sheet-description"
+      className={cn("text-muted-foreground text-sm", className)}
+      {...props}
+    />
+  )
+}
+
+function containsComponent(node: React.ReactNode, component: React.ElementType): boolean {
+  return React.Children.toArray(node).some((child) => {
+    if (!React.isValidElement(child)) return false
+    if (child.type === component) return true
+    const childProps = child.props as { children?: React.ReactNode }
+    return containsComponent(childProps.children, component)
+  })
+}
+
 function SheetContent({
   className,
   children,
@@ -55,6 +90,8 @@ function SheetContent({
   hideClose?: boolean
 }) {
   const contentRef = React.useRef<HTMLDivElement>(null)
+  const hasTitle = containsComponent(children, SheetTitle)
+  const hasDescription = containsComponent(children, SheetDescription)
 
   // Handle focus management to prevent aria-hidden conflicts with nested Dialogs
   const handleOpenAutoFocus = React.useCallback((e: Event) => {
@@ -102,6 +139,8 @@ function SheetContent({
         onCloseAutoFocus={handleCloseAutoFocus}
         {...props}
       >
+        {!hasTitle && <SheetPrimitive.Title className="sr-only">Panel</SheetPrimitive.Title>}
+        {!hasDescription && <SheetPrimitive.Description className="sr-only">Application panel</SheetPrimitive.Description>}
         {children}
         {!hideClose && (
           <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
@@ -129,32 +168,6 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sheet-footer"
       className={cn("mt-auto flex flex-col gap-2 p-4", className)}
-      {...props}
-    />
-  )
-}
-
-function SheetTitle({
-  className,
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Title>) {
-  return (
-    <SheetPrimitive.Title
-      data-slot="sheet-title"
-      className={cn("text-foreground font-semibold", className)}
-      {...props}
-    />
-  )
-}
-
-function SheetDescription({
-  className,
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Description>) {
-  return (
-    <SheetPrimitive.Description
-      data-slot="sheet-description"
-      className={cn("text-muted-foreground text-sm", className)}
       {...props}
     />
   )

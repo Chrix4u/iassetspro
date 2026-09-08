@@ -230,9 +230,12 @@ export async function releaseOfflineSyncLease(
   return runLeaseMutation(holderId, DEFAULT_LEASE_MS, 'release');
 }
 
-export async function isRemoteOfflineSyncActive(
-  holderId = getOfflineSyncTabId(),
-): Promise<boolean> {
+/**
+ * Report whether any unexpired replay lease exists. Because acquisition is
+ * deliberately non-reentrant, a second hook instance in the same tab must also
+ * treat the tab's existing lease as busy instead of immediately retrying.
+ */
+export async function isRemoteOfflineSyncActive(): Promise<boolean> {
   if (!canUseIndexedDb()) return false;
   try {
     const database = await openCoordinationDatabase();
@@ -241,7 +244,7 @@ export async function isRemoteOfflineSyncActive(
       const request = transaction.objectStore(LEASE_STORE).get(SYNC_LEASE_KEY);
       request.onsuccess = () => {
         const current = request.result as SyncLeaseRecord | undefined;
-        resolve(Boolean(current && current.expiresAt > Date.now() && current.holderId !== holderId));
+        resolve(Boolean(current && current.expiresAt > Date.now()));
       };
       request.onerror = () => reject(request.error || new Error('Failed to read offline sync lease'));
     });

@@ -15,8 +15,13 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await expect(page.locator('text=Dashboard').first()).toBeVisible({ timeout: 10_000 });
 }
 
-test('CORE replay drains an actor-bound queue from the normal dashboard', async ({ page }) => {
+test('CORE replay drains one shared queue exactly once across two authenticated tabs', async ({ page, context }) => {
   await loginAsAdmin(page);
+
+  const secondPage = await context.newPage();
+  await secondPage.goto('/');
+  await secondPage.waitForURL(/#\/dashboard/, { timeout: 15_000 });
+  await expect(secondPage.locator('text=Dashboard').first()).toBeVisible({ timeout: 10_000 });
 
   const actorUserId = await page.evaluate(() => localStorage.getItem('eam_user_id'));
   expect(actorUserId).toBeTruthy();
@@ -24,11 +29,14 @@ test('CORE replay drains an actor-bound queue from the normal dashboard', async 
   const recordId = `global-replay-${Date.now()}`;
   const submittedBatches: Array<Array<{ id: string }>> = [];
 
-  await page.route('**/api/sync/offline', async (route) => {
+  await context.route('**/api/sync/offline', async (route) => {
     const payload = route.request().postDataJSON() as { records?: Array<{ id: string }> } | null;
     const records = Array.isArray(payload?.records) ? payload.records : [];
     submittedBatches.push(records);
 
+    // Keep the request alive briefly so both tabs get a chance to observe the
+    // same pending queue and contend for replay ownership.
+    await new Promise((resolve) => setTimeout(resolve, 150));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -71,9 +79,18 @@ test('CORE replay drains an actor-bound queue from the normal dashboard', async 
       });
 
       database.close();
-      // The production queue service emits this same local event after a write.
-      // Dispatch it here because this probe writes directly to IndexedDB.
+
+      // The real queue service broadcasts the same event after a durable write.
+      // This direct IndexedDB probe emits a cross-tab equivalent so both root
+      // runtimes race through the production lease acquisition path.
       window.dispatchEvent(new Event('iassetspro:offline-queue-changed'));
+      const channel = new BroadcastChannel('iassetspro-offline-sync');
+      channel.postMessage({
+        type: 'queue-changed',
+        sourceId: 'browser-global-replay-probe',
+        at: new Date().toISOString(),
+      });
+      channel.close();
     },
     {
       dbName: DB_NAME,
@@ -86,7 +103,7 @@ test('CORE replay drains an actor-bound queue from the normal dashboard', async 
 
   await expect.poll(() => submittedBatches.length, {
     timeout: 15_000,
-    message: 'the root CORE runtime should replay pending work without opening Repairs execution UI',
+    message: 'one authenticated tab should acquire replay ownership for the shared queue',
   }).toBe(1);
 
   expect(submittedBatches[0].map((record) => record.id)).toEqual([recordId]);
@@ -113,4 +130,11 @@ test('CORE replay drains an actor-bound queue from the normal dashboard', async 
     timeout: 15_000,
     message: 'server-acknowledged replay record should be cleaned from durable storage',
   }).toBe(true);
+
+  // Give the non-owner tab enough time to process queue/sync completion signals.
+  // A second request here would prove the browser-wide lease failed.
+  await secondPage.waitForTimeout(750);
+  expect(submittedBatches).toHaveLength(1);
+
+  await secondPage.close();
 });

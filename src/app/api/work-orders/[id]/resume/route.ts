@@ -61,7 +61,17 @@ export async function POST(
       }, { status });
     }
 
-    return NextResponse.json({ success: true, data: result.data });
+    const data = result.data
+      ? {
+          ...result.data,
+          // Make the labor/control distinction explicit for every client. A
+          // supervisor/planner/manager release changes WO state only; the
+          // assigned technician must explicitly open the next execution timer.
+          technicianExecutionStartRequired: !result.data.executionSessionOpened,
+        }
+      : result.data;
+
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to resume work order';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

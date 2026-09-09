@@ -251,7 +251,12 @@ export async function resumeWaitingWorkOrder(
   options: { reason?: string; auditCtx?: ExecutionStateAuditContext } = {},
 ): Promise<{
   success: boolean;
-  data?: { status: 'in_progress'; resumedAt: Date; executionSessionOpened: boolean };
+  data?: {
+    status: 'in_progress';
+    resumedAt: Date;
+    executionSessionOpened: boolean;
+    technicianExecutionStartRequired: boolean;
+  };
   error?: string;
   conflict?: ExecutionStateConflict;
   reason?: ExecutionStateConflictReason;
@@ -296,13 +301,13 @@ export async function resumeWaitingWorkOrder(
     // manager control decisions merely release the WO back to in_progress so
     // the technician can explicitly begin/restart execution.
     const executionSessionOpened = !releasingSupervisorHold && assignedExecutionActor;
+    const technicianExecutionStartRequired = !executionSessionOpened;
 
-    // Match the canonical start boundary. An unclosed timer is only a real
-    // conflict while its parent WO is still actively in progress. Historical
-    // rows left behind by legacy hold/handover/rework paths must not strand a
-    // technician and block legitimate resume work. Control-only releases do not
-    // inspect the actor's technician timer because they do not open labor time.
-    if (executionSessionOpened && !session.roles.includes('admin')) {
+    // Match the canonical start boundary. Every actor who is about to create an
+    // execution timer—including an admin who is genuinely assigned as an
+    // execution worker—must obey the one-live-session invariant. Admin status is
+    // not a license to create overlapping labor time.
+    if (executionSessionOpened) {
       const existingLiveSession = await tx.workOrderTimeLog.findFirst({
         where: {
           userId: session.userId,
@@ -343,7 +348,7 @@ export async function resumeWaitingWorkOrder(
             : 'ACTIVE_SESSION_CONFLICT' as const,
           error: sameWorkOrder
             ? 'You already have an active work session on this work order'
-            : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and pause, hand over, or complete it before resuming another.`,
+            : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and hold, hand over, or complete it before resuming another.`,
           conflict,
         };
       }
@@ -381,7 +386,7 @@ export async function resumeWaitingWorkOrder(
           status: 'in_progress',
           resumedAt: resumedAt.toISOString(),
           executionSessionOpened,
-          ...(!executionSessionOpened ? { technicianExecutionStartRequired: true } : {}),
+          technicianExecutionStartRequired,
         },
         options.auditCtx,
       ),
@@ -389,7 +394,12 @@ export async function resumeWaitingWorkOrder(
 
     return {
       success: true as const,
-      data: { status: 'in_progress' as const, resumedAt, executionSessionOpened },
+      data: {
+        status: 'in_progress' as const,
+        resumedAt,
+        executionSessionOpened,
+        technicianExecutionStartRequired,
+      },
       notify: {
         woNumber: wo.woNumber,
         assignedTo: wo.assignedTo,
@@ -426,7 +436,10 @@ export async function resumeWaitingWorkOrder(
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance team',
-      details: { executionSessionOpened: outcome.data.executionSessionOpened },
+      details: {
+        executionSessionOpened: outcome.data.executionSessionOpened,
+        technicianExecutionStartRequired: outcome.data.technicianExecutionStartRequired,
+      },
     });
   }
 

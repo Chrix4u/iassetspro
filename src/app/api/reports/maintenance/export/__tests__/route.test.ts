@@ -8,6 +8,7 @@ const {
   mockIsAdmin,
   mockGetPlantScope,
   mockGetPlantFilterWhere,
+  mockGenerateReportPDF,
 } = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findMany: vi.fn() },
@@ -20,6 +21,7 @@ const {
   mockIsAdmin: vi.fn(),
   mockGetPlantScope: vi.fn(),
   mockGetPlantFilterWhere: vi.fn(),
+  mockGenerateReportPDF: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -31,6 +33,9 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/plant-scope', () => ({
   getPlantScope: mockGetPlantScope,
   getPlantFilterWhere: mockGetPlantFilterWhere,
+}));
+vi.mock('@/lib/generate-report-pdf', () => ({
+  generateReportPDF: mockGenerateReportPDF,
 }));
 
 import { GET } from '../route';
@@ -62,6 +67,7 @@ describe('GET /api/reports/maintenance/export', () => {
     mockDb.maintenanceRequest.findMany.mockResolvedValue([]);
     mockDb.asset.findMany.mockResolvedValue([]);
     mockDb.inventoryItem.findMany.mockResolvedValue([]);
+    mockGenerateReportPDF.mockResolvedValue(Buffer.from('%PDF-1.4\nmock report'));
   });
 
   it('requires authentication', async () => {
@@ -85,11 +91,11 @@ describe('GET /api/reports/maintenance/export', () => {
   });
 
   it('rejects unsupported export formats before querying report data', async () => {
-    const response = await GET(request('pdf'));
+    const response = await GET(request('json'));
     const json = await response.json();
 
     expect(response.status).toBe(400);
-    expect(json.error).toContain('xlsx or csv');
+    expect(json.error).toContain('xlsx, csv or pdf');
     expect(mockDb.workOrder.findMany).not.toHaveBeenCalled();
   });
 
@@ -125,5 +131,26 @@ describe('GET /api/reports/maintenance/export', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(bytes.length).toBeGreaterThan(100);
     expect(String.fromCharCode(bytes[0], bytes[1])).toBe('PK');
+  });
+
+  it('returns a server-generated PDF using the same scoped report dataset', async () => {
+    const response = await GET(request('pdf'));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('content-disposition')).toContain(
+      'maintenance-report-repairs-2026-09-01-to-2026-09-09.pdf',
+    );
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(new TextDecoder().decode(bytes).startsWith('%PDF-1.4')).toBe(true);
+    expect(mockGenerateReportPDF).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Repairs / RWOP Maintenance Report',
+      generatedBy: 'Report Exporter',
+      sections: expect.arrayContaining([
+        expect.objectContaining({ title: 'Management Summary' }),
+        expect.objectContaining({ title: 'Work Order Detail' }),
+      ]),
+    }));
   });
 });

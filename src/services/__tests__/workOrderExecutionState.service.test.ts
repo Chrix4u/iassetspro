@@ -56,6 +56,13 @@ const plannerSession: ExecutionStateSessionContext = {
   permissions: ['work_orders.update'],
 };
 
+const assignedAdminSession: ExecutionStateSessionContext = {
+  userId: 'admin-tech',
+  fullName: 'Assigned Admin Technician',
+  roles: ['admin'],
+  permissions: ['work_orders.update'],
+};
+
 function waitingWorkOrder(overrides: Record<string, unknown> = {}) {
   return {
     id: 'wo-1',
@@ -190,6 +197,7 @@ describe('workOrderExecutionState.resumeWaitingWorkOrder', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.executionSessionOpened).toBe(true);
+    expect(result.data?.technicianExecutionStartRequired).toBe(false);
     expect(mockDb.workOrderTimeLog.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -228,7 +236,7 @@ describe('workOrderExecutionState.resumeWaitingWorkOrder', () => {
     expect(result).toEqual({
       success: false,
       reason: 'ACTIVE_SESSION_CONFLICT',
-      error: 'You already have active work on WO #WO-002 (Repair compressor). Open that work order and pause, hand over, or complete it before resuming another.',
+      error: 'You already have active work on WO #WO-002 (Repair compressor). Open that work order and hold, hand over, or complete it before resuming another.',
       conflict: {
         workOrderId: 'wo-2',
         woNumber: 'WO-002',
@@ -263,6 +271,34 @@ describe('workOrderExecutionState.resumeWaitingWorkOrder', () => {
     expect(mockExecuteTransition).not.toHaveBeenCalled();
   });
 
+  it('enforces the one-live-session rule for an admin who is genuinely assigned as an execution worker', async () => {
+    const startedAt = new Date('2026-09-09T08:45:00.000Z');
+    mockDb.workOrder.findUnique.mockResolvedValue(waitingWorkOrder({
+      assignedTo: 'admin-tech',
+    }));
+    mockDb.workOrderTimeLog.findFirst.mockResolvedValue({
+      workOrderId: 'wo-9',
+      startTime: startedAt,
+      timestamp: startedAt,
+      workOrder: {
+        woNumber: 'WO-009',
+        title: 'Generator inspection',
+        status: 'in_progress',
+      },
+    });
+
+    const result = await resumeWaitingWorkOrder('wo-1', assignedAdminSession, {
+      reason: 'Parts received',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('ACTIVE_SESSION_CONFLICT');
+    expect(result.conflict?.workOrderId).toBe('wo-9');
+    expect(mockDb.workOrderTimeLog.findFirst).toHaveBeenCalled();
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
+    expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
+  });
+
   it('lets the assigned supervisor release on-hold work without creating supervisor labor time', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue(waitingWorkOrder({ status: 'on_hold' }));
 
@@ -272,6 +308,7 @@ describe('workOrderExecutionState.resumeWaitingWorkOrder', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.executionSessionOpened).toBe(false);
+    expect(result.data?.technicianExecutionStartRequired).toBe(true);
     expect(mockDb.workOrderTimeLog.findFirst).not.toHaveBeenCalled();
     expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
     expect(mockExecuteTransition).toHaveBeenCalledWith(
@@ -316,6 +353,7 @@ describe('workOrderExecutionState.resumeWaitingWorkOrder', () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.executionSessionOpened).toBe(false);
+    expect(result.data?.technicianExecutionStartRequired).toBe(true);
     expect(mockDb.workOrderTimeLog.findFirst).not.toHaveBeenCalled();
     expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
     expect(mockBuildAuditData).toHaveBeenCalledWith(

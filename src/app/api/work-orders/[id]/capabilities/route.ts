@@ -51,22 +51,32 @@ export async function GET(
     const isTeamMember = wo.teamMembers?.some(m => m.userId === userId) ?? false;
     const isSupervisor = wo.assignedSupervisorId === userId;
     const isPlanner = wo.plannerId === userId;
-    const isAdminUser = isAdmin(session) || session.roles.some(r =>
-      ['maintenance_manager', 'plant_manager'].includes(r),
-    );
+
+    // Review/close authority intentionally includes plant management. Execution
+    // hold/waiting control follows the canonical WO transitions and stays with
+    // admin/maintenance-management plus the specifically accountable actor.
+    const isAdminAccount = isAdmin(session);
+    const isMaintenanceManager = session.roles.includes('maintenance_manager');
+    const isPlantManager = session.roles.includes('plant_manager');
+    const isAdminUser = isAdminAccount || isMaintenanceManager || isPlantManager;
+    const isExecutionManager = isAdminAccount || isMaintenanceManager;
 
     const isTeamLeader = isTeamLeaderFromField || isTeamLeaderFromMembers;
-    const hasExecutionAuthority = isAssignee || isTeamLeader || isAdminUser;
+    const isAssignedExecutionActor = isAssignee || isTeamLeader;
+    const hasExecutionAuthority = isAssignedExecutionActor || isExecutionManager;
+    const hasHoldControlAuthority = isSupervisor || isExecutionManager;
+    const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
 
     const preExecutionStatuses = ['assigned', 'planned'];
     const waitingStatuses = ['on_hold', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
+    const technicianWaitingStatuses = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
     const activeExecutionStatuses = ['in_progress', ...waitingStatuses, 'pending_handover'];
 
     // A WO can legitimately be in_progress without a live timer after a
-    // supervisor requests rework. Capability derivation therefore has to use
-    // the same canonical live-session definition as Start/Resume rather than
-    // status alone.
+    // supervisor/planner control release or supervisor-requested rework.
+    // Capability derivation therefore uses the same canonical live-session
+    // definition as Start/Resume rather than status alone.
     const ownLiveSession = wo.status === 'in_progress' && hasExecutionAuthority
       ? await db.workOrderTimeLog.findFirst({
           where: {
@@ -81,16 +91,31 @@ export async function GET(
       : null;
 
     const hasOwnLiveSession = Boolean(ownLiveSession);
+    const canHold = hasHoldControlAuthority && wo.status === 'in_progress';
+    const canResume = (
+      wo.status === 'on_hold'
+        ? hasHoldControlAuthority
+        : technicianWaitingStatuses.includes(wo.status) && (hasExecutionAuthority || hasPlannerControlAuthority)
+    );
+    const resumeOpensExecutionSession = canResume &&
+      technicianWaitingStatuses.includes(wo.status) &&
+      isAssignedExecutionActor;
 
     const capabilities = {
       // `canStart` also covers an explicit execution restart when the WO is
-      // already in_progress but this actor has no live timer (e.g. rework).
+      // already in_progress but this actor has no live timer (e.g. rework or a
+      // supervisor/planner control release).
       canStart: hasExecutionAuthority && (
         preExecutionStatuses.includes(wo.status) ||
         (wo.status === 'in_progress' && !hasOwnLiveSession)
       ),
-      canPause: hasExecutionAuthority && wo.status === 'in_progress' && hasOwnLiveSession,
-      canResume: hasExecutionAuthority && waitingStatuses.includes(wo.status),
+      // `canPause` is retained for existing clients; `canHold` is the explicit
+      // enterprise lifecycle name. Holding is a WO-wide supervisor control
+      // action and must not depend on the supervisor owning a labor timer.
+      canPause: canHold,
+      canHold,
+      canResume,
+      resumeOpensExecutionSession,
       canLogOwnTime: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
       canLogTeamTime: isTeamLeader && hasMultipleTeamMembers && activeExecutionStatuses.includes(wo.status),
       canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),

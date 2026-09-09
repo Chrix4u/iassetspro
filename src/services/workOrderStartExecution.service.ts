@@ -71,12 +71,18 @@ function hasStartAuthority(
 }
 
 /**
- * Canonical assigned -> in_progress execution boundary.
+ * Canonical execution-session boundary.
  *
- * Authority, readiness, live-session conflict detection, status transition,
- * execution timer creation and audit are evaluated/committed through one
- * service boundary. The route may perform a fast pre-check for UX, but this
- * transactional check remains authoritative so direct callers cannot bypass it.
+ * Normal first execution performs the assigned -> in_progress state transition
+ * and opens a `start` timer. A WO may also already be in_progress without a live
+ * timer after an explicit supervisor rework decision (completed/verified ->
+ * in_progress). In that case the technician must still explicitly begin work:
+ * we open a `resume` timer without attempting an invalid in_progress ->
+ * in_progress transition and without resetting the original actualStart.
+ *
+ * Authority, readiness, live-session conflict detection, state transition (when
+ * required), timer creation and audit remain in one transaction. The route may
+ * perform a fast pre-check for UX, but this service is authoritative.
  */
 export async function startWorkOrderExecution(
   workOrderId: string,
@@ -92,6 +98,7 @@ export async function startWorkOrderExecution(
         id: true,
         woNumber: true,
         status: true,
+        actualStart: true,
         assignedTo: true,
         teamLeaderId: true,
         assignedSupervisorId: true,
@@ -168,21 +175,25 @@ export async function startWorkOrderExecution(
       }
     }
 
-    const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, {
-      reason: options.reason,
-      extraData: { actualStart: startedAt },
-      tx,
-    });
-    if (!transition.success) {
-      throw new StartExecutionTransitionError(transition.error || 'Failed to start work order');
+    const restartingExecution = wo.status === 'in_progress';
+
+    if (!restartingExecution) {
+      const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, {
+        reason: options.reason,
+        extraData: { actualStart: startedAt },
+        tx,
+      });
+      if (!transition.success) {
+        throw new StartExecutionTransitionError(transition.error || 'Failed to start work order');
+      }
     }
 
     await tx.workOrderTimeLog.create({
       data: {
         workOrderId,
         userId: session.userId,
-        action: 'start',
-        notes: options.notes?.trim() || 'Work started',
+        action: restartingExecution ? 'resume' : 'start',
+        notes: options.notes?.trim() || (restartingExecution ? 'Work execution restarted' : 'Work started'),
         timestamp: startedAt,
         startTime: startedAt,
       },
@@ -195,14 +206,25 @@ export async function startWorkOrderExecution(
         workOrderId,
         session.userId,
         { status: wo.status },
-        { status: 'in_progress', actualStart: startedAt.toISOString() },
+        restartingExecution
+          ? {
+              status: 'in_progress',
+              executionSessionRestarted: true,
+              resumedAt: startedAt.toISOString(),
+              reason: options.reason?.trim() || null,
+            }
+          : { status: 'in_progress', actualStart: startedAt.toISOString() },
         options.auditCtx,
       ),
     });
 
     return {
       success: true as const,
-      data: { status: 'in_progress' as const, actualStart: startedAt },
+      data: {
+        status: 'in_progress' as const,
+        actualStart: restartingExecution && wo.actualStart ? wo.actualStart : startedAt,
+      },
+      restarted: restartingExecution,
       notify: {
         woNumber: wo.woNumber,
         assignedTo: wo.assignedTo,
@@ -235,7 +257,7 @@ export async function startWorkOrderExecution(
   for (const userId of recipients) {
     sendRepairNotification({
       userId,
-      event: 'wo_started',
+      event: outcome.restarted ? 'wo_resumed' : 'wo_started',
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance technician',

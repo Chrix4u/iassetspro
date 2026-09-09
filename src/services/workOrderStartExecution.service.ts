@@ -61,9 +61,10 @@ function hasStartAuthority(
   },
   session: StartExecutionSessionContext,
 ): boolean {
-  if (session.roles.some((role) => ['admin', 'maintenance_manager', 'plant_manager'].includes(role))) {
-    return true;
-  }
+  // Starting execution opens a real labor timer for the caller, so generic
+  // management/admin authority is deliberately not enough. A manager who is
+  // genuinely performing the work must first be assigned as the technician or
+  // team leader, preserving labor attribution and the assignment audit chain.
   if (wo.assignedTo === session.userId || wo.teamLeaderId === session.userId) return true;
   return wo.teamMembers.some(
     (member) => member.userId === session.userId && member.role === 'team_leader',
@@ -75,10 +76,10 @@ function hasStartAuthority(
  *
  * Normal first execution performs the assigned -> in_progress state transition
  * and opens a `start` timer. A WO may also already be in_progress without a live
- * timer after an explicit supervisor rework decision (completed/verified ->
- * in_progress). In that case the technician must still explicitly begin work:
- * we open a `resume` timer without attempting an invalid in_progress ->
- * in_progress transition and without resetting the original actualStart.
+ * timer after an explicit supervisor rework/control-release decision. In that
+ * case the assigned technician/team leader must explicitly begin work: we open
+ * a `resume` timer without attempting an invalid in_progress -> in_progress
+ * transition and without resetting an existing original actualStart.
  *
  * Authority, readiness, live-session conflict detection, state transition (when
  * required), timer creation and audit remain in one transaction. The route may
@@ -111,7 +112,7 @@ export async function startWorkOrderExecution(
     if (!hasStartAuthority(wo, session)) {
       return {
         success: false as const,
-        error: 'Only the assigned technician, team leader, or maintenance manager can start this work order',
+        error: 'Only the assigned technician or team leader can start execution on this work order',
       };
     }
 
@@ -130,49 +131,49 @@ export async function startWorkOrderExecution(
     // closure. Only a timer whose parent WO is truly in_progress is allowed to
     // block another start. We deliberately do not auto-close stale rows here,
     // because inventing an end time would corrupt authoritative labor costing.
-    if (!session.roles.includes('admin')) {
-      const existingLiveSession = await tx.workOrderTimeLog.findFirst({
-        where: {
-          userId: session.userId,
-          action: { in: ['start', 'resume'] },
-          endTime: null,
-          workOrder: { status: 'in_progress' },
-        },
-        orderBy: { timestamp: 'desc' },
-        select: {
-          workOrderId: true,
-          startTime: true,
-          timestamp: true,
-          workOrder: {
-            select: {
-              woNumber: true,
-              title: true,
-              status: true,
-            },
+    // This applies to every execution actor, including an admin/manager who has
+    // explicitly been assigned as technician/team leader.
+    const existingLiveSession = await tx.workOrderTimeLog.findFirst({
+      where: {
+        userId: session.userId,
+        action: { in: ['start', 'resume'] },
+        endTime: null,
+        workOrder: { status: 'in_progress' },
+      },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        workOrderId: true,
+        startTime: true,
+        timestamp: true,
+        workOrder: {
+          select: {
+            woNumber: true,
+            title: true,
+            status: true,
           },
         },
-      });
+      },
+    });
 
-      if (existingLiveSession) {
-        const existingStartedAt = existingLiveSession.startTime || existingLiveSession.timestamp;
-        const sameWorkOrder = existingLiveSession.workOrderId === workOrderId;
-        return {
-          success: false as const,
-          reason: sameWorkOrder
-            ? 'ACTIVE_SESSION_ALREADY_RUNNING' as const
-            : 'ACTIVE_SESSION_CONFLICT' as const,
-          error: sameWorkOrder
-            ? 'You already have an active work session on this work order'
-            : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and pause, hand over, or complete it before starting another.`,
-          conflict: {
-            workOrderId: existingLiveSession.workOrderId,
-            woNumber: existingLiveSession.workOrder?.woNumber || undefined,
-            title: existingLiveSession.workOrder?.title || undefined,
-            status: 'in_progress' as const,
-            startedAt: existingStartedAt.toISOString(),
-          },
-        };
-      }
+    if (existingLiveSession) {
+      const existingStartedAt = existingLiveSession.startTime || existingLiveSession.timestamp;
+      const sameWorkOrder = existingLiveSession.workOrderId === workOrderId;
+      return {
+        success: false as const,
+        reason: sameWorkOrder
+          ? 'ACTIVE_SESSION_ALREADY_RUNNING' as const
+          : 'ACTIVE_SESSION_CONFLICT' as const,
+        error: sameWorkOrder
+          ? 'You already have an active work session on this work order'
+          : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and put it on hold, hand it over, or complete it before starting another.`,
+        conflict: {
+          workOrderId: existingLiveSession.workOrderId,
+          woNumber: existingLiveSession.workOrder?.woNumber || undefined,
+          title: existingLiveSession.workOrder?.title || undefined,
+          status: 'in_progress' as const,
+          startedAt: existingStartedAt.toISOString(),
+        },
+      };
     }
 
     const restartingExecution = wo.status === 'in_progress';
@@ -186,6 +187,14 @@ export async function startWorkOrderExecution(
       if (!transition.success) {
         throw new StartExecutionTransitionError(transition.error || 'Failed to start work order');
       }
+    } else if (!wo.actualStart) {
+      // Defensive repair for a legacy/control-transitioned in_progress WO that
+      // has never recorded a genuine execution start. The first real labor
+      // session becomes the authoritative actualStart.
+      await tx.workOrder.update({
+        where: { id: workOrderId },
+        data: { actualStart: startedAt },
+      });
     }
 
     await tx.workOrderTimeLog.create({
@@ -211,6 +220,7 @@ export async function startWorkOrderExecution(
               status: 'in_progress',
               executionSessionRestarted: true,
               resumedAt: startedAt.toISOString(),
+              actualStartInitialized: !wo.actualStart,
               reason: options.reason?.trim() || null,
             }
           : { status: 'in_progress', actualStart: startedAt.toISOString() },

@@ -13,6 +13,8 @@
     "src/components/modules/RepairsPages.tsx",
     "src/components/repairs/**/*.ts",
     "src/components/repairs/**/*.tsx",
+    "src/proxy.ts",
+    "src/__tests__/security/report-plant-proxy.test.ts",
     "src/services/repairPlanning.service.ts",
     "src/services/workExecution.service.ts",
     "src/services/workOrderExecutionState.service.ts",

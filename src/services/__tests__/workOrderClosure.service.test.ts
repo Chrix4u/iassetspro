@@ -135,6 +135,55 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     });
   });
 
+  it('rejects a different planner even when that user has generic close permission', async () => {
+    const otherPlanner: ClosureSessionContext = {
+      ...plannerSession,
+      userId: 'planner-2',
+      fullName: 'Planner Two',
+    };
+
+    const result = await closeRepairWorkOrder('wo-1', otherPlanner, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('assigned planner');
+    expect(mockNormalizeTimeLogs).not.toHaveBeenCalled();
+    expect(mockCheckReadiness).not.toHaveBeenCalled();
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a maintenance manager to close as an auditable assignment override', async () => {
+    const managerSession: ClosureSessionContext = {
+      userId: 'manager-1',
+      fullName: 'Maintenance Manager',
+      roles: ['maintenance_manager'],
+      permissions: ['work_orders.close'],
+    };
+
+    const result = await closeRepairWorkOrder('wo-1', managerSession, {});
+
+    expect(result.success).toBe(true);
+    expect(mockExecuteTransition).toHaveBeenCalledWith(
+      'work_order',
+      'wo-1',
+      'closed',
+      managerSession,
+      expect.objectContaining({ tx: mockDb }),
+    );
+    expect(mockBuildAuditData).toHaveBeenCalledWith(
+      'update',
+      'work_order',
+      'wo-1',
+      'manager-1',
+      expect.any(Object),
+      expect.objectContaining({
+        plannerCloseOverride: true,
+        assignedPlannerId: 'planner-1',
+      }),
+      undefined,
+    );
+  });
+
   it('does not advance an inactive PM schedule during closeout', async () => {
     mockDb.pmSchedule.findUnique.mockResolvedValue({
       id: 'pm-1',

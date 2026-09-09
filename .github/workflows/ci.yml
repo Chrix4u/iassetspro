@@ -152,9 +152,6 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # Build the actual production Dockerfile in CI. A successful Next standalone
-  # build alone is insufficient evidence that the image deployed to the VPS is
-  # buildable or starts from a valid runtime filesystem.
   container-build:
     name: Production Container Build
     runs-on: ubuntu-latest
@@ -181,10 +178,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
 
-  # Repairs/RWOP UAT is a hard release gate. It runs against real MariaDB + Redis
-  # service containers, verifies the deployed schema and BullMQ round-trip, then
-  # exercises the exact standalone production artifact with Playwright. It also
-  # waits for the production container build so Docker regressions block release.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
@@ -290,10 +283,6 @@ jobs:
             test-results/
           retention-days: 14
 
-  # Platform E2E is a second hard gate, separate from Repairs UAT. It gets its
-  # own fresh database so the destructive full demo seed is deterministic and
-  # cannot interfere with Repairs scenarios. Running it on PRs prevents broken
-  # platform-test infrastructure from reaching main and blocking deployments.
   e2e-tests:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest

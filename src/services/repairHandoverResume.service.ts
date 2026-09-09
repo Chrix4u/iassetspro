@@ -9,8 +9,14 @@ export interface ResumeConfirmedHandoverOptions {
 
 /**
  * Resume a WO after a confirmed shift handover.
- * Normal path: only the designated receivedById may resume.
- * Manager/admin override requires a reason and is captured in AuditLog.
+ *
+ * Normal path: only the designated receivedById may resume and open a live
+ * execution timer in their own name.
+ *
+ * Supervisor/manager override is a control release only. It may reassign the
+ * WO to the designated receiver and move the WO back to in_progress, but it
+ * must never create technician labor time in the overriding actor's name. The
+ * receiving technician must explicitly start execution afterwards.
  */
 export async function resumeConfirmedHandover(
   workOrderId: string,
@@ -33,6 +39,7 @@ export async function resumeConfirmedHandover(
   const now = new Date();
   let handoverId = '';
   let receiverId = '';
+  let executionSessionOpened = false;
 
   try {
     await db.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -76,27 +83,34 @@ export async function resumeConfirmedHandover(
         throw new Error('Supervisor/manager override requires a reason');
       }
 
-      const executionUserId = isOverride ? session.userId : receiverId;
-      const existingLiveSession = await tx.workOrderTimeLog.findFirst({
-        where: {
-          userId: executionUserId,
-          action: { in: ['start', 'resume'] },
-          endTime: null,
-        },
-        select: {
-          workOrderId: true,
-          workOrder: { select: { woNumber: true } },
-          startTime: true,
-          timestamp: true,
-        },
-      });
-      if (existingLiveSession) {
-        const activeWo = existingLiveSession.workOrder?.woNumber || 'unknown';
-        throw new Error(
-          existingLiveSession.workOrderId === workOrderId
-            ? 'Cannot resume work: an active execution session already exists on this work order'
-            : `Cannot resume work: you already have an active work session on WO #${activeWo}. Stop or hand over that session first.`,
-        );
+      executionSessionOpened = !isOverride;
+
+      // Only the actual receiving technician opens labor time. Control-only
+      // releases deliberately skip technician-session conflict checks because
+      // they are not creating a live execution session.
+      if (executionSessionOpened) {
+        const existingLiveSession = await tx.workOrderTimeLog.findFirst({
+          where: {
+            userId: receiverId,
+            action: { in: ['start', 'resume'] },
+            endTime: null,
+            workOrder: { status: 'in_progress' },
+          },
+          select: {
+            workOrderId: true,
+            workOrder: { select: { woNumber: true } },
+            startTime: true,
+            timestamp: true,
+          },
+        });
+        if (existingLiveSession) {
+          const activeWo = existingLiveSession.workOrder?.woNumber || 'unknown';
+          throw new Error(
+            existingLiveSession.workOrderId === workOrderId
+              ? 'Cannot resume work: an active execution session already exists on this work order'
+              : `Cannot resume work: you already have an active work session on WO #${activeWo}. Stop or hand over that session first.`,
+          );
+        }
       }
 
       const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, { tx });
@@ -124,23 +138,23 @@ export async function resumeConfirmedHandover(
         data: { assignedTo: receiverId },
       });
 
-      await tx.workOrderTimeLog.create({
-        data: {
-          workOrderId,
-          userId: executionUserId,
-          action: 'resume',
-          notes: isOverride
-            ? `Resumed after shift handover override: ${options.reason}`
-            : 'Resumed after confirmed shift handover',
-          timestamp: now,
-          startTime: now,
-        },
-      });
+      if (executionSessionOpened) {
+        await tx.workOrderTimeLog.create({
+          data: {
+            workOrderId,
+            userId: receiverId,
+            action: 'resume',
+            notes: 'Resumed after confirmed shift handover',
+            timestamp: now,
+            startTime: now,
+          },
+        });
+      }
 
       await tx.auditLog.create({
         data: {
           userId: session.userId,
-          action: isOverride ? 'resume_after_handover_override' : 'resume_after_handover',
+          action: isOverride ? 'release_after_handover_override' : 'resume_after_handover',
           entityType: 'work_order',
           entityId: workOrderId,
           oldValues: JSON.stringify({ status: wo.status, assignedTo: wo.assignedTo }),
@@ -149,8 +163,9 @@ export async function resumeConfirmedHandover(
             handoverId,
             receivedById: receiverId,
             assignedTo: receiverId,
-            executionUserId,
-            ...(isOverride ? { overrideReason: options.reason } : {}),
+            executionSessionOpened,
+            ...(!executionSessionOpened ? { technicianExecutionStartRequired: true } : {}),
+            ...(isOverride ? { overrideReason: options.reason?.trim() } : {}),
           }),
         },
       });
@@ -165,6 +180,8 @@ export async function resumeConfirmedHandover(
       status: 'in_progress',
       handoverId,
       assignedTo: receiverId,
+      executionSessionOpened,
+      ...(!executionSessionOpened ? { technicianExecutionStartRequired: true } : {}),
     },
   };
 }

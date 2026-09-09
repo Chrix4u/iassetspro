@@ -1,7 +1,7 @@
 # =============================================================================
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
-# Triggers on pushes to main/develop and all pull requests.
+# Triggers on pushes to main/develop, all pull requests, and manual dispatch.
 # Jobs: lint/typecheck/unit → app build + container build → Repairs UAT + platform E2E
 # Full-repository TypeScript debt is reported separately inside the typecheck job.
 # =============================================================================
@@ -13,6 +13,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -180,16 +181,16 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
 
-  # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
+  # Repairs/RWOP UAT is a hard release gate. It runs against real MariaDB + Redis
   # service containers, verifies the deployed schema and BullMQ round-trip, then
   # exercises the exact standalone production artifact with Playwright. It also
-  # waits for the production container build so Docker regressions block the PR.
+  # waits for the production container build so Docker regressions block release.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [build, container-build]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     services:
       mariadb:

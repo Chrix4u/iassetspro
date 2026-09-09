@@ -4,7 +4,6 @@ import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderR
 import { calculateAuthoritativeCosts } from '@/services/workExecution.service';
 import { calculateWorkOrderLaborCost } from '@/services/workOrderLaborCost.service';
 import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
-import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 
@@ -56,7 +55,6 @@ type CompletionWorkOrder = {
   teamLeaderId: string | null;
   assignedSupervisorId: string | null;
   plannerId: string | null;
-  pmScheduleId: string | null;
   teamMembers: Array<{ userId: string; role: string }>;
   workOrderDowntimes: Array<{ durationMinutes: number }>;
 };
@@ -101,9 +99,11 @@ function round2(value: number): number {
  * Canonical technician/team-leader completion.
  *
  * Time-log normalization, readiness, authoritative cost calculation, status
- * transition, RepairCompletion snapshot, PM advancement, comments and audit are
- * committed in one transaction. A completed WorkOrder can therefore never be
- * persisted without the completion report required by supervisor verification.
+ * transition and RepairCompletion snapshot are committed in one transaction.
+ * A completed WorkOrder can therefore never be persisted without the completion
+ * report required by supervisor verification. Recurring PM advancement is
+ * deliberately deferred until planner closure because completed/verified work
+ * can still be returned to in_progress for rework.
  */
 export async function submitRepairCompletion(
   workOrderId: string,
@@ -127,7 +127,6 @@ export async function submitRepairCompletion(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        pmScheduleId: true,
         teamMembers: { select: { userId: true, role: true } },
         workOrderDowntimes: { select: { durationMinutes: true } },
       },
@@ -210,39 +209,6 @@ export async function submitRepairCompletion(
       });
     }
 
-    if (wo.pmScheduleId) {
-      const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
-      if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
-        const nextDueDate = calculateNextDueDate(
-          completedAt,
-          pmSchedule.frequencyType,
-          pmSchedule.frequencyValue,
-        );
-        await tx.pmSchedule.update({
-          where: { id: pmSchedule.id },
-          data: { lastCompletedDate: completedAt, nextDueDate },
-        });
-        await tx.auditLog.create({
-          data: buildAuditData(
-            'update',
-            'pm_schedule',
-            pmSchedule.id,
-            session.userId,
-            {
-              lastCompletedDate: pmSchedule.lastCompletedDate,
-              nextDueDate: pmSchedule.nextDueDate,
-            },
-            {
-              lastCompletedDate: completedAt.toISOString(),
-              nextDueDate: nextDueDate?.toISOString() ?? null,
-              reason: `PM WO ${wo.woNumber} completed`,
-            },
-            options.auditCtx,
-          ),
-        });
-      }
-    }
-
     const totalDowntimeMinutes = Math.round(
       wo.workOrderDowntimes.reduce(
         (sum, downtime) => sum + (downtime.durationMinutes ?? 0),
@@ -303,6 +269,7 @@ export async function submitRepairCompletion(
           laborCurrency: labor.appliedLaborCurrency,
           laborRateApplied: labor.appliedLaborRate,
           laborRateComplete: !labor.incompleteLaborRate,
+          pmAdvancementDeferredUntilClosure: true,
           ...(costWarnings.length > 0 ? { costWarnings } : {}),
           ...(authority.isAdminOverride ? { adminOverride: true } : {}),
         },

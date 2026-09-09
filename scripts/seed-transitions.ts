@@ -1,18 +1,28 @@
 /**
- * Seed ONLY the status_transitions table without touching any other data.
+ * Reconcile the canonical status_transitions rows without touching unrelated data.
  *
  * Run on VPS:
- *   cd /home/ifleetpro/git/eam-system && bun run scripts/seed-transitions.ts
+ *   cd /home/lightworld/webapps/iassetspro && bun run scripts/seed-transitions.ts
  *
- * This is safe to run multiple times — it deletes and re-inserts.
- * It will NOT delete existing roles, users, permissions, or any other data.
+ * Safe to run repeatedly:
+ * - canonical rows are updated/inserted in place
+ * - unrelated/custom transitions are preserved
+ * - two known legacy transitions that bypass the verified → closed lifecycle are removed
  *
- * Uses the mariadb driver directly to avoid PrismaClient adapter issues.
+ * Uses the mariadb driver directly to avoid PrismaClient adapter issues in one-off
+ * production maintenance scripts.
  */
 
 import mariadb from 'mariadb';
 
-// Read DB credentials from environment or DATABASE_URL
+type Transition = {
+  entityType: 'maintenance_request' | 'work_order';
+  fromStatus: string | null;
+  toStatus: string;
+  allowedRoleSlugs: string;
+  requiresReason: boolean;
+};
+
 function getDbConfig() {
   const host = process.env.DB_HOST || process.env.MYSQL_HOST;
   const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
@@ -24,7 +34,6 @@ function getDbConfig() {
     return { host, port, user, password, database };
   }
 
-  // Try parsing DATABASE_URL
   const dbUrl = process.env.DATABASE_URL || '';
   if (dbUrl.startsWith('mysql://')) {
     const url = new URL(dbUrl);
@@ -41,7 +50,7 @@ function getDbConfig() {
   process.exit(1);
 }
 
-const MR_TRANSITIONS = [
+const MR_TRANSITIONS: Transition[] = [
   {
     entityType: 'maintenance_request',
     fromStatus: null,
@@ -90,29 +99,104 @@ const MR_TRANSITIONS = [
   },
 ];
 
-const WO_TRANSITIONS = [
-  { fromStatus: null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'approved', toStatus: 'planned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'draft', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'requested', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'approved', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'planned', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'assigned', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'in_progress', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'in_progress', toStatus: 'completed', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'completed', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-  { fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'in_progress', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'closed', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
-  { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+const WO_TRANSITIONS: Transition[] = [
+  { entityType: 'work_order', fromStatus: null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'approved', toStatus: 'planned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'draft', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'requested', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'approved', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'planned', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'assigned', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'completed', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'waiting_tools', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_tools', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_tools', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'waiting_shutdown', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_shutdown', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_shutdown', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'waiting_permit', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_permit', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'waiting_permit', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'in_progress', toStatus: 'pending_handover', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager', 'maintenance_supervisor']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'pending_handover', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'pending_handover', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'completed', toStatus: 'verified', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'verified', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
+  { entityType: 'work_order', fromStatus: 'completed', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
+  { entityType: 'work_order', fromStatus: 'verified', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
 ];
+
+const LEGACY_FORBIDDEN_WO_TRANSITIONS = [
+  { fromStatus: 'completed', toStatus: 'closed' },
+  { fromStatus: 'closed', toStatus: 'in_progress' },
+];
+
+async function upsertTransition(
+  conn: mariadb.Connection,
+  transition: Transition,
+  sortOrder: number,
+) {
+  if (transition.fromStatus === null) {
+    const result = await conn.query(
+      `UPDATE status_transitions
+       SET allowed_role_slugs = ?, requires_reason = ?, sort_order = ?, updated_at = NOW()
+       WHERE entity_type = ? AND from_status IS NULL AND to_status = ?`,
+      [
+        transition.allowedRoleSlugs,
+        transition.requiresReason ? 1 : 0,
+        sortOrder,
+        transition.entityType,
+        transition.toStatus,
+      ],
+    );
+
+    if (result.affectedRows === 0) {
+      await conn.query(
+        `INSERT INTO status_transitions
+          (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
+         VALUES (UUID(), ?, NULL, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          transition.entityType,
+          transition.toStatus,
+          transition.allowedRoleSlugs,
+          transition.requiresReason ? 1 : 0,
+          sortOrder,
+        ],
+      );
+    }
+    return;
+  }
+
+  await conn.query(
+    `INSERT INTO status_transitions
+      (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
+     VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       allowed_role_slugs = VALUES(allowed_role_slugs),
+       requires_reason = VALUES(requires_reason),
+       sort_order = VALUES(sort_order),
+       updated_at = NOW()`,
+    [
+      transition.entityType,
+      transition.fromStatus,
+      transition.toStatus,
+      transition.allowedRoleSlugs,
+      transition.requiresReason ? 1 : 0,
+      sortOrder,
+    ],
+  );
+}
 
 async function seedTransitions() {
   const config = getDbConfig();
@@ -124,51 +208,65 @@ async function seedTransitions() {
     user: config.user,
     password: config.password,
     database: config.database,
-    multipleStatements: true,
+    multipleStatements: false,
   });
 
-  console.log('✅ Connected! Seeding status_transitions...');
+  console.log('✅ Connected! Reconciling canonical status_transitions...');
 
   try {
-    // Clear existing
-    await conn.query('DELETE FROM status_transitions');
-    console.log('  ✅ Cleared existing status_transitions');
+    await conn.beginTransaction();
 
-    // Seed MR transitions
     for (let i = 0; i < MR_TRANSITIONS.length; i++) {
-      const t = MR_TRANSITIONS[i];
-      await conn.query(
-        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [t.entityType, t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
-      );
+      await upsertTransition(conn, MR_TRANSITIONS[i], i);
     }
-    console.log(`  ✅ Inserted ${MR_TRANSITIONS.length} MR transitions`);
+    console.log(`  ✅ Reconciled ${MR_TRANSITIONS.length} MR transitions`);
 
-    // Seed WO transitions
     for (let i = 0; i < WO_TRANSITIONS.length; i++) {
-      const t = WO_TRANSITIONS[i];
+      await upsertTransition(conn, WO_TRANSITIONS[i], i);
+    }
+    console.log(`  ✅ Reconciled ${WO_TRANSITIONS.length} WO transitions`);
+
+    for (const stale of LEGACY_FORBIDDEN_WO_TRANSITIONS) {
       await conn.query(
-        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        ['work_order', t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
+        `DELETE FROM status_transitions
+         WHERE entity_type = 'work_order' AND from_status = ? AND to_status = ?`,
+        [stale.fromStatus, stale.toStatus],
       );
     }
-    console.log(`  ✅ Inserted ${WO_TRANSITIONS.length} WO transitions`);
+    console.log('  ✅ Removed legacy direct-close/reopen transitions');
 
-    // Verify
-    const rows = await conn.query('SELECT COUNT(*) as total FROM status_transitions') as any[];
-    console.log(`\n  ✅ Total status transitions in DB: ${rows[0].total}`);
+    const verifiedClose = await conn.query(
+      `SELECT COUNT(*) AS cnt
+       FROM status_transitions
+       WHERE entity_type = 'work_order' AND from_status = 'verified' AND to_status = 'closed'`,
+    ) as Array<{ cnt: number }>;
 
-    // Critical check
-    const check = await conn.query(
-      "SELECT COUNT(*) as cnt FROM status_transitions WHERE entity_type='maintenance_request' AND from_status='pending' AND to_status='approved'"
-    ) as any[];
-    if (check[0].cnt > 0) {
-      console.log('  ✅ Critical check PASSED: pending→approved MR transition exists');
-    } else {
-      console.error('  ❌ Critical check FAILED: pending→approved MR transition NOT found!');
+    const directClose = await conn.query(
+      `SELECT COUNT(*) AS cnt
+       FROM status_transitions
+       WHERE entity_type = 'work_order' AND from_status = 'completed' AND to_status = 'closed'`,
+    ) as Array<{ cnt: number }>;
+
+    if (Number(verifiedClose[0]?.cnt || 0) !== 1 || Number(directClose[0]?.cnt || 0) !== 0) {
+      throw new Error('Canonical WO close path verification failed');
     }
+
+    await conn.commit();
+
+    const rows = await conn.query(
+      `SELECT entity_type, COUNT(*) AS total
+       FROM status_transitions
+       WHERE entity_type IN ('maintenance_request', 'work_order')
+       GROUP BY entity_type`,
+    ) as Array<{ entity_type: string; total: number }>;
+
+    for (const row of rows) {
+      console.log(`  ✅ ${row.entity_type}: ${row.total} transition rows present`);
+    }
+    console.log('  ✅ Critical check PASSED: completed → verified → closed is enforced');
+  } catch (error) {
+    await conn.rollback();
+    throw error;
   } finally {
     await conn.end();
   }
@@ -176,10 +274,11 @@ async function seedTransitions() {
 
 seedTransitions()
   .then(() => {
-    console.log('\n✅ Done! You can now approve/reject/convert maintenance requests.');
+    console.log('\n✅ Done! Canonical maintenance-request and work-order transitions are reconciled.');
     process.exit(0);
   })
-  .catch((err) => {
-    console.error('❌ Seed failed:', err.message);
+  .catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('❌ Seed failed:', message);
     process.exit(1);
   });

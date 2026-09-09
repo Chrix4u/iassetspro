@@ -13,10 +13,11 @@ export interface ResumeConfirmedHandoverOptions {
  * Normal path: only the designated receivedById may resume and open a live
  * execution timer in their own name.
  *
- * Supervisor/manager override is a control release only. It may reassign the
- * WO to the designated receiver and move the WO back to in_progress, but it
- * must never create technician labor time in the overriding actor's name. The
- * receiving technician must explicitly start execution afterwards.
+ * Admin/maintenance-management override is a control release only. It may
+ * reassign the WO to the designated receiver and move the WO back to
+ * in_progress, but it must never create technician labor time in the overriding
+ * actor's name. The receiving technician must explicitly start execution
+ * afterwards.
  */
 export async function resumeConfirmedHandover(
   workOrderId: string,
@@ -73,14 +74,14 @@ export async function resumeConfirmedHandover(
 
       const isOverride = session.userId !== receiverId;
       const canOverride = session.roles.some((role) =>
-        ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(role),
+        ['admin', 'maintenance_manager'].includes(role),
       );
 
       if (isOverride && !canOverride) {
-        throw new Error('Cannot resume work: only the designated handover receiver can resume work');
+        throw new Error('Cannot resume work: only the designated handover receiver or authorized maintenance management can release this handover');
       }
       if (isOverride && !options.reason?.trim()) {
-        throw new Error('Supervisor/manager override requires a reason');
+        throw new Error('Maintenance-management override requires a reason');
       }
 
       executionSessionOpened = !isOverride;

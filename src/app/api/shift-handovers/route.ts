@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -124,29 +124,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { shiftType, shiftDate, fromShift, toShift, departmentId, receivedById, tasksSummary, pendingIssues, safetyNotes, equipmentStatus, notes, workOrderId } = body;
 
-    // ── WO linkage validation (P2K + 3G plant scope) ──
+    // Operational work-order handovers must use the canonical work-order route.
+    // That route validates the receiver, closes active labor sessions, performs
+    // the state transition, creates the handover and writes audit/idempotency
+    // evidence atomically. Allowing a linked record here creates a shadow
+    // handover that bypasses those invariants.
     if (workOrderId) {
-      const wo = await db.workOrder.findUnique({
-        where: { id: workOrderId },
-        select: { id: true, status: true, plantId: true, assignedTo: true, teamMembers: { select: { userId: true } } },
-      });
-      if (!wo) {
-        return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-      }
-      // ── Phase 3G: Cross-plant WO handover access denied ──
-      if (plantScope.isScoped && plantScope.plantId && wo.plantId && wo.plantId !== plantScope.plantId) {
-        return NextResponse.json({ success: false, error: 'Cannot create handover for a work order in another plant' }, { status: 403 });
-      }
-      const nonTerminalStatuses = ['draft', 'assigned', 'in_progress', 'waiting_parts', 'waiting_tools', 'waiting_permit', 'pending_handover', 'completed', 'verified'];
-      if (!nonTerminalStatuses.includes(wo.status)) {
-        return NextResponse.json({ success: false, error: `Work order is in terminal status '${wo.status}' — cannot link to shift handover` }, { status: 400 });
-      }
-      // Validate user is on the WO team
-      const isOnTeam = wo.assignedTo === session.userId || wo.teamMembers.some((m) => m.userId === session.userId);
-      const isAdminUser = isAdmin(session);
-      if (!isOnTeam && !isAdminUser) {
-        return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s team' }, { status: 403 });
-      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Work-order handovers must be initiated through /api/work-orders/[id]/handover',
+        },
+        { status: 400 },
+      );
     }
 
     if (!shiftType) {
@@ -188,7 +178,7 @@ export async function POST(request: NextRequest) {
         safetyNotes: safetyNotes || null,
         equipmentStatus: parsedEquipment || null,
         notes: notes || null,
-        workOrderId: workOrderId || null,
+        workOrderId: null,
       },
       include: {
         workOrder: { select: { id: true, woNumber: true, title: true, plantId: true } },

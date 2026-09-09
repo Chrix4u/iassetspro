@@ -40,6 +40,26 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+/**
+ * Resolve the effective plant-selection signal that the proxy will pass into
+ * getPlantScope(). Only the canonical maintenance reporting endpoints accept a
+ * plant query fallback; every other API continues to require X-Plant-ID.
+ */
+export function resolveEffectivePlantId(request: NextRequest): string | null {
+  const explicitPlantHeader = request.headers.get('X-Plant-ID');
+  if (explicitPlantHeader) return explicitPlantHeader;
+
+  const { pathname, searchParams } = request.nextUrl;
+  if (
+    pathname === '/api/reports/maintenance' ||
+    pathname === '/api/reports/maintenance/export'
+  ) {
+    return searchParams.get('plantId');
+  }
+
+  return null;
+}
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -99,13 +119,7 @@ export default async function proxy(request: NextRequest) {
   // the route with ?plantId=... and overwrite its server-generated IN filter.
   // System-wide actors remain unaffected because getPlantScope intentionally
   // ignores X-Plant-ID for system-wide sessions.
-  const explicitPlantHeader = request.headers.get('X-Plant-ID');
-  const reportPlantQuery = pathname === '/api/reports/maintenance'
-    || pathname === '/api/reports/maintenance/export'
-    ? request.nextUrl.searchParams.get('plantId')
-    : null;
-  const effectivePlantId = explicitPlantHeader || reportPlantQuery;
-
+  const effectivePlantId = resolveEffectivePlantId(request);
   if (effectivePlantId) {
     requestHeaders.set('X-Plant-ID', effectivePlantId);
     requestHeaders.set('x-user-plant-id', effectivePlantId);

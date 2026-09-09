@@ -49,8 +49,11 @@ export async function POST(
       session as ExecutionStateSessionContext,
       {
         reason,
-        // Preserve the route's existing state-machine role rules. The canonical
-        // service still closes all live team timers in the same transaction.
+        // Role permission alone is not enough: the actor must be the assigned
+        // technician/team leader, assigned planner, or maintenance-management
+        // override. This prevents another technician in the same plant from
+        // stopping someone else's WO and closing their team timers.
+        requireExecutionAuthority: true,
         extraData: { notes: waitingPartsNote },
         auditCtx: auditCtx as ExecutionStateAuditContext,
       },

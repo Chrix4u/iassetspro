@@ -67,7 +67,9 @@ export async function GET(
     const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
 
-    const preExecutionStatuses = ['assigned', 'planned'];
+    // Canonical first execution begins only after assignment. A planned WO must
+    // be assigned before it can transition to in_progress.
+    const preExecutionStatuses = ['assigned'];
     const waitingStatuses = ['on_hold', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
     const technicianWaitingStatuses = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
     const activeExecutionStatuses = ['in_progress', ...waitingStatuses, 'pending_handover'];

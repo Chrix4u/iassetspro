@@ -32,12 +32,29 @@ export type RequestRepairReworkResult = {
   error?: string;
 };
 
+function hasSupervisorReworkAuthority(
+  wo: { assignedSupervisorId: string | null },
+  session: ReworkSessionContext,
+): { allowed: boolean; override: boolean } {
+  const managerOverride = session.roles.some((role) =>
+    ['admin', 'maintenance_manager', 'plant_manager'].includes(role),
+  );
+  if (managerOverride) return { allowed: true, override: true };
+  return { allowed: wo.assignedSupervisorId === session.userId, override: false };
+}
+
 /**
  * Canonical supervisor rework operation.
  *
+ * The assigned supervisor owns the rework decision. Admin, maintenance-manager
+ * and plant-manager roles may override that assignment, and the override is
+ * recorded in the audit trail.
+ *
  * Rework metadata belongs to RepairCompletion and audit history. WorkOrder has
  * no reworkReason/reworkCategory columns, so the state transition carries only
- * the legitimate status change back to in_progress.
+ * the legitimate status change back to in_progress. No technician timer is
+ * opened here: the assigned technician/team leader must explicitly restart
+ * execution through the canonical Start boundary.
  */
 export async function requestRepairRework(
   workOrderId: string,
@@ -59,9 +76,18 @@ export async function requestRepairRework(
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    const authority = hasSupervisorReworkAuthority(wo, session);
+    if (!authority.allowed) {
+      return {
+        success: false as const,
+        error: 'Only the assigned supervisor or an authorized maintenance/plant manager can request rework on this work order',
+      };
+    }
 
     const completion = await tx.repairCompletion.findUnique({
       where: { workOrderId },
@@ -119,6 +145,10 @@ export async function requestRepairRework(
           evidence: options.evidence ?? [],
           reworkCount: updatedCompletion.reworkCount,
           requestedAt: requestedAt.toISOString(),
+          technicianExecutionRestartRequired: true,
+          ...(authority.override
+            ? { supervisorReworkOverride: true, assignedSupervisorId: wo.assignedSupervisorId }
+            : {}),
         },
         options.auditCtx,
       ),

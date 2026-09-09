@@ -46,8 +46,24 @@ export type CloseRepairResult = {
   readiness?: ReadinessCheckResult;
 };
 
+function hasPlannerCloseAuthority(
+  wo: { plannerId: string | null },
+  session: ClosureSessionContext,
+): { allowed: boolean; override: boolean } {
+  const managerOverride = session.roles.some((role) =>
+    ['admin', 'maintenance_manager', 'plant_manager'].includes(role),
+  );
+  if (managerOverride) return { allowed: true, override: true };
+  return { allowed: wo.plannerId === session.userId, override: false };
+}
+
 /**
  * Canonical planner close for a verified repair WO.
+ *
+ * The assigned planner is the accountable closeout owner. Admin,
+ * maintenance-manager and plant-manager roles retain an auditable override;
+ * merely holding the generic close permission is not sufficient to close
+ * another planner's work order.
  *
  * Reliability history is component-based. A FailureRecord is therefore only
  * materialized when an actual failureMode is supplied and a concrete component
@@ -94,6 +110,14 @@ export async function closeRepairWorkOrder(
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    const authority = hasPlannerCloseAuthority(wo, session);
+    if (!authority.allowed) {
+      return {
+        success: false as const,
+        error: 'Only the assigned planner or an authorized maintenance/plant manager can close this work order',
+      };
+    }
 
     // Normalize legacy rows in the same transaction as readiness, costing and
     // final closure. Active sessions are never auto-closed by normalization.
@@ -278,6 +302,7 @@ export async function closeRepairWorkOrder(
           pmScheduleAdvanced,
           followUpRequired: options.followUpRequired ?? false,
           followUpNotes: options.followUpNotes ?? null,
+          ...(authority.override ? { plannerCloseOverride: true, assignedPlannerId: wo.plannerId } : {}),
         },
         options.auditCtx,
       ),

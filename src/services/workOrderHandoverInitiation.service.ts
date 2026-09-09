@@ -21,14 +21,23 @@ function hasHandoverAuthority(
   wo: {
     assignedTo: string | null;
     teamLeaderId: string | null;
+    assignedSupervisorId: string | null;
     teamMembers: Array<{ userId: string; role: string }>;
   },
   session: SessionContext,
 ): boolean {
-  if (session.roles.some((role) => ['admin', 'maintenance_manager', 'plant_manager'].includes(role))) {
+  // Plant management retains review/close authority elsewhere. Execution and
+  // handover control stays with the accountable maintenance chain.
+  if (session.roles.some((role) => ['admin', 'maintenance_manager'].includes(role))) {
     return true;
   }
-  if (wo.assignedTo === session.userId || wo.teamLeaderId === session.userId) return true;
+  if (
+    wo.assignedTo === session.userId ||
+    wo.teamLeaderId === session.userId ||
+    wo.assignedSupervisorId === session.userId
+  ) {
+    return true;
+  }
   return wo.teamMembers.some(
     (member) => member.userId === session.userId && member.role === 'team_leader',
   );
@@ -39,13 +48,60 @@ function parseStructuredArray(value: unknown, key: 'task' | 'issue'): string {
   return JSON.stringify(typeof value === 'string' ? [{ [key]: value }] : value);
 }
 
-async function readIdempotentResult(key: string): Promise<TransitionResult | null> {
-  const existing = await db.idempotencyRecord.findUnique({ where: { key } });
-  if (!existing?.responseData) return null;
+function idempotencyBindingMatches(
+  record: {
+    entityType: string;
+    entityId: string;
+    action: string;
+    userId: string;
+  },
+  workOrderId: string,
+  userId: string,
+): boolean {
+  return record.entityType === 'work_order' &&
+    record.entityId === workOrderId &&
+    record.action === 'handover' &&
+    record.userId === userId;
+}
+
+async function readIdempotentResult(
+  key: string,
+  workOrderId: string,
+  userId: string,
+): Promise<TransitionResult | null> {
+  const existing = await db.idempotencyRecord.findUnique({
+    where: { key },
+    select: {
+      entityType: true,
+      entityId: true,
+      action: true,
+      userId: true,
+      responseData: true,
+    },
+  });
+  if (!existing) return null;
+
+  if (!idempotencyBindingMatches(existing, workOrderId, userId)) {
+    return {
+      success: false,
+      error: 'Idempotency key is already bound to a different work order, action, or user',
+    };
+  }
+
+  if (!existing.responseData) {
+    return {
+      success: false,
+      error: 'Idempotency key exists without a completed stored response; use a new key or investigate the prior request',
+    };
+  }
+
   try {
     return JSON.parse(existing.responseData) as TransitionResult;
   } catch {
-    return null;
+    return {
+      success: false,
+      error: 'Stored idempotent handover response is invalid',
+    };
   }
 }
 
@@ -71,10 +127,29 @@ async function recordIdempotentResult(
     });
   } catch (error: unknown) {
     // A concurrent retry may have committed the same key after our initial read.
-    // The handover itself is already committed, so do not turn that success into
-    // an API failure solely because the duplicate idempotency row lost the race.
-    const concurrent = await db.idempotencyRecord.findUnique({ where: { key } });
+    // Accept only an identical binding. A cross-operation key collision must
+    // never be mistaken for a successful retry.
+    const concurrent = await db.idempotencyRecord.findUnique({
+      where: { key },
+      select: {
+        entityType: true,
+        entityId: true,
+        action: true,
+        userId: true,
+        responseData: true,
+      },
+    });
     if (!concurrent) throw error;
+    if (!idempotencyBindingMatches(concurrent, workOrderId, userId)) {
+      throw new Error('Idempotency key was concurrently claimed by a different operation');
+    }
+
+    if (!concurrent.responseData) {
+      await db.idempotencyRecord.update({
+        where: { key },
+        data: { responseHash, responseData },
+      });
+    }
   }
 }
 
@@ -93,7 +168,7 @@ export async function initiateCanonicalHandover(
 ): Promise<TransitionResult> {
   const idempotencyKey = options.idempotencyKey?.trim();
   if (idempotencyKey) {
-    const existing = await readIdempotentResult(idempotencyKey);
+    const existing = await readIdempotentResult(idempotencyKey, workOrderId, session.userId);
     if (existing) return existing;
   }
 
@@ -129,7 +204,7 @@ export async function initiateCanonicalHandover(
     if (!hasHandoverAuthority(wo, session)) {
       return {
         success: false as const,
-        error: 'Only the assigned technician, team leader, or maintenance manager can initiate handover',
+        error: 'Only the assigned technician, team leader, assigned supervisor, or authorized maintenance manager can initiate handover',
       };
     }
 

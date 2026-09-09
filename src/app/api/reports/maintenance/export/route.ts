@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { generateReportPDF } from '@/lib/generate-report-pdf';
 import { GET as getMaintenanceReport } from '../route';
 
 type ReportWorkOrder = {
@@ -55,6 +56,8 @@ type ReportData = {
     byImpactLevel?: Array<Record<string, unknown>>;
   };
 };
+
+type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 
 const WORK_ORDER_HEADERS = [
   'WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Asset Tag',
@@ -159,7 +162,79 @@ function buildWorkbook(data: ReportData): Uint8Array {
   return new Uint8Array(buffer);
 }
 
-function exportFilename(searchParams: URLSearchParams, extension: 'csv' | 'xlsx'): string {
+function summaryValue(data: ReportData, key: string): string | number {
+  const value = data.summary?.[key];
+  return typeof value === 'string' || typeof value === 'number' ? value : 0;
+}
+
+function readableDate(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10);
+}
+
+async function buildPdf(
+  data: ReportData,
+  workOrders: ReportWorkOrder[],
+  searchParams: URLSearchParams,
+  generatedBy: string,
+): Promise<Uint8Array> {
+  const start = searchParams.get('startDate') || 'All dates';
+  const end = searchParams.get('endDate') || 'All dates';
+  const moduleFilter = searchParams.get('moduleFilter') || 'all';
+  const plantId = searchParams.get('plantId') || 'All accessible plants';
+  const departmentId = searchParams.get('departmentId') || 'All departments';
+
+  const buffer = await generateReportPDF({
+    title: 'Repairs / RWOP Maintenance Report',
+    subtitle: 'Enterprise maintenance performance and work-order detail',
+    generatedBy,
+    generatedAt: new Date(),
+    filters: {
+      'Date range': `${start} to ${end}`,
+      'Maintenance scope': moduleFilter,
+      Plant: plantId,
+      Department: departmentId,
+    },
+    sections: [
+      {
+        title: 'Management Summary',
+        type: 'summary-cards',
+        data: [
+          { label: 'Total Work Orders', value: summaryValue(data, 'totalWOs') },
+          { label: 'Completed', value: summaryValue(data, 'completedWOs') },
+          { label: 'Completion Rate', value: `${summaryValue(data, 'completionRate')}%` },
+          { label: 'Open Work Orders', value: summaryValue(data, 'openWOs') },
+          { label: 'SLA Compliance', value: `${summaryValue(data, 'slaComplianceRate')}%` },
+          { label: 'Total Cost (GHS)', value: summaryValue(data, 'totalCost') },
+        ],
+      },
+      {
+        title: 'Work Order Detail',
+        type: 'table',
+        data: {
+          headers: ['WO', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned', 'Hours', 'Cost', 'Created'],
+          rows: workOrders.map(wo => [
+            wo.woNumber || '',
+            wo.title || '',
+            wo.type || '',
+            wo.priority || '',
+            wo.status || '',
+            wo.assetName || '',
+            wo.assigneeName || wo.teamLeaderName || '',
+            wo.actualHours ?? wo.estimatedHours ?? '',
+            wo.totalCost ?? 0,
+            readableDate(wo.createdAt),
+          ]),
+        },
+      },
+    ],
+  });
+
+  return new Uint8Array(buffer);
+}
+
+function exportFilename(searchParams: URLSearchParams, extension: ExportFormat): string {
   const start = searchParams.get('startDate') || 'all';
   const end = searchParams.get('endDate') || 'all';
   const moduleFilter = searchParams.get('moduleFilter') || 'all';
@@ -178,8 +253,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const format = (searchParams.get('format') || 'xlsx').toLowerCase();
-  if (format !== 'xlsx' && format !== 'csv') {
-    return NextResponse.json({ success: false, error: 'Unsupported export format. Use xlsx or csv.' }, { status: 400 });
+  if (!['xlsx', 'csv', 'pdf'].includes(format)) {
+    return NextResponse.json({ success: false, error: 'Unsupported export format. Use xlsx, csv or pdf.' }, { status: 400 });
   }
 
   // Reuse the canonical maintenance-report handler so export inherits exactly
@@ -201,6 +276,23 @@ export async function GET(request: NextRequest) {
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': `attachment; filename="${exportFilename(searchParams, 'csv')}"`,
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  }
+
+  if (format === 'pdf') {
+    const pdf = await buildPdf(
+      payload.data,
+      workOrders,
+      searchParams,
+      session.fullName || session.userId,
+    );
+    return new NextResponse(pdf, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${exportFilename(searchParams, 'pdf')}"`,
         'Cache-Control': 'private, no-store',
       },
     });

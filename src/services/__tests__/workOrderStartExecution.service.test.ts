@@ -88,7 +88,7 @@ describe('workOrderStartExecution.startWorkOrderExecution', () => {
         userId: 'tech-1',
         action: 'start',
         notes: 'Begin repair',
-        endTime: undefined,
+        startTime: expect.any(Date),
       }),
     });
   });

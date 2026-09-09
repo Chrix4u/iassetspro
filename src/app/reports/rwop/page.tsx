@@ -1,5 +1,5 @@
-import RWOPReportingPage from '@/components/repairs/reporting/RWOPReportingPage';
+import RWOPReportingRouteGuard from '@/components/repairs/reporting/RWOPReportingRouteGuard';
 
 export default function Page() {
-  return <RWOPReportingPage />;
+  return <RWOPReportingRouteGuard />;
 }

@@ -80,6 +80,9 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      - name: Enforce canonical RWOP lifecycle service imports
+        run: bunx tsx scripts/check-rwop-legacy-lifecycle-imports.ts
+
       - name: Run Repairs/RWOP TypeScript hard gate
         run: bunx tsc -p tsconfig.repairs.json --noEmit
 

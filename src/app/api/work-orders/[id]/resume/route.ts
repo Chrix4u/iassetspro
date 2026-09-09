@@ -8,6 +8,15 @@ import {
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
+function resolveResumeReason(body: Record<string, unknown>): string | undefined {
+  // `reason` is canonical; `notes` remains supported for existing clients.
+  const candidates = [body.reason, body.notes];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,14 +35,14 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await request.json() as Record<string, unknown>;
     const auditCtx = extractAuditContext(request);
 
     const result = await resumeWaitingWorkOrder(
       id,
       session as ExecutionStateSessionContext,
       {
-        reason: typeof body.notes === 'string' ? body.notes : undefined,
+        reason: resolveResumeReason(body),
         auditCtx: auditCtx as ExecutionStateAuditContext,
       },
     );

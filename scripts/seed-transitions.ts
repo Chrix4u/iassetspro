@@ -23,6 +23,8 @@ type Transition = {
   requiresReason: boolean;
 };
 
+type DbConnection = Awaited<ReturnType<typeof mariadb.createConnection>>;
+
 function getDbConfig() {
   const host = process.env.DB_HOST || process.env.MYSQL_HOST;
   const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
@@ -143,25 +145,33 @@ const LEGACY_FORBIDDEN_WO_TRANSITIONS = [
 ];
 
 async function upsertTransition(
-  conn: mariadb.Connection,
+  conn: DbConnection,
   transition: Transition,
   sortOrder: number,
 ) {
   if (transition.fromStatus === null) {
-    const result = await conn.query(
-      `UPDATE status_transitions
-       SET allowed_role_slugs = ?, requires_reason = ?, sort_order = ?, updated_at = NOW()
-       WHERE entity_type = ? AND from_status IS NULL AND to_status = ?`,
-      [
-        transition.allowedRoleSlugs,
-        transition.requiresReason ? 1 : 0,
-        sortOrder,
-        transition.entityType,
-        transition.toStatus,
-      ],
-    );
+    const existing = await conn.query(
+      `SELECT id
+       FROM status_transitions
+       WHERE entity_type = ? AND from_status IS NULL AND to_status = ?
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [transition.entityType, transition.toStatus],
+    ) as Array<{ id: string }>;
 
-    if (result.affectedRows === 0) {
+    if (existing[0]?.id) {
+      await conn.query(
+        `UPDATE status_transitions
+         SET allowed_role_slugs = ?, requires_reason = ?, sort_order = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [
+          transition.allowedRoleSlugs,
+          transition.requiresReason ? 1 : 0,
+          sortOrder,
+          existing[0].id,
+        ],
+      );
+    } else {
       await conn.query(
         `INSERT INTO status_transitions
           (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)

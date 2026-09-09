@@ -51,10 +51,13 @@ function hasSupervisorReworkAuthority(
  * recorded in the audit trail.
  *
  * Rework metadata belongs to RepairCompletion and audit history. WorkOrder has
- * no reworkReason/reworkCategory columns, so the state transition carries only
- * the legitimate status change back to in_progress. No technician timer is
- * opened here: the assigned technician/team leader must explicitly restart
- * execution through the canonical Start boundary.
+ * no reworkReason/reworkCategory columns, so the state transition carries the
+ * legitimate status change back to in_progress. The previous completion
+ * timestamp is cleared atomically so an in-progress WO never retains terminal
+ * completion semantics. Accumulated labor/cost data remains authoritative
+ * actual-to-date data and will be recalculated at the next completion.
+ * No technician timer is opened here: the assigned technician/team leader must
+ * explicitly restart execution through the canonical Start boundary.
  */
 export async function requestRepairRework(
   workOrderId: string,
@@ -102,6 +105,7 @@ export async function requestRepairRework(
 
     const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, {
       reason,
+      extraData: { actualEnd: null },
       tx,
     });
     if (!transition.success) throw new Error(transition.error);
@@ -140,6 +144,7 @@ export async function requestRepairRework(
         { status: wo.status, reworkCount: completion.reworkCount },
         {
           status: 'in_progress',
+          actualEnd: null,
           reworkReason: reason,
           reworkCategory: options.category ?? null,
           evidence: options.evidence ?? [],

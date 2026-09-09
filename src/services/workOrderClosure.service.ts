@@ -67,8 +67,9 @@ function hasPlannerCloseAuthority(
  *
  * Reliability history is component-based. A FailureRecord is therefore only
  * materialized when an actual failureMode is supplied and a concrete component
- * can be resolved from the WO. Merely having an asset does not justify creating
- * a synthetic failure classification.
+ * can be resolved from the WO. If legacy data already contains a FailureRecord
+ * linked to this WO under a non-deterministic id, that row is reused rather than
+ * creating a second reliability event for the same repair.
  *
  * Recurring PM schedules advance only here, after the verified WO crosses the
  * irreversible planner-close boundary. Technician completion and supervisor
@@ -119,8 +120,6 @@ export async function closeRepairWorkOrder(
       };
     }
 
-    // Normalize legacy rows in the same transaction as readiness, costing and
-    // final closure. Active sessions are never auto-closed by normalization.
     await normalizeWorkOrderTimeLogs(workOrderId, tx);
 
     const readiness = await checkReadiness(workOrderId, 'close', tx);
@@ -250,11 +249,19 @@ export async function closeRepairWorkOrder(
     }
 
     if (failureMode && failureComponentId) {
+      const existingFailure = await tx.failureRecord.findFirst({
+        where: { workOrderId },
+        select: { id: true },
+        orderBy: { detectedAt: 'asc' },
+      });
+      const failureRecordId = existingFailure?.id || `wo-${workOrderId}`;
+
       await tx.failureRecord.upsert({
-        where: { id: `wo-${workOrderId}` },
+        where: { id: failureRecordId },
         update: {
           componentId: failureComponentId,
           assetId: wo.assetId,
+          workOrderId,
           failureMode,
           failureCause: options.failureCause?.trim() || null,
           correctiveAction: options.correctiveAction?.trim() || null,
@@ -266,7 +273,7 @@ export async function closeRepairWorkOrder(
           reportedById: session.userId,
         },
         create: {
-          id: `wo-${workOrderId}`,
+          id: failureRecordId,
           componentId: failureComponentId,
           assetId: wo.assetId,
           workOrderId,

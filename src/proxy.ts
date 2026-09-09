@@ -60,6 +60,16 @@ export function resolveEffectivePlantId(request: NextRequest): string | null {
   return null;
 }
 
+function hasReportViewPermission(session: { roles: string[]; permissions: string[] }): boolean {
+  return session.roles.includes('admin') || session.permissions.some(permission =>
+    ['reports.view', 'reports.export', 'analytics.view'].includes(permission),
+  );
+}
+
+function hasReportExportPermission(session: { roles: string[]; permissions: string[] }): boolean {
+  return session.roles.includes('admin') || session.permissions.includes('reports.export');
+}
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -104,6 +114,54 @@ export default async function proxy(request: NextRequest) {
         { success: false, error: 'Invalid or expired session' },
         { status: 401 }
       )
+    );
+  }
+
+  // Legacy detailed Repairs reporting previously required only authentication.
+  // Enforce the same view/export policy as the canonical reporting surface.
+  if (pathname === '/api/repairs/reports/detailed') {
+    const reportFormat = (request.nextUrl.searchParams.get('format') || 'json').toLowerCase();
+    if (!['json', 'xlsx'].includes(reportFormat)) {
+      return withSecurityHeaders(
+        NextResponse.json(
+          { success: false, error: 'Unsupported report format. Use json or xlsx.' },
+          { status: 400 },
+        ),
+      );
+    }
+
+    const permitted = reportFormat === 'xlsx'
+      ? hasReportExportPermission(session)
+      : hasReportViewPermission(session);
+
+    if (!permitted) {
+      return withSecurityHeaders(
+        NextResponse.json(
+          {
+            success: false,
+            error: reportFormat === 'xlsx'
+              ? 'Insufficient permissions: reports.export required'
+              : 'Insufficient permissions: reports.view required',
+          },
+          { status: 403 },
+        ),
+      );
+    }
+  }
+
+  // The older aggregate Repairs endpoint supports PDF through ?format=pdf.
+  // Keep JSON viewing on its established role gate, but file export must require
+  // the explicit reports.export capability.
+  if (
+    pathname === '/api/repairs/reports' &&
+    request.nextUrl.searchParams.get('format')?.toLowerCase() === 'pdf' &&
+    !hasReportExportPermission(session)
+  ) {
+    return withSecurityHeaders(
+      NextResponse.json(
+        { success: false, error: 'Insufficient permissions: reports.export required' },
+        { status: 403 },
+      ),
     );
   }
 

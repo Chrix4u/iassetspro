@@ -8,6 +8,10 @@ import {
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,27 +33,33 @@ export async function POST(
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    const body = await request.json();
+    const body = await request.json() as Record<string, unknown>;
     const auditCtx = extractAuditContext(request);
 
     const result = await closeRepairWorkOrder(
       id,
       session as ClosureSessionContext,
       {
-        notes: body.notes,
-        componentId: body.componentId,
-        failureMode: body.failureMode,
-        failureCause: body.failureCause,
-        correctiveAction: body.correctiveAction,
-        pmRecommendation: body.pmRecommendation,
-        followUpRequired: body.followUpRequired,
-        followUpNotes: body.followUpNotes,
+        notes: optionalString(body.notes),
+        componentId: optionalString(body.componentId),
+        failureMode: optionalString(body.failureMode),
+        failureCause: optionalString(body.failureCause),
+        correctiveAction: optionalString(body.correctiveAction),
+        pmRecommendation: optionalString(body.pmRecommendation),
+        followUpRequired: typeof body.followUpRequired === 'boolean'
+          ? body.followUpRequired
+          : undefined,
+        followUpNotes: optionalString(body.followUpNotes),
         auditCtx: auditCtx as ClosureAuditContext,
       },
     );
 
     if (!result.success) {
-      const status = result.readiness ? 422 : 400;
+      const status = result.error === 'Work order not found'
+        ? 404
+        : result.readiness
+          ? 422
+          : 400;
       return NextResponse.json({
         success: false,
         error: result.error,

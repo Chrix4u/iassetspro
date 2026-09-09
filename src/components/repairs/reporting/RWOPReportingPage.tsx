@@ -122,9 +122,10 @@ function defaultFilters(): ReportFilters {
 }
 
 function plantHeader(plantId: string): Record<string, string> {
-  // api.get/getRaw inject the stored primary plant by default. Emptying the
-  // header is intentional when the user requests their full accessible set.
-  return { 'X-Plant-ID': plantId === 'all' ? '' : plantId };
+  // getAuthHeaders() uses the lowercase key. Use the exact same key here so
+  // object spread replaces the stored primary plant rather than producing a
+  // case-insensitive duplicate header such as "plant-a, plant-b".
+  return { 'x-plant-id': plantId === 'all' ? '' : plantId };
 }
 
 function buildQuery(filters: ReportFilters): string {
@@ -186,7 +187,7 @@ export default function RWOPReportingPage() {
 
   const loadPlants = useCallback(async () => {
     const response = await api.get<Plant[]>('/api/plants', {
-      headers: { 'X-Plant-ID': '' },
+      headers: { 'x-plant-id': '' },
     });
     if (response.success && Array.isArray(response.data)) {
       setPlants(response.data);

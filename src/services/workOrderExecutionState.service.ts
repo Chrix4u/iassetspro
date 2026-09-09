@@ -38,6 +38,14 @@ export type WaitingWorkOrderStatus =
   | 'waiting_shutdown'
   | 'waiting_permit';
 
+type ExecutionAuthorityWorkOrder = {
+  assignedTo: string | null;
+  teamLeaderId: string | null;
+  assignedSupervisorId: string | null;
+  plannerId: string | null;
+  teamMembers: Array<{ userId: string; role: string }>;
+};
+
 class ExecutionStateTransitionError extends Error {
   constructor(message: string) {
     super(message);
@@ -45,26 +53,52 @@ class ExecutionStateTransitionError extends Error {
   }
 }
 
-function hasExecutionAuthority(
-  wo: {
-    assignedTo: string | null;
-    teamLeaderId: string | null;
-    teamMembers: Array<{ userId: string; role: string }>;
-  },
+function hasExecutionManagementOverride(session: ExecutionStateSessionContext): boolean {
+  // Keep this aligned with the canonical execution-state transitions. Plant
+  // managers retain review/close authority elsewhere, but hold/waiting control
+  // belongs to maintenance management.
+  return session.roles.some((role) => ['admin', 'maintenance_manager'].includes(role));
+}
+
+function hasAssignedExecutionAuthority(
+  wo: ExecutionAuthorityWorkOrder,
   session: ExecutionStateSessionContext,
 ): boolean {
-  if (session.roles.some((role) => ['admin', 'maintenance_manager', 'plant_manager'].includes(role))) {
-    return true;
-  }
   if (wo.assignedTo === session.userId || wo.teamLeaderId === session.userId) return true;
   return wo.teamMembers.some(
     (member) => member.userId === session.userId && member.role === 'team_leader',
   );
 }
 
+function hasHoldControlAuthority(
+  wo: ExecutionAuthorityWorkOrder,
+  session: ExecutionStateSessionContext,
+): boolean {
+  if (hasExecutionManagementOverride(session)) return true;
+  return wo.assignedSupervisorId === session.userId;
+}
+
+function hasWaitingStateAuthority(
+  wo: ExecutionAuthorityWorkOrder,
+  targetStatus: WaitingWorkOrderStatus,
+  session: ExecutionStateSessionContext,
+): boolean {
+  if (targetStatus === 'on_hold') {
+    return hasHoldControlAuthority(wo, session);
+  }
+
+  if (hasExecutionManagementOverride(session)) return true;
+  if (wo.plannerId === session.userId) return true;
+  return hasAssignedExecutionAuthority(wo, session);
+}
+
 /**
  * Move a WO from active execution into a non-execution state.
  * All team timers close atomically because the state applies to the whole WO.
+ *
+ * Supervisor hold is intentionally distinct from technician/planner waiting
+ * states. The assigned supervisor (or maintenance-management override) owns the
+ * stop/release decision; technicians own execution timers.
  */
 export async function placeWorkOrderInWaitingState(
   workOrderId: string,
@@ -102,10 +136,12 @@ export async function placeWorkOrderInWaitingState(
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
 
-    if (options.requireExecutionAuthority && !hasExecutionAuthority(wo, session)) {
+    if (options.requireExecutionAuthority && !hasWaitingStateAuthority(wo, targetStatus, session)) {
       return {
         success: false as const,
-        error: 'Only the assigned technician, team leader, or maintenance manager can change this execution state',
+        error: targetStatus === 'on_hold'
+          ? 'Only the assigned supervisor or authorized maintenance manager can place this work order on hold'
+          : 'Only the assigned technician, team leader, planner, or authorized maintenance manager can change this execution state',
       };
     }
 
@@ -153,8 +189,11 @@ export async function placeWorkOrderInWaitingState(
       },
       notify: {
         woNumber: wo.woNumber,
+        assignedTo: wo.assignedTo,
+        teamLeaderId: wo.teamLeaderId,
         supervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
+        teamMemberIds: wo.teamMembers.map((member) => member.userId),
       },
     };
   }).catch((error: unknown) => {
@@ -166,10 +205,20 @@ export async function placeWorkOrderInWaitingState(
 
   if (!outcome.success) return outcome;
 
-  const recipient = outcome.notify.supervisorId || outcome.notify.plannerId;
-  if (recipient && recipient !== session.userId) {
+  const recipients = new Set<string>();
+  for (const userId of [
+    outcome.notify.assignedTo,
+    outcome.notify.teamLeaderId,
+    outcome.notify.supervisorId,
+    outcome.notify.plannerId,
+    ...outcome.notify.teamMemberIds,
+  ]) {
+    if (userId && userId !== session.userId) recipients.add(userId);
+  }
+
+  for (const userId of recipients) {
     sendRepairNotification({
-      userId: recipient,
+      userId,
       event: 'wo_on_hold',
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
@@ -181,14 +230,23 @@ export async function placeWorkOrderInWaitingState(
   return { success: true, data: outcome.data };
 }
 
-/** Resume an on-hold/waiting WO and open one canonical live resume session. */
+/**
+ * Resume an on-hold/waiting WO.
+ *
+ * - A technician/team leader resuming a normal waiting state opens a canonical
+ *   live `resume` timer.
+ * - A planner/maintenance manager clearing a normal waiting state transitions
+ *   the WO only; the assigned technician must explicitly start execution.
+ * - An assigned supervisor/maintenance manager releasing `on_hold` transitions
+ *   the WO only; a supervisor action must never create technician labor time.
+ */
 export async function resumeWaitingWorkOrder(
   workOrderId: string,
   session: ExecutionStateSessionContext,
   options: { reason?: string; auditCtx?: ExecutionStateAuditContext } = {},
 ): Promise<{
   success: boolean;
-  data?: { status: 'in_progress'; resumedAt: Date };
+  data?: { status: 'in_progress'; resumedAt: Date; executionSessionOpened: boolean };
   error?: string;
   conflict?: ExecutionStateConflict;
   reason?: ExecutionStateConflictReason;
@@ -211,18 +269,35 @@ export async function resumeWaitingWorkOrder(
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
 
-    if (!hasExecutionAuthority(wo, session)) {
+    const releasingSupervisorHold = wo.status === 'on_hold';
+    const assignedExecutionActor = hasAssignedExecutionAuthority(wo, session);
+    const maintenanceOverride = hasExecutionManagementOverride(session);
+    const plannerControlRelease = !releasingSupervisorHold && wo.plannerId === session.userId;
+
+    const authorized = releasingSupervisorHold
+      ? hasHoldControlAuthority(wo, session)
+      : assignedExecutionActor || plannerControlRelease || maintenanceOverride;
+
+    if (!authorized) {
       return {
         success: false as const,
-        error: 'Only the assigned technician, team leader, or maintenance manager can resume this work order',
+        error: releasingSupervisorHold
+          ? 'Only the assigned supervisor or authorized maintenance manager can release this work order from hold'
+          : 'Only the assigned technician, team leader, planner, or authorized maintenance manager can resume this work order',
       };
     }
 
-    // Match the canonical start boundary: an unclosed timer is only a real
+    // Only a genuine execution actor opens a labor timer. Supervisor/planner/
+    // manager control decisions merely release the WO back to in_progress so
+    // the technician can explicitly begin/restart execution.
+    const executionSessionOpened = !releasingSupervisorHold && assignedExecutionActor;
+
+    // Match the canonical start boundary. An unclosed timer is only a real
     // conflict while its parent WO is still actively in progress. Historical
     // rows left behind by legacy hold/handover/rework paths must not strand a
-    // technician and block legitimate resume work.
-    if (!session.roles.includes('admin')) {
+    // technician and block legitimate resume work. Control-only releases do not
+    // inspect the actor's technician timer because they do not open labor time.
+    if (executionSessionOpened && !session.roles.includes('admin')) {
       const existingLiveSession = await tx.workOrderTimeLog.findFirst({
         where: {
           userId: session.userId,
@@ -277,16 +352,18 @@ export async function resumeWaitingWorkOrder(
       throw new ExecutionStateTransitionError(transition.error || 'Failed to resume work order');
     }
 
-    await tx.workOrderTimeLog.create({
-      data: {
-        workOrderId,
-        userId: session.userId,
-        action: 'resume',
-        notes: options.reason?.trim() || 'Work resumed',
-        timestamp: resumedAt,
-        startTime: resumedAt,
-      },
-    });
+    if (executionSessionOpened) {
+      await tx.workOrderTimeLog.create({
+        data: {
+          workOrderId,
+          userId: session.userId,
+          action: 'resume',
+          notes: options.reason?.trim() || 'Work resumed',
+          timestamp: resumedAt,
+          startTime: resumedAt,
+        },
+      });
+    }
 
     await tx.auditLog.create({
       data: buildAuditData(
@@ -295,18 +372,26 @@ export async function resumeWaitingWorkOrder(
         workOrderId,
         session.userId,
         { status: wo.status },
-        { status: 'in_progress', resumedAt: resumedAt.toISOString() },
+        {
+          status: 'in_progress',
+          resumedAt: resumedAt.toISOString(),
+          executionSessionOpened,
+          ...(!executionSessionOpened ? { technicianExecutionStartRequired: true } : {}),
+        },
         options.auditCtx,
       ),
     });
 
     return {
       success: true as const,
-      data: { status: 'in_progress' as const, resumedAt },
+      data: { status: 'in_progress' as const, resumedAt, executionSessionOpened },
       notify: {
         woNumber: wo.woNumber,
+        assignedTo: wo.assignedTo,
+        teamLeaderId: wo.teamLeaderId,
         supervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
+        teamMemberIds: wo.teamMembers.map((member) => member.userId),
       },
     };
   }).catch((error: unknown) => {
@@ -318,14 +403,25 @@ export async function resumeWaitingWorkOrder(
 
   if (!outcome.success) return outcome;
 
-  const recipient = outcome.notify.supervisorId || outcome.notify.plannerId;
-  if (recipient && recipient !== session.userId) {
+  const recipients = new Set<string>();
+  for (const userId of [
+    outcome.notify.assignedTo,
+    outcome.notify.teamLeaderId,
+    outcome.notify.supervisorId,
+    outcome.notify.plannerId,
+    ...outcome.notify.teamMemberIds,
+  ]) {
+    if (userId && userId !== session.userId) recipients.add(userId);
+  }
+
+  for (const userId of recipients) {
     sendRepairNotification({
-      userId: recipient,
+      userId,
       event: 'wo_resumed',
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance team',
+      details: { executionSessionOpened },
     });
   }
 

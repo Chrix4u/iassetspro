@@ -1,62 +1,43 @@
-// ============================================================================
-// State Machine — Transaction Support & Type Contract Tests
-// ============================================================================
-//
-// Tests the state-machine module's transaction-aware API, verifying that:
-// - executeTransition options accept an optional tx parameter
-// - checkTransition accepts an optional tx parameter
-// - The tx parameter is optional (backward compatible)
-// - Type contracts are preserved
-//
-// ============================================================================
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
-// ---- Hoisted mocks ----
-const {
-  mockDb,
-  mockStatusTransitionFindFirst,
-  mockStatusTransitionCount,
-  mockWorkOrderFindUnique,
-  mockMaintenanceRequestFindUnique,
-  mockWorkOrderUpdate,
-  mockWorkOrderStatusHistoryCreate,
-  mockMaintenanceRequestUpdate,
-  mockMaintenanceRequestCommentCreate,
-} = vi.hoisted(() => ({
+const { mockDb } = vi.hoisted(() => ({
   mockDb: {
-    statusTransition: { findFirst: vi.fn(), count: vi.fn() },
-    workOrder: { findUnique: vi.fn(), update: vi.fn() },
-    maintenanceRequest: { findUnique: vi.fn(), update: vi.fn() },
+    statusTransition: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+      create: vi.fn(),
+      upsert: vi.fn(),
+    },
+    workOrder: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    maintenanceRequest: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+    },
     workOrderStatusHistory: { create: vi.fn() },
     maintenanceRequestComment: { create: vi.fn() },
     $transaction: vi.fn(),
   },
-  mockStatusTransitionFindFirst: vi.fn(),
-  mockStatusTransitionCount: vi.fn(),
-  mockWorkOrderFindUnique: vi.fn(),
-  mockMaintenanceRequestFindUnique: vi.fn(),
-  mockWorkOrderUpdate: vi.fn(),
-  mockWorkOrderStatusHistoryCreate: vi.fn(),
-  mockMaintenanceRequestUpdate: vi.fn(),
-  mockMaintenanceRequestCommentCreate: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
 
 import {
+  DEFAULT_WO_TRANSITIONS,
   checkTransition,
   executeTransition,
   getAvailableTransitions,
 } from '../state-machine';
 
-// ---- Minimal session for testing ----
 const adminSession = { userId: 'admin-1', roles: ['admin'], permissions: [] };
 const plannerSession = { userId: 'planner-1', roles: ['planner'], permissions: [] };
 const operatorSession = { userId: 'op-1', roles: ['operator'], permissions: [] };
 
-// ---- Mock a valid transition rule ----
 function mockTransitionRule(overrides: Record<string, unknown> = {}) {
   return {
     id: 'test-rule',
@@ -70,19 +51,35 @@ function mockTransitionRule(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// ============================================================================
-// Test 1: checkTransition accepts optional tx parameter
-// ============================================================================
-describe('checkTransition transaction support', () => {
+function transactionClient(overrides: Record<string, unknown> = {}) {
+  return {
+    statusTransition: {
+      findFirst: vi.fn().mockResolvedValue(mockTransitionRule()),
+    },
+    workOrder: {
+      findUnique: vi.fn()
+        .mockResolvedValueOnce({ status: 'draft' })
+        .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' }),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    maintenanceRequest: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+    workOrderStatusHistory: { create: vi.fn().mockResolvedValue({}) },
+    maintenanceRequestComment: { create: vi.fn().mockResolvedValue({}) },
+    ...overrides,
+  };
+}
+
+describe('checkTransition', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
   });
 
-  it('should call db.statusTransition.findFirst when no tx provided', async () => {
-    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
-      mockTransitionRule(),
-    );
+  it('uses the default DB client when no transaction is supplied', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(mockTransitionRule());
 
     const result = await checkTransition('work_order', 'draft', 'assigned', adminSession);
 
@@ -90,30 +87,23 @@ describe('checkTransition transaction support', () => {
     expect(mockDb.statusTransition.findFirst).toHaveBeenCalledTimes(1);
   });
 
-  it('should accept tx parameter and use it instead of db (type contract)', async () => {
-    // Create a mock transaction client
-    const mockTx = {
-      statusTransition: { findFirst: vi.fn().mockResolvedValue(mockTransitionRule()) },
-    };
+  it('uses the supplied transaction client', async () => {
+    const tx = transactionClient();
 
-    // This should compile without errors — the tx parameter is optional
     const result = await checkTransition(
       'work_order',
       'draft',
       'assigned',
       adminSession,
-      mockTx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      tx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
     );
 
     expect(result.allowed).toBe(true);
-    // The tx client should have been called, not the global db
-    expect(mockTx.statusTransition.findFirst).toHaveBeenCalledTimes(1);
-    // The global db should NOT have been called
+    expect(tx.statusTransition.findFirst).toHaveBeenCalledTimes(1);
     expect(mockDb.statusTransition.findFirst).not.toHaveBeenCalled();
   });
 
-  it('should return not allowed when no rule found', async () => {
-    (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
+  it('rejects a missing transition rule', async () => {
     (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(null);
 
     const result = await checkTransition('work_order', 'nonexistent', 'assigned', adminSession);
@@ -122,12 +112,8 @@ describe('checkTransition transaction support', () => {
     expect(result.reason).toContain('No transition rule found');
   });
 
-  it('should return not allowed when user lacks required role', async () => {
-    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
-      mockTransitionRule({
-        allowedRoleSlugs: JSON.stringify(['planner', 'admin']),
-      }),
-    );
+  it('rejects a role that is not allowed by the transition', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(mockTransitionRule());
 
     const result = await checkTransition('work_order', 'draft', 'assigned', operatorSession);
 
@@ -135,11 +121,9 @@ describe('checkTransition transaction support', () => {
     expect(result.reason).toContain('does not allow this transition');
   });
 
-  it('should allow admin to bypass role checks', async () => {
+  it('allows admin to bypass the transition role list', async () => {
     (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
-      mockTransitionRule({
-        allowedRoleSlugs: JSON.stringify(['planner']), // admin NOT in list
-      }),
+      mockTransitionRule({ allowedRoleSlugs: JSON.stringify(['planner']) }),
     );
 
     const result = await checkTransition('work_order', 'draft', 'assigned', adminSession);
@@ -148,93 +132,37 @@ describe('checkTransition transaction support', () => {
   });
 });
 
-// ============================================================================
-// Test 2: executeTransition options accept tx parameter
-// ============================================================================
-describe('executeTransition transaction support', () => {
+describe('executeTransition compare-and-set boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
   });
 
-  it('should accept options with tx parameter (type contract)', async () => {
-    // Mock the full flow: find current status → check transition → execute
-    (mockDb.statusTransition.findFirst as Mock)
-      .mockResolvedValueOnce(mockTransitionRule()) // for checkTransition
-      .mockResolvedValueOnce(mockTransitionRule()); // for re-lookup
+  it('uses one conditional status claim before writing work-order history', async () => {
+    const tx = transactionClient();
 
-    (mockDb.workOrder.findUnique as Mock)
-      .mockResolvedValueOnce({ status: 'draft' }) // get current status
-      .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' }); // return updated
-
-    (mockDb.workOrder.update as Mock).mockResolvedValue({});
-    (mockDb.workOrderStatusHistory.create as Mock).mockResolvedValue({});
-
-    // This should compile — tx in options is optional
     const result = await executeTransition(
       'work_order',
       'wo-1',
       'assigned',
       adminSession,
-      { tx: undefined }, // explicitly undefined = use default db
+      { tx: tx as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
     );
 
     expect(result.success).toBe(true);
+    expect(tx.workOrder.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wo-1', status: 'draft' },
+      data: { status: 'assigned' },
+    });
+    expect(tx.workOrderStatusHistory.create).toHaveBeenCalledTimes(1);
   });
 
-  it('should use provided tx for all DB operations', async () => {
-    const mockTx = {
+  it('fails closed when another request changed the state first', async () => {
+    const tx = transactionClient({
       workOrder: {
-        findUnique: vi.fn()
-          .mockResolvedValueOnce({ status: 'draft' })
-          .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' }),
-        update: vi.fn().mockResolvedValue({}),
+        findUnique: vi.fn().mockResolvedValueOnce({ status: 'draft' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
-      workOrderStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-      statusTransition: { findFirst: vi.fn().mockResolvedValue(mockTransitionRule()) },
-    };
-
-    const result = await executeTransition(
-      'work_order',
-      'wo-1',
-      'assigned',
-      adminSession,
-      { tx: mockTx as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
-    );
-
-    expect(result.success).toBe(true);
-    // The tx workOrder.update should be called, not the global db
-    expect(mockTx.workOrder.update).toHaveBeenCalledTimes(1);
-    expect(mockTx.workOrderStatusHistory.create).toHaveBeenCalledTimes(1);
-    // Global db should NOT be used
-    expect(mockDb.workOrder.update).not.toHaveBeenCalled();
-  });
-
-  it('should create its own transaction when no tx is provided (backward compatible)', async () => {
-    (mockDb.statusTransition.findFirst as Mock)
-      .mockResolvedValueOnce(mockTransitionRule())
-      .mockResolvedValueOnce(mockTransitionRule());
-
-    (mockDb.workOrder.findUnique as Mock)
-      .mockResolvedValueOnce({ status: 'draft' })
-      .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' });
-
-    // Mock $transaction to execute the callback immediately
-    (mockDb.$transaction as Mock).mockImplementation(async (cb: (tx: any) => Promise<any>) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-      const tx = {
-        workOrder: {
-          update: vi.fn().mockResolvedValue({}),
-          findUnique: mockDb.workOrder.findUnique,
-        },
-        workOrderStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-        maintenanceRequest: {
-          update: vi.fn().mockResolvedValue({}),
-          findUnique: mockDb.maintenanceRequest.findUnique,
-        },
-        maintenanceRequestComment: { create: vi.fn().mockResolvedValue({}) },
-        statusTransition: { findFirst: mockDb.statusTransition.findFirst },
-      };
-      return cb(tx);
     });
 
     const result = await executeTransition(
@@ -242,24 +170,16 @@ describe('executeTransition transaction support', () => {
       'wo-1',
       'assigned',
       adminSession,
-      // No tx option — should create own transaction
+      { tx: tx as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
     );
 
-    expect(result.success).toBe(true);
-    expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Transition conflict');
+    expect(tx.workOrderStatusHistory.create).not.toHaveBeenCalled();
   });
 
-  it('should pass extraData through to the update payload', async () => {
-    const mockTx = {
-      workOrder: {
-        findUnique: vi.fn()
-          .mockResolvedValueOnce({ status: 'draft' })
-          .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' }),
-        update: vi.fn().mockResolvedValue({}),
-      },
-      workOrderStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-      statusTransition: { findFirst: vi.fn().mockResolvedValue(mockTransitionRule()) },
-    };
+  it('merges trusted extraData into the conditional transition update', async () => {
+    const tx = transactionClient();
 
     await executeTransition(
       'work_order',
@@ -267,61 +187,83 @@ describe('executeTransition transaction support', () => {
       'assigned',
       adminSession,
       {
-        tx: mockTx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
-        extraData: { workOrderId: 'wo-new-1', workflowStatus: 'work_order_created' },
+        tx: tx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        extraData: { actualEnd: null, notes: 'transition payload' },
       },
     );
 
-    // Verify the update was called with merged data
-    const updateCall = mockTx.workOrder.update.mock.calls[0][0];
-    expect(updateCall.data.status).toBe('assigned');
-    expect(updateCall.data.workOrderId).toBe('wo-new-1');
-    expect(updateCall.data.workflowStatus).toBe('work_order_created');
+    expect(tx.workOrder.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wo-1', status: 'draft' },
+      data: {
+        status: 'assigned',
+        actualEnd: null,
+        notes: 'transition payload',
+      },
+    });
   });
 
-  it('should return error when transition requires reason but none provided', async () => {
-    // Document and verify the requiresReason contract at the rule level
-    const ruleWithReason = mockTransitionRule({ requiresReason: true });
-    expect(ruleWithReason.requiresReason).toBe(true);
+  it('creates its own transaction and still performs a conditional claim', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(mockTransitionRule());
+    (mockDb.workOrder.findUnique as Mock)
+      .mockResolvedValueOnce({ status: 'draft' })
+      .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' });
 
-    // Verify checkTransition correctly identifies the transition as allowed
-    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(ruleWithReason);
-    const check = await checkTransition('work_order', 'draft', 'assigned', adminSession);
-    expect(check.allowed).toBe(true);
+    const innerTx = transactionClient();
+    (mockDb.$transaction as Mock).mockImplementation(
+      async (callback: (tx: typeof innerTx) => Promise<unknown>) => callback(innerTx),
+    );
 
-    // The requiresReason flag is present on the transition object
-    // (executeTransition reads this to enforce the reason requirement)
-    expect(check.transition).toBeDefined();
-    // Note: The actual enforcement of requiresReason happens inside executeTransition
-    // which creates its own transaction. The type contract is verified here:
-    // - checkTransition returns the requiresReason flag
-    // - executeTransition checks check.transition?.requiresReason before proceeding
-    // This is documented behavior verified at the type-contract level.
+    const result = await executeTransition('work_order', 'wo-1', 'assigned', adminSession);
 
-    // Verify the rule correctly sets requiresReason
-    expect(ruleWithReason.requiresReason).toBe(true);
-    const ruleWithoutReason = mockTransitionRule({ requiresReason: false });
-    expect(ruleWithoutReason.requiresReason).toBe(false);
+    expect(result.success).toBe(true);
+    expect(mockDb.$transaction).toHaveBeenCalledTimes(1);
+    expect(innerTx.workOrder.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wo-1', status: 'draft' },
+      data: { status: 'assigned' },
+    });
   });
 
-  it('should handle maintenance_request entity type with tx', async () => {
-    const mockTx = {
+  it('enforces required transition reasons before attempting a claim', async () => {
+    const tx = transactionClient({
+      statusTransition: {
+        findFirst: vi.fn().mockResolvedValue(
+          mockTransitionRule({ requiresReason: true }),
+        ),
+      },
+    });
+
+    const result = await executeTransition(
+      'work_order',
+      'wo-1',
+      'assigned',
+      adminSession,
+      { tx: tx as any }, // eslint-disable-line @typescript-eslint/no-explicit-any
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('requires a reason');
+    expect(tx.workOrder.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('uses the same conditional claim for maintenance-request conversion', async () => {
+    const tx = transactionClient({
+      statusTransition: {
+        findFirst: vi.fn().mockResolvedValue(
+          mockTransitionRule({
+            entityType: 'maintenance_request',
+            fromStatus: 'approved',
+            toStatus: 'converted',
+            allowedRoleSlugs: JSON.stringify(['planner', 'admin']),
+          }),
+        ),
+      },
       maintenanceRequest: {
         findUnique: vi.fn()
           .mockResolvedValueOnce({ status: 'approved' })
           .mockResolvedValueOnce({ id: 'mr-1', status: 'converted' }),
-        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-      maintenanceRequestComment: { create: vi.fn().mockResolvedValue({}) },
-      statusTransition: { findFirst: vi.fn().mockResolvedValue(
-        mockTransitionRule({
-          entityType: 'maintenance_request',
-          fromStatus: 'approved',
-          toStatus: 'converted',
-          allowedRoleSlugs: JSON.stringify(['planner', 'admin']),
-        }),
-      )},
-    };
+    });
 
     const result = await executeTransition(
       'maintenance_request',
@@ -329,113 +271,59 @@ describe('executeTransition transaction support', () => {
       'converted',
       plannerSession,
       {
-        tx: mockTx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+        tx: tx as any, // eslint-disable-line @typescript-eslint/no-explicit-any
         extraData: { workOrderId: 'wo-new-1' },
       },
     );
 
     expect(result.success).toBe(true);
-    expect(mockTx.maintenanceRequest.update).toHaveBeenCalledTimes(1);
-    expect(mockTx.maintenanceRequestComment.create).toHaveBeenCalledTimes(1);
+    expect(tx.maintenanceRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: 'mr-1', status: 'approved' },
+      data: { status: 'converted', workOrderId: 'wo-new-1' },
+    });
+    expect(tx.maintenanceRequestComment.create).toHaveBeenCalledTimes(1);
   });
 });
 
-// ============================================================================
-// Test 3: getAvailableTransitions (type contract)
-// ============================================================================
-describe('getAvailableTransitions type contract', () => {
+describe('canonical work-order transition defaults', () => {
+  it('matches the audited cancellation and hold contract', () => {
+    const transitions = new Map(
+      DEFAULT_WO_TRANSITIONS.map((transition) => [
+        `${transition.fromStatus ?? 'NULL'}->${transition.toStatus}`,
+        transition,
+      ]),
+    );
+
+    expect(DEFAULT_WO_TRANSITIONS).toHaveLength(38);
+    expect(transitions.has('approved->cancelled')).toBe(true);
+    expect(transitions.has('planned->cancelled')).toBe(true);
+    expect(transitions.has('on_hold->cancelled')).toBe(true);
+    expect(transitions.get('in_progress->on_hold')?.requiresReason).toBe(true);
+    expect(transitions.has('completed->closed')).toBe(false);
+    expect(transitions.has('verified->closed')).toBe(true);
+  });
+});
+
+describe('getAvailableTransitions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('should be exported as a function', () => {
-    expect(typeof getAvailableTransitions).toBe('function');
-  });
-
-  it('should return an array of transition objects', async () => {
     (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
-    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(mockTransitionRule());
-    (mockDb.statusTransition.findMany as any) = vi.fn().mockResolvedValue([mockTransitionRule()]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  });
 
-    // Need to add findMany to the mock
-    mockDb.statusTransition.findMany = vi.fn().mockResolvedValue([mockTransitionRule()]);
+  it('returns the role-filtered transition contract', async () => {
+    (mockDb.statusTransition.findMany as Mock).mockResolvedValue([
+      mockTransitionRule(),
+    ]);
 
     const transitions = await getAvailableTransitions('work_order', 'draft', adminSession);
 
-    expect(Array.isArray(transitions)).toBe(true);
-    if (transitions.length > 0) {
-      const t = transitions[0];
-      expect(t).toHaveProperty('fromStatus');
-      expect(t).toHaveProperty('toStatus');
-      expect(t).toHaveProperty('allowedRoleSlugs');
-      expect(t).toHaveProperty('requiresReason');
-    }
-  });
-});
-
-// ============================================================================
-// Test 4: EntityType union type
-// ============================================================================
-describe('EntityType type contract', () => {
-  it('should only accept work_order and maintenance_request entity types', () => {
-    // These are valid
-    const woType = 'work_order' as const;
-    const mrType = 'maintenance_request' as const;
-
-    expect(woType).toBe('work_order');
-    expect(mrType).toBe('maintenance_request');
-
-    // Document the valid entity types
-    const validTypes: Array<'work_order' | 'maintenance_request'> = [woType, mrType];
-    expect(validTypes).toHaveLength(2);
-  });
-});
-
-// ============================================================================
-// Test 5: Backward compatibility — tx is optional everywhere
-// ============================================================================
-describe('Backward compatibility — tx is optional', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
-  });
-
-  it('checkTransition works without tx parameter', async () => {
-    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(mockTransitionRule());
-
-    // Call without tx — should work
-    const result = await checkTransition('work_order', 'draft', 'assigned', adminSession);
-    expect(result.allowed).toBe(true);
-  });
-
-  it('executeTransition works without options parameter', async () => {
-    (mockDb.statusTransition.findFirst as Mock)
-      .mockResolvedValueOnce(mockTransitionRule())
-      .mockResolvedValueOnce(mockTransitionRule());
-
-    (mockDb.workOrder.findUnique as Mock)
-      .mockResolvedValueOnce({ status: 'draft' })
-      .mockResolvedValueOnce({ id: 'wo-1', status: 'assigned' });
-
-    (mockDb.$transaction as Mock).mockImplementation(async (cb: (tx: any) => Promise<any>) => { // eslint-disable-line @typescript-eslint/no-explicit-any
-      const tx = {
-        workOrder: {
-          update: vi.fn().mockResolvedValue({}),
-          findUnique: mockDb.workOrder.findUnique,
-        },
-        workOrderStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-        maintenanceRequest: {
-          update: vi.fn().mockResolvedValue({}),
-          findUnique: mockDb.maintenanceRequest.findUnique,
-        },
-        maintenanceRequestComment: { create: vi.fn().mockResolvedValue({}) },
-        statusTransition: { findFirst: mockDb.statusTransition.findFirst },
-      };
-      return cb(tx);
-    });
-
-    // Call without any options — should work (backward compatible)
-    const result = await executeTransition('work_order', 'wo-1', 'assigned', adminSession);
-    expect(result.success).toBe(true);
+    expect(transitions).toEqual([
+      {
+        fromStatus: 'draft',
+        toStatus: 'assigned',
+        allowedRoleSlugs: ['planner', 'admin'],
+        requiresReason: false,
+      },
+    ]);
   });
 });

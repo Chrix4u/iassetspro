@@ -5,8 +5,16 @@ import { toast } from 'sonner';
 
 export interface Capabilities {
   canStart: boolean;
+  /** @deprecated Compatibility alias for canHold. The action is WO-wide hold, not a personal timer pause. */
   canPause: boolean;
+  /** Assigned-supervisor / maintenance-management authority to put the entire WO on hold. */
+  canHold: boolean;
+  /** Authority to release on-hold/waiting state back to in_progress. */
   canResume: boolean;
+  /** True only when this actor's resume action opens an execution labor timer. */
+  resumeOpensExecutionSession: boolean;
+  /** True when this user already has a canonical live start/resume timer on this WO. */
+  hasActiveExecutionSession: boolean;
   canLogOwnTime: boolean;
   canLogTeamTime: boolean;
   canRequestTools: boolean;

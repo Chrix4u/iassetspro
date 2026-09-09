@@ -32,12 +32,32 @@ export type RequestRepairReworkResult = {
   error?: string;
 };
 
+function hasSupervisorReworkAuthority(
+  wo: { assignedSupervisorId: string | null },
+  session: ReworkSessionContext,
+): { allowed: boolean; override: boolean } {
+  const managerOverride = session.roles.some((role) =>
+    ['admin', 'maintenance_manager', 'plant_manager'].includes(role),
+  );
+  if (managerOverride) return { allowed: true, override: true };
+  return { allowed: wo.assignedSupervisorId === session.userId, override: false };
+}
+
 /**
  * Canonical supervisor rework operation.
  *
+ * The assigned supervisor owns the rework decision. Admin, maintenance-manager
+ * and plant-manager roles may override that assignment, and the override is
+ * recorded in the audit trail.
+ *
  * Rework metadata belongs to RepairCompletion and audit history. WorkOrder has
- * no reworkReason/reworkCategory columns, so the state transition carries only
- * the legitimate status change back to in_progress.
+ * no reworkReason/reworkCategory columns, so the state transition carries the
+ * legitimate status change back to in_progress. The previous completion
+ * timestamp is cleared atomically so an in-progress WO never retains terminal
+ * completion semantics. Accumulated labor/cost data remains authoritative
+ * actual-to-date data and will be recalculated at the next completion.
+ * No technician timer is opened here: the assigned technician/team leader must
+ * explicitly restart execution through the canonical Start boundary.
  */
 export async function requestRepairRework(
   workOrderId: string,
@@ -59,9 +79,18 @@ export async function requestRepairRework(
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    const authority = hasSupervisorReworkAuthority(wo, session);
+    if (!authority.allowed) {
+      return {
+        success: false as const,
+        error: 'Only the assigned supervisor or an authorized maintenance/plant manager can request rework on this work order',
+      };
+    }
 
     const completion = await tx.repairCompletion.findUnique({
       where: { workOrderId },
@@ -76,6 +105,7 @@ export async function requestRepairRework(
 
     const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, {
       reason,
+      extraData: { actualEnd: null },
       tx,
     });
     if (!transition.success) throw new Error(transition.error);
@@ -114,11 +144,16 @@ export async function requestRepairRework(
         { status: wo.status, reworkCount: completion.reworkCount },
         {
           status: 'in_progress',
+          actualEnd: null,
           reworkReason: reason,
           reworkCategory: options.category ?? null,
           evidence: options.evidence ?? [],
           reworkCount: updatedCompletion.reworkCount,
           requestedAt: requestedAt.toISOString(),
+          technicianExecutionRestartRequired: true,
+          ...(authority.override
+            ? { supervisorReworkOverride: true, assignedSupervisorId: wo.assignedSupervisorId }
+            : {}),
         },
         options.auditCtx,
       ),

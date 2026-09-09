@@ -51,6 +51,7 @@ type CanonicalTransition = {
 
 // ============================================================================
 // DEFAULT TRANSITIONS (auto-seeded when table is empty)
+// Keep these exactly aligned with scripts/seed-transitions.ts.
 // ============================================================================
 
 export const DEFAULT_MR_TRANSITIONS = [
@@ -112,13 +113,14 @@ export const DEFAULT_WO_TRANSITIONS = [
   { fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+  { fromStatus: 'approved', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+  { fromStatus: 'planned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'in_progress', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-  { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
+  { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
-
-  // ── New waiting states (Phase 2B) ──
+  { fromStatus: 'on_hold', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'in_progress', toStatus: 'waiting_tools', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'waiting_tools', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'waiting_tools', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
@@ -131,12 +133,8 @@ export const DEFAULT_WO_TRANSITIONS = [
   { fromStatus: 'in_progress', toStatus: 'pending_handover', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager', 'maintenance_supervisor']), requiresReason: false },
   { fromStatus: 'pending_handover', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'pending_handover', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-
-  // ── Verification + Closure (canonical path: completed → verified → closed) ──
   { fromStatus: 'completed', toStatus: 'verified', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: false },
   { fromStatus: 'verified', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: false },
-
-  // ── Rework paths (requires reason) ──
   { fromStatus: 'completed', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
   { fromStatus: 'verified', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
 ];
@@ -282,18 +280,12 @@ function parseRoleSlugs(json: string): string[] {
   }
 }
 
-/**
- * Check whether the session has the admin role.
- * Admins bypass all role-based restrictions on transitions.
- */
+/** Check whether the session has the admin role. */
 function isAdmin(session: SessionLike): boolean {
   return session.roles.includes('admin');
 }
 
-/**
- * Determine if the session's roles intersect with the allowed role slugs.
- * Admin always passes regardless of role list.
- */
+/** Determine if the session's roles intersect with the allowed role slugs. */
 function hasAllowedRole(
   session: SessionLike,
   allowedRoleSlugs: string[],
@@ -302,23 +294,21 @@ function hasAllowedRole(
   return allowedRoleSlugs.some((slug) => session.roles.includes(slug));
 }
 
+function transitionConflictMessage(
+  entityType: EntityType,
+  entityId: string,
+  fromStatus: string,
+  toStatus: string,
+): string {
+  return `Transition conflict for ${entityType} "${entityId}": expected status "${fromStatus}" before moving to "${toStatus}". The record changed concurrently; reload and retry.`;
+}
+
 // ============================================================================
 // PUBLIC API
 // ============================================================================
 
 /**
  * Check if a status transition is allowed for a given user.
- *
- * Queries the `statusTransitions` table for a matching rule (entityType,
- * fromStatus, toStatus) and verifies the session's roles against the
- * `allowedRoleSlugs` JSON array.
- *
- * If the table is empty, auto-seeds the default transitions before retrying.
- *
- * @param entityType  - "work_order" or "maintenance_request"
- * @param fromStatus  - Current status string, or `null` for the initial state
- * @param toStatus    - Target status to transition into
- * @param session     - The acting user's session data
  */
 export async function checkTransition(
   entityType: EntityType,
@@ -327,24 +317,19 @@ export async function checkTransition(
   session: SessionLike,
   tx?: Prisma.TransactionClient,
 ): Promise<TransitionCheck> {
-  // Use the provided transaction client, or fall back to the default db
   const client = tx ?? db;
 
-  // Look up the matching transition rule
   let rule = await client.statusTransition.findFirst({
     where: {
       entityType,
       toStatus,
-      // Prisma treats `null` fromStatus as "IS NULL" when using the object form
       fromStatus: fromStatus === null ? null : fromStatus,
     },
   });
 
-  // If no rule found, try auto-seeding the table (self-healing for fresh deploys)
   if (!rule) {
     const seeded = await ensureTransitionsSeeded();
     if (seeded) {
-      // Retry the lookup after seeding
       rule = await client.statusTransition.findFirst({
         where: {
           entityType,
@@ -391,17 +376,11 @@ export async function checkTransition(
 /**
  * Execute a validated status transition.
  *
- * 1. Validates via `checkTransition`.
- * 2. Updates the appropriate entity table (work_orders or maintenance_requests).
- * 3. Creates a status-history audit entry (WorkOrderStatusHistory for work orders,
- *    MaintenanceRequestComment for maintenance requests).
- * 4. Handles conversion logic when a maintenance_request moves to "converted".
- *
- * @param entityType  - "work_order" or "maintenance_request"
- * @param entityId    - The primary key of the entity to update
- * @param toStatus    - Target status
- * @param session     - The acting user's session data
- * @param options     - Optional reason and extra fields to merge into the update
+ * The final write is a compare-and-set on the status observed during validation.
+ * This is the authoritative concurrency boundary: two Hold/Cancel/Handover/
+ * completion/review requests cannot both commit transitions from the same stale
+ * state. The loser receives a conflict and its surrounding transaction rolls
+ * back any timer/audit side effects.
  */
 export async function executeTransition(
   entityType: EntityType,
@@ -411,19 +390,11 @@ export async function executeTransition(
   options?: {
     reason?: string;
     extraData?: Record<string, unknown>;
-    /**
-     * An external Prisma transaction client. When provided, all DB
-     * operations are executed within this transaction instead of creating
-     * a new one — enabling callers to compose multiple operations
-     * (e.g. WO creation + MR transition) atomically.
-     */
     tx?: Prisma.TransactionClient;
   },
 ): Promise<ExecuteResult> {
-  // Use the provided transaction client, or fall back to the default db
   const tx = options?.tx;
 
-  // --- 1. Determine the current status of the entity ---
   let currentStatus: string | null = null;
 
   if (entityType === 'work_order') {
@@ -442,39 +413,50 @@ export async function executeTransition(
     currentStatus = mr.status;
   }
 
-  // --- 2. Validate the transition ---
   const check = await checkTransition(entityType, currentStatus, toStatus, session, tx);
   if (!check.allowed) {
     return { success: false, error: check.reason };
   }
 
-  // If the transition requires a reason, ensure one was provided
-  if (check.transition?.requiresReason && !options?.reason) {
+  if (check.transition?.requiresReason && !options?.reason?.trim()) {
     return {
       success: false,
       error: `This transition from "${currentStatus ?? 'initial'}" to "${toStatus}" requires a reason.`,
     };
   }
 
-  // --- 3. Build the update payload (merge extraData) ---
+  // Both persisted entity models have non-null status columns. A null value here
+  // would indicate corrupt/unexpected persistence and must never degrade into an
+  // unconditional update.
+  if (currentStatus === null) {
+    return {
+      success: false,
+      error: `Cannot execute transition for ${entityType} "${entityId}" because its persisted status is null.`,
+    };
+  }
+
   const updatePayload: Record<string, unknown> = {
     status: toStatus,
     ...options?.extraData,
   };
 
-  try {
-    // --- 4. Perform the update + audit trail ---
-    if (entityType === 'work_order') {
-      if (tx) {
-        // Use the caller's transaction directly
-        // Update the work order
-        await tx.workOrder.update({
-          where: { id: entityId },
-          data: updatePayload,
-        });
+  // Conversion carries the created WO id on the MR row.
+  if (entityType === 'maintenance_request' && toStatus === 'converted' && options?.extraData?.workOrderId) {
+    updatePayload.workOrderId = options.extraData.workOrderId;
+  }
 
-        // Create a status history audit entry
-        await tx.workOrderStatusHistory.create({
+  try {
+    if (entityType === 'work_order') {
+      const apply = async (client: Prisma.TransactionClient) => {
+        const claimed = await client.workOrder.updateMany({
+          where: { id: entityId, status: currentStatus },
+          data: updatePayload as Prisma.WorkOrderUpdateManyMutationInput,
+        });
+        if (claimed.count !== 1) {
+          throw new Error(transitionConflictMessage(entityType, entityId, currentStatus, toStatus));
+        }
+
+        await client.workOrderStatusHistory.create({
           data: {
             workOrderId: entityId,
             fromStatus: currentStatus,
@@ -483,29 +465,14 @@ export async function executeTransition(
             notes: options?.reason ?? null,
           },
         });
-      } else {
-        // Create our own transaction (backward compatible)
-        await db.$transaction(async (innerTx) => {
-          // Update the work order
-          await innerTx.workOrder.update({
-            where: { id: entityId },
-            data: updatePayload,
-          });
+      };
 
-          // Create a status history audit entry
-          await innerTx.workOrderStatusHistory.create({
-            data: {
-              workOrderId: entityId,
-              fromStatus: currentStatus,
-              toStatus,
-              performedById: session.userId,
-              notes: options?.reason ?? null,
-            },
-          });
-        });
+      if (tx) {
+        await apply(tx);
+      } else {
+        await db.$transaction(apply);
       }
 
-      // Return the updated record
       const updated = await (tx ?? db).workOrder.findUnique({ where: { id: entityId } });
       return {
         success: true,
@@ -513,68 +480,32 @@ export async function executeTransition(
       };
     }
 
-    // --- Maintenance request path ---
-    if (tx) {
-      // Use the caller's transaction directly
-      // Handle conversion logic: when a maintenance request is being converted
-      // to a work order, the maintenanceRequestId link may need updating.
-      if (toStatus === 'converted') {
-        // If the caller provided a workOrderId in extraData, link it
-        if (options?.extraData?.workOrderId) {
-          (updatePayload as Record<string, unknown>).workOrderId =
-            options.extraData.workOrderId;
-        }
+    const apply = async (client: Prisma.TransactionClient) => {
+      const claimed = await client.maintenanceRequest.updateMany({
+        where: { id: entityId, status: currentStatus },
+        data: updatePayload as Prisma.MaintenanceRequestUpdateManyMutationInput,
+      });
+      if (claimed.count !== 1) {
+        throw new Error(transitionConflictMessage(entityType, entityId, currentStatus, toStatus));
       }
 
-      // Update the maintenance request
-      await tx.maintenanceRequest.update({
-        where: { id: entityId },
-        data: updatePayload,
-      });
-
-      // Create an audit comment recording the status change
-      await tx.maintenanceRequestComment.create({
+      await client.maintenanceRequestComment.create({
         data: {
           maintenanceRequestId: entityId,
           userId: session.userId,
-          content: `[Status Change] ${currentStatus ?? 'initial'} → ${toStatus}${
+          content: `[Status Change] ${currentStatus} → ${toStatus}${
             options?.reason ? ` | Reason: ${options.reason}` : ''
           }`,
         },
       });
+    };
+
+    if (tx) {
+      await apply(tx);
     } else {
-      // Create our own transaction (backward compatible)
-      await db.$transaction(async (innerTx) => {
-        // Handle conversion logic: when a maintenance request is being converted
-        // to a work order, the maintenanceRequestId link may need updating.
-        if (toStatus === 'converted') {
-          // If the caller provided a workOrderId in extraData, link it
-          if (options?.extraData?.workOrderId) {
-            (updatePayload as Record<string, unknown>).workOrderId =
-              options.extraData.workOrderId;
-          }
-        }
-
-        // Update the maintenance request
-        await innerTx.maintenanceRequest.update({
-          where: { id: entityId },
-          data: updatePayload,
-        });
-
-        // Create an audit comment recording the status change
-        await innerTx.maintenanceRequestComment.create({
-          data: {
-            maintenanceRequestId: entityId,
-            userId: session.userId,
-            content: `[Status Change] ${currentStatus ?? 'initial'} → ${toStatus}${
-              options?.reason ? ` | Reason: ${options.reason}` : ''
-            }`,
-          },
-        });
-      });
+      await db.$transaction(apply);
     }
 
-    // Return the updated record
     const updated = await (tx ?? db).maintenanceRequest.findUnique({
       where: { id: entityId },
     });
@@ -588,25 +519,12 @@ export async function executeTransition(
   }
 }
 
-/**
- * Get all valid transitions available from a given status for a user.
- *
- * Returns every transition rule whose `fromStatus` matches `currentStatus`,
- * filtered by the user's roles (admin sees everything).
- * Results are ordered by `sortOrder` ascending.
- *
- * If the table is empty, auto-seeds before returning results.
- *
- * @param entityType     - "work_order" or "maintenance_request"
- * @param currentStatus  - The entity's current status, or `null` for initial
- * @param session        - The acting user's session data
- */
+/** Get all valid transitions available from a given status for a user. */
 export async function getAvailableTransitions(
   entityType: EntityType,
   currentStatus: string | null,
   session: SessionLike,
 ): Promise<AvailableTransition[]> {
-  // Auto-seed if table is empty
   await ensureTransitionsSeeded();
 
   const rules = await db.statusTransition.findMany({

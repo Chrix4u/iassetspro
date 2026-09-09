@@ -33,8 +33,23 @@ export type VerifyRepairResult = {
   readiness?: ReadinessCheckResult;
 };
 
+function hasSupervisorReviewAuthority(
+  wo: { assignedSupervisorId: string | null },
+  session: VerificationSessionContext,
+): { allowed: boolean; override: boolean } {
+  const managerOverride = session.roles.some((role) =>
+    ['admin', 'maintenance_manager', 'plant_manager'].includes(role),
+  );
+  if (managerOverride) return { allowed: true, override: true };
+  return { allowed: wo.assignedSupervisorId === session.userId, override: false };
+}
+
 /**
  * Canonical supervisor verification for a completed repair WO.
+ *
+ * The assigned supervisor owns the quality review. Admin, maintenance-manager
+ * and plant-manager roles retain an auditable override; a generic verify
+ * permission alone cannot approve another supervisor's work order.
  *
  * WorkOrder deliberately has no verifiedBy/qualityRating columns. Verification
  * evidence belongs to RepairCompletion + comments/audit history, while the WO
@@ -58,9 +73,18 @@ export async function verifyRepairWorkOrder(
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+
+    const authority = hasSupervisorReviewAuthority(wo, session);
+    if (!authority.allowed) {
+      return {
+        success: false as const,
+        error: 'Only the assigned supervisor or an authorized maintenance/plant manager can verify this work order',
+      };
+    }
 
     const readiness = await checkReadiness(workOrderId, 'verify', tx);
     if (!readiness.ready) {
@@ -83,7 +107,6 @@ export async function verifyRepairWorkOrder(
       };
     }
 
-    // No extraData here: verifiedBy/qualityRating are NOT WorkOrder columns.
     const transition = await executeTransition('work_order', workOrderId, 'verified', session, { tx });
     if (!transition.success) throw new Error(transition.error);
 
@@ -124,6 +147,9 @@ export async function verifyRepairWorkOrder(
           supervisorApprovedAt: verifiedAt.toISOString(),
           qualityRating: options.qualityRating ?? null,
           checklistPassed: options.checklistPassed ?? null,
+          ...(authority.override
+            ? { supervisorReviewOverride: true, assignedSupervisorId: wo.assignedSupervisorId }
+            : {}),
         },
         options.auditCtx,
       ),

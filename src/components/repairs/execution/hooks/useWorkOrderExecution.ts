@@ -262,6 +262,13 @@ export interface ReadinessResult {
   warnings: ReadinessItem[];
 }
 
+type ResumeWorkResponse = {
+  status: 'in_progress';
+  resumedAt: string | Date;
+  executionSessionOpened: boolean;
+  technicianExecutionStartRequired: boolean;
+};
+
 export function buildUnverifiedCompletionReadiness(message?: string): ReadinessResult {
   return {
     ready: false,
@@ -292,6 +299,7 @@ interface UseWorkOrderExecutionReturn {
   fetchDowntimes: () => Promise<void>;
   fetchReadiness: () => Promise<void>;
   startWork: (params?: { reason?: string; notes?: string }) => Promise<boolean>;
+  /** @deprecated This invokes the WO-wide Hold action; retained for existing workspace callers. */
   pauseWork: (reason: string) => Promise<boolean>;
   resumeWork: (notes?: string) => Promise<boolean>;
   submitCompletion: (params: {
@@ -471,24 +479,27 @@ export function useWorkOrderExecution(
     }
   }, [workOrderId, refetch, fetchTimeLogs]);
 
+  // Compatibility name retained until the monolithic workspace action strip is
+  // extracted. This is a WO-wide supervisor/maintenance-control Hold, not a
+  // personal technician timer pause.
   const pauseWork = useCallback(async (reason: string): Promise<boolean> => {
     if (!reason.trim()) {
-      toast.error('A reason is required to pause');
+      toast.error('A reason is required to place the work order on hold');
       return false;
     }
     setIsActionLoading(true);
     try {
       const res = await api.post(`/api/work-orders/${workOrderId}/hold`, { reason });
       if (res.success) {
-        toast.success('Work paused');
+        toast.success('Work order placed on hold');
         await refetch();
         await fetchTimeLogs();
         return true;
       }
-      toast.error(res.error || 'Failed to pause work');
+      toast.error(res.error || 'Failed to place work order on hold');
       return false;
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to pause work');
+      toast.error(err?.message || 'Failed to place work order on hold');
       return false;
     } finally {
       setIsActionLoading(false);
@@ -500,15 +511,22 @@ export function useWorkOrderExecution(
     try {
       const res = await api.post(`/api/work-orders/${workOrderId}/resume`, { notes });
       if (res.success) {
-        toast.success('Work resumed');
+        const data = res.data as ResumeWorkResponse | undefined;
+        if (data?.technicianExecutionStartRequired || data?.executionSessionOpened === false) {
+          toast.success('Work order released', {
+            description: 'No labor timer was started. The assigned technician must explicitly start execution.',
+          });
+        } else {
+          toast.success('Execution resumed');
+        }
         await refetch();
         await fetchTimeLogs();
         return true;
       }
-      toast.error(res.error || 'Failed to resume work');
+      toast.error(res.error || 'Failed to release or resume work');
       return false;
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to resume work');
+      toast.error(err?.message || 'Failed to release or resume work');
       return false;
     } finally {
       setIsActionLoading(false);

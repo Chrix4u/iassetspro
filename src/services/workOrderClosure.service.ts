@@ -3,6 +3,7 @@ import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
 import { calculateAuthoritativeCosts } from '@/services/workExecution.service';
 import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
+import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 
@@ -45,13 +46,36 @@ export type CloseRepairResult = {
   readiness?: ReadinessCheckResult;
 };
 
+function hasPlannerCloseAuthority(
+  wo: { plannerId: string | null },
+  session: ClosureSessionContext,
+): { allowed: boolean; override: boolean } {
+  const managerOverride = session.roles.some((role) =>
+    ['admin', 'maintenance_manager', 'plant_manager'].includes(role),
+  );
+  if (managerOverride) return { allowed: true, override: true };
+  return { allowed: wo.plannerId === session.userId, override: false };
+}
+
 /**
  * Canonical planner close for a verified repair WO.
  *
+ * The assigned planner is the accountable closeout owner. Admin,
+ * maintenance-manager and plant-manager roles retain an auditable override;
+ * merely holding the generic close permission is not sufficient to close
+ * another planner's work order.
+ *
  * Reliability history is component-based. A FailureRecord is therefore only
  * materialized when an actual failureMode is supplied and a concrete component
- * can be resolved from the WO. Merely having an asset does not justify creating
- * a synthetic failure classification.
+ * can be resolved from the WO. If legacy data already contains a FailureRecord
+ * linked to this WO under a non-deterministic id, that row is reused rather than
+ * creating a second reliability event for the same repair.
+ *
+ * Recurring PM schedules advance only here, after the verified WO crosses the
+ * irreversible planner-close boundary. Technician completion and supervisor
+ * verification remain reworkable and therefore cannot safely advance PM due
+ * dates. The PM completion date is the WO actualEnd when available so review
+ * delay does not shift the maintenance cadence.
  */
 export async function closeRepairWorkOrder(
   workOrderId: string,
@@ -71,6 +95,8 @@ export async function closeRepairWorkOrder(
         isLocked: true,
         assetId: true,
         actualStart: true,
+        actualEnd: true,
+        pmScheduleId: true,
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -86,8 +112,14 @@ export async function closeRepairWorkOrder(
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
 
-    // Normalize legacy rows in the same transaction as readiness, costing and
-    // final closure. Active sessions are never auto-closed by normalization.
+    const authority = hasPlannerCloseAuthority(wo, session);
+    if (!authority.allowed) {
+      return {
+        success: false as const,
+        error: 'Only the assigned planner or an authorized maintenance/plant manager can close this work order',
+      };
+    }
+
     await normalizeWorkOrderTimeLogs(workOrderId, tx);
 
     const readiness = await checkReadiness(workOrderId, 'close', tx);
@@ -179,12 +211,57 @@ export async function closeRepairWorkOrder(
       });
     }
 
+    let pmScheduleAdvanced = false;
+    if (wo.pmScheduleId) {
+      const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
+      if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
+        const pmCompletedAt = wo.actualEnd || closedAt;
+        const nextDueDate = calculateNextDueDate(
+          pmCompletedAt,
+          pmSchedule.frequencyType,
+          pmSchedule.frequencyValue,
+        );
+        await tx.pmSchedule.update({
+          where: { id: pmSchedule.id },
+          data: { lastCompletedDate: pmCompletedAt, nextDueDate },
+        });
+        await tx.auditLog.create({
+          data: buildAuditData(
+            'update',
+            'pm_schedule',
+            pmSchedule.id,
+            session.userId,
+            {
+              lastCompletedDate: pmSchedule.lastCompletedDate,
+              nextDueDate: pmSchedule.nextDueDate,
+            },
+            {
+              lastCompletedDate: pmCompletedAt.toISOString(),
+              nextDueDate: nextDueDate?.toISOString() ?? null,
+              reason: `PM WO ${wo.woNumber} planner-closed after verification`,
+              workOrderId,
+            },
+            options.auditCtx,
+          ),
+        });
+        pmScheduleAdvanced = true;
+      }
+    }
+
     if (failureMode && failureComponentId) {
+      const existingFailure = await tx.failureRecord.findFirst({
+        where: { workOrderId },
+        select: { id: true },
+        orderBy: { detectedAt: 'asc' },
+      });
+      const failureRecordId = existingFailure?.id || `wo-${workOrderId}`;
+
       await tx.failureRecord.upsert({
-        where: { id: `wo-${workOrderId}` },
+        where: { id: failureRecordId },
         update: {
           componentId: failureComponentId,
           assetId: wo.assetId,
+          workOrderId,
           failureMode,
           failureCause: options.failureCause?.trim() || null,
           correctiveAction: options.correctiveAction?.trim() || null,
@@ -196,7 +273,7 @@ export async function closeRepairWorkOrder(
           reportedById: session.userId,
         },
         create: {
-          id: `wo-${workOrderId}`,
+          id: failureRecordId,
           componentId: failureComponentId,
           assetId: wo.assetId,
           workOrderId,
@@ -229,8 +306,10 @@ export async function closeRepairWorkOrder(
           actualHours: costs.laborHours,
           totalCost: costs.totalActualCost,
           failureRecordCreated: Boolean(failureMode && failureComponentId),
+          pmScheduleAdvanced,
           followUpRequired: options.followUpRequired ?? false,
           followUpNotes: options.followUpNotes ?? null,
+          ...(authority.override ? { plannerCloseOverride: true, assignedPlannerId: wo.plannerId } : {}),
         },
         options.auditCtx,
       ),

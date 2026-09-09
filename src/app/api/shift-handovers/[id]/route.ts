@@ -71,6 +71,20 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    // A work-order-linked handover is lifecycle evidence owned by the canonical
+    // WO handover flow. Generic edits could change the designated receiver or
+    // custody evidence after active labor has already been closed and the WO
+    // moved to pending_handover. Keep these records immutable here.
+    if (existing.workOrderId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Work-order-linked handovers cannot be edited through the generic handover endpoint',
+        },
+        { status: 400 },
+      );
+    }
+
     const updateData: Record<string, unknown> = {};
     // Whitelist: status/confirmedAt/overriddenBy/overriddenAt are NOT in allowedFields
     // and can NEVER be set via generic PUT — only via the dedicated confirm endpoint.
@@ -148,6 +162,19 @@ export async function DELETE(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Deleting a linked handover would strand the work order in
+    // pending_handover with no canonical custody record. Any future lifecycle
+    // cancellation/recovery must be implemented through the WO state machine.
+    if (existing.workOrderId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Work-order-linked handovers cannot be deleted through the generic handover endpoint',
+        },
+        { status: 400 },
+      );
     }
 
     // Confirmed handovers cannot be deleted

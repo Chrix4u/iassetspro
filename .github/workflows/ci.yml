@@ -1,7 +1,7 @@
 # =============================================================================
 # iAssetsPro EAM — Main CI Pipeline
 # =============================================================================
-# Triggers on pushes to main/develop, all pull requests, and manual dispatch.
+# Triggers on pushes to main/develop, pull requests, and manual dispatch.
 # Jobs: lint/typecheck/unit → app build + container build → Repairs UAT + platform E2E
 # Full-repository TypeScript debt is reported separately inside the typecheck job.
 # =============================================================================
@@ -80,6 +80,9 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      - name: Enforce canonical RWOP lifecycle service imports
+        run: bunx tsx scripts/check-rwop-legacy-lifecycle-imports.ts
+
       - name: Run Repairs/RWOP TypeScript hard gate
         run: bunx tsc -p tsconfig.repairs.json --noEmit
 
@@ -152,6 +155,9 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  # Build the actual production Dockerfile in CI. A successful Next standalone
+  # build alone is insufficient evidence that the image deployed to the VPS is
+  # buildable or starts from a valid runtime filesystem.
   container-build:
     name: Production Container Build
     runs-on: ubuntu-latest
@@ -178,12 +184,17 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
 
+  # Repairs/RWOP UAT is a hard release gate. It runs for pull requests, manual
+  # verification of an exact branch head, and again on the exact main SHA that
+  # may be deployed. It uses real MariaDB + Redis service containers, verifies
+  # the deployed schema and BullMQ round-trip, then exercises the exact
+  # standalone production artifact with Playwright.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [build, container-build]
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
 
     services:
       mariadb:
@@ -283,6 +294,10 @@ jobs:
             test-results/
           retention-days: 14
 
+  # Platform E2E is a second hard gate, separate from Repairs UAT. It gets its
+  # own fresh database so the destructive full demo seed is deterministic and
+  # cannot interfere with Repairs scenarios. Running it on PRs prevents broken
+  # platform-test infrastructure from reaching main and blocking deployments.
   e2e-tests:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest

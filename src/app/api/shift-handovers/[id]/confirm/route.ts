@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // POST /api/shift-handovers/[id]/confirm
@@ -15,8 +15,6 @@ export async function POST(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { overrideReason } = body;
 
     const handover = await db.shiftHandover.findUnique({
       where: { id },
@@ -50,54 +48,77 @@ export async function POST(
       );
     }
 
-    const isDesignatedReceiver = handover.receivedById === session.userId;
-    const isOverrideRole =
-      isAdmin(session) ||
-      hasRole(session, 'maintenance_supervisor') ||
-      hasRole(session, 'maintenance_manager');
-
-    if (!isDesignatedReceiver && !isOverrideRole) {
-      return NextResponse.json({ success: false, error: 'Only the designated receiver or maintenance supervisor/manager can confirm' }, { status: 403 });
-    }
-
-    if (!isDesignatedReceiver && isOverrideRole && !overrideReason?.trim()) {
-      return NextResponse.json({ success: false, error: 'Override confirmation requires a reason' }, { status: 400 });
+    // Acceptance is a custody transfer, not a management override. The named
+    // incoming worker must personally acknowledge the handover. Managers may
+    // release a *confirmed* handover through the canonical resume service, but
+    // they cannot impersonate the receiver's acceptance here.
+    if (handover.receivedById !== session.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Only the designated handover receiver can confirm acceptance' },
+        { status: 403 },
+      );
     }
 
     const now = new Date();
-    // Keep the persisted model schema-compatible. Confirmation timestamp and
-    // override details are immutable audit metadata rather than ad-hoc columns.
-    const updated = await db.shiftHandover.update({
-      where: { id },
-      data: { status: 'confirmed' },
-      include: {
-        handedOverBy: { select: { id: true, fullName: true, username: true } },
-        receivedBy: { select: { id: true, fullName: true, username: true } },
-      },
+
+    // Atomically claim the pending handover and write its audit evidence in the
+    // same transaction. updateMany gives us a compare-and-set guard so two
+    // concurrent confirmation requests cannot both succeed or double-audit.
+    const updated = await db.$transaction(async (tx) => {
+      const claimed = await tx.shiftHandover.updateMany({
+        where: {
+          id,
+          status: 'pending',
+          receivedById: session.userId,
+        },
+        data: { status: 'confirmed' },
+      });
+
+      if (claimed.count !== 1) {
+        return null;
+      }
+
+      const confirmed = await tx.shiftHandover.findUnique({
+        where: { id },
+        include: {
+          handedOverBy: { select: { id: true, fullName: true, username: true } },
+          receivedBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+
+      if (!confirmed) {
+        throw new Error('Confirmed shift handover could not be reloaded');
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'shift_handover_confirm',
+          entityType: 'shift_handover',
+          entityId: id,
+          newValues: JSON.stringify({
+            status: 'confirmed',
+            confirmedAt: now.toISOString(),
+            receivedById: handover.receivedById,
+          }),
+        },
+      });
+
+      return confirmed;
     });
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: isDesignatedReceiver ? 'shift_handover_confirm' : 'shift_handover_confirm_override',
-        entityType: 'shift_handover',
-        entityId: id,
-        newValues: JSON.stringify({
-          status: 'confirmed',
-          confirmedAt: now.toISOString(),
-          receivedById: handover.receivedById,
-          ...(overrideReason ? { overrideReason } : {}),
-          ...(!isDesignatedReceiver ? { overriddenBy: session.userId } : {}),
-        }),
-      },
-    });
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: 'Shift handover was already confirmed or is no longer pending' },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         ...updated,
         confirmedAt: now.toISOString(),
-        ...(!isDesignatedReceiver ? { overriddenBy: session.userId, overrideReason } : {}),
       },
     });
   } catch (error: unknown) {

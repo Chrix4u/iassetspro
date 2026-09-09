@@ -16,6 +16,8 @@ export type RepairNotificationEvent =
   | 'planner_closed'
   | 'wo_started'
   | 'wo_on_hold'
+  | 'wo_waiting'
+  | 'wo_released'
   | 'wo_resumed'
   | 'shift_handover_pending';
 
@@ -44,8 +46,10 @@ const EVENT_TEMPLATES: Record<RepairNotificationEvent, { title: string; messageT
   supervisor_verified: { title: 'WO Verified', messageTemplate: '{actorName} verified {woNumber}' },
   planner_closed: { title: 'WO Closed', messageTemplate: '{actorName} closed {woNumber}' },
   wo_started: { title: 'WO Started', messageTemplate: '{actorName} started work on {woNumber}' },
-  wo_on_hold: { title: 'WO On Hold', messageTemplate: '{woNumber} has been put on hold: {details}' },
-  wo_resumed: { title: 'WO Resumed', messageTemplate: '{actorName} resumed work on {woNumber}' },
+  wo_on_hold: { title: 'WO On Hold', messageTemplate: '{actorName} placed {woNumber} on hold: {details}' },
+  wo_waiting: { title: 'WO Waiting', messageTemplate: '{woNumber} entered a waiting state: {details}' },
+  wo_released: { title: 'WO Released for Execution', messageTemplate: '{actorName} released {woNumber} for execution' },
+  wo_resumed: { title: 'WO Resumed', messageTemplate: '{actorName} resumed execution on {woNumber}' },
   shift_handover_pending: { title: 'Shift Handover Pending', messageTemplate: 'Shift handover pending for {woNumber}' },
 };
 

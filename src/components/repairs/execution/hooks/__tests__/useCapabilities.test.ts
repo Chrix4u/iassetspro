@@ -8,7 +8,10 @@ import {
 const BASE_CAPABILITIES: Capabilities = {
   canStart: true,
   canPause: false,
+  canHold: false,
   canResume: false,
+  resumeOpensExecutionSession: false,
+  hasActiveExecutionSession: false,
   canLogOwnTime: true,
   canLogTeamTime: false,
   canRequestTools: true,
@@ -60,9 +63,17 @@ describe('mergeStartReadiness', () => {
     expect(result.canStart).toBe(true);
   });
 
-  it('disables Start when the authoritative readiness result contains blockers', () => {
+  it('disables Start without changing hold/resume authority when readiness has blockers', () => {
+    const supervisorCapabilities: Capabilities = {
+      ...BASE_CAPABILITIES,
+      canHold: true,
+      canPause: true,
+      canResume: true,
+      resumeOpensExecutionSession: false,
+    };
+
     const result = mergeStartReadiness(
-      BASE_CAPABILITIES,
+      supervisorCapabilities,
       readiness({
         ready: false,
         blockers: [
@@ -77,7 +88,10 @@ describe('mergeStartReadiness', () => {
     );
 
     expect(result.canStart).toBe(false);
-    expect(result.canPause).toBe(false);
+    expect(result.canHold).toBe(true);
+    expect(result.canPause).toBe(true);
+    expect(result.canResume).toBe(true);
+    expect(result.resumeOpensExecutionSession).toBe(false);
     expect(result.canRequestMaterials).toBe(true);
   });
 
@@ -89,10 +103,11 @@ describe('mergeStartReadiness', () => {
     expect(result).toBe(denied);
   });
 
-  it('fails closed when the start-readiness result is unavailable', () => {
+  it('fails closed only for Start when the start-readiness result is unavailable', () => {
     const result = mergeStartReadiness(BASE_CAPABILITIES, null);
 
     expect(result.canStart).toBe(false);
+    expect(result.canHold).toBe(false);
     expect(result.canRequestMaterials).toBe(true);
   });
 });

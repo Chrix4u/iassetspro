@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { format } from 'date-fns';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -32,7 +31,6 @@ import {
 } from 'recharts';
 
 import { api } from '@/lib/api';
-import { exportPDF } from '@/lib/export-pdf';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,32 +69,34 @@ type WorkOrderRow = {
   actualHours?: number | null;
   totalCost?: number | null;
   createdAt?: string | null;
-  plannedEnd?: string | null;
-  completedDate?: string | null;
 };
 
 type ReportData = {
   summary?: {
-    totalMRs?: number;
     totalWOs?: number;
     completedWOs?: number;
     completionRate?: number;
     avgCompletionHours?: number;
     totalCost?: number;
     overdueWOs?: number;
-    slaBreachedWOs?: number;
     slaComplianceRate?: number;
     openWOs?: number;
-    pendingMRs?: number;
-    mrConversionRate?: number;
   };
   woByType?: Array<{ type: string; count: number }>;
   woByStatus?: Array<{ status: string; count: number }>;
-  woByMonth?: Array<{ month: string; count: number; completedCount: number }>;
   recentWorkOrders?: WorkOrderRow[];
 };
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
+type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+type ReportFilters = {
+  startDate: string;
+  endDate: string;
+  plantId: string;
+  departmentId: string;
+  moduleFilter: ModuleFilter;
+};
 
 const STATUS_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#14b8a6'];
 const TYPE_COLORS: Record<string, string> = {
@@ -108,32 +108,32 @@ const TYPE_COLORS: Record<string, string> = {
   project: '#14b8a6',
 };
 
-function defaultStartDate(): string {
-  const date = new Date();
-  date.setDate(date.getDate() - 30);
-  return date.toISOString().slice(0, 10);
+function defaultFilters(): ReportFilters {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 30);
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+    plantId: 'all',
+    departmentId: 'all',
+    moduleFilter: 'repairs',
+  };
 }
 
 function plantHeader(plantId: string): Record<string, string> {
-  // api.get/getRaw inject the user's stored primary plant by default. An empty
-  // header deliberately clears that implicit selection so the server can apply
-  // the authenticated user's full accessible-plant set instead.
+  // api.get/getRaw inject the stored primary plant by default. Emptying the
+  // header is intentional when the user requests their full accessible set.
   return { 'X-Plant-ID': plantId === 'all' ? '' : plantId };
 }
 
-function buildQuery(
-  startDate: string,
-  endDate: string,
-  plantId: string,
-  departmentId: string,
-  moduleFilter: ModuleFilter,
-): string {
+function buildQuery(filters: ReportFilters): string {
   const params = new URLSearchParams();
-  if (startDate) params.set('startDate', startDate);
-  if (endDate) params.set('endDate', endDate);
-  if (plantId !== 'all') params.set('plantId', plantId);
-  if (departmentId !== 'all') params.set('departmentId', departmentId);
-  if (moduleFilter !== 'all') params.set('moduleFilter', moduleFilter);
+  if (filters.startDate) params.set('startDate', filters.startDate);
+  if (filters.endDate) params.set('endDate', filters.endDate);
+  if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
+  if (filters.departmentId !== 'all') params.set('departmentId', filters.departmentId);
+  if (filters.moduleFilter !== 'all') params.set('moduleFilter', filters.moduleFilter);
   return params.toString();
 }
 
@@ -142,11 +142,18 @@ function prettify(value?: string | null): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
 }
 
-function statusBadge(status?: string | null) {
-  const normalized = status || 'unknown';
-  if (normalized === 'closed' || normalized === 'completed') return 'default';
-  if (normalized === 'cancelled') return 'destructive';
+function statusBadge(status?: string | null): 'default' | 'destructive' | 'outline' {
+  if (status === 'closed' || status === 'completed') return 'default';
+  if (status === 'cancelled') return 'destructive';
   return 'outline';
+}
+
+function filtersEqual(a: ReportFilters, b: ReportFilters): boolean {
+  return a.startDate === b.startDate
+    && a.endDate === b.endDate
+    && a.plantId === b.plantId
+    && a.departmentId === b.departmentId
+    && a.moduleFilter === b.moduleFilter;
 }
 
 export default function RWOPReportingPage() {
@@ -158,18 +165,19 @@ export default function RWOPReportingPage() {
     isAdmin,
   } = useAuthStore();
 
-  const [startDate, setStartDate] = useState(defaultStartDate);
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [plantId, setPlantId] = useState('all');
-  const [departmentId, setDepartmentId] = useState('all');
-  const [moduleFilter, setModuleFilter] = useState<ModuleFilter>('repairs');
+  const [filters, setFilters] = useState<ReportFilters>(() => defaultFilters());
+  const [appliedFilters, setAppliedFilters] = useState<ReportFilters | null>(null);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [downloading, setDownloading] = useState<'csv' | 'xlsx' | null>(null);
+  const [downloading, setDownloading] = useState<ExportFormat | null>(null);
+  const initialLoadStarted = useRef(false);
 
-  const canView = isAdmin() || hasPermission('reports.view') || hasPermission('reports.export') || hasPermission('analytics.view');
+  const canView = isAdmin()
+    || hasPermission('reports.view')
+    || hasPermission('reports.export')
+    || hasPermission('analytics.view');
   const canExport = isAdmin() || hasPermission('reports.export');
 
   useEffect(() => {
@@ -192,20 +200,21 @@ export default function RWOPReportingPage() {
     const response = await api.get<Department[]>(`/api/departments${suffix}`, {
       headers: plantHeader(selectedPlant),
     });
-    if (response.success && Array.isArray(response.data)) {
-      setDepartments(response.data);
-      return;
-    }
-    setDepartments([]);
+    setDepartments(response.success && Array.isArray(response.data) ? response.data : []);
   }, []);
 
-  const loadReport = useCallback(async () => {
+  const loadReport = useCallback(async (target: ReportFilters) => {
     if (!isAuthenticated || !canView) return;
+    if (target.startDate && target.endDate && target.startDate > target.endDate) {
+      toast.error('Start date cannot be after end date');
+      return;
+    }
+
     setLoading(true);
     try {
-      const query = buildQuery(startDate, endDate, plantId, departmentId, moduleFilter);
+      const query = buildQuery(target);
       const response = await api.get<ReportData>(`/api/reports/maintenance?${query}`, {
-        headers: plantHeader(plantId),
+        headers: plantHeader(target.plantId),
       });
       if (!response.success || !response.data) {
         setReport(null);
@@ -213,10 +222,14 @@ export default function RWOPReportingPage() {
         return;
       }
       setReport(response.data);
+      setAppliedFilters({ ...target });
+    } catch (error: unknown) {
+      setReport(null);
+      toast.error(error instanceof Error ? error.message : 'Unable to load RWOP report');
     } finally {
       setLoading(false);
     }
-  }, [canView, departmentId, endDate, isAuthenticated, moduleFilter, plantId, startDate]);
+  }, [canView, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -225,38 +238,48 @@ export default function RWOPReportingPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    setDepartmentId('all');
-    void loadDepartments(plantId);
-  }, [isAuthenticated, loadDepartments, plantId]);
+    void loadDepartments(filters.plantId);
+  }, [filters.plantId, isAuthenticated, loadDepartments]);
 
   useEffect(() => {
-    if (!isAuthenticated || !canView) return;
-    void loadReport();
-  }, [canView, isAuthenticated, loadReport]);
+    if (!isAuthenticated || !canView || initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void loadReport(filters);
+  }, [canView, filters, isAuthenticated, loadReport]);
 
   const summary = report?.summary;
   const workOrders = report?.recentWorkOrders || [];
+  const filtersDirty = appliedFilters ? !filtersEqual(filters, appliedFilters) : false;
 
-  const filterDescription = useMemo(() => {
-    const plant = plantId === 'all' ? 'All accessible plants' : plants.find(p => p.id === plantId)?.name || 'Selected plant';
-    const department = departmentId === 'all' ? 'All departments' : departments.find(d => d.id === departmentId)?.name || 'Selected department';
-    const moduleLabel = moduleFilter === 'repairs' ? 'Repairs / RWOP' : moduleFilter === 'pm' ? 'Preventive maintenance' : 'All maintenance';
+  const appliedDescription = useMemo(() => {
+    const source = appliedFilters || filters;
+    const plant = source.plantId === 'all'
+      ? 'All accessible plants'
+      : plants.find(item => item.id === source.plantId)?.name || 'Selected plant';
+    const department = source.departmentId === 'all'
+      ? 'All departments'
+      : departments.find(item => item.id === source.departmentId)?.name || 'Selected department';
+    const moduleLabel = source.moduleFilter === 'repairs'
+      ? 'Repairs / RWOP'
+      : source.moduleFilter === 'pm'
+        ? 'Preventive maintenance'
+        : 'All maintenance';
     return `${moduleLabel} · ${plant} · ${department}`;
-  }, [departmentId, departments, moduleFilter, plantId, plants]);
+  }, [appliedFilters, departments, filters, plants]);
 
-  const downloadExport = async (formatType: 'csv' | 'xlsx') => {
-    if (!canExport) {
-      toast.error('You do not have reports.export permission');
+  const downloadExport = async (formatType: ExportFormat) => {
+    if (!canExport || !report || !appliedFilters) {
+      toast.error('Report export is not available');
       return;
     }
 
     setDownloading(formatType);
     try {
-      const query = buildQuery(startDate, endDate, plantId, departmentId, moduleFilter);
+      const query = buildQuery(appliedFilters);
       const separator = query ? '&' : '';
       const response = await api.getRaw(
         `/api/reports/maintenance/export?${query}${separator}format=${formatType}`,
-        { headers: plantHeader(plantId), timeout: 60_000 },
+        { headers: plantHeader(appliedFilters.plantId), timeout: 60_000 },
       );
 
       if (!response.ok) {
@@ -265,7 +288,7 @@ export default function RWOPReportingPage() {
           const body = await response.json();
           if (body?.error) message = body.error;
         } catch {
-          // Keep the HTTP fallback message for non-JSON failures.
+          // Preserve the HTTP fallback for non-JSON errors.
         }
         throw new Error(message);
       }
@@ -276,7 +299,7 @@ export default function RWOPReportingPage() {
       const serverName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = serverName || `rwop-report-${startDate}-to-${endDate}.${formatType}`;
+      anchor.download = serverName || `rwop-report.${formatType}`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -287,41 +310,6 @@ export default function RWOPReportingPage() {
     } finally {
       setDownloading(null);
     }
-  };
-
-  const exportPdf = () => {
-    if (!canExport || !report || !summary) {
-      toast.error('Report export is not available');
-      return;
-    }
-
-    exportPDF({
-      title: 'Repairs / RWOP Maintenance Report',
-      subtitle: `${filterDescription} · ${startDate} to ${endDate} · Generated ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
-      filename: `rwop-report-${startDate}-to-${endDate}`,
-      orientation: 'landscape',
-      summary: [
-        { label: 'Total WOs', value: String(summary.totalWOs ?? 0) },
-        { label: 'Completed', value: String(summary.completedWOs ?? 0) },
-        { label: 'Completion Rate', value: `${summary.completionRate ?? 0}%` },
-        { label: 'Open WOs', value: String(summary.openWOs ?? 0) },
-        { label: 'SLA Compliance', value: `${summary.slaComplianceRate ?? 0}%` },
-        { label: 'Total Cost', value: formatCurrency(summary.totalCost ?? 0) },
-      ],
-      headers: ['WO', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Hours', 'Cost', 'Created'],
-      rows: workOrders.map(wo => [
-        wo.woNumber || '',
-        wo.title || '',
-        wo.type || '',
-        wo.priority || '',
-        wo.status || '',
-        wo.assetName || '',
-        wo.assigneeName || '',
-        String(wo.actualHours ?? wo.estimatedHours ?? ''),
-        formatCurrency(wo.totalCost ?? 0),
-        wo.createdAt ? formatDate(wo.createdAt) : '',
-      ]),
-    });
   };
 
   if ((authLoading || !isAuthenticated) && !report) {
@@ -349,7 +337,11 @@ export default function RWOPReportingPage() {
             <h1 className="text-2xl font-bold tracking-tight">Repairs / RWOP Reporting</h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">Plant-isolated maintenance reporting, analytics and audit-ready exports</p>
-          <p className="mt-1 text-xs text-muted-foreground">{filterDescription} · {startDate} to {endDate}</p>
+          {appliedFilters && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {appliedDescription} · {appliedFilters.startDate} to {appliedFilters.endDate}
+            </p>
+          )}
         </div>
 
         {canExport && (
@@ -362,8 +354,9 @@ export default function RWOPReportingPage() {
               {downloading === 'csv' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
               CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={exportPdf} disabled={!report}>
-              <FileText className="mr-1.5 h-4 w-4" />PDF
+            <Button variant="outline" size="sm" onClick={() => void downloadExport('pdf')} disabled={downloading !== null || !report}>
+              {downloading === 'pdf' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+              PDF
             </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()} disabled={!report}>
               <Printer className="mr-1.5 h-4 w-4" />Print
@@ -375,28 +368,40 @@ export default function RWOPReportingPage() {
       <Card className="border-border/60 shadow-sm print:hidden">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base"><Filter className="h-4 w-4" />Report Filters</CardTitle>
-          <CardDescription>Filters are enforced server-side and cannot widen the signed-in user&apos;s plant access.</CardDescription>
+          <CardDescription>
+            Filters are enforced server-side. Changing a filter does not change the displayed report until you select Generate.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(260px,1.4fr)_1fr_1fr_1fr_auto] lg:items-end">
             <DateRangePicker
               label="Date Range"
-              from={startDate || undefined}
-              to={endDate || undefined}
-              onChange={(from, to) => {
-                setStartDate(from || '');
-                setEndDate(to || '');
-              }}
+              from={filters.startDate || undefined}
+              to={filters.endDate || undefined}
+              onChange={(from, to) => setFilters(current => ({
+                ...current,
+                startDate: from || '',
+                endDate: to || '',
+              }))}
             />
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">Plant</span>
-              <Select value={plantId} onValueChange={setPlantId}>
+              <Select
+                value={filters.plantId}
+                onValueChange={value => setFilters(current => ({
+                  ...current,
+                  plantId: value,
+                  departmentId: 'all',
+                }))}
+              >
                 <SelectTrigger><SelectValue placeholder="Plant" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All accessible plants</SelectItem>
                   {plants.map(plant => (
-                    <SelectItem key={plant.id} value={plant.id}>{plant.name}{plant.code ? ` (${plant.code})` : ''}</SelectItem>
+                    <SelectItem key={plant.id} value={plant.id}>
+                      {plant.name}{plant.code ? ` (${plant.code})` : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -404,7 +409,10 @@ export default function RWOPReportingPage() {
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">Department</span>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
+              <Select
+                value={filters.departmentId}
+                onValueChange={value => setFilters(current => ({ ...current, departmentId: value }))}
+              >
                 <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All departments</SelectItem>
@@ -419,7 +427,10 @@ export default function RWOPReportingPage() {
 
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">Maintenance Scope</span>
-              <Select value={moduleFilter} onValueChange={value => setModuleFilter(value as ModuleFilter)}>
+              <Select
+                value={filters.moduleFilter}
+                onValueChange={value => setFilters(current => ({ ...current, moduleFilter: value as ModuleFilter }))}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="repairs">Repairs / RWOP</SelectItem>
@@ -429,11 +440,17 @@ export default function RWOPReportingPage() {
               </Select>
             </div>
 
-            <Button onClick={() => void loadReport()} disabled={loading} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Button onClick={() => void loadReport(filters)} disabled={loading} className="bg-emerald-600 text-white hover:bg-emerald-700">
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
               Generate
             </Button>
           </div>
+
+          {filtersDirty && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+              Filters have changed. Select Generate to refresh the report. Export buttons continue to use the currently displayed report filters.
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -456,18 +473,30 @@ export default function RWOPReportingPage() {
             <Card className="border-border/60 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Work Orders by Status</CardTitle>
-                <CardDescription>Current lifecycle distribution for the selected period</CardDescription>
+                <CardDescription>Current lifecycle distribution for the generated period</CardDescription>
               </CardHeader>
               <CardContent>
                 {(report.woByStatus || []).length > 0 ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <PieChart>
-                      <Pie data={report.woByStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={90} label={({ status, count }) => `${prettify(status)} ${count}`}>
-                        {(report.woByStatus || []).map((entry, index) => <Cell key={entry.status} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />)}
-                      </Pie>
-                      <RechartsTooltip formatter={(value: number) => [value, 'Work Orders']} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie data={report.woByStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={90}>
+                          {(report.woByStatus || []).map((entry, index) => (
+                            <Cell key={entry.status} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {(report.woByStatus || []).map((entry, index) => (
+                        <span key={entry.status} className="inline-flex items-center gap-1">
+                          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: STATUS_COLORS[index % STATUS_COLORS.length] }} />
+                          {prettify(entry.status)}: {entry.count}
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 ) : <EmptyState icon={BarChart3} title="No status data" />}
               </CardContent>
             </Card>
@@ -479,14 +508,16 @@ export default function RWOPReportingPage() {
               </CardHeader>
               <CardContent>
                 {(report.woByType || []).length > 0 ? (
-                  <ResponsiveContainer width="100%" height={260}>
+                  <ResponsiveContainer width="100%" height={280}>
                     <BarChart data={report.woByType} margin={{ top: 8, right: 8, bottom: 8, left: -12 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="type" tickFormatter={prettify} tick={{ fontSize: 11 }} />
                       <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                       <RechartsTooltip labelFormatter={prettify} />
                       <Bar dataKey="count" name="Work Orders" radius={[5, 5, 0, 0]}>
-                        {(report.woByType || []).map(entry => <Cell key={entry.type} fill={TYPE_COLORS[entry.type] || '#64748b'} />)}
+                        {(report.woByType || []).map(entry => (
+                          <Cell key={entry.type} fill={TYPE_COLORS[entry.type] || '#64748b'} />
+                        ))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -500,10 +531,14 @@ export default function RWOPReportingPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <CardTitle className="text-base">Work Order Detail</CardTitle>
-                  <CardDescription>Latest 200 records are shown here; Excel/CSV exports contain the complete filtered set.</CardDescription>
+                  <CardDescription>Latest 200 records are shown here; Excel, CSV and PDF contain the complete filtered set.</CardDescription>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {summary?.overdueWOs ? <Badge variant="destructive"><AlertTriangle className="mr-1 h-3 w-3" />{summary.overdueWOs} overdue</Badge> : <Badge variant="outline"><CheckCircle2 className="mr-1 h-3 w-3" />No overdue WOs</Badge>}
+                  {summary?.overdueWOs ? (
+                    <Badge variant="destructive"><AlertTriangle className="mr-1 h-3 w-3" />{summary.overdueWOs} overdue</Badge>
+                  ) : (
+                    <Badge variant="outline"><CheckCircle2 className="mr-1 h-3 w-3" />No overdue WOs</Badge>
+                  )}
                   <Badge variant="outline"><Clock className="mr-1 h-3 w-3" />Avg {summary?.avgCompletionHours ?? 0}h</Badge>
                 </div>
               </div>
@@ -527,12 +562,17 @@ export default function RWOPReportingPage() {
                   </TableHeader>
                   <TableBody>
                     {workOrders.length === 0 ? (
-                      <TableRow><TableCell colSpan={10}><EmptyState icon={Wrench} title="No work orders match these filters" /></TableCell></TableRow>
+                      <TableRow>
+                        <TableCell colSpan={10}><EmptyState icon={Wrench} title="No work orders match these filters" /></TableCell>
+                      </TableRow>
                     ) : workOrders.map(wo => (
                       <TableRow key={wo.id}>
                         <TableCell className="font-mono text-xs">{wo.woNumber || '—'}</TableCell>
                         <TableCell className="max-w-[280px] font-medium"><span className="line-clamp-2">{wo.title || 'Untitled work order'}</span></TableCell>
-                        <TableCell><div>{wo.assetName || 'Unassigned'}</div>{wo.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{wo.assetTag}</div>}</TableCell>
+                        <TableCell>
+                          <div>{wo.assetName || 'Unassigned'}</div>
+                          {wo.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{wo.assetTag}</div>}
+                        </TableCell>
                         <TableCell className="text-xs">{prettify(wo.type)}</TableCell>
                         <TableCell className="text-xs">{prettify(wo.priority)}</TableCell>
                         <TableCell><Badge variant={statusBadge(wo.status)} className="text-[10px]">{prettify(wo.status)}</Badge></TableCell>

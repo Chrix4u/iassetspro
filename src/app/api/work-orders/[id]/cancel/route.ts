@@ -22,6 +22,13 @@ const CANCELLABLE_STATES = [
   'pending_handover',
 ] as const;
 
+class CancellationTransitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CancellationTransitionError';
+  }
+}
+
 /**
  * POST /api/work-orders/[id]/cancel
  *
@@ -85,69 +92,82 @@ export async function POST(
 
     const cancelledAt = new Date();
 
-    const outcome = await db.$transaction(async (tx) => {
-      let closedTimerIds: string[] = [];
-      let closedTimerUsers: string[] = [];
-      let actualHours: number | undefined;
+    let outcome: {
+      closedTimerIds: string[];
+      closedTimerUsers: string[];
+      actualHours: number | undefined;
+    };
 
-      if (wo.status === 'in_progress') {
-        const closed = await closeAllActiveWorkSessions(
-          tx,
-          id,
-          cancelledAt,
-          `Work order cancelled: ${reason}`,
-        );
-        closedTimerIds = closed.closedTimerIds;
-        closedTimerUsers = closed.closedUserIds;
-        actualHours = closed.actualHours;
-      }
+    try {
+      outcome = await db.$transaction(async (tx) => {
+        let closedTimerIds: string[] = [];
+        let closedTimerUsers: string[] = [];
+        let actualHours: number | undefined;
 
-      const result = await executeTransition(
-        'work_order',
-        id,
-        'cancelled',
-        session,
-        {
-          reason,
-          extraData: { notes: `[Cancelled] ${reason}` },
-          tx,
-        },
-      );
+        if (wo.status === 'in_progress') {
+          const closed = await closeAllActiveWorkSessions(
+            tx,
+            id,
+            cancelledAt,
+            `Work order cancelled: ${reason}`,
+          );
+          closedTimerIds = closed.closedTimerIds;
+          closedTimerUsers = closed.closedUserIds;
+          actualHours = closed.actualHours;
+        }
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to cancel work order');
-      }
-
-      // Cancellation is lifecycle/audit evidence, not technician labor. Do not
-      // create a fake WorkOrderTimeLog row with action=cancel.
-      await tx.auditLog.create({
-        data: buildAuditData(
-          'update',
+        const result = await executeTransition(
           'work_order',
           id,
-          session.userId,
-          { status: wo.status },
+          'cancelled',
+          session,
           {
-            status: 'cancelled',
             reason,
-            cancelledAt: cancelledAt.toISOString(),
-            closedTimerIds,
-            closedTimerUsers,
-            ...(actualHours !== undefined ? { actualHours } : {}),
+            extraData: { notes: `[Cancelled] ${reason}` },
+            tx,
           },
-          {
-            ipAddress: request.headers.get('x-forwarded-for') || undefined,
-            userAgent: request.headers.get('user-agent') || undefined,
-          },
-        ),
-      });
+        );
 
-      return {
-        closedTimerIds,
-        closedTimerUsers,
-        actualHours,
-      };
-    });
+        if (!result.success) {
+          throw new CancellationTransitionError(result.error || 'Failed to cancel work order');
+        }
+
+        // Cancellation is lifecycle/audit evidence, not technician labor. Do not
+        // create a fake WorkOrderTimeLog row with action=cancel.
+        await tx.auditLog.create({
+          data: buildAuditData(
+            'update',
+            'work_order',
+            id,
+            session.userId,
+            { status: wo.status },
+            {
+              status: 'cancelled',
+              reason,
+              cancelledAt: cancelledAt.toISOString(),
+              closedTimerIds,
+              closedTimerUsers,
+              ...(actualHours !== undefined ? { actualHours } : {}),
+            },
+            {
+              ipAddress: request.headers.get('x-forwarded-for') || undefined,
+              userAgent: request.headers.get('user-agent') || undefined,
+            },
+          ),
+        });
+
+        return {
+          closedTimerIds,
+          closedTimerUsers,
+          actualHours,
+        };
+      });
+    } catch (error: unknown) {
+      if (error instanceof CancellationTransitionError) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+      }
+      throw error;
+    }
 
     // Notify all team members and requester after the transaction commits.
     const notifyTargets = new Set<string>();

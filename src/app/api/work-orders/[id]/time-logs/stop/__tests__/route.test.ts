@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const { mockDb, mockGetSession, mockIsAdmin, mockAuthorizeWorkOrderPlant } = vi.hoisted(() => ({
   mockDb: {
-    workOrder: { findUnique: vi.fn() },
+    workOrder: { findUnique: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
     workOrderTimeLog: {
       findMany: vi.fn(),
@@ -76,7 +76,7 @@ describe('POST /api/work-orders/[id]/time-logs/stop', () => {
     ]);
     mockDb.workOrderTimeLog.updateMany.mockResolvedValue({ count: 1 });
     mockDb.workOrderTimeLog.aggregate.mockResolvedValue({ _sum: { duration: 1.25 } });
-    mockDb.workOrder.update = vi.fn().mockResolvedValue({ id: 'wo-1' });
+    mockDb.workOrder.update.mockResolvedValue({ id: 'wo-1' });
     mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });
   });
 

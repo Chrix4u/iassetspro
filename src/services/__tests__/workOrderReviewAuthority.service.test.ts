@@ -121,7 +121,7 @@ describe('RWOP supervisor review accountability', () => {
     expect(mockExecuteTransition).not.toHaveBeenCalled();
   });
 
-  it('allows a maintenance manager to request rework as an auditable override', async () => {
+  it('allows a maintenance manager to request rework as an auditable override and clears terminal completion state', async () => {
     const managerSession: ReworkSessionContext = {
       userId: 'manager-1',
       fullName: 'Maintenance Manager',
@@ -139,7 +139,11 @@ describe('RWOP supervisor review accountability', () => {
       'wo-1',
       'in_progress',
       managerSession,
-      expect.objectContaining({ reason: 'Repeat vibration test', tx: mockDb }),
+      expect.objectContaining({
+        reason: 'Repeat vibration test',
+        extraData: { actualEnd: null },
+        tx: mockDb,
+      }),
     );
     expect(mockBuildAuditData).toHaveBeenCalledWith(
       'update',
@@ -148,6 +152,7 @@ describe('RWOP supervisor review accountability', () => {
       'manager-1',
       expect.any(Object),
       expect.objectContaining({
+        actualEnd: null,
         supervisorReworkOverride: true,
         assignedSupervisorId: 'sup-1',
         technicianExecutionRestartRequired: true,

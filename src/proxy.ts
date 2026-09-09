@@ -94,10 +94,21 @@ export default async function proxy(request: NextRequest) {
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
   requestHeaders.set('x-user-plant-id', '');
 
-  // Pass through X-Plant-ID as x-user-plant-id for downstream route handler convenience.
-  const plantIdHeader = request.headers.get('X-Plant-ID');
-  if (plantIdHeader) {
-    requestHeaders.set('x-user-plant-id', plantIdHeader);
+  // Bind maintenance-report query plant selection into the normal X-Plant-ID
+  // validation path. Without this, an unscoped multi-plant request could reach
+  // the route with ?plantId=... and overwrite its server-generated IN filter.
+  // System-wide actors remain unaffected because getPlantScope intentionally
+  // ignores X-Plant-ID for system-wide sessions.
+  const explicitPlantHeader = request.headers.get('X-Plant-ID');
+  const reportPlantQuery = pathname === '/api/reports/maintenance'
+    || pathname === '/api/reports/maintenance/export'
+    ? request.nextUrl.searchParams.get('plantId')
+    : null;
+  const effectivePlantId = explicitPlantHeader || reportPlantQuery;
+
+  if (effectivePlantId) {
+    requestHeaders.set('X-Plant-ID', effectivePlantId);
+    requestHeaders.set('x-user-plant-id', effectivePlantId);
   }
 
   return withSecurityHeaders(

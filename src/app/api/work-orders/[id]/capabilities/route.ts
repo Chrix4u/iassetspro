@@ -63,7 +63,6 @@ export async function GET(
 
     const isTeamLeader = isTeamLeaderFromField || isTeamLeaderFromMembers;
     const isAssignedExecutionActor = isAssignee || isTeamLeader;
-    const hasExecutionAuthority = isAssignedExecutionActor || isExecutionManager;
     const hasHoldControlAuthority = isSupervisor || isExecutionManager;
     const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
@@ -73,11 +72,10 @@ export async function GET(
     const technicianWaitingStatuses = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
     const activeExecutionStatuses = ['in_progress', ...waitingStatuses, 'pending_handover'];
 
-    // A WO can legitimately be in_progress without a live timer after a
-    // supervisor/planner control release or supervisor-requested rework.
-    // Capability derivation therefore uses the same canonical live-session
-    // definition as Start/Resume rather than status alone.
-    const ownLiveSession = wo.status === 'in_progress' && hasExecutionAuthority
+    // A live execution timer belongs only to an assigned execution actor. A WO
+    // can legitimately be in_progress without one after supervisor/planner
+    // control release or supervisor-requested rework.
+    const ownLiveSession = wo.status === 'in_progress' && isAssignedExecutionActor
       ? await db.workOrderTimeLog.findFirst({
           where: {
             workOrderId: id,
@@ -95,17 +93,19 @@ export async function GET(
     const canResume = (
       wo.status === 'on_hold'
         ? hasHoldControlAuthority
-        : technicianWaitingStatuses.includes(wo.status) && (hasExecutionAuthority || hasPlannerControlAuthority)
+        : technicianWaitingStatuses.includes(wo.status) && (
+            isAssignedExecutionActor || hasPlannerControlAuthority
+          )
     );
     const resumeOpensExecutionSession = canResume &&
       technicianWaitingStatuses.includes(wo.status) &&
       isAssignedExecutionActor;
 
     const capabilities = {
-      // `canStart` also covers an explicit execution restart when the WO is
-      // already in_progress but this actor has no live timer (e.g. rework or a
-      // supervisor/planner control release).
-      canStart: hasExecutionAuthority && (
+      // Starting creates a labor timer, therefore only the assigned technician
+      // or team leader receives this capability. Admin/manager control authority
+      // cannot silently turn into labor attribution.
+      canStart: isAssignedExecutionActor && (
         preExecutionStatuses.includes(wo.status) ||
         (wo.status === 'in_progress' && !hasOwnLiveSession)
       ),

@@ -32,9 +32,22 @@ type ReportWorkOrder = {
   plantId?: string | null;
 };
 
+type WorkOrderAssetGroup = {
+  assetName?: string | null;
+  assetTag?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  category?: string | null;
+  criticality?: string | null;
+  location?: string | null;
+  workOrders?: ReportWorkOrder[];
+};
+
 type ReportData = {
   summary?: Record<string, string | number | null | undefined>;
   recentWorkOrders?: ReportWorkOrder[];
+  workOrdersByAsset?: WorkOrderAssetGroup[];
   technicianProductivity?: Array<Record<string, unknown>>;
   materialConsumption?: Array<Record<string, unknown>>;
   downtimeAnalysis?: {
@@ -81,6 +94,26 @@ function workOrderRow(wo: ReportWorkOrder): Array<string | number> {
   ];
 }
 
+function getExportWorkOrders(data: ReportData): ReportWorkOrder[] {
+  if (Array.isArray(data.workOrdersByAsset) && data.workOrdersByAsset.length > 0) {
+    return data.workOrdersByAsset.flatMap(group =>
+      (group.workOrders || []).map(workOrder => ({
+        ...workOrder,
+        assetName: workOrder.assetName || group.assetName || '',
+        assetTag: workOrder.assetTag || group.assetTag || '',
+        manufacturer: workOrder.manufacturer || group.manufacturer || '',
+        model: workOrder.model || group.model || '',
+        serialNumber: workOrder.serialNumber || group.serialNumber || '',
+        category: workOrder.category || group.category || '',
+        criticality: workOrder.criticality || group.criticality || '',
+        location: workOrder.location || group.location || '',
+      })),
+    );
+  }
+
+  return data.recentWorkOrders || [];
+}
+
 function csvEscape(value: string | number): string {
   const text = String(value ?? '');
   return `"${text.replace(/"/g, '""')}"`;
@@ -108,7 +141,7 @@ function buildWorkbook(data: ReportData): Uint8Array {
   const summarySheet = XLSX.utils.json_to_sheet(summaryEntries.length ? summaryEntries : [{ Metric: 'No summary data', Value: '' }]);
   XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
 
-  const workOrders = data.recentWorkOrders || [];
+  const workOrders = getExportWorkOrders(data);
   const woSheet = XLSX.utils.aoa_to_sheet([
     [...WORK_ORDER_HEADERS],
     ...workOrders.map(workOrderRow),
@@ -159,8 +192,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: payload.error || 'Failed to build maintenance export' }, { status: 500 });
   }
 
+  const workOrders = getExportWorkOrders(payload.data);
+
   if (format === 'csv') {
-    const csv = `\uFEFF${buildCsv(payload.data.recentWorkOrders || [])}`;
+    const csv = `\uFEFF${buildCsv(workOrders)}`;
     return new NextResponse(csv, {
       status: 200,
       headers: {

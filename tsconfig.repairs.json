@@ -7,7 +7,10 @@
   "include": [
     "next-env.d.ts",
     "src/app/api/repairs/**/*.ts",
+    "src/app/api/reports/maintenance/**/*.ts",
     "src/app/api/work-orders/**/*.ts",
+    "src/app/reports/rwop/page.tsx",
+    "src/components/modules/RepairsPages.tsx",
     "src/components/repairs/**/*.ts",
     "src/components/repairs/**/*.tsx",
     "src/services/repairPlanning.service.ts",

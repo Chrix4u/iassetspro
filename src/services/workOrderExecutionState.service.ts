@@ -19,6 +19,18 @@ export interface ExecutionStateAuditContext {
   departmentId?: string;
 }
 
+export interface ExecutionStateConflict {
+  workOrderId: string;
+  woNumber?: string;
+  title?: string;
+  status: 'in_progress';
+  startedAt: string;
+}
+
+export type ExecutionStateConflictReason =
+  | 'ACTIVE_SESSION_CONFLICT'
+  | 'ACTIVE_SESSION_ALREADY_RUNNING';
+
 export type WaitingWorkOrderStatus =
   | 'on_hold'
   | 'waiting_parts'
@@ -178,6 +190,8 @@ export async function resumeWaitingWorkOrder(
   success: boolean;
   data?: { status: 'in_progress'; resumedAt: Date };
   error?: string;
+  conflict?: ExecutionStateConflict;
+  reason?: ExecutionStateConflictReason;
 }> {
   const resumedAt = new Date();
 
@@ -204,19 +218,55 @@ export async function resumeWaitingWorkOrder(
       };
     }
 
-    const existingLiveSession = await tx.workOrderTimeLog.findFirst({
-      where: {
-        userId: session.userId,
-        action: { in: ['start', 'resume'] },
-        endTime: null,
-      },
-      select: { workOrderId: true, workOrder: { select: { woNumber: true } } },
-    });
-    if (existingLiveSession) {
-      return {
-        success: false as const,
-        error: `You already have an active work session on WO #${existingLiveSession.workOrder.woNumber}. Stop or hand over that session before resuming another work order.`,
-      };
+    // Match the canonical start boundary: an unclosed timer is only a real
+    // conflict while its parent WO is still actively in progress. Historical
+    // rows left behind by legacy hold/handover/rework paths must not strand a
+    // technician and block legitimate resume work.
+    if (!session.roles.includes('admin')) {
+      const existingLiveSession = await tx.workOrderTimeLog.findFirst({
+        where: {
+          userId: session.userId,
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+          workOrder: { status: 'in_progress' },
+        },
+        orderBy: { timestamp: 'desc' },
+        select: {
+          workOrderId: true,
+          startTime: true,
+          timestamp: true,
+          workOrder: {
+            select: {
+              woNumber: true,
+              title: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      if (existingLiveSession) {
+        const sameWorkOrder = existingLiveSession.workOrderId === workOrderId;
+        const startedAt = existingLiveSession.startTime || existingLiveSession.timestamp;
+        const conflict: ExecutionStateConflict = {
+          workOrderId: existingLiveSession.workOrderId,
+          woNumber: existingLiveSession.workOrder?.woNumber || undefined,
+          title: existingLiveSession.workOrder?.title || undefined,
+          status: 'in_progress',
+          startedAt: startedAt.toISOString(),
+        };
+
+        return {
+          success: false as const,
+          reason: sameWorkOrder
+            ? 'ACTIVE_SESSION_ALREADY_RUNNING' as const
+            : 'ACTIVE_SESSION_CONFLICT' as const,
+          error: sameWorkOrder
+            ? 'You already have an active work session on this work order'
+            : `You already have active work on WO #${existingLiveSession.workOrder?.woNumber || 'unknown'}${existingLiveSession.workOrder?.title ? ` (${existingLiveSession.workOrder.title})` : ''}. Open that work order and pause, hand over, or complete it before resuming another.`,
+          conflict,
+        };
+      }
     }
 
     const transition = await executeTransition('work_order', workOrderId, 'in_progress', session, {

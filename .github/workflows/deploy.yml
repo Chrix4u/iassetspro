@@ -17,11 +17,6 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
-    inputs:
-      skip_tests:
-        description: "Explicitly bypass CI verification for this manual main-branch deploy"
-        type: boolean
-        default: false
 
 permissions:
   checks: read
@@ -50,11 +45,15 @@ jobs:
 
     steps:
       - name: Verify successful E2E check for manual deploy
-        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.skip_tests }}
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # E2E depends on Build + Production Container Build; Build in turn
+          # depends on lint, the Repairs TypeScript release gate and unit tests.
+          # Therefore a successful E2E check on this exact main SHA proves the
+          # entire main-branch CI dependency chain completed successfully.
           CHECK_NAME='E2E Tests (Playwright)'
           DEADLINE=$((SECONDS + 2400))
           API_URL="${{ github.api_url }}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?per_page=100&filter=latest"
@@ -114,6 +113,7 @@ jobs:
             PROD_PORT="$PRODUCTION_PORT"
             PM2_NAME="iassetspro"
             CANARY_NAME="iassetspro-canary"
+            ROLLBACK_DIR="$APP/.deploy-rollback"
 
             cd "$APP"
             test -f .env
@@ -125,23 +125,68 @@ jobs:
             command -v curl >/dev/null
             command -v ss >/dev/null
 
-            echo "[1/8] Backing up environment"
-            cp -a .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
+            OLD_SHA="$(git rev-parse HEAD)"
 
-            echo "[2/8] Checking out validated release"
+            rollback_runtime() {
+              echo "ROLLBACK: restoring previous standalone runtime ${OLD_SHA}"
+              pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
+              pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+
+              if [[ ! -f "$ROLLBACK_DIR/standalone/server.js" ]]; then
+                echo "ROLLBACK FAILED: previous standalone artifact is unavailable" >&2
+                return 1
+              fi
+
+              git reset --hard "$OLD_SHA"
+              rm -rf "$APP/.next/standalone"
+              mkdir -p "$APP/.next"
+              cp -a "$ROLLBACK_DIR/standalone" "$APP/.next/standalone"
+
+              PORT="$PROD_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
+                pm2 start "$APP/.next/standalone/server.js" \
+                  --name "$PM2_NAME" --cwd "$APP" \
+                  --node-args="--env-file=$APP/.env" --time
+
+              ROLLBACK_OK=0
+              for i in $(seq 1 18); do
+                CODE=$(curl -s -o /tmp/iassetspro-rollback-health.json -w "%{http_code}" \
+                  --max-time 10 "http://127.0.0.1:${PROD_PORT}/api/health" || true)
+                echo "Rollback attempt $i/18 -> HTTP $CODE"
+                if [[ "$CODE" == "200" ]]; then ROLLBACK_OK=1; break; fi
+                sleep 5
+              done
+
+              [[ "$ROLLBACK_OK" == "1" ]] || {
+                pm2 logs "$PM2_NAME" --lines 100 --nostream || true
+                return 1
+              }
+              pm2 save
+              echo "ROLLBACK COMPLETE"
+            }
+
+            echo "[1/10] Backing up environment and current production artifact"
+            cp -a .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
+            test -f .next/standalone/server.js
+            rm -rf "$ROLLBACK_DIR"
+            mkdir -p "$ROLLBACK_DIR"
+            cp -a .next/standalone "$ROLLBACK_DIR/standalone"
+            printf '%s\n' "$OLD_SHA" > "$ROLLBACK_DIR/release-sha"
+
+            echo "[2/10] Checking out validated release"
             git fetch origin main
             git cat-file -e "${RELEASE_SHA}^{commit}"
             git checkout -B main origin/main
             git reset --hard "$RELEASE_SHA"
             git restore playwright-report/index.html 2>/dev/null || true
 
-            echo "[3/8] Building production application"
+            echo "[3/10] Building production application"
             bun install --frozen-lockfile
             rm -rf .next
             bun run build
             test -f .next/standalone/server.js
+            test -f scripts/seed-transitions.ts
 
-            echo "[4/8] Selecting canary port"
+            echo "[4/10] Selecting canary port"
             CANARY_PORT=""
             for p in $(seq 3100 3199); do
               if ! ss -ltn | grep -q ":${p} "; then
@@ -151,7 +196,7 @@ jobs:
             done
             test -n "$CANARY_PORT"
 
-            echo "[5/8] Starting and validating canary on $CANARY_PORT"
+            echo "[5/10] Starting and validating canary on $CANARY_PORT"
             pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
             PORT="$CANARY_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
               pm2 start "$APP/.next/standalone/server.js" \
@@ -166,14 +211,19 @@ jobs:
               if [[ "$CODE" == "200" ]]; then CANARY_OK=1; break; fi
               sleep 5
             done
-            [[ "$CANARY_OK" == "1" ]] || { pm2 logs "$CANARY_NAME" --lines 100 --nostream || true; exit 1; }
+            [[ "$CANARY_OK" == "1" ]] || {
+              pm2 logs "$CANARY_NAME" --lines 100 --nostream || true
+              pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+              exit 1
+            }
 
-            echo "[6/8] Promoting canary build to production"
+            echo "[6/10] Promoting canary build to production"
             pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
             sleep 2
             if ss -ltn | grep -q ":${PROD_PORT} "; then
               echo "Production port ${PROD_PORT} is occupied by a non-PM2-managed process; refusing unsafe cutover."
               ss -ltnp | grep ":${PROD_PORT}" || true
+              rollback_runtime || true
               exit 1
             fi
 
@@ -190,13 +240,45 @@ jobs:
               if [[ "$CODE" == "200" ]]; then PROD_OK=1; break; fi
               sleep 5
             done
-            [[ "$PROD_OK" == "1" ]] || { pm2 logs "$PM2_NAME" --lines 100 --nostream || true; exit 1; }
+            if [[ "$PROD_OK" != "1" ]]; then
+              pm2 logs "$PM2_NAME" --lines 100 --nostream || true
+              rollback_runtime
+              exit 1
+            fi
 
-            echo "[7/8] Removing canary and persisting PM2 state"
+            echo "[7/10] Reconciling canonical RWOP lifecycle transitions"
+            # This script is transactional and idempotent. If it fails, its DB
+            # transaction is rolled back, so restoring the previous runtime is
+            # safe and leaves production on the pre-release lifecycle data.
+            if ! NODE_ENV=production bun run scripts/seed-transitions.ts; then
+              echo "Transition reconciliation failed; restoring previous runtime." >&2
+              rollback_runtime
+              exit 1
+            fi
+
+            echo "[8/10] Revalidating production after transition reconciliation"
+            POST_RECONCILE_OK=0
+            for i in $(seq 1 12); do
+              CODE=$(curl -s -o /tmp/iassetspro-post-reconcile-health.json -w "%{http_code}" \
+                --max-time 10 "http://127.0.0.1:${PROD_PORT}/api/health" || true)
+              echo "Post-reconcile attempt $i/12 -> HTTP $CODE"
+              if [[ "$CODE" == "200" ]]; then POST_RECONCILE_OK=1; break; fi
+              sleep 5
+            done
+            [[ "$POST_RECONCILE_OK" == "1" ]] || {
+              # Lifecycle data has already committed successfully at this point;
+              # do not automatically run an older binary against the new
+              # canonical transition contract. Fail for operator investigation.
+              pm2 logs "$PM2_NAME" --lines 100 --nostream || true
+              exit 1
+            }
+
+            echo "[9/10] Removing canary, rollback artifact and persisting PM2 state"
             pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+            rm -rf "$ROLLBACK_DIR"
             pm2 save
 
-            echo "[8/8] Final production status"
+            echo "[10/10] Final production status"
             pm2 status "$PM2_NAME"
             ss -ltnp | grep ":${PROD_PORT}" || true
             git log -1 --oneline
@@ -228,6 +310,7 @@ jobs:
           echo "- Branch: \`${RELEASE_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Runtime: PM2 + Next.js standalone" >> "$GITHUB_STEP_SUMMARY"
           echo "- Production port: \`${PRODUCTION_PORT}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- RWOP transition reconciliation: completed" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deployment summary — Failure
         if: failure()

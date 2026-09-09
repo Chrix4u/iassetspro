@@ -27,6 +27,13 @@ const receiverSession: SessionContext = {
   permissions: ['work_orders.update'],
 };
 
+const managerSession: SessionContext = {
+  userId: 'manager-1',
+  fullName: 'Maintenance Manager',
+  roles: ['maintenance_manager'],
+  permissions: ['work_orders.update'],
+};
+
 const supervisorSession: SessionContext = {
   userId: 'sup-1',
   fullName: 'Maintenance Supervisor',
@@ -100,8 +107,8 @@ describe('repairHandoverResume.resumeConfirmedHandover', () => {
     });
   });
 
-  it('treats supervisor override as a control release and never creates supervisor labor', async () => {
-    const result = await resumeConfirmedHandover('wo-1', supervisorSession, {
+  it('treats maintenance-manager override as a control release and never creates manager labor', async () => {
+    const result = await resumeConfirmedHandover('wo-1', managerSession, {
       reason: 'Incoming technician confirmed verbally; release WO for execution',
     });
 
@@ -122,7 +129,7 @@ describe('repairHandoverResume.resumeConfirmedHandover', () => {
 
     expect(mockDb.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        userId: 'sup-1',
+        userId: 'manager-1',
         action: 'release_after_handover_override',
       }),
     });
@@ -136,11 +143,22 @@ describe('repairHandoverResume.resumeConfirmedHandover', () => {
     }));
   });
 
-  it('requires a reason for supervisor or manager override', async () => {
-    const result = await resumeConfirmedHandover('wo-1', supervisorSession);
+  it('requires a reason for maintenance-management override', async () => {
+    const result = await resumeConfirmedHandover('wo-1', managerSession);
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('override requires a reason');
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
+    expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
+  });
+
+  it('does not let an unassigned supervisor impersonate the handover receiver', async () => {
+    const result = await resumeConfirmedHandover('wo-1', supervisorSession, {
+      reason: 'Release requested',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('designated handover receiver');
     expect(mockExecuteTransition).not.toHaveBeenCalled();
     expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
   });

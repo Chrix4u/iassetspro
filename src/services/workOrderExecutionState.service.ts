@@ -219,11 +219,16 @@ export async function placeWorkOrderInWaitingState(
   for (const userId of recipients) {
     sendRepairNotification({
       userId,
-      event: 'wo_on_hold',
+      event: targetStatus === 'on_hold' ? 'wo_on_hold' : 'wo_waiting',
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance team',
-      details: { reason, status: targetStatus },
+      details: {
+        reason: targetStatus === 'on_hold'
+          ? reason
+          : `${targetStatus.replaceAll('_', ' ')} — ${reason}`,
+        status: targetStatus,
+      },
     });
   }
 
@@ -417,11 +422,11 @@ export async function resumeWaitingWorkOrder(
   for (const userId of recipients) {
     sendRepairNotification({
       userId,
-      event: 'wo_resumed',
+      event: outcome.data.executionSessionOpened ? 'wo_resumed' : 'wo_released',
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance team',
-      details: { executionSessionOpened },
+      details: { executionSessionOpened: outcome.data.executionSessionOpened },
     });
   }
 

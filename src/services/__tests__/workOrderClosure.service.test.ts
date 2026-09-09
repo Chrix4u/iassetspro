@@ -17,7 +17,7 @@ const {
     repairCompletion: { update: vi.fn() },
     workOrderComment: { create: vi.fn() },
     pmSchedule: { findUnique: vi.fn(), update: vi.fn() },
-    failureRecord: { upsert: vi.fn() },
+    failureRecord: { findFirst: vi.fn(), upsert: vi.fn() },
     auditLog: { create: vi.fn() },
   },
   mockExecuteTransition: vi.fn(),
@@ -115,6 +115,8 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     mockIsAutoCalculableFrequency.mockReturnValue(true);
     mockCalculateNextDueDate.mockReturnValue(nextDueDate);
     mockDb.pmSchedule.update.mockResolvedValue({ id: 'pm-1' });
+    mockDb.failureRecord.findFirst.mockResolvedValue(null);
+    mockDb.failureRecord.upsert.mockResolvedValue({ id: 'wo-wo-1' });
   });
 
   it('advances an active recurring PM only after verified work is planner-closed', async () => {
@@ -214,5 +216,39 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     expect(result.error).toBe('Work order is not ready for closure');
     expect(mockExecuteTransition).not.toHaveBeenCalled();
     expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
+  it('reuses an existing WO-linked failure record instead of duplicating legacy reliability history', async () => {
+    mockDb.workOrder.findUnique.mockResolvedValue(verifiedWorkOrder({
+      workOrderComponents: [{
+        componentRegistryId: 'component-1',
+        componentRegistry: { assetId: 'asset-1' },
+      }],
+    }));
+    mockDb.failureRecord.findFirst.mockResolvedValue({ id: 'legacy-failure-17' });
+
+    const result = await closeRepairWorkOrder('wo-1', plannerSession, {
+      failureMode: 'wear',
+      failureCause: 'Bearing wear',
+      correctiveAction: 'Bearing replaced',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockDb.failureRecord.findFirst).toHaveBeenCalledWith({
+      where: { workOrderId: 'wo-1' },
+      select: { id: true },
+      orderBy: { detectedAt: 'asc' },
+    });
+    expect(mockDb.failureRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'legacy-failure-17' },
+        update: expect.objectContaining({
+          workOrderId: 'wo-1',
+          componentId: 'component-1',
+          failureMode: 'wear',
+        }),
+        create: expect.objectContaining({ id: 'legacy-failure-17' }),
+      }),
+    );
   });
 });

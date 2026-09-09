@@ -3,6 +3,7 @@ import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
 import { calculateAuthoritativeCosts } from '@/services/workExecution.service';
 import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormalization.service';
+import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 
@@ -52,6 +53,12 @@ export type CloseRepairResult = {
  * materialized when an actual failureMode is supplied and a concrete component
  * can be resolved from the WO. Merely having an asset does not justify creating
  * a synthetic failure classification.
+ *
+ * Recurring PM schedules advance only here, after the verified WO crosses the
+ * irreversible planner-close boundary. Technician completion and supervisor
+ * verification remain reworkable and therefore cannot safely advance PM due
+ * dates. The PM completion date is the WO actualEnd when available so review
+ * delay does not shift the maintenance cadence.
  */
 export async function closeRepairWorkOrder(
   workOrderId: string,
@@ -71,6 +78,8 @@ export async function closeRepairWorkOrder(
         isLocked: true,
         assetId: true,
         actualStart: true,
+        actualEnd: true,
+        pmScheduleId: true,
         plannerId: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -179,6 +188,43 @@ export async function closeRepairWorkOrder(
       });
     }
 
+    let pmScheduleAdvanced = false;
+    if (wo.pmScheduleId) {
+      const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
+      if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
+        const pmCompletedAt = wo.actualEnd || closedAt;
+        const nextDueDate = calculateNextDueDate(
+          pmCompletedAt,
+          pmSchedule.frequencyType,
+          pmSchedule.frequencyValue,
+        );
+        await tx.pmSchedule.update({
+          where: { id: pmSchedule.id },
+          data: { lastCompletedDate: pmCompletedAt, nextDueDate },
+        });
+        await tx.auditLog.create({
+          data: buildAuditData(
+            'update',
+            'pm_schedule',
+            pmSchedule.id,
+            session.userId,
+            {
+              lastCompletedDate: pmSchedule.lastCompletedDate,
+              nextDueDate: pmSchedule.nextDueDate,
+            },
+            {
+              lastCompletedDate: pmCompletedAt.toISOString(),
+              nextDueDate: nextDueDate?.toISOString() ?? null,
+              reason: `PM WO ${wo.woNumber} planner-closed after verification`,
+              workOrderId,
+            },
+            options.auditCtx,
+          ),
+        });
+        pmScheduleAdvanced = true;
+      }
+    }
+
     if (failureMode && failureComponentId) {
       await tx.failureRecord.upsert({
         where: { id: `wo-${workOrderId}` },
@@ -229,6 +275,7 @@ export async function closeRepairWorkOrder(
           actualHours: costs.laborHours,
           totalCost: costs.totalActualCost,
           failureRecordCreated: Boolean(failureMode && failureComponentId),
+          pmScheduleAdvanced,
           followUpRequired: options.followUpRequired ?? false,
           followUpNotes: options.followUpNotes ?? null,
         },

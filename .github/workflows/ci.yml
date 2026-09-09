@@ -180,16 +180,16 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
 
-  # Repairs/RWOP UAT is a hard PR gate. It runs against real MariaDB + Redis
-  # service containers, verifies the deployed schema and BullMQ round-trip, then
-  # exercises the exact standalone production artifact with Playwright. It also
-  # waits for the production container build so Docker regressions block the PR.
+  # Repairs/RWOP UAT is a hard release gate. It runs for pull requests and then
+  # again on the exact main SHA that may be deployed. It uses real MariaDB +
+  # Redis service containers, verifies the deployed schema and BullMQ round-trip,
+  # then exercises the exact standalone production artifact with Playwright.
   repairs-uat:
     name: Repairs UAT (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     needs: [build, container-build]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
 
     services:
       mariadb:

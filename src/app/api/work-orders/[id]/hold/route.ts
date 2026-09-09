@@ -59,7 +59,8 @@ export async function POST(
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      const status = result.error === 'Work order not found' ? 404 : 400;
+      return NextResponse.json({ success: false, error: result.error }, { status });
     }
 
     return NextResponse.json({ success: true, data: result.data });

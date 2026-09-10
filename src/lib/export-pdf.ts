@@ -105,7 +105,7 @@ export function exportPDF(options: ExportPDFOptions) {
   </table>
   ` : '<p style="color:#9ca3af; font-style:italic;">No data available for the selected filters.</p>'}
   <div class="footer">
-    <span class="footer-brand">iAssetsPro EAM — Enterprise Asset Management</span>
+    <span class="footer-brand">iAssetsPro EAM — Asset Management</span>
     <span>Generated automatically</span>
   </div>
 </body>

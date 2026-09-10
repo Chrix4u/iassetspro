@@ -147,7 +147,7 @@ export function createStandardWorkbook(options: CreateWorkbookOptions): XLSX.Wor
 
   // Branding header
   rows.push([companyName]);
-  rows.push(['Enterprise Asset Management']);
+  rows.push(['Asset Management']);
   rows.push([]);
 
   // Report metadata

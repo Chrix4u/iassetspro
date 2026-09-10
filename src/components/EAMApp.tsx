@@ -64,7 +64,7 @@ const PAGE_TITLES: Record<string, string> = {
   'pm-calendar': 'PM Calendar',
   // Planner Workbench
   'planner-workbench': 'Planner Workbench',
-  'enterprise-reports': 'Enterprise Reports',
+  'enterprise-reports': 'Reports',
   // Repairs Module
   'repairs-material-requests': 'Material Requests',
   'repairs-tool-requests': 'Tool Requests',

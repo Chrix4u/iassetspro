@@ -150,8 +150,16 @@ export async function POST(request: NextRequest) {
       notes,
     } = body;
 
-    if (!title) {
+    if (!title || !String(title).trim()) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
+    }
+
+    const normalizedAssetName = typeof assetName === 'string' ? assetName.trim() : '';
+    if (!assetId && !normalizedAssetName) {
+      return NextResponse.json(
+        { success: false, error: 'Select a registered asset or enter an asset/item name' },
+        { status: 400 },
+      );
     }
 
     let resolvedPlantId: string | null = plantId || null;
@@ -189,6 +197,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    let resolvedAssetName: string | null = normalizedAssetName || null;
+
     if (assetId) {
       const asset = await db.asset.findUnique({
         where: { id: assetId },
@@ -203,6 +213,7 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+      resolvedAssetName = asset.name;
     }
 
     let resolvedDepartmentId: string | null = departmentId || null;
@@ -295,7 +306,7 @@ export async function POST(request: NextRequest) {
         priority: priority || 'medium',
         category: category || null,
         assetId: assetId || null,
-        assetName: assetName || null,
+        assetName: resolvedAssetName,
         location: location || null,
         departmentId: resolvedDepartmentId,
         plantId: resolvedPlantId,
@@ -316,7 +327,7 @@ export async function POST(request: NextRequest) {
 
     if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
       const desc = description ? description.substring(0, 120) : '';
-      const assetInfo = assetName || '';
+      const assetInfo = resolvedAssetName || '';
       const priorityLabel = (priority || 'medium').toUpperCase();
       await notifyUser(
         resolvedSupervisorId,

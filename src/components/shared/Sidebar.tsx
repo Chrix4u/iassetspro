@@ -170,7 +170,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
       children: [
         { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
-        { page: 'enterprise-reports', label: 'Enterprise Reports', icon: Gauge },
+        { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
       ],
     },
     {
@@ -429,7 +429,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         {expanded && (
           <div className="overflow-hidden">
             <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">iAssetsPro</h1>
-            <p className="text-[10px] text-sidebar-foreground/40 uppercase tracking-widest font-medium">Enterprise EAM</p>
+            <p className="text-[10px] text-sidebar-foreground/40 uppercase tracking-widest font-medium">EAM</p>
           </div>
         )}
       </div>

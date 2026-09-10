@@ -4,6 +4,9 @@
  * Run on VPS:
  *   cd /home/lightworld/webapps/iassetspro && bun run scripts/seed-transitions.ts
  *
+ * Driver-only preflight (no database connection or writes):
+ *   bun run scripts/seed-transitions.ts --check-driver
+ *
  * Safe to run repeatedly:
  * - canonical rows are updated/inserted in place
  * - unrelated/custom transitions are preserved
@@ -27,6 +30,15 @@ type Transition = {
 };
 
 type DbConnection = Awaited<ReturnType<typeof createConnection>>;
+
+if (process.argv.includes('--check-driver')) {
+  if (typeof createConnection !== 'function') {
+    console.error('❌ MariaDB driver import check failed: createConnection is unavailable.');
+    process.exit(1);
+  }
+  console.log('✅ MariaDB driver import check passed: createConnection is available.');
+  process.exit(0);
+}
 
 function getDbConfig() {
   const host = process.env.DB_HOST || process.env.MYSQL_HOST;
@@ -229,6 +241,8 @@ async function seedTransitions() {
 
   console.log('✅ Connected! Reconciling canonical status_transitions...');
 
+  let committed = false;
+
   try {
     await conn.beginTransaction();
 
@@ -267,8 +281,9 @@ async function seedTransitions() {
       throw new Error('Canonical WO close path verification failed');
     }
 
-    await conn.commit();
-
+    // Perform all fallible verification queries before commit. Once commit
+    // succeeds, the script must not report a failure that could make a deploy
+    // controller incorrectly restore an older runtime against new lifecycle data.
     const rows = await conn.query(
       `SELECT entity_type, COUNT(*) AS total
        FROM status_transitions
@@ -276,15 +291,30 @@ async function seedTransitions() {
        GROUP BY entity_type`,
     ) as Array<{ entity_type: string; total: number }>;
 
+    await conn.commit();
+    committed = true;
+
     for (const row of rows) {
       console.log(`  ✅ ${row.entity_type}: ${row.total} transition rows present`);
     }
     console.log('  ✅ Critical check PASSED: completed → verified → closed is enforced');
   } catch (error) {
-    await conn.rollback();
+    if (!committed) {
+      try {
+        await conn.rollback();
+      } catch (rollbackError) {
+        const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+        console.error('❌ Rollback attempt also failed:', rollbackMessage);
+      }
+    }
     throw error;
   } finally {
-    await conn.end();
+    try {
+      await conn.end();
+    } catch (closeError) {
+      const closeMessage = closeError instanceof Error ? closeError.message : String(closeError);
+      console.warn(`⚠️ MariaDB connection close warning: ${closeMessage}`);
+    }
   }
 }
 

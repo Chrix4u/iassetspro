@@ -13,7 +13,10 @@
  * production maintenance scripts.
  */
 
-import mariadb from 'mariadb';
+// mariadb 3.5.x exposes the Promise API as named ESM exports. Using the named
+// createConnection export also avoids Bun requiring a non-existent default
+// export from mariadb/promise.js.
+import { createConnection } from 'mariadb';
 
 type Transition = {
   entityType: 'maintenance_request' | 'work_order';
@@ -23,7 +26,7 @@ type Transition = {
   requiresReason: boolean;
 };
 
-type DbConnection = Awaited<ReturnType<typeof mariadb.createConnection>>;
+type DbConnection = Awaited<ReturnType<typeof createConnection>>;
 
 function getDbConfig() {
   const host = process.env.DB_HOST || process.env.MYSQL_HOST;
@@ -215,7 +218,7 @@ async function seedTransitions() {
   const config = getDbConfig();
   console.log(`🔄 Connecting to MariaDB: ${config.host}/${config.database}...`);
 
-  const conn = await mariadb.createConnection({
+  const conn = await createConnection({
     host: config.host,
     port: config.port,
     user: config.user,

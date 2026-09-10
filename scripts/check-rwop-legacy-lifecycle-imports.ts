@@ -4,6 +4,8 @@ import { join, relative } from 'node:path';
 const ROOT = join(process.cwd(), 'src');
 const LEGACY_SERVICE = 'workExecution.service';
 const LEGACY_FILE = 'src/services/workExecution.service.ts';
+const TEST_DIRECTORY = '__tests__';
+const TEST_FILE_PATTERN = /\.(?:test|spec)\.(?:ts|tsx)$/;
 
 const FORBIDDEN_EXPORTS = [
   'startWork',
@@ -26,12 +28,17 @@ async function collectSourceFiles(directory: string): Promise<string[]> {
   for (const entry of entries) {
     const fullPath = join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === '.next') continue;
+      // This guard protects production callers. Unit/integration tests may
+      // intentionally import the legacy compatibility service to verify its
+      // behavior and must not be treated as production dependency violations.
+      if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === TEST_DIRECTORY) continue;
       files.push(...await collectSourceFiles(fullPath));
       continue;
     }
 
-    if (/\.(?:ts|tsx)$/.test(entry.name)) files.push(fullPath);
+    if (/\.(?:ts|tsx)$/.test(entry.name) && !TEST_FILE_PATTERN.test(entry.name)) {
+      files.push(fullPath);
+    }
   }
 
   return files;

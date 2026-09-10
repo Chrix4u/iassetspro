@@ -27,12 +27,12 @@ export { TwinToolbar, type TwinToolbarProps } from './TwinToolbar';
 export { SceneTreePanel, type SceneTreePanelProps } from './SceneTreePanel';
 export { ComponentInfoPanel, type ComponentInfoPanelProps } from './ComponentInfoPanel';
 
-// integration panels
+// Enterprise integration panels
 export { default as FailureAnalysisPanel, type FailureAnalysisPanelProps } from './FailureAnalysisPanel';
 export { default as PredictiveMaintenancePanel, type PredictiveMaintenancePanelProps } from './PredictiveMaintenancePanel';
 export { default as WorkInstructionPanel } from './WorkInstructionPanel';
 
-// Phase A — 3D Components
+// Phase A — Enterprise 3D Components
 export { ModelManagerPanel, type ModelManagerPanelProps } from './ModelManagerPanel';
 export { ComponentMappingEditor, type ComponentMappingEditorProps } from './ComponentMappingEditor';
 export { CameraTourPlayer, type CameraTourPlayerProps } from './CameraTourPlayer';

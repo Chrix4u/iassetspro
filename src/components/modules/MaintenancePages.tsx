@@ -386,7 +386,15 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     const res = await api.get(`/api/assets?${params.toString()}`);
     if (!res.success || !res.data) return [];
 
-    const assets = Array.isArray(res.data) ? res.data : [];
+    let assets = Array.isArray(res.data) ? [...res.data] : [];
+
+    // AsyncSearchableSelect clears its search query after selection. Keep the
+    // selected asset in the option set even when it is outside the first page.
+    if (!q && assetId && !assets.some((a: any) => a.id === assetId)) {
+      const selected = await api.get(`/api/assets/${encodeURIComponent(assetId)}`);
+      if (selected.success && selected.data) assets.unshift(selected.data);
+    }
+
     assetMetaRef.current.clear();
 
     return assets.map((a: any) => {
@@ -399,7 +407,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         badge: a.status,
       };
     });
-  }, []);
+  }, [assetId]);
 
   const handleRegisteredAssetChange = useCallback((value: string) => {
     setAssetId(value);
@@ -2968,7 +2976,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     };
   }, [wo?.actualStart, wo?.plannedStart, wo?.createdAt]);
   const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
-  // time session — active session tracking across all WOs
+  // Enterprise time session — active session tracking across all WOs
   const [globalActiveSession, setGlobalActiveSession] = useState<{
     workOrderId: string;
     workOrderNumber: string;
@@ -4816,7 +4824,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </MobileStepperSheet>
       )}
 
-      {/* Time Log Dialog — */}
+      {/* Time Log Dialog — Enterprise */}
       <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
             {/* Team member selector — only team leader or admin */}
@@ -5347,7 +5355,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Attachments */}
           <FileUpload entityType="work_order" entityId={id} />
 
-          {/* Time Logs — with Session Controls */}
+          {/* Time Logs — Enterprise with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {formatDuration(wo.actualHours || 0)} total</CardDescription></div>

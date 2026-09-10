@@ -30,4 +30,18 @@ describe('Create Maintenance Request UX contract', () => {
     expect(form).toContain("assetMode === 'registered' && !assetId");
     expect(form).toContain("assetMode === 'manual' && !cleanManualAssetName");
   });
+
+
+  it('keeps a selected registered asset available after search reset', () => {
+    expect(form).toContain('!q && assetId && !assets.some');
+    expect(form).toContain('/api/assets/${encodeURIComponent(assetId)}');
+    expect(form).toContain('}, [assetId]);');
+  });
+
+  it('does not clear Location when switching registered/manual modes', () => {
+    const registered = form.slice(form.indexOf('const switchToRegistered'), form.indexOf('const switchToManual'));
+    const manual = form.slice(form.indexOf('const switchToManual'), form.indexOf('const handleSubmit'));
+    expect(registered).not.toContain("setLocation('')");
+    expect(manual).not.toContain("setLocation('')");
+  });
 });

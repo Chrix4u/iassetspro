@@ -193,7 +193,7 @@ async function buildPdf(
 
   const buffer = await generateReportPDF({
     title: 'Repairs / RWOP Maintenance Report',
-    subtitle: 'maintenance performance and work-order detail',
+    subtitle: 'Maintenance performance and work-order detail',
     generatedBy,
     generatedAt: new Date(),
     filters: {

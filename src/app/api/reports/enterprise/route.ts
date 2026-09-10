@@ -4,7 +4,7 @@ import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // GET /api/reports/enterprise
-// -level maintenance report with all analytics sections
+// Enterprise-level maintenance report with all analytics sections
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);

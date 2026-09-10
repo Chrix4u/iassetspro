@@ -591,7 +591,7 @@ export default function RWOPReportingPage() {
         </>
       )}
 
-      <style jsx global>{`
+      <style>{`
         @media print {
           @page { size: landscape; margin: 10mm; }
           body { background: white !important; }

@@ -439,7 +439,6 @@ export async function GET(request: NextRequest) {
       type: wo.type,
       priority: wo.priority,
       status: wo.status,
-      assetName: wo.assetName,
       ...getAssetDetails(wo),
       assigneeName: wo.assignee?.fullName || null,
       teamLeaderName: wo.teamLeader?.fullName || null,

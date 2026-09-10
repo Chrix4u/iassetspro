@@ -206,14 +206,27 @@ export function PriorityBadge({ priority }: { priority: string }) {
   );
 }
 
-export function EmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description?: string;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mb-3">
         <Icon className="h-6 w-6 text-muted-foreground" />
       </div>
       <h3 className="font-medium text-sm">{title}</h3>
-      <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">{description}</p>
+      {description && (
+        <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">{description}</p>
+      )}
+      {children && <div className="mt-4">{children}</div>}
     </div>
   );
 }

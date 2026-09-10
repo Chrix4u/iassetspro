@@ -44,6 +44,8 @@ interface SearchableSelectProps {
   maxHeight?: string;
   /** Loading state */
   loading?: boolean;
+  /** Optional callback used by async wrappers for server-side search. */
+  onSearchChange?: (query: string) => void;
 }
 
 export function SearchableSelect({
@@ -59,6 +61,7 @@ export function SearchableSelect({
   groupBy = true,
   maxHeight = 'max-h-[240px]',
   loading = false,
+  onSearchChange,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -131,14 +134,17 @@ export function SearchableSelect({
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
-        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DismissableLayerBranch>
         <Command shouldFilter={false} loop>
           <CommandInput
             placeholder={searchPlaceholder}
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(nextQuery) => {
+              setQuery(nextQuery);
+              onSearchChange?.(nextQuery);
+            }}
           />
           <CommandList className={maxHeight}>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
@@ -159,6 +165,7 @@ export function SearchableSelect({
                         onValueChange(opt.value);
                         setOpen(false);
                         setQuery('');
+                        onSearchChange?.('');
                       }}
                       className="cursor-pointer"
                     >
@@ -192,9 +199,9 @@ export function SearchableSelect({
 // ASYNC SEARCHABLE SELECT — fetches options from API
 // ============================================================================
 
-interface AsyncSearchableSelectProps extends Omit<SearchableSelectProps, 'options'> {
-  /** Async function to fetch options */
-  fetchOptions: () => Promise<SearchableOption[]>;
+interface AsyncSearchableSelectProps extends Omit<SearchableSelectProps, 'options' | 'onSearchChange'> {
+  /** Async function to fetch options for the current search query */
+  fetchOptions: (query: string) => Promise<SearchableOption[]>;
   /** Re-fetch when deps change */
   deps?: React.DependencyList;
 }
@@ -207,35 +214,43 @@ export function AsyncSearchableSelect({
 }: AsyncSearchableSelectProps) {
   const [options, setOptions] = useState<SearchableOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
   const mountedRef = useRef(true);
   // Keep the latest fetchOptions in a ref to avoid recreating the load callback
   // when the parent passes an inline function. This prevents infinite re-render loops.
   const fetchOptionsRef = useRef(fetchOptions);
   fetchOptionsRef.current = fetchOptions;
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (searchQuery: string) => {
     setLoading(true);
     try {
-      const opts = await fetchOptionsRef.current();
+      const opts = await fetchOptionsRef.current(searchQuery);
       if (mountedRef.current) setOptions(opts);
     } catch {
       // Silently fail
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, []); // Stable — no deps that change between renders
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    load();
-    return () => { mountedRef.current = false; };
-  }, [load, ...deps]);
+    const timer = window.setTimeout(() => {
+      void load(query);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      mountedRef.current = false;
+    };
+  }, [load, query, ...deps]);
 
   return (
     <SearchableSelect
       {...props}
       options={options}
       loading={loading || externalLoading}
+      onSearchChange={setQuery}
     />
   );
 }
@@ -352,7 +367,7 @@ export function MultiSearchableSelect({
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
-        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DismissableLayerBranch>
         <Command shouldFilter={false} loop>

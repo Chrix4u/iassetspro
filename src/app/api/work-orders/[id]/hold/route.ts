@@ -8,6 +8,17 @@ import {
 import { extractAuditContext } from '@/lib/audit-helpers';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 
+function resolveHoldReason(body: Record<string, unknown>): string {
+  // `reason` is the canonical contract. `notes`, `holdReason`, and
+  // `pauseReason` are accepted for compatibility with existing planner and
+  // technician clients that pre-date the dedicated execution-state routes.
+  const candidates = [body.reason, body.notes, body.holdReason, body.pauseReason];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,8 +37,8 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    const body = await request.json() as Record<string, unknown>;
+    const reason = resolveHoldReason(body);
     if (!reason) {
       return NextResponse.json(
         { success: false, error: 'A reason is required to place a work order on hold' },
@@ -48,7 +59,8 @@ export async function POST(
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      const status = result.error === 'Work order not found' ? 404 : 400;
+      return NextResponse.json({ success: false, error: result.error }, { status });
     }
 
     return NextResponse.json({ success: true, data: result.data });

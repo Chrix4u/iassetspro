@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
@@ -8,7 +8,6 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // 1. Auth check
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
@@ -16,7 +15,6 @@ export async function GET(
 
     const { id } = await params;
 
-    // 2. Fetch the WO with relevant assignment/team fields
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
@@ -41,13 +39,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // 3. Plant scope check (IDOR protection)
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // 4. Derive roles from WO assignment
     const userId = session.userId;
     const isAssignee = wo.assignedTo === userId;
     const isTeamLeaderFromField = wo.teamLeaderId === userId;
@@ -55,34 +51,85 @@ export async function GET(
     const isTeamMember = wo.teamMembers?.some(m => m.userId === userId) ?? false;
     const isSupervisor = wo.assignedSupervisorId === userId;
     const isPlanner = wo.plannerId === userId;
-    const isAdminUser = isAdmin(session) || session.roles.some(r =>
-      ['maintenance_manager', 'plant_manager'].includes(r),
-    );
+
+    // Review/close authority intentionally includes plant management. Execution
+    // hold/waiting control follows the canonical WO transitions and stays with
+    // admin/maintenance-management plus the specifically accountable actor.
+    const isAdminAccount = isAdmin(session);
+    const isMaintenanceManager = session.roles.includes('maintenance_manager');
+    const isPlantManager = session.roles.includes('plant_manager');
+    const isAdminUser = isAdminAccount || isMaintenanceManager || isPlantManager;
+    const isExecutionManager = isAdminAccount || isMaintenanceManager;
 
     const isTeamLeader = isTeamLeaderFromField || isTeamLeaderFromMembers;
-
+    const isAssignedExecutionActor = isAssignee || isTeamLeader;
+    const hasHoldControlAuthority = isSupervisor || isExecutionManager;
+    const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
 
-    // Status sets for capability checks
-    const preExecutionStatuses = ['assigned', 'planned'];
-    const activeExecutionStatuses = ['in_progress', 'on_hold', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'pending_handover'];
+    // Canonical first execution begins only after assignment. A planned WO must
+    // be assigned before it can transition to in_progress.
+    const preExecutionStatuses = ['assigned'];
+    const waitingStatuses = ['on_hold', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
+    const technicianWaitingStatuses = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
+    const activeExecutionStatuses = ['in_progress', ...waitingStatuses, 'pending_handover'];
 
-    // 5. Derive capabilities
+    // A live execution timer belongs only to an assigned execution actor. A WO
+    // can legitimately be in_progress without one after supervisor/planner
+    // control release or supervisor-requested rework.
+    const ownLiveSession = wo.status === 'in_progress' && isAssignedExecutionActor
+      ? await db.workOrderTimeLog.findFirst({
+          where: {
+            workOrderId: id,
+            userId,
+            action: { in: ['start', 'resume'] },
+            endTime: null,
+            workOrder: { status: 'in_progress' },
+          },
+          select: { id: true },
+        })
+      : null;
+
+    const hasOwnLiveSession = Boolean(ownLiveSession);
+    const canHold = hasHoldControlAuthority && wo.status === 'in_progress';
+    const canResume = (
+      wo.status === 'on_hold'
+        ? hasHoldControlAuthority
+        : technicianWaitingStatuses.includes(wo.status) && (
+            isAssignedExecutionActor || hasPlannerControlAuthority
+          )
+    );
+    const resumeOpensExecutionSession = canResume &&
+      technicianWaitingStatuses.includes(wo.status) &&
+      isAssignedExecutionActor;
+
     const capabilities = {
-      canStart: (isAssignee || isTeamLeader || isAdminUser) && preExecutionStatuses.includes(wo.status),
-      canPause: (isAssignee || isTeamLeader || isAdminUser) && wo.status === 'in_progress',
-      canResume: (isAssignee || isTeamLeader || isAdminUser) && wo.status === 'on_hold',
+      // Starting creates a labor timer, therefore only the assigned technician
+      // or team leader receives this capability. Admin/manager control authority
+      // cannot silently turn into labor attribution.
+      canStart: isAssignedExecutionActor && (
+        preExecutionStatuses.includes(wo.status) ||
+        (wo.status === 'in_progress' && !hasOwnLiveSession)
+      ),
+      // `canPause` is retained for existing clients; `canHold` is the explicit
+      // enterprise lifecycle name. Holding is a WO-wide supervisor control
+      // action and must not depend on the supervisor owning a labor timer.
+      canPause: canHold,
+      canHold,
+      canResume,
+      resumeOpensExecutionSession,
       canLogOwnTime: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
       canLogTeamTime: isTeamLeader && hasMultipleTeamMembers && activeExecutionStatuses.includes(wo.status),
       canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
       canRequestMaterials: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
       canRequestAssistance: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
-      canHandover: (isAssignee || isTeamLeader) && wo.status === 'in_progress',
+      canHandover: (isAssignee || isTeamLeader) && wo.status === 'in_progress' && hasOwnLiveSession,
       canSubmitCompletion: hasMultipleTeamMembers
-        ? (isTeamLeader && wo.status === 'in_progress')
-        : (isAssignee && wo.status === 'in_progress'),
-      canVerify: isSupervisor && wo.status === 'completed',
-      canClose: isPlanner && wo.status === 'verified',
+        ? (isTeamLeader && wo.status === 'in_progress' && !hasOwnLiveSession)
+        : (isAssignee && wo.status === 'in_progress' && !hasOwnLiveSession),
+      canVerify: (isSupervisor || isAdminUser) && wo.status === 'completed',
+      canClose: (isPlanner || isAdminUser) && wo.status === 'verified',
+      hasActiveExecutionSession: hasOwnLiveSession,
       isTeamLeader,
       isTeamMember,
       isSupervisor,

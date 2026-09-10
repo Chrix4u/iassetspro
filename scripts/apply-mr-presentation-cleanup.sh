@@ -12,27 +12,33 @@ cd "$ROOT"
 git fetch origin main "$FEATURE"
 MAIN_SHA="$(git rev-parse origin/main)"
 FEATURE_SHA="$(git rev-parse origin/$FEATURE)"
+ORIGIN_URL="$(git remote get-url origin)"
 echo "Expected base: $EXPECTED"
 echo "origin/main:   $MAIN_SHA"
 echo "feature base:  $FEATURE_SHA"
 [[ "$MAIN_SHA" == "$EXPECTED" ]] || { echo "STOP: main moved; review before applying polish." >&2; exit 1; }
 [[ "$FEATURE_SHA" == "$EXPECTED" ]] || { echo "STOP: feature branch is not at the expected base." >&2; exit 1; }
 
+# Remove any partial worktree left by a previous helper run. Use a standalone
+# clone for validation so the release does not depend on worktree metadata from
+# the live repository/symlink.
 if git worktree list --porcelain | grep -Fq "worktree $WORK"; then
-  git worktree remove --force "$WORK"
+  git worktree remove --force "$WORK" || true
+  git worktree prune || true
 fi
 rm -rf "$WORK"
-git worktree add --detach "$WORK" "$EXPECTED"
+git clone --quiet --no-checkout "$ORIGIN_URL" "$WORK"
+git -C "$WORK" checkout --detach "$EXPECTED"
+git config --global --add safe.directory "$WORK" || true
 
-# Build validation needs the production environment values, but .env remains ignored
-# and is never staged or committed.
+# Build validation needs the production environment values, but .env remains
+# ignored and is never staged or committed.
 cp -a "$ROOT/.env" "$WORK/.env"
 chown -R lightworld:lightworld "$WORK"
 
-cd "$WORK"
-
 echo
 echo '[1/4] Polish Create Maintenance Request for client presentation'
+cd "$WORK"
 python3 - <<'PY'
 from pathlib import Path
 
@@ -47,8 +53,12 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f'STOP: expected exactly one {label}, found {count}')
     return text.replace(old, new, 1)
 
-form = replace_once(form, '    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-5">',
-                    '    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-4">', 'form spacing marker')
+form = replace_once(
+    form,
+    '    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-5">',
+    '    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-4">',
+    'form spacing marker',
+)
 
 old_registered = '''            className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-left ${assetMode === 'registered' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
           >
@@ -82,13 +92,20 @@ for sentence in [
 ]:
     form = replace_once(form, sentence, '', sentence.strip())
 
-old_location = '''            placeholder={assetMode === 'registered' ? 'Asset location, building, floor, line, or area' : 'Location of the asset or item'}'''
-new_location = '''            placeholder="Building, floor, line or area"'''
-form = replace_once(form, old_location, new_location, 'location placeholder')
+form = replace_once(
+    form,
+    '''            placeholder={assetMode === 'registered' ? 'Asset location, building, floor, line, or area' : 'Location of the asset or item'}''',
+    '''            placeholder="Building, floor, line or area"''',
+    'location placeholder',
+)
 
 # Existing UX contract should reflect the polished labels.
-test = replace_once(test, "    expect(form).toContain('Select Registered Asset');",
-                    "    expect(form).toContain('Registered Asset');\n    expect(form).toContain('Manual Entry');", 'registered asset label assertion')
+test = replace_once(
+    test,
+    "    expect(form).toContain('Select Registered Asset');",
+    "    expect(form).toContain('Registered Asset');\n    expect(form).toContain('Manual Entry');",
+    'registered asset label assertion',
+)
 
 insert_before = "\n});\n"
 new_test = '''\n  it('keeps the client-facing form concise and presentation-ready', () => {
@@ -113,9 +130,10 @@ form_path.write_text(form)
 test_path.write_text(test)
 PY
 
-git diff --check
-git diff --stat
-git diff -- src/components/modules/MaintenancePages.tsx src/components/modules/__tests__/create-maintenance-request-ux.test.ts
+git -C "$WORK" rev-parse --is-inside-work-tree
+git -C "$WORK" diff --check
+git -C "$WORK" diff --stat
+git -C "$WORK" diff -- src/components/modules/MaintenancePages.tsx src/components/modules/__tests__/create-maintenance-request-ux.test.ts
 
 echo
 echo '[2/4] Validate focused UX/branding tests and Repairs TypeScript gate'
@@ -123,8 +141,8 @@ runuser -u lightworld -- env HOME=/home/lightworld bash -lc "
   set -euo pipefail
   cd '$WORK'
   bun install --frozen-lockfile
-  bunx vitest run \
-    src/components/modules/__tests__/create-maintenance-request-ux.test.ts \
+  bunx vitest run \\
+    src/components/modules/__tests__/create-maintenance-request-ux.test.ts \\
     src/__tests__/branding/no-legacy-branding-word.test.ts
   bunx tsc -p tsconfig.repairs.json --noEmit
 "
@@ -140,17 +158,17 @@ runuser -u lightworld -- env HOME=/home/lightworld bash -lc "
 echo
 echo '[4/4] Commit and push isolated feature branch'
 cd "$WORK"
-git status --short
-git add src/components/modules/MaintenancePages.tsx src/components/modules/__tests__/create-maintenance-request-ux.test.ts
-git diff --cached --check
+git -C "$WORK" status --short
+git -C "$WORK" add src/components/modules/MaintenancePages.tsx src/components/modules/__tests__/create-maintenance-request-ux.test.ts
+git -C "$WORK" diff --cached --check
 
-git -c user.name='CHRISTIAN AGBOTAH' \
+git -C "$WORK" -c user.name='CHRISTIAN AGBOTAH' \
     -c user.email='148919415+christianagbotah@users.noreply.github.com' \
     commit -m 'Polish maintenance request form for client presentation'
 
-git push origin HEAD:"$FEATURE"
+git -C "$WORK" push origin HEAD:"$FEATURE"
 
-NEW_SHA="$(git rev-parse HEAD)"
+NEW_SHA="$(git -C "$WORK" rev-parse HEAD)"
 echo '============================================================'
 echo ' iAssetsPro MR PRESENTATION POLISH PUSHED'
 echo '============================================================'

@@ -5,7 +5,7 @@ import { requireFields } from '@/lib/validation';
 import { digitalTwinService } from '@/services/digitalTwin.service';
 
 // ============================================================================
-// API v1 — Digital Twins (Enterprise Architecture)
+// API v1 — Digital Twins (Architecture)
 // ============================================================================
 
 export async function GET(request: NextRequest) {

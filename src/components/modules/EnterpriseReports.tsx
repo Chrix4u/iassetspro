@@ -158,7 +158,7 @@ export default function EnterpriseReports() {
   const handlePdfExport = () => {
     if (!reportData || !s) return;
     exportPDF({
-      title: `Enterprise Report - ${startDate} to ${endDate}`,
+      title: `Report - ${startDate} to ${endDate}`,
       subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
       filename: `enterprise-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
@@ -364,7 +364,7 @@ export default function EnterpriseReports() {
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <ClipboardList className="h-12 w-12 text-muted-foreground" />
           <p className="text-lg font-medium text-muted-foreground">No maintenance modules are active</p>
-          <p className="text-sm text-muted-foreground">Enable at least one of Work Orders, Repairs, or PM Schedules to access Enterprise Reporting.</p>
+          <p className="text-sm text-muted-foreground">Enable at least one of Work Orders, Repairs, or PM Schedules to access reporting.</p>
         </div>
       </div>
     );
@@ -377,7 +377,7 @@ export default function EnterpriseReports() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <BarChart3 className="h-6 w-6 text-emerald-600" />
-            Enterprise Reporting
+            Reporting
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Comprehensive maintenance analytics across the organization</p>
         </div>

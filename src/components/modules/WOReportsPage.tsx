@@ -1710,7 +1710,7 @@ export function WOReportsPage() {
                 </ChartCard>
               </div>
 
-              {/* Materials Table — Enterprise Grade with Part Details */}
+              {/* Materials Table — Grade with Part Details */}
               <ReportTable
                 headers={[
                   { key: 'name', label: 'Item Name' },
@@ -1857,7 +1857,7 @@ export function WOReportsPage() {
                 </ChartCard>
               </div>
 
-              {/* Failure Rate Detail Table — Enterprise Grade with Asset Details */}
+              {/* Failure Rate Detail Table — Grade with Asset Details */}
               <ReportTable
                 headers={[
                   { key: 'asset', label: 'Equipment' },

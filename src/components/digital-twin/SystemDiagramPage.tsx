@@ -1049,7 +1049,7 @@ function FlowEditorInner({
   const reactFlowInstance = useReactFlow();
   const { fitView, zoomIn, zoomOut, getNodes, getEdges } = reactFlowInstance;
 
-  // Enterprise toolbar states
+  // toolbar states
   const [nodesDraggable, setNodesDraggable] = useState(true);
   const [snapToGridEnabled, setSnapToGridEnabled] = useState(true);
   const [minimapVisible, setMinimapVisible] = useState(true);
@@ -1842,7 +1842,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">System Diagrams</h1>
-            <p className="text-muted-foreground mt-1">Enterprise-grade process and instrumentation diagrams</p>
+            <p className="text-muted-foreground mt-1">-grade process and instrumentation diagrams</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)} className="gap-2">

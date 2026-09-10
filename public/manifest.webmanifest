@@ -1,7 +1,7 @@
 {
-  "name": "iAssetsPro Enterprise Asset Management",
+  "name": "iAssetsPro Asset Management",
   "short_name": "iAssetsPro",
-  "description": "Enterprise Asset Management for maintenance, reliability, inventory and field execution.",
+  "description": "Asset Management for maintenance, reliability, inventory and field execution.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

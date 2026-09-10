@@ -7,7 +7,7 @@ export async function GET() {
     data: {
       version: 'v1',
       apiVersion: '1.0.0',
-      platform: 'iAssetsPro Enterprise',
+      platform: 'iAssetsPro ',
       infrastructure: {
         redis: { status: process.env.REDIS_URL ? 'connected' : 'unavailable', type: 'optional' },
         database: { type: process.env.DATABASE_URL?.includes('mysql') ? 'mariadb' : 'sqlite', status: 'connected' },

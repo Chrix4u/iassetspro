@@ -130,7 +130,7 @@ export default function LoginPage() {
                 </div>
                 <div>
                   <h1 className="text-base font-bold tracking-tight">iAssetsPro</h1>
-                  <p className="text-emerald-300/80 text-xs font-medium">Enterprise Asset Management</p>
+                  <p className="text-emerald-300/80 text-xs font-medium">Asset Management</p>
                 </div>
               </div>
 
@@ -203,7 +203,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <h1 className="text-base font-bold text-slate-900 leading-tight">iAssetsPro</h1>
-                <p className="text-[10px] text-slate-500">Enterprise Asset Management</p>
+                <p className="text-[10px] text-slate-500">Asset Management</p>
               </div>
             </div>
           </div>

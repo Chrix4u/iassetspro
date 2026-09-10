@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 const buildVersion = process.env.NEXT_PUBLIC_BUILD_VERSION || "local";
 
 export const metadata: Metadata = {
-  title: "iAssetsPro - Enterprise Asset Management",
-  description: "Intelligent Enterprise Asset Management System",
+  title: "iAssetsPro - Asset Management",
+  description: "Intelligent Asset Management System",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/logo.svg",

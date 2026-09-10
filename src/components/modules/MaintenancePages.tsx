@@ -365,197 +365,222 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
+  const [assetMode, setAssetMode] = useState<'registered' | 'manual'>('registered');
   const [assetId, setAssetId] = useState('');
+  const [manualAssetName, setManualAssetName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [departmentLabel, setDepartmentLabel] = useState('');
   const [category, setCategory] = useState('');
   const [machineDown, setMachineDown] = useState(false);
-  const [itemType, setItemType] = useState<'machine' | 'manual'>('machine');
-  const [manualAssetName, setManualAssetName] = useState('');
-  const [manualAssetId, setManualAssetId] = useState('');
-  const [manualMode, setManualMode] = useState(false);
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const fetchManualAssetOptions = useCallback(async () => {
-    const res = await api.get('/api/assets?limit=100');
-    if (res.success && res.data) {
-      const assets = (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+  const assetMetaRef = useRef(new Map<string, { location: string }>());
+  const lastAutoLocationRef = useRef('');
+
+  const fetchAssetOptions = useCallback(async (query: string) => {
+    const params = new URLSearchParams({ limit: '100' });
+    const q = query.trim();
+    if (q) params.set('search', q);
+
+    const res = await api.get(`/api/assets?${params.toString()}`);
+    if (!res.success || !res.data) return [];
+
+    const assets = Array.isArray(res.data) ? res.data : [];
+    assetMetaRef.current.clear();
+
+    return assets.map((a: any) => {
+      assetMetaRef.current.set(a.id, { location: (a.location || '').trim() });
+      const tag = a.assetTag ? ` [${a.assetTag}]` : '';
+      const serial = a.serialNumber ? ` — ${a.serialNumber}` : '';
+      return {
         value: a.id,
-        label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : ''),
-      }));
-      return [...assets, { value: '__create_new__', label: '+ Create new asset', group: '' }];
-    }
-    return [{ value: '__create_new__', label: '+ Create new asset', group: '' }];
+        label: `${a.name || 'Unnamed Asset'}${tag}${serial}`,
+        badge: a.status,
+      };
+    });
   }, []);
 
-  // Auto-populate department from user's profile (read-only for non-admins)
+  const handleRegisteredAssetChange = useCallback((value: string) => {
+    setAssetId(value);
+    if (!value) return;
+
+    const suggestedLocation = assetMetaRef.current.get(value)?.location || '';
+    setLocation((current) => {
+      const currentTrimmed = current.trim();
+      if (!currentTrimmed || currentTrimmed === lastAutoLocationRef.current) {
+        return suggestedLocation;
+      }
+      return current;
+    });
+    lastAutoLocationRef.current = suggestedLocation;
+  }, []);
+
   useEffect(() => {
-    if (!user) return;
-    if (user.department) {
-      setDepartmentLabel(user.department);
-      // Look up department by name to get the ID
-      api.get('/api/departments?limit=100').then(res => {
-        if (res.success && Array.isArray(res.data)) {
-          const dept = res.data.find((d: any) => d.name === user.department);
-          if (dept) setDepartmentId(dept.id);
-        }
-      });
-    }
+    if (!user?.department) return;
+    setDepartmentLabel(user.department);
+    api.get('/api/departments?limit=100').then((res) => {
+      if (!res.success || !Array.isArray(res.data)) return;
+      const dept = res.data.find((d: any) =>
+        d.id === user.department || d.code === user.department || d.name === user.department
+      );
+      if (dept) setDepartmentId(dept.id);
+    });
   }, [user?.department]);
 
   const isDepartmentLocked = !isAdmin() && !!user?.department;
 
+  const switchToRegistered = () => {
+    setAssetMode('registered');
+    setManualAssetName('');
+  };
+
+  const switchToManual = () => {
+    setAssetMode('manual');
+    setAssetId('');
+    lastAutoLocationRef.current = '';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanTitle = title.trim();
+    const cleanManualAssetName = manualAssetName.trim();
+
+    if (!cleanTitle) {
+      toast.error('Please enter a request title');
+      return;
+    }
+    if (assetMode === 'registered' && !assetId) {
+      toast.error('Please select a registered asset');
+      return;
+    }
+    if (assetMode === 'manual' && !cleanManualAssetName) {
+      toast.error('Please enter the asset or item name');
+      return;
+    }
+
     setLoading(true);
-    const payload: any = { title, description, priority, departmentId, category, machineDownStatus: machineDown, itemType, location };
-    if (itemType === 'machine' && assetId) payload.assetId = assetId;
-    if (itemType === 'manual') {
-      if (manualAssetId) payload.assetId = manualAssetId;
-      else if (manualAssetName) payload.assetName = manualAssetName;
-      else { toast.error('Please select or enter an asset name'); setLoading(false); return; }
+    try {
+      const payload: any = {
+        title: cleanTitle,
+        description: description.trim(),
+        priority,
+        departmentId,
+        category,
+        machineDownStatus: machineDown,
+        location: location.trim(),
+      };
+      if (assetMode === 'registered') payload.assetId = assetId;
+      else payload.assetName = cleanManualAssetName;
+
+      const res = await api.post('/api/maintenance-requests', payload);
+      if (res.success) {
+        toast.success('Maintenance request created');
+        onSuccess();
+      } else {
+        toast.error(res.error || 'Failed to create request');
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to create request');
+    } finally {
+      setLoading(false);
     }
-    const res = await api.post('/api/maintenance-requests', payload);
-    if (res.success) {
-      toast.success('Maintenance request created');
-      onSuccess();
-    } else {
-      toast.error(res.error || 'Failed to create request');
-    }
-    setLoading(false);
   };
 
   return (
-    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-4">
+    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-2">
         <Label>Title *</Label>
         <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief description of the issue" required />
       </div>
+
       <div className="space-y-2">
         <Label>Description</Label>
-        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description of the issue, including any relevant observations" rows={3} />
+        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe the fault, symptoms, observations, and any immediate action taken" rows={3} />
       </div>
 
-      {/* Item Type Toggle — matches source: Select Machine / Enter Manually */}
       <div className="space-y-2">
-        <Label>Item Type *</Label>
-        <div className="grid grid-cols-2 gap-2">
+        <Label>Asset Source *</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setItemType('machine')}
-            className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-              itemType === 'machine'
-                ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
-                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
-            }`}
+            onClick={switchToRegistered}
+            aria-pressed={assetMode === 'registered'}
+            className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-left ${assetMode === 'registered' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
           >
-            <Settings className="h-4 w-4 inline mr-1.5" />
-            Select Machine
+            <Building2 className="h-4 w-4 inline mr-1.5" />Select Registered Asset
+            <span className="block text-[11px] font-normal mt-0.5 opacity-75">Search the asset register by name, tag, serial, manufacturer, or model</span>
           </button>
           <button
             type="button"
-            onClick={() => setItemType('manual')}
-            className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
-              itemType === 'manual'
-                ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
-                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
-            }`}
+            onClick={switchToManual}
+            aria-pressed={assetMode === 'manual'}
+            className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-left ${assetMode === 'manual' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
           >
-            <Pencil className="h-4 w-4 inline mr-1.5" />
-            Enter Manually
+            <Pencil className="h-4 w-4 inline mr-1.5" />Enter Manually
+            <span className="block text-[11px] font-normal mt-0.5 opacity-75">Use for an item or asset that is not yet registered</span>
           </button>
         </div>
       </div>
 
-      {itemType === 'machine' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label>Machine / Asset *</Label>
-            <AsyncSearchableSelect
-              value={assetId}
-              onValueChange={setAssetId}
-              fetchOptions={async () => {
-                const res = await api.get('/api/assets');
-                if (res.success && res.data) {
-                  return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
-                    value: a.id,
-                    label: `${a.name} [${a.assetTag}]`,
-                    badge: a.status,
-                  }));
-                }
-                return [];
-              }}
-              placeholder="Select machine..."
-              searchPlaceholder="Search machines by name or tag..."
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Machine Down?</Label>
-            <Select value={machineDown ? 'Yes' : 'No'} onValueChange={v => setMachineDown(v === 'Yes')}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="No">No — Machine Running</SelectItem>
-                <SelectItem value="Yes">Yes — Machine Down</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {assetMode === 'registered' ? (
+        <div className="space-y-2">
+          <Label>Registered Asset *</Label>
+          <AsyncSearchableSelect
+            value={assetId}
+            onValueChange={handleRegisteredAssetChange}
+            fetchOptions={fetchAssetOptions}
+            placeholder="Select registered asset..."
+            searchPlaceholder="Search by name, tag, serial, manufacturer, or model..."
+            emptyMessage="No registered assets found."
+          />
+          <p className="text-[11px] text-muted-foreground">Selecting an asset can populate its registered location below.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label>Asset Name *</Label>
-            {manualMode ? (
-              <div className="flex gap-1.5">
-                <Input value={manualAssetName} onChange={e => setManualAssetName(e.target.value)} placeholder="Enter new asset/item name" className="flex-1" />
-                <Button type="button" variant="ghost" size="sm" className="shrink-0 text-xs text-muted-foreground h-9" onClick={() => { setManualMode(false); setManualAssetName(''); setManualAssetId(''); }}>
-                  <Search className="h-3.5 w-3.5 mr-1" />Search
-                </Button>
-              </div>
-            ) : (
-              <AsyncSearchableSelect
-                value={manualAssetId}
-                onValueChange={(val) => {
-                  if (val === '__create_new__') {
-                    setManualMode(true);
-                    setManualAssetId('');
-                  } else {
-                    setManualAssetId(val);
-                  }
-                }}
-                fetchOptions={fetchManualAssetOptions}
-                placeholder="Search or select asset..."
-                searchPlaceholder="Search assets by name, tag, or serial..."
-              />
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label>Location</Label>
-            <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="Location of the item" />
-          </div>
+        <div className="space-y-2">
+          <Label>Asset / Item Name *</Label>
+          <Input
+            value={manualAssetName}
+            onChange={e => setManualAssetName(e.target.value)}
+            placeholder="Enter asset, machine, component, facility, or item name"
+            required
+          />
+          <p className="text-[11px] text-muted-foreground">This records the request against the name entered here without creating a new Asset Register record.</p>
         </div>
       )}
+
+      <div className="space-y-2">
+        <Label>Location</Label>
+        <div className="relative">
+          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={location}
+            onChange={e => setLocation(e.target.value)}
+            placeholder={assetMode === 'registered' ? 'Asset location, building, floor, line, or area' : 'Location of the asset or item'}
+            className="pl-9"
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground">Location stays visible regardless of asset source or down status.</p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground font-normal ml-1">(auto-filled)</span>}</Label>
           {isDepartmentLocked ? (
-            <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-              {departmentLabel || departmentId}
-            </div>
+            <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">{departmentLabel || departmentId}</div>
           ) : (
             <AsyncSearchableSelect
               value={departmentId}
               onValueChange={setDepartmentId}
-              fetchOptions={async () => {
-                const res = await api.get('/api/departments?limit=100');
-                if (res.success && res.data) {
-                  return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                    value: d.id,
-                    label: d.name,
-                  }));
-                }
-                return [];
+              fetchOptions={async (query) => {
+                const params = new URLSearchParams({ limit: '100' });
+                if (query.trim()) params.set('search', query.trim());
+                const res = await api.get(`/api/departments?${params.toString()}`);
+                if (!res.success || !res.data) return [];
+                return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                  value: d.id,
+                  label: d.code ? `${d.name} (${d.code})` : d.name,
+                }));
               }}
               placeholder="Select department..."
               searchPlaceholder="Search departments..."
@@ -565,7 +590,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         <div className="space-y-2">
           <Label>Category</Label>
           <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Select category..." /></SelectTrigger>
             <SelectContent>
               <SelectItem value="mechanical">Mechanical</SelectItem>
               <SelectItem value="electrical">Electrical</SelectItem>
@@ -592,14 +617,24 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             </SelectContent>
           </Select>
         </div>
-        {itemType === 'machine' && !machineDown && (
-          <div className="space-y-2">
-            <Label>Location</Label>
-            <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="Location of the machine" />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label>Machine / Equipment Down?</Label>
+          <Select value={machineDown ? 'yes' : 'no'} onValueChange={v => setMachineDown(v === 'yes')}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="no">No — Operating / Available</SelectItem>
+              <SelectItem value="yes">Yes — Down / Unavailable</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">Down status affects operational urgency only; it never hides Location.</p>
+        </div>
       </div>
 
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />Submitting maintenance request...
+        </div>
+      )}
     </form>
   );
 }
@@ -2933,7 +2968,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     };
   }, [wo?.actualStart, wo?.plannedStart, wo?.createdAt]);
   const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
-  // Enterprise time session — active session tracking across all WOs
+  // time session — active session tracking across all WOs
   const [globalActiveSession, setGlobalActiveSession] = useState<{
     workOrderId: string;
     workOrderNumber: string;
@@ -4781,7 +4816,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </MobileStepperSheet>
       )}
 
-      {/* Time Log Dialog — Enterprise */}
+      {/* Time Log Dialog — */}
       <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
             {/* Team member selector — only team leader or admin */}
@@ -5312,7 +5347,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Attachments */}
           <FileUpload entityType="work_order" entityId={id} />
 
-          {/* Time Logs — Enterprise with Session Controls */}
+          {/* Time Logs — with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {formatDuration(wo.actualHours || 0)} total</CardDescription></div>

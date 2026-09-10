@@ -77,7 +77,7 @@ interface LLMMachineData {
 // SYSTEM PROMPT
 // ============================================================================
 
-const SYSTEM_PROMPT = `You are an expert industrial equipment engineer specializing in Enterprise Asset Management (EAM). Given a machine name, generate comprehensive, realistic machine data for asset management systems.
+const SYSTEM_PROMPT = `You are an expert industrial equipment engineer specializing in Asset Management (EAM). Given a machine name, generate comprehensive, realistic machine data for asset management systems.
 
 You MUST respond with ONLY a valid JSON object (no markdown fences, no commentary) matching this exact structure:
 

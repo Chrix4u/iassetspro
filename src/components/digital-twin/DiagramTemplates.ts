@@ -4,7 +4,7 @@ import type { Node, Edge } from 'reactflow';
 
 // ============================================================================
 // DIAGRAM TEMPLATE DATA
-// Enterprise-grade pre-built system diagram templates
+// -grade pre-built system diagram templates
 // ============================================================================
 
 export interface DiagramTemplate {

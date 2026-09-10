@@ -26,12 +26,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      !hasAnyPermission(session, ['reports.view', 'reports.export', 'analytics.view']) &&
-      !isAdmin(session)
-    ) {
+    // Downloading an operational report is a distinct capability from viewing
+    // report/analytics screens. Keep every XLSX path aligned with reports.export.
+    if (!hasAnyPermission(session, ['reports.export']) && !isAdmin(session)) {
       return NextResponse.json(
-        { success: false, error: 'Insufficient permissions: reports.view required' },
+        { success: false, error: 'Insufficient permissions: reports.export required' },
         { status: 403 },
       );
     }
@@ -132,6 +131,7 @@ export async function POST(request: NextRequest) {
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': String(buffer.length),
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch (error: unknown) {

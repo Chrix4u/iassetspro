@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,8 +14,24 @@ export async function GET(request: NextRequest) {
     const plantId = searchParams.get('plantId');
     const includeChildren = searchParams.get('includeChildren') === 'true';
 
-    const where: Record<string, unknown> = {};
-    if (plantId) where.plantId = plantId;
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    const where: Record<string, unknown> = { ...getPlantFilterWhere(plantScope) };
+
+    if (plantId) {
+      // A query parameter may narrow the caller's allowed plant set, but it may
+      // never widen or override an explicitly selected X-Plant-ID context.
+      if (
+        (plantScope.isScoped && plantScope.plantId !== plantId) ||
+        !canAccessPlantStrict(plantScope, plantId)
+      ) {
+        return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+      }
+      where.plantId = plantId;
+    }
 
     const departments = await db.department.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,

@@ -40,6 +40,36 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
+/**
+ * Resolve the effective plant-selection signal that the proxy will pass into
+ * getPlantScope(). Only the canonical maintenance reporting endpoints accept a
+ * plant query fallback; every other API continues to require X-Plant-ID.
+ */
+export function resolveEffectivePlantId(request: NextRequest): string | null {
+  const explicitPlantHeader = request.headers.get('X-Plant-ID');
+  if (explicitPlantHeader) return explicitPlantHeader;
+
+  const { pathname, searchParams } = request.nextUrl;
+  if (
+    pathname === '/api/reports/maintenance' ||
+    pathname === '/api/reports/maintenance/export'
+  ) {
+    return searchParams.get('plantId');
+  }
+
+  return null;
+}
+
+function hasReportViewPermission(session: { roles: string[]; permissions: string[] }): boolean {
+  return session.roles.includes('admin') || session.permissions.some(permission =>
+    ['reports.view', 'reports.export', 'analytics.view'].includes(permission),
+  );
+}
+
+function hasReportExportPermission(session: { roles: string[]; permissions: string[] }): boolean {
+  return session.roles.includes('admin') || session.permissions.includes('reports.export');
+}
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -87,6 +117,54 @@ export default async function proxy(request: NextRequest) {
     );
   }
 
+  // Legacy detailed Repairs reporting previously required only authentication.
+  // Enforce the same view/export policy as the canonical reporting surface.
+  if (pathname === '/api/repairs/reports/detailed') {
+    const reportFormat = (request.nextUrl.searchParams.get('format') || 'json').toLowerCase();
+    if (!['json', 'xlsx'].includes(reportFormat)) {
+      return withSecurityHeaders(
+        NextResponse.json(
+          { success: false, error: 'Unsupported report format. Use json or xlsx.' },
+          { status: 400 },
+        ),
+      );
+    }
+
+    const permitted = reportFormat === 'xlsx'
+      ? hasReportExportPermission(session)
+      : hasReportViewPermission(session);
+
+    if (!permitted) {
+      return withSecurityHeaders(
+        NextResponse.json(
+          {
+            success: false,
+            error: reportFormat === 'xlsx'
+              ? 'Insufficient permissions: reports.export required'
+              : 'Insufficient permissions: reports.view required',
+          },
+          { status: 403 },
+        ),
+      );
+    }
+  }
+
+  // The older aggregate Repairs endpoint supports PDF through ?format=pdf.
+  // Keep JSON viewing on its established role gate, but file export must require
+  // the explicit reports.export capability.
+  if (
+    pathname === '/api/repairs/reports' &&
+    request.nextUrl.searchParams.get('format')?.toLowerCase() === 'pdf' &&
+    !hasReportExportPermission(session)
+  ) {
+    return withSecurityHeaders(
+      NextResponse.json(
+        { success: false, error: 'Insufficient permissions: reports.export required' },
+        { status: 403 },
+      ),
+    );
+  }
+
   // Token is valid — attach session info + plant context to request headers
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-session-user-id', session.userId);
@@ -94,10 +172,15 @@ export default async function proxy(request: NextRequest) {
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
   requestHeaders.set('x-user-plant-id', '');
 
-  // Pass through X-Plant-ID as x-user-plant-id for downstream route handler convenience.
-  const plantIdHeader = request.headers.get('X-Plant-ID');
-  if (plantIdHeader) {
-    requestHeaders.set('x-user-plant-id', plantIdHeader);
+  // Bind maintenance-report query plant selection into the normal X-Plant-ID
+  // validation path. Without this, an unscoped multi-plant request could reach
+  // the route with ?plantId=... and overwrite its server-generated IN filter.
+  // System-wide actors remain unaffected because getPlantScope intentionally
+  // ignores X-Plant-ID for system-wide sessions.
+  const effectivePlantId = resolveEffectivePlantId(request);
+  if (effectivePlantId) {
+    requestHeaders.set('X-Plant-ID', effectivePlantId);
+    requestHeaders.set('x-user-plant-id', effectivePlantId);
   }
 
   return withSecurityHeaders(

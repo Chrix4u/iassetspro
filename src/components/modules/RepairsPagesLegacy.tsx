@@ -329,7 +329,7 @@ function canApproveAsSupervisor(user: any): boolean {
   // Only supervisors, managers, and planners can approve tool/material requests
   const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || (authUser?.role?.slug && supervisorRoles.includes(authUser.role.slug)) || hasPermission('repair_material_requests.update');
+  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || hasPermission('repair_material_requests.update');
 }
 
 function canApproveAsStore(user: any): boolean {
@@ -338,7 +338,7 @@ function canApproveAsStore(user: any): boolean {
   // Only store keepers, inventory managers, and admins can do store approval
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || (authUser?.role?.slug && storeRoles.includes(authUser.role.slug)) || hasPermission('repair_material_requests.update');
+  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || hasPermission('repair_material_requests.update');
 }
 
 function canViewAllRepairData(user: any): boolean {
@@ -2120,6 +2120,7 @@ export function RepairToolRequestsPage() {
 
 export function RepairToolTransfersPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const userRoleSlugs = (user?.roles || []).map(role => role.slug);
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [transfers, setTransfers] = useState<any[]>([]);
@@ -2293,7 +2294,7 @@ export function RepairToolTransfersPage() {
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           {/* Approve / Reject — store keeper / tools shop attendant only */}
-                          {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && (
+                          {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && (
                             <div className="flex items-center gap-1">
                               {t.status === 'pending' && (<>
                                 <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
@@ -2310,7 +2311,7 @@ export function RepairToolTransfersPage() {
                             <Button size="sm" variant="outline" className="h-7 text-[10px] text-teal-600" onClick={() => handleAction(t.id, 'to_user_accept')}>Accept Receipt</Button>
                           )}
                           {/* Cancel — requester or supervisor */}
-                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (
+                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || userRoleSlugs.some(slug => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug))) && (
                             <Button size="sm" variant="ghost" className="h-7 text-[10px] text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(t.id, 'cancel'); }}>Cancel</Button>
                           )}
                           <DropdownMenu>
@@ -2380,7 +2381,7 @@ export function RepairToolTransfersPage() {
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
                 {/* Approve / Reject — store keeper / tools shop attendant only */}
-                {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
+                {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
@@ -2402,7 +2403,7 @@ export function RepairToolTransfersPage() {
                   </div>
                 </>)}
                 {/* Cancel — requester or supervisor */}
-                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (<>
+                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || userRoleSlugs.some(slug => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug))) && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="ghost" className="text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(detailItem.id, 'cancel'); }} disabled={submitting}>Cancel Transfer</Button>
@@ -4431,7 +4432,7 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/work-orders?search=${q}&status=in_progress,assigned,planned&limit=20`);
               if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
               return [];
-            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '' }))} />
+            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '' }))} />
           </div>
           <div className="space-y-2">
             <Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label>
@@ -4444,7 +4445,7 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/component-registry?${params}`);
               if (res.success) return (res.data || []).map((c: any) => ({ value: c.id, label: `${c.componentCode} - ${c.name}${c.criticality ? ` [${c.criticality}]` : ''}` }));
               return [];
-            }} value={createForm.componentId} onChange={v => setCreateForm(p => ({ ...p, componentId: v }))} />
+            }} deps={[createForm.workOrderId]} value={createForm.componentId} onValueChange={v => setCreateForm(p => ({ ...p, componentId: v }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -4823,7 +4824,7 @@ export function DamagedToolReportsPage() {
               const res = await api.get(`/api/tools?search=${q}&limit=20`);
               if (res.success) return (res.data || []).map((t: any) => ({ value: t.id, label: `${t.toolCode} - ${t.name}` }));
               return [];
-            }} value={createForm.toolId} onChange={v => setCreateForm(p => ({ ...p, toolId: v }))} />
+            }} value={createForm.toolId} onValueChange={v => setCreateForm(p => ({ ...p, toolId: v }))} />
           </div>
           <div className="space-y-2">
             <Label>Work Order (if related)</Label>
@@ -4831,7 +4832,7 @@ export function DamagedToolReportsPage() {
               const res = await api.get(`/api/work-orders?search=${q}&limit=20`);
               if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
               return [];
-            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v }))} />
+            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">

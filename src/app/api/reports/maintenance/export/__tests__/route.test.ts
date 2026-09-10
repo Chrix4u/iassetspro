@@ -101,7 +101,7 @@ describe('GET /api/reports/maintenance/export', () => {
 
   it('returns an Excel-compatible UTF-8 CSV with a scoped filename', async () => {
     const response = await GET(request('csv'));
-    const text = await response.text();
+    const bytes = new Uint8Array(await response.arrayBuffer());
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/csv');
@@ -109,7 +109,11 @@ describe('GET /api/reports/maintenance/export', () => {
       'maintenance-report-repairs-2026-09-01-to-2026-09-09.csv',
     );
     expect(response.headers.get('cache-control')).toBe('private, no-store');
-    expect(text.charCodeAt(0)).toBe(0xfeff);
+
+    // UTF-8 BOM required for reliable Excel Unicode detection.
+    expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+
+    const text = new TextDecoder('utf-8').decode(bytes.slice(3));
     expect(text).toContain('WO Number');
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({

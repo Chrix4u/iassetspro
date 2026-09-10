@@ -59,6 +59,12 @@ type ReportData = {
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 
+function toResponseBody(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 const WORK_ORDER_HEADERS = [
   'WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Asset Tag',
   'Manufacturer', 'Model', 'Serial Number', 'Category', 'Criticality', 'Location',
@@ -288,7 +294,7 @@ export async function GET(request: NextRequest) {
       searchParams,
       session.fullName || session.userId,
     );
-    return new NextResponse(pdf, {
+    return new NextResponse(toResponseBody(pdf), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
@@ -299,7 +305,7 @@ export async function GET(request: NextRequest) {
   }
 
   const workbook = buildWorkbook(payload.data);
-  return new NextResponse(workbook, {
+  return new NextResponse(toResponseBody(workbook), {
     status: 200,
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

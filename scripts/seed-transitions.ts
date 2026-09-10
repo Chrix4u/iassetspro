@@ -7,6 +7,9 @@
  * Driver-only preflight (no database connection or writes):
  *   bun run scripts/seed-transitions.ts --check-driver
  *
+ * Database-schema preflight (read-only):
+ *   bun run scripts/seed-transitions.ts --check-schema
+ *
  * Safe to run repeatedly:
  * - canonical rows are updated/inserted in place
  * - unrelated/custom transitions are preserved
@@ -162,6 +165,33 @@ const LEGACY_FORBIDDEN_WO_TRANSITIONS = [
   { fromStatus: 'closed', toStatus: 'in_progress' },
 ];
 
+const REQUIRED_STATUS_TRANSITION_COLUMNS = [
+  'id',
+  'entityType',
+  'fromStatus',
+  'toStatus',
+  'allowedRoleSlugs',
+  'requiresApproval',
+  'requiresReason',
+  'sortOrder',
+  'createdAt',
+] as const;
+
+async function verifyPhysicalSchema(conn: DbConnection) {
+  const rows = await conn.query(
+    'SHOW COLUMNS FROM status_transitions',
+  ) as Array<{ Field: string }>;
+
+  const actual = new Set(rows.map((row) => row.Field));
+  const missing = REQUIRED_STATUS_TRANSITION_COLUMNS.filter((column) => !actual.has(column));
+
+  if (missing.length > 0) {
+    throw new Error(`status_transitions schema mismatch; missing columns: ${missing.join(', ')}`);
+  }
+
+  console.log('✅ status_transitions physical schema verified');
+}
+
 async function upsertTransition(
   conn: DbConnection,
   transition: Transition,
@@ -171,8 +201,8 @@ async function upsertTransition(
     const existing = await conn.query(
       `SELECT id
        FROM status_transitions
-       WHERE entity_type = ? AND from_status IS NULL AND to_status = ?
-       ORDER BY created_at ASC
+       WHERE entityType = ? AND fromStatus IS NULL AND toStatus = ?
+       ORDER BY createdAt ASC
        LIMIT 1`,
       [transition.entityType, transition.toStatus],
     ) as Array<{ id: string }>;
@@ -180,7 +210,7 @@ async function upsertTransition(
     if (existing[0]?.id) {
       await conn.query(
         `UPDATE status_transitions
-         SET allowed_role_slugs = ?, requires_reason = ?, sort_order = ?, updated_at = NOW()
+         SET allowedRoleSlugs = ?, requiresReason = ?, sortOrder = ?
          WHERE id = ?`,
         [
           transition.allowedRoleSlugs,
@@ -192,8 +222,8 @@ async function upsertTransition(
     } else {
       await conn.query(
         `INSERT INTO status_transitions
-          (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-         VALUES (UUID(), ?, NULL, ?, ?, ?, ?, NOW(), NOW())`,
+          (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
+         VALUES (UUID(), ?, NULL, ?, ?, ?, ?, NOW())`,
         [
           transition.entityType,
           transition.toStatus,
@@ -208,13 +238,12 @@ async function upsertTransition(
 
   await conn.query(
     `INSERT INTO status_transitions
-      (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-     VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
+     VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW())
      ON DUPLICATE KEY UPDATE
-       allowed_role_slugs = VALUES(allowed_role_slugs),
-       requires_reason = VALUES(requires_reason),
-       sort_order = VALUES(sort_order),
-       updated_at = NOW()`,
+       allowedRoleSlugs = VALUES(allowedRoleSlugs),
+       requiresReason = VALUES(requiresReason),
+       sortOrder = VALUES(sortOrder)`,
     [
       transition.entityType,
       transition.fromStatus,
@@ -239,75 +268,84 @@ async function seedTransitions() {
     multipleStatements: false,
   });
 
-  console.log('✅ Connected! Reconciling canonical status_transitions...');
-
-  let committed = false;
-
   try {
-    await conn.beginTransaction();
+    await verifyPhysicalSchema(conn);
 
-    for (let i = 0; i < MR_TRANSITIONS.length; i++) {
-      await upsertTransition(conn, MR_TRANSITIONS[i], i);
-    }
-    console.log(`  ✅ Reconciled ${MR_TRANSITIONS.length} MR transitions`);
-
-    for (let i = 0; i < WO_TRANSITIONS.length; i++) {
-      await upsertTransition(conn, WO_TRANSITIONS[i], i);
-    }
-    console.log(`  ✅ Reconciled ${WO_TRANSITIONS.length} WO transitions`);
-
-    for (const stale of LEGACY_FORBIDDEN_WO_TRANSITIONS) {
-      await conn.query(
-        `DELETE FROM status_transitions
-         WHERE entity_type = 'work_order' AND from_status = ? AND to_status = ?`,
-        [stale.fromStatus, stale.toStatus],
-      );
-    }
-    console.log('  ✅ Removed legacy direct-close/reopen transitions');
-
-    const verifiedClose = await conn.query(
-      `SELECT COUNT(*) AS cnt
-       FROM status_transitions
-       WHERE entity_type = 'work_order' AND from_status = 'verified' AND to_status = 'closed'`,
-    ) as Array<{ cnt: number }>;
-
-    const directClose = await conn.query(
-      `SELECT COUNT(*) AS cnt
-       FROM status_transitions
-       WHERE entity_type = 'work_order' AND from_status = 'completed' AND to_status = 'closed'`,
-    ) as Array<{ cnt: number }>;
-
-    if (Number(verifiedClose[0]?.cnt || 0) !== 1 || Number(directClose[0]?.cnt || 0) !== 0) {
-      throw new Error('Canonical WO close path verification failed');
+    if (process.argv.includes('--check-schema')) {
+      console.log('✅ Schema-only check completed; no transition rows were changed.');
+      return;
     }
 
-    // Perform all fallible verification queries before commit. Once commit
-    // succeeds, the script must not report a failure that could make a deploy
-    // controller incorrectly restore an older runtime against new lifecycle data.
-    const rows = await conn.query(
-      `SELECT entity_type, COUNT(*) AS total
-       FROM status_transitions
-       WHERE entity_type IN ('maintenance_request', 'work_order')
-       GROUP BY entity_type`,
-    ) as Array<{ entity_type: string; total: number }>;
+    console.log('✅ Connected! Reconciling canonical status_transitions...');
 
-    await conn.commit();
-    committed = true;
+    let committed = false;
 
-    for (const row of rows) {
-      console.log(`  ✅ ${row.entity_type}: ${row.total} transition rows present`);
-    }
-    console.log('  ✅ Critical check PASSED: completed → verified → closed is enforced');
-  } catch (error) {
-    if (!committed) {
-      try {
-        await conn.rollback();
-      } catch (rollbackError) {
-        const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-        console.error('❌ Rollback attempt also failed:', rollbackMessage);
+    try {
+      await conn.beginTransaction();
+
+      for (let i = 0; i < MR_TRANSITIONS.length; i++) {
+        await upsertTransition(conn, MR_TRANSITIONS[i], i);
       }
+      console.log(`  ✅ Reconciled ${MR_TRANSITIONS.length} MR transitions`);
+
+      for (let i = 0; i < WO_TRANSITIONS.length; i++) {
+        await upsertTransition(conn, WO_TRANSITIONS[i], i);
+      }
+      console.log(`  ✅ Reconciled ${WO_TRANSITIONS.length} WO transitions`);
+
+      for (const stale of LEGACY_FORBIDDEN_WO_TRANSITIONS) {
+        await conn.query(
+          `DELETE FROM status_transitions
+           WHERE entityType = 'work_order' AND fromStatus = ? AND toStatus = ?`,
+          [stale.fromStatus, stale.toStatus],
+        );
+      }
+      console.log('  ✅ Removed legacy direct-close/reopen transitions');
+
+      const verifiedClose = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM status_transitions
+         WHERE entityType = 'work_order' AND fromStatus = 'verified' AND toStatus = 'closed'`,
+      ) as Array<{ cnt: number }>;
+
+      const directClose = await conn.query(
+        `SELECT COUNT(*) AS cnt
+         FROM status_transitions
+         WHERE entityType = 'work_order' AND fromStatus = 'completed' AND toStatus = 'closed'`,
+      ) as Array<{ cnt: number }>;
+
+      if (Number(verifiedClose[0]?.cnt || 0) !== 1 || Number(directClose[0]?.cnt || 0) !== 0) {
+        throw new Error('Canonical WO close path verification failed');
+      }
+
+      // Perform all fallible verification queries before commit. Once commit
+      // succeeds, the script must not report a transactional failure that could
+      // make a deploy controller restore an older runtime against new lifecycle data.
+      const rows = await conn.query(
+        `SELECT entityType, COUNT(*) AS total
+         FROM status_transitions
+         WHERE entityType IN ('maintenance_request', 'work_order')
+         GROUP BY entityType`,
+      ) as Array<{ entityType: string; total: number }>;
+
+      await conn.commit();
+      committed = true;
+
+      for (const row of rows) {
+        console.log(`  ✅ ${row.entityType}: ${row.total} transition rows present`);
+      }
+      console.log('  ✅ Critical check PASSED: completed → verified → closed is enforced');
+    } catch (error) {
+      if (!committed) {
+        try {
+          await conn.rollback();
+        } catch (rollbackError) {
+          const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+          console.error('❌ Rollback attempt also failed:', rollbackMessage);
+        }
+      }
+      throw error;
     }
-    throw error;
   } finally {
     try {
       await conn.end();

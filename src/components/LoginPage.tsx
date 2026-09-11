@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import {
   Lock,
   RefreshCw,
   Shield,
+  ChevronDown,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -33,6 +35,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const { login } = useAuthStore();
@@ -302,6 +305,67 @@ export default function LoginPage() {
                 <span>Secure role-based access</span>
               </div>
             </div>
+          </div>
+
+          {/* Demo Accounts — temporary presentation/testing access */}
+          <div className="mt-4 sm:mt-5 rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur border border-slate-200/60 shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowDemo(!showDemo)}
+              className="w-full flex items-center justify-between px-4 py-3 sm:px-4 sm:py-3 text-left"
+            >
+              <p className="font-semibold text-[11px] sm:text-xs text-slate-500 uppercase tracking-wider">Demo Accounts</p>
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${showDemo ? 'rotate-180' : ''}`} />
+            </button>
+            {showDemo && (
+              <div className="px-4 pb-3 space-y-1.5 text-xs max-h-[280px] overflow-y-auto">
+                <p className="text-[10px] text-slate-400 font-medium mb-1">Click to auto-fill credentials</p>
+                {[
+                  // ── Management ──
+                  { user: 'admin', pass: 'admin123', role: 'Administrator', desc: 'Full system access', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+                  { user: 'manager1', pass: 'password123', role: 'Plant Manager', desc: 'Plant-wide view', color: 'bg-violet-100 text-violet-700 border-violet-200' },
+                  // ── Maintenance ──
+                  { user: 'maint_mgr1', pass: 'password123', role: 'Maint. Manager', desc: 'Full RWOP + assets', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+                  { user: 'planner1', pass: 'password123', role: 'Planner', desc: 'Plan & schedule WOs', color: 'bg-sky-100 text-sky-700 border-sky-200' },
+                  { user: 'supervisor1', pass: 'password123', role: 'Supervisor', desc: 'Supervise WO execution', color: 'bg-teal-100 text-teal-700 border-teal-200' },
+                  { user: 'tech1', pass: 'password123', role: 'Technician', desc: 'Execute WOs (Tema)', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+                  { user: 'tech2', pass: 'password123', role: 'Technician', desc: 'Execute WOs (Kumasi)', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+                  // ── Production ──
+                  { user: 'prod_mgr1', pass: 'password123', role: 'Prod. Manager', desc: 'Full production mgmt', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+                  { user: 'operator1', pass: 'password123', role: 'Operator', desc: 'Data entry (Tema)', color: 'bg-slate-100 text-slate-600 border-slate-200' },
+                  { user: 'op2', pass: 'password123', role: 'Operator', desc: 'Data entry (Kumasi)', color: 'bg-slate-100 text-slate-600 border-slate-200' },
+                  // ── Store / Inventory ──
+                  { user: 'inv_mgr1', pass: 'password123', role: 'Inv. Manager', desc: 'Full inventory', color: 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200' },
+                  { user: 'store1', pass: 'password123', role: 'Store Keeper', desc: 'Stock operations (Tema)', color: 'bg-rose-100 text-rose-700 border-rose-200' },
+                  { user: 'store2', pass: 'password123', role: 'Store Keeper', desc: 'Stock operations (Kumasi)', color: 'bg-rose-100 text-rose-700 border-rose-200' },
+                  { user: 'toolshop1', pass: 'password123', role: 'Tools Shop Att.', desc: 'Tool checkout & transfers', color: 'bg-pink-100 text-pink-700 border-pink-200' },
+                  // ── Quality / Safety / HR / IoT ──
+                  { user: 'qual_mgr1', pass: 'password123', role: 'Quality Mgr', desc: 'Quality & calibration', color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
+                  { user: 'safety1', pass: 'password123', role: 'Safety Officer', desc: 'HSE management', color: 'bg-red-100 text-red-700 border-red-200' },
+                  { user: 'hr1', pass: 'password123', role: 'HR Manager', desc: 'HR & training', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+                  { user: 'iot1', pass: 'password123', role: 'IoT Engineer', desc: 'IoT & predictive', color: 'bg-lime-100 text-lime-700 border-lime-200' },
+                  // ── Read-only ──
+                  { user: 'viewer1', pass: 'password123', role: 'Viewer', desc: 'Read-only access', color: 'bg-gray-100 text-gray-600 border-gray-200' },
+                ].map(d => (
+                  <button
+                    key={d.user}
+                    type="button"
+                    onClick={() => { setUsername(d.user); setPassword(d.pass); }}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-white hover:bg-emerald-50/50 border border-slate-100 hover:border-emerald-200 transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono font-semibold text-slate-700 group-hover:text-emerald-700 transition-colors truncate">{d.user}</span>
+                      <span className="text-slate-300 shrink-0">/</span>
+                      <span className="font-mono text-slate-400">{d.pass}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <span className="hidden sm:inline text-[10px] text-slate-400 max-w-[80px] truncate">{d.desc}</span>
+                      <Badge variant="outline" className={`text-[9px] font-semibold px-1.5 py-0 ${d.color}`}>{d.role}</Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Help */}

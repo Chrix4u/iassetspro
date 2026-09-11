@@ -250,6 +250,10 @@ export async function POST(
         assignedSupervisorId: effectiveAssignedSupervisorId,
         assignedBy: session.userId,
         assignmentType,
+        assignmentResponseStatus: 'pending',
+        assignmentRespondedBy: null,
+        assignmentRespondedAt: null,
+        assignmentResponseReason: null,
       };
 
       // A WO may already be `assigned` after MR conversion. Reassignment is a

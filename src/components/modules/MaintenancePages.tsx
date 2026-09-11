@@ -2248,15 +2248,16 @@ export function WorkOrdersPage() {
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden lg:table-cell">Assigned To</TableHead>
                 <TableHead className="hidden md:table-cell">Created</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredWOs.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="h-48">
+                <TableRow><TableCell colSpan={8} className="h-48">
                   <EmptyState icon={Wrench} title="No work orders found" description="Try adjusting your filters or create a new work order." />
                 </TableCell></TableRow>
               ) : filteredWOs.map(wo => (
-                <TableRow key={wo.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setDetailId(wo.id)}>
+                <TableRow key={wo.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate('wo-detail', { id: wo.id })}>
                   <TableCell className="font-mono text-xs">
                     <span className="flex items-center gap-1.5">
                       {wo.woNumber}
@@ -2264,7 +2265,7 @@ export function WorkOrdersPage() {
                         <span
                           className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-violet-100 dark:bg-violet-900/50 text-[9px] font-bold text-violet-600 dark:text-violet-400 animate-pulse"
                           title="Pending team member request"
-                          onClick={(e) => { e.stopPropagation(); setDetailId(wo.id); }}
+                          onClick={(e) => { e.stopPropagation(); navigate('wo-detail', { id: wo.id }); }}
                         >
                           <UserPlus className="h-2.5 w-2.5" />
                         </span>
@@ -2277,6 +2278,9 @@ export function WorkOrdersPage() {
                   <TableCell><StatusBadge status={wo.status} /></TableCell>
                   <TableCell className="text-sm hidden lg:table-cell">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? <span className="text-muted-foreground">Team ({wo.teamMembers.length})</span> : <span className="text-muted-foreground">Unassigned</span>)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(wo.createdAt)}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); navigate('wo-detail', { id: wo.id }); }}>Open Work Order</Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -3079,7 +3083,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [completeRootCause, setCompleteRootCause] = useState('');
   const [completeFindings, setCompleteFindings] = useState('');
   const [completeCorrectiveAction, setCompleteCorrectiveAction] = useState('');
-  const [completeRequestReview, setCompleteRequestReview] = useState(true);
   // Live session timer
   const [sessionDuration, setSessionDuration] = useState<number | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -3366,54 +3369,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return lastAction?.action === 'pause';
   }, [wo?.timeLogs, isActiveOnThisWO, optimisticPausedOnThisWO]);
 
-  // Quick action handlers for start/pause/resume/complete
+  // Quick live-execution controls use canonical lifecycle/session endpoints.
   const handleQuickTimeAction = async (action: string, reason?: string) => {
     setTlLoading(true);
-    const body: any = {
-      action,
-      activityType: 'maintenance',
-    };
-    if (reason) body.pauseReason = reason;
-    if (pauseNotes) { body.notes = pauseNotes; setPauseNotes(''); }
-    const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
+    let res;
+    if (action === 'start' || action === 'resume') {
+      res = await api.post(`/api/work-orders/${id}/start`, { notes: pauseNotes || undefined });
+    } else {
+      res = await api.post(`/api/work-orders/${id}/pause-session`, {
+        reason: reason || (action === 'complete' ? 'Technician ended current execution session' : 'Technician paused work'),
+        notes: pauseNotes || undefined,
+      });
+    }
+
     if (res.success) {
-      const msgs: Record<string, string> = {
-        start: 'Work started — timer is running',
-        pause: reason === 'break' ? 'Paused for break' : reason === 'switch_wo' ? 'Paused — you can now work on another WO' : 'Work paused',
-        resume: 'Work resumed — timer is running',
-        complete: 'Time session ended — duration recorded',
-      };
-      toast.success(msgs[action] || `Time ${action} recorded`);
+      toast.success(action === 'start' ? 'Work started — timer is running' : action === 'resume' ? 'Work resumed — timer is running' : 'Execution timer stopped');
       setPauseDialogOpen(false);
       setPauseReason('');
-
-      // Optimistic update: immediately reflect the action in the UI
-      // so buttons (Start/Pause/Resume) switch without waiting for server re-fetch
-      if (action === 'start' || action === 'resume') {
-        setOptimisticPausedOnThisWO(false);
-        setGlobalActiveSession({
-          workOrderId: id,
-          workOrderNumber: wo?.woNumber || '',
-          workOrderTitle: wo?.title || '',
-          workOrderStatus: wo?.status || '',
-          action,
-          startedAt: new Date().toISOString(),
-          elapsedSeconds: 0,
-          logId: res.data?.id || '',
-          activityType: 'maintenance',
-        });
-      } else if (action === 'pause' || action === 'complete') {
-        setGlobalActiveSession(null);
-        if (action === 'pause') {
-          setOptimisticPausedOnThisWO(true);
-        } else {
-          setOptimisticPausedOnThisWO(false);
-        }
-      }
-
-      // Background sync with server to ensure consistency
-      fetchActiveSession();
-      fetchWO();
+      setPauseNotes('');
+      await fetchActiveSession();
+      await fetchWO();
     } else {
       toast.error(res.error || `Failed to ${action}`);
     }
@@ -3458,7 +3433,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         res = await api.post(`/api/work-orders/${id}/request`, { notes: extra?.notes, ...extra });
         break;
       case 'wait-parts':
-        res = await api.post(`/api/work-orders/${id}/wait-parts`, { notes: extra?.notes, ...extra });
+        res = await api.post(`/api/work-orders/${id}/execution-state`, { action: 'wait', targetStatus: 'waiting_parts', reason: extra?.notes || 'Waiting for parts' });
+        break;
+      case 'waiting_tools':
+      case 'waiting_shutdown':
+      case 'waiting_permit':
+        res = await api.post(`/api/work-orders/${id}/execution-state`, { action: 'wait', targetStatus: action, reason: extra?.notes || action.replaceAll('_', ' ') });
         break;
       default:
         res = await api.put(`/api/work-orders/${id}`, { ...extra });
@@ -4080,7 +4060,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Build transition actions from state machine
   const transitionActions = availableTransitions.map(t => ({
     toStatus: t.toStatus,
-    actionName: statusToAction[t.toStatus] || t.toStatus,
+    actionName: t.toStatus === 'in_progress' && wo.status !== 'assigned' ? 'resume' : (statusToAction[t.toStatus] || t.toStatus),
     label: t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     requiresReason: t.requiresReason,
   }));
@@ -4264,7 +4244,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* Complete Dialog — Enhanced */}
-      <ResponsiveDialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)} large title="Complete Work Order" description="Mark this work order as completed with full details." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading || !completionNotes.trim()} onClick={() => handleAction('complete', { completionNotes, rootCause: completeRootCause, findings: completeFindings, correctiveAction: completeCorrectiveAction, requestSupervisorReview: completeRequestReview })}>{actionLoading ? 'Completing...' : 'Mark as Completed'}</Button>}>
+      <ResponsiveDialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)} large title="Complete Work Order" description="Mark this work order as completed with full details." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading || !completionNotes.trim()} onClick={() => handleAction('complete', { completionNotes, causeDescription: completeRootCause, failureDescription: completeFindings, actionDescription: completeCorrectiveAction })}>{actionLoading ? 'Completing...' : 'Mark as Completed'}</Button>}>
           <div className="grid gap-4 py-2">
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3">
@@ -4290,10 +4270,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <div className="space-y-2"><Label>Root Cause</Label><Textarea value={completeRootCause} onChange={e => setCompleteRootCause(e.target.value)} placeholder="What caused the failure..." rows={2} /></div>
             <div className="space-y-2"><Label>Findings</Label><Textarea value={completeFindings} onChange={e => setCompleteFindings(e.target.value)} placeholder="What was discovered during the repair..." rows={2} /></div>
             <div className="space-y-2"><Label>Corrective Action</Label><Textarea value={completeCorrectiveAction} onChange={e => setCompleteCorrectiveAction(e.target.value)} placeholder="Actions taken to prevent recurrence..." rows={2} /></div>
-            <div className="flex items-center gap-2">
-              <Checkbox checked={completeRequestReview} onCheckedChange={v => setCompleteRequestReview(!!v)} id="request-review" />
-              <Label htmlFor="request-review" className="text-sm cursor-pointer">Request Supervisor Review</Label>
-            </div>
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">Completion is automatically submitted to the assigned supervisor for review.</div>
           </div>
       </ResponsiveDialog>
 

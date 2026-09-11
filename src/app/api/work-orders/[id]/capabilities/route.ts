@@ -26,6 +26,9 @@ export async function GET(
         plannerId: true,
         plantId: true,
         isLocked: true,
+        assignmentResponseStatus: true,
+        assignmentRespondedAt: true,
+        assignmentResponseReason: true,
         teamMembers: {
           select: {
             userId: true,
@@ -63,6 +66,8 @@ export async function GET(
 
     const isTeamLeader = isTeamLeaderFromField || isTeamLeaderFromMembers;
     const isAssignedExecutionActor = isAssignee || isTeamLeader;
+    const assignmentPending = wo.status === 'assigned' && wo.assignmentResponseStatus === 'pending';
+    const assignmentAccepted = wo.assignmentResponseStatus === 'accepted';
     const hasHoldControlAuthority = isSupervisor || isExecutionManager;
     const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
@@ -107,8 +112,13 @@ export async function GET(
       // Starting creates a labor timer, therefore only the assigned technician
       // or team leader receives this capability. Admin/manager control authority
       // cannot silently turn into labor attribution.
+      canAcceptAssignment: isAssignedExecutionActor && assignmentPending,
+      canDeclineAssignment: isAssignedExecutionActor && assignmentPending,
+      assignmentResponseStatus: wo.assignmentResponseStatus,
+      assignmentRespondedAt: wo.assignmentRespondedAt,
+      assignmentResponseReason: wo.assignmentResponseReason,
       canStart: isAssignedExecutionActor && (
-        preExecutionStatuses.includes(wo.status) ||
+        (preExecutionStatuses.includes(wo.status) && assignmentAccepted) ||
         (wo.status === 'in_progress' && !hasOwnLiveSession)
       ),
       // `canPause` is retained for existing clients; `canHold` is the explicit

@@ -496,7 +496,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-5">
+    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label>Title *</Label>
         <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief description of the issue" required />
@@ -514,19 +514,19 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             type="button"
             onClick={switchToRegistered}
             aria-pressed={assetMode === 'registered'}
-            className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-left ${assetMode === 'registered' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all ${assetMode === 'registered' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
           >
-            <Building2 className="h-4 w-4 inline mr-1.5" />Select Registered Asset
-            <span className="block text-[11px] font-normal mt-0.5 opacity-75">Search the asset register by name, tag, serial, manufacturer, or model</span>
+            <Building2 className="h-4 w-4" />
+            <span>Registered Asset</span>
           </button>
           <button
             type="button"
             onClick={switchToManual}
             aria-pressed={assetMode === 'manual'}
-            className={`px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all text-left ${assetMode === 'manual' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-3 rounded-lg border-2 text-sm font-medium transition-all ${assetMode === 'manual' ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground hover:border-emerald-300'}`}
           >
-            <Pencil className="h-4 w-4 inline mr-1.5" />Enter Manually
-            <span className="block text-[11px] font-normal mt-0.5 opacity-75">Use for an item or asset that is not yet registered</span>
+            <Pencil className="h-4 w-4" />
+            <span>Manual Entry</span>
           </button>
         </div>
       </div>
@@ -542,7 +542,6 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             searchPlaceholder="Search by name, tag, serial, manufacturer, or model..."
             emptyMessage="No registered assets found."
           />
-          <p className="text-[11px] text-muted-foreground">Selecting an asset can populate its registered location below.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -553,7 +552,6 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             placeholder="Enter asset, machine, component, facility, or item name"
             required
           />
-          <p className="text-[11px] text-muted-foreground">This records the request against the name entered here without creating a new Asset Register record.</p>
         </div>
       )}
 
@@ -564,11 +562,10 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
           <Input
             value={location}
             onChange={e => setLocation(e.target.value)}
-            placeholder={assetMode === 'registered' ? 'Asset location, building, floor, line, or area' : 'Location of the asset or item'}
+            placeholder="Building, floor, line or area"
             className="pl-9"
           />
         </div>
-        <p className="text-[11px] text-muted-foreground">Location stays visible regardless of asset source or down status.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -634,7 +631,6 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
               <SelectItem value="yes">Yes — Down / Unavailable</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-[11px] text-muted-foreground">Down status affects operational urgency only; it never hides Location.</p>
         </div>
       </div>
 

@@ -18,7 +18,8 @@ describe('Create Maintenance Request UX contract', () => {
   });
 
   it('provides direct registered and manual asset modes', () => {
-    expect(form).toContain('Select Registered Asset');
+    expect(form).toContain('Registered Asset');
+    expect(form).toContain('Manual Entry');
     expect(form).toContain('Asset / Item Name *');
     expect(form).not.toContain('manualMode');
     expect(form).not.toContain('manualAssetId');
@@ -44,4 +45,18 @@ describe('Create Maintenance Request UX contract', () => {
     expect(registered).not.toContain("setLocation('')");
     expect(manual).not.toContain("setLocation('')");
   });
+  it('keeps the client-facing form concise and presentation-ready', () => {
+    const verboseImplementationCopy = [
+      'Search the asset register by name, tag, serial, manufacturer, or model',
+      'Use for an item or asset that is not yet registered',
+      'Selecting an asset can populate its registered location below.',
+      'This records the request against the name entered here without creating a new Asset Register record.',
+      'Location stays visible regardless of asset source or down status.',
+      'Down status affects operational urgency only; it never hides Location.',
+    ];
+    for (const copy of verboseImplementationCopy) expect(form).not.toContain(copy);
+    expect(form).toContain('placeholder="Building, floor, line or area"');
+    expect(form).toContain('Submitting maintenance request...');
+  });
+
 });

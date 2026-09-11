@@ -6,6 +6,7 @@ import {
   ArrowLeft, Play, Pause, CheckCircle2, XCircle, Clock3, Wrench, Package,
   Users, ShieldAlert, ClipboardList, MessageSquare, Loader2, AlertTriangle,
   RotateCcw, Save, ChevronRight, CalendarDays, UserRound, TimerReset,
+  Paperclip, Upload, UserPlus, ArrowRightLeft, Camera,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -73,6 +74,17 @@ function formatTimer(seconds: number) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function currentShift(): 'morning' | 'afternoon' | 'night' {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 14) return 'morning';
+  if (hour >= 14 && hour < 22) return 'afternoon';
+  return 'night';
+}
+
+function nextShift(shift: 'morning' | 'afternoon' | 'night'): 'morning' | 'afternoon' | 'night' {
+  return shift === 'morning' ? 'afternoon' : shift === 'afternoon' ? 'night' : 'morning';
+}
+
 function errorText(res: any) {
   const blockers = Array.isArray(res?.blockers) ? res.blockers.map((b: any) => b.message).filter(Boolean) : [];
   return [res?.error, ...blockers].filter(Boolean).join(' — ') || 'Action failed';
@@ -103,14 +115,30 @@ export function TechnicianWorkOrderPage() {
   const [elapsed, setElapsed] = useState(0);
   const [measurement, setMeasurement] = useState({ parameterKey: '', value: '', unit: '' });
   const [measurements, setMeasurements] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceDescription, setEvidenceDescription] = useState('');
+  const [evidenceInputKey, setEvidenceInputKey] = useState(0);
+  const [assistanceTrade, setAssistanceTrade] = useState('');
+  const [assistanceReason, setAssistanceReason] = useState('');
+  const [assistanceRequests, setAssistanceRequests] = useState<any[]>([]);
+  const initialShift = currentShift();
+  const [handoverUsers, setHandoverUsers] = useState<any[]>([]);
+  const [handoverReceiverId, setHandoverReceiverId] = useState('');
+  const [handoverReason, setHandoverReason] = useState('Shift change');
+  const [handoverNotes, setHandoverNotes] = useState('');
+  const [handoverFromShift, setHandoverFromShift] = useState<'morning' | 'afternoon' | 'night'>(initialShift);
+  const [handoverToShift, setHandoverToShift] = useState<'morning' | 'afternoon' | 'night'>(nextShift(initialShift));
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [woRes, capRes, taskRes, measurementRes] = await Promise.all([
+    const [woRes, capRes, taskRes, measurementRes, attachmentRes, assistanceRes] = await Promise.all([
       api.get(`/api/work-orders/${id}`),
       api.get(`/api/work-orders/${id}/capabilities`),
       api.get(`/api/work-orders/${id}/tasks`),
       api.get(`/api/work-orders/${id}/measurements`),
+      api.get(`/api/work-orders/${id}/attachments`),
+      api.get(`/api/work-orders/${id}/team-member-requests`),
     ]);
     if (!woRes.success || !woRes.data) {
       toast.error(woRes.error || 'Unable to load work order');
@@ -124,10 +152,27 @@ export function TechnicianWorkOrderPage() {
     if (capRes.success && capRes.data) setCaps(capRes.data as Capabilities);
     if (taskRes.success && Array.isArray(taskRes.data)) setTasks(taskRes.data as Task[]);
     if (measurementRes.success && Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);
+    if (attachmentRes.success && Array.isArray(attachmentRes.data)) setAttachments(attachmentRes.data);
+    if (assistanceRes.success && Array.isArray(assistanceRes.data)) setAssistanceRequests(assistanceRes.data);
     setLoading(false);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!caps?.canHandover) { setHandoverUsers([]); return; }
+    let active = true;
+    api.get<any[]>('/api/users?role=maintenance_technician&status=active').then((res) => {
+      if (!active || !res.success || !Array.isArray(res.data)) return;
+      const options = res.data.filter((candidate: any) => {
+        if (candidate.id === user?.id) return false;
+        if (!wo?.plantId) return true;
+        return Array.isArray(candidate.plants) && candidate.plants.some((plant: any) => plant.id === wo.plantId);
+      });
+      setHandoverUsers(options);
+    });
+    return () => { active = false; };
+  }, [caps?.canHandover, user?.id, wo?.plantId]);
 
   const liveLog = useMemo(() => {
     if (!wo || !user) return null;
@@ -183,7 +228,13 @@ export function TechnicianWorkOrderPage() {
     }), `Work order moved to ${pretty(waitingTarget)}`);
   };
 
-  const resumeWaiting = () => id && perform('resume-waiting', () => api.post(`/api/work-orders/${id}/execution-state`, { action: 'resume', reason: 'Technician resumed execution' }), 'Work resumed');
+  const resumeWaiting = () => id && perform(
+    'resume-waiting',
+    () => api.post(`/api/work-orders/${id}/execution-state`, { action: 'resume', reason: 'Execution state released/resumed' }),
+    caps?.resumeOpensExecutionSession
+      ? 'Work resumed — timer running'
+      : 'Work order released to In Progress — assigned technician must start execution',
+  );
 
   const saveExecution = () => id && perform('save-execution', () => api.patch(`/api/work-orders/${id}/execution-details`, {
     failureDescription, causeDescription, actionDescription,
@@ -207,6 +258,66 @@ export function TechnicianWorkOrderPage() {
       parameterKey: measurement.parameterKey.trim(), value, unit: measurement.unit.trim(),
     }), 'Measurement recorded');
     if (ok) setMeasurement({ parameterKey: '', value: '', unit: '' });
+  };
+
+  const uploadEvidence = async () => {
+    if (!id || !evidenceFile) { toast.error('Choose a photo or file first'); return; }
+    const form = new FormData();
+    form.append('file', evidenceFile);
+    form.append('category', 'technician_evidence');
+    if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());
+    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form), 'Evidence uploaded');
+    if (ok) {
+      setEvidenceFile(null);
+      setEvidenceDescription('');
+      setEvidenceInputKey((value) => value + 1);
+    }
+  };
+
+  const openAttachment = async (attachmentId: string) => {
+    if (!id) return;
+    setBusy(`open-${attachmentId}`);
+    try {
+      const res = await api.getRaw(`/api/work-orders/${id}/attachments/${attachmentId}`);
+      if (!res.ok) { toast.error('Unable to open evidence file'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const requestAssistance = async () => {
+    if (!id || assistanceTrade.trim().length < 2) { toast.error('Enter the trade or skill required'); return; }
+    if (assistanceReason.trim().length < 3) { toast.error('Explain why assistance is needed'); return; }
+    const ok = await perform('assistance', () => api.post(`/api/work-orders/${id}/team-member-requests`, {
+      requestedTrade: assistanceTrade.trim(),
+      role: 'assistant',
+      reason: assistanceReason.trim(),
+    }), 'Assistance request sent to planner');
+    if (ok) { setAssistanceTrade(''); setAssistanceReason(''); }
+  };
+
+  const submitHandover = async () => {
+    if (!id || !handoverReceiverId) { toast.error('Select the incoming technician'); return; }
+    if (handoverReason.trim().length < 3) { toast.error('Enter a handover reason'); return; }
+    const pendingTasks = tasks.filter((task) => task.status !== 'completed').map((task) => ({ task: task.description, status: task.status }));
+    const ok = await perform('handover', () => api.post(`/api/work-orders/${id}/handover`, {
+      receivedById: handoverReceiverId,
+      reason: handoverReason.trim(),
+      shiftType: handoverFromShift,
+      shiftDate: new Date().toISOString(),
+      fromShift: handoverFromShift,
+      toShift: handoverToShift,
+      tasksSummary: pendingTasks,
+      pendingIssues: handoverNotes.trim() || undefined,
+      safetyNotes: wo?.safetyNotes || undefined,
+      notes: handoverNotes.trim() || handoverReason.trim(),
+      idempotencyKey: `handover-${id}-${user?.id || 'user'}-${Date.now()}`,
+    }), 'Shift handover submitted and live work timers stopped');
+    if (ok) { setHandoverReceiverId(''); setHandoverNotes(''); }
   };
 
   const submitCompletion = () => {
@@ -256,7 +367,7 @@ export function TechnicianWorkOrderPage() {
             )}
             {caps?.canStart && !liveLog && <Button onClick={startWork} disabled={busy !== null} className="bg-emerald-600 hover:bg-emerald-700"><Play className="h-4 w-4 mr-1" />{wo.actualStart ? 'Resume Work' : 'Start Work'}</Button>}
             {liveLog && <Button variant="outline" onClick={pauseWork} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Pause Timer</Button>}
-            {caps?.canResume && inWaitingState && <Button onClick={resumeWaiting} disabled={busy !== null}><RotateCcw className="h-4 w-4 mr-1" />Resume Work</Button>}
+            {caps?.canResume && inWaitingState && <Button onClick={resumeWaiting} disabled={busy !== null}><RotateCcw className="h-4 w-4 mr-1" />{caps.resumeOpensExecutionSession ? 'Resume Work' : 'Release to In Progress'}</Button>}
           </div>
         </div>
       </div>
@@ -296,8 +407,9 @@ export function TechnicianWorkOrderPage() {
           <Card>
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4" />Work Order & Problem</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">Asset / Machine</p><p className="font-medium">{wo.assetName || wo.maintenanceRequest?.asset?.name || '-'}</p></div>
+                <div><p className="text-xs text-muted-foreground">Location</p><p className="font-medium">{wo.maintenanceRequest?.location || '-'}</p></div>
                 <div><p className="text-xs text-muted-foreground">Type</p><p className="font-medium">{pretty(wo.type)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Trade</p><p className="font-medium">{pretty(wo.tradeActivity)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Estimated Time</p><p className="font-medium">{wo.estimatedHours ? `${wo.estimatedHours} h` : '-'}</p></div>
@@ -354,6 +466,28 @@ export function TechnicianWorkOrderPage() {
               {(wo.comments || []).slice(0, 6).map((c: any) => <div key={c.id} className="rounded-lg bg-muted/40 p-3 text-sm"><div className="flex justify-between gap-3 text-xs text-muted-foreground"><span>{c.user?.fullName || 'User'}</span><span>{formatDate(c.createdAt)}</span></div><p className="mt-1 whitespace-pre-wrap">{c.content}</p></div>)}
             </CardContent>
           </Card>
+
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Camera className="h-4 w-4" />Photos & Evidence <Badge variant="outline">{attachments.length}</Badge></CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2">
+                <Input key={evidenceInputKey} type="file" accept="image/*,application/pdf,text/plain,text/csv" onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)} />
+                <Input value={evidenceDescription} onChange={(e) => setEvidenceDescription(e.target.value)} placeholder="Evidence description (optional)" />
+                <Button variant="outline" className="w-fit" onClick={uploadEvidence} disabled={busy !== null || !evidenceFile}><Upload className="h-4 w-4 mr-1" />Upload Evidence</Button>
+              </div>
+              {attachments.length === 0 ? <p className="text-xs text-muted-foreground">No photos or evidence have been attached yet.</p> : (
+                <div className="space-y-2">
+                  {attachments.slice(0, 10).map((attachment: any) => (
+                    <button key={attachment.id} onClick={() => openAttachment(attachment.id)} className="w-full rounded-lg border p-3 text-left hover:bg-muted/40 transition-colors" disabled={busy !== null}>
+                      <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium truncate"><Paperclip className="h-3.5 w-3.5 inline mr-1" />{attachment.fileName}</span><span className="text-[11px] text-muted-foreground shrink-0">{attachment.fileSize ? `${(attachment.fileSize / 1024 / 1024).toFixed(1)} MB` : ''}</span></div>
+                      <p className="text-xs text-muted-foreground mt-1">{attachment.uploadedBy?.fullName || 'User'} · {formatDate(attachment.uploadedAt)}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
@@ -393,7 +527,20 @@ export function TechnicianWorkOrderPage() {
             <CardContent className="space-y-2">
               <Button variant="outline" className="w-full justify-between" onClick={() => navigate('repairs-material-requests', { workOrderId: id })}>Materials <Badge variant="secondary">{wo.repairMaterialRequests?.length || 0}</Badge></Button>
               <Button variant="outline" className="w-full justify-between" onClick={() => navigate('repairs-tool-requests', { workOrderId: id })}>Tools <Badge variant="secondary">{wo.repairToolRequests?.length || 0}</Badge></Button>
-              <Button variant="outline" className="w-full justify-between" onClick={() => navigate('maintenance-work-orders', { id })}>Team / Assistance <Users className="h-4 w-4" /></Button>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium"><UserPlus className="h-4 w-4" />Team / Assistance</div>
+                {caps?.canRequestAssistance && (
+                  <>
+                    <Input value={assistanceTrade} onChange={(e) => setAssistanceTrade(e.target.value)} placeholder="Required trade / skill e.g. Electrician" />
+                    <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder="Why is assistance required?" rows={2} />
+                    <Button variant="outline" className="w-full" onClick={requestAssistance} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>Request Assistance</Button>
+                  </>
+                )}
+                {assistanceRequests.slice(0, 5).map((request: any) => (
+                  <div key={request.id} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span>{request.requestedTrade || request.requestedUser?.fullName || 'Assistance'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
+                ))}
+              </div>
             </CardContent>
           </Card>
 
@@ -410,6 +557,20 @@ export function TechnicianWorkOrderPage() {
                 </select>
                 <Textarea value={waitingReason} onChange={(e) => setWaitingReason(e.target.value)} placeholder="Why must execution stop?" />
                 <Button variant="secondary" className="w-full" onClick={moveToWaiting} disabled={busy !== null}>Move Work Order to Waiting</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {caps?.canHandover && (
+            <Card className="border-blue-200 bg-blue-50/30 dark:bg-blue-950/10">
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><ArrowRightLeft className="h-4 w-4" />Shift Handover</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">Hand over live work to the incoming technician. This closes active team timers and moves the work order to Pending Handover.</p>
+                <div><Label>Incoming Technician *</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverReceiverId} onChange={(e) => setHandoverReceiverId(e.target.value)}><option value="">Select technician...</option>{handoverUsers.map((candidate: any) => <option key={candidate.id} value={candidate.id}>{candidate.fullName} ({candidate.username})</option>)}</select></div>
+                <div className="grid grid-cols-2 gap-2"><div><Label>From Shift</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverFromShift} onChange={(e) => setHandoverFromShift(e.target.value as 'morning' | 'afternoon' | 'night')}><option value="morning">Morning 06:00–14:00</option><option value="afternoon">Afternoon 14:00–22:00</option><option value="night">Night 22:00–06:00</option></select></div><div><Label>To Shift</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverToShift} onChange={(e) => setHandoverToShift(e.target.value as 'morning' | 'afternoon' | 'night')}><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="night">Night</option></select></div></div>
+                <Input value={handoverReason} onChange={(e) => setHandoverReason(e.target.value)} placeholder="Handover reason" />
+                <Textarea value={handoverNotes} onChange={(e) => setHandoverNotes(e.target.value)} placeholder="Pending issues, equipment condition, safety information..." rows={3} />
+                <Button variant="outline" className="w-full" onClick={submitHandover} disabled={busy !== null || !handoverReceiverId || handoverReason.trim().length < 3}>Submit Shift Handover</Button>
               </CardContent>
             </Card>
           )}

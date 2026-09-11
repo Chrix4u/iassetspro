@@ -31,6 +31,7 @@ export async function GET(
           description: true,
           category: true,
           machineDownStatus: true,
+          location: true,
           createdAt: true,
           requester: { select: { id: true, fullName: true, username: true } },
           asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },

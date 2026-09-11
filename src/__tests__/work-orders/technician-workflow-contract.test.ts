@@ -13,6 +13,7 @@ describe('technician work-order vertical slice contract', () => {
     expect(start).toContain("wo.assignmentResponseStatus !== 'accepted'");
     expect(capability).toContain('canAcceptAssignment');
     expect(capability).toContain('canDeclineAssignment');
+    expect(capability).toContain('isAccountableAssignmentResponder');
     expect(assignment).toContain("response must be 'accepted' or 'declined'");
   });
 
@@ -29,6 +30,12 @@ describe('technician work-order vertical slice contract', () => {
     expect(page).toContain('failureDescription: failureDescription.trim()');
     expect(page).toContain('causeDescription: causeDescription.trim()');
     expect(page).toContain('actionDescription: actionDescription.trim()');
+    expect(page).toContain('/attachments');
+    expect(page).toContain('/team-member-requests');
+    expect(page).toContain('/handover');
+    expect(page).toContain('Photos & Evidence');
+    expect(page).toContain('Shift Handover');
+    expect(page).toContain('maintenanceRequest?.location');
   });
 
   it('keeps assignment reset and schema migration explicit', () => {

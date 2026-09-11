@@ -17,7 +17,9 @@ echo "Workspace branch: $BRANCH"
 [[ "$BRANCH" == "$FEATURE_BRANCH" ]] || { echo "STOP: wrong workspace branch"; exit 1; }
 
 # Refuse to proceed if the failed first pass left changes outside the intended V1.1 slice.
-mapfile -t CHANGED < <(git status --porcelain | sed -E 's/^.. //' | sort)
+# -uall is required here so a brand-new untracked directory is expanded to its file path
+# instead of being reported only as "path/to/directory/".
+mapfile -t CHANGED < <(git status --porcelain -uall | sed -E 's/^.. //' | sort)
 ALLOWED=(
   "src/__tests__/work-orders/technician-workflow-v11-contract.test.ts"
   "src/app/api/work-orders/[id]/capabilities/route.ts"
@@ -25,6 +27,10 @@ ALLOWED=(
   "src/components/modules/TechnicianWorkOrderPage.tsx"
   "src/components/modules/TechnicianWorkOrderV11Panels.tsx"
 )
+
+echo "Workspace changes:"
+printf '  %s\n' "${CHANGED[@]}"
+
 for path in "${CHANGED[@]}"; do
   ok=0
   for allowed in "${ALLOWED[@]}"; do

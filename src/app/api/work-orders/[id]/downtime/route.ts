@@ -6,7 +6,8 @@ import { buildAuditData } from '@/lib/audit-helpers';
 
 const VALID_CATEGORIES = new Set(['planned', 'unplanned', 'partial']);
 const VALID_IMPACT_LEVELS = new Set(['low', 'medium', 'high', 'critical']);
-const IMMUTABLE_STATUSES = new Set(['verified', 'closed', 'cancelled']);
+const IMMUTABLE_STATUSES = new Set(['completed', 'verified', 'closed', 'cancelled']);
+const ACTIVE_DOWNTIME_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
 type AccessWorkOrder = {
   id: string;
@@ -15,6 +16,8 @@ type AccessWorkOrder = {
   assetName: string | null;
   assignedTo: string | null;
   teamLeaderId: string | null;
+  assignedSupervisorId: string | null;
+  plannerId: string | null;
   status: string;
   isLocked: boolean;
   teamMembers: Array<{ userId: string }>;
@@ -48,6 +51,8 @@ async function loadWorkOrder(id: string): Promise<AccessWorkOrder | null> {
       assetName: true,
       assignedTo: true,
       teamLeaderId: true,
+      assignedSupervisorId: true,
+      plannerId: true,
       status: true,
       isLocked: true,
       teamMembers: { select: { userId: true } },
@@ -90,13 +95,20 @@ async function authorizeWrite(request: NextRequest, id: string) {
   const read = await authorizeRead(request, id);
   if (!read.ok) return read;
 
-  const canManage = isAdmin(read.session) || hasAnyPermission(read.session, ['work_orders.update']);
+  const isSupervisor = read.wo.assignedSupervisorId === read.session.userId;
+  const isPlanner = read.wo.plannerId === read.session.userId;
+  const isMaintenanceManager = read.session.roles.includes('maintenance_manager');
+  const canManage = isAdmin(read.session) || isMaintenanceManager || isSupervisor || isPlanner || hasAnyPermission(read.session, ['work_orders.update']);
   if (!isExecutionMember(read.wo, read.session.userId) && !canManage) {
     return { ok: false as const, response: NextResponse.json({ success: false, error: 'Only assigned execution staff or authorized maintenance management can record work-order downtime' }, { status: 403 }) };
   }
 
   if (read.wo.isLocked || IMMUTABLE_STATUSES.has(read.wo.status)) {
     return { ok: false as const, response: NextResponse.json({ success: false, error: `Downtime cannot be changed for work order status: ${read.wo.status}` }, { status: 409 }) };
+  }
+
+  if (!ACTIVE_DOWNTIME_STATUSES.has(read.wo.status)) {
+    return { ok: false as const, response: NextResponse.json({ success: false, error: `Downtime can only be recorded during active work-order execution. Status: ${read.wo.status}` }, { status: 409 }) };
   }
 
   return read;
@@ -148,8 +160,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (end && end < start) return NextResponse.json({ success: false, error: 'Downtime end cannot be before start' }, { status: 400 });
 
     const rawLoss = body.productionLoss == null || body.productionLoss === '' ? null : Number(body.productionLoss);
-    if (rawLoss != null && !Number.isFinite(rawLoss)) {
-      return NextResponse.json({ success: false, error: 'productionLoss must be numeric' }, { status: 400 });
+    if (rawLoss != null && (!Number.isFinite(rawLoss) || rawLoss < 0)) {
+      return NextResponse.json({ success: false, error: 'productionLoss must be a non-negative number' }, { status: 400 });
+    }
+
+    if (!end) {
+      const existingOngoing = await db.workOrderDowntime.findFirst({
+        where: { workOrderId: id, downtimeEnd: null },
+        select: { id: true, downtimeStart: true },
+      });
+      if (existingOngoing) {
+        return NextResponse.json({
+          success: false,
+          error: 'An ongoing downtime record already exists for this work order. End it before starting another.',
+          data: { recordId: existingOngoing.id, downtimeStart: existingOngoing.downtimeStart },
+        }, { status: 409 });
+      }
     }
 
     const record = await db.$transaction(async (tx) => {

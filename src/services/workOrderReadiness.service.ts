@@ -33,6 +33,7 @@ type WoReadinessData = {
   teamMembers: { userId: string }[]
   teamMemberRequests: { id: string; status: string; requestedUserId: string | null }[]
   timeLogs: { id: string; action: string; endTime: DateTime | null }[]
+  workOrderDowntimes: { id: string; downtimeEnd: DateTime | null }[]
   repairToolRequests: {
     id: string
     status: string
@@ -89,6 +90,7 @@ export async function checkReadiness(
       teamMembers: { select: { userId: true } },
       teamMemberRequests: { select: { id: true, status: true, requestedUserId: true } },
       timeLogs: { select: { id: true, action: true, endTime: true } },
+      workOrderDowntimes: { select: { id: true, downtimeEnd: true } },
       repairToolRequests: {
         select: {
           id: true,
@@ -230,6 +232,9 @@ function checkCompletionReadiness(
 ): void {
   const activeTimers = wo.timeLogs.filter((tl) => (tl.action === 'start' || tl.action === 'resume') && !tl.endTime)
   if (activeTimers.length > 0) blockers.push({ code: 'ACTIVE_TIMERS', category: 'timer', message: `${activeTimers.length} active time timer(s) must be stopped before completion`, severity: 'blocker' })
+
+  const ongoingDowntime = wo.workOrderDowntimes.filter((row) => !row.downtimeEnd)
+  if (ongoingDowntime.length > 0) blockers.push({ code: 'ONGOING_DOWNTIME', category: 'timer', message: `${ongoingDowntime.length} ongoing downtime record(s) must be ended before completion`, severity: 'blocker' })
 
   const toolsOut = wo.repairToolRequests
     .filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')

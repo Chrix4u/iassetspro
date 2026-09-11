@@ -38,6 +38,8 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(route).toContain("buildAuditData('update', 'wo_downtime'");
     expect(route).toContain('workOrderDowntime.create');
     expect(route).toContain('workOrderDowntime.update');
+    expect(route).toContain('ACTIVE_DOWNTIME_STATUSES');
+    expect(route).toContain('An ongoing downtime record already exists');
     expect(panel).toContain('`/api/work-orders/${workOrderId}/downtime`');
     expect(panel).toContain('Start Downtime');
     expect(panel).toContain('End Downtime');
@@ -55,6 +57,16 @@ describe('technician workflow V1.1 completion contract', () => {
     const caps = read('src/app/api/work-orders/[id]/capabilities/route.ts');
     expect(caps).toContain("hasPermission(session, 'repair_tool_requests.create')");
     expect(caps).toContain('canCreateToolRequest');
-    expect(caps).toContain('canLogDowntime:');
+    expect(caps).toContain('canManageDowntime');
+    expect(caps).toContain('canLogDowntime: activeExecutionStatuses.includes(wo.status)');
+  });
+
+  it('blocks completion while equipment downtime is still open and keeps stage anchors permanent', () => {
+    const readiness = read('src/services/workOrderReadiness.service.ts');
+    const page = read('src/components/modules/TechnicianWorkOrderPage.tsx');
+    expect(readiness).toContain('ONGOING_DOWNTIME');
+    expect(readiness).toContain('workOrderDowntimes');
+    expect(page).toContain('<div id="assignment" className="scroll-mt-28" aria-hidden="true" />');
+    expect(page).toContain('<div id="completion" className="scroll-mt-28" aria-hidden="true" />');
   });
 });

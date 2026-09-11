@@ -105,6 +105,9 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       await loadPanels();
       if (refreshParent) await onChanged();
       return true;
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Action failed');
+      return false;
     } finally {
       setBusy(null);
     }
@@ -149,15 +152,22 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
 
   const recordDowntime = async () => {
     if (downtimeForm.reason.trim().length < 3) { toast.error('Downtime reason is required'); return; }
+    const start = new Date(downtimeForm.downtimeStart);
+    const end = downtimeForm.downtimeEnd ? new Date(downtimeForm.downtimeEnd) : null;
+    if (!Number.isFinite(start.getTime())) { toast.error('Enter a valid downtime start'); return; }
+    if (end && !Number.isFinite(end.getTime())) { toast.error('Enter a valid downtime end'); return; }
+    if (end && end < start) { toast.error('Downtime end cannot be before start'); return; }
+    const productionLoss = downtimeForm.productionLoss === '' ? undefined : Number(downtimeForm.productionLoss);
+    if (productionLoss !== undefined && (!Number.isFinite(productionLoss) || productionLoss < 0)) { toast.error('Production loss must be a non-negative number'); return; }
     const ok = await run('downtime', () => api.post(`/api/work-orders/${workOrderId}/downtime`, {
       reason: downtimeForm.reason.trim(),
       category: downtimeForm.category,
       impactLevel: downtimeForm.impactLevel,
-      downtimeStart: new Date(downtimeForm.downtimeStart).toISOString(),
-      downtimeEnd: downtimeForm.downtimeEnd ? new Date(downtimeForm.downtimeEnd).toISOString() : undefined,
-      productionLoss: downtimeForm.productionLoss || undefined,
+      downtimeStart: start.toISOString(),
+      downtimeEnd: end?.toISOString(),
+      productionLoss,
       notes: downtimeForm.notes.trim() || undefined,
-    }), downtimeForm.downtimeEnd ? 'Downtime recorded' : 'Ongoing downtime started', false);
+    }), end ? 'Downtime recorded' : 'Ongoing downtime started', false);
     if (ok) setDowntimeForm({ reason: '', category: 'unplanned', impactLevel: 'medium', downtimeStart: toLocalInput(), downtimeEnd: '', productionLoss: '', notes: '' });
   };
 
@@ -284,7 +294,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <Button className="sm:col-span-2 w-fit" variant="outline" onClick={recordDowntime} disabled={busy !== null}><TimerReset className="h-4 w-4 mr-1" />{downtimeForm.downtimeEnd ? 'Record Downtime' : 'Start Downtime'}</Button>
               </div>
             )}
-            <div className="space-y-2">{downtime.length === 0 ? <p className="text-sm text-muted-foreground">No downtime recorded for this work order.</p> : downtime.slice(0, 8).map((row: any) => <div key={row.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div><p className="font-medium">{row.reason}</p><p className="text-xs text-muted-foreground">{pretty(row.category)} · {pretty(row.impactLevel)} · {fmt(row.downtimeStart)}</p></div>{row.downtimeEnd ? <Badge variant="outline">{minutesLabel(row.durationMinutes)}</Badge> : <Button size="sm" variant="outline" onClick={() => endDowntime(row.id)} disabled={busy !== null}><XCircle className="h-3.5 w-3.5 mr-1" />End Downtime</Button>}</div></div>)}</div>
+            <div className="space-y-2">{downtime.length === 0 ? <p className="text-sm text-muted-foreground">No downtime recorded for this work order.</p> : downtime.slice(0, 8).map((row: any) => <div key={row.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div><p className="font-medium">{row.reason}</p><p className="text-xs text-muted-foreground">{pretty(row.category)} · {pretty(row.impactLevel)} · {fmt(row.downtimeStart)}</p></div>{row.downtimeEnd ? <Badge variant="outline">{minutesLabel(row.durationMinutes)}</Badge> : capabilities?.canLogDowntime ? <Button size="sm" variant="outline" onClick={() => endDowntime(row.id)} disabled={busy !== null}><XCircle className="h-3.5 w-3.5 mr-1" />End Downtime</Button> : <Badge variant="outline">Ongoing</Badge>}</div></div>)}</div>
           </CardContent>
         </Card>
 

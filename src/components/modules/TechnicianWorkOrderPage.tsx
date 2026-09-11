@@ -376,8 +376,10 @@ export function TechnicianWorkOrderPage() {
         </div>
       </div>
 
+      <div id="assignment" className="scroll-mt-28" aria-hidden="true" />
+
       {wo.status === 'assigned' && assignmentStatus === 'pending' && (caps?.canAcceptAssignment || caps?.canDeclineAssignment) && (
-        <Card id="assignment" className="scroll-mt-28 border-sky-200 bg-sky-50/50 dark:bg-sky-950/20">
+        <Card className="border-sky-200 bg-sky-50/50 dark:bg-sky-950/20">
           <CardContent className="p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -581,8 +583,10 @@ export function TechnicianWorkOrderPage() {
             </Card>
           )}
 
+          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
+
           {caps?.canSubmitCompletion && (
-            <Card id="completion" className="scroll-mt-28 border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
+            <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
               <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-xs text-muted-foreground">Stop the live timer first. The server will verify open tools, materials, handovers and assistance requests before accepting completion.</p>

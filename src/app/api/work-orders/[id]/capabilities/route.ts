@@ -78,6 +78,7 @@ export async function GET(
     const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
     const canCreateToolRequest = isAdminAccount || hasPermission(session, 'repair_tool_requests.create');
+    const canManageDowntime = isSupervisor || isPlanner || isExecutionManager || hasPermission(session, 'work_orders.update');
 
     // Canonical first execution begins only after assignment. A planned WO must
     // be assigned before it can transition to in_progress.
@@ -139,7 +140,9 @@ export async function GET(
       canLogTeamTime: isTeamLeader && hasMultipleTeamMembers && activeExecutionStatuses.includes(wo.status),
       canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status) && canCreateToolRequest,
       canRequestMaterials: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
-      canLogDowntime: ((isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status)) || isSupervisor || isPlanner || isExecutionManager,
+      canLogDowntime: activeExecutionStatuses.includes(wo.status) && (
+        isAssignee || isTeamMember || isTeamLeader || canManageDowntime
+      ),
       canRequestAssistance: (isAssignee || isTeamMember || isTeamLeader) && (
         activeExecutionStatuses.includes(wo.status) ||
         (wo.status === 'assigned' && assignmentAccepted)

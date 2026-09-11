@@ -7,6 +7,7 @@ EXPECTED_TREE="eb3b73ad1b975ea49b522e69dd47e2c131777198"
 APP_LINK="/home/lightworld/webapps/iassetspro"
 PROD_PORT="3001"
 PUBLIC_URL="https://iassetspro.lightworldtech.com"
+MIN_FREE_BYTES=$((8 * 1024 * 1024 * 1024))
 
 [[ "$(id -u)" -eq 0 ]] || { echo "STOP: run as root"; exit 1; }
 
@@ -40,6 +41,17 @@ echo "===== CURRENT PRODUCTION HEALTH ====="
 CODE="$(curl -sS -o /tmp/iassetspro-v11-predeploy-health.json -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PROD_PORT}/api/health" || true)"
 echo "Local production HTTP: $CODE"
 [[ "$CODE" == "200" ]] || { echo "STOP: current production is unhealthy"; exit 1; }
+
+echo "===== DISK SPACE PREFLIGHT ====="
+AVAILABLE_BYTES="$(df --output=avail -B1 / | tail -1 | tr -d ' ')"
+echo "Available bytes: $AVAILABLE_BYTES"
+echo "Required min  : $MIN_FREE_BYTES"
+[[ "$AVAILABLE_BYTES" =~ ^[0-9]+$ ]] || { echo "STOP: unable to determine free disk space"; exit 1; }
+[[ "$AVAILABLE_BYTES" -ge "$MIN_FREE_BYTES" ]] || {
+  echo "STOP: less than 8 GiB free; do not create another immutable release until space is recovered"
+  df -h /
+  exit 1
+}
 
 echo "===== PERSISTENT STORAGE SAFETY CHECK ====="
 check_storage_path() {

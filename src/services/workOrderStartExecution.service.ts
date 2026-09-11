@@ -102,6 +102,7 @@ export async function startWorkOrderExecution(
         actualStart: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignmentResponseStatus: true,
         assignedSupervisorId: true,
         plannerId: true,
         teamMembers: { select: { userId: true, role: true } },
@@ -113,6 +114,15 @@ export async function startWorkOrderExecution(
       return {
         success: false as const,
         error: 'Only the assigned technician or team leader can start execution on this work order',
+      };
+    }
+
+    if (wo.status === 'assigned' && wo.assignmentResponseStatus !== 'accepted') {
+      return {
+        success: false as const,
+        error: wo.assignmentResponseStatus === 'declined'
+          ? 'This assignment was declined and must be reassigned before work can start'
+          : 'Accept the work order assignment before starting execution',
       };
     }
 

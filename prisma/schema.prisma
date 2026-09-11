@@ -517,6 +517,10 @@ model WorkOrder {
   assignedSupervisorId String? // → User
   assignedBy           String? // → User
   assignmentType       String? // direct, via_supervisor
+  assignmentResponseStatus String @default("pending") // pending, accepted, declined
+  assignmentRespondedBy String?
+  assignmentRespondedAt DateTime?
+  assignmentResponseReason String? @db.Text
   plannerId            String? // → User
   estimatedHours       Float?
   actualHours          Float?
@@ -613,6 +617,7 @@ model WorkOrder {
   @@index([createdAt])
   @@index([status, priority])
   @@index([assignedTo, status])
+  @@index([assignedTo, assignmentResponseStatus])
   @@index([plantId, status])
   @@map("work_orders")
 }

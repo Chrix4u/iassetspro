@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { ObjectStorageService } from '@/services/objectStorage.service';
 
 export async function POST(
@@ -14,66 +14,61 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
     const { id: workOrderId } = await params;
-
-    // Verify WO exists
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      select: { id: true, status: true, isLocked: true, plantId: true },
+      select: {
+        id: true,
+        status: true,
+        isLocked: true,
+        plantId: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        teamMembers: { select: { userId: true, accessLevel: true } },
+      },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Plant scope check (IDOR protection)
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Closed/locked WO immutability guard
-    if (wo.isLocked) {
-      return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
+    const isWritableExecutionActor =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId && member.accessLevel !== 'read_only');
+    const canManage = isAdmin(session) || hasPermission(session, 'work_orders.update');
+    if (!isWritableExecutionActor && !canManage) {
+      return NextResponse.json({ success: false, error: 'Only assigned execution staff or authorized maintenance management can upload work-order evidence' }, { status: 403 });
     }
-    if (wo.status === 'closed') {
-      return NextResponse.json({ success: false, error: 'Work order is closed and cannot be modified' }, { status: 409 });
+
+    if (wo.isLocked || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
     }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const description = (formData.get('description') as string) || null;
     const category = (formData.get('category') as string) || null;
-
     if (!file) {
       return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 });
     }
 
-    // Validate file
     const validation = ObjectStorageService.validateUpload(file.type, file.size);
     if (!validation.valid) {
       return NextResponse.json({ success: false, error: validation.error }, { status: 400 });
     }
 
-    // Read file buffer
     const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Generate storage key
-    const prefix = `work-orders/${workOrderId}`;
-    const key = ObjectStorageService.generateKey(prefix, file.name);
-
-    // Upload to storage
+    const key = ObjectStorageService.generateKey(`work-orders/${workOrderId}`, file.name);
     const uploadResult = await ObjectStorageService.upload(key, buffer, file.type);
-
-    // Build description with category prefix if provided
     const finalDescription = category
       ? `[${category}]${description ? ' ' + description : ''}`
       : description;
 
-    // Create attachment record
     const attachment = await db.attachment.create({
       data: {
         fileName: file.name,
@@ -85,9 +80,7 @@ export async function POST(
         uploadedById: session.userId,
         description: finalDescription,
       },
-      include: {
-        uploadedBy: { select: { id: true, fullName: true, username: true } },
-      },
+      include: { uploadedBy: { select: { id: true, fullName: true, username: true } } },
     });
 
     return NextResponse.json({ success: true, data: attachment }, { status: 201 });
@@ -107,31 +100,50 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const { id: workOrderId } = await params;
+    const wo = await db.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: {
+        plantId: true,
+        assignedTo: true,
+        teamMembers: { select: { userId: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+      },
+    });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    const { id: workOrderId } = await params;
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const canViewAll =
+      isAdmin(session) ||
+      hasPermission(session, 'work_orders.view') ||
+      hasPermission(session, 'work_orders.view_all');
+    const isOwn =
+      wo.assignedTo === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId) ||
+      wo.maintenanceRequest?.requestedBy === session.userId;
+    const canViewOwn = hasPermission(session, 'work_orders.view_own') && isOwn;
+    if (!canViewAll && !canViewOwn) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category') || undefined;
-
-    // Build where clause
-    const where: any = {
+    const where: Record<string, unknown> = {
       entityType: 'work_order',
       entityId: workOrderId,
     };
-
-    // If category filter provided, match against description prefix
-    if (category) {
-      where.description = { startsWith: `[${category}]` };
-    }
+    if (category) where.description = { startsWith: `[${category}]` };
 
     const attachments = await db.attachment.findMany({
       where,
       orderBy: { uploadedAt: 'desc' },
-      include: {
-        uploadedBy: { select: { id: true, fullName: true, username: true } },
-      },
+      include: { uploadedBy: { select: { id: true, fullName: true, username: true } } },
       take: 200,
     });
 

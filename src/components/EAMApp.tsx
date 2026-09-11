@@ -204,7 +204,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'ai-history': () => import('./modules/AIHistoryPage').then(m => m.AIHistoryPage),
   // Maintenance
   'maintenance-work-orders': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
-  'wo-detail': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
+  'wo-detail': () => import('./modules/TechnicianWorkOrderPage').then(m => m.TechnicianWorkOrderPage),
   'maintenance-requests': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),
   'mr-detail': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),
   'create-mr': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),

@@ -159,7 +159,7 @@ export interface WorkOrder {
   description?: string;
   type: 'preventive' | 'corrective' | 'predictive' | 'inspection' | 'emergency' | 'project';
   priority: 'low' | 'medium' | 'high' | 'critical' | 'emergency';
-  status: 'draft' | 'requested' | 'approved' | 'planned' | 'assigned' | 'in_progress' | 'waiting_parts' | 'on_hold' | 'completed' | 'verified' | 'closed' | 'cancelled';
+  status: 'draft' | 'requested' | 'approved' | 'planned' | 'assigned' | 'in_progress' | 'waiting_parts' | 'waiting_tools' | 'waiting_shutdown' | 'waiting_permit' | 'on_hold' | 'pending_handover' | 'completed' | 'verified' | 'closed' | 'cancelled';
   assetId?: string;
   assetName?: string;
   departmentId?: string;
@@ -172,6 +172,10 @@ export interface WorkOrder {
   assignedById?: string;
   assignedAt?: string;
   assignmentType?: string;
+  assignmentResponseStatus?: 'pending' | 'accepted' | 'declined';
+  assignmentRespondedBy?: string;
+  assignmentRespondedAt?: string;
+  assignmentResponseReason?: string;
   estimatedHours?: number;
   plannedStart?: string;
   plannedEnd?: string;

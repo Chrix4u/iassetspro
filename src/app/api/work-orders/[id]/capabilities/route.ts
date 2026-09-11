@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(
@@ -77,6 +77,8 @@ export async function GET(
     const hasHoldControlAuthority = isSupervisor || isExecutionManager;
     const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
+    const canCreateToolRequest = isAdminAccount || hasPermission(session, 'repair_tool_requests.create');
+    const canManageDowntime = isSupervisor || isPlanner || isExecutionManager || hasPermission(session, 'work_orders.update');
 
     // Canonical first execution begins only after assignment. A planned WO must
     // be assigned before it can transition to in_progress.
@@ -136,8 +138,11 @@ export async function GET(
       resumeOpensExecutionSession,
       canLogOwnTime: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
       canLogTeamTime: isTeamLeader && hasMultipleTeamMembers && activeExecutionStatuses.includes(wo.status),
-      canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
+      canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status) && canCreateToolRequest,
       canRequestMaterials: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
+      canLogDowntime: activeExecutionStatuses.includes(wo.status) && (
+        isAssignee || isTeamMember || isTeamLeader || canManageDowntime
+      ),
       canRequestAssistance: (isAssignee || isTeamMember || isTeamLeader) && (
         activeExecutionStatuses.includes(wo.status) ||
         (wo.status === 'assigned' && assignmentAccepted)

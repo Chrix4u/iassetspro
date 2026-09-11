@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { TechnicianWorkOrderV11Panels } from './TechnicianWorkOrderV11Panels';
 
 interface Capabilities {
   canAcceptAssignment: boolean;
@@ -28,6 +29,9 @@ interface Capabilities {
   canStart: boolean;
   canResume: boolean;
   resumeOpensExecutionSession: boolean;
+  canLogOwnTime: boolean;
+  canLogTeamTime: boolean;
+  canLogDowntime: boolean;
   canRequestTools: boolean;
   canRequestMaterials: boolean;
   canRequestAssistance: boolean;
@@ -372,6 +376,8 @@ export function TechnicianWorkOrderPage() {
         </div>
       </div>
 
+      <div id="assignment" className="scroll-mt-28" aria-hidden="true" />
+
       {wo.status === 'assigned' && assignmentStatus === 'pending' && (caps?.canAcceptAssignment || caps?.canDeclineAssignment) && (
         <Card className="border-sky-200 bg-sky-50/50 dark:bg-sky-950/20">
           <CardContent className="p-5">
@@ -402,9 +408,11 @@ export function TechnicianWorkOrderPage() {
         </div>
       )}
 
+      <TechnicianWorkOrderV11Panels workOrderId={id} workOrder={wo} capabilities={caps} onChanged={load} />
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-5">
-          <Card>
+          <Card id="preparation" className="scroll-mt-28">
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4" />Work Order & Problem</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 text-sm">
@@ -436,7 +444,7 @@ export function TechnicianWorkOrderPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="execution" className="scroll-mt-28">
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Save className="h-4 w-4" />Execution Report</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div><Label>Findings / Failure Description</Label><Textarea className="mt-1" rows={3} value={failureDescription} onChange={(e) => setFailureDescription(e.target.value)} placeholder="What did you find during inspection and repair?" /></div>
@@ -468,7 +476,7 @@ export function TechnicianWorkOrderPage() {
           </Card>
 
 
-          <Card>
+          <Card id="evidence" className="scroll-mt-28">
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Camera className="h-4 w-4" />Photos & Evidence <Badge variant="outline">{attachments.length}</Badge></CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-2">
@@ -574,6 +582,8 @@ export function TechnicianWorkOrderPage() {
               </CardContent>
             </Card>
           )}
+
+          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
 
           {caps?.canSubmitCompletion && (
             <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">

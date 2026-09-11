@@ -16,10 +16,7 @@ echo "Workspace branch: $BRANCH"
 [[ "$HEAD_SHA" == "$EXPECTED_BASE" ]] || { echo "STOP: workspace base changed unexpectedly"; exit 1; }
 [[ "$BRANCH" == "$FEATURE_BRANCH" ]] || { echo "STOP: wrong workspace branch"; exit 1; }
 
-# Refuse to proceed if the failed first pass left changes outside the intended V1.1 slice.
-# -uall is required here so a brand-new untracked directory is expanded to its file path
-# instead of being reported only as "path/to/directory/".
-mapfile -t CHANGED < <(git status --porcelain -uall | sed -E 's/^.. //' | sort)
+mapfile -t CHANGED < <(git status --porcelain=v1 -uall | sed -E 's/^.. //' | sort)
 ALLOWED=(
   "src/__tests__/work-orders/technician-workflow-v11-contract.test.ts"
   "src/app/api/work-orders/[id]/capabilities/route.ts"
@@ -39,29 +36,78 @@ for path in "${CHANGED[@]}"; do
   [[ "$ok" == 1 ]] || { echo "STOP: unexpected modified path: $path"; exit 1; }
 done
 
-[[ -f "$TEST_FILE" ]] || { echo "STOP: V1.1 contract test file missing"; exit 1; }
+for required in "${ALLOWED[@]}"; do
+  if [[ "$required" == "$TEST_FILE" ]]; then
+    continue
+  fi
+  [[ -e "$required" ]] || { echo "STOP: expected V1.1 file missing: $required"; exit 1; }
+done
 
-python3 - <<'PY'
-from pathlib import Path
-p = Path('src/__tests__/work-orders/technician-workflow-v11-contract.test.ts')
-s = p.read_text()
-repls = [
-    ("expect(panel).toContain(`/api/work-orders/${workOrderId}/materials`);", "expect(panel).toContain('`/api/work-orders/${workOrderId}/materials`');"),
-    ("expect(panel).toContain(`/api/work-orders/${workOrderId}/personal-tools`);", "expect(panel).toContain('`/api/work-orders/${workOrderId}/personal-tools`');"),
-    ("expect(route).toContain(\"entityType: 'wo_downtime'\");", "expect(route).toContain(\"buildAuditData('create', 'wo_downtime'\");"),
-    ("expect(panel).toContain(`/api/work-orders/${workOrderId}/downtime`);", "expect(panel).toContain('`/api/work-orders/${workOrderId}/downtime`');"),
-    ("expect(panel).toContain(`/api/work-orders/${workOrderId}/time-logs`);", "expect(panel).toContain('`/api/work-orders/${workOrderId}/time-logs');"),
-]
-for old, new in repls:
-    count = s.count(old)
-    if count != 1:
-        raise SystemExit(f'STOP: expected one test anchor for {old!r}, found {count}')
-    s = s.replace(old, new, 1)
-p.write_text(s)
-PY
+cat > "$TEST_FILE" <<'TEST'
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
 
-echo "===== CORRECTED CONTRACT TEST ====="
-sed -n '20,60p' "$TEST_FILE"
+const read = (path: string) => fs.readFileSync(path, 'utf8');
+
+describe('technician workflow V1.1 completion contract', () => {
+  it('uses a lifecycle-oriented full-page workspace', () => {
+    const page = read('src/components/modules/TechnicianWorkOrderPage.tsx');
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(page).toContain('TechnicianWorkOrderV11Panels');
+    expect(page).toContain('id="assignment"');
+    expect(page).toContain('id="preparation"');
+    expect(page).toContain('id="execution"');
+    expect(page).toContain('id="evidence"');
+    expect(page).toContain('id="completion"');
+    for (const label of ['Assignment', 'Preparation', 'Execution', 'Resources', 'Evidence', 'Completion']) {
+      expect(panel).toContain(`label: '${label}'`);
+    }
+    expect(panel).toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6');
+    expect(panel).toContain('grid grid-cols-1 2xl:grid-cols-2');
+  });
+
+  it('integrates materials, tools and personal tools in the technician workspace', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(panel).toContain('`/api/work-orders/${workOrderId}/materials`');
+    expect(panel).toContain("api.post('/api/repairs/tool-requests'");
+    expect(panel).toContain('`/api/work-orders/${workOrderId}/personal-tools`');
+    expect(panel).toContain('Materials — Request & Status');
+    expect(panel).toContain('Tools — Request, Issue & Personal Tools');
+  });
+
+  it('provides work-order-scoped downtime capture with authorization and audit', () => {
+    const route = read('src/app/api/work-orders/[id]/downtime/route.ts');
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(route).toContain('authorizeWorkOrderPlant');
+    expect(route).toContain('isExecutionMember');
+    expect(route).toContain("buildAuditData('create', 'wo_downtime'");
+    expect(route).toContain("buildAuditData('update', 'wo_downtime'");
+    expect(route).toContain('workOrderDowntime.create');
+    expect(route).toContain('workOrderDowntime.update');
+    expect(panel).toContain('`/api/work-orders/${workOrderId}/downtime`');
+    expect(panel).toContain('Start Downtime');
+    expect(panel).toContain('End Downtime');
+  });
+
+  it('embeds labor history without reviving stale live /time-logs writes', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(panel).toContain('`/api/work-orders/${workOrderId}/time-logs');
+    expect(panel).toContain('Labor & Time History');
+    expect(panel).not.toContain('api.post(`/api/work-orders/${workOrderId}/time-logs`');
+    expect(panel).not.toContain('api.patch(`/api/work-orders/${workOrderId}/time-logs`');
+  });
+
+  it('keeps tool request UI aligned with endpoint permission and exposes downtime capability', () => {
+    const caps = read('src/app/api/work-orders/[id]/capabilities/route.ts');
+    expect(caps).toContain("hasPermission(session, 'repair_tool_requests.create')");
+    expect(caps).toContain('canCreateToolRequest');
+    expect(caps).toContain('canLogDowntime:');
+  });
+});
+TEST
+
+echo "===== REWRITTEN CONTRACT TEST ====="
+sed -n '1,120p' "$TEST_FILE"
 
 echo "===== DIFF CHECK ====="
 git diff --check
@@ -78,7 +124,6 @@ echo "===== PRODUCTION BUILD ====="
 bun run build
 
 echo "===== COMMIT AND PUSH ====="
-# Remove only the temporary dependency symlink created by the first-pass runner.
 if [[ -L node_modules ]]; then rm node_modules; fi
 
 git diff --check

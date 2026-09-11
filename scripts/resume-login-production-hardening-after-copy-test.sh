@@ -25,20 +25,24 @@ p = Path('src/components/LoginPage.tsx')
 t = p.read_text()
 old = "{ icon: BarChart3, label: 'Real-time Monitoring', desc: 'Track assets 24/7 with live dashboards', color: 'bg-emerald-500/20 text-emerald-300' },"
 new = "{ icon: BarChart3, label: 'Real-time Monitoring', desc: 'Track assets with live dashboards', color: 'bg-emerald-500/20 text-emerald-300' },"
-count = t.count(old)
-if count != 1:
-    raise SystemExit(f'STOP: expected one remaining 24/7 monitoring claim, found {count}')
-p.write_text(t.replace(old, new, 1))
+if old in t:
+    p.write_text(t.replace(old, new, 1))
+elif new not in t:
+    raise SystemExit('STOP: monitoring copy is neither the expected old nor corrected text')
 PY
 
 echo
 echo '[1/3] Verify intended hardening diff only'
-STATUS="$(git status --short)"
+# Expand untracked directories to individual files so the safety check sees the
+# actual test file rather than only src/__tests__/presentation/.
+STATUS="$(git status --porcelain=v1 --untracked-files=all)"
 printf '%s\n' "$STATUS"
 
 # Only LoginPage and the regression test may be changed by this hardening pass.
 BAD="$(printf '%s\n' "$STATUS" | awk '{print $2}' | grep -Ev '^(src/components/LoginPage\.tsx|src/__tests__/presentation/login-production-safety\.test\.ts)$' || true)"
 [[ -z "$BAD" ]] || { echo "STOP: unexpected modified files:" >&2; echo "$BAD" >&2; exit 1; }
+
+[[ -f src/__tests__/presentation/login-production-safety.test.ts ]] || { echo 'STOP: regression test file is missing.' >&2; exit 1; }
 
 git diff --check
 git diff --stat

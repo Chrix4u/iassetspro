@@ -4,15 +4,20 @@ set -euo pipefail
 EXPECTED_BASE="90e3250e805a8bbaf6201aa0247cefe5a0ecf275"
 FEATURE_BRANCH="fix/technician-workflow-v1-1-completion"
 WORK="/home/lightworld/releases/iassetspro-technician-workflow-v1-1"
+APP_LINK="/home/lightworld/webapps/iassetspro"
 TEST_FILE="src/__tests__/work-orders/technician-workflow-v11-contract.test.ts"
 
 [[ -d "$WORK/.git" ]] || { echo "STOP: V1.1 workspace not found: $WORK"; exit 1; }
+ACTIVE="$(readlink -f "$APP_LINK")"
+[[ -n "$ACTIVE" && -d "$ACTIVE" ]] || { echo "STOP: active production release could not be resolved"; exit 1; }
+
 cd "$WORK"
 
 HEAD_SHA="$(git rev-parse HEAD)"
 BRANCH="$(git branch --show-current)"
 echo "Workspace HEAD : $HEAD_SHA"
 echo "Workspace branch: $BRANCH"
+echo "Active release  : $ACTIVE"
 [[ "$HEAD_SHA" == "$EXPECTED_BASE" ]] || { echo "STOP: workspace base changed unexpectedly"; exit 1; }
 [[ "$BRANCH" == "$FEATURE_BRANCH" ]] || { echo "STOP: wrong workspace branch"; exit 1; }
 
@@ -42,6 +47,57 @@ for required in "${ALLOWED[@]}"; do
   fi
   [[ -e "$required" ]] || { echo "STOP: expected V1.1 file missing: $required"; exit 1; }
 done
+
+echo "===== PRODUCTION HEALTH BEFORE VALIDATION ====="
+HEALTH_CODE="$(curl -sS -o /tmp/iassetspro-v11-pre-health.json -w '%{http_code}' --max-time 10 http://127.0.0.1:3001/api/health || true)"
+echo "Production HTTP: $HEALTH_CODE"
+[[ "$HEALTH_CODE" == "200" ]] || { echo "STOP: current production runtime is not healthy"; exit 1; }
+
+# The first-pass workspace intentionally reused production node_modules through a
+# symlink. Next 16/Turbopack refuses a node_modules symlink that points outside
+# the project root, and prisma generate would also write through that symlink.
+# Replace it with an isolated local copy before any further validation/build.
+echo "===== LOCALIZE DEPENDENCIES FOR TURBOPACK ====="
+if [[ -L node_modules ]]; then
+  DEP_SOURCE="$(readlink -f node_modules)"
+  EXPECTED_DEP_SOURCE="$ACTIVE/node_modules"
+  echo "Dependency symlink: $DEP_SOURCE"
+  [[ "$DEP_SOURCE" == "$EXPECTED_DEP_SOURCE" ]] || {
+    echo "STOP: dependency symlink points somewhere unexpected: $DEP_SOURCE"
+    exit 1
+  }
+
+  MODULE_BYTES="$(du -sb "$DEP_SOURCE" | awk '{print $1}')"
+  AVAIL_BYTES="$(df -PB1 "$WORK" | awk 'NR==2 {print $4}')"
+  RESERVE_BYTES=$((4 * 1024 * 1024 * 1024))
+  REQUIRED_BYTES=$((MODULE_BYTES + RESERVE_BYTES))
+
+  echo "node_modules bytes : $MODULE_BYTES"
+  echo "available bytes    : $AVAIL_BYTES"
+  echo "required minimum   : $REQUIRED_BYTES"
+
+  if (( AVAIL_BYTES < REQUIRED_BYTES )); then
+    echo "STOP: insufficient disk to create an isolated dependency tree and production build."
+    df -h /
+    exit 1
+  fi
+
+  rm node_modules
+  cp -a --reflink=auto "$DEP_SOURCE" "$WORK/node_modules"
+fi
+
+[[ -d node_modules && ! -L node_modules ]] || {
+  echo "STOP: workspace node_modules is not an isolated local directory"
+  exit 1
+}
+
+LOCAL_DEPS="$(readlink -f node_modules)"
+[[ "$LOCAL_DEPS" == "$WORK/node_modules" ]] || {
+  echo "STOP: localized dependency tree resolved outside the workspace: $LOCAL_DEPS"
+  exit 1
+}
+
+echo "Localized dependencies: $LOCAL_DEPS"
 
 cat > "$TEST_FILE" <<'TEST'
 import { describe, expect, it } from 'vitest';
@@ -122,9 +178,18 @@ bunx tsc -p tsconfig.repairs.json --noEmit
 
 echo "===== PRODUCTION BUILD ====="
 bun run build
+[[ -f .next/standalone/server.js ]] || { echo "STOP: standalone production server artifact missing after build"; exit 1; }
+
+echo "===== PRODUCTION HEALTH AFTER BUILD ====="
+HEALTH_CODE="$(curl -sS -o /tmp/iassetspro-v11-post-build-health.json -w '%{http_code}' --max-time 10 http://127.0.0.1:3001/api/health || true)"
+echo "Production HTTP: $HEALTH_CODE"
+[[ "$HEALTH_CODE" == "200" ]] || { echo "STOP: current production runtime became unhealthy during validation"; exit 1; }
 
 echo "===== COMMIT AND PUSH ====="
-if [[ -L node_modules ]]; then rm node_modules; fi
+# The standalone artifact now contains the runtime dependencies it needs. Remove
+# the temporary local dependency tree to recover validation disk space.
+rm -rf --one-file-system "$WORK/node_modules"
+rm -rf "$WORK/.next/cache"
 
 git diff --check
 git status --short
@@ -144,4 +209,5 @@ echo "============================================================"
 echo " iAssetsPro TECHNICIAN WORKFLOW V1.1 COMPLETED AND PUSHED"
 echo "============================================================"
 echo "$FEATURE_SHA"
+echo "Build artifact: $WORK/.next/standalone/server.js"
 df -h /

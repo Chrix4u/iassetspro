@@ -19,6 +19,13 @@ type AssignmentBody = {
   teamMembers?: WorkOrderTeamMemberInput[];
 };
 
+const SUPERVISOR_ROLES = new Set([
+  'maintenance_supervisor',
+  'maintenance_manager',
+  'plant_manager',
+  'admin',
+]);
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -97,6 +104,13 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
+    if (!wo.plantId) {
+      return NextResponse.json(
+        { success: false, error: 'Operational work order must have a plant before assignment' },
+        { status: 400 },
+      );
+    }
+
     if (wo.isLocked || ['verified', 'closed', 'cancelled'].includes(wo.status)) {
       return NextResponse.json(
         { success: false, error: `Work order cannot be reassigned in status '${wo.status}'` },
@@ -124,7 +138,7 @@ export async function POST(
 
     const uniqueUserIds = [...new Set(plantScopeUserIds)];
 
-    if (wo.plantId && uniqueUserIds.length > 0) {
+    if (uniqueUserIds.length > 0) {
       const plantAccessRows = await db.userPlant.findMany({
         where: {
           userId: { in: uniqueUserIds },
@@ -144,7 +158,7 @@ export async function POST(
       }
     }
 
-    // ── Verify users exist ─────────────────────────────────────────────────
+    // ── Verify targets exist, are active, and supervisor is eligible ──────
 
     const allUserIdsToVerify = [...new Set([
       ...(directPlan?.executionMemberIds ?? []),
@@ -154,13 +168,37 @@ export async function POST(
     if (allUserIdsToVerify.length > 0) {
       const users = await db.user.findMany({
         where: { id: { in: allUserIdsToVerify } },
-        select: { id: true, fullName: true },
+        select: {
+          id: true,
+          fullName: true,
+          status: true,
+          userRoles: { select: { role: { select: { slug: true } } } },
+        },
       });
-      const existingUserIds = new Set(users.map((u) => u.id));
+      const usersById = new Map(users.map((user) => [user.id, user]));
+
       for (const uid of allUserIdsToVerify) {
-        if (!existingUserIds.has(uid)) {
+        const target = usersById.get(uid);
+        if (!target) {
           return NextResponse.json(
             { success: false, error: `User ${uid} not found` },
+            { status: 400 },
+          );
+        }
+        if (target.status !== 'active') {
+          return NextResponse.json(
+            { success: false, error: `User ${uid} is not active and cannot be assigned to a work order` },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (assignedSupervisorId) {
+        const supervisor = usersById.get(assignedSupervisorId)!;
+        const supervisorRoles = new Set(supervisor.userRoles.map((userRole) => userRole.role.slug));
+        if (![...supervisorRoles].some((role) => SUPERVISOR_ROLES.has(role))) {
+          return NextResponse.json(
+            { success: false, error: 'Selected supervisor is not a maintenance supervisor or manager' },
             { status: 400 },
           );
         }

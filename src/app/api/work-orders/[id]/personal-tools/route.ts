@@ -2,30 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-
-type PersonalToolAccessWO = {
-  assignedTo: string | null;
-  teamLeaderId: string | null;
-  teamMembers: Array<{ userId: string; role: string }>;
-  maintenanceRequest: { requestedBy: string } | null;
-};
-
-function hasBroadWorkOrderView(session: NonNullable<ReturnType<typeof getSession>>): boolean {
-  return isAdmin(session) || hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all']);
-}
-
-function canViewOwnWorkOrder(
-  session: NonNullable<ReturnType<typeof getSession>>,
-  wo: PersonalToolAccessWO,
-): boolean {
-  if (!hasAnyPermission(session, ['work_orders.view_own'])) return false;
-  return (
-    wo.assignedTo === session.userId ||
-    wo.teamLeaderId === session.userId ||
-    wo.teamMembers.some((member) => member.userId === session.userId) ||
-    wo.maintenanceRequest?.requestedBy === session.userId
-  );
-}
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 function parsePersonalTools(value: string | null | undefined): unknown[] {
   if (!value) return [];
@@ -60,6 +37,8 @@ export async function GET(
         personalTools: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true, role: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },
@@ -68,8 +47,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    if (!hasBroadWorkOrderView(session) && !canViewOwnWorkOrder(session, wo)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: parsePersonalTools(wo.personalTools) });
@@ -109,6 +88,8 @@ export async function POST(
         status: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true, role: true } },
       },
     });
@@ -126,9 +107,11 @@ export async function POST(
       wo.assignedTo === session.userId ||
       wo.teamLeaderId === session.userId ||
       wo.teamMembers.some((member) => member.userId === session.userId);
-    const hasUpdatePermission = isAdmin(session) || hasAnyPermission(session, ['work_orders.update']);
-    if (!isExecutionMember && !hasUpdatePermission) {
-      return NextResponse.json({ success: false, error: 'Only team members or authorized WO editors can add personal tools.' }, { status: 403 });
+    const canManage =
+      (isAdmin(session) || hasAnyPermission(session, ['work_orders.update'])) &&
+      canManageWorkOrder(session, wo);
+    if (!isExecutionMember && !canManage) {
+      return NextResponse.json({ success: false, error: 'Only assigned execution staff or accountable maintenance management can add personal tools.' }, { status: 403 });
     }
 
     const existingTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;
@@ -195,6 +178,8 @@ export async function PUT(
         personalTools: true,
         isLocked: true,
         status: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamLeaderId: true,
         teamMembers: { select: { userId: true, role: true } },
       },
@@ -209,12 +194,14 @@ export async function PUT(
       return NextResponse.json({ success: false, error: `Work order has been reviewed. Changes are no longer allowed. Status: ${wo.status}` }, { status: 400 });
     }
 
-    const hasUpdatePermission = isAdmin(session) || hasAnyPermission(session, ['work_orders.update']);
     const isTeamLeader =
       wo.teamLeaderId === session.userId ||
       wo.teamMembers.some((member) => member.userId === session.userId && member.role === 'team_leader');
-    if (!hasUpdatePermission && !isTeamLeader) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions. Requires WO update permission or team-leader authority.' }, { status: 403 });
+    const canManage =
+      (isAdmin(session) || hasAnyPermission(session, ['work_orders.update'])) &&
+      canManageWorkOrder(session, wo);
+    if (!canManage && !isTeamLeader) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions. Requires team-leader or accountable maintenance-management authority.' }, { status: 403 });
     }
 
     const previousTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;

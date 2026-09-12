@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
 /**
  * PUT /api/work-orders/[id]/team-member-requests/[reqId]
@@ -38,6 +39,7 @@ export async function PUT(
         plantId: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
         assignedBy: true,
         plannerId: true,
         isLocked: true,
@@ -47,18 +49,21 @@ export async function PUT(
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
+    }
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    const canReview = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']) ||
-      wo.plannerId === session.userId ||
-      wo.assignedBy === session.userId;
+    const hasAssignmentPermission = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']);
+    const canReview = hasAssignmentPermission &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
 
     if (!canReview) {
       return NextResponse.json(
-        { success: false, error: 'Only the assigner, planner, or an authorized assignment user can review team member requests.' },
+        { success: false, error: 'Only the accountable assigner, planner, supervisor, or maintenance management can review team member requests.' },
         { status: 403 },
       );
     }
@@ -109,9 +114,7 @@ export async function PUT(
           id: true,
           fullName: true,
           status: true,
-          plantAccess: wo.plantId
-            ? { where: { plantId: wo.plantId }, select: { id: true } }
-            : { select: { id: true } },
+          plantAccess: { where: { plantId: wo.plantId }, select: { id: true } },
         },
       });
       if (!assignee) {
@@ -120,15 +123,13 @@ export async function PUT(
       if (assignee.status !== 'active') {
         return NextResponse.json({ success: false, error: 'Selected technician is not active.' }, { status: 400 });
       }
-      if (wo.plantId && assignee.plantAccess.length === 0) {
+      if (assignee.plantAccess.length === 0) {
         return NextResponse.json(
           { success: false, error: 'Selected technician does not have access to the work order plant.' },
           { status: 403 },
         );
       }
 
-      // When assistance turns a single-tech WO into a team WO, the original
-      // assignee becomes team leader unless a leader was already designated.
       const effectiveLeaderId = wo.teamLeaderId || wo.assignedTo || userIdToAssign;
       const alreadyMember = wo.teamMembers.some((tm) => tm.userId === userIdToAssign);
       const now = new Date();
@@ -243,7 +244,6 @@ export async function PUT(
       return NextResponse.json({ success: true, data: updated });
     }
 
-    // ---- REJECT ----
     await db.woTeamMemberRequest.update({
       where: { id: reqId },
       data: {
@@ -301,7 +301,7 @@ export async function PUT(
 
 /**
  * DELETE /api/work-orders/[id]/team-member-requests/[reqId]
- * Cancel a pending team member request (only the requester can cancel their own)
+ * Cancel a pending team member request.
  */
 export async function DELETE(
   request: NextRequest,
@@ -325,12 +325,26 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Request does not belong to this work order' }, { status: 400 });
     }
 
-    const canCancel = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']) ||
-      teamRequest.requestedBy === session.userId;
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        assignedSupervisorId: true,
+        plannerId: true,
+        assignedBy: true,
+      },
+    });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    const hasAssignmentPermission = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']);
+    const canManageCancellation = hasAssignmentPermission &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
+    const canCancel = teamRequest.requestedBy === session.userId || canManageCancellation;
 
     if (!canCancel) {
-      return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'You can only cancel your own request unless you are accountable assignment management for this work order' }, { status: 403 });
     }
     if (teamRequest.status !== 'pending') {
       return NextResponse.json(

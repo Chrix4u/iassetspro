@@ -16,7 +16,9 @@ describe('technician workflow V1.1 completion contract', () => {
     for (const label of ['Assignment', 'Preparation', 'Execution', 'Resources', 'Evidence', 'Completion']) {
       expect(panel).toContain(`label: '${label}'`);
     }
-    expect(panel).toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6');
+    expect(panel).toContain('Sticky work order lifecycle navigation');
+    expect(panel).toContain('absolute right-3 top-1/2');
+    expect(panel).not.toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6');
     expect(panel).toContain('grid grid-cols-1 2xl:grid-cols-2');
   });
 

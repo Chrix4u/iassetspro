@@ -596,6 +596,7 @@ nav[aria-label="Sticky work order lifecycle navigation"] {
   margin-top: 0.5rem !important;
   padding-top: 0.5rem !important;
   border-top: 1px solid var(--border);
+  translate: none !important;
   transform: none !important;
   justify-content: flex-end !important;
 }

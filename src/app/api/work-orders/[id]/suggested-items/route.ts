@@ -322,7 +322,7 @@ export async function PUT(
 
       const storekeepers = await db.user.findMany({
         where: {
-          role: { in: ['storekeeper', 'admin'] },
+          userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } },
           plantAccess: { some: { plantId: wo.plantId } },
         },
         select: { id: true, fullName: true },

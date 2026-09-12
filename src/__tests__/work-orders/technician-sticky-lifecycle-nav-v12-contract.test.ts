@@ -19,7 +19,7 @@ describe('technician sticky lifecycle navigation V1.2', () => {
 
     expect(panel).toContain('absolute left-1/2 top-1/2');
     expect(panel).toContain('-translate-x-1/2 -translate-y-1/2');
-    expect(panel).toContain('max-w-[44vw]');
+    expect(panel).toContain('max-w-[48vw]');
     expect(panel).not.toContain('sticky top-');
   });
 
@@ -31,5 +31,6 @@ describe('technician sticky lifecycle navigation V1.2', () => {
     }
     expect(panel).toContain('aria-label="Work order lifecycle"');
     expect(panel).toContain('scrollToStage(stage.anchor)');
+    expect(panel).toContain('<span className="hidden xl:inline">{stage.label}</span>');
   });
 });

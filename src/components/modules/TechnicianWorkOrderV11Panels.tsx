@@ -233,34 +233,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       {stickyHeaderTarget && createPortal(
         <nav
           aria-label="Sticky work order lifecycle navigation"
-          className="pointer-events-none absolute left-1/2 top-1/2 z-10 hidden max-w-[48vw] -translate-x-1/2 -translate-y-1/2 xl:flex"
+          className="pointer-events-none absolute right-3 top-1/2 z-10 hidden max-w-[64vw] -translate-y-1/2 items-center justify-end xl:flex"
         >
-          <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/75">
+          <div className="pointer-events-auto ml-auto flex max-w-full items-center justify-end gap-1 overflow-x-auto rounded-xl border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/75">
             {lifecycleButtons}
           </div>
         </nav>,
         stickyHeaderTarget,
       )}
-
-      <Card className="overflow-hidden">
-        <CardContent className="p-3 sm:p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2" aria-label="Work order lifecycle">
-            {stages.map((stage, index) => (
-              <button
-                key={stage.anchor}
-                type="button"
-                onClick={() => scrollToStage(stage.anchor)}
-                className={`rounded-lg border px-3 py-2 text-left transition-colors ${index === stageIndex ? 'border-primary bg-primary/10' : index < stageIndex ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20' : 'hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-2">
-                  {index < stageIndex ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : index === stageIndex ? <Activity className="h-4 w-4 text-primary" /> : <Clock3 className="h-4 w-4 text-muted-foreground" />}
-                  <span className="text-xs font-semibold">{stage.label}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
 
       <section id="resources" className="scroll-mt-28 grid grid-cols-1 2xl:grid-cols-2 gap-5">
         <Card>

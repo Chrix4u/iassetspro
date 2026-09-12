@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -29,6 +30,9 @@ export async function GET(
         assignmentResponseStatus: true,
         assignmentRespondedAt: true,
         assignmentResponseReason: true,
+        maintenanceRequest: {
+          select: { requestedBy: true },
+        },
         teamMembers: {
           select: {
             userId: true,
@@ -43,8 +47,12 @@ export async function GET(
     }
 
     const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlant(plantScope, wo.plantId)) {
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const userId = session.userId;

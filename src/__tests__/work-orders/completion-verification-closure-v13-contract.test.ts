@@ -11,7 +11,7 @@ describe('RWOP V1.3 completion → verification → closure integrity contract',
     expect(readiness).toContain('failureDescription: true');
     expect(readiness).toContain('causeDescription: true');
     expect(readiness).toContain('actionDescription: true');
-    expect(readiness).toContain("client.attachment.count");
+    expect(readiness).toContain('client.attachment.count');
     expect(readiness).toContain("entityType: 'work_order', entityId: workOrderId");
     expect(readiness).toContain("code: 'RCA_REQUIRED'");
     expect(readiness).toContain("code: 'COMPLETION_EVIDENCE_REQUIRED'");
@@ -43,8 +43,8 @@ describe('RWOP V1.3 completion → verification → closure integrity contract',
     const stateMachine = read('src/lib/state-machine.ts');
 
     expect(stateMachine).toContain('workOrder.updateMany');
-    expect(stateMachine).toContain('status: currentState');
-    expect(stateMachine).toContain('Concurrent transition detected: work_order');
+    expect(stateMachine).toContain('where: { id: entityId, status: currentStatus }');
+    expect(stateMachine).toContain('Transition conflict for ${entityType}');
 
     for (const service of [
       'src/services/workOrderCompletion.service.ts',
@@ -53,7 +53,7 @@ describe('RWOP V1.3 completion → verification → closure integrity contract',
     ]) {
       const source = read(service);
       expect(source).toContain("executeTransition('work_order'");
-      expect(source).toContain("startsWith('Concurrent transition detected:')");
+      expect(source).toContain("error.message.includes('Transition conflict for work_order')");
     }
   });
 

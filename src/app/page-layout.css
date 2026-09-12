@@ -10,7 +10,7 @@
    - 24px from the sm breakpoint upward
 
    Existing page-level vertical padding is intentionally preserved. Horizontal
-   padding on the page root is neutralized so legacy p-*/px-* wrappers do not
+   padding on the page root is neutralized so legacy p-* and px-* wrappers do not
    double the shell gutter. Nested cards, panels, tables and forms keep their
    own component padding unchanged.
 

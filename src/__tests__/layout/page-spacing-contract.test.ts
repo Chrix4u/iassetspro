@@ -23,6 +23,14 @@ describe('application page spacing contract', () => {
     expect(css).toContain('padding-right: var(--iassets-page-gutter);');
   });
 
+  it('keeps page-layout CSS block comments balanced', () => {
+    const css = read('src/app/page-layout.css');
+    const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    expect(withoutComments).not.toContain('/*');
+    expect(withoutComments).not.toContain('*/');
+  });
+
   it('centers and caps every page root while preserving nested component spacing', () => {
     const css = read('src/app/page-layout.css');
     expect(css).toContain('main.flex-1.min-h-0.overflow-y-auto > *');

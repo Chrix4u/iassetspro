@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
-import { hasPermission, isAdmin } from '@/lib/permissions';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 // GET /api/work-orders/[id]/suggested-items — Fetch suggested parts & tools
 export async function GET(
@@ -10,14 +10,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession(request);
+    const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const { id } = await params;
-
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
@@ -28,6 +26,12 @@ export async function GET(
         suggestedParts: true,
         suggestedTools: true,
         plantId: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamMembers: { select: { userId: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
         repairMaterialRequests: {
           where: { source: 'planner_suggested' },
           select: {
@@ -60,11 +64,13 @@ export async function GET(
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
+    }
 
     const suggestedParts = JSON.parse(wo.suggestedParts || '[]');
     const suggestedTools = JSON.parse(wo.suggestedTools || '[]');
 
-    // Merge suggested items with their pipeline status from repair requests
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(
         (mr: { itemId: string | null }) => mr.itemId === p.itemId
@@ -93,10 +99,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      data: {
-        suggestedParts: partsWithStatus,
-        suggestedTools: toolsWithStatus,
-      },
+      data: { suggestedParts: partsWithStatus, suggestedTools: toolsWithStatus },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch suggested items';
@@ -104,64 +107,91 @@ export async function GET(
   }
 }
 
-// PUT /api/work-orders/[id]/suggested-items — Update suggested parts & tools
+// PUT /api/work-orders/[id]/suggested-items — Planner/supervisor management only
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getSession(request);
+    const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
+    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { id } = await params;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const { action } = body;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, plantId: true, suggestedParts: true, suggestedTools: true },
+      select: {
+        id: true,
+        plantId: true,
+        suggestedParts: true,
+        suggestedTools: true,
+        isLocked: true,
+        status: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+      },
     });
 
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
+    }
+    if (!canManageWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Only the assigned supervisor/planner or maintenance management can change suggested resources' }, { status: 403 });
+    }
+    if (wo.isLocked || ['verified', 'closed', 'cancelled'].includes(wo.status)) {
+      return NextResponse.json({ success: false, error: `Suggested resources cannot be changed while work order status is ${wo.status}` }, { status: 409 });
+    }
 
     if (action === 'reject_item') {
       const { itemType, itemId } = body;
-      if (itemType === 'part') {
-        const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-        const filtered = parts.filter((p) => p.itemId !== itemId);
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedParts: JSON.stringify(filtered) },
-        });
-        await db.repairMaterialRequest.updateMany({
-          where: { workOrderId: id, itemId: itemId as string, source: 'planner_suggested', status: 'pending' },
-          data: { status: 'rejected', notes: 'Rejected by ' + (session.userName || 'user') },
-        });
-      } else if (itemType === 'tool') {
-        const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
-        const filtered = tools.filter((t) => t.toolId !== itemId);
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedTools: JSON.stringify(filtered) },
-        });
-        await db.repairToolRequest.updateMany({
-          where: { workOrderId: id, toolId: itemId as string, source: 'planner_suggested', status: 'pending' },
-          data: { status: 'rejected', rejectionReason: 'Rejected by ' + (session.userName || 'user') },
-        });
+      if (!['part', 'tool'].includes(itemType) || typeof itemId !== 'string' || !itemId) {
+        return NextResponse.json({ success: false, error: 'Valid itemType and itemId are required' }, { status: 400 });
       }
 
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'reject_suggested_item',
-          entityType: 'work_order',
-          entityId: id,
-          newValues: JSON.stringify({ itemType, itemId, action: 'rejected' }),
-        },
+      await db.$transaction(async (tx) => {
+        if (itemType === 'part') {
+          const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedParts: JSON.stringify(parts.filter((p) => p.itemId !== itemId)) },
+          });
+          await tx.repairMaterialRequest.updateMany({
+            where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
+            data: { status: 'rejected', notes: `Rejected by ${session.fullName}` },
+          });
+        } else {
+          const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedTools: JSON.stringify(tools.filter((t) => t.toolId !== itemId)) },
+          });
+          await tx.repairToolRequest.updateMany({
+            where: { workOrderId: id, toolId: itemId, source: 'planner_suggested', status: 'pending' },
+            data: { status: 'rejected', rejectionReason: `Rejected by ${session.fullName}` },
+          });
+        }
+        await tx.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'reject_suggested_item',
+            entityType: 'work_order',
+            entityId: id,
+            newValues: JSON.stringify({ itemType, itemId, action: 'rejected' }),
+          },
+        });
       });
 
       return NextResponse.json({ success: true, message: 'Item rejected' });
@@ -169,114 +199,114 @@ export async function PUT(
 
     if (action === 'add_item') {
       const { itemType, item } = body;
-      if (itemType === 'part' && item) {
-        const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-        const newPart = {
-          id: crypto.randomUUID(),
-          itemId: item.itemId,
-          itemName: item.itemName || 'Unknown Part',
-          itemCode: item.itemCode || '',
-          quantity: item.quantity || 1,
-          unit: item.unit || 'each',
-          notes: item.notes || '',
-        };
-        parts.push(newPart);
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedParts: JSON.stringify(parts) },
-        });
-        await db.repairMaterialRequest.create({
-          data: {
-            workOrderId: id,
-            itemId: item.itemId,
-            itemName: newPart.itemName,
-            quantityRequested: newPart.quantity,
-            unit: newPart.unit,
-            estimatedCost: item.unitCost ? item.unitCost * newPart.quantity : 0,
-            reason: item.notes || 'Added by ' + (session.userName || 'user'),
-            plantId: wo.plantId,
-            source: 'planner_suggested',
-            status: 'pending',
-            requestedById: session.userId,
-          },
-        });
-      } else if (itemType === 'tool' && item) {
-        const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
-        const newTool = {
-          id: crypto.randomUUID(),
-          toolId: item.toolId,
-          toolName: item.toolName || 'Unknown Tool',
-          toolCode: item.toolCode || '',
-          quantity: item.quantity || 1,
-          notes: item.notes || '',
-        };
-        tools.push(newTool);
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedTools: JSON.stringify(tools) },
-        });
-        await db.repairToolRequest.create({
-          data: {
-            workOrderId: id,
-            toolId: item.toolId,
-            toolName: newTool.toolName,
-            reason: item.notes || 'Added by ' + (session.userName || 'user'),
-            plantId: wo.plantId,
-            source: 'planner_suggested',
-            status: 'pending',
-            urgency: 'normal',
-            requestedById: session.userId,
-          },
-        });
+      if (!['part', 'tool'].includes(itemType) || !item || typeof item !== 'object') {
+        return NextResponse.json({ success: false, error: 'Valid itemType and item are required' }, { status: 400 });
       }
 
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'add_suggested_item',
-          entityType: 'work_order',
-          entityId: id,
-          newValues: JSON.stringify({ itemType, item }),
-        },
-      });
-
+      if (itemType === 'part') {
+        const itemId = typeof item.itemId === 'string' ? item.itemId : '';
+        if (!itemId) return NextResponse.json({ success: false, error: 'item.itemId is required' }, { status: 400 });
+        const inventoryItem = await db.inventoryItem.findUnique({
+          where: { id: itemId },
+          select: { id: true, name: true, itemCode: true, unitOfMeasure: true, unitCost: true, plantId: true },
+        });
+        if (!inventoryItem) return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 400 });
+        if (inventoryItem.plantId !== wo.plantId) {
+          return NextResponse.json({ success: false, error: 'Inventory item belongs to a different plant' }, { status: 400 });
+        }
+        const quantity = Number(item.quantity ?? 1);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          return NextResponse.json({ success: false, error: 'Quantity must be greater than zero' }, { status: 400 });
+        }
+        const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+        const newPart = {
+          id: crypto.randomUUID(), itemId: inventoryItem.id, itemName: inventoryItem.name,
+          itemCode: inventoryItem.itemCode || '', quantity,
+          unit: inventoryItem.unitOfMeasure || 'each', notes: typeof item.notes === 'string' ? item.notes : '',
+        };
+        parts.push(newPart);
+        await db.$transaction(async (tx) => {
+          await tx.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(parts) } });
+          await tx.repairMaterialRequest.create({
+            data: {
+              workOrderId: id, itemId: inventoryItem.id, itemName: inventoryItem.name,
+              quantityRequested: quantity, unit: inventoryItem.unitOfMeasure || 'each',
+              unitCost: inventoryItem.unitCost ?? 0,
+              estimatedCost: (inventoryItem.unitCost ?? 0) * quantity,
+              reason: newPart.notes || `Added by ${session.fullName}`,
+              plantId: wo.plantId, source: 'planner_suggested', status: 'pending', requestedById: session.userId,
+            },
+          });
+          await tx.auditLog.create({
+            data: { userId: session.userId, action: 'add_suggested_item', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, itemId, quantity }) },
+          });
+        });
+      } else {
+        const toolId = typeof item.toolId === 'string' ? item.toolId : '';
+        if (!toolId) return NextResponse.json({ success: false, error: 'item.toolId is required' }, { status: 400 });
+        const tool = await db.tool.findUnique({
+          where: { id: toolId },
+          select: { id: true, name: true, toolCode: true, plantId: true },
+        });
+        if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 400 });
+        if (tool.plantId && tool.plantId !== wo.plantId) {
+          return NextResponse.json({ success: false, error: 'Tool belongs to a different plant' }, { status: 400 });
+        }
+        const quantity = Number(item.quantity ?? 1);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          return NextResponse.json({ success: false, error: 'Quantity must be greater than zero' }, { status: 400 });
+        }
+        const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+        const newTool = {
+          id: crypto.randomUUID(), toolId: tool.id, toolName: tool.name,
+          toolCode: tool.toolCode || '', quantity, notes: typeof item.notes === 'string' ? item.notes : '',
+        };
+        tools.push(newTool);
+        await db.$transaction(async (tx) => {
+          await tx.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(tools) } });
+          await tx.repairToolRequest.create({
+            data: {
+              workOrderId: id, toolId: tool.id, toolName: tool.name,
+              reason: newTool.notes || `Added by ${session.fullName}`,
+              plantId: wo.plantId, source: 'planner_suggested', status: 'pending', urgency: 'normal', requestedById: session.userId,
+            },
+          });
+          await tx.auditLog.create({
+            data: { userId: session.userId, action: 'add_suggested_item', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, toolId, quantity }) },
+          });
+        });
+      }
       return NextResponse.json({ success: true, message: 'Item added' });
     }
 
     if (action === 'update_quantity') {
-      const { itemType, itemId, quantity } = body;
-      if (itemType === 'part' && quantity > 0) {
-        const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-        const updated = parts.map((p) =>
-          p.itemId === itemId ? { ...p, quantity } : p
-        );
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedParts: JSON.stringify(updated) },
-        });
-        await db.repairMaterialRequest.updateMany({
-          where: { workOrderId: id, itemId: itemId as string, source: 'planner_suggested', status: 'pending' },
-          data: { quantityRequested: quantity },
-        });
-      } else if (itemType === 'tool' && quantity > 0) {
-        const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
-        const updated = tools.map((t) =>
-          t.toolId === itemId ? { ...t, quantity } : t
-        );
-        await db.workOrder.update({
-          where: { id },
-          data: { suggestedTools: JSON.stringify(updated) },
-        });
+      const { itemType, itemId } = body;
+      const quantity = Number(body.quantity);
+      if (!['part', 'tool'].includes(itemType) || typeof itemId !== 'string' || !itemId || !Number.isFinite(quantity) || quantity <= 0) {
+        return NextResponse.json({ success: false, error: 'Valid itemType, itemId and positive quantity are required' }, { status: 400 });
       }
 
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'update_suggested_item_qty',
-          entityType: 'work_order',
-          entityId: id,
-          newValues: JSON.stringify({ itemType, itemId, quantity }),
-        },
+      await db.$transaction(async (tx) => {
+        if (itemType === 'part') {
+          const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedParts: JSON.stringify(parts.map((p) => p.itemId === itemId ? { ...p, quantity } : p)) },
+          });
+          await tx.repairMaterialRequest.updateMany({
+            where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
+            data: { quantityRequested: quantity },
+          });
+        } else {
+          const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedTools: JSON.stringify(tools.map((t) => t.toolId === itemId ? { ...t, quantity } : t)) },
+          });
+        }
+        await tx.auditLog.create({
+          data: { userId: session.userId, action: 'update_suggested_item_qty', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, itemId, quantity }) },
+        });
       });
 
       return NextResponse.json({ success: true, message: 'Quantity updated' });
@@ -293,7 +323,7 @@ export async function PUT(
       const storekeepers = await db.user.findMany({
         where: {
           role: { in: ['storekeeper', 'admin'] },
-          ...(wo.plantId ? { userPlants: { some: { plantId: wo.plantId } } } : {}),
+          plantAccess: { some: { plantId: wo.plantId } },
         },
         select: { id: true, fullName: true },
       });
@@ -303,37 +333,31 @@ export async function PUT(
         return NextResponse.json({ success: true, message: 'No pending items to send' });
       }
 
-      for (const sk of storekeepers) {
-        await db.notification.create({
+      await db.$transaction(async (tx) => {
+        for (const sk of storekeepers) {
+          await tx.notification.create({
+            data: {
+              userId: sk.id,
+              type: 'material_request',
+              title: 'Material/Tool Request Ready for Review',
+              message: `${pendingMatReqs.length} material(s) and ${pendingToolReqs.length} tool(s) from WO need your review.`,
+              actionUrl: 'maintenance?tab=repairs-material-requests',
+              isRead: false,
+            },
+          });
+        }
+        await tx.auditLog.create({
           data: {
-            userId: sk.id,
-            type: 'material_request',
-            title: `Material/Tool Request Ready for Review`,
-            message: `${pendingMatReqs.length} material(s) and ${pendingToolReqs.length} tool(s) from WO need your review.`,
-            actionUrl: `maintenance?tab=repairs-material-requests`,
-            isRead: false,
+            userId: session.userId,
+            action: 'send_suggested_to_store',
+            entityType: 'work_order',
+            entityId: id,
+            newValues: JSON.stringify({ materialCount: pendingMatReqs.length, toolCount: pendingToolReqs.length, notifiedStorekeepers: storekeepers.length }),
           },
         });
-      }
-
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'send_suggested_to_store',
-          entityType: 'work_order',
-          entityId: id,
-          newValues: JSON.stringify({
-            materialCount: pendingMatReqs.length,
-            toolCount: pendingToolReqs.length,
-            notifiedStorekeepers: storekeepers.length,
-          }),
-        },
       });
 
-      return NextResponse.json({
-        success: true,
-        message: `${totalCount} item(s) sent to store. ${storekeepers.length} storekeeper(s) notified.`,
-      });
+      return NextResponse.json({ success: true, message: `${totalCount} item(s) sent to store. ${storekeepers.length} storekeeper(s) notified.` });
     }
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });

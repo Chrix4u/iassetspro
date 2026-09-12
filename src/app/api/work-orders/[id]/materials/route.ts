@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
 const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
 
@@ -21,14 +22,30 @@ export async function POST(
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    if (!hasAnyPermission(session, ['work_orders.update'])) {
-      const woCheck = await db.workOrder.findUnique({
-        where: { id },
-        select: { id: true, assignedTo: true, teamMembers: { select: { userId: true } } },
-      });
-      if (!woCheck || (woCheck.assignedTo !== session.userId && !woCheck.teamMembers.some((m) => m.userId === session.userId))) {
-        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-      }
+    const woAccess = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamMembers: { select: { userId: true } },
+      },
+    });
+    if (!woAccess) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    const isExecutionActor =
+      woAccess.assignedTo === session.userId ||
+      woAccess.teamLeaderId === session.userId ||
+      woAccess.teamMembers.some((member) => member.userId === session.userId);
+    const canManage =
+      hasAnyPermission(session, ['work_orders.update']) &&
+      canManageWorkOrder(session, woAccess);
+    if (!isExecutionActor && !canManage) {
+      return NextResponse.json({ success: false, error: 'Only assigned execution staff or accountable maintenance management can request materials for this work order' }, { status: 403 });
     }
 
     const body = await request.json();

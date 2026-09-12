@@ -49,4 +49,75 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
     expect(route).toContain('if (!canManageWorkOrder(session, existing))');
     expect(route).toContain('assigned supervisor/planner or maintenance management');
   });
+
+  it('applies the canonical relationship policy to sensitive WO subresource reads', () => {
+    const relationshipScopedRoutes = [
+      'src/app/api/work-orders/[id]/comments/route.ts',
+      'src/app/api/work-orders/[id]/attachments/route.ts',
+      'src/app/api/work-orders/[id]/attachments/[attachmentId]/route.ts',
+      'src/app/api/work-orders/[id]/measurements/route.ts',
+      'src/app/api/work-orders/[id]/downtime/route.ts',
+      'src/app/api/work-orders/[id]/personal-tools/route.ts',
+      'src/app/api/work-orders/[id]/components/route.ts',
+      'src/app/api/work-orders/[id]/readiness/route.ts',
+      'src/app/api/work-orders/[id]/status-history/route.ts',
+      'src/app/api/work-orders/[id]/suggested-items/route.ts',
+      'src/app/api/work-orders/[id]/tasks/route.ts',
+    ];
+
+    for (const path of relationshipScopedRoutes) {
+      const source = read(path);
+      expect(source, path).toContain('canViewWorkOrder');
+      expect(source, path).not.toContain("hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all')");
+      expect(source, path).not.toContain("hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all'])");
+    }
+  });
+
+  it('requires accountable management relationship as well as generic management permission', () => {
+    const managementScopedRoutes = [
+      'src/app/api/work-orders/[id]/materials/route.ts',
+      'src/app/api/work-orders/[id]/attachments/route.ts',
+      'src/app/api/work-orders/[id]/downtime/route.ts',
+      'src/app/api/work-orders/[id]/personal-tools/route.ts',
+      'src/app/api/work-orders/[id]/components/route.ts',
+      'src/app/api/work-orders/[id]/tasks/route.ts',
+      'src/app/api/work-orders/[id]/suggested-items/route.ts',
+      'src/app/api/work-orders/[id]/team-member-requests/route.ts',
+      'src/app/api/work-orders/[id]/team-member-requests/[reqId]/route.ts',
+      'src/app/api/work-orders/[id]/team-members/route.ts',
+      'src/app/api/work-orders/[id]/team-members/[memberId]/route.ts',
+    ];
+
+    for (const path of managementScopedRoutes) {
+      expect(read(path), path).toContain('canManageWorkOrder');
+    }
+  });
+
+  it('does not allow task creation or team removal to skip WO plant authorization', () => {
+    const tasks = read('src/app/api/work-orders/[id]/tasks/route.ts');
+    const removal = read('src/app/api/work-orders/[id]/team-members/[memberId]/route.ts');
+    const suggested = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
+
+    expect(tasks).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
+    expect(removal).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
+    expect(suggested).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
+  });
+
+  it('keeps primary assignee and team-leader ownership changes on the canonical assignment path', () => {
+    const removal = read('src/app/api/work-orders/[id]/team-members/[memberId]/route.ts');
+
+    expect(removal).toContain('member.userId === wo.assignedTo');
+    expect(removal).toContain('member.userId === wo.teamLeaderId');
+    expect(removal).toContain('Use the canonical assignment workflow');
+  });
+
+  it('validates assistance targets and suggested resources against the WO plant', () => {
+    const assistance = read('src/app/api/work-orders/[id]/team-member-requests/route.ts');
+    const suggested = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
+
+    expect(assistance).toContain('Requested user does not have access to the work order plant');
+    expect(suggested).toContain('Inventory item belongs to a different plant');
+    expect(suggested).toContain('Tool belongs to a different plant');
+    expect(suggested).toContain("userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } }");
+  });
 });

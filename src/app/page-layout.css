@@ -13,12 +13,17 @@
    padding on the page root is neutralized so legacy p-*/px-* wrappers do not
    double the shell gutter. Nested cards, panels, tables and forms keep their
    own component padding unchanged.
+
+   Page roots are also centered and capped at 1600px so detail pages such as
+   Work Order Details keep the same left/right rhythm as dashboards, lists,
+   forms and reports on very wide screens.
    ============================================================================ */
 
 main.flex-1.min-h-0.overflow-y-auto {
   --iassets-page-gutter: 1rem;
   padding-left: var(--iassets-page-gutter);
   padding-right: var(--iassets-page-gutter);
+  overflow-x: hidden;
 }
 
 @media (min-width: 640px) {
@@ -33,7 +38,12 @@ main.flex-1.min-h-0.overflow-y-auto {
  * each module, but make left/right spacing an app-shell responsibility.
  */
 main.flex-1.min-h-0.overflow-y-auto > * {
+  width: 100%;
+  max-width: 1600px;
   min-width: 0;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }

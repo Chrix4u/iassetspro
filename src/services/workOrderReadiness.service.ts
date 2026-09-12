@@ -15,6 +15,14 @@ export interface ReadinessItem {
   severity: 'blocker' | 'warning'
 }
 
+export interface WorkOrderReadinessContext {
+  completionEvidence?: {
+    failureDescription?: string | null
+    causeDescription?: string | null
+    actionDescription?: string | null
+  }
+}
+
 export type ReadinessCheckType = 'start' | 'complete' | 'verify' | 'close'
 
 type WoReadinessData = {
@@ -29,6 +37,8 @@ type WoReadinessData = {
   contractorCost: number
   safetyNotes: string | null
   failureDescription: string | null
+  causeDescription: string | null
+  actionDescription: string | null
   tradeActivity: string | null
   teamMembers: { userId: string }[]
   teamMemberRequests: { id: string; status: string; requestedUserId: string | null }[]
@@ -65,10 +75,15 @@ type WoReadinessData = {
 
 type DateTime = string | Date
 
+function requiresFailureEvidence(type: string): boolean {
+  return type === 'corrective' || type === 'predictive'
+}
+
 export async function checkReadiness(
   workOrderId: string,
   checkType: ReadinessCheckType,
   tx?: Prisma.TransactionClient,
+  context?: WorkOrderReadinessContext,
 ): Promise<ReadinessCheckResult> {
   const client = tx ?? db
 
@@ -86,6 +101,8 @@ export async function checkReadiness(
       contractorCost: true,
       safetyNotes: true,
       failureDescription: true,
+      causeDescription: true,
+      actionDescription: true,
       tradeActivity: true,
       teamMembers: { select: { userId: true } },
       teamMemberRequests: { select: { id: true, status: true, requestedUserId: true } },
@@ -142,21 +159,45 @@ export async function checkReadiness(
     }
   }
 
+  const evidenceAttachmentCount =
+    checkType !== 'start' && requiresFailureEvidence(wo.type)
+      ? await client.attachment.count({
+          where: {
+            entityType: 'work_order',
+            entityId: workOrderId,
+            OR: [
+              { description: { startsWith: '[technician_evidence]' } },
+              { description: { startsWith: '[completion_evidence]' } },
+            ],
+          },
+        })
+      : 0
+
+  const effectiveWo: WoReadinessData = {
+    ...wo,
+    failureDescription:
+      context?.completionEvidence?.failureDescription ?? wo.failureDescription,
+    causeDescription:
+      context?.completionEvidence?.causeDescription ?? wo.causeDescription,
+    actionDescription:
+      context?.completionEvidence?.actionDescription ?? wo.actionDescription,
+  }
+
   const blockers: ReadinessItem[] = []
   const warnings: ReadinessItem[] = []
 
   switch (checkType) {
     case 'start':
-      await checkStartReadiness(wo, blockers, warnings)
+      await checkStartReadiness(effectiveWo, blockers, warnings)
       break
     case 'complete':
-      checkCompletionReadiness(wo, blockers, warnings)
+      checkCompletionReadiness(effectiveWo, evidenceAttachmentCount, blockers, warnings)
       break
     case 'verify':
-      checkVerificationReadiness(wo, blockers, warnings)
+      checkVerificationReadiness(effectiveWo, evidenceAttachmentCount, blockers, warnings)
       break
     case 'close':
-      checkClosureReadiness(wo, blockers, warnings)
+      checkClosureReadiness(effectiveWo, evidenceAttachmentCount, blockers, warnings)
       break
   }
 
@@ -227,6 +268,7 @@ function hasOpenToolCustody(item: WoReadinessData['repairToolRequests'][number][
 
 function checkCompletionReadiness(
   wo: WoReadinessData,
+  evidenceAttachmentCount: number,
   blockers: ReadinessItem[],
   warnings: ReadinessItem[],
 ): void {
@@ -253,7 +295,7 @@ function checkCompletionReadiness(
   if (pendingAssistance.length > 0) blockers.push({ code: 'PENDING_ASSISTANCE', category: 'team', message: `${pendingAssistance.length} team member request(s) pending — requested user(s) not yet added`, severity: 'blocker' })
 
   checkUnresolvedHandover(wo, blockers)
-  checkRequiredFailureCoding(wo, warnings)
+  checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
 }
 
 function checkUnresolvedHandover(wo: WoReadinessData, blockers: ReadinessItem[]): void {
@@ -261,18 +303,45 @@ function checkUnresolvedHandover(wo: WoReadinessData, blockers: ReadinessItem[])
   if (pendingHandovers.length > 0) blockers.push({ code: 'UNRESOLVED_HANDOVER', category: 'safety', message: `${pendingHandovers.length} shift handover(s) still pending — all handovers must be confirmed before completion`, severity: 'blocker' })
 }
 
-function checkRequiredFailureCoding(wo: WoReadinessData, warnings: ReadinessItem[]): void {
-  if (wo.type !== 'corrective' && wo.type !== 'predictive') return
-  if (wo.failureDescription && wo.failureDescription.trim().length > 0) return
-  warnings.push({ code: 'REQUIRED_FAILURE_CODING', category: 'evidence', message: `Work order type is "${wo.type}" but no failure description has been entered — failure mode, cause, and remedy should be documented`, severity: 'warning' })
+function checkRequiredRepairEvidence(
+  wo: WoReadinessData,
+  evidenceAttachmentCount: number,
+  blockers: ReadinessItem[],
+): void {
+  if (!requiresFailureEvidence(wo.type)) return
+
+  const missing: string[] = []
+  if (!wo.failureDescription?.trim()) missing.push('failure description')
+  if (!wo.causeDescription?.trim()) missing.push('root cause')
+  if (!wo.actionDescription?.trim()) missing.push('corrective action')
+
+  if (missing.length > 0) {
+    blockers.push({
+      code: 'RCA_REQUIRED',
+      category: 'evidence',
+      message: `${wo.type} work orders require complete RCA before progression — missing ${missing.join(', ')}`,
+      severity: 'blocker',
+    })
+  }
+
+  if (evidenceAttachmentCount < 1) {
+    blockers.push({
+      code: 'COMPLETION_EVIDENCE_REQUIRED',
+      category: 'evidence',
+      message: `${wo.type} work orders require at least one technician/completion evidence photo or document attachment`,
+      severity: 'blocker',
+    })
+  }
 }
 
 function checkVerificationReadiness(
   wo: WoReadinessData,
+  evidenceAttachmentCount: number,
   blockers: ReadinessItem[],
   warnings: ReadinessItem[],
 ): void {
   if (!wo.repairCompletion) blockers.push({ code: 'NO_COMPLETION_REPORT', category: 'evidence', message: 'No completion report has been submitted for this work order', severity: 'blocker' })
+  checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
   checkToolCustody(wo, blockers)
   checkMaterialReconciliation(wo, blockers)
   checkIncompleteCostWarning(wo, warnings)
@@ -286,10 +355,12 @@ function checkIncompleteCostWarning(wo: WoReadinessData, warnings: ReadinessItem
 
 function checkClosureReadiness(
   wo: WoReadinessData,
+  evidenceAttachmentCount: number,
   blockers: ReadinessItem[],
   warnings: ReadinessItem[],
 ): void {
   if (wo.status !== 'verified') blockers.push({ code: 'NOT_VERIFIED', category: 'task', message: `Work order status is '${wo.status}', must be 'verified' before closure`, severity: 'blocker' })
+  checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
   checkToolCustody(wo, blockers)
   checkMaterialReconciliation(wo, blockers)
   if (wo.totalCost === 0 && (wo.laborCost + wo.partsCost + wo.contractorCost) === 0) blockers.push({ code: 'INCOMPLETE_COST', category: 'evidence', message: 'No cost data has been recorded for this work order', severity: 'blocker' })

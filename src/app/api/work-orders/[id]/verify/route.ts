@@ -89,9 +89,11 @@ export async function POST(
     if (!result.success) {
       const status = result.error === 'Work order not found'
         ? 404
-        : result.readiness
-          ? 422
-          : 400;
+        : result.conflict
+          ? 409
+          : result.readiness
+            ? 422
+            : 400;
       return NextResponse.json({
         success: false,
         error: result.error,
@@ -101,7 +103,11 @@ export async function POST(
       }, { status });
     }
 
-    return NextResponse.json({ success: true, data: result.data });
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      ...(result.idempotent ? { idempotent: true } : {}),
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to verify work order';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

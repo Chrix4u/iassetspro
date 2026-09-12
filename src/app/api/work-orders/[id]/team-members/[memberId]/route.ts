@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
 /**
  * DELETE /api/work-orders/[id]/team-members/[memberId]
- * Remove a team member from a work order.
- *
- * PERMISSION RULES:
- * - Admin: Always allowed
- * - Users with work_orders.assign / work_orders.*: Allowed
- * - The person who assigned the WO (wo.assignedBy): Allowed
- * - Technicians / regular team members: BLOCKED
+ * Remove an assistant/specialist from a work order.
+ * Primary assignment/team leadership changes must go through /assign.
  */
 export async function DELETE(
   request: NextRequest,
@@ -24,12 +21,18 @@ export async function DELETE(
 
     const { id, memberId } = await params;
 
-    // Validate WO exists
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         assignedBy: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         isLocked: true,
       },
     });
@@ -41,24 +44,22 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
-    // ─── PERMISSION CHECK ────────────────────────────────────────────────
-    const canDirectRemove = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
-      wo.assignedBy === session.userId;
+    const hasAssignmentPermission = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician']);
+    const canDirectRemove = hasAssignmentPermission &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
 
     if (!canDirectRemove) {
       return NextResponse.json(
         {
           success: false,
-          error: 'You do not have permission to remove team members. Contact the person who assigned this work order.',
+          error: 'You do not have accountable assignment authority to remove team members from this work order.',
           code: 'USE_REQUEST_FLOW',
         },
         { status: 403 }
       );
     }
-    // ─── END PERMISSION CHECK ────────────────────────────────────────────
 
-    // Validate member belongs to the WO
     const member = await db.workOrderTeamMember.findUnique({
       where: { id: memberId },
       include: { user: { select: { id: true, fullName: true, username: true } } },
@@ -74,23 +75,32 @@ export async function DELETE(
       );
     }
 
-    await db.workOrderTeamMember.delete({
-      where: { id: memberId },
-    });
+    if (member.userId === wo.assignedTo || member.userId === wo.teamLeaderId || member.role === 'team_leader') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Primary assignee/team leader ownership cannot be removed through the team-member endpoint. Use the canonical assignment workflow.',
+        },
+        { status: 409 },
+      );
+    }
 
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'delete',
-        entityType: 'wo_team_member',
-        entityId: memberId,
-        oldValues: JSON.stringify({
-          workOrderId: id,
-          userId: member.user.fullName,
-          role: member.role,
-        }),
-      },
+    await db.$transaction(async (tx) => {
+      await tx.workOrderTeamMember.delete({ where: { id: memberId } });
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'wo_team_member',
+          entityId: memberId,
+          oldValues: JSON.stringify({
+            workOrderId: id,
+            userId: member.userId,
+            userName: member.user.fullName,
+            role: member.role,
+          }),
+        },
+      });
     });
 
     return NextResponse.json({ success: true, data: { id: memberId } });

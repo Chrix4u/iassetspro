@@ -1,0 +1,1 @@
+This directory contains the regression contracts for the application-level page gutter introduced after the Work Order Details spacing defect was reported. The contracts intentionally validate the shared shell selector and the Work Order sticky-header breakout so later page work cannot silently reintroduce inconsistent outer left/right padding.

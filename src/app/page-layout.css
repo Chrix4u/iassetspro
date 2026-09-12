@@ -1,0 +1,39 @@
+/* ============================================================================
+   APPLICATION PAGE GUTTERS
+   ----------------------------------------------------------------------------
+   Every authenticated module page is rendered as a direct child of the main
+   EAM scroll container. Historically each page chose its own px/p-* utility,
+   which allowed detail pages and newer workspaces to drift out of alignment.
+
+   The shell now owns horizontal page spacing:
+   - 16px on phones
+   - 24px from the sm breakpoint upward
+
+   Existing page-level vertical padding is intentionally preserved. Horizontal
+   padding on the page root is neutralized so legacy p-*/px-* wrappers do not
+   double the shell gutter. Nested cards, panels, tables and forms keep their
+   own component padding unchanged.
+   ============================================================================ */
+
+main.flex-1.min-h-0.overflow-y-auto {
+  --iassets-page-gutter: 1rem;
+  padding-left: var(--iassets-page-gutter);
+  padding-right: var(--iassets-page-gutter);
+}
+
+@media (min-width: 640px) {
+  main.flex-1.min-h-0.overflow-y-auto {
+    --iassets-page-gutter: 1.5rem;
+  }
+}
+
+/*
+ * PageSwitcher returns the active page component directly, so the rendered
+ * page root becomes a direct child of <main>. Keep vertical page rhythm from
+ * each module, but make left/right spacing an app-shell responsibility.
+ */
+main.flex-1.min-h-0.overflow-y-auto > * {
+  min-width: 0;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}

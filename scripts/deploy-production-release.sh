@@ -342,7 +342,10 @@ for release in "$NEW_RELEASE" "$OLD_RELEASE"; do
     "$release/coverage"
 done
 
-rm -f /tmp/iassetspro-* || true
+# Deployment-owned health/hosts artifacts are regular files. Do not let the
+# broad iassetspro-* pattern descend into or complain about validation worktrees
+# that may also live under /tmp.
+find /tmp -mindepth 1 -maxdepth 1 -type f -name 'iassetspro-*' -delete || true
 
 echo "Disk after cleanup:"
 df -h /

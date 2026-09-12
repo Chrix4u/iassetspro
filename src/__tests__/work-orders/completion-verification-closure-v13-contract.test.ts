@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const read = (path: string) => fs.readFileSync(path, 'utf8');
 
 describe('RWOP V1.3 completion → verification → closure integrity contract', () => {
-  it('requires complete RCA and attachment evidence for corrective/predictive progression', () => {
+  it('requires complete RCA and classified completion evidence for corrective/predictive progression', () => {
     const readiness = read('src/services/workOrderReadiness.service.ts');
 
     expect(readiness).toContain("return type === 'corrective' || type === 'predictive'");
@@ -12,7 +12,10 @@ describe('RWOP V1.3 completion → verification → closure integrity contract',
     expect(readiness).toContain('causeDescription: true');
     expect(readiness).toContain('actionDescription: true');
     expect(readiness).toContain('client.attachment.count');
-    expect(readiness).toContain("entityType: 'work_order', entityId: workOrderId");
+    expect(readiness).toContain("entityType: 'work_order'");
+    expect(readiness).toContain('entityId: workOrderId');
+    expect(readiness).toContain("description: { startsWith: '[technician_evidence]' }");
+    expect(readiness).toContain("description: { startsWith: '[completion_evidence]' }");
     expect(readiness).toContain("code: 'RCA_REQUIRED'");
     expect(readiness).toContain("code: 'COMPLETION_EVIDENCE_REQUIRED'");
     expect(readiness).toContain("missing.push('failure description')");

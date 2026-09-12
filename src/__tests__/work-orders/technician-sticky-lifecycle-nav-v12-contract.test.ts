@@ -36,6 +36,7 @@ describe('technician sticky lifecycle navigation V1.2', () => {
     expect(globals).toContain('margin-top: 0.5rem !important;');
     expect(globals).toContain('padding-top: 0.5rem !important;');
     expect(globals).toContain('border-top: 1px solid var(--border);');
+    expect(globals).toContain('translate: none !important;');
     expect(globals).toContain('transform: none !important;');
     expect(globals).toContain('justify-content: flex-end !important;');
   });

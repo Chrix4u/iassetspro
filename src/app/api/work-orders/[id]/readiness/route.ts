@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { checkReadiness } from '@/services/workOrderReadiness.service';
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -23,23 +24,18 @@ export async function GET(
       select: {
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
       },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    const canViewAll =
-      isAdmin(session) ||
-      hasPermission(session, 'work_orders.view') ||
-      hasPermission(session, 'work_orders.view_all');
-    const isAssigned = wo.assignedTo === session.userId;
-    const isTeamLeader = wo.teamLeaderId === session.userId;
-    const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
-
-    if (!canViewAll && !isAssigned && !isTeamLeader && !isTeamMember) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const phaseParam = new URL(request.url).searchParams.get('phase') || 'complete';

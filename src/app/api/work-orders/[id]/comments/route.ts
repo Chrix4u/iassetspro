@@ -1,41 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-
-function hasBroadWorkOrderView(session: NonNullable<ReturnType<typeof getSession>>): boolean {
-  return (
-    isAdmin(session) ||
-    hasPermission(session, 'work_orders.view') ||
-    hasPermission(session, 'work_orders.view_all')
-  );
-}
-
-function canViewWorkOrderComments(session: NonNullable<ReturnType<typeof getSession>>): boolean {
-  return hasBroadWorkOrderView(session) || hasPermission(session, 'work_orders.view_own');
-}
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 async function authorizeCommentAccess(
   request: NextRequest,
   session: NonNullable<ReturnType<typeof getSession>>,
   workOrderId: string,
 ) {
-  if (!canViewWorkOrderComments(session)) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-  }
-
   const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
   if (!plantAuth.ok) return plantAuth.response;
 
-  if (hasBroadWorkOrderView(session)) return null;
-
-  // view_own is narrower than plant access: a technician/requester may only read
-  // comments for a WO they are assigned to, participate in, or originally requested.
   const wo = await db.workOrder.findUnique({
     where: { id: workOrderId },
     select: {
       assignedTo: true,
+      teamLeaderId: true,
+      assignedSupervisorId: true,
+      plannerId: true,
       teamMembers: { select: { userId: true } },
       maintenanceRequest: { select: { requestedBy: true } },
     },
@@ -44,12 +28,9 @@ async function authorizeCommentAccess(
     return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
   }
 
-  const isAssignee = wo.assignedTo === session.userId;
-  const isTeamMember = wo.teamMembers.some((member) => member.userId === session.userId);
-  const isRequester = wo.maintenanceRequest?.requestedBy === session.userId;
-  if (!isAssignee && !isTeamMember && !isRequester) {
+  if (!canViewWorkOrder(session, wo)) {
     return NextResponse.json(
-      { success: false, error: 'Access denied — you can only view comments for work orders assigned to you' },
+      { success: false, error: 'Access denied — you are not part of this work order workflow' },
       { status: 403 },
     );
   }

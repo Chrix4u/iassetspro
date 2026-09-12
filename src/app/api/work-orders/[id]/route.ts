@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -130,14 +131,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const hasViewAll = hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all') || isAdmin(session);
-    if (!hasViewAll) {
-      const isAssignee = wo.assignedTo === session.userId;
-      const isTeamMember = wo.teamMembers?.some((m: { userId: string }) => m.userId === session.userId);
-      const isRequester = wo.maintenanceRequest?.requester?.id === session.userId;
-      if (!isAssignee && !isTeamMember && !isRequester) {
-        return NextResponse.json({ success: false, error: 'Access denied — you can only view work orders assigned to you' }, { status: 403 });
-      }
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
     }
 
     if (!wo.repairToolRequests) {
@@ -185,6 +183,13 @@ export async function PUT(
       );
     }
 
+    if (!canManageWorkOrder(session, existing)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — generic work-order edits are limited to the assigned supervisor/planner or maintenance management' },
+        { status: 403 },
+      );
+    }
+
     if (existing.isLocked) {
       return NextResponse.json(
         { success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' },
@@ -199,6 +204,25 @@ export async function PUT(
       );
     }
 
+    const assignmentOwnedFields = [
+      'assignedTo', 'teamLeaderId', 'assignedSupervisorId', 'assignmentType', 'teamMembers',
+    ];
+    for (const field of assignmentOwnedFields) {
+      if (body[field] !== undefined) {
+        return NextResponse.json(
+          { success: false, error: `Field '${field}' is assignment-owned. Use /api/work-orders/${id}/assign so authorization, roster replacement and concurrency controls are enforced.` },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (body.departmentId !== undefined) {
+      return NextResponse.json(
+        { success: false, error: `Field 'departmentId' is planning-owned. Use /api/work-orders/${id}/plan so plant/department validation is enforced.` },
+        { status: 400 },
+      );
+    }
+
     const updateData: Record<string, unknown> = {};
     const immutableCostFields = [
       'totalCost', 'laborCost', 'partsCost', 'contractorCost',
@@ -207,12 +231,11 @@ export async function PUT(
 
     const allowedFields = [
       'title', 'description', 'type', 'priority',
-      'assetId', 'assetName', 'departmentId',
+      'assetId', 'assetName',
       'estimatedHours', 'plannedStart', 'plannedEnd',
       'failureDescription', 'causeDescription', 'actionDescription',
       'tradeActivity', 'technicalDescription', 'safetyNotes', 'ppeRequired',
-      'notes', 'assignedTo', 'teamLeaderId',
-      'assignmentType', 'assignedSupervisorId',
+      'notes',
     ];
 
     for (const field of immutableCostFields) {
@@ -250,40 +273,6 @@ export async function PUT(
         if (!existing.plantId || asset.plantId !== existing.plantId) {
           return NextResponse.json(
             { success: false, error: 'Cannot assign an asset from a different plant' },
-            { status: 400 },
-          );
-        }
-      }
-    }
-
-    const assignmentFields = ['assignedTo', 'teamLeaderId', 'assignedSupervisorId'] as const;
-    const usersToValidate = new Set<string>();
-    for (const field of assignmentFields) {
-      if (body[field] !== undefined && body[field] !== null && body[field] !== existing[field]) {
-        usersToValidate.add(body[field] as string);
-      }
-    }
-    if (body.teamMembers && Array.isArray(body.teamMembers)) {
-      for (const m of body.teamMembers) {
-        if (m.userId) usersToValidate.add(m.userId);
-      }
-    }
-    if (usersToValidate.size > 0) {
-      if (!existing.plantId) {
-        return NextResponse.json({ success: false, error: 'Operational work order must have a plant before assigning users' }, { status: 400 });
-      }
-      const plantAccess = await db.userPlant.findMany({
-        where: {
-          userId: { in: Array.from(usersToValidate) },
-          plantId: existing.plantId,
-        },
-        select: { userId: true },
-      });
-      const usersWithAccess = new Set(plantAccess.map(p => p.userId));
-      for (const userId of usersToValidate) {
-        if (!usersWithAccess.has(userId)) {
-          return NextResponse.json(
-            { success: false, error: `User ${userId} does not have access to plant ${existing.plantId} — cannot be assigned` },
             { status: 400 },
           );
         }
@@ -410,30 +399,6 @@ export async function PUT(
         },
       },
     });
-
-    if (body.teamMembers && Array.isArray(body.teamMembers)) {
-      const now = new Date();
-      const teamMemberData = body.teamMembers.map((member: { userId: string; role: string }) => ({
-        workOrderId: id,
-        userId: member.userId,
-        role: member.role,
-        accessLevel: member.role === 'team_leader' ? 'full' : 'execution',
-        assignedAt: now,
-      }));
-
-      await db.$transaction([
-        db.workOrderTeamMember.deleteMany({ where: { workOrderId: id } }),
-        ...(teamMemberData.length > 0
-          ? [db.workOrderTeamMember.createMany({ data: teamMemberData })]
-          : []),
-      ]);
-
-      updated.teamMembers = await db.workOrderTeamMember.findMany({
-        where: { workOrderId: id },
-        include: { user: { select: { id: true, fullName: true } } },
-        orderBy: { assignedAt: 'asc' },
-      });
-    }
 
     if (resolvedParts) {
       await db.$transaction(async (tx) => {

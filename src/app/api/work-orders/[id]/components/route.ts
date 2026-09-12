@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 // GET /api/work-orders/[id]/components — Get components linked to a WO
 export async function GET(
@@ -24,6 +25,9 @@ export async function GET(
       select: {
         id: true,
         assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         maintenanceRequest: { select: { requestedBy: true } },
         teamMembers: { select: { userId: true } },
       },
@@ -32,17 +36,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    const canViewAll =
-      isAdmin(session) ||
-      hasPermission(session, 'work_orders.view') ||
-      hasPermission(session, 'work_orders.view_all');
-    const isOwn =
-      wo.assignedTo === session.userId ||
-      wo.teamMembers.some((member) => member.userId === session.userId) ||
-      wo.maintenanceRequest?.requestedBy === session.userId;
-
-    if (!canViewAll && !(hasPermission(session, 'work_orders.view_own') && isOwn)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const components = await db.workOrderComponent.findMany({
@@ -100,11 +95,26 @@ export async function PUT(
 
     const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, assetId: true, isLocked: true, status: true },
+      select: {
+        id: true,
+        assetId: true,
+        isLocked: true,
+        status: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+      },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
+
+    if (!canManageWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Only the assigned supervisor/planner or maintenance management can change work-order component links' },
+        { status: 403 },
+      );
+    }
+
     if (wo.isLocked || wo.status === 'closed' || wo.status === 'verified') {
       return NextResponse.json(
         { success: false, error: `Work order components cannot be changed while status is ${wo.status}` },

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { ObjectStorageService } from '@/services/objectStorage.service';
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -20,6 +21,9 @@ export async function GET(
       select: {
         plantId: true,
         assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },
@@ -31,16 +35,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const canViewAll =
-      isAdmin(session) ||
-      hasPermission(session, 'work_orders.view') ||
-      hasPermission(session, 'work_orders.view_all');
-    const isOwn =
-      wo.assignedTo === session.userId ||
-      wo.teamMembers.some((member) => member.userId === session.userId) ||
-      wo.maintenanceRequest?.requestedBy === session.userId;
-    if (!canViewAll && !(hasPermission(session, 'work_orders.view_own') && isOwn)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const attachment = await db.attachment.findUnique({

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { buildAuditData } from '@/lib/audit-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 const VALID_CATEGORIES = new Set(['planned', 'unplanned', 'partial']);
 const VALID_IMPACT_LEVELS = new Set(['low', 'medium', 'high', 'critical']);
@@ -23,15 +24,6 @@ type AccessWorkOrder = {
   teamMembers: Array<{ userId: string }>;
   maintenanceRequest: { requestedBy: string } | null;
 };
-
-function isOwnWorkOrder(wo: AccessWorkOrder, userId: string): boolean {
-  return (
-    wo.assignedTo === userId ||
-    wo.teamLeaderId === userId ||
-    wo.teamMembers.some((member) => member.userId === userId) ||
-    wo.maintenanceRequest?.requestedBy === userId
-  );
-}
 
 function isExecutionMember(wo: AccessWorkOrder, userId: string): boolean {
   return (
@@ -82,10 +74,8 @@ async function authorizeRead(request: NextRequest, id: string) {
   const wo = await loadWorkOrder(id);
   if (!wo) return { ok: false as const, response: NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 }) };
 
-  const canViewAll = isAdmin(session) || hasAnyPermission(session, ['work_orders.view', 'work_orders.view_all']);
-  const canViewOwn = hasAnyPermission(session, ['work_orders.view_own']) && isOwnWorkOrder(wo, session.userId);
-  if (!canViewAll && !canViewOwn) {
-    return { ok: false as const, response: NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 }) };
+  if (!canViewWorkOrder(session, wo)) {
+    return { ok: false as const, response: NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 }) };
   }
 
   return { ok: true as const, session, wo };
@@ -95,12 +85,10 @@ async function authorizeWrite(request: NextRequest, id: string) {
   const read = await authorizeRead(request, id);
   if (!read.ok) return read;
 
-  const isSupervisor = read.wo.assignedSupervisorId === read.session.userId;
-  const isPlanner = read.wo.plannerId === read.session.userId;
-  const isMaintenanceManager = read.session.roles.includes('maintenance_manager');
-  const canManage = isAdmin(read.session) || isMaintenanceManager || isSupervisor || isPlanner || hasAnyPermission(read.session, ['work_orders.update']);
+  const hasManagementPermission = isAdmin(read.session) || hasAnyPermission(read.session, ['work_orders.update']);
+  const canManage = hasManagementPermission && canManageWorkOrder(read.session, read.wo);
   if (!isExecutionMember(read.wo, read.session.userId) && !canManage) {
-    return { ok: false as const, response: NextResponse.json({ success: false, error: 'Only assigned execution staff or authorized maintenance management can record work-order downtime' }, { status: 403 }) };
+    return { ok: false as const, response: NextResponse.json({ success: false, error: 'Only assigned execution staff or accountable maintenance management can record work-order downtime' }, { status: 403 }) };
   }
 
   if (read.wo.isLocked || IMMUTABLE_STATUSES.has(read.wo.status)) {

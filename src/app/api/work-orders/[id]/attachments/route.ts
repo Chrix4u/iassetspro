@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { ObjectStorageService } from '@/services/objectStorage.service';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function POST(
   request: NextRequest,
@@ -24,6 +25,8 @@ export async function POST(
         plantId: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true, accessLevel: true } },
       },
     });
@@ -40,7 +43,9 @@ export async function POST(
       wo.assignedTo === session.userId ||
       wo.teamLeaderId === session.userId ||
       wo.teamMembers.some((member) => member.userId === session.userId && member.accessLevel !== 'read_only');
-    const canManage = isAdmin(session) || hasPermission(session, 'work_orders.update');
+    const canManage =
+      canManageWorkOrder(session, wo) &&
+      (isAdmin(session) || hasPermission(session, 'work_orders.update'));
     if (!isWritableExecutionActor && !canManage) {
       return NextResponse.json({ success: false, error: 'Only assigned execution staff or authorized maintenance management can upload work-order evidence' }, { status: 403 });
     }
@@ -106,6 +111,9 @@ export async function GET(
       select: {
         plantId: true,
         assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         teamMembers: { select: { userId: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },
@@ -119,17 +127,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const canViewAll =
-      isAdmin(session) ||
-      hasPermission(session, 'work_orders.view') ||
-      hasPermission(session, 'work_orders.view_all');
-    const isOwn =
-      wo.assignedTo === session.userId ||
-      wo.teamMembers.some((member) => member.userId === session.userId) ||
-      wo.maintenanceRequest?.requestedBy === session.userId;
-    const canViewOwn = hasPermission(session, 'work_orders.view_own') && isOwn;
-    if (!canViewAll && !canViewOwn) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

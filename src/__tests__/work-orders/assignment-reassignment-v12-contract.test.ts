@@ -23,6 +23,27 @@ describe('RWOP V1.2 assignment and reassignment contract', () => {
     expect(route).toContain('for (const member of directPlan.members)');
   });
 
+  it('requires an operational plant before any assignment', () => {
+    const route = read('src/app/api/work-orders/[id]/assign/route.ts');
+    expect(route).toContain('if (!wo.plantId)');
+    expect(route).toContain('Operational work order must have a plant before assignment');
+  });
+
+  it('rejects inactive assignment targets', () => {
+    const route = read('src/app/api/work-orders/[id]/assign/route.ts');
+    expect(route).toContain("if (target.status !== 'active')");
+    expect(route).toContain('is not active and cannot be assigned to a work order');
+  });
+
+  it('requires assigned supervisors to hold a supervisor or manager role', () => {
+    const route = read('src/app/api/work-orders/[id]/assign/route.ts');
+    expect(route).toContain("'maintenance_supervisor'");
+    expect(route).toContain("'maintenance_manager'");
+    expect(route).toContain("'plant_manager'");
+    expect(route).toContain('SUPERVISOR_ROLES.has(role)');
+    expect(route).toContain('Selected supervisor is not a maintenance supervisor or manager');
+  });
+
   it('uses compare-and-set semantics for assigned-to-assigned reassignment', () => {
     const route = read('src/app/api/work-orders/[id]/assign/route.ts');
     expect(route).toContain('const claimed = await tx.workOrder.updateMany');

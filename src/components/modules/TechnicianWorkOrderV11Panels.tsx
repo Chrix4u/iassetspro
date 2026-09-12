@@ -223,7 +223,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[11px] font-semibold transition-colors ${isCurrent ? 'border-primary bg-primary/10 text-primary' : isComplete ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground'}`}
       >
         {isComplete ? <CheckCircle2 className="h-3.5 w-3.5" /> : isCurrent ? <Activity className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
-        <span className="hidden 2xl:inline">{stage.label}</span>
+        <span className="hidden xl:inline">{stage.label}</span>
       </button>
     );
   });
@@ -233,7 +233,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       {stickyHeaderTarget && createPortal(
         <nav
           aria-label="Sticky work order lifecycle navigation"
-          className="pointer-events-none absolute left-1/2 top-1/2 z-10 hidden max-w-[44vw] -translate-x-1/2 -translate-y-1/2 xl:flex"
+          className="pointer-events-none absolute left-1/2 top-1/2 z-10 hidden max-w-[48vw] -translate-x-1/2 -translate-y-1/2 xl:flex"
         >
           <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/75">
             {lifecycleButtons}

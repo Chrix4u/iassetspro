@@ -162,7 +162,14 @@ export async function checkReadiness(
   const evidenceAttachmentCount =
     checkType !== 'start' && requiresFailureEvidence(wo.type)
       ? await client.attachment.count({
-          where: { entityType: 'work_order', entityId: workOrderId },
+          where: {
+            entityType: 'work_order',
+            entityId: workOrderId,
+            OR: [
+              { description: { startsWith: '[technician_evidence]' } },
+              { description: { startsWith: '[completion_evidence]' } },
+            ],
+          },
         })
       : 0
 
@@ -321,7 +328,7 @@ function checkRequiredRepairEvidence(
     blockers.push({
       code: 'COMPLETION_EVIDENCE_REQUIRED',
       category: 'evidence',
-      message: `${wo.type} work orders require at least one work-order photo or document attachment as completion evidence`,
+      message: `${wo.type} work orders require at least one technician/completion evidence photo or document attachment`,
       severity: 'blocker',
     })
   }

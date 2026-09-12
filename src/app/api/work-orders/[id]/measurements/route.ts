@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function POST(
   request: NextRequest,
@@ -35,6 +36,7 @@ export async function POST(
         isLocked: true,
         plantId: true,
         assignedTo: true,
+        teamLeaderId: true,
         teamMembers: { select: { userId: true, accessLevel: true } },
         workOrderComponents: { select: { componentRegistryId: true } },
       },
@@ -48,7 +50,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const isAssignedTechnician = wo.assignedTo === session.userId;
+    const isAssignedTechnician = wo.assignedTo === session.userId || wo.teamLeaderId === session.userId;
     const isExecutionTeamMember = wo.teamMembers.some(
       (member) => member.userId === session.userId && member.accessLevel !== 'read_only',
     );
@@ -143,6 +145,9 @@ export async function GET(
         id: true,
         plantId: true,
         assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         maintenanceRequest: { select: { requestedBy: true } },
         teamMembers: { select: { userId: true } },
         workOrderComponents: { select: { componentRegistryId: true } },
@@ -157,17 +162,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const canViewAll =
-      isAdmin(session) ||
-      hasPermission(session, 'work_orders.view') ||
-      hasPermission(session, 'work_orders.view_all');
-    const isOwn =
-      wo.assignedTo === session.userId ||
-      wo.teamMembers.some((member) => member.userId === session.userId) ||
-      wo.maintenanceRequest?.requestedBy === session.userId;
-
-    if (!canViewAll && !(hasPermission(session, 'work_orders.view_own') && isOwn)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
     const componentIds = wo.workOrderComponents.map((component) => component.componentRegistryId);

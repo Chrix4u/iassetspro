@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
 const VALID_TEAM_ROLES = ['assistant', 'technician', 'team_leader'];
 
@@ -10,8 +11,8 @@ const VALID_TEAM_ROLES = ['assistant', 'technician', 'team_leader'];
  * Directly add a team member to a work order.
  *
  * Technicians cannot self-expand a team through this route; they must use the
- * assistance-request workflow. Direct assignment remains available to admins,
- * assignment-capable planners/supervisors and the original WO assigner.
+ * assistance-request workflow. Direct assignment remains available only to an
+ * accountable WO assignment actor who also holds assignment permission.
  */
 export async function POST(
   request: NextRequest,
@@ -33,7 +34,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const userId = typeof body.userId === 'string' ? body.userId : '';
+    const userId = typeof body.userId === 'string' ? body.userId.trim() : '';
     const role = typeof body.role === 'string' && body.role ? body.role : 'assistant';
 
     if (!userId) {
@@ -50,6 +51,8 @@ export async function POST(
         assignedBy: true,
         assignedTo: true,
         teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
         isLocked: true,
         plantId: true,
       },
@@ -61,14 +64,15 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
-    const canDirectAdd = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_technician', 'work_orders.assign_supervisor']) ||
-      wo.assignedBy === session.userId;
+    const hasAssignmentPermission = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign_technician', 'work_orders.assign_supervisor']);
+    const canDirectAdd = hasAssignmentPermission &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
 
     if (!canDirectAdd) {
       return NextResponse.json({
         success: false,
-        error: 'You do not have permission to directly add team members. Please submit a team member request instead.',
+        error: 'You do not have accountable assignment authority to directly add team members. Please submit a team member request instead.',
         code: 'USE_REQUEST_FLOW',
       }, { status: 403 });
     }
@@ -90,6 +94,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Selected user does not have access to the work order plant' }, { status: 400 });
     }
 
+    if (wo.assignedTo === userId || wo.teamLeaderId === userId) {
+      return NextResponse.json({ success: false, error: 'User is already assigned to this work order' }, { status: 409 });
+    }
+
     const existingMember = await db.workOrderTeamMember.findFirst({
       where: { workOrderId: id, userId },
       select: { id: true },
@@ -108,8 +116,6 @@ export async function POST(
     const member = await db.$transaction(async (tx) => {
       let effectiveLeaderId = wo.teamLeaderId;
 
-      // When a second technician is added to a previously single-tech WO, the
-      // original assignee becomes the explicit team leader automatically.
       if (!effectiveLeaderId && role !== 'team_leader' && wo.assignedTo) {
         effectiveLeaderId = wo.assignedTo;
         await tx.workOrder.update({ where: { id }, data: { teamLeaderId: effectiveLeaderId } });

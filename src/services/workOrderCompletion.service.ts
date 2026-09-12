@@ -98,7 +98,7 @@ function round2(value: number): number {
 }
 
 function isConcurrentTransitionError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith('Concurrent transition detected:');
+  return error instanceof Error && error.message.includes('Transition conflict for work_order');
 }
 
 async function readCommittedCompletionRetry(

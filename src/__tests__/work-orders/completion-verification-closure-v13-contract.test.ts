@@ -113,4 +113,18 @@ describe('RWOP V1.3 completion → verification → closure integrity contract',
     expect(closure).toContain("plannerStatus !== 'closed'");
     expect(closure).toContain('!current.isLocked');
   });
+
+  it('keeps mandatory corrective/predictive evidence actionable in the technician workspace', () => {
+    const workspace = read('src/components/modules/TechnicianWorkOrderPage.tsx');
+
+    expect(workspace).toContain('value={failureDescription}');
+    expect(workspace).toContain('value={causeDescription}');
+    expect(workspace).toContain('value={actionDescription}');
+    expect(workspace).toContain("form.append('category', 'technician_evidence')");
+    expect(workspace).toContain('Photos & Evidence');
+    expect(workspace).toContain('failureDescription: failureDescription.trim() || undefined');
+    expect(workspace).toContain('causeDescription: causeDescription.trim() || undefined');
+    expect(workspace).toContain('actionDescription: actionDescription.trim() || undefined');
+    expect(workspace).toContain('res?.blockers');
+  });
 });

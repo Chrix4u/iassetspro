@@ -23,9 +23,14 @@ describe('application page spacing contract', () => {
     expect(css).toContain('padding-right: var(--iassets-page-gutter);');
   });
 
-  it('neutralizes only page-root horizontal padding so vertical rhythm and nested component padding survive', () => {
+  it('centers and caps every page root while preserving nested component spacing', () => {
     const css = read('src/app/page-layout.css');
     expect(css).toContain('main.flex-1.min-h-0.overflow-y-auto > *');
+    expect(css).toContain('width: 100%;');
+    expect(css).toContain('max-width: 1600px;');
+    expect(css).toContain('min-width: 0;');
+    expect(css).toContain('margin-left: auto;');
+    expect(css).toContain('margin-right: auto;');
     expect(css).toContain('padding-left: 0 !important;');
     expect(css).toContain('padding-right: 0 !important;');
     expect(css).not.toContain('padding-top: 0 !important;');

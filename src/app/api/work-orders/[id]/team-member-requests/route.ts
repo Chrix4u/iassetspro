@@ -3,12 +3,13 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 /**
  * GET /api/work-orders/[id]/team-member-requests
  * List team member requests for a WO.
- * - Admins/planners/assigner see all requests
- * - Technicians/team members see their own requests
+ * - Accountable management actors see all requests
+ * - Execution actors see requests they submitted
  */
 export async function GET(
   request: NextRequest,
@@ -22,37 +23,39 @@ export async function GET(
 
     const { id } = await params;
 
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    // Fetch WO with planner info
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         assignedBy: true,
         plannerId: true,
+        assignedSupervisorId: true,
         teamLeaderId: true,
         assignedTo: true,
         teamMembers: { select: { userId: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
       },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Determine if user can see all requests (admin/planner/assigner)
-    const canManageTeam = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
-      wo.plannerId === session.userId ||
-      wo.assignedBy === session.userId;
-
-    // Build where clause: admins see all, others see their own
-    const where: Record<string, unknown> = { workOrderId: id };
-    if (!canManageTeam) {
-      (where as Record<string, unknown>).requestedBy = session.userId;
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
     }
+
+    const canManageTeam =
+      (isAdmin(session) || hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician'])) &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
+
+    const where: Record<string, unknown> = { workOrderId: id };
+    if (!canManageTeam) where.requestedBy = session.userId;
 
     const requests = await db.woTeamMemberRequest.findMany({
       where,
@@ -74,9 +77,6 @@ export async function GET(
 /**
  * POST /api/work-orders/[id]/team-member-requests
  * Create a team member request.
- * - Technicians and team members can request a TRADE (e.g. "Electrician", "Mechanical Fitter")
- * - The request is sent to the assigner/planner for approval
- * - On approval, the approver picks the actual technician to assign
  */
 export async function POST(
   request: NextRequest,
@@ -90,7 +90,6 @@ export async function POST(
 
     const { id } = await params;
 
-    // POST must enforce the same plant boundary as GET and other Repairs mutations.
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
@@ -106,19 +105,19 @@ export async function POST(
     const role = typeof body.role === 'string' && body.role.trim() ? body.role.trim() : 'assistant';
     const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null;
 
-    // `tradeSkill` is accepted as a compatibility alias for the Technician Workspace,
-    // but the canonical persisted/API field is requestedTrade.
     if (!requestedTrade && !requestedUserId) {
       return NextResponse.json({ success: false, error: 'requestedTrade or requestedUserId is required' }, { status: 400 });
     }
 
-    // Fetch WO
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         woNumber: true,
+        plantId: true,
         assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
         assignedBy: true,
         plannerId: true,
         isLocked: true,
@@ -129,34 +128,41 @@ export async function POST(
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
+    }
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    // Only writable team members, assignee, or admin/planner can request assistance.
-    const isWritableTeamMember = wo.teamMembers?.some(
+    const isWritableTeamMember = wo.teamMembers.some(
       tm => tm.userId === session.userId && tm.accessLevel !== 'read_only',
     );
-    const isAssignee = wo.assignedTo === session.userId;
-    const isAdminUser = isAdmin(session) || session.roles.some(roleName =>
-      ['maintenance_manager', 'plant_manager'].includes(roleName),
-    );
-    const canManageTeam = hasAnyPermission(session, ['work_orders.assign_supervisor']) || isAdminUser;
+    const isExecutionActor =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      isWritableTeamMember;
+    const canManageTeam =
+      (isAdmin(session) || hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician'])) &&
+      (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);
 
-    if (!isWritableTeamMember && !isAssignee && !canManageTeam) {
+    if (!isExecutionActor && !canManageTeam) {
       return NextResponse.json(
-        { success: false, error: 'Only writable team members or the assigned technician can request additional members.' },
+        { success: false, error: 'Only assigned execution staff or accountable assignment management can request additional members.' },
         { status: 403 }
       );
     }
 
-    // If a specific user was requested, verify they exist and are active
     let targetUser: { id: string; fullName: string } | null = null;
     if (requestedUserId) {
       const user = await db.user.findUnique({
         where: { id: requestedUserId },
-        select: { id: true, fullName: true, status: true },
+        select: {
+          id: true,
+          fullName: true,
+          status: true,
+          plantAccess: { where: { plantId: wo.plantId }, select: { id: true } },
+        },
       });
       if (!user) {
         return NextResponse.json({ success: false, error: 'Requested user not found' }, { status: 400 });
@@ -164,19 +170,20 @@ export async function POST(
       if (user.status !== 'active') {
         return NextResponse.json({ success: false, error: 'Requested user is not active' }, { status: 400 });
       }
+      if (user.plantAccess.length === 0) {
+        return NextResponse.json({ success: false, error: 'Requested user does not have access to the work order plant' }, { status: 403 });
+      }
       targetUser = user;
 
-      // Check not already a team member
-      const alreadyMember = wo.teamMembers?.some(tm => tm.userId === requestedUserId);
-      if (alreadyMember) {
+      const alreadyMember = wo.teamMembers.some(tm => tm.userId === requestedUserId);
+      if (alreadyMember || wo.assignedTo === requestedUserId || wo.teamLeaderId === requestedUserId) {
         return NextResponse.json(
-          { success: false, error: 'User is already a team member of this work order' },
+          { success: false, error: 'User is already assigned to this work order' },
           { status: 409 }
         );
       }
     }
 
-    // Check for duplicate pending request (same trade or same user)
     const existingWhere: Record<string, unknown> = { workOrderId: id, status: 'pending' };
     if (requestedUserId) {
       existingWhere.requestedUserId = requestedUserId;
@@ -187,12 +194,11 @@ export async function POST(
     const existingPending = await db.woTeamMemberRequest.findFirst({ where: existingWhere });
     if (existingPending) {
       return NextResponse.json(
-        { success: false, error: 'A pending request already exists for this on this work order' },
+        { success: false, error: 'A pending request already exists for this work order' },
         { status: 409 }
       );
     }
 
-    // Create the request
     const teamRequest = await db.woTeamMemberRequest.create({
       data: {
         workOrderId: id,
@@ -208,7 +214,6 @@ export async function POST(
       },
     });
 
-    // Audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -225,8 +230,7 @@ export async function POST(
       },
     });
 
-    // Notify the planner (or assigner as fallback) about the new request
-    const approverId = wo.plannerId || wo.assignedBy;
+    const approverId = wo.plannerId || wo.assignedSupervisorId || wo.assignedBy;
     if (approverId && approverId !== session.userId) {
       const description = requestedTrade
         ? `${session.fullName} requested a ${requestedTrade} for WO ${wo.woNumber || 'Work Order'}`

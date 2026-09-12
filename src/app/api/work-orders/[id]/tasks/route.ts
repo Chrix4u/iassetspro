@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -14,15 +15,14 @@ export async function GET(
     }
 
     const { id } = await params;
-
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    // Verify work order exists
     const wo = await db.workOrder.findUnique({
       where: { id },
       include: {
+        teamMembers: { select: { userId: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
         pmSchedule: {
           include: {
             template: {
@@ -42,7 +42,13 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Check if task executions already exist for this WO
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
+    }
+
     const existingTasks = await db.workOrderTaskExecution.findMany({
       where: { workOrderId: id },
       orderBy: { taskNumber: 'asc' },
@@ -51,11 +57,10 @@ export async function GET(
       },
     });
 
-    // Auto-generate tasks from template if none exist yet and template has tasks
+    // Template task materialization is deterministic and limited to a user who
+    // has already passed strict plant + workflow-relationship authorization.
     if (existingTasks.length === 0 && wo.pmSchedule?.template?.tasks && wo.pmSchedule.template.tasks.length > 0) {
       const templateTasks = wo.pmSchedule.template.tasks;
-
-      // Bulk create task executions from template
       const createData = templateTasks.map((tt) => ({
         workOrderId: id,
         templateTaskId: tt.id,
@@ -67,9 +72,8 @@ export async function GET(
         status: 'pending' as const,
       }));
 
-      await db.workOrderTaskExecution.createMany({ data: createData });
+      await db.workOrderTaskExecution.createMany({ data: createData, skipDuplicates: true });
 
-      // Re-fetch the newly created tasks
       const tasks = await db.workOrderTaskExecution.findMany({
         where: { workOrderId: id },
         orderBy: { taskNumber: 'asc' },
@@ -107,10 +111,13 @@ export async function POST(
     }
 
     if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
+    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const body = await request.json();
     const { description, taskType, requiredParts, estimatedMinutes, taskNumber } = body;
 
@@ -118,17 +125,31 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Task description is required' }, { status: 400 });
     }
 
-    // Verify work order exists
-    const wo = await db.workOrder.findUnique({ where: { id }, select: { id: true, status: true, isLocked: true } });
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        isLocked: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+      },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (!canManageWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Only the assigned supervisor/planner or maintenance management can add work-order tasks' },
+        { status: 403 },
+      );
     }
 
     if (wo.isLocked || wo.status === 'verified' || wo.status === 'closed') {
       return NextResponse.json({ success: false, error: 'Work order has been reviewed. Task changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
     }
 
-    // Determine next task number if not provided
     let nextTaskNumber = taskNumber;
     if (!nextTaskNumber) {
       const lastTask = await db.workOrderTaskExecution.findFirst({
@@ -138,7 +159,6 @@ export async function POST(
       nextTaskNumber = (lastTask?.taskNumber ?? 0) + 1;
     }
 
-    // Validate taskType
     const validTaskTypes = ['check', 'measure', 'inspect', 'lubricate', 'replace', 'record'];
     const finalTaskType = taskType && validTaskTypes.includes(taskType) ? taskType : 'check';
 
@@ -157,7 +177,6 @@ export async function POST(
       },
     });
 
-    // Audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,

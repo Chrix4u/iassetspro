@@ -56,6 +56,7 @@ export async function respondToWorkOrderAssignment(
         woNumber: true,
         title: true,
         status: true,
+        updatedAt: true,
         isLocked: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -78,7 +79,27 @@ export async function respondToWorkOrderAssignment(
       return { success: false as const, statusCode: 403, error: 'Only the assigned technician or accountable team leader can accept or decline this work order' };
     }
 
+    // Even an idempotent retry must prove that it still refers to the same
+    // assignment snapshot. Reassignment resets response state, so returning a
+    // stale success after the WO has moved to another technician would be unsafe.
     if (wo.assignmentResponseStatus === decision) {
+      const claimed = await tx.workOrder.updateMany({
+        where: {
+          id: workOrderId,
+          status: 'assigned',
+          updatedAt: wo.updatedAt,
+          assignmentResponseStatus: decision,
+        },
+        data: { assignmentResponseStatus: decision },
+      });
+      if (claimed.count !== 1) {
+        return {
+          success: false as const,
+          statusCode: 409,
+          error: 'Assignment changed concurrently; reload the work order before responding again',
+        };
+      }
+
       return {
         success: true as const,
         data: {
@@ -91,8 +112,12 @@ export async function respondToWorkOrderAssignment(
       };
     }
 
-    await tx.workOrder.update({
-      where: { id: workOrderId },
+    const claimed = await tx.workOrder.updateMany({
+      where: {
+        id: workOrderId,
+        status: 'assigned',
+        updatedAt: wo.updatedAt,
+      },
       data: {
         assignmentResponseStatus: decision,
         assignmentRespondedBy: session.userId,
@@ -100,6 +125,14 @@ export async function respondToWorkOrderAssignment(
         assignmentResponseReason: decision === 'declined' ? reason : null,
       },
     });
+
+    if (claimed.count !== 1) {
+      return {
+        success: false as const,
+        statusCode: 409,
+        error: 'Assignment changed concurrently; reload the work order before responding again',
+      };
+    }
 
     await tx.auditLog.create({
       data: buildAuditData(

@@ -578,3 +578,24 @@ main[class*="flex-1"] {
     display: none;
   }
 }
+
+/* ============================================================================
+   RWOP TECHNICIAN STICKY LIFECYCLE NAVIGATION
+   - Keep live timer / Pause / Start controls on the primary sticky-header row.
+   - Force the lifecycle quick-nav into normal document flow beneath that row.
+   - The selector is unique to the technician work-order lifecycle navigation.
+   ============================================================================ */
+nav[aria-label="Sticky work order lifecycle navigation"] {
+  position: static !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0.5rem !important;
+  border-top: 1px solid var(--border);
+  transform: none !important;
+  justify-content: flex-end !important;
+}

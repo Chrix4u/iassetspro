@@ -4,19 +4,19 @@ import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/aut
 import { executeTransition } from '@/lib/state-machine';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import {
+  buildDirectAssignmentPlan,
+  type DirectAssignmentPlan,
+  type WorkOrderTeamMemberInput,
+} from '@/services/workOrderAssignment.service';
 import type { Prisma } from '@prisma/client';
-
-type TeamMemberInput = {
-  userId: string;
-  role?: string;
-};
 
 type AssignmentBody = {
   assignedTo?: string;
   teamLeaderId?: string;
   assignedSupervisorId?: string;
   assignmentType?: 'direct' | 'via_supervisor';
-  teamMembers?: TeamMemberInput[];
+  teamMembers?: WorkOrderTeamMemberInput[];
 };
 
 export async function POST(
@@ -60,54 +60,26 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Insufficient permissions to assign technicians' }, { status: 403 });
     }
 
-    // ── Validation ─────────────────────────────────────────────────────────
+    // ── Validation / canonical direct-roster planning ──────────────────────
 
-    if (isViaSupervisor) {
-      if (!assignedSupervisorId) {
-        return NextResponse.json(
-          { success: false, error: 'assignedSupervisorId is required for via_supervisor assignment' },
-          { status: 400 },
-        );
-      }
+    let directPlan: DirectAssignmentPlan | null = null;
+
+    if (isViaSupervisor && !assignedSupervisorId) {
+      return NextResponse.json(
+        { success: false, error: 'assignedSupervisorId is required for via_supervisor assignment' },
+        { status: 400 },
+      );
     }
 
     if (isDirect) {
-      const hasAssignedTo = !!assignedTo;
-      const hasTeamMembers = Array.isArray(teamMembers) && teamMembers.length > 0;
-
-      if (!hasAssignedTo && !hasTeamMembers) {
+      const planResult = buildDirectAssignmentPlan(assignedTo, teamLeaderId, teamMembers);
+      if (!planResult.ok) {
         return NextResponse.json(
-          { success: false, error: 'assignedTo or teamMembers is required for direct assignment' },
+          { success: false, error: planResult.error },
           { status: 400 },
         );
       }
-
-      if (hasTeamMembers && teamMembers!.length > 1) {
-        if (!teamLeaderId) {
-          return NextResponse.json(
-            { success: false, error: 'teamLeaderId is required when teamMembers has more than one member' },
-            { status: 400 },
-          );
-        }
-        const leaderInTeam = teamMembers!.some((m) => m.userId === teamLeaderId);
-        if (!leaderInTeam) {
-          return NextResponse.json(
-            { success: false, error: 'teamLeaderId must be one of the teamMembers' },
-            { status: 400 },
-          );
-        }
-      }
-
-      if (hasTeamMembers) {
-        for (const m of teamMembers!) {
-          if (!m.userId) {
-            return NextResponse.json(
-              { success: false, error: 'Each team member must have a userId' },
-              { status: 400 },
-            );
-          }
-        }
-      }
+      directPlan = planResult.plan;
     }
 
     // ── Fetch WO with plant info ───────────────────────────────────────────
@@ -139,20 +111,12 @@ export async function POST(
       assignmentType: wo.assignmentType,
     };
 
-    // ── Plant-scope check helper ───────────────────────────────────────────
+    // ── Plant-scope check ──────────────────────────────────────────────────
 
     const plantScopeUserIds: string[] = [];
 
-    if (isDirect) {
-      if (assignedTo) plantScopeUserIds.push(assignedTo);
-      if (teamLeaderId) plantScopeUserIds.push(teamLeaderId);
-      if (teamMembers) {
-        for (const m of teamMembers) {
-          if (m.userId && !plantScopeUserIds.includes(m.userId)) {
-            plantScopeUserIds.push(m.userId);
-          }
-        }
-      }
+    if (directPlan) {
+      plantScopeUserIds.push(...directPlan.executionMemberIds);
     }
     if (assignedSupervisorId && !plantScopeUserIds.includes(assignedSupervisorId)) {
       plantScopeUserIds.push(assignedSupervisorId);
@@ -182,20 +146,10 @@ export async function POST(
 
     // ── Verify users exist ─────────────────────────────────────────────────
 
-    const allUserIdsToVerify: string[] = [];
-    if (isDirect) {
-      if (assignedTo) allUserIdsToVerify.push(assignedTo);
-      if (teamMembers) {
-        for (const m of teamMembers) {
-          if (m.userId && !allUserIdsToVerify.includes(m.userId)) {
-            allUserIdsToVerify.push(m.userId);
-          }
-        }
-      }
-    }
-    if (assignedSupervisorId && !allUserIdsToVerify.includes(assignedSupervisorId)) {
-      allUserIdsToVerify.push(assignedSupervisorId);
-    }
+    const allUserIdsToVerify = [...new Set([
+      ...(directPlan?.executionMemberIds ?? []),
+      ...(assignedSupervisorId ? [assignedSupervisorId] : []),
+    ])];
 
     if (allUserIdsToVerify.length > 0) {
       const users = await db.user.findMany({
@@ -215,28 +169,20 @@ export async function POST(
 
     // ── Determine effective assignment values ──────────────────────────────
 
-    let effectiveAssignedTo = wo.assignedTo;
-    let effectiveTeamLeaderId = wo.teamLeaderId;
-    const effectiveAssignedSupervisorId = assignedSupervisorId ?? wo.assignedSupervisorId;
+    let effectiveAssignedTo: string | null = wo.assignedTo;
+    let effectiveTeamLeaderId: string | null = wo.teamLeaderId;
+    let effectiveAssignedSupervisorId: string | null = assignedSupervisorId ?? wo.assignedSupervisorId;
 
-    if (isDirect) {
-      const hasAssignedTo = !!assignedTo;
-      const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
-
-      if (hasAssignedTo && !hasTeamMembers) {
-        effectiveAssignedTo = assignedTo!;
-        effectiveTeamLeaderId = assignedTo!;
-      } else if (hasTeamMembers && !hasAssignedTo) {
-        effectiveAssignedTo = teamMembers![0].userId;
-        effectiveTeamLeaderId = teamMembers!.length === 1
-          ? teamMembers![0].userId
-          : teamLeaderId!;
-      } else if (hasAssignedTo && hasTeamMembers) {
-        effectiveAssignedTo = assignedTo!;
-        effectiveTeamLeaderId = teamMembers!.length === 1
-          ? teamMembers![0].userId
-          : teamLeaderId!;
-      }
+    if (isViaSupervisor) {
+      // Delegation means the supervisor owns the next assignment decision.
+      // Clear the previous execution team so stale technicians do not retain
+      // assignment access while the WO waits for supervisor reassignment.
+      effectiveAssignedTo = null;
+      effectiveTeamLeaderId = null;
+      effectiveAssignedSupervisorId = assignedSupervisorId!;
+    } else if (directPlan) {
+      effectiveAssignedTo = directPlan.effectiveAssignedTo;
+      effectiveTeamLeaderId = directPlan.effectiveTeamLeaderId;
     }
 
     const now = new Date();
@@ -258,10 +204,24 @@ export async function POST(
 
       // A WO may already be `assigned` after MR conversion. Reassignment is a
       // resource-planning change, not a lifecycle status change, so never create
-      // a fake assigned→assigned transition/history row.
+      // a fake assigned→assigned transition/history row. Use updatedAt as the
+      // compare-and-set boundary so two planners/supervisors cannot silently
+      // overwrite each other's concurrent reassignment.
       let transitionResult: { success: boolean; error?: string; data?: Record<string, unknown> };
       if (wo.status === 'assigned') {
-        await tx.workOrder.update({ where: { id }, data: assignmentData });
+        const claimed = await tx.workOrder.updateMany({
+          where: {
+            id,
+            status: 'assigned',
+            updatedAt: wo.updatedAt,
+          },
+          data: assignmentData,
+        });
+        if (claimed.count !== 1) {
+          throw new Error(
+            `Assignment conflict for work order "${id}": the assignment changed concurrently; reload and retry.`,
+          );
+        }
         transitionResult = { success: true, data: { status: 'assigned', reassigned: true } };
       } else {
         transitionResult = await executeTransition(
@@ -276,42 +236,24 @@ export async function POST(
         }
       }
 
-      // Create/upsert team members for direct assignment.
-      if (isDirect) {
-        const membersToAdd: { userId: string; role: string; isLeader: boolean }[] = [];
-        const hasAssignedTo = !!assignedTo;
-        const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
+      // Assignment is authoritative for execution membership. Replace the
+      // roster atomically so former technicians cannot retain stale WO access.
+      if (isDirect && directPlan) {
+        await tx.workOrderTeamMember.deleteMany({
+          where: {
+            workOrderId: id,
+            userId: { notIn: directPlan.executionMemberIds },
+          },
+        });
 
-        if (hasAssignedTo && !hasTeamMembers) {
-          membersToAdd.push({ userId: assignedTo!, role: 'team_leader', isLeader: true });
-        } else if (hasTeamMembers) {
-          for (const m of teamMembers!) {
-            const isLeader = m.userId === effectiveTeamLeaderId;
-            membersToAdd.push({
-              userId: m.userId,
-              role: isLeader ? 'team_leader' : (m.role || 'assistant'),
-              isLeader,
-            });
-          }
-        }
-
-        if (hasAssignedTo && hasTeamMembers && !teamMembers!.some((m) => m.userId === assignedTo)) {
-          const isLeader = assignedTo === effectiveTeamLeaderId;
-          membersToAdd.push({
-            userId: assignedTo!,
-            role: isLeader ? 'team_leader' : 'assistant',
-            isLeader,
-          });
-        }
-
-        for (const m of membersToAdd) {
-          const accessLevel = m.isLeader ? 'full' : 'execution';
+        for (const member of directPlan.members) {
+          const accessLevel = member.isLeader ? 'full' : 'execution';
           await tx.workOrderTeamMember.upsert({
             where: {
-              workOrderId_userId: { workOrderId: id, userId: m.userId },
+              workOrderId_userId: { workOrderId: id, userId: member.userId },
             },
             update: {
-              role: m.role,
+              role: member.role,
               accessLevel,
               addedById: session.userId,
               addedVia: 'direct',
@@ -319,8 +261,8 @@ export async function POST(
             },
             create: {
               workOrderId: id,
-              userId: m.userId,
-              role: m.role,
+              userId: member.userId,
+              role: member.role,
               accessLevel,
               addedById: session.userId,
               addedVia: 'direct',
@@ -328,16 +270,18 @@ export async function POST(
             },
           });
         }
+      } else if (isViaSupervisor) {
+        await tx.workOrderTeamMember.deleteMany({ where: { workOrderId: id } });
       }
 
       const newValues: Record<string, unknown> = {
         assignmentType,
         reassignment: wo.status === 'assigned',
+        assignedTo: effectiveAssignedTo,
+        teamLeaderId: effectiveTeamLeaderId,
+        assignedSupervisorId: effectiveAssignedSupervisorId,
+        teamMembersCount: directPlan?.executionMemberIds.length ?? 0,
       };
-      if (effectiveAssignedTo) newValues.assignedTo = effectiveAssignedTo;
-      if (effectiveTeamLeaderId) newValues.teamLeaderId = effectiveTeamLeaderId;
-      if (effectiveAssignedSupervisorId) newValues.assignedSupervisorId = effectiveAssignedSupervisorId;
-      if (teamMembers && teamMembers.length > 0) newValues.teamMembersCount = teamMembers.length;
 
       await tx.auditLog.create({
         data: {
@@ -370,8 +314,8 @@ export async function POST(
       ).catch(() => {});
     }
 
-    if (isDirect && Array.isArray(teamMembers) && teamMembers.length > 0) {
-      for (const member of teamMembers) {
+    if (isDirect && directPlan) {
+      for (const member of directPlan.members) {
         if (member.userId !== session.userId && member.userId !== effectiveAssignedTo) {
           notifyUser(
             member.userId,
@@ -417,6 +361,9 @@ export async function POST(
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to assign work order';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const status = message.startsWith('Assignment conflict for work order') || message.includes('Transition conflict')
+      ? 409
+      : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   Activity, CheckCircle2, Clock3, ExternalLink, Gauge, Package, Plus,
@@ -65,6 +66,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [labor, setLabor] = useState<any[]>([]);
   const [laborSummary, setLaborSummary] = useState<any>({ totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
   const [personalTools, setPersonalTools] = useState<any[]>([]);
+  const [stickyHeaderTarget, setStickyHeaderTarget] = useState<HTMLElement | null>(null);
 
   const [material, setMaterial] = useState({ itemName: '', quantity: '1', unit: 'each', urgency: 'normal', reason: '' });
   const [toolRequest, setToolRequest] = useState({ toolName: '', quantity: '1', urgency: 'normal', reason: '' });
@@ -92,6 +94,12 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   }, [capabilities?.isTeamLeader, workOrderId]);
 
   useEffect(() => { void loadPanels(); }, [loadPanels]);
+
+  useEffect(() => {
+    const target = document.querySelector('div.sticky.top-0.z-20');
+    if (target instanceof HTMLElement) setStickyHeaderTarget(target);
+    return () => setStickyHeaderTarget(null);
+  }, []);
 
   const run = async (key: string, action: () => Promise<any>, success: string, refreshParent = true) => {
     setBusy(key);
@@ -197,8 +205,43 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolRequests = Array.isArray(workOrder.repairToolRequests) ? workOrder.repairToolRequests : [];
   const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);
 
+  const scrollToStage = (anchor: string) => {
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const lifecycleButtons = stages.map((stage, index) => {
+    const isCurrent = index === stageIndex;
+    const isComplete = index < stageIndex;
+    return (
+      <button
+        key={stage.anchor}
+        type="button"
+        title={stage.label}
+        aria-label={`Go to ${stage.label}`}
+        aria-current={isCurrent ? 'step' : undefined}
+        onClick={() => scrollToStage(stage.anchor)}
+        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[11px] font-semibold transition-colors ${isCurrent ? 'border-primary bg-primary/10 text-primary' : isComplete ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-border bg-background/80 text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+      >
+        {isComplete ? <CheckCircle2 className="h-3.5 w-3.5" /> : isCurrent ? <Activity className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
+        <span className="hidden 2xl:inline">{stage.label}</span>
+      </button>
+    );
+  });
+
   return (
     <div className="space-y-5">
+      {stickyHeaderTarget && createPortal(
+        <nav
+          aria-label="Sticky work order lifecycle navigation"
+          className="pointer-events-none absolute left-1/2 top-1/2 z-10 hidden max-w-[44vw] -translate-x-1/2 -translate-y-1/2 xl:flex"
+        >
+          <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border bg-background/90 p-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/75">
+            {lifecycleButtons}
+          </div>
+        </nav>,
+        stickyHeaderTarget,
+      )}
+
       <Card className="overflow-hidden">
         <CardContent className="p-3 sm:p-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2" aria-label="Work order lifecycle">
@@ -206,7 +249,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
               <button
                 key={stage.anchor}
                 type="button"
-                onClick={() => document.getElementById(stage.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                onClick={() => scrollToStage(stage.anchor)}
                 className={`rounded-lg border px-3 py-2 text-left transition-colors ${index === stageIndex ? 'border-primary bg-primary/10' : index < stageIndex ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20' : 'hover:bg-muted/50'}`}
               >
                 <div className="flex items-center gap-2">

@@ -26,6 +26,21 @@ describe('technician sticky lifecycle navigation V1.2', () => {
     expect(panel).not.toContain('max-w-[48vw]');
   });
 
+  it('forces lifecycle navigation into a non-overlapping second sticky-header row', () => {
+    const globals = read('src/app/globals.css');
+
+    expect(globals).toContain('nav[aria-label="Sticky work order lifecycle navigation"]');
+    expect(globals).toContain('position: static !important;');
+    expect(globals).toContain('width: 100% !important;');
+    expect(globals).toContain('max-width: none !important;');
+    expect(globals).toContain('margin-top: 0.5rem !important;');
+    expect(globals).toContain('padding-top: 0.5rem !important;');
+    expect(globals).toContain('border-top: 1px solid var(--border);');
+    expect(globals).toContain('translate: none !important;');
+    expect(globals).toContain('transform: none !important;');
+    expect(globals).toContain('justify-content: flex-end !important;');
+  });
+
   it('keeps one six-destination navigation and removes the old duplicate lifecycle row', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

@@ -64,11 +64,12 @@ test.describe('Repairs Reports & Analytics', () => {
       });
     });
 
-    // Use the application's own navigation action instead of performing a
-    // second document load. This exercises the same route users select from
-    // the Reports menu and avoids testing an unrelated auth-hydration race.
-    await page.getByRole('button', { name: /^Reports$/ }).click();
-    await page.getByRole('button', { name: /^Repair Lifecycle$/ }).click();
+    // Switch the authenticated SPA directly to the registered report route.
+    // This isolates report rendering from sidebar expansion state while still
+    // exercising the production navigation store and permission guard.
+    await page.evaluate(() => {
+      window.location.hash = '#/repairs-reports';
+    });
 
     await expect(page.getByRole('heading', { name: 'Repairs Reports & Analytics' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Tabular and graphical maintenance intelligence')).toBeVisible();

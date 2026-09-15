@@ -12,6 +12,7 @@ import {
   approveMR,
   convertMR,
   assignWO,
+  acceptWOAssignment,
   startWO,
   getWO,
   getMR,
@@ -93,6 +94,7 @@ test('UAT-03: Scenario C — Supervisor Delegation Flow', async ({ browser }) =>
 
     await test.step('C3: Technician can start the supervisor-assigned WO', async () => {
       const token = await getToken('tech_single');
+      await acceptWOAssignment(token, woId);
 
       const caps = await getCapabilities(token, woId);
       expect(caps.canStart).toBe(true);

@@ -290,7 +290,7 @@ export interface PersonalTool {
 
 // Repair Module
 export type RepairMaterialRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'store_approved' | 'picking' | 'issued' | 'returned' | 'closed' | 'partially_returned' | 'fully_returned' | 'rejected';
-export type RepairToolRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'returned' | 'rejected';
+export type RepairToolRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'pending_return' | 'returned' | 'transferred' | 'rejected';
 export type ToolTransferStatus = 'pending' | 'storekeeper_approved' | 'awaiting_handover' | 'transferred' | 'rejected';
 
 export interface RepairMaterialRequest {

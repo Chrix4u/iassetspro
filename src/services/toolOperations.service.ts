@@ -1,15 +1,17 @@
 /**
- * Tool Operations Service — Atomic tool issue/return for repair WOs
- *
- * Ensures that multi-item tool issue and return operations are fully atomic.
- * All DB operations within a single logical action execute in one Prisma transaction.
+ * Tool Operations Service — concurrency-safe issue / return custody operations.
  */
-
 import { db } from '@/lib/db';
-import type { Prisma } from '@prisma/client';
 import { checkToolCalibration } from '@/services/toolCalibration.service';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
+
+export class ToolOperationConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ToolOperationConflictError';
+  }
+}
 
 export interface IssueItem {
   itemId: string;
@@ -27,22 +29,43 @@ export interface ReturnItem {
 export interface AtomicIssueResult {
   success: boolean;
   error?: string;
+  conflict?: boolean;
   warnings?: string[];
-  updatedRequest?: any;
+  updatedRequest?: unknown;
 }
 
 export interface AtomicReturnResult {
   success: boolean;
   error?: string;
+  conflict?: boolean;
   warnings?: string[];
   allReturned?: boolean;
-  updatedRequest?: any;
+  updatedRequest?: unknown;
 }
 
-/**
- * Atomically issue tools for a repair tool request.
- * All item deductions, transactions, and status updates happen in one transaction.
- */
+export interface SubmitReturnResult {
+  success: boolean;
+  error?: string;
+  conflict?: boolean;
+  warnings?: string[];
+  updatedRequest?: unknown;
+}
+
+const detailedInclude = {
+  requestedBy: { select: { id: true, fullName: true, username: true } },
+  supervisorApprovedBy: { select: { id: true, fullName: true } },
+  storekeeperApprovedBy: { select: { id: true, fullName: true } },
+  issuedByUser: { select: { id: true, fullName: true } },
+  returnedByUser: { select: { id: true, fullName: true } },
+  workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
+  tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true, assignedToId: true, checkedOutAt: true } },
+  items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true, assignedToId: true, checkedOutAt: true } } }, orderBy: { createdAt: 'asc' as const } },
+};
+
+function isConflict(error: unknown): boolean {
+  return error instanceof ToolOperationConflictError;
+}
+
 export async function atomicIssueTools(
   toolRequestId: string,
   session: { userId: string; fullName?: string },
@@ -52,41 +75,39 @@ export async function atomicIssueTools(
   const now = new Date();
 
   try {
-    const result = await db.$transaction(async (tx) => {
-      // Fetch request with items and tools in a consistent snapshot
+    const updatedRequest = await db.$transaction(async (tx) => {
+      const claim = await tx.repairToolRequest.updateMany({
+        where: { id: toolRequestId, status: 'storekeeper_approved' },
+        data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+      });
+      if (claim.count !== 1) {
+        const current = await tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, select: { status: true } });
+        if (!current) throw new Error('Tool request not found');
+        throw new ToolOperationConflictError(`Cannot issue: status is ${current.status}`);
+      }
+
       const toolReq = await tx.repairToolRequest.findUnique({
         where: { id: toolRequestId },
-        include: {
-          items: { include: { tool: true } },
-          tool: true,
-          workOrder: { select: { woNumber: true, plannerId: true } },
-          requestedBy: { select: { id: true, fullName: true } },
-        },
+        include: { items: { include: { tool: true } }, tool: true, workOrder: { select: { woNumber: true, plannerId: true } }, requestedBy: { select: { id: true, fullName: true } } },
       });
-
       if (!toolReq) throw new Error('Tool request not found');
-      if (toolReq.status !== 'storekeeper_approved') {
-        throw new Error(`Cannot issue: status is ${toolReq.status}`);
-      }
+
+      let actualIssuedTotal = 0;
 
       if (toolReq.items.length > 0) {
         if (!Array.isArray(issuedItems) || issuedItems.length === 0) {
           throw new Error('issuedItems array is required for multi-tool requests');
         }
 
-        // Track total actually issued to decide final status
-        let actualIssuedTotal = 0;
-
-        // Process all items atomically
         for (const issuedItem of issuedItems) {
-          const lineItem = toolReq.items.find((i: any) => i.id === issuedItem.itemId);
+          const lineItem = toolReq.items.find((item) => item.id === issuedItem.itemId);
           if (!lineItem) {
             warnings.push(`Item ${issuedItem.itemId} not found in this request, skipping`);
             continue;
           }
 
           const qtyToIssue = Math.max(0, Math.min(
-            parseInt(String(issuedItem.quantityIssued), 10) || 0,
+            Number.parseInt(String(issuedItem.quantityIssued), 10) || 0,
             lineItem.quantityApproved ?? lineItem.quantityRequested,
           ));
 
@@ -98,75 +119,7 @@ export async function atomicIssueTools(
             continue;
           }
 
-          if (lineItem.toolId) {
-            // Calibration check — runs outside tx (read-only)
-            const calCheck = await checkToolCalibration(lineItem.toolId)
-            if (calCheck.blocked) {
-              warnings.push(`"${lineItem.toolName}" BLOCKED: ${calCheck.reason || 'calibration issue'}. Item skipped.`)
-              await tx.repairToolRequestItem.update({
-                where: { id: lineItem.id },
-                data: { availabilityStatus: 'unavailable', issueNotes: calCheck.reason || 'Blocked by calibration check' },
-              })
-              continue
-            }
-            if (calCheck.reason) {
-              warnings.push(`"${lineItem.toolName}" WARNING: ${calCheck.reason}`)
-            }
-
-            // Re-read tool within transaction for consistent snapshot (prevents concurrent over-issue)
-            const tool = await tx.tool.findUnique({ where: { id: lineItem.toolId } });
-            if (!tool) {
-              warnings.push(`Tool "${lineItem.toolName}" not found`);
-              continue;
-            }
-
-            if (tool.quantity < qtyToIssue) {
-              warnings.push(`"${lineItem.toolName}": only ${tool.quantity} available, issuing all available`);
-            }
-
-            const actualIssued = Math.min(qtyToIssue, tool.quantity);
-            const conditionAtIssue = tool.condition;
-
-            // Prevent negative quantity
-            if (actualIssued <= 0) continue;
-
-            actualIssuedTotal += actualIssued;
-
-            // Deduct from tool within transaction
-            await tx.tool.update({
-              where: { id: lineItem.toolId },
-              data: {
-                quantity: { decrement: actualIssued },
-                status: tool.quantity - actualIssued <= 0 ? 'checked_out' : tool.status,
-                ...(tool.quantity - actualIssued <= 0 && !tool.assignedToId
-                  ? { assignedToId: toolReq.requestedById, checkedOutAt: now }
-                  : {}),
-              },
-            });
-
-            // Create transaction record
-            await tx.toolTransaction.create({
-              data: {
-                toolId: lineItem.toolId,
-                type: 'checkout',
-                toUserId: toolReq.requestedById,
-                notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})${qtyToIssue < lineItem.quantityRequested ? ' [PARTIAL]' : ''}`,
-                performedById: session.userId,
-              },
-            });
-
-            // Update line item
-            await tx.repairToolRequestItem.update({
-              where: { id: lineItem.id },
-              data: {
-                quantityIssued: actualIssued,
-                conditionAtIssue,
-                availabilityStatus: actualIssued >= lineItem.quantityRequested ? 'available' : 'limited',
-                issueNotes: issuedItem.issueNotes || (actualIssued < qtyToIssue ? `Only ${actualIssued} available in stock` : null),
-              },
-            });
-          } else {
-            // No toolId — just update the line item
+          if (!lineItem.toolId) {
             actualIssuedTotal += qtyToIssue;
             await tx.repairToolRequestItem.update({
               where: { id: lineItem.id },
@@ -176,115 +129,230 @@ export async function atomicIssueTools(
                 issueNotes: issuedItem.issueNotes || null,
               },
             });
+            continue;
           }
-        }
 
-        // CRITICAL: If nothing was actually issued (e.g. all items calibration-blocked),
-        // do NOT mark the request as 'issued'. Return early with warnings.
-        if (actualIssuedTotal === 0) {
-          warnings.push('No items were actually issued (all blocked or unavailable). Request status unchanged.')
-          const unchanged = await tx.repairToolRequest.findUnique({
-            where: { id: toolRequestId },
-            include: {
-              requestedBy: { select: { id: true, fullName: true, username: true } },
-              supervisorApprovedBy: { select: { id: true, fullName: true } },
-              storekeeperApprovedBy: { select: { id: true, fullName: true } },
-              issuedByUser: { select: { id: true, fullName: true } },
-              returnedByUser: { select: { id: true, fullName: true } },
-              workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
-              tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
-              items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
+          const calCheck = await checkToolCalibration(lineItem.toolId);
+          if (calCheck.blocked) {
+            warnings.push(`"${lineItem.toolName}" BLOCKED: ${calCheck.reason || 'calibration issue'}. Item skipped.`);
+            await tx.repairToolRequestItem.update({
+              where: { id: lineItem.id },
+              data: { availabilityStatus: 'unavailable', issueNotes: calCheck.reason || 'Blocked by calibration check' },
+            });
+            continue;
+          }
+          if (calCheck.reason) warnings.push(`"${lineItem.toolName}" WARNING: ${calCheck.reason}`);
+
+          const tool = await tx.tool.findUnique({ where: { id: lineItem.toolId } });
+          if (!tool) {
+            warnings.push(`Tool "${lineItem.toolName}" not found`);
+            continue;
+          }
+          if (tool.assignedToId && tool.assignedToId !== toolReq.requestedById) {
+            throw new ToolOperationConflictError(`Tool "${lineItem.toolName}" is already assigned to another custodian`);
+          }
+
+          const actualIssued = Math.min(qtyToIssue, tool.quantity);
+          if (actualIssued <= 0) {
+            warnings.push(`"${lineItem.toolName}" is no longer available`);
+            continue;
+          }
+          if (actualIssued < qtyToIssue) warnings.push(`"${lineItem.toolName}": only ${actualIssued} available`);
+
+          const remaining = tool.quantity - actualIssued;
+          const toolClaim = await tx.tool.updateMany({
+            where: {
+              id: lineItem.toolId,
+              quantity: tool.quantity,
+              status: tool.status,
+              assignedToId: tool.assignedToId,
+            },
+            data: {
+              quantity: { decrement: actualIssued },
+              status: remaining <= 0 ? 'checked_out' : tool.status,
+              ...(remaining <= 0 ? { assignedToId: toolReq.requestedById, checkedOutAt: now } : {}),
             },
           });
-          return unchanged;
+          if (toolClaim.count !== 1) {
+            throw new ToolOperationConflictError(`Tool "${lineItem.toolName}" stock/custody changed concurrently`);
+          }
+
+          actualIssuedTotal += actualIssued;
+          await tx.toolTransaction.create({
+            data: {
+              toolId: lineItem.toolId,
+              type: 'checkout',
+              toUserId: toolReq.requestedById,
+              notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${tool.condition})${actualIssued < lineItem.quantityRequested ? ' [PARTIAL]' : ''}`,
+              performedById: session.userId,
+              workOrderId: toolReq.workOrderId,
+            },
+          });
+          await tx.repairToolRequestItem.update({
+            where: { id: lineItem.id },
+            data: {
+              quantityIssued: actualIssued,
+              conditionAtIssue: tool.condition,
+              availabilityStatus: actualIssued >= lineItem.quantityRequested ? 'available' : 'limited',
+              issueNotes: issuedItem.issueNotes || (actualIssued < qtyToIssue ? `Only ${actualIssued} available in stock` : null),
+            },
+          });
         }
-
-        // Update request status to issued (only when at least one item was actually issued)
-        const updated = await tx.repairToolRequest.update({
-          where: { id: toolRequestId },
-          data: { status: 'issued', issuedById: session.userId, issuedAt: now },
-          include: {
-            requestedBy: { select: { id: true, fullName: true, username: true } },
-            supervisorApprovedBy: { select: { id: true, fullName: true } },
-            storekeeperApprovedBy: { select: { id: true, fullName: true } },
-            issuedByUser: { select: { id: true, fullName: true } },
-            returnedByUser: { select: { id: true, fullName: true } },
-            workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
-            tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
-            items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
-          },
-        });
-
-        return updated;
       } else if (toolReq.toolId) {
-        // Legacy single-tool request
         const tool = toolReq.tool;
-
-        // Calibration check for single-tool path
-        const calCheck = await checkToolCalibration(toolReq.toolId)
+        const calCheck = await checkToolCalibration(toolReq.toolId);
         if (calCheck.blocked) {
-          warnings.push(`Tool '${tool?.name || toolReq.toolId}' BLOCKED: ${calCheck.reason || 'calibration issue'}. Single-tool issue skipped.`)
-          return { success: true, warnings, updatedRequest: null }
-        }
-        if (calCheck.reason) {
-          warnings.push(`Tool '${tool?.name || toolReq.toolId}' WARNING: ${calCheck.reason}`)
-        }
+          warnings.push(`Tool '${tool?.name || toolReq.toolId}' BLOCKED: ${calCheck.reason || 'calibration issue'}. Single-tool issue skipped.`);
+        } else {
+          if (calCheck.reason) warnings.push(`Tool '${tool?.name || toolReq.toolId}' WARNING: ${calCheck.reason}`);
+          if (!tool || tool.status !== 'available') {
+            throw new ToolOperationConflictError(`Tool is not available for issue (current status: ${tool?.status})`);
+          }
+          if (tool.assignedToId && tool.assignedToId !== toolReq.requestedById) {
+            throw new ToolOperationConflictError('Tool is already assigned to another custodian');
+          }
 
-        if (!tool || (tool.status !== 'in_repair' && tool.status !== 'available')) {
-          throw new Error(`Tool is not available for issue (current status: ${tool?.status})`);
+          const conditionAtIssue = toolReq.toolConditionAtIssue || tool.condition;
+          const toolClaim = await tx.tool.updateMany({
+            where: { id: toolReq.toolId, status: tool.status, assignedToId: tool.assignedToId },
+            data: { status: 'checked_out', assignedToId: toolReq.requestedById, checkedOutAt: now },
+          });
+          if (toolClaim.count !== 1) throw new ToolOperationConflictError('Tool custody changed concurrently');
+
+          await tx.toolTransaction.create({
+            data: {
+              toolId: toolReq.toolId,
+              type: 'checkout',
+              toUserId: toolReq.requestedById,
+              notes: `Issued for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})`,
+              performedById: session.userId,
+              workOrderId: toolReq.workOrderId,
+            },
+          });
+          await tx.repairToolRequest.update({
+            where: { id: toolRequestId },
+            data: { toolConditionAtIssue: conditionAtIssue },
+          });
+          actualIssuedTotal = 1;
         }
-
-        const conditionAtIssue = toolReq.toolConditionAtIssue || tool.condition;
-
-        await tx.tool.update({
-          where: { id: toolReq.toolId },
-          data: { status: 'checked_out', assignedToId: toolReq.requestedById, checkedOutAt: now },
-        });
-        await tx.toolTransaction.create({
-          data: {
-            toolId: toolReq.toolId,
-            type: 'checkout',
-            toUserId: toolReq.requestedById,
-            notes: `Issued for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})`,
-            performedById: session.userId,
-          },
-        });
-        await tx.repairToolRequest.update({
-          where: { id: toolRequestId },
-          data: { toolConditionAtIssue: conditionAtIssue },
-        });
       }
 
-      // Single-tool path: update request status to issued (only reaches here for non-blocked single-tool)
-      const updated = await tx.repairToolRequest.update({
-        where: { id: toolRequestId },
-        data: { status: 'issued', issuedById: session.userId, issuedAt: now, ...(toolReq.toolId ? { toolConditionAtIssue: toolReq.tool?.condition || toolReq.toolConditionAtIssue } : {}) },
-        include: {
-          requestedBy: { select: { id: true, fullName: true, username: true } },
-          supervisorApprovedBy: { select: { id: true, fullName: true } },
-          storekeeperApprovedBy: { select: { id: true, fullName: true } },
-          issuedByUser: { select: { id: true, fullName: true } },
-          returnedByUser: { select: { id: true, fullName: true } },
-          workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
-          tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
-          items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
-        },
-      });
+      if (actualIssuedTotal === 0) {
+        await tx.repairToolRequest.update({
+          where: { id: toolRequestId },
+          data: { status: 'storekeeper_approved', issuedById: null, issuedAt: null },
+        });
+        warnings.push('No items were actually issued. Request status remains storekeeper_approved.');
+      }
 
-      return updated;
+      return tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, include: detailedInclude });
     });
 
-    return { success: true, warnings: warnings.length > 0 ? warnings : undefined, updatedRequest: result };
+    return { success: true, warnings: warnings.length ? warnings : undefined, updatedRequest };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Atomic tool issue failed';
-    return { success: false, error: message };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Atomic tool issue failed',
+      conflict: isConflict(error),
+    };
   }
 }
 
-/**
- * Atomically confirm tool return by store keeper.
- * All inventory updates, transactions, and status changes happen in one transaction.
- */
+export async function submitToolReturn(
+  toolRequestId: string,
+  session: { userId: string; fullName?: string },
+  returnedItems: ReturnItem[],
+  toolConditionAtReturn?: string,
+): Promise<SubmitReturnResult> {
+  const warnings: string[] = [];
+
+  try {
+    const updatedRequest = await db.$transaction(async (tx) => {
+      const toolReq = await tx.repairToolRequest.findUnique({
+        where: { id: toolRequestId },
+        include: { items: true, tool: true },
+      });
+      if (!toolReq) throw new Error('Tool request not found');
+      if (toolReq.status !== 'issued' && toolReq.status !== 'returned') {
+        throw new ToolOperationConflictError(`Cannot return: status is ${toolReq.status}`);
+      }
+
+      if (toolReq.items.length > 0 && toolReq.status === 'returned') {
+        const remaining = toolReq.items.some((item) => item.quantityIssued > item.quantityReturned + item.quantityTransferred);
+        if (!remaining) throw new Error('All items have already been fully returned or transferred');
+      }
+
+      const requestClaim = await tx.repairToolRequest.updateMany({
+        where: { id: toolRequestId, status: toolReq.status },
+        data: { status: 'pending_return', returnedById: session.userId },
+      });
+      if (requestClaim.count !== 1) throw new ToolOperationConflictError('Tool return was submitted concurrently');
+
+      if (toolReq.items.length > 0) {
+        if (!Array.isArray(returnedItems) || returnedItems.length === 0) {
+          throw new Error('returnedItems array is required for multi-tool requests');
+        }
+        let anyPending = false;
+
+        for (const retItem of returnedItems) {
+          const lineItem = toolReq.items.find((item) => item.id === retItem.itemId);
+          if (!lineItem) {
+            warnings.push(`Item ${retItem.itemId} not found in this request, skipping`);
+            continue;
+          }
+
+          const existingPending = lineItem.pendingReturnQty ?? 0;
+          const outstanding = Math.max(0, lineItem.quantityIssued - lineItem.quantityReturned - lineItem.quantityTransferred - existingPending);
+          const requested = Number.parseInt(String(retItem.quantityReturned), 10) || 0;
+          const qtyToReturn = Math.max(0, Math.min(requested, outstanding));
+          if (qtyToReturn === 0) continue;
+
+          const condition = VALID_CONDITIONS.includes(retItem.conditionAtReturn || '') ? retItem.conditionAtReturn! : 'good';
+          const notes = typeof retItem.notes === 'string' ? retItem.notes.trim() : null;
+          const itemClaim = await tx.repairToolRequestItem.updateMany({
+            where: {
+              id: lineItem.id,
+              quantityIssued: lineItem.quantityIssued,
+              quantityReturned: lineItem.quantityReturned,
+              quantityTransferred: lineItem.quantityTransferred,
+              pendingReturnQty: lineItem.pendingReturnQty,
+            },
+            data: {
+              pendingReturnQty: existingPending + qtyToReturn,
+              pendingReturnCondition: condition,
+              pendingReturnNotes: notes || null,
+            },
+          });
+          if (itemClaim.count !== 1) {
+            throw new ToolOperationConflictError(`Return custody for "${lineItem.toolName}" changed concurrently`);
+          }
+          if (condition === 'poor' || condition === 'damaged') warnings.push(`"${lineItem.toolName}" reported in "${condition}" condition — store keeper will inspect`);
+          anyPending = true;
+        }
+
+        if (!anyPending) throw new Error('No items to return');
+      } else if (toolReq.toolId) {
+        const condition = VALID_CONDITIONS.includes(toolConditionAtReturn || '')
+          ? toolConditionAtReturn!
+          : (toolReq.tool?.condition || 'good');
+        await tx.repairToolRequest.update({ where: { id: toolRequestId }, data: { toolConditionAtReturn: condition } });
+      } else {
+        throw new Error('Tool request has no linked tool or line items');
+      }
+
+      return tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, include: detailedInclude });
+    });
+
+    return { success: true, warnings: warnings.length ? warnings : undefined, updatedRequest };
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Tool return submission failed',
+      conflict: isConflict(error),
+    };
+  }
+}
+
 export async function atomicConfirmToolReturn(
   toolRequestId: string,
   session: { userId: string; fullName?: string },
@@ -294,139 +362,143 @@ export async function atomicConfirmToolReturn(
 
   try {
     const result = await db.$transaction(async (tx) => {
-      const toolReq = await tx.repairToolRequest.findUnique({
-        where: { id: toolRequestId },
-        include: {
-          items: { include: { tool: true } },
-          tool: true,
-          workOrder: { select: { woNumber: true, plannerId: true } },
-          requestedBy: { select: { id: true, fullName: true } },
-        },
+      const requestClaim = await tx.repairToolRequest.updateMany({
+        where: { id: toolRequestId, status: 'pending_return' },
+        data: { status: 'issued', returnConfirmedById: session.userId, returnConfirmedAt: now },
       });
-
-      if (!toolReq) throw new Error('Tool request not found');
-      if (toolReq.status !== 'pending_return') {
-        throw new Error(`Cannot confirm return: status is ${toolReq.status}`);
+      if (requestClaim.count !== 1) {
+        const current = await tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, select: { status: true } });
+        if (!current) throw new Error('Tool request not found');
+        throw new ToolOperationConflictError(`Cannot confirm return: status is ${current.status}`);
       }
 
-      // Process pending returns for all items
+      const toolReq = await tx.repairToolRequest.findUnique({
+        where: { id: toolRequestId },
+        include: { items: { include: { tool: true } }, tool: true, workOrder: { select: { woNumber: true, plannerId: true } }, requestedBy: { select: { id: true, fullName: true } } },
+      });
+      if (!toolReq) throw new Error('Tool request not found');
+
+      let confirmedAny = false;
       if (toolReq.items.length > 0) {
         for (const item of toolReq.items) {
-          if (!item.pendingReturnQty || item.pendingReturnQty <= 0) continue;
+          const pendingQty = item.pendingReturnQty ?? 0;
+          if (pendingQty <= 0) continue;
 
-          const condition = VALID_CONDITIONS.includes(item.pendingReturnCondition || '')
-            ? item.pendingReturnCondition!
-            : 'good';
+          const outstanding = item.quantityIssued - item.quantityReturned - item.quantityTransferred;
+          if (pendingQty > outstanding) {
+            throw new ToolOperationConflictError(`Pending return for "${item.toolName}" exceeds outstanding custody`);
+          }
+          const condition = VALID_CONDITIONS.includes(item.pendingReturnCondition || '') ? item.pendingReturnCondition! : 'good';
 
           if (item.toolId) {
             const tool = await tx.tool.findUnique({ where: { id: item.toolId } });
-            if (tool) {
-              const toolStatus = (condition === 'poor' || condition === 'damaged') ? 'in_repair' :
-                (tool.quantity + item.pendingReturnQty > 0 ? 'available' : tool.status);
-
-              await tx.tool.update({
-                where: { id: item.toolId },
-                data: {
-                  quantity: { increment: item.pendingReturnQty },
-                  status: toolStatus,
-                  condition,
-                  ...(toolStatus === 'available' ? { assignedToId: null, checkedOutAt: null } : {}),
-                },
-              });
-
-              await tx.toolTransaction.create({
-                data: {
-                  toolId: item.toolId,
-                  type: 'return',
-                  fromUserId: toolReq.requestedById,
-                  notes: `Returned ${item.pendingReturnQty}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})${item.pendingReturnNotes ? ` — ${item.pendingReturnNotes}` : ''}`,
-                  performedById: session.userId,
-                },
-              });
+            if (!tool) throw new ToolOperationConflictError(`Tool "${item.toolName}" no longer exists`);
+            if (tool.assignedToId && tool.assignedToId !== toolReq.requestedById) {
+              throw new ToolOperationConflictError(`Tool "${item.toolName}" is assigned to a different custodian`);
             }
+            const toolStatus = condition === 'poor' || condition === 'damaged' ? 'in_repair' : 'available';
+            const toolClaim = await tx.tool.updateMany({
+              where: { id: item.toolId, quantity: tool.quantity, status: tool.status, assignedToId: tool.assignedToId },
+              data: {
+                quantity: { increment: pendingQty },
+                status: toolStatus,
+                condition,
+                assignedToId: null,
+                checkedOutAt: null,
+              },
+            });
+            if (toolClaim.count !== 1) throw new ToolOperationConflictError(`Tool "${item.toolName}" changed concurrently during return`);
+
+            await tx.toolTransaction.create({
+              data: {
+                toolId: item.toolId,
+                type: 'return',
+                fromUserId: toolReq.requestedById,
+                notes: `Returned ${pendingQty}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})${item.pendingReturnNotes ? ` — ${item.pendingReturnNotes}` : ''}`,
+                performedById: session.userId,
+                workOrderId: toolReq.workOrderId,
+              },
+            });
           }
 
-          // Move pending → confirmed
-          await tx.repairToolRequestItem.update({
-            where: { id: item.id },
+          const itemClaim = await tx.repairToolRequestItem.updateMany({
+            where: {
+              id: item.id,
+              quantityIssued: item.quantityIssued,
+              quantityReturned: item.quantityReturned,
+              quantityTransferred: item.quantityTransferred,
+              pendingReturnQty: item.pendingReturnQty,
+            },
             data: {
-              quantityReturned: { increment: item.pendingReturnQty },
+              quantityReturned: { increment: pendingQty },
               conditionAtReturn: condition,
               pendingReturnQty: 0,
               pendingReturnCondition: null,
               pendingReturnNotes: null,
             },
           });
-
-          if (condition === 'poor' || condition === 'damaged') {
-            warnings.push(`"${item.toolName}" confirmed in "${condition}" condition — flagged for repair`);
-          }
+          if (itemClaim.count !== 1) throw new ToolOperationConflictError(`Return custody for "${item.toolName}" changed concurrently`);
+          if (condition === 'poor' || condition === 'damaged') warnings.push(`"${item.toolName}" confirmed in "${condition}" condition — flagged for repair`);
+          confirmedAny = true;
         }
       } else if (toolReq.toolId) {
-        // Legacy single-tool
-        const resolvedCondition = VALID_CONDITIONS.includes(toolReq.toolConditionAtReturn || '')
-          ? toolReq.toolConditionAtReturn! : 'good';
-
-        const toolStatus = (resolvedCondition === 'poor' || resolvedCondition === 'damaged') ? 'in_repair' : 'available';
-        await tx.tool.update({
-          where: { id: toolReq.toolId },
-          data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition: resolvedCondition },
+        const condition = VALID_CONDITIONS.includes(toolReq.toolConditionAtReturn || '') ? toolReq.toolConditionAtReturn! : 'good';
+        const tool = toolReq.tool;
+        if (!tool) throw new ToolOperationConflictError('Tool no longer exists');
+        if (tool.assignedToId && tool.assignedToId !== toolReq.requestedById) {
+          throw new ToolOperationConflictError('Tool is assigned to a different custodian');
+        }
+        const toolStatus = condition === 'poor' || condition === 'damaged' ? 'in_repair' : 'available';
+        const toolClaim = await tx.tool.updateMany({
+          where: { id: toolReq.toolId, status: tool.status, assignedToId: tool.assignedToId },
+          data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition },
         });
+        if (toolClaim.count !== 1) throw new ToolOperationConflictError('Tool custody changed concurrently during return');
+
         await tx.toolTransaction.create({
           data: {
             toolId: toolReq.toolId,
             type: 'return',
             fromUserId: toolReq.requestedById,
-            notes: `Returned from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedCondition})`,
+            notes: `Returned from WO ${toolReq.workOrder.woNumber} (condition: ${condition})`,
             performedById: session.userId,
+            workOrderId: toolReq.workOrderId,
           },
         });
+        confirmedAny = true;
       }
 
-      // Check if ALL items are now fully returned/transferred
+      if (!confirmedAny) throw new ToolOperationConflictError('No pending tool return quantities were found');
+
       let allDone = true;
       if (toolReq.items.length > 0) {
-        const refreshedItems = await tx.repairToolRequestItem.findMany({
-          where: { repairToolRequestId: toolRequestId },
-        });
-        for (const item of refreshedItems) {
-          const issued = item.quantityIssued || 0;
-          const ret = item.quantityReturned || 0;
-          const xfer = item.quantityTransferred || 0;
-          if ((ret + xfer) < issued) { allDone = false; break; }
-        }
+        const refreshed = await tx.repairToolRequestItem.findMany({ where: { repairToolRequestId: toolRequestId } });
+        allDone = refreshed.every((item) => item.quantityReturned + item.quantityTransferred >= item.quantityIssued && (item.pendingReturnQty ?? 0) === 0);
       }
 
-      // Update request status
-      const updated = await tx.repairToolRequest.update({
+      await tx.repairToolRequest.update({
         where: { id: toolRequestId },
         data: {
           status: allDone ? 'returned' : 'issued',
           ...(allDone ? { returnedAt: now } : {}),
-          returnConfirmedById: session.userId,
-          returnConfirmedAt: now,
-        },
-        include: {
-          requestedBy: { select: { id: true, fullName: true, username: true } },
-          issuedByUser: { select: { id: true, fullName: true } },
-          returnedByUser: { select: { id: true, fullName: true } },
-          workOrder: { select: { id: true, woNumber: true, title: true, status: true, plannerId: true } },
-          tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
-          items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
         },
       });
 
+      const updated = await tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, include: detailedInclude });
       return { updated, allDone };
     });
 
     return {
       success: true,
-      warnings: warnings.length > 0 ? warnings : undefined,
+      warnings: warnings.length ? warnings : undefined,
       allReturned: result.allDone,
       updatedRequest: result.updated,
     };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Atomic tool return confirmation failed';
-    return { success: false, error: message };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Atomic tool return confirmation failed',
+      conflict: isConflict(error),
+    };
   }
 }

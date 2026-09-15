@@ -115,18 +115,36 @@ function makeTool(overrides: Record<string, unknown> = {}) {
 function setupTransactionWithMockTx(toolRequestData: Record<string, unknown> | null) {
   (mockDb.repairToolRequest.findUnique as Mock).mockResolvedValue(toolRequestData);
 
+  mockTxRequestUpdate.mockImplementation(async (args: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (args?.where?.status) {
+      return { count: toolRequestData && toolRequestData.status === args.where.status ? 1 : 0 };
+    }
+    return {};
+  });
+  mockTxItemUpdate.mockImplementation(async (args: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (args?.where && ('quantityIssued' in args.where || 'pendingReturnQty' in args.where)) return { count: 1 };
+    return {};
+  });
+  mockTxToolUpdate.mockImplementation(async (args: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (args?.where && ('quantity' in args.where || 'assignedToId' in args.where || 'status' in args.where)) return { count: 1 };
+    return {};
+  });
+
   const mockTx = {
     repairToolRequest: {
       findUnique: mockDb.repairToolRequest.findUnique,
       update: mockTxRequestUpdate,
+      updateMany: mockTxRequestUpdate,
     },
     repairToolRequestItem: {
       update: mockTxItemUpdate,
+      updateMany: mockTxItemUpdate,
       findMany: mockTxItemFindMany,
     },
     tool: {
       findUnique: vi.fn().mockResolvedValue(null),
       update: mockTxToolUpdate,
+      updateMany: mockTxToolUpdate,
     },
     toolTransaction: {
       create: mockTxToolTransactionCreate,
@@ -528,7 +546,7 @@ describe('atomicIssueTools - legacy single-tool path', () => {
     // Tool should be updated to checked_out
     expect(mockTxToolUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'tool-1' },
+        where: expect.objectContaining({ id: 'tool-1', status: 'available', assignedToId: null }),
         data: expect.objectContaining({
           status: 'checked_out',
           assignedToId: 'tech-1',
@@ -547,7 +565,7 @@ describe('atomicIssueTools - legacy single-tool path', () => {
     );
   });
 
-  it('should reject legacy tool when status is not available/in_repair', async () => {
+  it('should reject legacy tool when status is not available', async () => {
     setupTransactionWithMockTx(
       makeToolRequest({
         items: [],
@@ -781,7 +799,7 @@ describe('atomicConfirmToolReturn - multi-item return', () => {
       makeTool({ id: 'tool-1', quantity: 0, status: 'checked_out' }),
     );
     mockTxItemFindMany.mockResolvedValue([
-      { ...items[0], quantityReturned: 2, quantityTransferred: 0 },
+      { ...items[0], quantityReturned: 2, quantityTransferred: 0, pendingReturnQty: 0 },
     ]);
 
     const result = await atomicConfirmToolReturn('tr-1', session);
@@ -790,7 +808,7 @@ describe('atomicConfirmToolReturn - multi-item return', () => {
     // Tool should be incremented
     expect(mockTxToolUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'tool-1' },
+        where: expect.objectContaining({ id: 'tool-1' }),
         data: expect.objectContaining({
           quantity: { increment: 2 },
           status: 'available',
@@ -835,8 +853,9 @@ describe('atomicConfirmToolReturn - multi-item return', () => {
     ]);
 
     const result = await atomicConfirmToolReturn('tr-1', session);
-    expect(result.success).toBe(true);
-    // Should NOT update tool or create transaction since no pending returns
+    expect(result.success).toBe(false);
+    expect(result.conflict).toBe(true);
+    expect(result.error).toContain('No pending tool return quantities');
     expect(mockTxToolUpdate).not.toHaveBeenCalled();
     expect(mockTxToolTransactionCreate).not.toHaveBeenCalled();
   });
@@ -990,6 +1009,7 @@ describe('atomicConfirmToolReturn - legacy single-tool path', () => {
         status: 'pending_return',
         items: [],
         toolId: 'tool-1',
+        tool: makeTool({ id: 'tool-1', status: 'checked_out', assignedToId: 'tech-1' }),
         toolConditionAtReturn: 'good',
       }),
     );
@@ -1016,6 +1036,7 @@ describe('atomicConfirmToolReturn - legacy single-tool path', () => {
         status: 'pending_return',
         items: [],
         toolId: 'tool-1',
+        tool: makeTool({ id: 'tool-1', status: 'checked_out', assignedToId: 'tech-1' }),
         toolConditionAtReturn: 'poor',
       }),
     );
@@ -1035,6 +1056,7 @@ describe('atomicConfirmToolReturn - legacy single-tool path', () => {
         status: 'pending_return',
         items: [],
         toolId: 'tool-1',
+        tool: makeTool({ id: 'tool-1', status: 'checked_out', assignedToId: 'tech-1' }),
         toolConditionAtReturn: 'scratched',
       }),
     );
@@ -1104,7 +1126,7 @@ describe('atomicIssueTools - request status update', () => {
     // The request should be updated to 'issued'
     expect(mockTxRequestUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'tr-1' },
+        where: expect.objectContaining({ id: 'tr-1', status: 'storekeeper_approved' }),
         data: expect.objectContaining({
           status: 'issued',
           issuedById: 'storekeeper-1',
@@ -1146,19 +1168,31 @@ describe('atomicConfirmToolReturn - request status and timestamps', () => {
     expect(result.allReturned).toBe(true);
     expect(mockTxRequestUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ id: 'tr-1', status: 'pending_return' }),
         data: expect.objectContaining({
-          status: 'returned',
-          returnedAt: expect.any(Date),
+          status: 'issued',
           returnConfirmedById: 'storekeeper-1',
           returnConfirmedAt: expect.any(Date),
         }),
+      }),
+    );
+    expect(mockTxRequestUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'tr-1' },
+        data: expect.objectContaining({ status: 'returned', returnedAt: expect.any(Date) }),
       }),
     );
   });
 
   it('should always set returnConfirmedById and returnConfirmedAt', async () => {
     setupTransactionWithMockTx(
-      makeToolRequest({ status: 'pending_return', items: [] }),
+      makeToolRequest({
+        status: 'pending_return',
+        items: [],
+        toolId: 'tool-1',
+        tool: makeTool({ id: 'tool-1', status: 'checked_out', assignedToId: 'tech-1' }),
+        toolConditionAtReturn: 'good',
+      }),
     );
 
     const result = await atomicConfirmToolReturn('tr-1', session);

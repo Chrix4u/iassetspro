@@ -4,9 +4,8 @@ import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeToolRequestPlant } from '@/lib/plant-auth-helpers';
-import { atomicIssueTools, atomicConfirmToolReturn } from '@/services/toolOperations.service';
+import { atomicIssueTools, atomicConfirmToolReturn, submitToolReturn, ToolOperationConflictError } from '@/services/toolOperations.service';
 
-const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 // GET /api/repairs/tool-requests/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -121,7 +120,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           if (toolReq.tool.status !== 'available') return NextResponse.json({ success: false, error: `Tool "${toolReq.tool.name}" is not available (status: ${toolReq.tool.status}). Cannot approve.` }, { status: 400 });
           await db.repairToolRequest.update({ where: { id }, data: { toolConditionAtIssue: toolReq.tool.condition } });
         }
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'supervisor_approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now } });
+        const claim = await db.repairToolRequest.updateMany({ where: { id, status: 'pending' }, data: { status: 'supervisor_approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now } });
+        if (claim.count !== 1) throw new ToolOperationConflictError('Supervisor approval was claimed concurrently');
+        updated = await db.repairToolRequest.findUnique({ where: { id } });
         const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         const toolLabel = toolReq.items.length > 0 ? `${itemCount} tool${itemCount > 1 ? 's' : ''}` : `"${toolReq.toolName}"`;
@@ -133,7 +134,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'supervisor_reject': {
         if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot reject: status is ${toolReq.status}` }, { status: 400 });
         const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'rejected', supervisorApprovedById: session.userId, supervisorApprovedAt: now, rejectionReason } });
+        const claim = await db.repairToolRequest.updateMany({ where: { id, status: 'pending' }, data: { status: 'rejected', supervisorApprovedById: session.userId, supervisorApprovedAt: now, rejectionReason } });
+        if (claim.count !== 1) throw new ToolOperationConflictError('Supervisor rejection was claimed concurrently');
+        updated = await db.repairToolRequest.findUnique({ where: { id } });
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected', `Your request for "${toolReq.toolName}" was rejected by supervisor${rejectionReason ? `: ${rejectionReason}` : ''}`, 'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
@@ -157,9 +160,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           }
         } else if (toolReq.toolId && toolReq.tool) {
           if (toolReq.tool.status !== 'available') return NextResponse.json({ success: false, error: `Tool "${toolReq.tool.name}" is no longer available (status: ${toolReq.tool.status})` }, { status: 400 });
-          await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'in_repair' } });
         }
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'storekeeper_approved', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now } });
+        const claim = await db.repairToolRequest.updateMany({ where: { id, status: 'supervisor_approved' }, data: { status: 'storekeeper_approved', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now } });
+        if (claim.count !== 1) throw new ToolOperationConflictError('Store approval was claimed concurrently');
+        updated = await db.repairToolRequest.findUnique({ where: { id } });
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Ready for Pickup', `${itemCount} tool${itemCount > 1 ? 's' : ''} approved and ready for issuance`, 'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
@@ -168,15 +172,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'storekeeper_reject': {
         if (toolReq.status !== 'supervisor_approved') return NextResponse.json({ success: false, error: `Cannot reject: status is ${toolReq.status}` }, { status: 400 });
         const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
-        if (toolReq.items.length === 0 && toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'available' } });
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, rejectionReason } });
+        const claim = await db.repairToolRequest.updateMany({ where: { id, status: 'supervisor_approved' }, data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, rejectionReason } });
+        if (claim.count !== 1) throw new ToolOperationConflictError('Store rejection was claimed concurrently');
+        updated = await db.repairToolRequest.findUnique({ where: { id } });
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected by Store', `"${toolReq.toolName}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`, 'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 
       case 'issue': {
         const issueResult = await atomicIssueTools(id, session, issuedItems || []);
-        if (!issueResult.success) return NextResponse.json({ success: false, error: issueResult.error }, { status: 400 });
+        if (!issueResult.success) return NextResponse.json({ success: false, error: issueResult.error }, { status: issueResult.conflict ? 409 : 400 });
         updated = issueResult.updatedRequest;
         if (issueResult.warnings) warnings.push(...issueResult.warnings);
         if (updated?.status === 'issued') {
@@ -187,42 +192,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'return': {
-        if (toolReq.status !== 'issued' && toolReq.status !== 'returned') return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
-        if (toolReq.status === 'returned') {
-          const hasRemaining = toolReq.items.length > 0 ? toolReq.items.some((i: any) => (i.quantityIssued || 0) > (i.quantityReturned || 0) + (i.quantityTransferred || 0)) : false;
-          if (!hasRemaining) return NextResponse.json({ success: false, error: 'All items have already been fully returned or transferred' }, { status: 400 });
-          await db.repairToolRequest.update({ where: { id }, data: { status: 'issued' } });
+        const submitResult = await submitToolReturn(id, session, returnedItems || [], toolConditionAtReturn);
+        if (!submitResult.success) {
+          return NextResponse.json(
+            { success: false, error: submitResult.error },
+            { status: submitResult.conflict ? 409 : 400 },
+          );
         }
-        if (toolReq.items.length > 0) {
-          if (!Array.isArray(returnedItems) || returnedItems.length === 0) return NextResponse.json({ success: false, error: 'returnedItems array is required for multi-tool requests' }, { status: 400 });
-          let anyPending = false;
-          for (const retItem of returnedItems) {
-            const lineItem = toolReq.items.find((i: any) => i.id === retItem.itemId);
-            if (!lineItem) { warnings.push(`Item ${retItem.itemId} not found in this request, skipping`); continue; }
-            const qtyToReturn = Math.max(0, Math.min(parseInt(retItem.quantityReturned, 10) || 0, (lineItem.quantityIssued || 0) - (lineItem.quantityReturned || 0) - (lineItem.quantityTransferred || 0)));
-            if (qtyToReturn === 0) continue;
-            const condition = VALID_CONDITIONS.includes(retItem.conditionAtReturn) ? retItem.conditionAtReturn : 'good';
-            const retNotes = typeof retItem.notes === 'string' ? retItem.notes.trim() : null;
-            await db.repairToolRequestItem.update({ where: { id: lineItem.id }, data: { pendingReturnQty: qtyToReturn, pendingReturnCondition: condition, pendingReturnNotes: retNotes || null } });
-            if (condition === 'poor' || condition === 'damaged') warnings.push(`"${lineItem.toolName}" reported in "${condition}" condition — store keeper will inspect`);
-            anyPending = true;
-          }
-          if (!anyPending) return NextResponse.json({ success: false, error: 'No items to return' }, { status: 400 });
-        } else if (toolReq.toolId) {
-          const resolvedCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
-          await db.repairToolRequest.update({ where: { id }, data: { toolConditionAtReturn: resolvedCondition } });
-        }
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'pending_return', returnedById: session.userId } });
-        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
+        updated = submitResult.updatedRequest;
+        if (submitResult.warnings) warnings.push(...submitResult.warnings);
+
+        const storeKeepers = await db.user.findMany({
+          where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' },
+          select: { id: true },
+        });
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
-        for (const sk of storeKeepers) await notifyUser(sk.id, 'repair_tool_request', 'Tool Return Pending Confirmation', `${toolReq.requestedBy.fullName} submitted return of ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${toolReq.workOrder.woNumber}. Please inspect and confirm.`, 'repair_tool_request', id, `tool-requests?id=${id}`);
+        for (const sk of storeKeepers) {
+          await notifyUser(sk.id, 'repair_tool_request', 'Tool Return Pending Confirmation', `${toolReq.requestedBy.fullName} submitted return of ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${toolReq.workOrder.woNumber}. Please inspect and confirm.`, 'repair_tool_request', id, `tool-requests?id=${id}`);
+        }
         break;
       }
 
       case 'storekeeper_confirm_return': {
         if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) return NextResponse.json({ success: false, error: 'Only store keeper or admin can confirm returns' }, { status: 403 });
         const returnResult = await atomicConfirmToolReturn(id, session);
-        if (!returnResult.success) return NextResponse.json({ success: false, error: returnResult.error }, { status: 400 });
+        if (!returnResult.success) return NextResponse.json({ success: false, error: returnResult.error }, { status: returnResult.conflict ? 409 : 400 });
         updated = returnResult.updatedRequest;
         if (returnResult.warnings) warnings.push(...returnResult.warnings);
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Return Confirmed', `Your return of tools for WO ${toolReq.workOrder.woNumber} has been confirmed by store keeper.`, 'repair_tool_request', id, `tool-requests?id=${id}`);
@@ -231,15 +225,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'storekeeper_reject_return': {
-        if (toolReq.status !== 'pending_return') return NextResponse.json({ success: false, error: `Cannot reject return: status is ${toolReq.status}` }, { status: 400 });
-        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) return NextResponse.json({ success: false, error: 'Only store keeper or admin can reject returns' }, { status: 403 });
-        const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
-        if (toolReq.items.length > 0) {
-          for (const item of toolReq.items) {
-            if (item.pendingReturnQty && item.pendingReturnQty > 0) await db.repairToolRequestItem.update({ where: { id: item.id }, data: { pendingReturnQty: 0, pendingReturnCondition: null, pendingReturnNotes: null } });
-          }
+        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
+          return NextResponse.json({ success: false, error: 'Only store keeper or admin can reject returns' }, { status: 403 });
         }
-        updated = await db.repairToolRequest.update({ where: { id }, data: { status: 'issued', rejectionReason: rejectionReason || 'Return rejected by store keeper' } });
+        const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
+        updated = await db.$transaction(async (tx) => {
+          const claim = await tx.repairToolRequest.updateMany({
+            where: { id, status: 'pending_return' },
+            data: { status: 'issued', rejectionReason: rejectionReason || 'Return rejected by store keeper' },
+          });
+          if (claim.count !== 1) {
+            throw new ToolOperationConflictError('Tool return was already confirmed or rejected concurrently');
+          }
+          await tx.repairToolRequestItem.updateMany({
+            where: { repairToolRequestId: id, pendingReturnQty: { gt: 0 } },
+            data: { pendingReturnQty: 0, pendingReturnCondition: null, pendingReturnNotes: null },
+          });
+          return tx.repairToolRequest.findUnique({ where: { id } });
+        });
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Return Rejected', `Your return of tools for WO ${toolReq.workOrder.woNumber} was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}. Please resubmit.`, 'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
@@ -252,6 +255,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: true, data: updated, warnings: warnings.length > 0 ? warnings : undefined });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process action';
+    if (error instanceof ToolOperationConflictError) {
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
+    }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -336,9 +342,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: true, data: updated, warnings: warnings.length > 0 ? warnings : undefined });
     }
 
-    const updated = await db.repairToolRequest.update({
-      where: { id },
+    const changed = await db.repairToolRequest.updateMany({
+      where: { id, status: 'pending' },
       data: { toolName: toolName ?? toolReq.toolName, urgency: resolvedUrgency, reason: reason ?? toolReq.reason, notes: notes !== undefined ? (notes || null) : toolReq.notes },
+    });
+    if (changed.count !== 1) return NextResponse.json({ success: false, error: 'Tool request changed concurrently' }, { status: 409 });
+    const updated = await db.repairToolRequest.findUnique({
+      where: { id },
       include: {
         requestedBy: { select: { id: true, fullName: true, username: true } },
         supervisorApprovedBy: { select: { id: true, fullName: true } },
@@ -373,8 +383,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: 'Cannot delete: request is no longer pending' }, { status: 400 });
     if (toolReq.requestedById !== session.userId && !isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
 
-    if (toolReq.items.length === 0 && toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'available' } });
-    await db.repairToolRequest.delete({ where: { id } });
+    const deleted = await db.repairToolRequest.deleteMany({ where: { id, status: 'pending' } });
+    if (deleted.count !== 1) return NextResponse.json({ success: false, error: 'Tool request changed concurrently and can no longer be cancelled' }, { status: 409 });
     await db.auditLog.create({ data: { userId: session.userId, action: 'delete', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName: toolReq.toolName, workOrderId: toolReq.workOrderId }) } });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

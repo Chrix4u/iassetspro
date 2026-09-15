@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getPlantScope, applyPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
-import { incrementToolRequestTransfer } from '@/lib/tool-transfer-helpers';
+import { createToolTransferRequest, ToolTransferConflictError, ToolTransferNotFoundError } from '@/services/toolTransfer.service';
 
 // GET /api/repairs/tool-transfers
 export async function GET(request: NextRequest) {
@@ -133,25 +133,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cannot transfer tool to the same person' }, { status: 400 });
     }
 
-    // Verify tool exists and is assigned to fromUser
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
 
-    if (tool.assignedToId !== fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
-      return NextResponse.json({ success: false, error: 'Tool is not currently assigned to the specified user' }, { status: 400 });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, tool.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const transfer = await db.toolTransferRequest.create({
-      data: {
-        toolId, fromUserId, toUserId, reason, notes: notes || null,
-        status: 'pending', requestedById: session.userId,
-      },
-      include: {
-        tool: { select: { id: true, toolCode: true, name: true } },
-        fromUser: { select: { id: true, fullName: true } },
-        toUser: { select: { id: true, fullName: true } },
-        requestedBy: { select: { id: true, fullName: true } },
-      },
+    const transfer = await createToolTransferRequest({
+      toolId,
+      fromUserId,
+      toUserId,
+      reason,
+      notes,
+      requestedById: session.userId,
     });
 
     // Notify store keepers
@@ -165,9 +161,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Immediately update tool request item to reflect the pending transfer
-    await incrementToolRequestTransfer(toolId, fromUserId);
-
     await db.auditLog.create({
       data: { userId: session.userId, action: 'create', entityType: 'tool_transfer_request', entityId: transfer.id, newValues: JSON.stringify({ toolId, fromUserId, toUserId, reason }) },
     });
@@ -175,6 +168,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: transfer }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create tool transfer request';
+    if (error instanceof ToolTransferNotFoundError) {
+      return NextResponse.json({ success: false, error: message }, { status: 404 });
+    }
+    if (error instanceof ToolTransferConflictError) {
+      return NextResponse.json({ success: false, error: message }, { status: 409 });
+    }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

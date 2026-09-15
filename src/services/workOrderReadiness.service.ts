@@ -278,11 +278,11 @@ function checkCompletionReadiness(
   const ongoingDowntime = wo.workOrderDowntimes.filter((row) => !row.downtimeEnd)
   if (ongoingDowntime.length > 0) blockers.push({ code: 'ONGOING_DOWNTIME', category: 'timer', message: `${ongoingDowntime.length} ongoing downtime record(s) must be ended before completion`, severity: 'blocker' })
 
-  const toolsOut = wo.repairToolRequests
-    .filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
-    .flatMap((tr) => tr.items)
-    .filter(hasOpenToolCustody)
-  if (toolsOut.length > 0) blockers.push({ code: 'TOOLS_ISSUED', category: 'tool', message: `${toolsOut.length} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
+  const activeToolRequests = wo.repairToolRequests.filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
+  const toolsOut = activeToolRequests.flatMap((tr) => tr.items).filter(hasOpenToolCustody)
+  const legacyToolsOut = activeToolRequests.filter((tr) => tr.items.length === 0)
+  const openToolCount = toolsOut.length + legacyToolsOut.length
+  if (openToolCount > 0) blockers.push({ code: 'TOOLS_ISSUED', category: 'tool', message: `${openToolCount} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
 
   checkUnreconciledMaterials(wo, blockers, 'UNRECONCILED_MATERIALS')
 
@@ -375,11 +375,11 @@ function checkAuthoritativeCostUnavailable(wo: WoReadinessData, warnings: Readin
 }
 
 function checkToolCustody(wo: WoReadinessData, out: ReadinessItem[]): void {
-  const toolsOut = wo.repairToolRequests
-    .filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
-    .flatMap((tr) => tr.items)
-    .filter(hasOpenToolCustody)
-  if (toolsOut.length > 0) out.push({ code: 'OPEN_TOOL_CUSTODY', category: 'tool', message: `${toolsOut.length} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
+  const activeToolRequests = wo.repairToolRequests.filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
+  const toolsOut = activeToolRequests.flatMap((tr) => tr.items).filter(hasOpenToolCustody)
+  const legacyToolsOut = activeToolRequests.filter((tr) => tr.items.length === 0)
+  const openToolCount = toolsOut.length + legacyToolsOut.length
+  if (openToolCount > 0) out.push({ code: 'OPEN_TOOL_CUSTODY', category: 'tool', message: `${openToolCount} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
 }
 
 function checkUnreconciledMaterials(

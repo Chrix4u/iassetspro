@@ -18,6 +18,17 @@ describe('production deploy workflow security contract', () => {
     expect(workflow).not.toMatch(/uses:\s+actions\/download-artifact@v\d+/)
   })
 
+  it('requires release provenance from a merged PR targeting main', () => {
+    expect(workflow).toContain('pull-requests: read')
+    expect(workflow).toContain('/commits/${RELEASE_SHA}/pulls')
+    expect(workflow).toContain('.merged_at != null')
+    expect(workflow).toContain('.base.ref == "main"')
+    expect(workflow).toContain('.merge_commit_sha == $sha')
+    expect(workflow).toContain(
+      'release SHA is not the merge result of a merged PR targeting main',
+    )
+  })
+
   it('validates custom SSH ports against the pinned known-host entry', () => {
     expect(workflow).toContain('[[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]')
     expect(workflow).toContain('DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535')

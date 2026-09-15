@@ -132,13 +132,23 @@ describe('GET /api/work-orders/[id]/readiness', () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({ success: false, error: 'Access denied' });
+    expect(body).toEqual({ success: false, error: 'Access denied — you are not part of this work order workflow' });
     expect(mockCheckReadiness).not.toHaveBeenCalled();
   });
 
-  it('allows users with work-order view permission to inspect readiness', async () => {
+  it('keeps basic work-order view permission relationship-scoped', async () => {
     mockFindUnique.mockResolvedValue(accessibleWorkOrder({ assignedTo: 'another-tech' }));
     mockHasPermission.mockImplementation((_session: unknown, permission: string) => permission === 'work_orders.view');
+
+    const response = await GET(request('?phase=complete'), routeContext());
+
+    expect(response.status).toBe(403);
+    expect(mockCheckReadiness).not.toHaveBeenCalled();
+  });
+
+  it('allows the explicit work-order view-all permission to inspect readiness', async () => {
+    mockFindUnique.mockResolvedValue(accessibleWorkOrder({ assignedTo: 'another-tech' }));
+    mockHasPermission.mockImplementation((_session: unknown, permission: string) => permission === 'work_orders.view_all');
 
     const response = await GET(request('?phase=complete'), routeContext());
 

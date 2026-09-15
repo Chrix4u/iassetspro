@@ -15,12 +15,15 @@ BACKUP_DIR="${BACKUP_DIR:-/home/lightworld/backups/iassetspro}"
 INBOX_ROOT="${INBOX_ROOT:-/home/iassetsdeploy/incoming}"
 
 [[ "$(id -u)" -eq 0 ]] || { echo "STOP: root is required"; exit 1; }
+install -d -m 755 /run/lock
+exec 9>/run/lock/iassetspro-deploy.lock
+flock -n 9 || { echo "STOP: another iAssetsPro deployment is active"; exit 1; }
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: invalid release SHA"; exit 1; }
 [[ -f "$ARTIFACT" && -f "$CHECKSUM" ]] || { echo "STOP: artifact/checksum missing"; exit 1; }
 case "$(readlink -f "$ARTIFACT")" in "$INBOX_ROOT"/*) ;; *) echo "STOP: artifact outside deployment inbox"; exit 1;; esac
 case "$(readlink -f "$CHECKSUM")" in "$INBOX_ROOT"/*) ;; *) echo "STOP: checksum outside deployment inbox"; exit 1;; esac
 
-for cmd in node bun pm2 curl ss df find cp mv rm gzip tar sha256sum awk grep; do
+for cmd in node bun pm2 curl ss df find cp mv rm gzip tar sha256sum awk grep flock; do
   command -v "$cmd" >/dev/null || { echo "STOP: missing command: $cmd"; exit 1; }
 done
 
@@ -57,15 +60,14 @@ health_check() {
 
 cleanup_canary() {
   pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
+  if [[ "$CUTOVER_DONE" == "0" && -n "${NEW_RELEASE:-}" && -d "$NEW_RELEASE" ]]; then
+    rm -rf --one-file-system "$NEW_RELEASE"
+  fi
 }
 trap cleanup_canary EXIT INT TERM
 
 rollback_runtime() {
   [[ "$CUTOVER_DONE" == "1" ]] || return 0
-  if [[ "$RECONCILIATION_STARTED" == "1" ]]; then
-    echo "ROLLBACK REFUSED: reconciliation has started"
-    return 1
-  fi
   if [[ "$OLD_RUNTIME_POST_MIGRATION_OK" != "1" ]]; then
     echo "ROLLBACK REFUSED: old runtime was not verified after migration"
     return 1
@@ -82,6 +84,8 @@ rollback_runtime() {
       --node-args="--env-file=$OLD_RELEASE/.env" --time
   health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-rollback-health.json 18 5
   pm2 save
+  CUTOVER_DONE=0
+  echo "ROLLBACK COMPLETE"
 }
 
 echo "============================================================"
@@ -100,9 +104,26 @@ health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-predeplo
   sha256sum -c "$(basename "$CHECKSUM")"
 )
 
+echo "Validating archive member paths and types"
+tar -tzf "$ARTIFACT" | awk '
+  /^\// || /(^|\/)\.\.($|\/)/ || /\\/ {
+    print "STOP: unsafe archive path: " $0 > "/dev/stderr"
+    bad=1
+  }
+  END { exit bad }
+'
+tar -tvzf "$ARTIFACT" | awk '
+  substr($1,1,1) == "l" || substr($1,1,1) == "h" {
+    print "STOP: archive links are forbidden: " $0 > "/dev/stderr"
+    bad=1
+  }
+  END { exit bad }
+'
+
 [[ ! -e "$NEW_RELEASE" ]] || { echo "STOP: release path already exists"; exit 1; }
 mkdir -p "$NEW_RELEASE"
-tar -xzf "$ARTIFACT" -C "$NEW_RELEASE"
+tar --extract --gzip --file "$ARTIFACT" --directory "$NEW_RELEASE" \
+  --no-same-owner --no-same-permissions --delay-directory-restore
 [[ "$(tr -d '\r\n' < "$NEW_RELEASE/RELEASE_SHA")" == "$SHA" ]] || { echo "STOP: embedded SHA mismatch"; exit 1; }
 NEW_ENTRY="$(entrypoint_for "$NEW_RELEASE")" || { echo "STOP: runtime entrypoint missing"; exit 1; }
 test -x "$NEW_RELEASE/node_modules/.bin/prisma"
@@ -194,11 +215,23 @@ fi
 echo "[6/10] Reconcile canonical lifecycle transitions"
 RECONCILIATION_STARTED=1
 cd "$NEW_RELEASE"
-NODE_ENV=production bun run scripts/seed-transitions.ts
+if ! NODE_ENV=production bun run scripts/seed-transitions.ts; then
+  echo "STOP: transition reconciliation failed; rolling back runtime"
+  rollback_runtime
+  exit 1
+fi
 
 echo "[7/10] Local/public smoke"
-health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-postreconcile.json 12 5
-health_check "${PUBLIC_URL}/api/health" /tmp/iassetspro-public-health.json 12 10
+if ! health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-postreconcile.json 12 5; then
+  echo "STOP: post-cutover local health failed; rolling back runtime"
+  rollback_runtime
+  exit 1
+fi
+if ! health_check "${PUBLIC_URL}/api/health" /tmp/iassetspro-public-health.json 12 10; then
+  echo "STOP: post-cutover public health failed; rolling back runtime"
+  rollback_runtime
+  exit 1
+fi
 pm2 save
 
 echo "[8/10] Retain active + immediate rollback only"
@@ -219,8 +252,16 @@ RELEASE_COUNT="$(find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -name 'ias
 [[ "$RELEASE_COUNT" -eq 2 ]] || { echo "STOP: expected 2 releases, found $RELEASE_COUNT"; exit 1; }
 
 echo "[10/10] Final health and inbox cleanup"
-health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-final-local.json 3 2
-health_check "${PUBLIC_URL}/api/health" /tmp/iassetspro-final-public.json 3 3
+if ! health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-final-local.json 3 2; then
+  echo "STOP: final local health failed; rolling back runtime"
+  rollback_runtime
+  exit 1
+fi
+if ! health_check "${PUBLIC_URL}/api/health" /tmp/iassetspro-final-public.json 3 3; then
+  echo "STOP: final public health failed; rolling back runtime"
+  rollback_runtime
+  exit 1
+fi
 pm2 status "$PM2_NAME"
 pm2 save
 rm -rf -- "$(dirname "$ARTIFACT")"

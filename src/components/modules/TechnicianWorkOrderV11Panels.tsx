@@ -242,18 +242,18 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         stickyHeaderTarget,
       )}
 
-      <section id="resources" className="scroll-mt-28 grid grid-cols-1 2xl:grid-cols-2 gap-5">
-        <Card>
+      <section id="resources" className="scroll-mt-28 grid grid-cols-1 gap-5">
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" />Materials — Request & Status</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {capabilities?.canRequestMaterials && (
-              <div className="grid sm:grid-cols-2 gap-2 rounded-lg border p-3">
-                <div className="sm:col-span-2"><Label>Material / spare part *</Label><Input value={material.itemName} onChange={(e) => setMaterial((v) => ({ ...v, itemName: e.target.value }))} placeholder="Bearing 6205, V-belt, grease..." /></div>
-                <div><Label>Quantity</Label><Input type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} /></div>
-                <div><Label>Unit</Label><Input value={material.unit} onChange={(e) => setMaterial((v) => ({ ...v, unit: e.target.value }))} /></div>
-                <div><Label>Urgency</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div><Label>Reason *</Label><Input value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
-                <Button className="sm:col-span-2 w-fit" variant="outline" onClick={requestMaterial} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(11rem,2fr)_minmax(5rem,.6fr)_minmax(5.5rem,.7fr)_minmax(6.5rem,.8fr)_minmax(11rem,1.7fr)_auto] lg:items-end">
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Material / spare part *</Label><Input className="w-full min-w-0" value={material.itemName} onChange={(e) => setMaterial((v) => ({ ...v, itemName: e.target.value }))} placeholder="Bearing 6205, V-belt, grease..." /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0" value={material.unit} onChange={(e) => setMaterial((v) => ({ ...v, unit: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
+                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestMaterial} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
               </div>
             )}
             <div className="space-y-2">
@@ -268,16 +268,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4" />Tools — Request, Issue & Personal Tools</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {capabilities?.canRequestTools && (
-              <div className="grid sm:grid-cols-2 gap-2 rounded-lg border p-3">
-                <div className="sm:col-span-2"><Label>Tool required *</Label><Input value={toolRequest.toolName} onChange={(e) => setToolRequest((v) => ({ ...v, toolName: e.target.value }))} placeholder="Torque wrench, multimeter, puller..." /></div>
-                <div><Label>Quantity</Label><Input type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} /></div>
-                <div><Label>Urgency</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div className="sm:col-span-2"><Label>Reason *</Label><Input value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
-                <Button className="sm:col-span-2 w-fit" variant="outline" onClick={requestTool} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(12rem,2fr)_minmax(5rem,.6fr)_minmax(6.5rem,.8fr)_minmax(12rem,1.8fr)_auto] lg:items-end">
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Tool required *</Label><Input className="w-full min-w-0" value={toolRequest.toolName} onChange={(e) => setToolRequest((v) => ({ ...v, toolName: e.target.value }))} placeholder="Torque wrench, multimeter, puller..." /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
+                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestTool} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
               </div>
             )}
             <div className="space-y-2">
@@ -292,8 +292,8 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
             <Separator />
             <div className="space-y-2">
               <p className="text-sm font-medium">Personal / technician tools used on this job</p>
-              {canAddPersonalTool && <div className="grid sm:grid-cols-2 gap-2"><Input value={personalTool.toolName} onChange={(e) => setPersonalTool((v) => ({ ...v, toolName: e.target.value }))} placeholder="Tool name" /><Input value={personalTool.toolCode} onChange={(e) => setPersonalTool((v) => ({ ...v, toolCode: e.target.value }))} placeholder="Tool code (optional)" /><select className="h-10 rounded-md border bg-background px-3 text-sm" value={personalTool.condition} onChange={(e) => setPersonalTool((v) => ({ ...v, condition: e.target.value }))}><option value="good">Good</option><option value="fair">Fair</option><option value="damaged">Damaged</option></select><Button variant="outline" onClick={addPersonalTool} disabled={busy !== null || personalTool.toolName.trim().length < 2}>Record Tool Used</Button></div>}
-              {personalTools.slice(0, 6).map((tool: any) => <div key={tool.id || `${tool.toolName}-${tool.addedAt}`} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span>{tool.toolName}{tool.toolCode ? ` · ${tool.toolCode}` : ''}</span><Badge variant="outline">{pretty(tool.condition)}</Badge></div>)}
+              {canAddPersonalTool && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(10rem,1.4fr)_minmax(8rem,1fr)_minmax(7rem,.8fr)_auto] lg:items-end"><Input className="min-w-0" value={personalTool.toolName} onChange={(e) => setPersonalTool((v) => ({ ...v, toolName: e.target.value }))} placeholder="Tool name" /><Input className="min-w-0" value={personalTool.toolCode} onChange={(e) => setPersonalTool((v) => ({ ...v, toolCode: e.target.value }))} placeholder="Tool code (optional)" /><select className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm" value={personalTool.condition} onChange={(e) => setPersonalTool((v) => ({ ...v, condition: e.target.value }))}><option value="good">Good</option><option value="fair">Fair</option><option value="damaged">Damaged</option></select><Button className="w-full whitespace-nowrap sm:col-span-2 lg:col-span-1 lg:w-auto" variant="outline" onClick={addPersonalTool} disabled={busy !== null || personalTool.toolName.trim().length < 2}>Record Tool Used</Button></div>}
+              {personalTools.slice(0, 6).map((tool: any) => <div key={tool.id || `${tool.toolName}-${tool.addedAt}`} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span className="min-w-0 truncate">{tool.toolName}{tool.toolCode ? ` · ${tool.toolCode}` : ''}</span><Badge variant="outline" className="shrink-0">{pretty(tool.condition)}</Badge></div>)}
             </div>
             <Button variant="ghost" className="w-full justify-between" onClick={() => navigate('repairs-tool-requests', { workOrderId })}>Open full tool workflow <ExternalLink className="h-4 w-4" /></Button>
           </CardContent>
@@ -301,31 +301,31 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Gauge className="h-4 w-4" />Equipment Downtime</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{downtimeSummary.totalRecords || 0}</p><p className="text-[11px] text-muted-foreground">Records</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{downtimeSummary.ongoing || 0}</p><p className="text-[11px] text-muted-foreground">Ongoing</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{minutesLabel(downtimeSummary.totalMinutes)}</p><p className="text-[11px] text-muted-foreground">Recorded</p></div></div>
             {capabilities?.canLogDowntime && (
-              <div className="grid sm:grid-cols-2 gap-2 rounded-lg border p-3">
-                <div className="sm:col-span-2"><Label>Downtime reason *</Label><Input value={downtimeForm.reason} onChange={(e) => setDowntimeForm((v) => ({ ...v, reason: e.target.value }))} placeholder="Machine stopped due to bearing failure..." /></div>
-                <div><Label>Category</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={downtimeForm.category} onChange={(e) => setDowntimeForm((v) => ({ ...v, category: e.target.value }))}><option value="unplanned">Unplanned</option><option value="planned">Planned</option><option value="partial">Partial</option></select></div>
-                <div><Label>Impact</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={downtimeForm.impactLevel} onChange={(e) => setDowntimeForm((v) => ({ ...v, impactLevel: e.target.value }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div><Label>Started</Label><Input type="datetime-local" value={downtimeForm.downtimeStart} onChange={(e) => setDowntimeForm((v) => ({ ...v, downtimeStart: e.target.value }))} /></div>
-                <div><Label>Ended (optional)</Label><Input type="datetime-local" value={downtimeForm.downtimeEnd} onChange={(e) => setDowntimeForm((v) => ({ ...v, downtimeEnd: e.target.value }))} /></div>
-                <div><Label>Production loss (optional)</Label><Input type="number" min="0" step="0.01" value={downtimeForm.productionLoss} onChange={(e) => setDowntimeForm((v) => ({ ...v, productionLoss: e.target.value }))} /></div>
-                <div><Label>Notes</Label><Input value={downtimeForm.notes} onChange={(e) => setDowntimeForm((v) => ({ ...v, notes: e.target.value }))} /></div>
-                <Button className="sm:col-span-2 w-fit" variant="outline" onClick={recordDowntime} disabled={busy !== null}><TimerReset className="h-4 w-4 mr-1" />{downtimeForm.downtimeEnd ? 'Record Downtime' : 'Start Downtime'}</Button>
+              <div className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-2">
+                <div className="min-w-0 sm:col-span-2"><Label>Downtime reason *</Label><Input className="w-full min-w-0" value={downtimeForm.reason} onChange={(e) => setDowntimeForm((v) => ({ ...v, reason: e.target.value }))} placeholder="Machine stopped due to bearing failure..." /></div>
+                <div className="min-w-0"><Label>Category</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={downtimeForm.category} onChange={(e) => setDowntimeForm((v) => ({ ...v, category: e.target.value }))}><option value="unplanned">Unplanned</option><option value="planned">Planned</option><option value="partial">Partial</option></select></div>
+                <div className="min-w-0"><Label>Impact</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={downtimeForm.impactLevel} onChange={(e) => setDowntimeForm((v) => ({ ...v, impactLevel: e.target.value }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+                <div className="min-w-0"><Label>Started</Label><Input className="w-full min-w-0" type="datetime-local" value={downtimeForm.downtimeStart} onChange={(e) => setDowntimeForm((v) => ({ ...v, downtimeStart: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Ended (optional)</Label><Input className="w-full min-w-0" type="datetime-local" value={downtimeForm.downtimeEnd} onChange={(e) => setDowntimeForm((v) => ({ ...v, downtimeEnd: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Production loss (optional)</Label><Input className="w-full min-w-0" type="number" min="0" step="0.01" value={downtimeForm.productionLoss} onChange={(e) => setDowntimeForm((v) => ({ ...v, productionLoss: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Notes</Label><Input className="w-full min-w-0" value={downtimeForm.notes} onChange={(e) => setDowntimeForm((v) => ({ ...v, notes: e.target.value }))} /></div>
+                <Button className="w-full sm:col-span-2 sm:w-fit" variant="outline" onClick={recordDowntime} disabled={busy !== null}><TimerReset className="h-4 w-4 mr-1" />{downtimeForm.downtimeEnd ? 'Record Downtime' : 'Start Downtime'}</Button>
               </div>
             )}
-            <div className="space-y-2">{downtime.length === 0 ? <p className="text-sm text-muted-foreground">No downtime recorded for this work order.</p> : downtime.slice(0, 8).map((row: any) => <div key={row.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div><p className="font-medium">{row.reason}</p><p className="text-xs text-muted-foreground">{pretty(row.category)} · {pretty(row.impactLevel)} · {fmt(row.downtimeStart)}</p></div>{row.downtimeEnd ? <Badge variant="outline">{minutesLabel(row.durationMinutes)}</Badge> : capabilities?.canLogDowntime ? <Button size="sm" variant="outline" onClick={() => endDowntime(row.id)} disabled={busy !== null}><XCircle className="h-3.5 w-3.5 mr-1" />End Downtime</Button> : <Badge variant="outline">Ongoing</Badge>}</div></div>)}</div>
+            <div className="space-y-2">{downtime.length === 0 ? <p className="text-sm text-muted-foreground">No downtime recorded for this work order.</p> : downtime.slice(0, 8).map((row: any) => <div key={row.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div className="min-w-0"><p className="font-medium break-words">{row.reason}</p><p className="text-xs text-muted-foreground">{pretty(row.category)} · {pretty(row.impactLevel)} · {fmt(row.downtimeStart)}</p></div>{row.downtimeEnd ? <Badge variant="outline" className="shrink-0">{minutesLabel(row.durationMinutes)}</Badge> : capabilities?.canLogDowntime ? <Button size="sm" variant="outline" className="shrink-0" onClick={() => endDowntime(row.id)} disabled={busy !== null}><XCircle className="h-3.5 w-3.5 mr-1" />End Downtime</Button> : <Badge variant="outline" className="shrink-0">Ongoing</Badge>}</div></div>)}</div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Clock3 className="h-4 w-4" />Labor & Time History</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center"><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{laborSummary.totalEntries || 0}</p><p className="text-[11px] text-muted-foreground">Entries</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.totalHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Total h</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.personalHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Personal h</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.teamHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Team h</p></div></div>
-            <div className="space-y-2">{labor.length === 0 ? <p className="text-sm text-muted-foreground">No labor entries recorded yet.</p> : labor.slice(-8).reverse().map((log: any) => <div key={log.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{log.user?.fullName || 'Technician'} · {pretty(log.action)}</span>{log.endTime ? <Badge variant="outline">{Number(log.duration || 0).toFixed(2)} h</Badge> : <Badge className="bg-emerald-600">Live</Badge>}</div><p className="text-xs text-muted-foreground mt-1">{fmt(log.startTime || log.timestamp)}{log.endTime ? ` → ${fmt(log.endTime)}` : ''}{log.activityType ? ` · ${pretty(log.activityType)}` : ''}</p>{log.notes && <p className="text-xs mt-1">{log.notes}</p>}</div>)}</div>
+            <div className="space-y-2">{labor.length === 0 ? <p className="text-sm text-muted-foreground">No labor entries recorded yet.</p> : labor.slice(-8).reverse().map((log: any) => <div key={log.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-words font-medium">{log.user?.fullName || 'Technician'} · {pretty(log.action)}</span>{log.endTime ? <Badge variant="outline" className="shrink-0">{Number(log.duration || 0).toFixed(2)} h</Badge> : <Badge className="shrink-0 bg-emerald-600">Live</Badge>}</div><p className="text-xs text-muted-foreground mt-1 break-words">{fmt(log.startTime || log.timestamp)}{log.endTime ? ` → ${fmt(log.endTime)}` : ''}{log.activityType ? ` · ${pretty(log.activityType)}` : ''}</p>{log.notes && <p className="text-xs mt-1 break-words">{log.notes}</p>}</div>)}</div>
             <Button variant="ghost" className="w-full justify-between" onClick={() => navigate('technician-timesheet', { workOrderId })}>Open full timesheet <ExternalLink className="h-4 w-4" /></Button>
           </CardContent>
         </Card>

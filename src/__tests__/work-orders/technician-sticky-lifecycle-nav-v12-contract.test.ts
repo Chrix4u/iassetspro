@@ -54,10 +54,11 @@ describe('technician sticky lifecycle navigation V1.2', () => {
     expect((panel.match(/stages\.map/g) || []).length).toBe(1);
   });
 
-  it('keeps the technician workspace content in two-column layouts on wide screens', () => {
+  it('keeps resource cards full width while analysis panels use wide-screen columns', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
-    expect(panel).toContain('grid grid-cols-1 2xl:grid-cols-2 gap-5');
+    expect(panel).toContain('id="resources" className="scroll-mt-28 grid grid-cols-1 gap-5"');
+    expect(panel).not.toContain('grid grid-cols-1 2xl:grid-cols-2 gap-5');
     expect(panel).toContain('grid grid-cols-1 xl:grid-cols-2 gap-5');
   });
 });

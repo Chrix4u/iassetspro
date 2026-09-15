@@ -19,7 +19,9 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('Sticky work order lifecycle navigation');
     expect(panel).toContain('absolute right-3 top-1/2');
     expect(panel).not.toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6');
-    expect(panel).toContain('grid grid-cols-1 2xl:grid-cols-2');
+    expect(panel).toContain('id="resources" className="scroll-mt-28 grid grid-cols-1 gap-5"');
+    expect(panel).toContain('lg:grid-cols-[minmax(11rem,2fr)');
+    expect(panel).toContain('lg:grid-cols-[minmax(12rem,2fr)');
   });
 
   it('integrates materials, tools and personal tools in the technician workspace', () => {

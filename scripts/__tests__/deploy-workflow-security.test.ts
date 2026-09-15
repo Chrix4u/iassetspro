@@ -35,4 +35,21 @@ describe('production deploy workflow security contract', () => {
     expect(workflow).not.toContain('ssh-keyscan')
     expect(workflow).not.toContain('StrictHostKeyChecking=no')
   })
+
+  it('attests both privileged deployer files before any artifact upload', () => {
+    expect(workflow).toContain('- name: Attest installed privileged deployer')
+    expect(workflow).toContain('WRAPPER_SOURCE="scripts/deploy-production-artifact.sh"')
+    expect(workflow).toContain('CORE_SOURCE="scripts/deploy-production-artifact-core.sh"')
+    expect(workflow).toContain('WRAPPER_REMOTE_PATH="/usr/local/sbin/iassetspro-deploy-artifact"')
+    expect(workflow).toContain(
+      'CORE_REMOTE_PATH="/usr/local/sbin/deploy-production-artifact-core.sh"',
+    )
+    expect(workflow).toContain('sudo sha256sum')
+    expect(workflow).toContain('installed wrapper does not match reviewed release source')
+    expect(workflow).toContain('installed core deployer does not match reviewed release source')
+
+    expect(workflow.indexOf('- name: Attest installed privileged deployer')).toBeLessThan(
+      workflow.indexOf('- name: Upload artifact to production inbox'),
+    )
+  })
 })

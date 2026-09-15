@@ -76,12 +76,13 @@ jobs:
           fi
 
       - name: Checkout exact release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
 
       - name: Download tested production artifact from CI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: production-release
           path: release-artifact
@@ -122,11 +123,19 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
         run: |
           set -euo pipefail
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || { echo "Invalid DEPLOY_PORT" >&2; exit 1; }
+          (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 )) || { echo "DEPLOY_PORT out of range" >&2; exit 1; }
+
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/iassetspro_deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/iassetspro_deploy ~/.ssh/known_hosts
-          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+
+          KNOWN_HOST_QUERY="$DEPLOY_HOST"
+          if [[ "$DEPLOY_PORT" != "22" ]]; then
+            KNOWN_HOST_QUERY="[$DEPLOY_HOST]:$DEPLOY_PORT"
+          fi
+          ssh-keygen -F "$KNOWN_HOST_QUERY" -f ~/.ssh/known_hosts >/dev/null
 
       - name: Upload artifact to production inbox
         env:
@@ -140,8 +149,8 @@ jobs:
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes)
-          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes)
+          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_DIR'"
           "${SCP[@]}" "release-artifact/$ARTIFACT" "release-artifact/$CHECKSUM" \
             "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/"
@@ -158,7 +167,9 @@ jobs:
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes \
+          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA' '$REMOTE_DIR/$ARTIFACT' '$REMOTE_DIR/$CHECKSUM'"
 

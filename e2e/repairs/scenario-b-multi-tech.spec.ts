@@ -94,6 +94,12 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
       const leaderToken = await getToken('tech_leader');
       await startWO(leaderToken, woId);
 
+      // Completion authority becomes available only after the leader closes
+      // the live execution timer, preventing unaccounted concurrent labor.
+      const stopped = await apiCall(leaderToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
+      expect(stopped.status).toBe(200);
+      expect(stopped.data.success).toBe(true);
+
       const leaderCaps = await getCapabilities(leaderToken, woId);
       expect(leaderCaps.canSubmitCompletion).toBe(true);
       expect(leaderCaps.isTeamLeader).toBe(true);
@@ -115,10 +121,6 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
 
     await test.step('B4: Team leader completes the WO with deterministic labor', async () => {
       const token = await getToken('tech_leader');
-
-      const stopped = await apiCall(token, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
-      expect(stopped.status).toBe(200);
-      expect(stopped.data.success).toBe(true);
 
       // Closing a zero-cost WO is intentionally blocked. Record deterministic
       // labor effort so B tests team governance rather than incomplete costing.

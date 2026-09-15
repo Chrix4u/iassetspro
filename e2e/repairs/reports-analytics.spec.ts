@@ -68,7 +68,9 @@ test.describe('Repairs Reports & Analytics', () => {
     // This isolates report rendering from sidebar expansion state while still
     // exercising the production navigation store and permission guard.
     await page.evaluate(() => {
-      window.location.hash = '#/repairs-reports';
+      const state = { eam_nav: true, page: 'repairs-reports', params: {} };
+      window.history.pushState(state, '', '#/repairs-reports');
+      window.dispatchEvent(new PopStateEvent('popstate', { state }));
     });
 
     await expect(page.getByRole('heading', { name: 'Repairs Reports & Analytics' })).toBeVisible({ timeout: 15_000 });

@@ -144,16 +144,50 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build application (prisma generate + next build + copy assets)
-        run: bun run build:local
+      - name: Build production application
+        run: bun run build
 
-      - name: Upload build artifacts
+      - name: Upload standalone build for CI consumers
         uses: actions/upload-artifact@v4
         with:
           name: build-output
           path: .next/standalone
           include-hidden-files: true
           retention-days: 7
+
+      - name: Assemble compact production release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .release-bundle .release-tools
+          mkdir -p .release-bundle/prisma .release-bundle/scripts .release-tools
+
+          cp -a .next/standalone/. .release-bundle/
+          cp -a prisma/migrations .release-bundle/prisma/
+          cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
+          cp prisma.config.ts package.json bun.lock .release-bundle/
+          cp scripts/seed-transitions.ts .release-bundle/scripts/seed-transitions.ts
+          printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
+
+          PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
+          printf '{"private":true,"dependencies":{"prisma":"%s"}}\n' "$PRISMA_VERSION" > .release-tools/package.json
+          npm install --prefix .release-tools --omit=dev --no-audit --no-fund
+          cp -a .release-tools/node_modules/. .release-bundle/node_modules/
+
+          ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
+          tar -C .release-bundle -czf "$ARTIFACT" .
+          sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
+          test "$(tar -xOf "$ARTIFACT" ./RELEASE_SHA | tr -d '\r\n')" = "$GITHUB_SHA"
+
+      - name: Upload production release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release
+          path: |
+            iassetspro-release-${{ github.sha }}.tar.gz
+            iassetspro-release-${{ github.sha }}.tar.gz.sha256
+          retention-days: 7
+          compression-level: 0
 
   # Build the actual production Dockerfile in CI. A successful Next standalone
   # build alone is insufficient evidence that the image deployed to the VPS is
@@ -398,3 +432,47 @@ jobs:
           name: playwright-html-report
           path: playwright-report/
           retention-days: 30
+
+  required-ci-gate:
+    name: Required CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [lint, typecheck, unit-tests, build, container-build, repairs-uat, e2e-tests]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository for verification marker
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Publish SSH-visible CI result marker
+        env:
+          LINT: ${{ needs.lint.result }}
+          TYPECHECK: ${{ needs.typecheck.result }}
+          UNIT: ${{ needs.unit-tests.result }}
+          BUILD: ${{ needs.build.result }}
+          CONTAINER: ${{ needs.container-build.result }}
+          REPAIRS_UAT: ${{ needs.repairs-uat.result }}
+          E2E: ${{ needs.e2e-tests.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "iAssetsPro CI"
+          git config user.email "actions@users.noreply.github.com"
+
+          RESULTS=("$LINT" "$TYPECHECK" "$UNIT" "$BUILD" "$CONTAINER" "$REPAIRS_UAT" "$E2E")
+          STATUS=verified
+          for result in "${RESULTS[@]}"; do
+            [[ "$result" == "success" ]] || STATUS=failed
+          done
+
+          TAG="ci-${STATUS}-${GITHUB_SHA}"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+
+          echo "lint=$LINT typecheck=$TYPECHECK unit=$UNIT build=$BUILD container=$CONTAINER repairs_uat=$REPAIRS_UAT e2e=$E2E"
+          [[ "$STATUS" == "verified" ]]

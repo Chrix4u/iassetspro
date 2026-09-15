@@ -1,17 +1,3 @@
-# =============================================================================
-# iAssetsPro EAM — Production Deployment Pipeline
-# =============================================================================
-# Production topology:
-#   Nginx -> /home/lightworld/webapps/iassetspro (symlink)
-#         -> /home/lightworld/releases/iassetspro-<sha>-<timestamp>
-#         -> PM2 "iassetspro" -> Next.js standalone
-#
-# Releases are immutable. After a successful deployment we retain exactly:
-#   1) the active release
-#   2) the immediately previous release as rollback
-# Temporary/canary/build artifacts are cleaned only after local + public smoke.
-# =============================================================================
-
 name: Deploy
 
 on:
@@ -20,9 +6,18 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful CI workflow run ID containing production-release
+        required: true
+        type: string
+      release_sha:
+        description: Exact main commit SHA produced by that CI run
+        required: true
+        type: string
 
 permissions:
-  checks: read
+  actions: read
   contents: read
 
 concurrency:
@@ -30,151 +25,130 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-  RELEASE_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
-  PRODUCTION_PORT: 3001
-  DEFAULT_DEPLOY_PATH: /home/lightworld/webapps/iassetspro
-  DEFAULT_PRODUCTION_URL: https://iassetspro.lightworldtech.com
+  RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.release_sha }}
+  CI_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.ci_run_id }}
+  PRODUCTION_URL: ${{ secrets.PRODUCTION_URL || 'https://iassetspro.lightworldtech.com' }}
 
 jobs:
   deploy-production:
-    name: Deploy to Production
+    name: Deploy tested artifact to production
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
+    environment: production
     if: >-
       ${{
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        vars.ENABLE_PRODUCTION_DEPLOY == 'true' &&
+        (
+          (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+          github.event_name == 'workflow_dispatch'
+        )
       }}
 
     steps:
-      - name: Verify successful release checks for manual deploy
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          API_URL="${{ github.api_url }}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?per_page=100&filter=latest"
-
-          for CHECK_NAME in 'Repairs UAT (Playwright)' 'E2E Tests (Playwright)'; do
-            DEADLINE=$((SECONDS + 2400))
-            echo "Verifying ${CHECK_NAME} on ${RELEASE_SHA}"
-
-            while (( SECONDS < DEADLINE )); do
-              PAYLOAD="$(curl --fail-with-body --silent --show-error \
-                -H "Accept: application/vnd.github+json" \
-                -H "Authorization: Bearer ${GH_TOKEN}" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "$API_URL")"
-              CHECK="$(jq -c \
-                --arg name "$CHECK_NAME" \
-                '[.check_runs[] | select(.name == $name)] | sort_by(.started_at // .created_at // "") | last // {}' \
-                <<< "$PAYLOAD")"
-              STATUS="$(jq -r '.status // ""' <<< "$CHECK")"
-              CONCLUSION="$(jq -r '.conclusion // ""' <<< "$CHECK")"
-
-              if [[ "$STATUS" == "completed" ]]; then
-                [[ "$CONCLUSION" == "success" ]] || {
-                  echo "${CHECK_NAME} verification failed closed: ${CONCLUSION:-unknown}" >&2
-                  exit 1
-                }
-                echo "${CHECK_NAME}: success"
-                break
-              fi
-              sleep 15
-            done
-
-            (( SECONDS < DEADLINE )) || {
-              echo "Timed out waiting for ${CHECK_NAME}." >&2
-              exit 1
-            }
-          done
-
-      - name: Validate VPS deployment configuration
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST || secrets.SERVER_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER || secrets.VPS_USER || secrets.SERVER_USER }}
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
-          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD || secrets.VPS_PASSWORD || secrets.SSH_PASSWORD }}
-        run: |
-          set -euo pipefail
-          [[ -n "$DEPLOY_HOST" ]] || { echo "Missing deploy host"; exit 1; }
-          [[ -n "$DEPLOY_USER" ]] || { echo "Missing deploy user"; exit 1; }
-          [[ -n "$DEPLOY_KEY" || -n "$DEPLOY_PASSWORD" ]] || { echo "Missing SSH key or password"; exit 1; }
-
-      - name: Deploy exact validated commit with immutable release/canary
-        uses: appleboy/ssh-action@v1
-        env:
-          RELEASE_SHA: ${{ env.RELEASE_SHA }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || secrets.VPS_APP_PATH || env.DEFAULT_DEPLOY_PATH }}
-          PRODUCTION_PORT: ${{ env.PRODUCTION_PORT }}
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL || env.DEFAULT_PRODUCTION_URL }}
+      - name: Checkout exact release commit
+        uses: actions/checkout@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST || secrets.VPS_HOST || secrets.SERVER_HOST }}
-          username: ${{ secrets.DEPLOY_USER || secrets.VPS_USER || secrets.SERVER_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY || secrets.VPS_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
-          password: ${{ secrets.DEPLOY_PASSWORD || secrets.VPS_PASSWORD || secrets.SSH_PASSWORD }}
-          port: ${{ secrets.DEPLOY_PORT || secrets.VPS_PORT || secrets.SSH_PORT || 22 }}
-          command_timeout: 50m
-          envs: RELEASE_SHA,DEPLOY_PATH,PRODUCTION_PORT,PRODUCTION_URL
-          script: |
-            set -euo pipefail
+          ref: ${{ env.RELEASE_SHA }}
 
-            APP="$DEPLOY_PATH"
-            cd "$APP"
-            test -d .git
+      - name: Download tested production artifact from CI
+        uses: actions/download-artifact@v4
+        with:
+          name: production-release
+          path: release-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CI_RUN_ID }}
 
-            git fetch origin main
-            git cat-file -e "${RELEASE_SHA}^{commit}"
-            [[ "$(git rev-parse origin/main)" == "$RELEASE_SHA" ]] || {
-              echo "Release SHA is not current origin/main." >&2
-              exit 1
-            }
+      - name: Verify release artifact integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT="release-artifact/iassetspro-release-${RELEASE_SHA}.tar.gz"
+          CHECKSUM="${ARTIFACT}.sha256"
+          test -s "$ARTIFACT"
+          test -s "$CHECKSUM"
+          (cd release-artifact && sha256sum -c "$(basename "$CHECKSUM")")
+          EMBEDDED_SHA="$(tar -xOf "$ARTIFACT" ./RELEASE_SHA | tr -d '\r\n')"
+          test "$EMBEDDED_SHA" = "$RELEASE_SHA"
 
-            DEPLOY_SCRIPT="/tmp/iassetspro-deploy-${RELEASE_SHA:0:12}.sh"
-            git show "${RELEASE_SHA}:scripts/deploy-production-release.sh" > "$DEPLOY_SCRIPT"
-            chmod +x "$DEPLOY_SCRIPT"
-
-            RELEASE_SHA="$RELEASE_SHA" \
-            DEPLOY_PATH="$DEPLOY_PATH" \
-            PRODUCTION_PORT="$PRODUCTION_PORT" \
-            PRODUCTION_URL="$PRODUCTION_URL" \
-              "$DEPLOY_SCRIPT"
-
-      - name: Run independent public production smoke test
+      - name: Validate deployment secrets
         env:
-          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL || env.DEFAULT_PRODUCTION_URL }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/iassetspro_deploy
+          chmod 600 ~/.ssh/iassetspro_deploy
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload artifact to production inbox
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_INBOX: ${{ secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
+          CHECKSUM="${ARTIFACT}.sha256"
+          REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
+          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes)
+          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes)
+          "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_DIR'"
+          "${SCP[@]}" "release-artifact/$ARTIFACT" "release-artifact/$CHECKSUM" \
+            "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/"
+
+      - name: Activate immutable release on VPS
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          DEPLOY_INBOX: ${{ secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
+          CHECKSUM="${ARTIFACT}.sha256"
+          REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
+          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA' '$REMOTE_DIR/$ARTIFACT' '$REMOTE_DIR/$CHECKSUM'"
+
+      - name: Independent public smoke test
+        shell: bash
         run: |
           set -euo pipefail
           for i in $(seq 1 12); do
-            HTTP_CODE="$(curl -s -o /tmp/health.json -w "%{http_code}" \
-              "${PRODUCTION_URL}/api/health" --max-time 10 2>/dev/null || echo "000")"
-            if [[ "$HTTP_CODE" == "200" ]]; then
-              echo "Production smoke test passed."
-              cat /tmp/health.json
+            CODE="$(curl -sS -o /tmp/iassetspro-health.json -w '%{http_code}' --max-time 10 \
+              "${PRODUCTION_URL}/api/health" 2>/dev/null || true)"
+            if [[ "$CODE" == "200" ]]; then
+              cat /tmp/iassetspro-health.json
               exit 0
             fi
-            echo "Attempt $i/12 returned HTTP $HTTP_CODE"
+            echo "Health attempt $i/12 returned ${CODE:-000}"
             sleep 10
           done
           exit 1
 
-      - name: Deployment summary — Success
-        if: success()
+      - name: Deployment summary
+        if: always()
         run: |
-          echo "## ✅ Deployment Successful" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commit: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Branch: \`${RELEASE_BRANCH}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime: PM2 + immutable Next.js standalone release" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Production port: \`${PRODUCTION_PORT}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- RWOP preflight: driver + schema checks passed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- RWOP transition reconciliation: completed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Retention: active release + one rollback; obsolete/temp releases cleaned" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Deployment summary — Failure
-        if: failure()
-        run: |
-          echo "## ❌ Deployment Failed" >> "$GITHUB_STEP_SUMMARY"
-          echo "Commit: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Check the failed step logs before retrying." >> "$GITHUB_STEP_SUMMARY"
+          echo "## iAssetsPro production deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CI run: \`${CI_RUN_ID}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VPS build/install: **none**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Deployment model: GitHub-built immutable artifact + canary + PM2 cutover" >> "$GITHUB_STEP_SUMMARY"

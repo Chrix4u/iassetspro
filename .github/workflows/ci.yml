@@ -19,6 +19,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   NEXT_TELEMETRY_DISABLED: 1
   NODE_ENV: test
@@ -115,6 +118,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
       - name: Run unit tests
         run: bun run test
 
@@ -175,7 +181,7 @@ jobs:
           cp -a .release-tools/node_modules/. .release-bundle/node_modules/
 
           ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
-          tar -C .release-bundle -czf "$ARTIFACT" .
+          tar --dereference -C .release-bundle -czf "$ARTIFACT" .
           sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
           test "$(tar -xOf "$ARTIFACT" ./RELEASE_SHA | tr -d '\r\n')" = "$GITHUB_SHA"
 
@@ -439,17 +445,9 @@ jobs:
     timeout-minutes: 5
     if: always()
     needs: [lint, typecheck, unit-tests, build, container-build, repairs-uat, e2e-tests]
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout repository for verification marker
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-
-      - name: Publish SSH-visible CI result marker
+      - name: Verify all required jobs succeeded
         env:
           LINT: ${{ needs.lint.result }}
           TYPECHECK: ${{ needs.typecheck.result }}
@@ -461,18 +459,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "iAssetsPro CI"
-          git config user.email "actions@users.noreply.github.com"
-
           RESULTS=("$LINT" "$TYPECHECK" "$UNIT" "$BUILD" "$CONTAINER" "$REPAIRS_UAT" "$E2E")
-          STATUS=verified
+          printf 'lint=%s typecheck=%s unit=%s build=%s container=%s repairs_uat=%s e2e=%s\n' \
+            "$LINT" "$TYPECHECK" "$UNIT" "$BUILD" "$CONTAINER" "$REPAIRS_UAT" "$E2E"
           for result in "${RESULTS[@]}"; do
-            [[ "$result" == "success" ]] || STATUS=failed
+            [[ "$result" == "success" ]]
           done
-
-          TAG="ci-${STATUS}-${GITHUB_SHA}"
-          git tag -f "$TAG" "$GITHUB_SHA"
-          git push --force origin "refs/tags/$TAG"
-
-          echo "lint=$LINT typecheck=$TYPECHECK unit=$UNIT build=$BUILD container=$CONTAINER repairs_uat=$REPAIRS_UAT e2e=$E2E"
-          [[ "$STATUS" == "verified" ]]

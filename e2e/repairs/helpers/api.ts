@@ -162,6 +162,7 @@ export async function createMR(
     title: string;
     description: string;
     assetId?: string;
+    assetName?: string;
     priority: string;
     plantId: string;
     supervisorId?: string;
@@ -173,6 +174,7 @@ export async function createMR(
   const supervisorId = data.supervisorId ?? await lookupUserByKey(token, 'supervisor');
   const { status, data: resp } = await apiCall(token, 'POST', '/api/maintenance-requests', {
     ...data,
+    assetName: data.assetName ?? (data.assetId ? undefined : data.title),
     supervisorId,
   });
   if (status < 200 || status >= 300) throw new Error(`MR creation failed: ${status} ${JSON.stringify(resp)}`);
@@ -226,7 +228,20 @@ export async function assignWO(
   return resp.data;
 }
 
+export async function acceptWOAssignment(token: string, woId: string) {
+  const { status, data: resp } = await apiCall(token, 'POST', `/api/work-orders/${woId}/assignment-response`, {
+    response: 'accepted',
+  });
+  if (status < 200 || status >= 300) throw new Error(`WO assignment acceptance failed: ${status} ${JSON.stringify(resp)}`);
+  return resp.data;
+}
+
 export async function startWO(token: string, woId: string) {
+  const capabilities = await getCapabilities(token, woId);
+  if (!capabilities.canStart) {
+    await acceptWOAssignment(token, woId);
+  }
+
   const { status, data: resp } = await apiCall(token, 'POST', `/api/work-orders/${woId}/start`, {});
   if (status < 200 || status >= 300) throw new Error(`WO start failed: ${status} ${JSON.stringify(resp)}`);
   return resp.data;
@@ -242,7 +257,35 @@ export async function logTime(
   return resp.data;
 }
 
+async function prepareCompletionEvidence(token: string, woId: string) {
+  const execution = await apiCall(token, 'PATCH', `/api/work-orders/${woId}/execution-details`, {
+    failureDescription: 'UAT-observed equipment failure requiring maintenance intervention',
+    causeDescription: 'UAT-confirmed component degradation under operating load',
+    actionDescription: 'UAT repair completed and functional checks passed',
+  });
+  if (execution.status < 200 || execution.status >= 300) {
+    throw new Error(`WO execution evidence failed: ${execution.status} ${JSON.stringify(execution.data)}`);
+  }
+
+  const form = new FormData();
+  const pngSignature = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  form.append('file', new Blob([pngSignature], { type: 'image/png' }), 'uat-completion-evidence.png');
+  form.append('category', 'technician_evidence');
+  form.append('description', 'Deterministic Repairs UAT completion evidence');
+
+  const response = await fetch(`${BASE}/api/work-orders/${woId}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const body = await readJson(response);
+  if (!response.ok) {
+    throw new Error(`WO completion attachment failed: ${response.status} ${JSON.stringify(body)}`);
+  }
+}
+
 export async function completeWO(token: string, woId: string, notes?: string) {
+  await prepareCompletionEvidence(token, woId);
   const { status, data: resp } = await apiCall(token, 'POST', `/api/work-orders/${woId}/complete`, { notes });
   if (status < 200 || status >= 300) throw new Error(`WO completion failed: ${status} ${JSON.stringify(resp)}`);
   return resp.data;

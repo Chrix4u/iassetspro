@@ -82,6 +82,7 @@ describe('POST /api/shift-handovers/[id]/confirm', () => {
     mockGetSession.mockReturnValue(receiverSession);
     mockGetPlantScope.mockResolvedValue({ denyAccess: false, plantIds: ['plant-1'] });
     mockCanAccessPlantStrict.mockReturnValue(true);
+    mockDb.shiftHandover.findUnique.mockReset();
     mockDb.shiftHandover.findUnique
       .mockResolvedValueOnce(pendingHandover())
       .mockResolvedValueOnce(confirmedHandover());

@@ -138,24 +138,29 @@ export async function navigateToWOList(page: Page): Promise<void> {
   await expect(page.getByText(/Work Order/i).first()).toBeVisible({ timeout: 15_000 });
 }
 
-/** Navigate to a specific work order detail by ID */
+/** Navigate the authenticated SPA to a specific work order detail by ID. */
 export async function navigateToWODetail(page: Page, woId: string): Promise<void> {
-  await page.goto(`/#/wo-detail?id=${woId}`);
+  await page.goto('/');
+  await expect(page.locator('main')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('body')).not.toContainText('Sign in', { timeout: 20_000 });
 
-  // The wo-detail hash route renders the normal Work Orders page and opens a
-  // shadcn Sheet containing WODetailPage. The UI displays woNumber (WO-...)
-  // rather than the raw database UUID, so wait for the real sheet/header.
-  const detailSheet = page.getByRole('dialog').first();
-  await expect(detailSheet).toBeVisible({ timeout: 15_000 });
-  await expect(detailSheet.getByText(/^WO-[A-Z0-9-]+$/).first()).toBeVisible({ timeout: 15_000 });
-  await expect(detailSheet).not.toContainText('Work order not found');
+  await page.evaluate(({ id }) => {
+    const state = { eam_nav: true, page: 'wo-detail', params: { id } };
+    window.history.pushState(state, '', `#/wo-detail?id=${encodeURIComponent(id)}`);
+    window.dispatchEvent(new PopStateEvent('popstate', { state }));
+  }, { id: woId });
+
+  // wo-detail is a standalone page. The UI renders woNumber rather than the
+  // raw database UUID, so assert the page header and server lookup result.
+  await expect(page.getByText(/^WO-[A-Z0-9-]+$/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('body')).not.toContainText('Work order not found');
 }
 
 /** Assert the human-visible WO status rendered by StatusBadge */
 export async function expectWODetailStatus(page: Page, status: string): Promise<void> {
-  const expectedLabel = status.replace(/_/g, ' ').toUpperCase();
-  const detailSheet = page.getByRole('dialog').first();
-  await expect(detailSheet.getByText(expectedLabel, { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  const expectedLabel = status.replace(/_/g, ' ');
+  const statusPattern = new RegExp('^' + expectedLabel + '$', 'i');
+  await expect(page.getByText(statusPattern).first()).toBeVisible({ timeout: 10_000 });
 }
 
 /** Navigate to the repairs dashboard */

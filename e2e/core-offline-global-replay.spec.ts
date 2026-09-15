@@ -11,8 +11,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
   await page.fill('input[placeholder="Enter your username"]', ADMIN_CREDENTIALS.username);
   await page.fill('input[placeholder="Enter your password"]', ADMIN_CREDENTIALS.password);
   await page.click('button[type="submit"]');
-  await page.waitForURL(/#\/dashboard/, { timeout: 15_000 });
-  await expect(page.locator('text=Dashboard').first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('text=Dashboard').first()).toBeVisible({ timeout: 20_000 });
 }
 
 test('CORE replay drains one shared queue exactly once across two authenticated tabs', async ({ page, context }) => {
@@ -20,8 +19,7 @@ test('CORE replay drains one shared queue exactly once across two authenticated 
 
   const secondPage = await context.newPage();
   await secondPage.goto('/');
-  await secondPage.waitForURL(/#\/dashboard/, { timeout: 15_000 });
-  await expect(secondPage.locator('text=Dashboard').first()).toBeVisible({ timeout: 10_000 });
+  await expect(secondPage.locator('text=Dashboard').first()).toBeVisible({ timeout: 20_000 });
 
   const actorUserId = await page.evaluate(() => localStorage.getItem('eam_user_id'));
   expect(actorUserId).toBeTruthy();

@@ -1,22 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { mockDb, mockGetSession, mockIsAdmin, mockGetPlantScope, mockCanAccessPlant } = vi.hoisted(() => ({
+const { mockDb, mockGetSession, mockIsAdmin, mockHasPermission, mockGetPlantScope, mockCanAccessPlantStrict } = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findUnique: vi.fn() },
     workOrderTimeLog: { findFirst: vi.fn() },
   },
   mockGetSession: vi.fn(),
   mockIsAdmin: vi.fn(),
+  mockHasPermission: vi.fn(),
   mockGetPlantScope: vi.fn(),
-  mockCanAccessPlant: vi.fn(),
+  mockCanAccessPlantStrict: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
-vi.mock('@/lib/auth', () => ({ getSession: mockGetSession, isAdmin: mockIsAdmin }));
+vi.mock('@/lib/auth', () => ({
+  getSession: mockGetSession,
+  isAdmin: mockIsAdmin,
+  hasPermission: mockHasPermission,
+}));
 vi.mock('@/lib/plant-scope', () => ({
   getPlantScope: mockGetPlantScope,
-  canAccessPlant: mockCanAccessPlant,
+  canAccessPlantStrict: mockCanAccessPlantStrict,
 }));
 
 import { GET } from '../route';
@@ -41,6 +46,10 @@ function workOrder(status: string) {
     plannerId: 'planner-1',
     plantId: 'plant-a',
     isLocked: false,
+    assignmentResponseStatus: status === 'assigned' ? 'accepted' : null,
+    assignmentRespondedAt: null,
+    assignmentResponseReason: null,
+    maintenanceRequest: null,
     teamMembers: [],
   };
 }
@@ -57,7 +66,8 @@ describe('GET /api/work-orders/[id]/capabilities start lifecycle', () => {
       isSystemWide: false,
       accessLevel: 'write',
     });
-    mockCanAccessPlant.mockReturnValue(true);
+    mockCanAccessPlantStrict.mockReturnValue(true);
+    mockHasPermission.mockReturnValue(false);
     mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
   });
 

@@ -7,6 +7,7 @@ const mockIsAdmin = vi.fn();
 const mockAuthorizeWorkOrderPlant = vi.fn();
 const mockFindUnique = vi.fn();
 const mockCheckReadiness = vi.fn();
+const mockCanViewWorkOrder = vi.fn();
 
 vi.mock('@/lib/auth', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
@@ -28,6 +29,10 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/services/workOrderReadiness.service', () => ({
   checkReadiness: (...args: unknown[]) => mockCheckReadiness(...args),
+}));
+
+vi.mock('@/services/workOrderAccess.service', () => ({
+  canViewWorkOrder: (...args: unknown[]) => mockCanViewWorkOrder(...args),
 }));
 
 import { GET } from '@/app/api/work-orders/[id]/readiness/route';
@@ -64,6 +69,7 @@ describe('GET /api/work-orders/[id]/readiness', () => {
     mockAuthorizeWorkOrderPlant.mockResolvedValue({ ok: true });
     mockFindUnique.mockResolvedValue(accessibleWorkOrder());
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
+    mockCanViewWorkOrder.mockReturnValue(true);
   });
 
   it('returns 401 when there is no authenticated session', async () => {
@@ -128,17 +134,22 @@ describe('GET /api/work-orders/[id]/readiness', () => {
       teamMembers: [{ userId: 'member-3' }],
     }));
 
+    mockCanViewWorkOrder.mockReturnValue(false);
+
     const response = await GET(request('?phase=start'), routeContext());
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({ success: false, error: 'Access denied' });
+    expect(body).toEqual({
+      success: false,
+      error: 'Access denied — you are not part of this work order workflow',
+    });
     expect(mockCheckReadiness).not.toHaveBeenCalled();
   });
 
-  it('allows users with work-order view permission to inspect readiness', async () => {
+  it('allows users accepted by the canonical relationship/view-all policy to inspect readiness', async () => {
     mockFindUnique.mockResolvedValue(accessibleWorkOrder({ assignedTo: 'another-tech' }));
-    mockHasPermission.mockImplementation((_session: unknown, permission: string) => permission === 'work_orders.view');
+    mockCanViewWorkOrder.mockReturnValue(true);
 
     const response = await GET(request('?phase=complete'), routeContext());
 

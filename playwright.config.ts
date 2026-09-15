@@ -37,7 +37,7 @@ export default defineConfig({
   ],
   webServer: {
     command: useProductionServer
-      ? 'NODE_ENV=production node .next/standalone/server.js'
+      ? 'PORT=3000 HOSTNAME=127.0.0.1 NODE_ENV=production node .next/standalone/server.js'
       : 'bun run dev',
     url: baseURL,
     reuseExistingServer: !process.env.CI,

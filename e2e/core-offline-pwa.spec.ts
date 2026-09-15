@@ -23,7 +23,10 @@ test.describe('CORE offline PWA platform', () => {
   test('upgrades the shared offline database with queue and API snapshot stores', async ({ page }) => {
     await page.goto('/');
 
-    const stores = await page.evaluate(async () => {
+    await expect.poll(async () => page.evaluate(async () => {
+      const databases = await indexedDB.databases();
+      if (!databases.some((database) => database.name === 'iassetspro_offline')) return [];
+
       return await new Promise<string[]>((resolve, reject) => {
         const request = indexedDB.open('iassetspro_offline', 2);
         request.onerror = () => reject(request.error);
@@ -34,9 +37,10 @@ test.describe('CORE offline PWA platform', () => {
           resolve(names);
         };
       });
-    });
-
-    expect(stores).toEqual(expect.arrayContaining(['sync_records', 'api_snapshots']));
+    }), {
+      timeout: 20_000,
+      message: 'the application should initialize the shared offline schema',
+    }).toEqual(expect.arrayContaining(['sync_records', 'api_snapshots']));
   });
 
   test('keeps a persistent stale-data warning until each cached endpoint refreshes live', async ({ page }) => {

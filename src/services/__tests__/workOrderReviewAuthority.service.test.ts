@@ -52,6 +52,7 @@ function completedWorkOrder(overrides: Record<string, unknown> = {}) {
     assignedTo: 'tech-1',
     teamLeaderId: null,
     assignedSupervisorId: 'sup-1',
+    repairCompletion: { id: 'completion-1', supervisorStatus: 'pending' },
     ...overrides,
   };
 }

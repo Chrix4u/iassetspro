@@ -37,10 +37,12 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
   let assetId: string;
   let plantId: string;
   let techSingleUserId: string;
+  let supervisorUserId: string;
 
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
@@ -64,6 +66,7 @@ test('UAT-05: Scenario E — Rework Flow', async ({ browser }) => {
       const planToken = await getToken('planner');
       const wo = await convertMR(planToken, mrId, {
         assignedTo: techSingleUserId,
+        assignedSupervisorId: supervisorUserId,
         tradeActivity: 'mechanical',
         workOrderType: 'corrective',
       });

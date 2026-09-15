@@ -39,11 +39,13 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
   let plantId: string;
   let techLeaderUserId: string;
   let techAssistantUserId: string;
+  let supervisorUserId: string;
 
   try {
     const plannerToken = await getToken('planner');
     techLeaderUserId = await lookupUserByKey(plannerToken, 'tech_leader');
     techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
@@ -72,6 +74,7 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
       const planToken = await getToken('planner');
       const wo = await convertMR(planToken, mrId, {
         assignedTo: techLeaderUserId,
+        assignedSupervisorId: supervisorUserId,
         teamLeaderId: techLeaderUserId,
         teamMembers: [
           { userId: techLeaderUserId, role: 'team_leader' },
@@ -142,7 +145,7 @@ test('UAT-02: Scenario B — Multi-Tech Team Flow', async ({ browser }) => {
       await authenticateAs(context, 'tech_leader');
       const page = await context.newPage();
       await navigateToWODetail(page, woId);
-      await expect(page.locator('body')).toContainText('COMPLETED', { timeout: 10_000 });
+      await expect(page.getByText(/^Completed$/).first()).toBeVisible({ timeout: 10_000 });
       await page.close();
     });
 

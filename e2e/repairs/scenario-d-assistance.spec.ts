@@ -38,12 +38,14 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
   let plantId: string;
   let techSingleUserId: string;
   let techAssistantUserId: string;
+  let supervisorUserId: string;
   let assistanceReqId: string;
 
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
     techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
@@ -65,6 +67,7 @@ test('UAT-04: Scenario D — Assistance Request Flow', async ({ browser }) => {
       const planToken = await getToken('planner');
       const wo = await convertMR(planToken, mrId, {
         assignedTo: techSingleUserId,
+        assignedSupervisorId: supervisorUserId,
         tradeActivity: 'mechanical',
         workOrderType: 'corrective',
       });

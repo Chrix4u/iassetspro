@@ -108,6 +108,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       const token = await getToken('planner');
       const wo = await convertMR(token, mrId, {
         assignedTo: techSingleUserId,
+        assignedSupervisorId: supervisorUserId,
         tradeActivity: 'mechanical',
         workOrderType: 'corrective',
         priority: 'high',

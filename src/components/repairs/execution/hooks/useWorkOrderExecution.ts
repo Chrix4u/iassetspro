@@ -356,12 +356,7 @@ export function useWorkOrderExecution(
           ...data,
           repairMaterialRequests: (data.repairMaterialRequests || []).map((request) => ({
             ...request,
-            // RepairMaterialRequest does not persist a quantityReturned column.
-            // Return quantity is the reconciled balance after consumption/waste.
-            quantityReturned: Math.max(
-              0,
-              (request.quantityIssued || 0) - (request.consumedQty ?? 0) - (request.wastedQty ?? 0),
-            ),
+            quantityReturned: request.quantityReturned ?? 0,
           })),
         });
       } else {

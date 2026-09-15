@@ -3228,15 +3228,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     });
     // Fetch suggested items
     fetchSuggestedItems();
-    // Background sync: fix any mismatched quantityTransferred on tool request items
-    api.post(`/api/repairs/tool-transfers/sync-quantities`, { workOrderId: id }).then(res => {
-      if (active && res.success && res.data && (res.data as any).synced > 0) {
-        // Re-fetch WO to show corrected transfer quantities
-        api.get<WorkOrder>(`/api/work-orders/${id}`).then(woRes => {
-          if (active && woRes.success && woRes.data) setWo(woRes.data);
-        });
-      }
-    });
     return () => { active = false; };
   }, [id, fetchSuggestedItems]);
 

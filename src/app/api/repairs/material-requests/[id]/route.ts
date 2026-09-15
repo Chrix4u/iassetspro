@@ -4,6 +4,16 @@ import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
+import {
+  MaterialCustodyConflictError,
+  MaterialCustodyNotFoundError,
+  MaterialCustodyValidationError,
+  issueMaterialRequest,
+  recordMaterialConsumption,
+  recordMaterialReturn,
+  recordMaterialWaste,
+  reserveMaterialRequest,
+} from '@/services/materialCustody.service';
 
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -118,10 +128,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       allowedFields.urgency = body.urgency;
     }
 
-    const updated = await db.repairMaterialRequest.update({
-      where: { id },
+    const changed = await db.repairMaterialRequest.updateMany({
+      where: { id, status: 'pending' },
       data: allowedFields,
     });
+    if (changed.count !== 1) {
+      return NextResponse.json({ success: false, error: 'Material request changed concurrently' }, { status: 409 });
+    }
+    const updated = await db.repairMaterialRequest.findUnique({ where: { id } });
 
     await db.auditLog.create({
       data: {
@@ -165,7 +179,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       }
     }
 
-    await db.repairMaterialRequest.delete({ where: { id } });
+    const deleted = await db.repairMaterialRequest.deleteMany({ where: { id, status: 'pending' } });
+    if (deleted.count !== 1) {
+      return NextResponse.json({ success: false, error: 'Material request changed concurrently and can no longer be cancelled' }, { status: 409 });
+    }
 
     await db.auditLog.create({
       data: {
@@ -264,8 +281,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           return NextResponse.json({ success: false, error: `Cannot approve: current status is ${matReq.status}` }, { status: 400 });
         }
         const qty = approvedQuantity ?? quantityApproved ?? matReq.quantityRequested;
-        updated = await db.repairMaterialRequest.update({
-          where: { id },
+        const claim = await db.repairMaterialRequest.updateMany({
+          where: { id, status: 'pending' },
           data: {
             status: 'supervisor_approved',
             supervisorApprovedById: session.userId,
@@ -274,6 +291,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             quantityApproved: qty,
           },
         });
+        if (claim.count !== 1) throw new MaterialCustodyConflictError('Supervisor approval was claimed concurrently');
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
 
         await db.auditLog.create({
           data: {
@@ -300,33 +319,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (matReq.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot reject: current status is ${matReq.status}` }, { status: 400 });
         const rejectionNotes = notes ? `[${now.toISOString()}] REJECTED by ${session.userId}: ${notes}` : `[${now.toISOString()}] REJECTED by ${session.userId}`;
         const updatedNotes = matReq.notes ? `${matReq.notes}\n${rejectionNotes}` : rejectionNotes;
-        updated = await db.repairMaterialRequest.update({ where: { id }, data: { status: 'rejected', supervisorApprovedById: session.userId, supervisorApprovedAt: now, notes: updatedNotes } });
+        const claim = await db.repairMaterialRequest.updateMany({ where: { id, status: 'pending' }, data: { status: 'rejected', supervisorApprovedById: session.userId, supervisorApprovedAt: now, notes: updatedNotes } });
+        if (claim.count !== 1) throw new MaterialCustodyConflictError('Supervisor rejection was claimed concurrently');
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_supervisor_reject', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'supervisor_reject', status: 'rejected', reason: notes || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', 'Material Request Rejected', `Your request for ${matReq.itemName} was rejected by supervisor${notes ? `: ${notes}` : ''}`, 'repair_material_request', id, `material-requests?id=${id}`);
         break;
       }
 
       case 'storekeeper_approve': {
-        if (matReq.status !== 'supervisor_approved') return NextResponse.json({ success: false, error: `Cannot approve: current status is ${matReq.status}` }, { status: 400 });
         const qty = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
-        try {
-          updated = await db.$transaction(async (tx) => {
-            let stockReserved = false;
-            if (matReq.itemId) {
-              const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-              if (invItem) {
-                if (invItem.currentStock < qty) throw new Error(`INSUFFICIENT_STOCK:Available: ${invItem.currentStock}, Required: ${qty}`);
-                await tx.inventoryItem.update({ where: { id: matReq.itemId }, data: { currentStock: { decrement: qty } } });
-                await tx.stockMovement.create({ data: { itemId: matReq.itemId, type: 'adjustment', quantity: qty, previousStock: invItem.currentStock, newStock: invItem.currentStock - qty, reason: `Stock reserved for WO ${matReq.workOrder.woNumber} — ${matReq.itemName}`, referenceType: 'work_order', referenceId: matReq.workOrderId, performedById: session.userId, notes: `Reservation: ${qty} ${matReq.unit} reserved for material request ${id.substring(0, 8)}` } });
-                stockReserved = true;
-              }
-            }
-            return tx.repairMaterialRequest.update({ where: { id }, data: { status: 'storekeeper_approved', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, storekeeperApprovedQuantity: qty !== matReq.quantityApproved ? qty : null, quantityApproved: qty, stockReserved } });
-          });
-        } catch (txError: unknown) {
-          if (txError instanceof Error && txError.message.startsWith('INSUFFICIENT_STOCK:')) return NextResponse.json({ success: false, error: `Insufficient stock to reserve. ${txError.message.replace('INSUFFICIENT_STOCK:', '')}` }, { status: 400 });
-          throw txError;
-        }
+        updated = await reserveMaterialRequest(id, session.userId, qty);
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_storekeeper_approve', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'storekeeper_approve', status: 'storekeeper_approved', approvedQuantity: qty, previousApprovedQuantity: matReq.quantityApproved, quantityChanged: qty !== matReq.quantityApproved, stockReserved: updated.stockReserved, itemId: matReq.itemId || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', 'Material Request Ready for Issuance', `${qty} ${matReq.unit} of ${matReq.itemName} approved by store keeper. Ready for pickup.`, 'repair_material_request', id, `material-requests?id=${id}`);
         break;
@@ -336,33 +339,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (matReq.status !== 'supervisor_approved') return NextResponse.json({ success: false, error: `Cannot reject: current status is ${matReq.status}` }, { status: 400 });
         const rejectionNotes = notes ? `[${now.toISOString()}] REJECTED by store: ${notes}` : `[${now.toISOString()}] REJECTED by store keeper ${session.userId}`;
         const updatedNotes = matReq.notes ? `${matReq.notes}\n${rejectionNotes}` : rejectionNotes;
-        updated = await db.repairMaterialRequest.update({ where: { id }, data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, notes: updatedNotes } });
+        const claim = await db.repairMaterialRequest.updateMany({ where: { id, status: 'supervisor_approved' }, data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, notes: updatedNotes } });
+        if (claim.count !== 1) throw new MaterialCustodyConflictError('Store rejection was claimed concurrently');
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_storekeeper_reject', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'storekeeper_reject', status: 'rejected', reason: notes || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', 'Material Request Rejected by Store', `Your request for ${matReq.itemName} was rejected by store keeper${notes ? `: ${notes}` : ''}`, 'repair_material_request', id, `material-requests?id=${id}`);
         break;
       }
 
       case 'issue': {
-        if (matReq.status !== 'storekeeper_approved' && matReq.status !== 'picking') return NextResponse.json({ success: false, error: `Cannot issue: current status is ${matReq.status}` }, { status: 400 });
         const qtyToIssue = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
-        try {
-          updated = await db.$transaction(async (tx) => {
-            if (matReq.itemId) {
-              const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-              if (matReq.stockReserved) {
-                if (invItem) await tx.stockMovement.create({ data: { itemId: matReq.itemId, type: 'out', quantity: qtyToIssue, previousStock: invItem.currentStock, newStock: invItem.currentStock, reason: `Issued for WO ${matReq.workOrder.woNumber} (from reserved stock)`, referenceType: 'work_order', referenceId: matReq.workOrderId, performedById: session.userId, notes: `Issuance from reserved stock for material request ${id.substring(0, 8)}` + (notes ? ` — ${notes}` : '') } });
-              } else if (invItem) {
-                if (invItem.currentStock < qtyToIssue) throw new Error(`INSUFFICIENT_STOCK:Available: ${invItem.currentStock}, Requested: ${qtyToIssue}`);
-                await tx.inventoryItem.update({ where: { id: matReq.itemId }, data: { currentStock: { decrement: qtyToIssue } } });
-                await tx.stockMovement.create({ data: { itemId: matReq.itemId, type: 'out', quantity: qtyToIssue, previousStock: invItem.currentStock, newStock: invItem.currentStock - qtyToIssue, reason: `Issued for WO ${matReq.workOrder.woNumber}`, referenceType: 'work_order', referenceId: matReq.workOrderId, performedById: session.userId, notes: notes || null } });
-              }
-            }
-            return tx.repairMaterialRequest.update({ where: { id }, data: { status: 'issued', quantityIssued: qtyToIssue, issuedById: session.userId, issuedAt: now } });
-          });
-        } catch (txError: unknown) {
-          if (txError instanceof Error && txError.message.startsWith('INSUFFICIENT_STOCK:')) return NextResponse.json({ success: false, error: `Insufficient stock. ${txError.message.replace('INSUFFICIENT_STOCK:', '')}` }, { status: 400 });
-          throw txError;
-        }
+        updated = await issueMaterialRequest(id, session.userId, qtyToIssue, notes);
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_issue', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'issue', status: 'issued', quantityIssued: qtyToIssue, wasReserved: !!matReq.stockReserved, itemId: matReq.itemId || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', 'Materials Issued', `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`, 'repair_material_request', id, `material-requests?id=${id}`);
         if (matReq.workOrder.plannerId && matReq.workOrder.plannerId !== matReq.requestedById) await notifyUser(matReq.workOrder.plannerId, 'repair_material_request', 'Material Issued for Planned Work Order', `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`, 'repair_material_request', id, 'maintenance-work-orders');
@@ -371,53 +358,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'record_return': {
-        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') return NextResponse.json({ success: false, error: `Cannot record return: current status is ${matReq.status}` }, { status: 400 });
         const qtyToReturn = approvedQuantity ?? quantityApproved ?? quantityReturned ?? 0;
-        if (qtyToReturn <= 0) return NextResponse.json({ success: false, error: 'Return quantity must be greater than 0' }, { status: 400 });
-        const previousReturned = matReq.quantityReturned || 0;
-        const cumulativeReturn = previousReturned + qtyToReturn;
-        if (cumulativeReturn > matReq.quantityIssued) return NextResponse.json({ success: false, error: `Cumulative returns (${cumulativeReturn}) would exceed issued quantity (${matReq.quantityIssued}). Already returned: ${previousReturned}. Max additional return: ${matReq.quantityIssued - previousReturned}` }, { status: 400 });
-        const newStatus = cumulativeReturn >= matReq.quantityIssued ? 'fully_returned' : 'partially_returned';
-        updated = await db.$transaction(async (tx) => {
-          if (matReq.itemId && qtyToReturn > 0) {
-            const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-            if (invItem) {
-              await tx.inventoryItem.update({ where: { id: matReq.itemId }, data: { currentStock: { increment: qtyToReturn } } });
-              await tx.stockMovement.create({ data: { itemId: matReq.itemId, type: 'in', quantity: qtyToReturn, previousStock: invItem.currentStock, newStock: invItem.currentStock + qtyToReturn, reason: `Returned from WO ${matReq.workOrder.woNumber}`, referenceType: 'work_order', referenceId: matReq.workOrderId, performedById: session.userId, notes: `Return #${Math.floor(previousReturned) + 1}: ${qtyToReturn} ${matReq.unit}` + (notes ? ` — ${notes}` : '') } });
-            }
-          }
-          return tx.repairMaterialRequest.update({ where: { id }, data: { status: newStatus, quantityReturned: cumulativeReturn, returnedById: session.userId, returnedAt: now } });
-        });
-        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_record_return', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'record_return', status: newStatus, returnQuantity: qtyToReturn, previousReturned, cumulativeReturned: cumulativeReturn, quantityIssued: matReq.quantityIssued, itemId: matReq.itemId || null }) } });
-        await notifyUser(matReq.requestedById, 'repair_material_request', newStatus === 'fully_returned' ? 'All Materials Returned' : 'Partial Material Return Recorded', newStatus === 'fully_returned' ? `All ${matReq.quantityIssued} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}` : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${cumulativeReturn}/${matReq.quantityIssued}`, 'repair_material_request', id, `material-requests?id=${id}`);
+        const result = await recordMaterialReturn(id, session.userId, qtyToReturn, { notes });
+        updated = result.updated;
+        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_record_return', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'record_return', status: result.newStatus, returnQuantity: qtyToReturn, previousReturned: result.previousReturned, cumulativeReturned: result.cumulativeReturned, quantityIssued: matReq.quantityIssued, itemId: matReq.itemId || null }) } });
+        await notifyUser(matReq.requestedById, 'repair_material_request', result.newStatus === 'fully_returned' ? 'All Materials Returned' : 'Partial Material Return Recorded', result.newStatus === 'fully_returned' ? `All ${matReq.quantityIssued} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}` : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${result.cumulativeReturned}/${matReq.quantityIssued}`, 'repair_material_request', id, `material-requests?id=${id}`);
         break;
       }
 
       case 'consume_material': {
-        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') return NextResponse.json({ success: false, error: `Cannot consume: current status is ${matReq.status}` }, { status: 400 });
         const consumeQty = approvedQuantity ?? quantityApproved ?? 0;
-        if (consumeQty <= 0) return NextResponse.json({ success: false, error: 'Consume quantity must be greater than 0' }, { status: 400 });
-        const currentConsumed = matReq.consumedQty ?? 0;
-        const currentWasted = matReq.wastedQty ?? 0;
-        const currentReturned = matReq.quantityReturned ?? 0;
-        const newConsumed = currentConsumed + consumeQty;
-        if (newConsumed + currentWasted + currentReturned > matReq.quantityIssued + 0.001) return NextResponse.json({ success: false, error: `Reconciliation invariant violated: consumed(${newConsumed}) + wasted(${currentWasted}) + returned(${currentReturned}) would exceed issued(${matReq.quantityIssued})` }, { status: 400 });
-        updated = await db.repairMaterialRequest.update({ where: { id }, data: { consumedQty: newConsumed } });
-        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_consume', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'consume_material', consumeQty, previousConsumed: currentConsumed, newConsumed, reconciliation: { consumed: newConsumed, wasted: currentWasted, returned: currentReturned, issued: matReq.quantityIssued } }) } });
+        const previousConsumed = matReq.consumedQty ?? 0;
+        updated = await recordMaterialConsumption(id, consumeQty);
+        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_consume', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'consume_material', consumeQty, previousConsumed, newConsumed: updated.consumedQty, reconciliation: { consumed: updated.consumedQty ?? 0, wasted: updated.wastedQty ?? 0, returned: updated.quantityReturned ?? 0, issued: updated.quantityIssued } }) } });
         break;
       }
 
       case 'waste_material': {
-        if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') return NextResponse.json({ success: false, error: `Cannot record waste: current status is ${matReq.status}` }, { status: 400 });
         const wasteQty = approvedQuantity ?? quantityApproved ?? 0;
-        if (wasteQty <= 0) return NextResponse.json({ success: false, error: 'Waste quantity must be greater than 0' }, { status: 400 });
-        const currentConsumed = matReq.consumedQty ?? 0;
-        const currentWasted = matReq.wastedQty ?? 0;
-        const currentReturned = matReq.quantityReturned ?? 0;
-        const newWasted = currentWasted + wasteQty;
-        if (currentConsumed + newWasted + currentReturned > matReq.quantityIssued + 0.001) return NextResponse.json({ success: false, error: `Reconciliation invariant violated: consumed(${currentConsumed}) + wasted(${newWasted}) + returned(${currentReturned}) would exceed issued(${matReq.quantityIssued})` }, { status: 400 });
-        updated = await db.repairMaterialRequest.update({ where: { id }, data: { wastedQty: newWasted } });
-        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_waste', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'waste_material', wasteQty, previousWasted: currentWasted, newWasted, reconciliation: { consumed: currentConsumed, wasted: newWasted, returned: currentReturned, issued: matReq.quantityIssued } }) } });
+        const previousWasted = matReq.wastedQty ?? 0;
+        updated = await recordMaterialWaste(id, wasteQty);
+        await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_waste', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'waste_material', wasteQty, previousWasted, newWasted: updated.wastedQty, reconciliation: { consumed: updated.consumedQty ?? 0, wasted: updated.wastedQty ?? 0, returned: updated.quantityReturned ?? 0, issued: updated.quantityIssued } }) } });
         break;
       }
 
@@ -428,7 +389,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const returned = matReq.quantityReturned ?? 0;
         const total = consumed + wasted + returned;
         if (Math.abs(total - matReq.quantityIssued) > 0.001) return NextResponse.json({ success: false, error: `Reconciliation failed: consumed(${consumed}) + wasted(${wasted}) + returned(${returned}) = ${total} ≠ issued(${matReq.quantityIssued}). Difference: ${matReq.quantityIssued - total}` }, { status: 400 });
-        updated = await db.repairMaterialRequest.update({ where: { id }, data: { status: 'closed' } });
+        const claim = await db.repairMaterialRequest.updateMany({
+          where: { id, status: matReq.status, consumedQty: matReq.consumedQty, wastedQty: matReq.wastedQty, quantityReturned: matReq.quantityReturned },
+          data: { status: 'closed' },
+        });
+        if (claim.count !== 1) throw new MaterialCustodyConflictError('Material reconciliation changed concurrently');
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_reconcile', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'reconcile', status: 'closed', reconciliation: { consumed, wasted, returned, issued: matReq.quantityIssued } }) } });
         break;
       }
@@ -440,6 +406,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process action';
+    if (error instanceof MaterialCustodyNotFoundError) return NextResponse.json({ success: false, error: message }, { status: 404 });
+    if (error instanceof MaterialCustodyValidationError) return NextResponse.json({ success: false, error: message }, { status: 400 });
+    if (error instanceof MaterialCustodyConflictError) return NextResponse.json({ success: false, error: message }, { status: 409 });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

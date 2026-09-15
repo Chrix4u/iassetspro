@@ -4,6 +4,13 @@ import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { applyPlantScope, canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import {
+  createSparePartReturnWithCustody,
+  MaterialCustodyConflictError,
+  MaterialCustodyNotFoundError,
+  MaterialCustodyValidationError,
+} from '@/services/materialCustody.service';
 
 // Helper: generate auto-number SPR-YYYYMM-NNNN
 async function generateReturnNumber(): Promise<string> {
@@ -41,14 +48,21 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const search = searchParams.get('search') || undefined;
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (plantId && !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     // Stats mode
     if (stats) {
+      const statsWhere: Record<string, unknown> = {};
+      if (plantId) statsWhere.plantId = plantId; else applyPlantScope(statsWhere, plantScope);
       const [total, byStatus] = await Promise.all([
-        db.sparePartReturn.count({ where: { plantId: plantId || undefined } }),
+        db.sparePartReturn.count({ where: statsWhere }),
         db.sparePartReturn.groupBy({
           by: ['status'],
-          where: { plantId: plantId || undefined },
+          where: statsWhere,
           _count: { id: true },
         }),
       ]);
@@ -59,15 +73,15 @@ export async function GET(request: NextRequest) {
       }
 
       const pendingInspection = await db.sparePartReturn.count({
-        where: { status: 'pending', plantId: plantId || undefined },
+        where: { ...statsWhere, status: 'pending' },
       });
 
       const pendingRefurbishment = await db.sparePartReturn.count({
-        where: { status: 'inspected', refurbishmentNeeded: true, plantId: plantId || undefined },
+        where: { ...statsWhere, status: 'inspected', refurbishmentNeeded: true },
       });
 
       const pendingStoreReturn = await db.sparePartReturn.count({
-        where: { status: 'refurbished', plantId: plantId || undefined },
+        where: { ...statsWhere, status: 'refurbished' },
       });
 
       return NextResponse.json({
@@ -86,7 +100,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
     if (workOrderId) where.workOrderId = workOrderId;
-    if (plantId) where.plantId = plantId;
+    if (plantId) where.plantId = plantId; else applyPlantScope(where, plantScope);
     if (itemId) where.itemId = itemId;
     if (search) {
       where.OR = [
@@ -154,7 +168,6 @@ export async function POST(request: NextRequest) {
       quantity,
       conditionOnReturn,
       damageDescription,
-      plantId,
       refurbishmentNeeded,
       isConsumed,
     } = body;
@@ -183,20 +196,23 @@ export async function POST(request: NextRequest) {
     // Verify work order exists
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      select: { id: true, woNumber: true, title: true },
+      select: { id: true, woNumber: true, title: true, plantId: true },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Resolve plantId from WO if not provided
-    const resolvedPlantId = plantId || (await db.workOrder.findUnique({ where: { id: workOrderId }, select: { plantId: true } }))?.plantId || null;
+    // Plant identity is server-authoritative from the linked work order.
+    const resolvedPlantId = wo.plantId || null;
 
     // Verify item exists if itemId provided
     if (itemId) {
       const item = await db.inventoryItem.findUnique({ where: { id: itemId } });
       if (!item) {
         return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 404 });
+      }
+      if (resolvedPlantId && item.plantId !== resolvedPlantId) {
+        return NextResponse.json({ success: false, error: 'Inventory item belongs to a different plant' }, { status: 400 });
       }
     }
 
@@ -208,96 +224,31 @@ export async function POST(request: NextRequest) {
     const resolvedStatus = resolvedIsConsumed ? 'disposed' : 'pending';
     const now = new Date();
 
-    const sparePartReturn = await db.sparePartReturn.create({
-      data: {
-        returnNumber,
-        workOrderId,
-        componentId: componentId || null,
-        materialRequestId: materialRequestId || null,
-        itemId: itemId || null,
-        itemName,
-        partSerialNumber: partSerialNumber || null,
-        quantity: quantity ?? 1,
-        conditionOnReturn: conditionOnReturn || 'used',
-        damageDescription: damageDescription || null,
-        refurbishmentNeeded: resolvedRefurbishmentNeeded,
-        plantId: resolvedPlantId,
-        requestedById: session.userId,
-        status: resolvedStatus,
-        ...(resolvedIsConsumed ? {
-          disposedById: session.userId,
-          disposedAt: now,
-          disposalReason: 'Consumed during repair',
-        } : {}),
-      },
-      include: {
-        workOrder: { select: { id: true, woNumber: true, title: true } },
-        component: { select: { id: true, componentCode: true, name: true, criticality: true, assetId: true } },
-        item: { select: { id: true, itemCode: true, name: true } },
-        requestedBy: { select: { id: true, fullName: true, username: true } },
-      },
+    const result = await createSparePartReturnWithCustody({
+      returnNumber,
+      workOrderId,
+      componentId: componentId || null,
+      materialRequestId: materialRequestId || null,
+      itemId: itemId || null,
+      itemName,
+      partSerialNumber: partSerialNumber || null,
+      quantity: quantity ?? 1,
+      conditionOnReturn: conditionOnReturn || 'used',
+      damageDescription: damageDescription || null,
+      refurbishmentNeeded: resolvedRefurbishmentNeeded,
+      plantId: resolvedPlantId,
+      requestedById: session.userId,
+      isConsumed: resolvedIsConsumed,
     });
+    const sparePartReturn = result.sparePartReturn;
 
-    // Update linked RepairMaterialRequest if provided
-    if (materialRequestId) {
-      const matReq = await db.repairMaterialRequest.findUnique({ where: { id: materialRequestId } });
-      if (matReq) {
-        if (resolvedIsConsumed) {
-          // Material was consumed — update consumedQty and close the request
-          const newConsumedQty = (matReq.consumedQty || 0) + (quantity ?? 1);
-          const issuedQty = matReq.quantityIssued || matReq.quantityApproved || 0;
-          const newReturnedQty = Math.max(0, issuedQty - newConsumedQty - (matReq.wastedQty || 0));
-          const allAccountedFor = newConsumedQty + (matReq.wastedQty || 0) + newReturnedQty >= issuedQty;
-
-          await db.repairMaterialRequest.update({
-            where: { id: materialRequestId },
-            data: {
-              consumedQty: newConsumedQty,
-              quantityReturned: newReturnedQty,
-              status: allAccountedFor ? 'closed' : matReq.status,
-              returnedById: session.userId,
-              returnedAt: now,
-            },
-          });
-
-          // Audit log for material request update
-          await createAuditLog(session.userId, 'RepairMaterialRequest', 'update', materialRequestId, {
-            newValues: {
-              action: 'consumed_via_spare_return',
-              consumedQty: newConsumedQty,
-              quantityReturned: newReturnedQty,
-              status: allAccountedFor ? 'closed' : matReq.status,
-              sparePartReturnId: sparePartReturn.id,
-            },
-          });
-        } else {
-          // Material returned for refurbishment — record partial/full return
-          const issuedQty = matReq.quantityIssued || matReq.quantityApproved || 0;
-          const previousReturned = matReq.quantityReturned || 0;
-          const cumulativeReturn = previousReturned + (quantity ?? 1);
-          const newStatus = cumulativeReturn >= issuedQty ? 'returned' : 'issued';
-
-          await db.repairMaterialRequest.update({
-            where: { id: materialRequestId },
-            data: {
-              quantityReturned: cumulativeReturn,
-              status: newStatus,
-              returnedById: session.userId,
-              returnedAt: now,
-            },
-          });
-
-          // Audit log for material request update
-          await createAuditLog(session.userId, 'RepairMaterialRequest', 'update', materialRequestId, {
-            newValues: {
-              action: 'returned_via_spare_return',
-              quantityReturned: cumulativeReturn,
-              status: newStatus,
-              sparePartReturnId: sparePartReturn.id,
-            },
-          });
-        }
-      }
+    if (materialRequestId && result.materialAccounting) {
+      await createAuditLog(session.userId, 'RepairMaterialRequest', 'update', materialRequestId, {
+        newValues: {
+          ...result.materialAccounting,
+          sparePartReturnId: sparePartReturn.id,
+        },
+      });
     }
 
     // Audit log
@@ -325,6 +276,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: sparePartReturn }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create spare part return';
+    if (error instanceof MaterialCustodyNotFoundError) return NextResponse.json({ success: false, error: message }, { status: 404 });
+    if (error instanceof MaterialCustodyValidationError) return NextResponse.json({ success: false, error: message }, { status: 400 });
+    if (error instanceof MaterialCustodyConflictError) return NextResponse.json({ success: false, error: message }, { status: 409 });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

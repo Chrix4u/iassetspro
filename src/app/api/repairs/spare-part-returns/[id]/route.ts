@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { MaterialCustodyConflictError, MaterialCustodyNotFoundError, returnSparePartToStore } from '@/services/materialCustody.service';
 
 // GET /api/repairs/spare-part-returns/[id]
 export async function GET(
@@ -159,7 +160,7 @@ export async function POST(
     const existing = await db.sparePartReturn.findUnique({
       where: { id },
       include: {
-        workOrder: { select: { id: true, woNumber: true, title: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, plantId: true } },
         item: true,
         requestedBy: { select: { id: true, fullName: true } },
       },
@@ -167,6 +168,11 @@ export async function POST(
 
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const now = new Date();
@@ -293,9 +299,6 @@ export async function POST(
     }
 
     if (action === 'return_to_store') {
-      if (existing.status !== 'refurbished') {
-        return NextResponse.json({ success: false, error: `Cannot return to store: current status is '${existing.status}'` }, { status: 400 });
-      }
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
@@ -303,47 +306,7 @@ export async function POST(
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can return parts to store' }, { status: 403 });
       }
 
-      const updated = await db.sparePartReturn.update({
-        where: { id },
-        data: {
-          status: 'returned_to_store',
-          returnedToStoreById: session.userId,
-          returnedToStoreAt: now,
-        },
-        include: {
-          workOrder: { select: { id: true, woNumber: true, title: true } },
-          item: { select: { id: true, itemCode: true, name: true, currentStock: true } },
-          returnedToStore: { select: { id: true, fullName: true } },
-        },
-      });
-
-      if (existing.itemId) {
-        const item = await db.inventoryItem.findUnique({ where: { id: existing.itemId } });
-        if (item) {
-          const previousStock = item.currentStock;
-          const newStock = previousStock + (existing.quantity || 1);
-
-          await db.inventoryItem.update({
-            where: { id: existing.itemId },
-            data: { currentStock: newStock },
-          });
-
-          await db.stockMovement.create({
-            data: {
-              itemId: existing.itemId,
-              type: 'in',
-              quantity: existing.quantity || 1,
-              previousStock,
-              newStock,
-              reason: `Spare part return ${existing.returnNumber} - returned to store`,
-              referenceType: 'return',
-              referenceId: existing.id,
-              performedById: session.userId,
-              notes: `WO: ${existing.workOrder?.woNumber || 'N/A'}`,
-            },
-          });
-        }
-      }
+      const updated = await returnSparePartToStore(id, session.userId);
 
       await createAuditLog(session.userId, 'SparePartReturn', 'return_to_store', id, {
         newValues: { status: 'returned_to_store', itemId: existing.itemId, quantity: existing.quantity },
@@ -451,6 +414,8 @@ export async function POST(
     return NextResponse.json({ success: false, error: `Unknown action: ${action}` }, { status: 400 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process spare part return action';
+    if (error instanceof MaterialCustodyNotFoundError) return NextResponse.json({ success: false, error: message }, { status: 404 });
+    if (error instanceof MaterialCustodyConflictError) return NextResponse.json({ success: false, error: message }, { status: 409 });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

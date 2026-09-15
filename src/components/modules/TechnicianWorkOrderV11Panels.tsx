@@ -243,17 +243,17 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       )}
 
       <section id="resources" className="scroll-mt-28 grid grid-cols-1 2xl:grid-cols-2 gap-5">
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" />Materials — Request & Status</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 min-w-0">
             {capabilities?.canRequestMaterials && (
-              <div className="grid sm:grid-cols-2 gap-2 rounded-lg border p-3">
-                <div className="sm:col-span-2"><Label>Material / spare part *</Label><Input value={material.itemName} onChange={(e) => setMaterial((v) => ({ ...v, itemName: e.target.value }))} placeholder="Bearing 6205, V-belt, grease..." /></div>
-                <div><Label>Quantity</Label><Input type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} /></div>
-                <div><Label>Unit</Label><Input value={material.unit} onChange={(e) => setMaterial((v) => ({ ...v, unit: e.target.value }))} /></div>
-                <div><Label>Urgency</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div><Label>Reason *</Label><Input value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
-                <Button className="sm:col-span-2 w-fit" variant="outline" onClick={requestMaterial} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-[minmax(12rem,2fr)_minmax(5.5rem,.7fr)_minmax(6rem,.8fr)_minmax(7rem,.9fr)_minmax(12rem,1.6fr)_auto] gap-2 rounded-lg border p-3 items-end min-w-0">
+                <div className="min-w-0 sm:col-span-2 2xl:col-span-1"><Label>Material / spare part *</Label><Input className="min-w-0" value={material.itemName} onChange={(e) => setMaterial((v) => ({ ...v, itemName: e.target.value }))} placeholder="Bearing 6205, V-belt, grease..." /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="min-w-0" type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Unit</Label><Input className="min-w-0" value={material.unit} onChange={(e) => setMaterial((v) => ({ ...v, unit: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+                <div className="min-w-0"><Label>Reason *</Label><Input className="min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
+                <Button className="w-full sm:col-span-2 2xl:col-span-1 2xl:w-auto whitespace-nowrap" variant="outline" onClick={requestMaterial} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
               </div>
             )}
             <div className="space-y-2">
@@ -268,16 +268,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4" />Tools — Request, Issue & Personal Tools</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 min-w-0">
             {capabilities?.canRequestTools && (
-              <div className="grid sm:grid-cols-2 gap-2 rounded-lg border p-3">
-                <div className="sm:col-span-2"><Label>Tool required *</Label><Input value={toolRequest.toolName} onChange={(e) => setToolRequest((v) => ({ ...v, toolName: e.target.value }))} placeholder="Torque wrench, multimeter, puller..." /></div>
-                <div><Label>Quantity</Label><Input type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} /></div>
-                <div><Label>Urgency</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div className="sm:col-span-2"><Label>Reason *</Label><Input value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
-                <Button className="sm:col-span-2 w-fit" variant="outline" onClick={requestTool} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-[minmax(13rem,2fr)_minmax(5.5rem,.65fr)_minmax(7rem,.85fr)_minmax(13rem,1.7fr)_auto] gap-2 rounded-lg border p-3 items-end min-w-0">
+                <div className="min-w-0 sm:col-span-2 2xl:col-span-1"><Label>Tool required *</Label><Input className="min-w-0" value={toolRequest.toolName} onChange={(e) => setToolRequest((v) => ({ ...v, toolName: e.target.value }))} placeholder="Torque wrench, multimeter, puller..." /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="min-w-0" type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} /></div>
+                <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+                <div className="min-w-0 sm:col-span-2 2xl:col-span-1"><Label>Reason *</Label><Input className="min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
+                <Button className="w-full sm:col-span-2 2xl:col-span-1 2xl:w-auto whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
               </div>
             )}
             <div className="space-y-2">
@@ -292,7 +292,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
             <Separator />
             <div className="space-y-2">
               <p className="text-sm font-medium">Personal / technician tools used on this job</p>
-              {canAddPersonalTool && <div className="grid sm:grid-cols-2 gap-2"><Input value={personalTool.toolName} onChange={(e) => setPersonalTool((v) => ({ ...v, toolName: e.target.value }))} placeholder="Tool name" /><Input value={personalTool.toolCode} onChange={(e) => setPersonalTool((v) => ({ ...v, toolCode: e.target.value }))} placeholder="Tool code (optional)" /><select className="h-10 rounded-md border bg-background px-3 text-sm" value={personalTool.condition} onChange={(e) => setPersonalTool((v) => ({ ...v, condition: e.target.value }))}><option value="good">Good</option><option value="fair">Fair</option><option value="damaged">Damaged</option></select><Button variant="outline" onClick={addPersonalTool} disabled={busy !== null || personalTool.toolName.trim().length < 2}>Record Tool Used</Button></div>}
+              {canAddPersonalTool && <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[minmax(10rem,1.4fr)_minmax(9rem,1fr)_minmax(7rem,.75fr)_auto] gap-2 items-end min-w-0"><Input className="min-w-0" value={personalTool.toolName} onChange={(e) => setPersonalTool((v) => ({ ...v, toolName: e.target.value }))} placeholder="Tool name" /><Input className="min-w-0" value={personalTool.toolCode} onChange={(e) => setPersonalTool((v) => ({ ...v, toolCode: e.target.value }))} placeholder="Tool code (optional)" /><select className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm" value={personalTool.condition} onChange={(e) => setPersonalTool((v) => ({ ...v, condition: e.target.value }))}><option value="good">Good</option><option value="fair">Fair</option><option value="damaged">Damaged</option></select><Button className="w-full sm:col-span-2 xl:col-span-1 xl:w-auto whitespace-nowrap" variant="outline" onClick={addPersonalTool} disabled={busy !== null || personalTool.toolName.trim().length < 2}>Record Tool Used</Button></div>}
               {personalTools.slice(0, 6).map((tool: any) => <div key={tool.id || `${tool.toolName}-${tool.addedAt}`} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span>{tool.toolName}{tool.toolCode ? ` · ${tool.toolCode}` : ''}</span><Badge variant="outline">{pretty(tool.condition)}</Badge></div>)}
             </div>
             <Button variant="ghost" className="w-full justify-between" onClick={() => navigate('repairs-tool-requests', { workOrderId })}>Open full tool workflow <ExternalLink className="h-4 w-4" /></Button>

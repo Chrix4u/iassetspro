@@ -257,7 +257,35 @@ export async function logTime(
   return resp.data;
 }
 
+async function prepareCompletionEvidence(token: string, woId: string) {
+  const execution = await apiCall(token, 'PATCH', `/api/work-orders/${woId}/execution-details`, {
+    failureDescription: 'UAT-observed equipment failure requiring maintenance intervention',
+    causeDescription: 'UAT-confirmed component degradation under operating load',
+    actionDescription: 'UAT repair completed and functional checks passed',
+  });
+  if (execution.status < 200 || execution.status >= 300) {
+    throw new Error(`WO execution evidence failed: ${execution.status} ${JSON.stringify(execution.data)}`);
+  }
+
+  const form = new FormData();
+  const pngSignature = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  form.append('file', new Blob([pngSignature], { type: 'image/png' }), 'uat-completion-evidence.png');
+  form.append('category', 'technician_evidence');
+  form.append('description', 'Deterministic Repairs UAT completion evidence');
+
+  const response = await fetch(`${BASE}/api/work-orders/${woId}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const body = await readJson(response);
+  if (!response.ok) {
+    throw new Error(`WO completion attachment failed: ${response.status} ${JSON.stringify(body)}`);
+  }
+}
+
 export async function completeWO(token: string, woId: string, notes?: string) {
+  await prepareCompletionEvidence(token, woId);
   const { status, data: resp } = await apiCall(token, 'POST', `/api/work-orders/${woId}/complete`, { notes });
   if (status < 200 || status >= 300) throw new Error(`WO completion failed: ${status} ${JSON.stringify(resp)}`);
   return resp.data;

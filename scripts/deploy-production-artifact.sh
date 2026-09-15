@@ -8,8 +8,22 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CORE_SCRIPT="${SCRIPT_DIR}/deploy-production-artifact-core.sh"
 
 [[ "$(id -u)" -eq 0 ]] || { echo "STOP: root is required"; exit 1; }
+for cmd in stat readlink curl seq pm2 ln mv; do
+  command -v "$cmd" >/dev/null || { echo "STOP: missing command: $cmd" >&2; exit 1; }
+done
 [[ -x "$CORE_SCRIPT" ]] || {
   echo "STOP: deployment core is missing or not executable: $CORE_SCRIPT" >&2
+  exit 1
+}
+
+CORE_OWNER="$(stat -c '%u' "$CORE_SCRIPT")"
+CORE_MODE="$(stat -c '%A' "$CORE_SCRIPT")"
+[[ "$CORE_OWNER" == "0" ]] || {
+  echo "STOP: deployment core must be owned by root" >&2
+  exit 1
+}
+[[ "${CORE_MODE:5:1}" != "w" && "${CORE_MODE:8:1}" != "w" ]] || {
+  echo "STOP: deployment core must not be group/world writable" >&2
   exit 1
 }
 
@@ -50,8 +64,11 @@ restore_previous_runtime() {
 
   echo "WRAPPER ROLLBACK: restoring $OLD_RELEASE"
   pm2 delete "$PM2_NAME" >/dev/null 2>&1 || true
-  ln -sfn "$OLD_RELEASE" "${APP_LINK}.wrapper-rollback"
-  mv -Tf "${APP_LINK}.wrapper-rollback" "$APP_LINK"
+  if ! ln -sfn "$OLD_RELEASE" "${APP_LINK}.wrapper-rollback" || \
+    ! mv -Tf "${APP_LINK}.wrapper-rollback" "$APP_LINK"; then
+    echo "ROLLBACK FAILED: unable to restore previous release link" >&2
+    return 1
+  fi
 
   if ! PORT="$PROD_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
     pm2 start "$old_entry" --name "$PM2_NAME" --cwd "$OLD_RELEASE" \

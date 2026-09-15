@@ -151,6 +151,7 @@ function makeWoReadinessData(overrides: Record<string, unknown> = {}) {
     teamMembers: [{ userId: 'tech-1' }],
     teamMemberRequests: [],
     timeLogs: [],
+    workOrderDowntimes: [],
     repairToolRequests: [],
     repairMaterialRequests: [],
     repairCompletion: null,

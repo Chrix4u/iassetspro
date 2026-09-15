@@ -42,6 +42,7 @@ function workOrder(overrides: Record<string, unknown> = {}) {
     id: 'wo-1',
     woNumber: 'WO-001',
     status: 'assigned',
+    assignmentResponseStatus: 'accepted',
     actualStart: null,
     assignedTo: 'tech-1',
     teamLeaderId: null,

@@ -121,18 +121,16 @@ describe('Shift handover confirm endpoint', () => {
     expect(src).toContain("'pending_handover'");
   });
 
-  it('allows only supervisor/manager/admin override', () => {
+  it('allows only the designated receiver to accept custody', () => {
     const src = readFileSync(path, 'utf8');
-    expect(src).toContain('maintenance_supervisor');
-    expect(src).toContain('maintenance_manager');
-    expect(src).toContain('overrideReason');
+    expect(src).toContain('handover.receivedById !== session.userId');
+    expect(src).toContain('Only the designated handover receiver can confirm acceptance');
   });
 
-  it('does NOT allow arbitrary planner confirmation', () => {
+  it('does not expose a management override for receiver acceptance', () => {
     const src = readFileSync(path, 'utf8');
-    // The isOverrideRole check should NOT include planner
-    const overrideLine = src.match(/isOverrideRole.*?maintenance_planner/);
-    expect(overrideLine).toBeNull();
+    expect(src).not.toContain('overrideReason');
+    expect(src).not.toContain('isOverrideRole');
   });
 });
 

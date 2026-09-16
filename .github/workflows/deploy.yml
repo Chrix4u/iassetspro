@@ -19,6 +19,7 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 concurrency:
   group: deploy-production
@@ -75,13 +76,28 @@ jobs:
             test "$RELEASE_SHA" = "${{ github.event.workflow_run.head_sha }}"
           fi
 
+          PRS_URL="${{ github.api_url }}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/pulls"
+          PRS="$(curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$PRS_URL")"
+          MERGED_PR_COUNT="$(jq --arg sha "$RELEASE_SHA" \
+            '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha)] | length' \
+            <<<"$PRS")"
+          if (( MERGED_PR_COUNT < 1 )); then
+            echo "Refusing deployment: release SHA is not the merge result of a merged PR targeting main." >&2
+            exit 1
+          fi
+
       - name: Checkout exact release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
 
       - name: Download tested production artifact from CI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: production-release
           path: release-artifact
@@ -122,11 +138,56 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
         run: |
           set -euo pipefail
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] || { echo "Invalid DEPLOY_PORT" >&2; exit 1; }
+          (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 )) || { echo "DEPLOY_PORT out of range" >&2; exit 1; }
+
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/iassetspro_deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/iassetspro_deploy ~/.ssh/known_hosts
-          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+
+          KNOWN_HOST_QUERY="$DEPLOY_HOST"
+          if [[ "$DEPLOY_PORT" != "22" ]]; then
+            KNOWN_HOST_QUERY="[$DEPLOY_HOST]:$DEPLOY_PORT"
+          fi
+          ssh-keygen -F "$KNOWN_HOST_QUERY" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Attest installed privileged deployer
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRAPPER_SOURCE="scripts/deploy-production-artifact.sh"
+          CORE_SOURCE="scripts/deploy-production-artifact-core.sh"
+          WRAPPER_REMOTE_PATH="/usr/local/sbin/iassetspro-deploy-artifact"
+          CORE_REMOTE_PATH="/usr/local/sbin/deploy-production-artifact-core.sh"
+
+          test -s "$WRAPPER_SOURCE"
+          test -s "$CORE_SOURCE"
+          EXPECTED_WRAPPER="$(sha256sum "$WRAPPER_SOURCE" | awk '{print $1}')"
+          EXPECTED_CORE="$(sha256sum "$CORE_SOURCE" | awk '{print $1}')"
+
+          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          REMOTE_HASHES="$("${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "sudo sha256sum '$WRAPPER_REMOTE_PATH' '$CORE_REMOTE_PATH'")"
+
+          ACTUAL_WRAPPER="$(awk -v path="$WRAPPER_REMOTE_PATH" '$2 == path {print $1}' <<<"$REMOTE_HASHES")"
+          ACTUAL_CORE="$(awk -v path="$CORE_REMOTE_PATH" '$2 == path {print $1}' <<<"$REMOTE_HASHES")"
+
+          test -n "$ACTUAL_WRAPPER"
+          test -n "$ACTUAL_CORE"
+          if [[ "$ACTUAL_WRAPPER" != "$EXPECTED_WRAPPER" ]]; then
+            echo "Refusing deployment: installed wrapper does not match reviewed release source." >&2
+            exit 1
+          fi
+          if [[ "$ACTUAL_CORE" != "$EXPECTED_CORE" ]]; then
+            echo "Refusing deployment: installed core deployer does not match reviewed release source." >&2
+            exit 1
+          fi
+          echo "Privileged deployer attestation passed."
 
       - name: Upload artifact to production inbox
         env:
@@ -140,8 +201,8 @@ jobs:
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes)
-          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes)
+          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_DIR'"
           "${SCP[@]}" "release-artifact/$ARTIFACT" "release-artifact/$CHECKSUM" \
             "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/"
@@ -158,7 +219,9 @@ jobs:
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes \
+          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA' '$REMOTE_DIR/$ARTIFACT' '$REMOTE_DIR/$CHECKSUM'"
 
@@ -169,4 +232,6 @@ jobs:
           echo "- SHA: \`${RELEASE_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- CI run: \`${CI_RUN_ID}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- VPS build/install: **none**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source provenance: **merged PR to main required**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Privileged deployer: **SHA-256 attested to reviewed release source**" >> "$GITHUB_STEP_SUMMARY"
           echo "- Deployment model: GitHub-built immutable artifact + canary + PM2 cutover" >> "$GITHUB_STEP_SUMMARY"

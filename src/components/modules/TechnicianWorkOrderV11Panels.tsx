@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
 export interface TechnicianWorkspaceCapabilities {
@@ -33,6 +32,25 @@ interface Props {
   capabilities: TechnicianWorkspaceCapabilities | null;
   onChanged: () => Promise<void>;
 }
+
+type InventoryOption = {
+  id: string;
+  name: string;
+  itemCode?: string | null;
+  unitOfMeasure?: string | null;
+  currentStock?: number | null;
+  location?: string | null;
+};
+
+type ToolOption = {
+  id: string;
+  name: string;
+  toolCode?: string | null;
+  status?: string | null;
+  condition?: string | null;
+  quantity?: number | null;
+  location?: string | null;
+};
 
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
@@ -66,10 +84,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [labor, setLabor] = useState<any[]>([]);
   const [laborSummary, setLaborSummary] = useState<any>({ totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
   const [personalTools, setPersonalTools] = useState<any[]>([]);
+  const [inventoryOptions, setInventoryOptions] = useState<InventoryOption[]>([]);
+  const [toolOptions, setToolOptions] = useState<ToolOption[]>([]);
+  const [resourcesLoading, setResourcesLoading] = useState(true);
   const [stickyHeaderTarget, setStickyHeaderTarget] = useState<HTMLElement | null>(null);
 
-  const [material, setMaterial] = useState({ itemName: '', quantity: '1', unit: 'each', urgency: 'normal', reason: '' });
-  const [toolRequest, setToolRequest] = useState({ toolName: '', quantity: '1', urgency: 'normal', reason: '' });
+  const [material, setMaterial] = useState({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });
+  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });
   const [personalTool, setPersonalTool] = useState({ toolName: '', toolCode: '', condition: 'good', notes: '' });
   const [downtimeForm, setDowntimeForm] = useState({
     reason: '', category: 'unplanned', impactLevel: 'medium', downtimeStart: toLocalInput(), downtimeEnd: '', productionLoss: '', notes: '',
@@ -77,10 +98,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
 
   const loadPanels = useCallback(async () => {
     const teamLogs = capabilities?.isTeamLeader ? '?includeTeamLogs=true' : '';
-    const [downRes, timeRes, personalToolsRes] = await Promise.all([
+    setResourcesLoading(true);
+    const [downRes, timeRes, personalToolsRes, inventoryRes, toolsRes] = await Promise.all([
       api.get<any[]>(`/api/work-orders/${workOrderId}/downtime`),
       api.get<any>(`/api/work-orders/${workOrderId}/time-logs${teamLogs}`),
       api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`),
+      api.get<InventoryOption[]>('/api/inventory'),
+      api.get<ToolOption[]>('/api/tools?status=available&limit=100'),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
       setDowntime(downRes.data);
@@ -91,6 +115,25 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
     if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) setPersonalTools(personalToolsRes.data);
+    if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
+      setInventoryOptions(
+        inventoryRes.data
+          .filter((item) => Number(item.currentStock ?? 0) > 0)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+      );
+    } else {
+      setInventoryOptions([]);
+    }
+    if (toolsRes.success && Array.isArray(toolsRes.data)) {
+      setToolOptions(
+        toolsRes.data
+          .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+      );
+    } else {
+      setToolOptions([]);
+    }
+    setResourcesLoading(false);
   }, [capabilities?.isTeamLeader, workOrderId]);
 
   useEffect(() => { void loadPanels(); }, [loadPanels]);
@@ -100,6 +143,15 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     if (target instanceof HTMLElement) setStickyHeaderTarget(target);
     return () => setStickyHeaderTarget(null);
   }, []);
+
+  const selectedMaterial = useMemo(
+    () => inventoryOptions.find((item) => item.id === material.itemId) || null,
+    [inventoryOptions, material.itemId],
+  );
+  const selectedTool = useMemo(
+    () => toolOptions.find((tool) => tool.id === toolRequest.toolId) || null,
+    [toolOptions, toolRequest.toolId],
+  );
 
   const run = async (key: string, action: () => Promise<any>, success: string, refreshParent = true) => {
     setBusy(key);
@@ -122,29 +174,46 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   };
 
   const requestMaterial = async () => {
-    if (material.itemName.trim().length < 2 || material.reason.trim().length < 3) {
-      toast.error('Enter the material name and reason'); return;
+    if (!material.itemId || !selectedMaterial || material.reason.trim().length < 3) {
+      toast.error('Select an available material / spare part and enter a reason'); return;
     }
     const quantity = Number(material.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero'); return; }
+    const availableStock = Number(selectedMaterial.currentStock ?? 0);
+    if (quantity > availableStock) {
+      toast.error(`Only ${availableStock} ${selectedMaterial.unitOfMeasure || 'unit(s)'} currently available`); return;
+    }
     const ok = await run('material', () => api.post(`/api/work-orders/${workOrderId}/materials`, {
-      itemName: material.itemName.trim(), quantity, unit: material.unit.trim() || 'each', urgency: material.urgency,
+      itemId: selectedMaterial.id,
+      itemName: selectedMaterial.name,
+      quantity,
+      unit: selectedMaterial.unitOfMeasure || 'each',
+      urgency: material.urgency,
       reason: material.reason.trim(),
     }), 'Material request submitted');
-    if (ok) setMaterial({ itemName: '', quantity: '1', unit: 'each', urgency: 'normal', reason: '' });
+    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });
   };
 
   const requestTool = async () => {
-    if (toolRequest.toolName.trim().length < 2 || toolRequest.reason.trim().length < 3) {
-      toast.error('Enter the tool name and reason'); return;
+    if (!toolRequest.toolId || !selectedTool || toolRequest.reason.trim().length < 3) {
+      toast.error('Select an available tool and enter a reason'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
+    const availableQuantity = Number(selectedTool.quantity ?? 1);
+    if (quantity > availableQuantity) {
+      toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;
+    }
     const ok = await run('tool-request', () => api.post('/api/repairs/tool-requests', {
       workOrderId,
-      items: [{ toolName: toolRequest.toolName.trim(), quantityRequested: quantity }],
+      items: [{
+        toolId: selectedTool.id,
+        toolName: selectedTool.name,
+        toolCode: selectedTool.toolCode || '',
+        quantityRequested: quantity,
+      }],
       reason: toolRequest.reason.trim(), urgency: toolRequest.urgency,
     }), 'Tool request submitted');
-    if (ok) setToolRequest({ toolName: '', quantity: '1', urgency: 'normal', reason: '' });
+    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });
   };
 
   const addPersonalTool = async () => {
@@ -247,13 +316,42 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" />Materials — Request & Status</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {capabilities?.canRequestMaterials && (
-              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(11rem,2fr)_minmax(5rem,.6fr)_minmax(5.5rem,.7fr)_minmax(6.5rem,.8fr)_minmax(11rem,1.7fr)_auto] lg:items-end">
-                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Material / spare part *</Label><Input className="w-full min-w-0" value={material.itemName} onChange={(e) => setMaterial((v) => ({ ...v, itemName: e.target.value }))} placeholder="Bearing 6205, V-belt, grease..." /></div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} /></div>
-                <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0" value={material.unit} onChange={(e) => setMaterial((v) => ({ ...v, unit: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(13rem,2.2fr)_minmax(5rem,.6fr)_minmax(6rem,.8fr)_minmax(6.5rem,.8fr)_minmax(11rem,1.7fr)_auto] lg:items-end">
+                <div className="col-span-2 min-w-0 lg:col-span-1">
+                  <Label>Material / spare part *</Label>
+                  <select
+                    className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
+                    value={material.itemId}
+                    disabled={resourcesLoading}
+                    onChange={(e) => {
+                      const item = inventoryOptions.find((option) => option.id === e.target.value);
+                      setMaterial((v) => ({
+                        ...v,
+                        itemId: item?.id || '',
+                        itemName: item?.name || '',
+                        unit: item?.unitOfMeasure || 'each',
+                        quantity: '1',
+                      }));
+                    }}
+                  >
+                    <option value="">{resourcesLoading ? 'Loading available materials...' : inventoryOptions.length ? 'Select available material / spare part...' : 'No in-stock materials available'}</option>
+                    {inventoryOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}{item.itemCode ? ` [${item.itemCode}]` : ''} — {Number(item.currentStock ?? 0)} {item.unitOfMeasure || 'each'} available
+                      </option>
+                    ))}
+                  </select>
+                  {selectedMaterial && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Stock: {Number(selectedMaterial.currentStock ?? 0)} {selectedMaterial.unitOfMeasure || 'each'}{selectedMaterial.location ? ` · ${selectedMaterial.location}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" max={selectedMaterial ? Number(selectedMaterial.currentStock ?? 0) : undefined} value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
+                <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0 bg-muted/40" value={material.unit} readOnly placeholder="From inventory" /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
-                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestMaterial} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
+                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestMaterial} disabled={busy !== null || !material.itemId || resourcesLoading}><Plus className="h-4 w-4 mr-1" />Request Material</Button>
               </div>
             )}
             <div className="space-y-2">
@@ -272,12 +370,41 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4" />Tools — Request, Issue & Personal Tools</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {capabilities?.canRequestTools && (
-              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(12rem,2fr)_minmax(5rem,.6fr)_minmax(6.5rem,.8fr)_minmax(12rem,1.8fr)_auto] lg:items-end">
-                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Tool required *</Label><Input className="w-full min-w-0" value={toolRequest.toolName} onChange={(e) => setToolRequest((v) => ({ ...v, toolName: e.target.value }))} placeholder="Torque wrench, multimeter, puller..." /></div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(14rem,2.2fr)_minmax(5rem,.6fr)_minmax(6.5rem,.8fr)_minmax(12rem,1.8fr)_auto] lg:items-end">
+                <div className="col-span-2 min-w-0 lg:col-span-1">
+                  <Label>Tool required *</Label>
+                  <select
+                    className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
+                    value={toolRequest.toolId}
+                    disabled={resourcesLoading}
+                    onChange={(e) => {
+                      const tool = toolOptions.find((option) => option.id === e.target.value);
+                      setToolRequest((v) => ({
+                        ...v,
+                        toolId: tool?.id || '',
+                        toolName: tool?.name || '',
+                        toolCode: tool?.toolCode || '',
+                        quantity: '1',
+                      }));
+                    }}
+                  >
+                    <option value="">{resourcesLoading ? 'Loading available tools...' : toolOptions.length ? 'Select available tool...' : 'No tools currently available'}</option>
+                    {toolOptions.map((tool) => (
+                      <option key={tool.id} value={tool.id}>
+                        {tool.name}{tool.toolCode ? ` [${tool.toolCode}]` : ''} — {Number(tool.quantity ?? 1)} available{tool.condition ? ` · ${pretty(tool.condition)}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedTool && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
-                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestTool} disabled={busy !== null}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
+                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || resourcesLoading}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>
               </div>
             )}
             <div className="space-y-2">

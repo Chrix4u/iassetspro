@@ -27,7 +27,13 @@ concurrency:
 env:
   RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.release_sha }}
   CI_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.ci_run_id }}
-  PRODUCTION_URL: ${{ secrets.PRODUCTION_URL || 'https://iassetspro.lightworldtech.com' }}
+  PRODUCTION_URL: ${{ vars.PRODUCTION_URL || secrets.PRODUCTION_URL || 'https://iassetspro.lightworldtech.com' }}
+  # Host/user/port/inbox are routing configuration, not credentials. Repository or
+  # environment variables can override these deployment defaults when needed.
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || 'iassetspro.lightworldtech.com' }}
+  DEPLOY_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER || 'iassetsdeploy' }}
+  DEPLOY_PORT: ${{ vars.DEPLOY_PORT || secrets.DEPLOY_PORT || '22' }}
+  DEPLOY_INBOX: ${{ vars.DEPLOY_INBOX || secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}
 
 jobs:
   deploy-production:
@@ -103,25 +109,32 @@ jobs:
           EMBEDDED_SHA="$(tar -xOf "$ARTIFACT" ./RELEASE_SHA | tr -d '\r\n')"
           test "$EMBEDDED_SHA" = "$RELEASE_SHA"
 
-      - name: Validate deployment secrets
+      - name: Validate deployment credentials
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
         run: |
           set -euo pipefail
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_SSH_KEY"
-          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_INBOX"
+
+          missing=0
+          for name in DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error title=Missing deployment secret::${name} is not configured for the production environment or repository Actions secrets."
+              missing=1
+            fi
+          done
+          [[ "$missing" -eq 0 ]]
 
       - name: Configure SSH
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+        shell: bash
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
@@ -131,36 +144,27 @@ jobs:
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
 
       - name: Upload artifact to production inbox
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
-          DEPLOY_INBOX: ${{ secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}
         shell: bash
         run: |
           set -euo pipefail
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes)
-          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes)
+          SSH=(ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts)
+          SCP=(scp -4 -i ~/.ssh/iassetspro_deploy -P "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts)
           "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_DIR'"
           "${SCP[@]}" "release-artifact/$ARTIFACT" "release-artifact/$CHECKSUM" \
             "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_DIR/"
 
       - name: Activate immutable release on VPS
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
-          DEPLOY_INBOX: ${{ secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}
         shell: bash
         run: |
           set -euo pipefail
           ARTIFACT="iassetspro-release-${RELEASE_SHA}.tar.gz"
           CHECKSUM="${ARTIFACT}.sha256"
           REMOTE_DIR="${DEPLOY_INBOX}/${RELEASE_SHA}"
-          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" -o IdentitiesOnly=yes \
+          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
             "$DEPLOY_USER@$DEPLOY_HOST" \
             "sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA' '$REMOTE_DIR/$ARTIFACT' '$REMOTE_DIR/$CHECKSUM'"
 

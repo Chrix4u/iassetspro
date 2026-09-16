@@ -35,9 +35,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
+    # Deploy successful main CI runs by default. Setting the repository variable
+    # ENABLE_PRODUCTION_DEPLOY=false is the explicit emergency kill switch.
     if: >-
       ${{
-        vars.ENABLE_PRODUCTION_DEPLOY == 'true' &&
+        vars.ENABLE_PRODUCTION_DEPLOY != 'false' &&
         (
           (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
           github.event_name == 'workflow_dispatch'

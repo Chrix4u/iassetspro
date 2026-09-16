@@ -20,8 +20,8 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('absolute right-3 top-1/2');
     expect(panel).not.toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6');
     expect(panel).toContain('id="resources" className="scroll-mt-28 grid grid-cols-1 gap-5"');
-    expect(panel).toContain('lg:grid-cols-[minmax(11rem,2fr)');
-    expect(panel).toContain('lg:grid-cols-[minmax(12rem,2fr)');
+    expect(panel).toContain('lg:grid-cols-[minmax(13rem,2.2fr)');
+    expect(panel).toContain('lg:grid-cols-[minmax(14rem,2.2fr)');
   });
 
   it('integrates materials, tools and personal tools in the technician workspace', () => {
@@ -31,6 +31,21 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('`/api/work-orders/${workOrderId}/personal-tools`');
     expect(panel).toContain('Materials — Request & Status');
     expect(panel).toContain('Tools — Request, Issue & Personal Tools');
+  });
+
+  it('prefetches available store materials, tools and units instead of free-text resource identities', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory')");
+    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
+    expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
+    expect(panel).toContain(".filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
+    expect(panel).toContain('value={material.itemId}');
+    expect(panel).toContain('itemId: selectedMaterial.id');
+    expect(panel).toContain("unit: selectedMaterial.unitOfMeasure || 'each'");
+    expect(panel).toContain('readOnly placeholder="From inventory"');
+    expect(panel).toContain('value={toolRequest.toolId}');
+    expect(panel).toContain('toolId: selectedTool.id');
+    expect(panel).toContain('quantityRequested: quantity');
   });
 
   it('provides work-order-scoped downtime capture with authorization and audit', () => {

@@ -1,0 +1,47 @@
+/* Shared compact-filter responsiveness.
+   Loaded after globals.css so this intentionally supersedes the legacy
+   phone-only single-column .filter-row rule without changing desktop layout. */
+@media (max-width: 639px) {
+  .filter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 0.5rem;
+  }
+
+  .filter-row > * {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+
+  .filter-row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filter-row > .filter-row-checkbox {
+    grid-column: 1 / -1;
+    width: auto !important;
+    justify-self: start;
+  }
+}
+
+/* Shared dialogs become compact two-column forms below the tablet breakpoint.
+   ResponsiveDialog uses the body hook for its mobile bottom sheet, while the
+   data-slot selectors also cover modules that still use the raw Dialog primitive. */
+@media (max-width: 767px) {
+  .responsive-dialog-body .grid.grid-cols-3,
+  .responsive-dialog-body .grid.grid-cols-4,
+  .responsive-dialog-body .grid.grid-cols-5,
+  [data-slot="dialog-content"] .grid.grid-cols-3,
+  [data-slot="dialog-content"] .grid.grid-cols-4,
+  [data-slot="dialog-content"] .grid.grid-cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .responsive-dialog-body .grid > *,
+  [data-slot="dialog-content"] .grid > * {
+    min-width: 0;
+  }
+}

@@ -119,7 +119,7 @@ export default function RepairDetailReportPage() {
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Repair Detail Report</h1>
           <p className="text-muted-foreground text-sm mt-1">
             Machine name + parts worked on — with Excel export
@@ -128,7 +128,7 @@ export default function RepairDetailReportPage() {
         <Button
           onClick={handleExport}
           disabled={exporting || data.length === 0}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          className="w-full bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto"
         >
           {exporting ? (
             <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
@@ -141,20 +141,20 @@ export default function RepairDetailReportPage() {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        <div className="grid grid-cols-2 gap-3 mt-4 sm:gap-4 xl:grid-cols-4">
           {[
             { label: 'Total WOs', value: summary.totalWorkOrders, icon: Wrench, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
             { label: 'With Parts Specified', value: summary.workOrdersWithComponents, icon: Building2, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
             { label: 'Total Rows', value: summary.totalRows, icon: Filter, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
           ].map((s) => (
-            <Card key={s.label} className="border-0 shadow-sm dark:bg-card">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${s.color}`}>
+            <Card key={s.label} className="min-w-0 border-0 shadow-sm dark:bg-card">
+              <CardContent className="flex min-w-0 items-center gap-3 p-3 sm:p-4">
+                <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center ${s.color}`}>
                   <s.icon className="h-5 w-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xl font-bold">{s.value}</p>
-                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                  <p className="text-xs text-muted-foreground break-words">{s.label}</p>
                 </div>
               </CardContent>
             </Card>
@@ -165,19 +165,19 @@ export default function RepairDetailReportPage() {
       {/* Filters */}
       <Card className="border-0 shadow-sm dark:bg-card mt-4">
         <CardContent className="p-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-[minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,.85fr)_minmax(8rem,.85fr)_minmax(10rem,1fr)_auto] xl:items-end">
+            <div className="min-w-0 space-y-1">
               <Label className="text-xs">Date From</Label>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-[160px]" />
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full" />
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-xs">Date To</Label>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-[160px]" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full" />
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-xs">Status</Label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
@@ -186,10 +186,10 @@ export default function RepairDetailReportPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <Label className="text-xs">Type</Label>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="corrective">Corrective</SelectItem>
@@ -199,10 +199,10 @@ export default function RepairDetailReportPage() {
               </Select>
             </div>
             {plants.length > 0 && (
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <Label className="text-xs">Plant</Label>
                 <Select value={plantId} onValueChange={setPlantId}>
-                  <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Plants" /></SelectTrigger>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="All Plants" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">All Plants</SelectItem>
                     {plants.map((p: any) => (
@@ -212,7 +212,13 @@ export default function RepairDetailReportPage() {
                 </Select>
               </div>
             )}
-            <Button variant="outline" onClick={loadReport} disabled={loading} size="sm">
+            <Button
+              variant="outline"
+              onClick={loadReport}
+              disabled={loading}
+              size="sm"
+              className="col-span-2 w-full md:col-span-1 md:w-auto"
+            >
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
@@ -235,8 +241,8 @@ export default function RepairDetailReportPage() {
               <p className="text-xs mt-1">Adjust the filters or complete repair work orders to see data here</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="overflow-x-auto overscroll-x-contain">
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="whitespace-nowrap">WO Number</TableHead>
@@ -312,9 +318,9 @@ export default function RepairDetailReportPage() {
       </Card>
 
       {/* Footer info */}
-      <div className="mt-4 text-xs text-muted-foreground flex items-center justify-between">
+      <div className="mt-4 flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <span>{data.length} row(s) displayed</span>
-        <span>Report includes: WO Number, Machine Name, Parts/Components worked on, costs, labor hours</span>
+        <span className="sm:text-right">Report includes: WO Number, Machine Name, Parts/Components worked on, costs, labor hours</span>
       </div>
     </div>
   );

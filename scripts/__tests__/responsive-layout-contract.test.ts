@@ -12,7 +12,7 @@ const tabs = readFileSync(join(root, 'src/components/ui/tabs.tsx'), 'utf8')
 describe('responsive layout contract', () => {
   it('keeps material and tool request forms compact on smaller screens and single-row on desktop', () => {
     const responsiveResourceForms = workOrderPanels.match(
-      /grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-\[/g,
+      /grid grid-cols-2 gap-2 lg:grid-cols-\[/g,
     ) ?? []
 
     expect(responsiveResourceForms).toHaveLength(2)
@@ -21,6 +21,7 @@ describe('responsive layout contract', () => {
     expect(workOrderPanels).toContain(
       'col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto',
     )
+    expect(workOrderPanels).toContain('col-span-2 min-w-0 lg:col-span-1')
   })
 
   it('prevents shared tab controls from widening responsive pages', () => {

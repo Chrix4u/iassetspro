@@ -30,7 +30,8 @@ env:
   PRODUCTION_URL: ${{ vars.PRODUCTION_URL || secrets.PRODUCTION_URL || 'https://iassetspro.lightworldtech.com' }}
   # Host/user/port/inbox are routing configuration, not credentials. Repository or
   # environment variables can override these deployment defaults when needed.
-  DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || 'iassetspro.lightworldtech.com' }}
+  # The public app hostname is Cloudflare-proxied, so SSH must target the origin VPS.
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || '163.245.212.15' }}
   DEPLOY_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER || 'iassetsdeploy' }}
   DEPLOY_PORT: ${{ vars.DEPLOY_PORT || secrets.DEPLOY_PORT || '22' }}
   DEPLOY_INBOX: ${{ vars.DEPLOY_INBOX || secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}

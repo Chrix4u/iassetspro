@@ -21,7 +21,7 @@ describe('production deployment workflow gate', () => {
       'utf8',
     );
 
-    expect(workflow).toContain("DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || 'iassetspro.lightworldtech.com' }}");
+    expect(workflow).toContain("DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || '163.245.212.15' }}");
     expect(workflow).toContain("DEPLOY_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER || 'iassetsdeploy' }}");
     expect(workflow).toContain("DEPLOY_PORT: ${{ vars.DEPLOY_PORT || secrets.DEPLOY_PORT || '22' }}");
     expect(workflow).toContain("DEPLOY_INBOX: ${{ vars.DEPLOY_INBOX || secrets.DEPLOY_INBOX || '/home/iassetsdeploy/incoming' }}");

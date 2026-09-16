@@ -30,6 +30,18 @@ describe('production deployment workflow gate', () => {
     expect(workflow).toContain('DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}');
   });
 
+  it('uses Node 24 GitHub Actions releases in the production deploy path', async () => {
+    const workflow = await readFile(
+      join(process.cwd(), '.github/workflows/deploy.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('uses: actions/checkout@v7.0.1');
+    expect(workflow).toContain('uses: actions/download-artifact@v8.0.1');
+    expect(workflow).not.toContain('uses: actions/checkout@v4');
+    expect(workflow).not.toContain('uses: actions/download-artifact@v4');
+  });
+
   it('keeps artifact provenance, integrity and pinned SSH trust as hard deployment safeguards', async () => {
     const workflow = await readFile(
       join(process.cwd(), '.github/workflows/deploy.yml'),

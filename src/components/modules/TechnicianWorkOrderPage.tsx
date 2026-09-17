@@ -20,6 +20,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { TechnicianWorkOrderV11Panels } from './TechnicianWorkOrderV11Panels';
 
+type ReadinessItem = {
+  code: string;
+  category: string;
+  message: string;
+  severity: 'blocker' | 'warning';
+};
+
 interface Capabilities {
   canAcceptAssignment: boolean;
   canDeclineAssignment: boolean;
@@ -27,6 +34,11 @@ interface Capabilities {
   assignmentRespondedAt?: string | null;
   assignmentResponseReason?: string | null;
   canStart: boolean;
+  startReadiness?: {
+    ready: boolean;
+    blockers: ReadinessItem[];
+    warnings: ReadinessItem[];
+  } | null;
   canResume: boolean;
   resumeOpensExecutionSession: boolean;
   canLogOwnTime: boolean;
@@ -345,6 +357,10 @@ export function TechnicianWorkOrderPage() {
   const inWaitingState = WAITING_STATUSES.includes(wo.status) || wo.status === 'on_hold';
   const taskDone = tasks.filter((t) => t.status === 'completed').length;
   const taskProgress = tasks.length ? Math.round((taskDone / tasks.length) * 100) : 0;
+  const startReadiness = caps?.startReadiness || null;
+  const startBlockers = startReadiness?.blockers || [];
+  const startWarnings = startReadiness?.warnings || [];
+  const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
 
   return (
     <div className="space-y-5 pb-12">
@@ -369,12 +385,25 @@ export function TechnicianWorkOrderPage() {
                 <div className="font-mono text-xl font-bold text-emerald-700 dark:text-emerald-300">{formatTimer(elapsed)}</div>
               </div>
             )}
-            {caps?.canStart && !liveLog && <Button onClick={startWork} disabled={busy !== null} className="bg-emerald-600 hover:bg-emerald-700"><Play className="h-4 w-4 mr-1" />{wo.actualStart ? 'Resume Work' : 'Start Work'}</Button>}
+            {caps?.canStart && !liveLog && <Button onClick={startWork} disabled={busy !== null || startBlocked} title={startBlockers[0]?.message} className="bg-emerald-600 hover:bg-emerald-700"><Play className="h-4 w-4 mr-1" />{wo.actualStart ? 'Resume Work' : 'Start Work'}</Button>}
             {liveLog && <Button variant="outline" onClick={pauseWork} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Pause Timer</Button>}
             {caps?.canResume && inWaitingState && <Button onClick={resumeWaiting} disabled={busy !== null}><RotateCcw className="h-4 w-4 mr-1" />{caps.resumeOpensExecutionSession ? 'Resume Work' : 'Release to In Progress'}</Button>}
           </div>
         </div>
       </div>
+
+      {caps?.canStart && startReadiness && !liveLog && (
+        <div className={`rounded-xl border p-4 text-sm ${startBlocked ? 'border-red-200 bg-red-50 text-red-800 dark:bg-red-950/20 dark:text-red-300' : startWarnings.length ? 'border-amber-200 bg-amber-50 text-amber-900 dark:bg-amber-950/20 dark:text-amber-300' : 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'}`}>
+          <div className="flex items-start gap-2">
+            {startBlocked || startWarnings.length ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+            <div className="min-w-0">
+              <p className="font-semibold">{startBlocked ? 'Start blocked — resolve readiness items first' : startWarnings.length ? 'Ready to start with safety warnings' : 'Ready to start'}</p>
+              {startBlockers.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{startBlockers.map((item) => <li key={item.code}>{item.message}</li>)}</ul>}
+              {startWarnings.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{startWarnings.map((item) => <li key={item.code}>{item.message}</li>)}</ul>}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div id="assignment" className="scroll-mt-28" aria-hidden="true" />
 

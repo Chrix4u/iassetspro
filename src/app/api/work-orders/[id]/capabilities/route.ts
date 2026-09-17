@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { checkReadiness } from '@/services/workOrderReadiness.service';
 
 export async function GET(
   request: NextRequest,
@@ -124,6 +125,18 @@ export async function GET(
       technicianWaitingStatuses.includes(wo.status) &&
       isAssignedExecutionActor;
 
+    // Keep canStart as an authority/status capability so the client can keep the
+    // Start/Resume action visible. Readiness is exposed separately and is sourced
+    // from the same canonical service enforced by POST /start. This lets the UI
+    // explain blockers before the technician clicks instead of hiding the action.
+    const canAttemptStart = isAssignedExecutionActor && (
+      (preExecutionStatuses.includes(wo.status) && assignmentAccepted) ||
+      (wo.status === 'in_progress' && !hasOwnLiveSession)
+    );
+    const startReadiness = canAttemptStart
+      ? await checkReadiness(id, 'start')
+      : null;
+
     const capabilities = {
       // Starting creates a labor timer, therefore only the assigned technician
       // or team leader receives this capability. Admin/manager control authority
@@ -133,10 +146,8 @@ export async function GET(
       assignmentResponseStatus: wo.assignmentResponseStatus,
       assignmentRespondedAt: wo.assignmentRespondedAt,
       assignmentResponseReason: wo.assignmentResponseReason,
-      canStart: isAssignedExecutionActor && (
-        (preExecutionStatuses.includes(wo.status) && assignmentAccepted) ||
-        (wo.status === 'in_progress' && !hasOwnLiveSession)
-      ),
+      canStart: canAttemptStart,
+      startReadiness,
       // `canPause` is retained for existing clients; `canHold` is the explicit
       // enterprise lifecycle name. Holding is a WO-wide supervisor control
       // action and must not depend on the supervisor owning a labor timer.

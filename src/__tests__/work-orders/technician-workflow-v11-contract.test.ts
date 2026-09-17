@@ -39,11 +39,11 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
     expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
     expect(panel).toContain(".filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
-    expect(panel).toContain('value={material.itemId}');
+    expect(panel).toContain('selectedId={material.itemId}');
     expect(panel).toContain('itemId: selectedMaterial.id');
     expect(panel).toContain("unit: selectedMaterial.unitOfMeasure || 'each'");
     expect(panel).toContain('readOnly placeholder="From inventory"');
-    expect(panel).toContain('value={toolRequest.toolId}');
+    expect(panel).toContain('selectedId={toolRequest.toolId}');
     expect(panel).toContain('toolId: selectedTool.id');
     expect(panel).toContain('quantityRequested: quantity');
   });

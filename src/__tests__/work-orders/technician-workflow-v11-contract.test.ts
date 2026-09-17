@@ -40,11 +40,11 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
     expect(panel).toContain(".filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
     expect(panel).toContain('selectedId={material.itemId}');
-    expect(panel).toContain('itemId: selectedMaterial.id');
-    expect(panel).toContain("unit: selectedMaterial.unitOfMeasure || 'each'");
+    expect(panel).toContain('itemId: selectedMaterial?.id || material.itemId');
+    expect(panel).toContain("unit: selectedMaterial?.unitOfMeasure || material.unit || 'each'");
     expect(panel).toContain('readOnly placeholder="From inventory"');
     expect(panel).toContain('selectedId={toolRequest.toolId}');
-    expect(panel).toContain('toolId: selectedTool.id');
+    expect(panel).toContain('toolId: selectedTool?.id || toolRequest.toolId');
     expect(panel).toContain('quantityRequested: quantity');
   });
 
@@ -64,11 +64,16 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('End Downtime');
   });
 
-  it('embeds labor history without reviving stale live /time-logs writes', () => {
+  it('keeps live technician timing separate while allowing guarded team-leader retrospective labor entry', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
     expect(panel).toContain('`/api/work-orders/${workOrderId}/time-logs');
     expect(panel).toContain('Labor & Time History');
-    expect(panel).not.toContain('api.post(`/api/work-orders/${workOrderId}/time-logs`');
+    expect(panel).toContain('capabilities?.canLogTeamTime && capabilities?.isTeamLeader');
+    expect(panel).toContain("action: 'start'");
+    expect(panel).toContain('loggedForUserId: teamTime.userId');
+    expect(panel).toContain('isTeamLog: true');
+    expect(panel).toContain('startTime: start.toISOString()');
+    expect(panel).toContain('endTime: end.toISOString()');
     expect(panel).not.toContain('api.patch(`/api/work-orders/${workOrderId}/time-logs`');
   });
 

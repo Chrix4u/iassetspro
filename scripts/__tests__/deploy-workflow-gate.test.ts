@@ -57,4 +57,15 @@ describe('production deployment workflow gate', () => {
     expect(workflow).toContain('UserKnownHostsFile=~/.ssh/known_hosts');
     expect(workflow).toContain("sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA'");
   });
+
+  it('flattens symlinks and hardlinks before publishing the production release archive', async () => {
+    const workflow = await readFile(
+      join(process.cwd(), '.github/workflows/ci.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('tar --dereference --hard-dereference -C .release-bundle -czf "$ARTIFACT" .');
+    expect(workflow).toContain('release artifact contains link entry');
+    expect(workflow).toContain('substr($1,1,1) == "l" || substr($1,1,1) == "h"');
+  });
 });

@@ -181,9 +181,16 @@ jobs:
           cp -a .release-tools/node_modules/. .release-bundle/node_modules/
 
           ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
-          tar --dereference -C .release-bundle -czf "$ARTIFACT" .
+          tar --dereference --hard-dereference -C .release-bundle -czf "$ARTIFACT" .
           sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
           test "$(tar -xOf "$ARTIFACT" ./RELEASE_SHA | tr -d '\r\n')" = "$GITHUB_SHA"
+          tar -tvzf "$ARTIFACT" | awk '
+            substr($1,1,1) == "l" || substr($1,1,1) == "h" {
+              print "STOP: release artifact contains link entry: " $0 > "/dev/stderr"
+              bad=1
+            }
+            END { exit bad }
+          '
 
       - name: Upload production release artifact
         uses: actions/upload-artifact@v4

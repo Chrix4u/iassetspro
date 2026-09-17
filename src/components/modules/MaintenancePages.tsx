@@ -6702,27 +6702,42 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     fetchOptions={async () => {
                       try {
                         const req = teamRequests.find((r: any) => r.id === approveReqId);
-                        const tradeFilter = req?.requestedTrade || '';
-                        const url = tradeFilter
-                          ? `/api/users?role=maintenance_technician&primaryTrade=${encodeURIComponent(tradeFilter)}`
-                          : `/api/users?role=maintenance_technician`;
-                        const res = await api.get(url);
+                        const tradeFilter = String(req?.requestedTrade || '').trim();
+                        const workerUrl = wo.plantId
+                          ? `/api/workers?role=technician&plantId=${encodeURIComponent(wo.plantId)}`
+                          : '/api/workers?role=technician';
+                        const res = await api.get(workerUrl);
                         if (res.success && res.data) {
                           let users = Array.isArray(res.data) ? res.data : [];
-                          // If filtered by trade and no results, fall back to all technicians
-                          if (tradeFilter && users.length === 0) {
-                            const fallbackRes = await api.get('/api/users?role=maintenance_technician');
-                            if (fallbackRes.success && fallbackRes.data) {
-                              users = Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
-                            }
+                          if (tradeFilter) {
+                            const requested = tradeFilter.toLowerCase();
+                            users = users.filter((worker: any) => {
+                              const skillLabels = [
+                                worker.trade,
+                                ...(Array.isArray(worker.skills)
+                                  ? worker.skills.flatMap((skill: any) => [skill?.name, skill?.code])
+                                  : []),
+                              ]
+                                .filter(Boolean)
+                                .map((value: unknown) => String(value).trim().toLowerCase());
+                              return skillLabels.includes(requested);
+                            });
                           }
-                          return users.map((u: any) => ({
-                            value: u.id,
-                            label: u.primaryTrade
-                              ? `${u.fullName} — ${u.primaryTrade}${u.department ? ` (${u.department})` : ''}`
-                              : `${u.fullName}${u.department ? ` (${u.department})` : ''}`,
-                            ...(tradeFilter && u.primaryTrade?.toLowerCase() !== tradeFilter.toLowerCase() ? { group: 'Other trades' } : {}),
-                          }));
+                          return users.map((u: any) => {
+                            const matchingSkill = tradeFilter
+                              ? (u.skills || []).find((skill: any) =>
+                                  [skill?.name, skill?.code].some((value) =>
+                                    String(value || '').trim().toLowerCase() === tradeFilter.toLowerCase(),
+                                  ),
+                                )
+                              : null;
+                            const tradeLabel = matchingSkill?.name || u.trade || tradeFilter || 'Technician';
+                            const proficiency = matchingSkill?.proficiency ? ` · ${matchingSkill.proficiency}` : '';
+                            return {
+                              value: u.id,
+                              label: `${u.fullName} — ${tradeLabel}${proficiency}${u.department ? ` (${u.department})` : ''}`,
+                            };
+                          });
                         }
                       } catch { /* ignore */ }
                       return [];
@@ -6730,7 +6745,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     placeholder="Search technicians..."
                     searchPlaceholder="Search by name or trade..."
                   />
-                  <p className="text-xs text-muted-foreground">Choose the best available technician for this trade</p>
+                  <p className="text-xs text-muted-foreground">Only active technicians in this plant with the requested trade/skill are listed.</p>
                 </div>
               </div>
           </ResponsiveDialog>

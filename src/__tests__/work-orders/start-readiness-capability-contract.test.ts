@@ -14,6 +14,17 @@ describe('technician start readiness capability contract', () => {
     expect(capabilities).toContain('startReadiness,');
   });
 
+  it('shows readiness before execution and disables Start only for blockers', () => {
+    const technicianPage = read('src/components/modules/TechnicianWorkOrderPage.tsx');
+
+    expect(technicianPage).toContain('const startReadiness = caps?.startReadiness || null;');
+    expect(technicianPage).toContain('const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);');
+    expect(technicianPage).toContain('disabled={busy !== null || startBlocked}');
+    expect(technicianPage).toContain('Start blocked — resolve readiness items first');
+    expect(technicianPage).toContain('Ready to start with safety warnings');
+    expect(technicianPage).toContain('Ready to start');
+  });
+
   it('keeps POST start enforcement on the same canonical readiness service', () => {
     const startService = read('src/services/workOrderStartExecution.service.ts');
     const startRoute = read('src/app/api/work-orders/[id]/start/route.ts');

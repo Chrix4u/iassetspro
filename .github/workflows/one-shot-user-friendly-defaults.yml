@@ -63,15 +63,13 @@ jobs:
           defaults = (
               "const DEFAULT_WO_SAFETY_NOTES = 'Follow site safety procedures. Isolate equipment and apply LOTO/PTW where required.';\n"
               "const DEFAULT_WO_PPE = 'Safety helmet, safety boots, gloves and eye protection; add task-specific PPE where required.';\n"
-              "const DEFAULT_WO_TOOLS = 'Use approved task-appropriate tools; confirm availability before work starts.';\n"
-              "const DEFAULT_WO_MATERIALS = 'Confirm required spare parts and consumables; request unavailable items before work starts.';\n"
               "const DEFAULT_WO_NOTES = 'Record work performed, findings and follow-up actions before completion.';\n\n"
           )
           maintenance = replace_once(maintenance, marker, defaults + marker, 'WO default constants')
           maintenance = replace_once(
               maintenance,
-              "  safetyNotes: '',\n  ppeRequired: '',\n  toolsRequired: '',\n  materialsRequired: '',\n  notes: '',",
-              "  safetyNotes: DEFAULT_WO_SAFETY_NOTES,\n  ppeRequired: DEFAULT_WO_PPE,\n  toolsRequired: DEFAULT_WO_TOOLS,\n  materialsRequired: DEFAULT_WO_MATERIALS,\n  notes: DEFAULT_WO_NOTES,",
+              "    // Section: Safety\n    safetyNotes: '',\n    ppeRequired: '',\n    notes: '',",
+              "    // Section: Safety\n    safetyNotes: DEFAULT_WO_SAFETY_NOTES,\n    ppeRequired: DEFAULT_WO_PPE,\n    notes: DEFAULT_WO_NOTES,",
               'direct WO defaults',
           )
           maintenance = replace_once(

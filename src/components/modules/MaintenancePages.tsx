@@ -72,10 +72,6 @@ const URGENCY_CFG: Record<string, { label: string; color: string; dotColor: stri
   critical: { label: 'Critical', color: 'bg-red-50 text-red-700 border-red-300', dotColor: 'bg-red-500' },
 };
 
-const DEFAULT_WO_SAFETY_NOTES = 'Follow site safety procedures. Isolate equipment and apply LOTO/PTW where required.';
-const DEFAULT_WO_PPE = 'Safety helmet, safety boots, gloves and eye protection; add task-specific PPE where required.';
-const DEFAULT_WO_NOTES = 'Record work performed, findings and follow-up actions before completion.';
-
 function UrgencyBadge({ urgency }: { urgency: string }) {
   const cfg = URGENCY_CFG[urgency];
   if (!cfg) return null;
@@ -802,9 +798,9 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     requiredParts: [] as Array<{ itemId: string; quantity: number }>,
     requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section 4: Safety
-    safetyNotes: DEFAULT_WO_SAFETY_NOTES,
-    ppeRequired: DEFAULT_WO_PPE,
-    notes: DEFAULT_WO_NOTES,
+    safetyNotes: '',
+    ppeRequired: '',
+    notes: '',
   });
   const [convertLoading, setConvertLoading] = useState(false);
   // Data for dropdowns
@@ -875,7 +871,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       workOrderType: 'corrective',
       priority: mr.priority === 'urgent' ? 'high' : mr.priority,
       tradeActivity: 'mechanical',
-      technicalDescription: mr.description || mr.title,
+      technicalDescription: mr.title,
       scheduledDate: nowIso,
       deliveryDate: nowIso,
       estimatedHours: '',
@@ -886,9 +882,9 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       teamLeaderId: '',
       requiredParts: [],
       requiredTools: [],
-      safetyNotes: DEFAULT_WO_SAFETY_NOTES,
-      ppeRequired: DEFAULT_WO_PPE,
-      notes: DEFAULT_WO_NOTES,
+      safetyNotes: '',
+      ppeRequired: '',
+      notes: '',
     });
     // Load dropdown data
     try {
@@ -2333,9 +2329,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     requiredParts: [] as Array<{ itemId: string; quantity: number }>,
     requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section: Safety
-    safetyNotes: DEFAULT_WO_SAFETY_NOTES,
-    ppeRequired: DEFAULT_WO_PPE,
-    notes: DEFAULT_WO_NOTES,
+    safetyNotes: '',
+    ppeRequired: '',
+    notes: '',
     componentIds: [] as string[],
   });
   const [loading, setLoading] = useState(false);

@@ -235,9 +235,12 @@ export async function POST(request: NextRequest) {
       },
     }));
 
+    const itemCount = validatedItems.length;
     if (wo.assignedSupervisorId) {
-      const itemCount = validatedItems.length;
       await notifyUser(wo.assignedSupervisorId, 'repair_tool_request', 'Tool Request Pending Approval', `${toolReq.requestedBy.fullName} requested ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${wo.woNumber}${resolvedUrgency !== 'normal' ? ` [${resolvedUrgency.toUpperCase()}]` : ''}`, 'repair_tool_request', toolReq.id, 'maintenance-work-orders');
+    }
+    if (wo.plannerId && wo.plannerId !== wo.assignedSupervisorId && wo.plannerId !== session.userId) {
+      await notifyUser(wo.plannerId, 'repair_tool_request', 'New Tool Request Submitted', `${toolReq.requestedBy.fullName} requested ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${wo.woNumber}${resolvedUrgency !== 'normal' ? ` [${resolvedUrgency.toUpperCase()}]` : ''}`, 'repair_tool_request', toolReq.id, 'maintenance-work-orders');
     }
 
     await db.auditLog.create({ data: { userId: session.userId, action: 'create', entityType: 'repair_tool_request', entityId: toolReq.id, newValues: JSON.stringify({ requestNumber, workOrderId, plantId: wo.plantId, itemCount: validatedItems.length, reason, urgency: resolvedUrgency }) } });

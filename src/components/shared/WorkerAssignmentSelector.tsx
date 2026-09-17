@@ -33,7 +33,12 @@ interface Worker {
   isTechnician: boolean;
   roles: Array<{ name: string; slug: string }>;
   skills?: Array<{ name: string; code: string; category: string; proficiency: string }>;
-}
+    competency?: {
+      requiredTrade: string;
+      tradeMatch: boolean;
+      certification: 'certified' | 'not_certified' | 'not_recorded' | 'not_applicable';
+    } | null;
+  }
 
 interface WorkerAssignmentSelectorProps {
   selectedWorkerIds: string[];
@@ -43,6 +48,7 @@ interface WorkerAssignmentSelectorProps {
   assignType: 'technician' | 'supervisor';
   onAssignTypeChange: (type: 'technician' | 'supervisor') => void;
   label?: string;
+  requiredTrade?: string;
 }
 
 // ============================================================================
@@ -66,6 +72,31 @@ function getTradeColor(trade: string | null): { bg: string; text: string; border
   return { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' };
 }
 
+function CompetencyEvidence({ worker, compact = false }: { worker: Worker; compact?: boolean }) {
+  const competency = worker.competency;
+  if (!competency) return null;
+  const tradeLabel = competency.requiredTrade.replaceAll('_', ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+
+  return (
+    <div className={`flex flex-wrap gap-1 ${compact ? 'mt-1' : 'mt-1.5'}`}>
+      <Badge variant="outline" className={competency.tradeMatch
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]'
+        : 'border-amber-200 bg-amber-50 text-amber-700 text-[10px]'}>
+        {competency.tradeMatch ? `Trade match: ${tradeLabel}` : `Trade mismatch: ${tradeLabel}`}
+      </Badge>
+      {competency.tradeMatch && competency.certification === 'certified' && (
+        <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]">Certified</Badge>
+      )}
+      {competency.tradeMatch && competency.certification === 'not_certified' && (
+        <Badge variant="outline" className="border-red-200 bg-red-50 text-red-700 text-[10px]">Matching skill not certified</Badge>
+      )}
+      {competency.tradeMatch && competency.certification === 'not_recorded' && (
+        <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 text-[10px]">Certification not recorded</Badge>
+      )}
+    </div>
+  );
+}
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -78,6 +109,7 @@ export function WorkerAssignmentSelector({
   assignType,
   onAssignTypeChange,
   label,
+  requiredTrade,
 }: WorkerAssignmentSelectorProps) {
   const isMobile = useIsMobile();
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -100,6 +132,9 @@ export function WorkerAssignmentSelector({
         params.set('search', debouncedSearch);
       }
       params.set('role', assignType);
+      if (assignType === 'technician' && requiredTrade?.trim()) {
+        params.set('requiredTrade', requiredTrade.trim());
+      }
       const res = await api.get(`/api/workers?${params}`);
       if (res.success && res.data) {
         setWorkers(Array.isArray(res.data) ? res.data : []);
@@ -108,7 +143,7 @@ export function WorkerAssignmentSelector({
       setWorkers([]);
     }
     setLoading(false);
-  }, [debouncedSearch, assignType]);
+  }, [debouncedSearch, assignType, requiredTrade]);
 
   useEffect(() => {
     fetchWorkers();
@@ -155,7 +190,14 @@ export function WorkerAssignmentSelector({
         <DesktopAssignToggle assignType={assignType} onAssignTypeChange={onAssignTypeChange} />
       )}
 
-      {/* Search */}
+      {assignType === 'technician' && requiredTrade?.trim() && (
+      <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+        Comparing candidates with the WO trade <strong>{requiredTrade.replaceAll('_', ' ')}</strong>.
+        Competency indicators are advisory; assignment remains available unless an explicit system blocker applies.
+      </div>
+    )}
+
+    {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -449,6 +491,7 @@ function DesktopWorkerTable({
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
+                    <CompetencyEvidence worker={worker} />
                   </TableCell>
                   <TableCell className="px-3 py-2">
                     {worker.department ? (
@@ -551,6 +594,7 @@ function MobileWorkerList({
                     <span className="text-[10px] text-muted-foreground">{worker.department}</span>
                   )}
                 </div>
+                <CompetencyEvidence worker={worker} compact />
               </div>
 
               <div onClick={e => e.stopPropagation()} className="shrink-0">

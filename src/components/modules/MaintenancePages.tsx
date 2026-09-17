@@ -1489,6 +1489,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
                   onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
                   assignType={convertForm.assignType}
+                  requiredTrade={convertForm.tradeActivity}
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
                   label="Resource Assignment"
                 />
@@ -1745,6 +1746,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
               onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
               onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
               assignType={convertForm.assignType}
+              requiredTrade={convertForm.tradeActivity}
               onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
               label="Resource Assignment"
             />
@@ -2602,6 +2604,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
               assignType={form.assignType}
+              requiredTrade={form.tradeActivity}
               onAssignTypeChange={(type) => updateField('assignType', type)}
               label="Resource Assignment"
             />
@@ -2824,6 +2827,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
             onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
             assignType={form.assignType}
+            requiredTrade={form.tradeActivity}
             onAssignTypeChange={(type) => updateField('assignType', type)}
             label="Resource Assignment"
           />
@@ -4454,6 +4458,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
                   onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
                   assignType={editForm.assignType || 'technician'}
+                  requiredTrade={editForm.tradeActivity}
                   onAssignTypeChange={(type) => editUpdateField('assignType', type)}
                   label="Resource Assignment"
                 />
@@ -4683,6 +4688,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
               assignType={editForm.assignType || 'technician'}
+              requiredTrade={editForm.tradeActivity}
               onAssignTypeChange={(type) => editUpdateField('assignType', type)}
               label="Resource Assignment"
             />

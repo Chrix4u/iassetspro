@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/auth';
+import { tradeValuesCompatible } from '@/services/technicianEligibility.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +15,18 @@ export async function GET(request: NextRequest) {
     const plantId = searchParams.get('plantId');
     const search = searchParams.get('search');
     const role = searchParams.get('role'); // technician | supervisor | all
+    const requiredTrade = searchParams.get('requiredTrade')?.trim() || null;
+    const canViewCompetency = isAdminCheck(session) || hasAnyPermission(session, [
+      'work_orders.assign_technician',
+      'work_orders.assign_supervisor',
+    ]);
+
+    if (requiredTrade && !canViewCompetency) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions to view technician competency evidence' },
+        { status: 403 },
+      );
+    }
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -101,6 +114,8 @@ export async function GET(request: NextRequest) {
               },
             },
             proficiencyLevel: true,
+            certified: true,
+            yearsExperience: true,
           },
         },
       },
@@ -118,13 +133,34 @@ export async function GET(request: NextRequest) {
       const primaryRoleSlug = roles.length > 0 ? roles[0].slug : null;
       const isTechnician = roles.some(r => r.slug === 'maintenance_technician');
 
-      // Build skills/trades list from userSkills
+      // Build skills/trades list from userSkills. Certification details stay
+      // server-side; planners receive only aggregate assignment evidence.
       const skills = (user.userSkills || []).map(us => ({
         name: us.trade.name,
         code: us.trade.code,
         category: us.trade.category,
         proficiency: us.proficiencyLevel,
       }));
+
+      const matchingSkills = requiredTrade
+        ? (user.userSkills || []).filter((us) =>
+            [us.trade.name, us.trade.code, us.trade.category]
+              .some((candidate) => tradeValuesCompatible(candidate, requiredTrade)),
+          )
+        : [];
+      const primaryTradeMatches = requiredTrade
+        ? tradeValuesCompatible(user.primaryTrade, requiredTrade)
+        : false;
+      const tradeMatch = requiredTrade
+        ? primaryTradeMatches || matchingSkills.length > 0
+        : false;
+      const certification = !requiredTrade || !tradeMatch
+        ? 'not_applicable'
+        : matchingSkills.length === 0
+          ? 'not_recorded'
+          : matchingSkills.some((us) => us.certified)
+            ? 'certified'
+            : 'not_certified';
 
       return {
         id: user.id,
@@ -139,6 +175,13 @@ export async function GET(request: NextRequest) {
         isTechnician,
         roles,
         skills,
+        competency: requiredTrade && canViewCompetency
+          ? {
+              requiredTrade,
+              tradeMatch,
+              certification,
+            }
+          : null,
       };
     });
 

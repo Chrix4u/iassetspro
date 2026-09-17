@@ -23,6 +23,18 @@ describe('responsive layout contract', () => {
     )
   })
 
+  it('keeps long material and tool selectors searchable with metadata above the control', () => {
+    const searchableResourceSelectors = workOrderPanels.match(/<SearchableResourceSelect/g) ?? []
+
+    expect(searchableResourceSelectors).toHaveLength(2)
+    expect(workOrderPanels).toContain('Search materials or item codes...')
+    expect(workOrderPanels).toContain('Search tools or tool codes...')
+    expect(workOrderPanels).toContain('role="combobox"')
+    expect(workOrderPanels).toContain('flex min-h-5 items-center justify-between gap-2')
+    expect(workOrderPanels).toContain('Stock: {Number(selectedMaterial.currentStock ?? 0)}')
+    expect(workOrderPanels).toContain('Available: {Number(selectedTool.quantity ?? 1)}')
+  })
+
   it('prevents shared tab controls from widening responsive pages', () => {
     expect(tabs).toContain('max-w-full')
     expect(tabs).toContain('overflow-x-auto')

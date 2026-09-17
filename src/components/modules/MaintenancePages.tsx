@@ -83,6 +83,72 @@ function UrgencyBadge({ urgency }: { urgency: string }) {
   );
 }
 
+
+type WorkOrderDefaults = {
+  safetyNotes: string;
+  ppeRequired: string;
+  notes: string;
+};
+
+const EMPTY_WORK_ORDER_DEFAULTS: WorkOrderDefaults = {
+  safetyNotes: '',
+  ppeRequired: '',
+  notes: '',
+};
+
+async function loadWorkOrderDefaults(): Promise<WorkOrderDefaults> {
+  try {
+    const res = await api.get<WorkOrderDefaults>('/api/settings/work-order-defaults');
+    if (res.success && res.data) {
+      return {
+        safetyNotes: String(res.data.safetyNotes || ''),
+        ppeRequired: String(res.data.ppeRequired || ''),
+        notes: String(res.data.notes || ''),
+      };
+    }
+  } catch {
+    // Defaults are optional; an unavailable settings endpoint must not block WO creation.
+  }
+  return EMPTY_WORK_ORDER_DEFAULTS;
+}
+
+function ResponsibleSupervisorSelect({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Responsible Supervisor *</Label>
+      <AsyncSearchableSelect
+        value={value}
+        onValueChange={onValueChange}
+        fetchOptions={async (query) => {
+          const params = new URLSearchParams({ role: 'supervisor' });
+          if (query.trim()) params.set('search', query.trim());
+          const res = await api.get(`/api/workers?${params.toString()}`);
+          if (!res.success || !Array.isArray(res.data)) return [];
+          return res.data.map((worker: any) => ({
+            value: worker.id,
+            label: worker.staffId
+              ? `${worker.fullName} [${worker.staffId}]`
+              : worker.fullName,
+            badge: worker.primaryRole || 'Supervisor',
+          }));
+        }}
+        placeholder="Select responsible supervisor..."
+        searchPlaceholder="Search supervisors..."
+        emptyMessage="No eligible supervisors found."
+      />
+      <p className="text-[11px] text-muted-foreground">
+        This supervisor owns completion verification for a directly assigned technician/team.
+      </p>
+    </div>
+  );
+}
+
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -795,6 +861,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
+    responsibleSupervisorId: '',
     requiredParts: [] as Array<{ itemId: string; quantity: number }>,
     requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section 4: Safety
@@ -866,6 +933,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
 
   const openConvertDialog = async () => {
     if (!mr) return;
+    const defaults = await loadWorkOrderDefaults();
     const nowIso = new Date().toISOString();
     setConvertForm({
       workOrderType: 'corrective',
@@ -880,11 +948,12 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       assignType: 'technician',
       selectedWorkerIds: [],
       teamLeaderId: '',
+    responsibleSupervisorId: '',
       requiredParts: [],
       requiredTools: [],
-      safetyNotes: '',
-      ppeRequired: '',
-      notes: '',
+      safetyNotes: defaults.safetyNotes,
+      ppeRequired: defaults.ppeRequired,
+      notes: defaults.notes,
     });
     // Load dropdown data
     try {
@@ -927,6 +996,14 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
 
   const handleConvert = async () => {
     if (!mr) return;
+    if (convertForm.assignType === 'technician' && convertForm.selectedWorkerIds.length > 0 && !convertForm.responsibleSupervisorId) {
+      toast.error('Select the responsible supervisor who will verify this work order');
+      return;
+    }
+    if (convertForm.assignType === 'supervisor' && !convertForm.teamLeaderId) {
+      toast.error('Select the supervisor who will receive this work order');
+      return;
+    }
     setConvertLoading(true);
     const payload: any = {
       title: mr.title,
@@ -944,20 +1021,19 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined,
       requiredTools: convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined,
     };
-    // Build team members from selected workers
-    if (convertForm.selectedWorkerIds.length > 0) {
-      const teamMembers = convertForm.selectedWorkerIds.map(workerId => ({
-        userId: workerId,
-        role: workerId === convertForm.teamLeaderId ? 'team_leader' : 'assistant',
-      }));
-      payload.teamMembers = teamMembers;
-      payload.assignedTo = convertForm.selectedWorkerIds[0];
-      payload.teamLeaderId = convertForm.teamLeaderId || null;
-    }
-    if (convertForm.assignType === 'supervisor') {
-      if (convertForm.teamLeaderId) {
-        payload.assignedSupervisorId = convertForm.teamLeaderId;
+    if (convertForm.assignType === 'technician') {
+      if (convertForm.selectedWorkerIds.length > 0) {
+        const teamMembers = convertForm.selectedWorkerIds.map(workerId => ({
+          userId: workerId,
+          role: workerId === convertForm.teamLeaderId ? 'team_leader' : 'assistant',
+        }));
+        payload.teamMembers = teamMembers;
+        payload.assignedTo = convertForm.selectedWorkerIds[0];
+        payload.teamLeaderId = convertForm.teamLeaderId || null;
       }
+      payload.assignedSupervisorId = convertForm.responsibleSupervisorId || undefined;
+    } else {
+      payload.assignedSupervisorId = convertForm.teamLeaderId;
     }
     const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
@@ -1492,6 +1568,12 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
                   label="Resource Assignment"
                 />
+                {convertForm.assignType === 'technician' && (
+                  <ResponsibleSupervisorSelect
+                    value={convertForm.responsibleSupervisorId}
+                    onValueChange={(value) => setConvertForm(f => ({ ...f, responsibleSupervisorId: value }))}
+                  />
+                )}
 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
@@ -1748,6 +1830,12 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
               onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
               label="Resource Assignment"
             />
+            {convertForm.assignType === 'technician' && (
+              <ResponsibleSupervisorSelect
+                value={convertForm.responsibleSupervisorId}
+                onValueChange={(value) => setConvertForm(f => ({ ...f, responsibleSupervisorId: value }))}
+              />
+            )}
 
             {/* Parts & Tools in collapsible sections */}
             <Accordion type="multiple" className="space-y-2">
@@ -2326,6 +2414,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
+    responsibleSupervisorId: '',
     requiredParts: [] as Array<{ itemId: string; quantity: number }>,
     requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section: Safety
@@ -2407,6 +2496,20 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     }
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    loadWorkOrderDefaults().then((defaults) => {
+      if (!active) return;
+      setForm((current) => ({
+        ...current,
+        safetyNotes: current.safetyNotes || defaults.safetyNotes,
+        ppeRequired: current.ppeRequired || defaults.ppeRequired,
+        notes: current.notes || defaults.notes,
+      }));
+    });
+    return () => { active = false; };
+  }, []);
+
   // ── Helpers ──
   const updateField = (field: string, value: any) => setForm(f => ({ ...f, [field]: value }));
 
@@ -2458,6 +2561,14 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.assignType === 'technician' && form.selectedWorkerIds.length > 0 && !form.responsibleSupervisorId) {
+      toast.error('Select the responsible supervisor who will verify this work order');
+      return;
+    }
+    if (form.assignType === 'supervisor' && !form.teamLeaderId) {
+      toast.error('Select the supervisor who will receive this work order');
+      return;
+    }
     setLoading(true);
     const payload: any = {
       title: form.title,
@@ -2479,17 +2590,18 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
       componentIds: form.componentIds.length > 0 ? form.componentIds : undefined,
     };
-    // Build team members from selected workers
-    if (form.selectedWorkerIds.length > 0) {
-      const teamMembers = form.selectedWorkerIds.map(workerId => ({
-        userId: workerId,
-        role: workerId === form.teamLeaderId ? 'team_leader' : 'assistant',
-      }));
-      payload.teamMembers = teamMembers;
-      payload.assignedTo = form.selectedWorkerIds[0];
-      payload.teamLeaderId = form.teamLeaderId || null;
-    }
-    if (form.assignType === 'supervisor' && form.teamLeaderId) {
+    if (form.assignType === 'technician') {
+      if (form.selectedWorkerIds.length > 0) {
+        const teamMembers = form.selectedWorkerIds.map(workerId => ({
+          userId: workerId,
+          role: workerId === form.teamLeaderId ? 'team_leader' : 'assistant',
+        }));
+        payload.teamMembers = teamMembers;
+        payload.assignedTo = form.selectedWorkerIds[0];
+        payload.teamLeaderId = form.teamLeaderId || null;
+      }
+      payload.assignedSupervisorId = form.responsibleSupervisorId || undefined;
+    } else {
       payload.assignedSupervisorId = form.teamLeaderId;
     }
     const res = await api.post('/api/work-orders', payload);
@@ -2605,6 +2717,12 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               onAssignTypeChange={(type) => updateField('assignType', type)}
               label="Resource Assignment"
             />
+            {form.assignType === 'technician' && (
+              <ResponsibleSupervisorSelect
+                value={form.responsibleSupervisorId}
+                onValueChange={(value) => updateField('responsibleSupervisorId', value)}
+              />
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -2827,6 +2945,12 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             onAssignTypeChange={(type) => updateField('assignType', type)}
             label="Resource Assignment"
           />
+          {form.assignType === 'technician' && (
+            <ResponsibleSupervisorSelect
+              value={form.responsibleSupervisorId}
+              onValueChange={(value) => updateField('responsibleSupervisorId', value)}
+            />
+          )}
 
           {/* Required Spare Parts */}
           <div className="space-y-2">
@@ -3556,9 +3680,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       scheduledDate: wo.plannedStart ? toLocalDatetime(wo.plannedStart) : '',
       deliveryDate: wo.plannedEnd ? toLocalDate(wo.plannedEnd) : '',
       // Section 3: Resource Assignment
-      assignType: 'technician' as const,
-      selectedWorkerIds: wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || [],
-      teamLeaderId: wo.teamLeaderId || '',
+      assignType: ((wo as any).assignmentType === 'via_supervisor' ? 'supervisor' : 'technician') as 'technician' | 'supervisor',
+      selectedWorkerIds: (wo as any).assignmentType === 'via_supervisor'
+        ? (wo.assignedSupervisorId ? [wo.assignedSupervisorId] : [])
+        : (wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || []),
+      teamLeaderId: (wo as any).assignmentType === 'via_supervisor'
+        ? (wo.assignedSupervisorId || '')
+        : (wo.teamLeaderId || ''),
+      responsibleSupervisorId: (wo as any).assignmentType === 'via_supervisor' ? '' : (wo.assignedSupervisorId || ''),
       requiredParts: wo.materials?.map((m: any) => m.itemId).filter(Boolean) || [],
       requiredTools: [], // populated after editToolsData loads (see useEffect below)
       // Section 4: Safety
@@ -3571,6 +3700,24 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const handleEditWO = async () => {
     if (!editForm.title) { toast.error('Title is required'); return; }
+
+    if (editForm.assignType === 'technician' && editForm.selectedWorkerIds.length > 0 && !editForm.responsibleSupervisorId) {
+      toast.error('Select the responsible supervisor who will verify this work order');
+      return;
+    }
+    if (editForm.assignType === 'supervisor' && !editForm.teamLeaderId) {
+      toast.error('Select the supervisor who will receive this work order');
+      return;
+    }
+    if (
+      editForm.assignType === 'technician' &&
+      editForm.selectedWorkerIds.length === 0 &&
+      (wo?.assignedTo || (wo?.teamMembers?.length ?? 0) > 0)
+    ) {
+      toast.error('Select at least one technician, or switch assignment mode to Supervisor');
+      return;
+    }
+
     setActionLoading(true);
     const payload: any = {
       title: editForm.title,
@@ -3581,7 +3728,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       departmentId: editForm.departmentId || undefined,
       tradeActivity: editForm.tradeActivity,
       technicalDescription: editForm.technicalDescription || undefined,
-      assignmentType: editForm.assignType === 'technician' ? 'direct' : 'via_supervisor',
       estimatedHours: editForm.estimatedHours ? parseFloat(editForm.estimatedHours) : undefined,
       plannedStart: editForm.scheduledDate || undefined,
       deliveryDateRequired: editForm.deliveryDate || undefined,
@@ -3591,22 +3737,66 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       requiredParts: editForm.requiredParts.length > 0 ? editForm.requiredParts : undefined,
       requiredTools: editForm.requiredTools.length > 0 ? editForm.requiredTools : undefined,
     };
-    // Build team members from selected workers
-    if (editForm.selectedWorkerIds.length > 0) {
-      const teamMembers = editForm.selectedWorkerIds.map(workerId => ({
-        userId: workerId,
-        role: workerId === editForm.teamLeaderId ? 'team_leader' : 'assistant',
-      }));
-      payload.teamMembers = teamMembers;
-      payload.assignedTo = editForm.selectedWorkerIds[0];
-      payload.teamLeaderId = editForm.teamLeaderId || null;
-    }
-    if (editForm.assignType === 'supervisor' && editForm.teamLeaderId) {
-      payload.assignedSupervisorId = editForm.teamLeaderId;
-    }
+
+    const desiredAssignmentType = editForm.assignType === 'technician' ? 'direct' : 'via_supervisor';
+    const desiredMemberIds = editForm.assignType === 'technician'
+      ? [...editForm.selectedWorkerIds].sort()
+      : [];
+    const currentMemberIds = (wo?.teamMembers || []).map((member: any) => member.userId).filter(Boolean).sort();
+    const desiredAssignedTo = editForm.assignType === 'technician'
+      ? (editForm.selectedWorkerIds[0] || null)
+      : null;
+    const desiredTeamLeaderId = editForm.assignType === 'technician'
+      ? (editForm.teamLeaderId || null)
+      : null;
+    const desiredSupervisorId = editForm.assignType === 'technician'
+      ? (editForm.responsibleSupervisorId || null)
+      : (editForm.teamLeaderId || null);
+    const currentAssignmentType = (wo as any)?.assignmentType || (wo?.assignedTo ? 'direct' : null);
+
+    const assignmentChanged = Boolean(wo) && (
+      currentAssignmentType !== desiredAssignmentType ||
+      (wo?.assignedTo || null) !== desiredAssignedTo ||
+      (wo?.teamLeaderId || null) !== desiredTeamLeaderId ||
+      (wo?.assignedSupervisorId || null) !== desiredSupervisorId ||
+      JSON.stringify(currentMemberIds) !== JSON.stringify(desiredMemberIds)
+    );
+
     const res = await api.put(`/api/work-orders/${id}`, payload);
-    if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); onUpdate(); }
-    else { toast.error(res.error || 'Update failed'); }
+    if (!res.success) {
+      toast.error(res.error || 'Update failed');
+      setActionLoading(false);
+      return;
+    }
+
+    if (assignmentChanged) {
+      const assignmentPayload: any = {
+        assignmentType: desiredAssignmentType,
+        assignedSupervisorId: desiredSupervisorId || undefined,
+      };
+      if (desiredAssignmentType === 'direct') {
+        assignmentPayload.assignedTo = desiredAssignedTo || undefined;
+        assignmentPayload.teamLeaderId = desiredTeamLeaderId || undefined;
+        assignmentPayload.teamMembers = editForm.selectedWorkerIds.map((workerId: string) => ({
+          userId: workerId,
+          role: workerId === editForm.teamLeaderId ? 'team_leader' : 'assistant',
+        }));
+      }
+
+      const assignmentRes = await api.post(`/api/work-orders/${id}/assign`, assignmentPayload);
+      if (!assignmentRes.success) {
+        toast.error(`Work order details saved, but assignment update failed: ${assignmentRes.error || 'Unknown error'}`);
+        fetchWO();
+        onUpdate();
+        setActionLoading(false);
+        return;
+      }
+    }
+
+    toast.success('Work order updated');
+    setEditOpen(false);
+    fetchWO();
+    onUpdate();
     setActionLoading(false);
   };
 
@@ -4457,6 +4647,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   onAssignTypeChange={(type) => editUpdateField('assignType', type)}
                   label="Resource Assignment"
                 />
+                {editForm.assignType === 'technician' && (
+                  <ResponsibleSupervisorSelect
+                    value={editForm.responsibleSupervisorId}
+                    onValueChange={(value) => editUpdateField('responsibleSupervisorId', value)}
+                  />
+                )}
 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
@@ -4686,6 +4882,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               onAssignTypeChange={(type) => editUpdateField('assignType', type)}
               label="Resource Assignment"
             />
+            {editForm.assignType === 'technician' && (
+              <ResponsibleSupervisorSelect
+                value={editForm.responsibleSupervisorId}
+                onValueChange={(value) => editUpdateField('responsibleSupervisorId', value)}
+              />
+            )}
             <Accordion type="multiple" className="space-y-2">
               <AccordionItem value="parts" className="border rounded-xl px-1">
                 <AccordionTrigger className="text-xs font-medium py-3 px-2">

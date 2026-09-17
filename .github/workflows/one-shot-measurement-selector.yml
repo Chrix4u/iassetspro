@@ -1,0 +1,216 @@
+name: One-shot database-backed measurement selector
+
+on:
+  push:
+    branches:
+      - feat/database-backed-measurement-options
+    paths:
+      - .github/workflows/one-shot-measurement-selector.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/database-backed-measurement-options
+          fetch-depth: 0
+
+      - name: Patch technician measurement selector and add regression contract
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/modules/TechnicianWorkOrderPage.tsx')
+          source = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+          """type Task = {
+            id: string;
+            taskNumber: number;
+            description: string;
+            taskType: string;
+            status: string;
+            findings?: string | null;
+            notes?: string | null;
+            completedBy?: { fullName?: string } | null;
+          };
+
+          const WAITING_STATUSES""",
+          """type Task = {
+            id: string;
+            taskNumber: number;
+            description: string;
+            taskType: string;
+            status: string;
+            findings?: string | null;
+            notes?: string | null;
+            completedBy?: { fullName?: string } | null;
+          };
+
+          type MeasurementOption = {
+            inspectionPointId: string;
+            componentId: string;
+            componentName: string;
+            componentCode: string;
+            parameterKey: string;
+            label: string;
+            description?: string | null;
+            unit: string | null;
+            acceptableMin: number | null;
+            acceptableMax: number | null;
+            selectable: boolean;
+          };
+
+          const WAITING_STATUSES""",
+          'measurement option type',
+          )
+
+          replace_once(
+          """  const [measurement, setMeasurement] = useState({ parameterKey: '', value: '', unit: '' });
+            const [measurements, setMeasurements] = useState<any[]>([]);""",
+          """  const [measurement, setMeasurement] = useState({ inspectionPointId: '', value: '' });
+            const [measurementOptions, setMeasurementOptions] = useState<MeasurementOption[]>([]);
+            const [measurements, setMeasurements] = useState<any[]>([]);""",
+          'measurement state',
+          )
+
+          replace_once(
+          """    if (measurementRes.success && Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);""",
+          """    if (measurementRes.success && Array.isArray(measurementRes.data)) {
+              setMeasurements(measurementRes.data);
+              setMeasurementOptions(Array.isArray((measurementRes as any).options) ? (measurementRes as any).options : []);
+            }""",
+          'measurement load',
+          )
+
+          replace_once(
+          """  const addMeasurement = async () => {
+            if (!id || !measurement.parameterKey.trim() || !measurement.unit.trim() || !measurement.value.trim()) {
+              toast.error('Parameter, value and unit are required'); return;
+            }
+            const value = Number(measurement.value);
+            if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }
+            const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {
+              parameterKey: measurement.parameterKey.trim(), value, unit: measurement.unit.trim(),
+            }), 'Measurement recorded');
+            if (ok) setMeasurement({ parameterKey: '', value: '', unit: '' });
+          };""",
+          """  const addMeasurement = async () => {
+            if (!id || !measurement.inspectionPointId || !measurement.value.trim()) {
+              toast.error('Select a configured measurement and enter a value'); return;
+            }
+            const selectedOption = measurementOptions.find((option) => option.inspectionPointId === measurement.inspectionPointId);
+            if (!selectedOption || !selectedOption.selectable || !selectedOption.unit) {
+              toast.error('This measurement point has no configured unit. Ask a planner to update the component inspection point.'); return;
+            }
+            const value = Number(measurement.value);
+            if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }
+            const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {
+              componentId: selectedOption.componentId,
+              parameterKey: selectedOption.parameterKey,
+              value,
+            }), 'Measurement recorded');
+            if (ok) setMeasurement({ inspectionPointId: '', value: '' });
+          };""",
+          'measurement submit',
+          )
+
+          replace_once(
+          """  const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
+
+            return (""",
+          """  const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
+            const selectedMeasurementOption = measurementOptions.find(
+              (option) => option.inspectionPointId === measurement.inspectionPointId,
+            ) || null;
+
+            return (""",
+          'selected measurement option',
+          )
+
+          replace_once(
+          """              <div className=\"grid sm:grid-cols-4 gap-2\">
+                          <Input placeholder=\"Parameter e.g. vibration\" value={measurement.parameterKey} onChange={(e) => setMeasurement((m) => ({ ...m, parameterKey: e.target.value }))} />
+                          <Input placeholder=\"Value\" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
+                          <Input placeholder=\"Unit e.g. mm/s\" value={measurement.unit} onChange={(e) => setMeasurement((m) => ({ ...m, unit: e.target.value }))} />
+                          <Button variant=\"outline\" onClick={addMeasurement} disabled={busy !== null}>Record Reading</Button>
+                        </div>""",
+          """              <div className=\"grid sm:grid-cols-4 gap-2\">
+                          <select
+                            className=\"h-10 rounded-md border bg-background px-3 text-sm\"
+                            value={measurement.inspectionPointId}
+                            onChange={(e) => setMeasurement((m) => ({ ...m, inspectionPointId: e.target.value }))}
+                          >
+                            <option value=\"\">Select configured parameter...</option>
+                            {measurementOptions.map((option) => (
+                              <option key={option.inspectionPointId} value={option.inspectionPointId} disabled={!option.selectable}>
+                                {option.componentName} · {option.label}{option.unit ? ` (${option.unit})` : ' — unit not configured'}
+                              </option>
+                            ))}
+                          </select>
+                          <Input type=\"number\" step=\"any\" placeholder=\"Value\" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
+                          <Input placeholder=\"Unit from component setup\" value={selectedMeasurementOption?.unit || ''} readOnly aria-label=\"Configured measurement unit\" />
+                          <Button variant=\"outline\" onClick={addMeasurement} disabled={busy !== null || !selectedMeasurementOption?.selectable}>Record Reading</Button>
+                        </div>
+                        {measurementOptions.length === 0 && <p className=\"text-xs text-muted-foreground\">No active measurement inspection points are configured for the components linked to this work order. Ask a planner or reliability administrator to configure the component inspection points first.</p>}
+                        {selectedMeasurementOption && !selectedMeasurementOption.selectable && <p className=\"text-xs text-amber-700 dark:text-amber-300\">This inspection point is missing its configured unit and cannot be recorded until the component setup is corrected.</p>}
+                        {selectedMeasurementOption?.description && <p className=\"text-xs text-muted-foreground\">{selectedMeasurementOption.description}</p>}""",
+          'measurement form',
+          )
+
+          path.write_text(source)
+
+          test = Path('src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import fs from 'node:fs';
+
+          const read = (path: string) => fs.readFileSync(path, 'utf8');
+
+          describe('database-backed work order measurement options', () => {
+            it('derives measurement units and thresholds from active component inspection points', () => {
+              const route = read('src/app/api/work-orders/[id]/measurements/route.ts');
+
+              expect(route).toContain('db.componentInspectionPoint.findFirst');
+              expect(route).toContain("inspectionType: 'measurement'");
+              expect(route).toContain('isActive: true');
+              expect(route).toContain('const canonicalRange = parseNormalRange(inspectionPoint.normalRange);');
+              expect(route).toContain('unit: canonicalRange.unit');
+              expect(route).toContain('minThreshold: canonicalRange.min');
+              expect(route).toContain('maxThreshold: canonicalRange.max');
+              expect(route).not.toContain('acceptableMin ??');
+              expect(route).not.toContain('acceptableMax ??');
+            });
+
+            it('exposes only configured work-order component measurement choices to the technician UI', () => {
+              const page = read('src/components/modules/TechnicianWorkOrderPage.tsx');
+
+              expect(page).toContain('measurementRes as any).options');
+              expect(page).toContain('Select configured parameter...');
+              expect(page).toContain('Unit from component setup');
+              expect(page).toContain('selectedOption.componentId');
+              expect(page).toContain('selectedOption.parameterKey');
+              expect(page).not.toContain('placeholder=\"Parameter e.g. vibration\"');
+              expect(page).not.toContain('placeholder=\"Unit e.g. mm/s\"');
+            });
+          });
+          """)
+          PY
+
+          rm .github/workflows/one-shot-measurement-selector.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/modules/TechnicianWorkOrderPage.tsx src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts .github/workflows/one-shot-measurement-selector.yml
+          git commit -m "feat: use configured measurement parameters and units"
+          git push origin HEAD:feat/database-backed-measurement-options

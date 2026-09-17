@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch-form-defaults:
-    if: github.event.head_commit.message == 'chore: apply user-friendly form defaults'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch

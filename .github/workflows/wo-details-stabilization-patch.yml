@@ -2,201 +2,49 @@ name: WO details stabilization patch
 
 on:
   push:
-    branches:
-      - fix/wo-details-stabilization
+    branches: ["fix/wo-details-stabilization"]
 
 permissions:
   contents: write
 
 jobs:
   patch-and-verify:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
           ref: fix/wo-details-stabilization
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Apply stabilization changes
+      - name: Recover and apply product patch
         shell: bash
         run: |
           set -euo pipefail
+          git show HEAD^:.github/workflows/wo-details-stabilization-patch.yml > /tmp/previous-workflow.yml
+          python3 <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/previous-workflow.yml').read_text()
+          start_marker = "          python3 <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          block = text[start:end]
+          lines = []
+          for line in block.splitlines():
+              lines.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/wo_patch.py').write_text('\n'.join(lines) + '\n')
+          PY
           git fetch origin refs/pull/26/head:pr26-measurements --depth=1
           git show pr26-measurements:'src/app/api/work-orders/[id]/measurements/route.ts' > 'src/app/api/work-orders/[id]/measurements/route.ts'
           mkdir -p src/__tests__/work-orders
           git show pr26-measurements:'src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts' > 'src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts'
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if old not in text:
-                  raise SystemExit(f'Expected source block not found in {path}: {old[:120]!r}')
-              p.write_text(text.replace(old, new, 1))
-
-          tech = 'src/components/modules/TechnicianWorkOrderPage.tsx'
-          replace_once(tech,
-          "  const [measurement, setMeasurement] = useState({ parameterKey: '', value: '', unit: '' });\n  const [measurements, setMeasurements] = useState<any[]>([]);",
-          "  const [measurement, setMeasurement] = useState({ componentId: '', parameterKey: '', value: '', unit: '' });\n  const [measurementOptions, setMeasurementOptions] = useState<any[]>([]);\n  const [measurements, setMeasurements] = useState<any[]>([]);")
-          replace_once(tech,
-          "  const [assistanceReason, setAssistanceReason] = useState('');\n  const [assistanceRequests, setAssistanceRequests] = useState<any[]>([]);",
-          "  const [assistanceReason, setAssistanceReason] = useState('');\n  const [assistanceRequests, setAssistanceRequests] = useState<any[]>([]);\n  const [availableAssistanceSkills, setAvailableAssistanceSkills] = useState<string[]>([]);\n  const [editingAssistanceId, setEditingAssistanceId] = useState<string | null>(null);")
-
-          old_load = '''    const [woRes, capRes, taskRes, measurementRes, attachmentRes, assistanceRes] = await Promise.all([\n      api.get(`/api/work-orders/${id}`),\n      api.get(`/api/work-orders/${id}/capabilities`),\n      api.get(`/api/work-orders/${id}/tasks`),\n      api.get(`/api/work-orders/${id}/measurements`),\n      api.get(`/api/work-orders/${id}/attachments`),\n      api.get(`/api/work-orders/${id}/team-member-requests`),\n    ]);'''
-          new_load = '''    const [woRes, capRes, taskRes, measurementRes, attachmentRes, assistanceRes, workerRes] = await Promise.all([\n      api.get(`/api/work-orders/${id}`),\n      api.get(`/api/work-orders/${id}/capabilities`),\n      api.get(`/api/work-orders/${id}/tasks`),\n      api.get(`/api/work-orders/${id}/measurements`),\n      api.get(`/api/work-orders/${id}/attachments`),\n      api.get(`/api/work-orders/${id}/team-member-requests`),\n      api.get('/api/workers?role=technician'),\n    ]);'''
-          replace_once(tech, old_load, new_load)
-          replace_once(tech,
-          "    if (measurementRes.success && Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);\n    if (attachmentRes.success && Array.isArray(attachmentRes.data)) setAttachments(attachmentRes.data);\n    if (assistanceRes.success && Array.isArray(assistanceRes.data)) setAssistanceRequests(assistanceRes.data);",
-          """    if (measurementRes.success) {\n      if (Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);\n      const options = Array.isArray((measurementRes as any).options)\n        ? (measurementRes as any).options.filter((option: any) => option?.parameterKey && option?.unit && option?.selectable !== false)\n        : [];\n      setMeasurementOptions(options);\n      if (options.length === 1) {\n        const only = options[0];\n        setMeasurement((current) => ({ ...current, componentId: only.componentId, parameterKey: only.parameterKey, unit: only.unit || '' }));\n      }\n    }\n    if (attachmentRes.success && Array.isArray(attachmentRes.data)) setAttachments(attachmentRes.data);\n    if (assistanceRes.success && Array.isArray(assistanceRes.data)) setAssistanceRequests(assistanceRes.data);\n    if (workerRes.success && Array.isArray(workerRes.data)) {\n      const distinct = new Map<string, string>();\n      workerRes.data.forEach((worker: any) => {\n        const primaryTrade = String(worker.trade || '').trim();\n        if (primaryTrade) distinct.set(primaryTrade.toLowerCase(), primaryTrade);\n        (worker.skills || []).forEach((skill: any) => {\n          const label = String(skill.name || skill.code || '').trim();\n          if (label) distinct.set(label.toLowerCase(), label);\n        });\n      });\n      setAvailableAssistanceSkills(Array.from(distinct.values()).sort((a, b) => a.localeCompare(b)));\n    }""")
-
-          old_measure = '''  const addMeasurement = async () => {\n    if (!id || !measurement.parameterKey.trim() || !measurement.unit.trim() || !measurement.value.trim()) {\n      toast.error('Parameter, value and unit are required'); return;\n    }\n    const value = Number(measurement.value);\n    if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }\n    const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {\n      parameterKey: measurement.parameterKey.trim(), value, unit: measurement.unit.trim(),\n    }), 'Measurement recorded');\n    if (ok) setMeasurement({ parameterKey: '', value: '', unit: '' });\n  };'''
-          new_measure = '''  const addMeasurement = async () => {\n    if (!id || !measurement.componentId || !measurement.parameterKey || !measurement.value.trim()) {\n      toast.error('Select a configured measurement point and enter a value'); return;\n    }\n    const value = Number(measurement.value);\n    if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }\n    const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {\n      componentId: measurement.componentId, parameterKey: measurement.parameterKey, value,\n    }), 'Measurement recorded');\n    if (ok) setMeasurement((current) => ({ ...current, value: '' }));\n  };'''
-          replace_once(tech, old_measure, new_measure)
-
-          old_upload = '''  const uploadEvidence = async () => {\n    if (!id || !evidenceFile) { toast.error('Choose a photo or file first'); return; }\n    const form = new FormData();\n    form.append('file', evidenceFile);\n    form.append('category', 'technician_evidence');\n    if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());\n    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form), 'Evidence uploaded');'''
-          new_upload = '''  const uploadEvidence = async () => {\n    if (!id || !evidenceFile) { toast.error('Choose a photo or file first'); return; }\n    const maxBytes = 50 * 1024 * 1024;\n    if (evidenceFile.size > maxBytes) { toast.error('Evidence file must be 50 MB or smaller'); return; }\n    const form = new FormData();\n    form.append('file', evidenceFile);\n    form.append('category', 'technician_evidence');\n    if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());\n    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form, { timeout: 60_000 }), 'Evidence uploaded');'''
-          replace_once(tech, old_upload, new_upload)
-
-          old_assistance = '''  const requestAssistance = async () => {\n    if (!id || assistanceTrade.trim().length < 2) { toast.error('Enter the trade or skill required'); return; }\n    if (assistanceReason.trim().length < 3) { toast.error('Explain why assistance is needed'); return; }\n    const ok = await perform('assistance', () => api.post(`/api/work-orders/${id}/team-member-requests`, {\n      requestedTrade: assistanceTrade.trim(),\n      role: 'assistant',\n      reason: assistanceReason.trim(),\n    }), 'Assistance request sent to planner');\n    if (ok) { setAssistanceTrade(''); setAssistanceReason(''); }\n  };'''
-          new_assistance = '''  const saveAssistanceRequest = async () => {\n    if (!id || assistanceTrade.trim().length < 2) { toast.error('Select the trade or skill required'); return; }\n    if (assistanceReason.trim().length < 3) { toast.error('Explain why assistance is needed'); return; }\n    const body = { requestedTrade: assistanceTrade.trim(), role: 'assistant', reason: assistanceReason.trim() };\n    const ok = await perform(\n      'assistance',\n      () => editingAssistanceId\n        ? api.patch(`/api/work-orders/${id}/team-member-requests/${editingAssistanceId}`, body)\n        : api.post(`/api/work-orders/${id}/team-member-requests`, body),\n      editingAssistanceId ? 'Assistance request updated' : 'Assistance request sent to planner',\n    );\n    if (ok) { setAssistanceTrade(''); setAssistanceReason(''); setEditingAssistanceId(null); }\n  };\n\n  const cancelAssistanceRequest = (requestId: string) => id && perform(\n    `cancel-assistance-${requestId}`,\n    () => api.delete(`/api/work-orders/${id}/team-member-requests/${requestId}`),\n    'Assistance request cancelled',\n  );'''
-          replace_once(tech, old_assistance, new_assistance)
-
-          old_measure_ui = '''              <div className="grid sm:grid-cols-4 gap-2">\n                <Input placeholder="Parameter e.g. vibration" value={measurement.parameterKey} onChange={(e) => setMeasurement((m) => ({ ...m, parameterKey: e.target.value }))} />\n                <Input placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />\n                <Input placeholder="Unit e.g. mm/s" value={measurement.unit} onChange={(e) => setMeasurement((m) => ({ ...m, unit: e.target.value }))} />\n                <Button variant="outline" onClick={addMeasurement} disabled={busy !== null}>Record Reading</Button>\n              </div>'''
-          new_measure_ui = '''              {measurementOptions.length === 0 ? (\n                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">\n                  No configured measurement points are available for this work order. A planner or supervisor must link the relevant component and configure its measurement inspection points before a technician can record readings.\n                </div>\n              ) : (\n                <div className="grid sm:grid-cols-4 gap-2">\n                  <select\n                    className="h-10 rounded-md border bg-background px-3 text-sm sm:col-span-2"\n                    value={measurement.componentId && measurement.parameterKey ? `${measurement.componentId}::${measurement.parameterKey}` : ''}\n                    onChange={(e) => {\n                      const selected = measurementOptions.find((option: any) => `${option.componentId}::${option.parameterKey}` === e.target.value);\n                      setMeasurement((current) => ({\n                        ...current,\n                        componentId: selected?.componentId || '',\n                        parameterKey: selected?.parameterKey || '',\n                        unit: selected?.unit || '',\n                      }));\n                    }}\n                  >\n                    <option value="">Select configured measurement...</option>\n                    {measurementOptions.map((option: any) => (\n                      <option key={`${option.componentId}-${option.inspectionPointId || option.parameterKey}`} value={`${option.componentId}::${option.parameterKey}`}>\n                        {option.componentName || 'Component'} · {option.label || option.parameterKey} ({option.unit})\n                      </option>\n                    ))}\n                  </select>\n                  <Input placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />\n                  <div className="flex gap-2"><Input aria-label="Measurement unit" className="bg-muted/40" value={measurement.unit} readOnly placeholder="Unit" /><Button variant="outline" onClick={addMeasurement} disabled={busy !== null || !measurement.componentId || !measurement.parameterKey}>Record</Button></div>\n                </div>\n              )}'''
-          replace_once(tech, old_measure_ui, new_measure_ui)
-
-          old_assistance_ui = '''                {caps?.canRequestAssistance && (\n                  <>\n                    <Input value={assistanceTrade} onChange={(e) => setAssistanceTrade(e.target.value)} placeholder="Required trade / skill e.g. Electrician" />\n                    <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder="Why is assistance required?" rows={2} />\n                    <Button variant="outline" className="w-full" onClick={requestAssistance} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>Request Assistance</Button>\n                  </>\n                )}\n                {assistanceRequests.slice(0, 5).map((request: any) => (\n                  <div key={request.id} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span>{request.requestedTrade || request.requestedUser?.fullName || 'Assistance'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>\n                ))}'''
-          new_assistance_ui = '''                {caps?.canRequestAssistance && (\n                  <>\n                    <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={assistanceTrade} onChange={(e) => setAssistanceTrade(e.target.value)}>\n                      <option value="">Select required trade / skill...</option>\n                      {availableAssistanceSkills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}\n                    </select>\n                    {availableAssistanceSkills.length === 0 && <p className="text-xs text-amber-600">No active technician skills are configured. Add technician trades/skills in HRMS before requesting skill-based assistance.</p>}\n                    <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder="Why is assistance required?" rows={2} />\n                    <div className="flex gap-2">\n                      <Button variant="outline" className="flex-1" onClick={saveAssistanceRequest} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>{editingAssistanceId ? 'Update Request' : 'Request Assistance'}</Button>\n                      {editingAssistanceId && <Button variant="ghost" onClick={() => { setEditingAssistanceId(null); setAssistanceTrade(''); setAssistanceReason(''); }} disabled={busy !== null}>Cancel Edit</Button>}\n                    </div>\n                  </>\n                )}\n                {assistanceRequests.slice(0, 5).map((request: any) => {\n                  const ownPending = request.status === 'pending' && (request.requestedBy === user?.id || request.requestedByUser?.id === user?.id);\n                  return (\n                    <div key={request.id} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2">\n                      <span>{request.requestedTrade || request.requestedUser?.fullName || 'Assistance'}</span>\n                      <div className="flex items-center gap-1">\n                        <Badge variant="outline">{pretty(request.status)}</Badge>\n                        {ownPending && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingAssistanceId(request.id); setAssistanceTrade(request.requestedTrade || ''); setAssistanceReason(request.reason || ''); }}>Edit</Button>}\n                        {ownPending && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelAssistanceRequest(request.id)} disabled={busy !== null}>Cancel</Button>}\n                      </div>\n                    </div>\n                  );\n                })}'''
-          replace_once(tech, old_assistance_ui, new_assistance_ui)
-
-          replace_once(tech,
-          '''                <p className="text-xs text-muted-foreground">Stop the live timer first. The server will verify open tools, materials, handovers and assistance requests before accepting completion.</p>\n                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />''',
-          '''                <p className="text-xs text-muted-foreground">Stop the live timer first. The server will verify open tools, materials, handovers and assistance requests before accepting completion.</p>\n                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}\n                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />''')
-
-          route = 'src/app/api/work-orders/[id]/team-member-requests/[reqId]/route.ts'
-          route_text = Path(route).read_text()
-          marker = '''/**\n * DELETE /api/work-orders/[id]/team-member-requests/[reqId]\n * Cancel a pending team member request.\n */'''
-          if marker not in route_text:
-              raise SystemExit('Team member DELETE marker not found')
-          patch_handler = r'''/**
- * PATCH /api/work-orders/[id]/team-member-requests/[reqId]
- * Requester may edit an unprocessed pending assistance request.
- */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string; reqId: string }> }
-) {
-  try {
-    const session = getSession(request);
-    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-
-    const { id, reqId } = await params;
-    const auth = await authorizeWorkOrderPlant(request, session, id);
-    if (!auth.ok) return auth.response;
-
-    const teamRequest = await db.woTeamMemberRequest.findUnique({ where: { id: reqId } });
-    if (!teamRequest) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
-    if (teamRequest.workOrderId !== id) return NextResponse.json({ success: false, error: 'Request does not belong to this work order' }, { status: 400 });
-    if (teamRequest.requestedBy !== session.userId) return NextResponse.json({ success: false, error: 'Only the requester can edit this assistance request' }, { status: 403 });
-    if (teamRequest.status !== 'pending' || teamRequest.reviewedAt) {
-      return NextResponse.json({ success: false, error: 'Only an unprocessed pending request can be edited' }, { status: 409 });
-    }
-
-    const body = await request.json();
-    const requestedTrade = typeof body.requestedTrade === 'string' ? body.requestedTrade.trim() : '';
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
-    if (requestedTrade.length < 2) return NextResponse.json({ success: false, error: 'requestedTrade is required' }, { status: 400 });
-    if (reason.length < 3) return NextResponse.json({ success: false, error: 'reason is required' }, { status: 400 });
-
-    const updated = await db.$transaction(async (tx) => {
-      const row = await tx.woTeamMemberRequest.update({
-        where: { id: reqId },
-        data: { requestedTrade, reason, role: 'assistant' },
-        include: {
-          requestedByUser: { select: { id: true, fullName: true, username: true } },
-          requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'update',
-          entityType: 'wo_team_member_request',
-          entityId: reqId,
-          newValues: JSON.stringify({ workOrderId: id, requestedTrade, reason, status: 'pending' }),
-        },
-      });
-      return row;
-    });
-
-    return NextResponse.json({ success: true, data: updated });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to update team member request';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
-}
-
-'''
-          Path(route).write_text(route_text.replace(marker, patch_handler + marker, 1))
-
-          sidebar = 'src/components/shared/Sidebar.tsx'
-          replace_once(sidebar,
-          "        { page: 'inventory-requests', label: 'Requests', icon: FileText },\n        { page: 'inventory-transfers', label: 'Transfers', icon: Truck },",
-          "        { page: 'inventory-requests', label: 'Requests', icon: FileText },\n        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },\n        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: Wrench },\n        { page: 'inventory-transfers', label: 'Transfers', icon: Truck },")
-
-          v11 = 'src/components/modules/TechnicianWorkOrderV11Panels.tsx'
-          replace_once(v11,
-          "import { useNavigationStore } from '@/stores/navigationStore';",
-          "import { useNavigationStore } from '@/stores/navigationStore';")
-          replace_once(v11,
-          "  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });\n  const [personalTool, setPersonalTool] = useState({ toolName: '', toolCode: '', condition: 'good', notes: '' });",
-          """  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });\n  const [editingMaterialRequestId, setEditingMaterialRequestId] = useState<string | null>(null);\n  const [editingToolRequestId, setEditingToolRequestId] = useState<string | null>(null);\n  const [teamTime, setTeamTime] = useState({ userId: '', startTime: toLocalInput(new Date(Date.now() - 60 * 60_000)), endTime: toLocalInput(), breakMinutes: '0', activityType: 'maintenance', notes: '' });\n  const [personalTool, setPersonalTool] = useState({ toolName: '', toolCode: '', condition: 'good', notes: '' });""")
-
-          old_material_fn = '''  const requestMaterial = async () => {\n    if (!material.itemId || !selectedMaterial || material.reason.trim().length < 3) {\n      toast.error('Select an available material / spare part and enter a reason'); return;\n    }\n    const quantity = Number(material.quantity);\n    if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero'); return; }\n    const availableStock = Number(selectedMaterial.currentStock ?? 0);\n    if (quantity > availableStock) {\n      toast.error(`Only ${availableStock} ${selectedMaterial.unitOfMeasure || 'unit(s)'} currently available`); return;\n    }\n    const ok = await run('material', () => api.post(`/api/work-orders/${workOrderId}/materials`, {\n      itemId: selectedMaterial.id,\n      itemName: selectedMaterial.name,\n      quantity,\n      unit: selectedMaterial.unitOfMeasure || 'each',\n      urgency: material.urgency,\n      reason: material.reason.trim(),\n    }), 'Material request submitted');\n    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });\n  };'''
-          new_material_fn = '''  const resetMaterialRequest = () => {\n    setEditingMaterialRequestId(null);\n    setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });\n  };\n\n  const requestMaterial = async () => {\n    if (!material.itemId || material.reason.trim().length < 3) {\n      toast.error('Select a material / spare part and enter a reason'); return;\n    }\n    const quantity = Number(material.quantity);\n    if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero'); return; }\n    if (selectedMaterial) {\n      const availableStock = Number(selectedMaterial.currentStock ?? 0);\n      if (quantity > availableStock) {\n        toast.error(`Only ${availableStock} ${selectedMaterial.unitOfMeasure || 'unit(s)'} currently available`); return;\n      }\n    }\n    const ok = await run(\n      'material',\n      () => editingMaterialRequestId\n        ? api.put(`/api/repairs/material-requests/${editingMaterialRequestId}`, { quantityRequested: quantity, urgency: material.urgency, reason: material.reason.trim() })\n        : api.post(`/api/work-orders/${workOrderId}/materials`, {\n            itemId: selectedMaterial?.id || material.itemId,\n            itemName: selectedMaterial?.name || material.itemName,\n            quantity,\n            unit: selectedMaterial?.unitOfMeasure || material.unit || 'each',\n            urgency: material.urgency,\n            reason: material.reason.trim(),\n          }),\n      editingMaterialRequestId ? 'Material request updated' : 'Material request submitted',\n    );\n    if (ok) resetMaterialRequest();\n  };\n\n  const cancelMaterialRequest = (requestId: string) => run(\n    `cancel-material-${requestId}`,\n    () => api.delete(`/api/repairs/material-requests/${requestId}`),\n    'Material request cancelled',\n  );'''
-          replace_once(v11, old_material_fn, new_material_fn)
-
-          old_tool_fn = '''  const requestTool = async () => {\n    if (!toolRequest.toolId || !selectedTool || toolRequest.reason.trim().length < 3) {\n      toast.error('Select an available tool and enter a reason'); return;\n    }\n    const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));\n    const availableQuantity = Number(selectedTool.quantity ?? 1);\n    if (quantity > availableQuantity) {\n      toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;\n    }\n    const ok = await run('tool-request', () => api.post('/api/repairs/tool-requests', {\n      workOrderId,\n      items: [{\n        toolId: selectedTool.id,\n        toolName: selectedTool.name,\n        toolCode: selectedTool.toolCode || '',\n        quantityRequested: quantity,\n      }],\n      reason: toolRequest.reason.trim(), urgency: toolRequest.urgency,\n    }), 'Tool request submitted');\n    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });\n  };'''
-          new_tool_fn = '''  const resetToolRequest = () => {\n    setEditingToolRequestId(null);\n    setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });\n  };\n\n  const requestTool = async () => {\n    if (!toolRequest.toolId || toolRequest.reason.trim().length < 3) {\n      toast.error('Select a tool and enter a reason'); return;\n    }\n    const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));\n    if (selectedTool) {\n      const availableQuantity = Number(selectedTool.quantity ?? 1);\n      if (quantity > availableQuantity) {\n        toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;\n      }\n    }\n    const item = {\n      toolId: selectedTool?.id || toolRequest.toolId,\n      toolName: selectedTool?.name || toolRequest.toolName,\n      toolCode: selectedTool?.toolCode || toolRequest.toolCode || '',\n      quantityRequested: quantity,\n    };\n    const ok = await run(\n      'tool-request',\n      () => editingToolRequestId\n        ? api.put(`/api/repairs/tool-requests/${editingToolRequestId}`, { toolName: item.toolName, items: [item], reason: toolRequest.reason.trim(), urgency: toolRequest.urgency })\n        : api.post('/api/repairs/tool-requests', { workOrderId, items: [item], reason: toolRequest.reason.trim(), urgency: toolRequest.urgency }),\n      editingToolRequestId ? 'Tool request updated' : 'Tool request submitted',\n    );\n    if (ok) resetToolRequest();\n  };\n\n  const cancelToolRequest = (requestId: string) => run(\n    `cancel-tool-${requestId}`,\n    () => api.delete(`/api/repairs/tool-requests/${requestId}`),\n    'Tool request cancelled',\n  );'''
-          replace_once(v11, old_tool_fn, new_tool_fn)
-
-          insert_before = '''  const recordDowntime = async () => {'''
-          team_time_fn = '''  const logTeamMemberTime = async () => {\n    if (!teamTime.userId) { toast.error('Select a team member'); return; }\n    const start = new Date(teamTime.startTime);\n    const end = new Date(teamTime.endTime);\n    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {\n      toast.error('Enter a valid start/end time window'); return;\n    }\n    const breakMinutes = Math.max(0, Number(teamTime.breakMinutes) || 0);\n    const ok = await run('team-time', () => api.post(`/api/work-orders/${workOrderId}/time-logs`, {\n      action: 'start',\n      loggedForUserId: teamTime.userId,\n      isTeamLog: true,\n      startTime: start.toISOString(),\n      endTime: end.toISOString(),\n      breakMinutes,\n      activityType: teamTime.activityType,\n      notes: teamTime.notes.trim() || undefined,\n    }), 'Team member time recorded', false);\n    if (ok) setTeamTime((current) => ({ ...current, startTime: toLocalInput(new Date(Date.now() - 60 * 60_000)), endTime: toLocalInput(), breakMinutes: '0', notes: '' }));\n  };\n\n'''
-          replace_once(v11, insert_before, team_time_fn + insert_before)
-
-          replace_once(v11,
-          "  const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);",
-          """  const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);\n  const teamTimeCandidates = Array.from(new Map([\n    ...(workOrder.assignee?.id ? [[workOrder.assignee.id, workOrder.assignee.fullName || 'Assigned technician']] : []),\n    ...(Array.isArray(workOrder.teamMembers) ? workOrder.teamMembers.map((member: any) => [member.userId || member.user?.id, member.user?.fullName || member.fullName || member.user?.username || member.userId]).filter((row: any[]) => row[0]) : []),\n  ]).entries()).map(([id, name]) => ({ id, name }));""")
-
-          replace_once(v11,
-          '''                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestMaterial} disabled={busy !== null || !material.itemId || resourcesLoading}><Plus className="h-4 w-4 mr-1" />Request Material</Button>''',
-          '''                <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestMaterial} disabled={busy !== null || !material.itemId || (!editingMaterialRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingMaterialRequestId ? 'Update Request' : 'Request Material'}</Button>{editingMaterialRequestId && <Button variant="ghost" onClick={resetMaterialRequest} disabled={busy !== null}>Cancel Edit</Button>}</div>''')
-          replace_once(v11,
-          '''                  <p className="text-xs text-muted-foreground mt-1">Requested {request.quantityRequested ?? request.quantity ?? '-'} {request.unit || ''} · {pretty(request.urgency)}</p>\n                </div>''',
-          '''                  <p className="text-xs text-muted-foreground mt-1">Requested {request.quantityRequested ?? request.quantity ?? '-'} {request.unit || ''} · {pretty(request.urgency)}</p>\n                  {request.status === 'pending' && <div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingMaterialRequestId(request.id); setMaterial({ itemId: request.itemId || request.item?.id || '', itemName: request.item?.name || request.itemName || '', quantity: String(request.quantityRequested ?? request.quantity ?? 1), unit: request.unit || request.item?.unitOfMeasure || '', urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelMaterialRequest(request.id)} disabled={busy !== null}>Cancel</Button></div>}\n                </div>''')
-
-          replace_once(v11,
-          '''                <Button className="col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || resourcesLoading}><Plus className="h-4 w-4 mr-1" />Request Tool</Button>''',
-          '''                <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || (!editingToolRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingToolRequestId ? 'Update Request' : 'Request Tool'}</Button>{editingToolRequestId && <Button variant="ghost" onClick={resetToolRequest} disabled={busy !== null}>Cancel Edit</Button>}</div>''')
-          replace_once(v11,
-          '''                  <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>\n                </div>''',
-          '''                  <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>\n                  {request.status === 'pending' && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelToolRequest(request.id)} disabled={busy !== null}>Cancel</Button></div>}\n                </div>''')
-
-          labor_anchor = '''            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center"><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{laborSummary.totalEntries || 0}</p><p className="text-[11px] text-muted-foreground">Entries</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.totalHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Total h</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.personalHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Personal h</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{Number(laborSummary.teamHours || 0).toFixed(2)}</p><p className="text-[11px] text-muted-foreground">Team h</p></div></div>'''
-          labor_new = labor_anchor + '''\n            {capabilities?.canLogTeamTime && capabilities?.isTeamLeader && (\n              <div className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-2">\n                <div><Label>Team member *</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={teamTime.userId} onChange={(e) => setTeamTime((v) => ({ ...v, userId: e.target.value }))}><option value="">Select team member...</option>{teamTimeCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></div>\n                <div><Label>Activity</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={teamTime.activityType} onChange={(e) => setTeamTime((v) => ({ ...v, activityType: e.target.value }))}><option value="maintenance">Maintenance</option><option value="inspection">Inspection</option><option value="testing">Testing</option><option value="travel">Travel</option><option value="waiting">Waiting</option></select></div>\n                <div><Label>Start</Label><Input type="datetime-local" value={teamTime.startTime} onChange={(e) => setTeamTime((v) => ({ ...v, startTime: e.target.value }))} /></div>\n                <div><Label>End</Label><Input type="datetime-local" value={teamTime.endTime} onChange={(e) => setTeamTime((v) => ({ ...v, endTime: e.target.value }))} /></div>\n                <div><Label>Break minutes</Label><Input type="number" min="0" max="480" value={teamTime.breakMinutes} onChange={(e) => setTeamTime((v) => ({ ...v, breakMinutes: e.target.value }))} /></div>\n                <div><Label>Notes</Label><Input value={teamTime.notes} onChange={(e) => setTeamTime((v) => ({ ...v, notes: e.target.value }))} placeholder="Work performed" /></div>\n                <Button className="sm:col-span-2 sm:w-fit" variant="outline" onClick={logTeamMemberTime} disabled={busy !== null || !teamTime.userId}><Clock3 className="h-4 w-4 mr-1" />Record Team Member Time</Button>\n              </div>\n            )}'''
-          replace_once(v11, labor_anchor, labor_new)
-          PY
-
-      - name: Remove one-shot workflow before commit
-        run: rm -f .github/workflows/wo-details-stabilization-patch.yml
+          python3 /tmp/wo_patch.py
+          rm -f .github/workflows/wo-details-stabilization-patch.yml
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

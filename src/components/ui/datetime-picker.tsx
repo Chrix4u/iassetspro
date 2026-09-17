@@ -17,18 +17,27 @@ import { cn } from '@/lib/utils'
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Convert a YYYY-MM-DD string to dd/mm/yyyy display format. */
-function displayDate(value: string | undefined): string {
+/** Normalize YYYY-MM-DD or a full ISO timestamp to YYYY-MM-DD. */
+export function normalizeDateInput(value: string | undefined): string {
   if (!value) return ''
-  const [year, month, day] = value.split('-')
-  if (!year || !month || !day) return value
+  const datePart = value.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : value
+}
+
+/** Convert a YYYY-MM-DD or full ISO timestamp to dd/mm/yyyy display format. */
+export function displayDate(value: string | undefined): string {
+  const normalized = normalizeDateInput(value)
+  if (!normalized) return ''
+  const [year, month, day] = normalized.split('-')
+  if (!year || !month || !day) return value ?? ''
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
 }
 
-/** Parse a YYYY-MM-DD string into a Date object at midnight local. */
+/** Parse a YYYY-MM-DD or full ISO timestamp into a Date object at midnight local. */
 function parseDate(value: string | undefined): Date | undefined {
-  if (!value) return undefined
-  const [year, month, day] = value.split('-')
+  const normalized = normalizeDateInput(value)
+  if (!normalized) return undefined
+  const [year, month, day] = normalized.split('-')
   if (!year || !month || !day) return undefined
   return new Date(Number(year), Number(month) - 1, Number(day))
 }
@@ -209,7 +218,7 @@ export function DatePicker({
           <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <input
             type="date"
-            value={value ?? ''}
+            value={normalizeDateInput(value)}
             onChange={(e) => {
               const v = e.target.value
               onChange?.(v || undefined)

@@ -59,6 +59,9 @@ type SearchableResourceOption = {
   searchText: string;
 };
 
+const DEFAULT_MATERIAL_REQUEST_REASON = 'Required to complete this work order.';
+const DEFAULT_TOOL_REQUEST_REASON = 'Required to safely complete this work order.';
+
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
 function pretty(value?: string | null) {
@@ -172,8 +175,8 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [resourcesLoading, setResourcesLoading] = useState(true);
   const [stickyHeaderTarget, setStickyHeaderTarget] = useState<HTMLElement | null>(null);
 
-  const [material, setMaterial] = useState({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });
-  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });
+  const [material, setMaterial] = useState({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: DEFAULT_MATERIAL_REQUEST_REASON });
+  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: DEFAULT_TOOL_REQUEST_REASON });
   const [personalTool, setPersonalTool] = useState({ toolName: '', toolCode: '', condition: 'good', notes: '' });
   const [downtimeForm, setDowntimeForm] = useState({
     reason: '', category: 'unplanned', impactLevel: 'medium', downtimeStart: toLocalInput(), downtimeEnd: '', productionLoss: '', notes: '',
@@ -292,7 +295,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       urgency: material.urgency,
       reason: material.reason.trim(),
     }), 'Material request submitted');
-    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });
+    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: DEFAULT_MATERIAL_REQUEST_REASON });
   };
 
   const requestTool = async () => {
@@ -314,7 +317,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       }],
       reason: toolRequest.reason.trim(), urgency: toolRequest.urgency,
     }), 'Tool request submitted');
-    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });
+    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: DEFAULT_TOOL_REQUEST_REASON });
   };
 
   const addPersonalTool = async () => {

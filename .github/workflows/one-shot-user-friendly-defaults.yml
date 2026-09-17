@@ -1,0 +1,107 @@
+name: One-shot user-friendly form defaults
+
+on:
+  push:
+    branches:
+      - feat/user-friendly-form-defaults
+
+permissions:
+  contents: write
+
+jobs:
+  patch-form-defaults:
+    if: github.event.head_commit.message == 'chore: apply user-friendly form defaults'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/user-friendly-form-defaults
+
+      - name: Apply exact form-default replacements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          tech_path = Path('src/components/modules/TechnicianWorkOrderV11Panels.tsx')
+          tech = tech_path.read_text()
+          tech = replace_once(
+              tech,
+              "const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);\n",
+              "const DEFAULT_MATERIAL_REQUEST_REASON = 'Required to complete this work order.';\nconst DEFAULT_TOOL_REQUEST_REASON = 'Required to safely complete this work order.';\n\nconst ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);\n",
+              'technician constants',
+          )
+          tech = replace_once(
+              tech,
+              "  const [material, setMaterial] = useState({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });\n  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });",
+              "  const [material, setMaterial] = useState({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: DEFAULT_MATERIAL_REQUEST_REASON });\n  const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: DEFAULT_TOOL_REQUEST_REASON });",
+              'technician initial request defaults',
+          )
+          tech = replace_once(
+              tech,
+              "    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: '' });",
+              "    if (ok) setMaterial({ itemId: '', itemName: '', quantity: '1', unit: '', urgency: 'normal', reason: DEFAULT_MATERIAL_REQUEST_REASON });",
+              'material reset default',
+          )
+          tech = replace_once(
+              tech,
+              "    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });",
+              "    if (ok) setToolRequest({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: DEFAULT_TOOL_REQUEST_REASON });",
+              'tool reset default',
+          )
+          tech_path.write_text(tech)
+
+          maintenance_path = Path('src/components/modules/MaintenancePages.tsx')
+          maintenance = maintenance_path.read_text()
+          marker = "function UrgencyBadge({ urgency }: { urgency: string }) {"
+          defaults = """const DEFAULT_WO_SAFETY_NOTES = 'Follow site safety procedures. Isolate equipment and apply LOTO/PTW where required.';
+const DEFAULT_WO_PPE = 'Safety helmet, safety boots, gloves and eye protection; add task-specific PPE where required.';
+const DEFAULT_WO_TOOLS = 'Use approved task-appropriate tools; confirm availability before work starts.';
+const DEFAULT_WO_MATERIALS = 'Confirm required spare parts and consumables; request unavailable items before work starts.';
+const DEFAULT_WO_NOTES = 'Record work performed, findings and follow-up actions before completion.';
+
+"""
+          maintenance = replace_once(maintenance, marker, defaults + marker, 'WO default constants')
+          maintenance = replace_once(
+              maintenance,
+              "  safetyNotes: '',\n  ppeRequired: '',\n  toolsRequired: '',\n  materialsRequired: '',\n  notes: '',",
+              "  safetyNotes: DEFAULT_WO_SAFETY_NOTES,\n  ppeRequired: DEFAULT_WO_PPE,\n  toolsRequired: DEFAULT_WO_TOOLS,\n  materialsRequired: DEFAULT_WO_MATERIALS,\n  notes: DEFAULT_WO_NOTES,",
+              'direct WO defaults',
+          )
+          maintenance = replace_once(
+              maintenance,
+              "    // Section 4: Safety\n    safetyNotes: '',\n    ppeRequired: '',\n    notes: '',",
+              "    // Section 4: Safety\n    safetyNotes: DEFAULT_WO_SAFETY_NOTES,\n    ppeRequired: DEFAULT_WO_PPE,\n    notes: DEFAULT_WO_NOTES,",
+              'conversion initial defaults',
+          )
+          maintenance = replace_once(
+              maintenance,
+              "      requiredParts: [],\n      requiredTools: [],\n      safetyNotes: '',\n      ppeRequired: '',\n      notes: '',",
+              "      requiredParts: [],\n      requiredTools: [],\n      safetyNotes: DEFAULT_WO_SAFETY_NOTES,\n      ppeRequired: DEFAULT_WO_PPE,\n      notes: DEFAULT_WO_NOTES,",
+              'conversion reopen defaults',
+          )
+          maintenance = replace_once(
+              maintenance,
+              "      technicalDescription: mr.title,",
+              "      technicalDescription: mr.description || mr.title,",
+              'conversion technical description',
+          )
+          maintenance_path.write_text(maintenance)
+          PY
+
+      - name: Commit branch-only source changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/modules/TechnicianWorkOrderV11Panels.tsx src/components/modules/MaintenancePages.tsx
+          git diff --cached --check
+          git commit -m "feat: prefill common maintenance form text"
+          git push origin HEAD:feat/user-friendly-form-defaults

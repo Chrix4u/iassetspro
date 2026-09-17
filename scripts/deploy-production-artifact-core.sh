@@ -126,7 +126,9 @@ tar --extract --gzip --file "$ARTIFACT" --directory "$NEW_RELEASE" \
   --no-same-owner --no-same-permissions --delay-directory-restore
 [[ "$(tr -d '\r\n' < "$NEW_RELEASE/RELEASE_SHA")" == "$SHA" ]] || { echo "STOP: embedded SHA mismatch"; exit 1; }
 NEW_ENTRY="$(entrypoint_for "$NEW_RELEASE")" || { echo "STOP: runtime entrypoint missing"; exit 1; }
-test -x "$NEW_RELEASE/node_modules/.bin/prisma"
+PRISMA_CLI="$NEW_RELEASE/node_modules/prisma/build/index.js"
+test -f "$PRISMA_CLI"
+test -f "$NEW_RELEASE/node_modules/prisma/build/prisma_schema_build_bg.wasm"
 test -f "$NEW_RELEASE/prisma/schema.prisma"
 test -d "$NEW_RELEASE/prisma/migrations"
 test -f "$NEW_RELEASE/scripts/seed-transitions.ts"
@@ -139,7 +141,7 @@ NODE_ENV=production bun run scripts/seed-transitions.ts --check-schema
 
 echo "[3/10] Prisma migration classification"
 set +e
-MIGRATION_STATUS="$(./node_modules/.bin/prisma migrate status 2>&1)"
+MIGRATION_STATUS="$(node "$PRISMA_CLI" migrate status 2>&1)"
 MIGRATION_RC=$?
 set -e
 printf '%s\n' "$MIGRATION_STATUS"
@@ -164,8 +166,8 @@ elif grep -Eq "not yet been applied|have not yet been applied|Following migratio
   test -s "$BACKUP"
   gzip -t "$BACKUP"
   echo "Verified database backup: $BACKUP"
-  ./node_modules/.bin/prisma migrate deploy
-  ./node_modules/.bin/prisma migrate status
+  node "$PRISMA_CLI" migrate deploy
+  node "$PRISMA_CLI" migrate status
 else
   echo "STOP: migration status unclassified (exit $MIGRATION_RC)"
   exit 1

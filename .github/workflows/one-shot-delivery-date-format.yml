@@ -73,15 +73,10 @@ jobs:
             raise SystemExit('DatePicker helper anchor not found')
           text = text.replace(old, new, 1)
 
-          old_mobile = """            type=\"date\"
-            value={value ?? ''}
-            onChange={(e) => {"""
-          new_mobile = """            type=\"date\"
-            value={normalizeDateInput(value)}
-            onChange={(e) => {"""
+          old_mobile = "value={value ?? ''}"
           if old_mobile not in text:
             raise SystemExit('DatePicker mobile value anchor not found')
-          text = text.replace(old_mobile, new_mobile, 1)
+          text = text.replace(old_mobile, "value={normalizeDateInput(value)}", 1)
           path.write_text(text)
 
           test = Path('src/__tests__/datetime-picker-date-normalization.test.ts')

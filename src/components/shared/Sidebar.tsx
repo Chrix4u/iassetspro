@@ -264,6 +264,8 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'inventory-transactions', label: 'Transactions', icon: ArrowRightLeft },
         { page: 'inventory-adjustments', label: 'Adjustments', icon: ArrowUpDown },
         { page: 'inventory-requests', label: 'Requests', icon: FileText },
+        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
+        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: Wrench },
         { page: 'inventory-transfers', label: 'Transfers', icon: Truck },
         { page: 'inventory-suppliers', label: 'Suppliers', icon: Building },
         { page: 'inventory-purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },

@@ -1,0 +1,371 @@
+name: One-shot planner competency evidence
+
+on:
+  push:
+    branches:
+      - feat/planner-technician-competency-evidence
+    paths:
+      - .github/workflows/one-shot-planner-competency.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/planner-technician-competency-evidence
+          fetch-depth: 0
+
+      - name: Patch planner competency evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # -----------------------------------------------------------------
+          # /api/workers: canonical, permission-gated competency evidence
+          # -----------------------------------------------------------------
+          workers_path = Path('src/app/api/workers/route.ts')
+          workers = workers_path.read_text()
+
+          old = "import { getSession } from '@/lib/auth';"
+          new = "import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/auth';\nimport { tradeValuesCompatible } from '@/services/technicianEligibility.service';"
+          if old not in workers:
+              raise SystemExit('workers auth import anchor not found')
+          workers = workers.replace(old, new, 1)
+
+          old = "    const role = searchParams.get('role'); // technician | supervisor | all\n\n    // Build where clause"
+          new = """    const role = searchParams.get('role'); // technician | supervisor | all
+              const requiredTrade = searchParams.get('requiredTrade')?.trim() || null;
+              const canViewCompetency = isAdminCheck(session) || hasAnyPermission(session, [
+                'work_orders.assign_technician',
+                'work_orders.assign_supervisor',
+              ]);
+
+              if (requiredTrade && !canViewCompetency) {
+                return NextResponse.json(
+                  { success: false, error: 'Insufficient permissions to view technician competency evidence' },
+                  { status: 403 },
+                );
+              }
+
+              // Build where clause"""
+          if old not in workers:
+              raise SystemExit('workers query anchor not found')
+          workers = workers.replace(old, new, 1)
+
+          old = """            proficiencyLevel: true,
+                  },"""
+          new = """            proficiencyLevel: true,
+                    certified: true,
+                    yearsExperience: true,
+                  },"""
+          if old not in workers:
+              raise SystemExit('workers userSkills select anchor not found')
+          workers = workers.replace(old, new, 1)
+
+          old = """      // Build skills/trades list from userSkills
+                const skills = (user.userSkills || []).map(us => ({
+                  name: us.trade.name,
+                  code: us.trade.code,
+                  category: us.trade.category,
+                  proficiency: us.proficiencyLevel,
+                }));
+
+                return {"""
+          new = """      // Build skills/trades list from userSkills. Certification details stay
+                // server-side; planners receive only the aggregate evidence needed for
+                // assignment decisions rather than the technician's raw certification flags.
+                const skills = (user.userSkills || []).map(us => ({
+                  name: us.trade.name,
+                  code: us.trade.code,
+                  category: us.trade.category,
+                  proficiency: us.proficiencyLevel,
+                }));
+
+                const matchingSkills = requiredTrade
+                  ? (user.userSkills || []).filter((us) =>
+                      [us.trade.name, us.trade.code, us.trade.category]
+                        .some((candidate) => tradeValuesCompatible(candidate, requiredTrade)),
+                    )
+                  : [];
+                const primaryTradeMatches = requiredTrade
+                  ? tradeValuesCompatible(user.primaryTrade, requiredTrade)
+                  : false;
+                const tradeMatch = requiredTrade
+                  ? primaryTradeMatches || matchingSkills.length > 0
+                  : false;
+                const certification = !requiredTrade || !tradeMatch
+                  ? 'not_applicable'
+                  : matchingSkills.length === 0
+                    ? 'not_recorded'
+                    : matchingSkills.some((us) => us.certified)
+                      ? 'certified'
+                      : 'not_certified';
+
+                return {"""
+          if old not in workers:
+              raise SystemExit('workers transform anchor not found')
+          workers = workers.replace(old, new, 1)
+
+          old = """        roles,
+                skills,
+              };"""
+          new = """        roles,
+                skills,
+                competency: requiredTrade && canViewCompetency
+                  ? {
+                      requiredTrade,
+                      tradeMatch,
+                      certification,
+                    }
+                  : null,
+              };"""
+          if old not in workers:
+              raise SystemExit('workers return anchor not found')
+          workers = workers.replace(old, new, 1)
+          workers_path.write_text(workers)
+
+          # -----------------------------------------------------------------
+          # Shared assignment selector: advisory competency UI
+          # -----------------------------------------------------------------
+          selector_path = Path('src/components/shared/WorkerAssignmentSelector.tsx')
+          selector = selector_path.read_text()
+
+          old = """  roles: Array<{ name: string; slug: string }>;
+            skills?: Array<{ name: string; code: string; category: string; proficiency: string }>;
+          }"""
+          new = """  roles: Array<{ name: string; slug: string }>;
+            skills?: Array<{ name: string; code: string; category: string; proficiency: string }>;
+            competency?: {
+              requiredTrade: string;
+              tradeMatch: boolean;
+              certification: 'certified' | 'not_certified' | 'not_recorded' | 'not_applicable';
+            } | null;
+          }"""
+          if old not in selector:
+              raise SystemExit('selector Worker type anchor not found')
+          selector = selector.replace(old, new, 1)
+
+          old = """  onAssignTypeChange: (type: 'technician' | 'supervisor') => void;
+            label?: string;
+          }"""
+          new = """  onAssignTypeChange: (type: 'technician' | 'supervisor') => void;
+            label?: string;
+            requiredTrade?: string;
+          }"""
+          if old not in selector:
+              raise SystemExit('selector props type anchor not found')
+          selector = selector.replace(old, new, 1)
+
+          helper_marker = "// ============================================================================\n// Main Component\n// ============================================================================"
+          helper = """function CompetencyEvidence({ worker, compact = false }: { worker: Worker; compact?: boolean }) {
+            const competency = worker.competency;
+            if (!competency) return null;
+
+            const tradeLabel = competency.requiredTrade
+              .replaceAll('_', ' ')
+              .replace(/\\b\\w/g, (char) => char.toUpperCase());
+
+            return (
+              <div className={`flex flex-wrap gap-1 ${compact ? 'mt-1' : 'mt-1.5'}`}>
+                <Badge
+                  variant=\"outline\"
+                  className={competency.tradeMatch
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]'
+                    : 'border-amber-200 bg-amber-50 text-amber-700 text-[10px]'}
+                >
+                  {competency.tradeMatch ? `Trade match: ${tradeLabel}` : `Trade mismatch: ${tradeLabel}`}
+                </Badge>
+                {competency.tradeMatch && competency.certification === 'certified' && (
+                  <Badge variant=\"outline\" className=\"border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px]\">
+                    Certified
+                  </Badge>
+                )}
+                {competency.tradeMatch && competency.certification === 'not_certified' && (
+                  <Badge variant=\"outline\" className=\"border-red-200 bg-red-50 text-red-700 text-[10px]\">
+                    Matching skill not certified
+                  </Badge>
+                )}
+                {competency.tradeMatch && competency.certification === 'not_recorded' && (
+                  <Badge variant=\"outline\" className=\"border-amber-200 bg-amber-50 text-amber-700 text-[10px]\">
+                    Certification not recorded
+                  </Badge>
+                )}
+              </div>
+            );
+          }
+
+          // ============================================================================
+          // Main Component
+          // ============================================================================"""
+          if helper_marker not in selector:
+              raise SystemExit('selector helper marker not found')
+          selector = selector.replace(helper_marker, helper, 1)
+
+          old = """  onAssignTypeChange,
+            label,
+          }: WorkerAssignmentSelectorProps)"""
+          new = """  onAssignTypeChange,
+            label,
+            requiredTrade,
+          }: WorkerAssignmentSelectorProps)"""
+          if old not in selector:
+              raise SystemExit('selector destructure anchor not found')
+          selector = selector.replace(old, new, 1)
+
+          old = """      params.set('role', assignType);
+                const res = await api.get(`/api/workers?${params}`);"""
+          new = """      params.set('role', assignType);
+                if (assignType === 'technician' && requiredTrade?.trim()) {
+                  params.set('requiredTrade', requiredTrade.trim());
+                }
+                const res = await api.get(`/api/workers?${params}`);"""
+          if old not in selector:
+              raise SystemExit('selector request params anchor not found')
+          selector = selector.replace(old, new, 1)
+          selector = selector.replace(
+              "  }, [debouncedSearch, assignType]);",
+              "  }, [debouncedSearch, assignType, requiredTrade]);",
+              1,
+          )
+
+          search_marker = "      {/* Search */}"
+          advisory = """      {assignType === 'technician' && requiredTrade?.trim() && (
+                <div className=\"rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800\">
+                  Comparing candidates with the WO trade <strong>{requiredTrade.replaceAll('_', ' ')}</strong>.
+                  Competency indicators are advisory; assignment remains available unless an explicit system blocker applies.
+                </div>
+              )}
+
+              {/* Search */}"""
+          if search_marker not in selector:
+              raise SystemExit('selector search marker not found')
+          selector = selector.replace(search_marker, advisory, 1)
+
+          old = """                  <TableCell className=\"px-3 py-2\">
+                            {worker.trade ? (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${tradeColor.bg} ${tradeColor.text} ${tradeColor.border}`}>
+                                {typeof worker.trade === 'object' ? worker.trade.name : worker.trade}
+                              </span>
+                            ) : (
+                              <span className=\"text-xs text-muted-foreground\">—</span>
+                            )}
+                          </TableCell>"""
+          new = """                  <TableCell className=\"px-3 py-2\">
+                            {worker.trade ? (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${tradeColor.bg} ${tradeColor.text} ${tradeColor.border}`}>
+                                {typeof worker.trade === 'object' ? worker.trade.name : worker.trade}
+                              </span>
+                            ) : (
+                              <span className=\"text-xs text-muted-foreground\">—</span>
+                            )}
+                            <CompetencyEvidence worker={worker} />
+                          </TableCell>"""
+          if old not in selector:
+              raise SystemExit('selector desktop trade cell anchor not found')
+          selector = selector.replace(old, new, 1)
+
+          old = """                </div>
+                      </div>
+
+                      <div onClick={e => e.stopPropagation()} className=\"shrink-0\">"""
+          new = """                </div>
+                        <CompetencyEvidence worker={worker} compact />
+                      </div>
+
+                      <div onClick={e => e.stopPropagation()} className=\"shrink-0\">"""
+          if old not in selector:
+              raise SystemExit('selector mobile competency anchor not found')
+          selector = selector.replace(old, new, 1)
+          selector_path.write_text(selector)
+
+          # -----------------------------------------------------------------
+          # Maintenance WO create/convert/edit flows pass the current WO trade
+          # -----------------------------------------------------------------
+          maintenance_path = Path('src/components/modules/MaintenancePages.tsx')
+          maintenance = maintenance_path.read_text()
+          patterns = [
+              (r'^(?P<i>[ \\t]*)assignType=\\{convertForm\\.assignType\\}\\s*$', 'requiredTrade={convertForm.tradeActivity}'),
+              (r'^(?P<i>[ \\t]*)assignType=\\{form\\.assignType\\}\\s*$', 'requiredTrade={form.tradeActivity}'),
+              (r"^(?P<i>[ \\t]*)assignType=\\{editForm\\.assignType \\|\\| 'technician'\\}\\s*$", 'requiredTrade={editForm.tradeActivity}'),
+          ]
+          replacement_total = 0
+          for pattern, prop in patterns:
+              def repl(match, prop=prop):
+                  return f"{match.group('i')}{match.group(0).strip()}\\n{match.group('i')}{prop}"
+              maintenance, count = re.subn(pattern, repl, maintenance, flags=re.M)
+              if count == 0:
+                  raise SystemExit(f'Maintenance assignment prop anchor not found: {pattern}')
+              replacement_total += count
+          if replacement_total < 3:
+              raise SystemExit(f'Expected at least 3 selector call sites, patched {replacement_total}')
+          maintenance_path.write_text(maintenance)
+
+          # -----------------------------------------------------------------
+          # Contract coverage: canonical matcher, privacy gate, advisory UI
+          # -----------------------------------------------------------------
+          test_path = Path('src/__tests__/work-orders/planner-technician-competency-contract.test.ts')
+          test_path.write_text("""import { describe, expect, it } from 'vitest';
+          import fs from 'node:fs';
+
+          const read = (path: string) => fs.readFileSync(path, 'utf8');
+
+          describe('planner technician competency evidence contract', () => {
+            it('uses the canonical semantic trade matcher and permission-gates competency evidence', () => {
+              const workersRoute = read('src/app/api/workers/route.ts');
+
+              expect(workersRoute).toContain("import { tradeValuesCompatible } from '@/services/technicianEligibility.service';");
+              expect(workersRoute).toContain("const requiredTrade = searchParams.get('requiredTrade')?.trim() || null;");
+              expect(workersRoute).toContain("'work_orders.assign_technician'");
+              expect(workersRoute).toContain('if (requiredTrade && !canViewCompetency)');
+              expect(workersRoute).toContain('tradeValuesCompatible(user.primaryTrade, requiredTrade)');
+              expect(workersRoute).toContain("? 'certified'");
+              expect(workersRoute).toContain(": 'not_certified'");
+              expect(workersRoute).toContain("? 'not_recorded'");
+            });
+
+            it('shows competency evidence in the shared assignment selector without blocking selection', () => {
+              const selector = read('src/components/shared/WorkerAssignmentSelector.tsx');
+
+              expect(selector).toContain('requiredTrade?: string;');
+              expect(selector).toContain("params.set('requiredTrade', requiredTrade.trim())");
+              expect(selector).toContain('CompetencyEvidence worker={worker}');
+              expect(selector).toContain('Trade mismatch: ${tradeLabel}');
+              expect(selector).toContain('Certification not recorded');
+              expect(selector).toContain('Competency indicators are advisory');
+              expect(selector).not.toContain('disabled={!worker.competency?.tradeMatch}');
+            });
+
+            it('passes each WO trade into technician selection for create, conversion and edit flows', () => {
+              const maintenance = read('src/components/modules/MaintenancePages.tsx');
+
+              expect(maintenance).toContain('requiredTrade={convertForm.tradeActivity}');
+              expect(maintenance).toContain('requiredTrade={form.tradeActivity}');
+              expect(maintenance).toContain('requiredTrade={editForm.tradeActivity}');
+            });
+          });
+          """)
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          grep -F "requiredTrade" src/app/api/workers/route.ts
+          grep -F "Competency indicators are advisory" src/components/shared/WorkerAssignmentSelector.tsx
+          grep -F "requiredTrade={convertForm.tradeActivity}" src/components/modules/MaintenancePages.tsx
+          test -f src/__tests__/work-orders/planner-technician-competency-contract.test.ts
+
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-planner-competency.yml
+          git add src/app/api/workers/route.ts src/components/shared/WorkerAssignmentSelector.tsx src/components/modules/MaintenancePages.tsx src/__tests__/work-orders/planner-technician-competency-contract.test.ts
+          git commit -m "RWOP: show planner technician competency evidence"
+          git push origin HEAD:feat/planner-technician-competency-evidence

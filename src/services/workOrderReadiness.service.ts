@@ -278,21 +278,53 @@ function checkCompletionReadiness(
   const ongoingDowntime = wo.workOrderDowntimes.filter((row) => !row.downtimeEnd)
   if (ongoingDowntime.length > 0) blockers.push({ code: 'ONGOING_DOWNTIME', category: 'timer', message: `${ongoingDowntime.length} ongoing downtime record(s) must be ended before completion`, severity: 'blocker' })
 
+  const unresolvedToolRequests = wo.repairToolRequests.filter((tr) =>
+    ['pending', 'supervisor_approved', 'storekeeper_approved'].includes(tr.status),
+  )
+  if (unresolvedToolRequests.length > 0) {
+    blockers.push({
+      code: 'PENDING_TOOL_REQUESTS',
+      category: 'tool',
+      message: `${unresolvedToolRequests.length} tool request(s) are still awaiting approval or issuance — resolve, reject, or cancel them before completion`,
+      severity: 'blocker',
+    })
+  }
+
   const activeToolRequests = wo.repairToolRequests.filter((tr) => tr.status === 'issued' || tr.status === 'pending_return')
   const toolsOut = activeToolRequests.flatMap((tr) => tr.items).filter(hasOpenToolCustody)
   const legacyToolsOut = activeToolRequests.filter((tr) => tr.items.length === 0)
   const openToolCount = toolsOut.length + legacyToolsOut.length
   if (openToolCount > 0) blockers.push({ code: 'TOOLS_ISSUED', category: 'tool', message: `${openToolCount} issued tool item(s) still in custody or awaiting confirmed return`, severity: 'blocker' })
 
+  const unresolvedMaterialRequests = wo.repairMaterialRequests.filter((mr) =>
+    ['pending', 'supervisor_approved', 'storekeeper_approved'].includes(mr.status),
+  )
+  if (unresolvedMaterialRequests.length > 0) {
+    blockers.push({
+      code: 'PENDING_MATERIAL_REQUESTS',
+      category: 'material',
+      message: `${unresolvedMaterialRequests.length} material request(s) are still awaiting approval or issuance — resolve, reject, or cancel them before completion`,
+      severity: 'blocker',
+    })
+  }
+
   checkUnreconciledMaterials(wo, blockers, 'UNRECONCILED_MATERIALS')
 
   const existingMemberIds = new Set(wo.teamMembers.map((m) => m.userId))
-  const pendingAssistance = wo.teamMemberRequests.filter((req) => {
-    if (req.status !== 'pending' && req.status !== 'approved') return false
-    if (!req.requestedUserId) return false
+  const unresolvedAssistance = wo.teamMemberRequests.filter((req) => {
+    if (req.status === 'pending') return true
+    if (req.status !== 'approved') return false
+    if (!req.requestedUserId) return true
     return !existingMemberIds.has(req.requestedUserId)
   })
-  if (pendingAssistance.length > 0) blockers.push({ code: 'PENDING_ASSISTANCE', category: 'team', message: `${pendingAssistance.length} team member request(s) pending — requested user(s) not yet added`, severity: 'blocker' })
+  if (unresolvedAssistance.length > 0) {
+    blockers.push({
+      code: 'PENDING_ASSISTANCE',
+      category: 'team',
+      message: `${unresolvedAssistance.length} assistance request(s) are still awaiting review or assignment — resolve, reject, or cancel them before completion`,
+      severity: 'blocker',
+    })
+  }
 
   checkUnresolvedHandover(wo, blockers)
   checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)

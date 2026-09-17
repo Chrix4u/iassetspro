@@ -1,0 +1,120 @@
+name: One-shot delivery date format fix
+
+on:
+  push:
+    branches:
+      - fix/wo-convert-delivery-date-format
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/wo-convert-delivery-date-format
+      - uses: oven-sh/setup-bun@v2
+      - name: Patch DatePicker normalization and add regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/ui/datetime-picker.tsx')
+          text = path.read_text()
+
+          old = """/** Convert a YYYY-MM-DD string to dd/mm/yyyy display format. */
+          function displayDate(value: string | undefined): string {
+            if (!value) return ''
+            const [year, month, day] = value.split('-')
+            if (!year || !month || !day) return value
+            return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+          }
+
+          /** Parse a YYYY-MM-DD string into a Date object at midnight local. */
+          function parseDate(value: string | undefined): Date | undefined {
+            if (!value) return undefined
+            const [year, month, day] = value.split('-')
+            if (!year || !month || !day) return undefined
+            return new Date(Number(year), Number(month) - 1, Number(day))
+          }
+          """
+
+          new = """/** Normalize YYYY-MM-DD or a full ISO timestamp to YYYY-MM-DD. */
+          export function normalizeDateInput(value: string | undefined): string {
+            if (!value) return ''
+            const datePart = value.slice(0, 10)
+            return /^\\d{4}-\\d{2}-\\d{2}$/.test(datePart) ? datePart : value
+          }
+
+          /** Convert a YYYY-MM-DD or full ISO timestamp to dd/mm/yyyy display format. */
+          export function displayDate(value: string | undefined): string {
+            const normalized = normalizeDateInput(value)
+            if (!normalized) return ''
+            const [year, month, day] = normalized.split('-')
+            if (!year || !month || !day) return value ?? ''
+            return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
+          }
+
+          /** Parse a YYYY-MM-DD or full ISO timestamp into a Date object at midnight local. */
+          function parseDate(value: string | undefined): Date | undefined {
+            const normalized = normalizeDateInput(value)
+            if (!normalized) return undefined
+            const [year, month, day] = normalized.split('-')
+            if (!year || !month || !day) return undefined
+            return new Date(Number(year), Number(month) - 1, Number(day))
+          }
+          """
+
+          if old not in text:
+            raise SystemExit('DatePicker helper anchor not found')
+          text = text.replace(old, new, 1)
+
+          old_mobile = """            type=\"date\"
+            value={value ?? ''}
+            onChange={(e) => {"""
+          new_mobile = """            type=\"date\"
+            value={normalizeDateInput(value)}
+            onChange={(e) => {"""
+          if old_mobile not in text:
+            raise SystemExit('DatePicker mobile value anchor not found')
+          text = text.replace(old_mobile, new_mobile, 1)
+          path.write_text(text)
+
+          test = Path('src/__tests__/datetime-picker-date-normalization.test.ts')
+          test.write_text("""import { describe, expect, it } from 'vitest';
+          import { displayDate, normalizeDateInput } from '@/components/ui/datetime-picker';
+
+          describe('DatePicker date normalization', () => {
+            it('formats a full ISO timestamp as DD/MM/YYYY', () => {
+              const value = '2026-09-17T18:43:51.394Z';
+              expect(normalizeDateInput(value)).toBe('2026-09-17');
+              expect(displayDate(value)).toBe('17/09/2026');
+            });
+
+            it('preserves YYYY-MM-DD values', () => {
+              expect(normalizeDateInput('2026-09-17')).toBe('2026-09-17');
+              expect(displayDate('2026-09-17')).toBe('17/09/2026');
+            });
+          });
+          """)
+          PY
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify fix
+        run: |
+          bunx eslint src/components/ui/datetime-picker.tsx src/__tests__/datetime-picker-date-normalization.test.ts
+          bunx vitest run src/__tests__/datetime-picker-date-normalization.test.ts
+      - name: Commit fix and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/one-shot-delivery-date-format.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/ui/datetime-picker.tsx src/__tests__/datetime-picker-date-normalization.test.ts .github/workflows/one-shot-delivery-date-format.yml
+          git commit -m 'fix: format WO delivery dates as DD/MM/YYYY'
+          git push origin HEAD:fix/wo-convert-delivery-date-format

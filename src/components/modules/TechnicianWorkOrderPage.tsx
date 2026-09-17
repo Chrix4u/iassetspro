@@ -481,6 +481,18 @@ export function TechnicianWorkOrderPage() {
         </div>
       )}
 
+      {wo.status === 'completed' && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950/20 dark:text-blue-200">
+          <strong>Work submitted.</strong> The work order is awaiting supervisor verification. No further technician closure action is required at this stage.
+        </div>
+      )}
+
+      {wo.status === 'verified' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200">
+          <strong>Work verified.</strong> The work order is awaiting planner or maintenance-management closure.
+        </div>
+      )}
+
       <TechnicianWorkOrderV11Panels workOrderId={id} workOrder={wo} capabilities={caps} onChanged={load} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

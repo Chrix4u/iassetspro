@@ -71,6 +71,11 @@ type Task = {
 };
 
 const WAITING_STATUSES = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
+const TECHNICIAN_HIDDEN_PROFILE_WARNING_CODES = new Set([
+  'TECH_ELIG_TRADE_MISMATCH',
+  'TECH_ELIG_NO_SKILL_RECORD',
+  'TECH_ELIG_NO_CERTIFICATION',
+]);
 
 function pretty(value?: string | null) {
   if (!value) return '-';
@@ -359,7 +364,9 @@ export function TechnicianWorkOrderPage() {
   const taskProgress = tasks.length ? Math.round((taskDone / tasks.length) * 100) : 0;
   const startReadiness = caps?.startReadiness || null;
   const startBlockers = startReadiness?.blockers || [];
-  const startWarnings = startReadiness?.warnings || [];
+  const startWarnings = (startReadiness?.warnings || []).filter(
+  (item) => !TECHNICIAN_HIDDEN_PROFILE_WARNING_CODES.has(item.code),
+);
   const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
 
   return (
@@ -397,7 +404,7 @@ export function TechnicianWorkOrderPage() {
           <div className="flex items-start gap-2">
             {startBlocked || startWarnings.length ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
             <div className="min-w-0">
-              <p className="font-semibold">{startBlocked ? 'Start blocked — resolve readiness items first' : startWarnings.length ? 'Ready to start with safety warnings' : 'Ready to start'}</p>
+              <p className="font-semibold">{startBlocked ? 'Start blocked — resolve readiness items first' : startWarnings.length ? 'Ready to start with warnings' : 'Ready to start'}</p>
               {startBlockers.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{startBlockers.map((item) => <li key={item.code}>{item.message}</li>)}</ul>}
               {startWarnings.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5">{startWarnings.map((item) => <li key={item.code}>{item.message}</li>)}</ul>}
             </div>

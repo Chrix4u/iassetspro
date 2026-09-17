@@ -25,4 +25,15 @@ describe('production artifact deployment rollback safety', () => {
     expect(source).toMatch(/Deployment core exited[\s\S]*health_check[\s\S]*restore_previous_runtime/);
     expect(source).toMatch(/pm2 delete \"\$PM2_NAME\"[\s\S]*ln -sfn \"\$OLD_RELEASE\"[\s\S]*pm2 start \"\$old_entry\"/);
   });
+
+  it('invokes Prisma from its canonical package entrypoint instead of a flattened .bin launcher', async () => {
+    const corePath = join(process.cwd(), 'scripts/deploy-production-artifact-core.sh');
+    const source = await readFile(corePath, 'utf8');
+
+    expect(source).toContain('PRISMA_CLI="$NEW_RELEASE/node_modules/prisma/build/index.js"');
+    expect(source).toContain('node "$PRISMA_CLI" migrate status');
+    expect(source).toContain('node "$PRISMA_CLI" migrate deploy');
+    expect(source).toContain('prisma_schema_build_bg.wasm');
+    expect(source).not.toContain('./node_modules/.bin/prisma migrate');
+  });
 });

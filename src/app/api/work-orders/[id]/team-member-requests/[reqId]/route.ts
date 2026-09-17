@@ -114,6 +114,14 @@ export async function PUT(
           id: true,
           fullName: true,
           status: true,
+          primaryTrade: true,
+          userRoles: { select: { role: { select: { slug: true } } } },
+          userSkills: {
+            select: {
+              trade: { select: { name: true, code: true } },
+              proficiencyLevel: true,
+            },
+          },
           plantAccess: { where: { plantId: wo.plantId }, select: { id: true } },
         },
       });
@@ -128,6 +136,30 @@ export async function PUT(
           { success: false, error: 'Selected technician does not have access to the work order plant.' },
           { status: 403 },
         );
+      }
+
+      if (teamRequest.requestedTrade) {
+        const isTechnician = assignee.userRoles.some((row) => row.role.slug === 'maintenance_technician');
+        if (!isTechnician) {
+          return NextResponse.json(
+            { success: false, error: 'Selected user is not an active maintenance technician.' },
+            { status: 422 },
+          );
+        }
+
+        const requestedSkill = teamRequest.requestedTrade.trim().toLowerCase();
+        const skillLabels = [
+          assignee.primaryTrade,
+          ...assignee.userSkills.flatMap((row) => [row.trade.name, row.trade.code]),
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase());
+        if (!skillLabels.includes(requestedSkill)) {
+          return NextResponse.json(
+            { success: false, error: `Selected technician does not have the requested trade/skill: ${teamRequest.requestedTrade}` },
+            { status: 422 },
+          );
+        }
       }
 
       const effectiveLeaderId = wo.teamLeaderId || wo.assignedTo || userIdToAssign;

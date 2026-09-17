@@ -2,7 +2,7 @@
  * Technician Eligibility Service
  *
  * Checks whether a technician is eligible to be assigned or work on a given WO.
- * Uses existing User, UserSkill, UserPlant, WorkOrder fields — no new HR structures.
+ * Uses existing User, UserSkill, UserPlant, WorkOrder and WorkOrderTimeLog fields — no new HR structures.
  */
 
 import { db } from '@/lib/db'
@@ -13,16 +13,87 @@ export interface EligibilityResult {
   warnings: Array<{ code: string; message: string; category: string }>
 }
 
+type TechnicianSkill = {
+  tradeId: string
+  proficiencyLevel: string
+  certified: boolean
+  yearsExperience: number | null
+  trade: { id: string; name: string; code: string; category: string | null }
+}
+
+const GENERIC_TRADE_ROLE_TOKENS = new Set([
+  'technician',
+  'tech',
+  'fitter',
+  'artisan',
+  'operator',
+  'engineer',
+  'engineering',
+  'specialist',
+])
+
+function normalizeTrade(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function tradeTokens(value: string): string[] {
+  return normalizeTrade(value)
+    .split(' ')
+    .filter(Boolean)
+    .filter((token) => !GENERIC_TRADE_ROLE_TOKENS.has(token))
+}
+
+/**
+ * Compare trade labels semantically enough for the data already used by RWOP.
+ *
+ * Examples that should match:
+ * - "Mechanical Fitter" <-> "mechanical"
+ * - "Electrical Technician" <-> "electrical"
+ * - "Instrumentation & Control" <-> "instrumentation control"
+ *
+ * We deliberately do not use loose substring matching, so unrelated labels such
+ * as "mechanical" and "electromechanical" are not treated as equivalent.
+ */
+export function tradeValuesCompatible(left: string | null | undefined, right: string | null | undefined): boolean {
+  if (!left || !right) return false
+
+  const normalizedLeft = normalizeTrade(left)
+  const normalizedRight = normalizeTrade(right)
+  if (!normalizedLeft || !normalizedRight) return false
+  if (normalizedLeft === normalizedRight) return true
+
+  const leftTokens = tradeTokens(normalizedLeft)
+  const rightTokens = tradeTokens(normalizedRight)
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false
+
+  const leftSet = new Set(leftTokens)
+  const rightSet = new Set(rightTokens)
+  const leftWithinRight = leftTokens.every((token) => rightSet.has(token))
+  const rightWithinLeft = rightTokens.every((token) => leftSet.has(token))
+
+  return leftWithinRight || rightWithinLeft
+}
+
+function skillMatchesTradeActivity(skill: TechnicianSkill, tradeActivity: string): boolean {
+  return [skill.trade.name, skill.trade.code, skill.trade.category]
+    .some((candidate) => tradeValuesCompatible(candidate, tradeActivity))
+}
+
 /**
  * Check technician eligibility for a work order.
  *
  * Checks:
  * - BLOCKER: User status is not 'active' → INACTIVE_USER
  * - BLOCKER: User has no plant access for WO's plant → NO_PLANT_ACCESS
- * - WARNING: User's primaryTrade doesn't match WO's tradeActivity → TRADE_MISMATCH
- * - WARNING: User has conflicting active WO → CONFLICTING_WORK
- * - WARNING: User has no UserSkill records at all → NO_SKILL_RECORD
- * - WARNING: User not certified for the WO's required trade → NO_CERTIFICATION
+ * - WARNING: Recorded trade information is incompatible with WO tradeActivity → TRADE_MISMATCH
+ * - WARNING: User has another genuinely live execution session → CONFLICTING_WORK
+ * - WARNING: User has neither a primary trade nor structured UserSkill records → NO_SKILL_RECORD
+ * - WARNING: Matching UserSkill exists but is not certified → NO_CERTIFICATION
  */
 export async function checkTechnicianEligibility(
   userId: string,
@@ -31,7 +102,6 @@ export async function checkTechnicianEligibility(
   const blockers: EligibilityResult['blockers'] = []
   const warnings: EligibilityResult['warnings'] = []
 
-  // Fetch user with relevant relations
   const user = await db.user.findUnique({
     where: { id: userId },
     select: {
@@ -59,7 +129,6 @@ export async function checkTechnicianEligibility(
     }
   }
 
-  // Fetch work order
   const wo = await db.workOrder.findUnique({
     where: { id: workOrderId },
     select: {
@@ -78,7 +147,6 @@ export async function checkTechnicianEligibility(
     }
   }
 
-  // BLOCKER: User status is not 'active'
   if (user.status && user.status !== 'active') {
     blockers.push({
       code: 'INACTIVE_USER',
@@ -87,7 +155,6 @@ export async function checkTechnicianEligibility(
     })
   }
 
-  // BLOCKER: No plant access for WO's plant
   if (wo.plantId) {
     const hasPlantAccess = user.plantAccess.some((pa) => pa.plantId === wo.plantId)
     if (!hasPlantAccess) {
@@ -99,40 +166,42 @@ export async function checkTechnicianEligibility(
     }
   }
 
-  // WARNING: Primary trade doesn't match WO's tradeActivity
-  if (user.primaryTrade && wo.tradeActivity && user.primaryTrade !== wo.tradeActivity) {
-    warnings.push({
-      code: 'TRADE_MISMATCH',
-      message: `User's primary trade ("${user.primaryTrade}") does not match WO trade activity ("${wo.tradeActivity}")`,
-      category: 'skill',
-    })
+  if (user.primaryTrade && wo.tradeActivity) {
+    const primaryTradeMatches = tradeValuesCompatible(user.primaryTrade, wo.tradeActivity)
+    const structuredTradeMatches = user.userSkills.some((skill) => skillMatchesTradeActivity(skill, wo.tradeActivity!))
+
+    if (!primaryTradeMatches && !structuredTradeMatches) {
+      warnings.push({
+        code: 'TRADE_MISMATCH',
+        message: `User's primary trade ("${user.primaryTrade}") does not match WO trade activity ("${wo.tradeActivity}")`,
+        category: 'skill',
+      })
+    }
   }
 
-  // WARNING: Conflicting active WO
-  const activeWoStatuses = ['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold']
-  const conflictingWos = await db.workOrder.count({
+  // Only a genuinely live execution session can conflict with starting another
+  // work order. Merely being assigned to WOs that are waiting/on hold must not
+  // create a false readiness warning. This mirrors the authoritative start
+  // execution service's live-session predicate.
+  const conflictingSessions = await db.workOrderTimeLog.count({
     where: {
-      id: { not: workOrderId },
-      OR: [
-        { assignedTo: userId },
-        { teamMembers: { some: { userId } } },
-      ],
-      status: { in: activeWoStatuses },
+      userId,
+      workOrderId: { not: workOrderId },
+      action: { in: ['start', 'resume'] },
+      endTime: null,
+      workOrder: { status: 'in_progress' },
     },
   })
 
-  if (conflictingWos > 0) {
+  if (conflictingSessions > 0) {
     warnings.push({
       code: 'CONFLICTING_WORK',
-      message: `User has ${conflictingWos} active work order(s) that may conflict with this assignment`,
+      message: `User has ${conflictingSessions} active execution session(s) on another work order that may conflict with this assignment`,
       category: 'schedule',
     })
   }
 
-  // WARNING: No skill records at all
-  checkNoSkillRecord(user.userSkills, warnings)
-
-  // WARNING: Not certified for the WO's required trade
+  checkNoSkillRecord(user.primaryTrade, user.userSkills, warnings)
   checkNoCertification(user, wo.tradeActivity, warnings)
 
   return {
@@ -145,17 +214,20 @@ export async function checkTechnicianEligibility(
 /**
  * NO_SKILL_RECORD — WARNING
  *
- * If the user has no UserSkill records at all, warn that no trade/skill
- * certifications are on file. Uses the existing UserSkill model.
+ * A populated primaryTrade is already meaningful trade-profile evidence. Warn
+ * only when both the primary trade and the structured skill records are absent;
+ * do not incorrectly describe a technician with "Mechanical Fitter" recorded
+ * as having no trade information at all.
  */
 function checkNoSkillRecord(
+  primaryTrade: string | null,
   userSkills: Array<{ tradeId: string }>,
   warnings: EligibilityResult['warnings'],
 ): void {
-  if (userSkills.length === 0) {
+  if (!primaryTrade?.trim() && userSkills.length === 0) {
     warnings.push({
       code: 'NO_SKILL_RECORD',
-      message: 'No trade or skill certifications are on file for this technician',
+      message: 'No primary trade or structured skill records are on file for this technician',
       category: 'skill',
     })
   }
@@ -164,55 +236,31 @@ function checkNoSkillRecord(
 /**
  * NO_CERTIFICATION — WARNING
  *
- * If the WO requires a specific trade (tradeActivity) and the user's UserSkill
- * for that trade has `certified: false`, warn that the technician is not
- * certified for this trade. Matches by looking up the Trade record associated
- * with each UserSkill and comparing against the WO's tradeActivity.
+ * Certification warnings are evidence-based: they are emitted only when a
+ * structured UserSkill matching the WO trade exists and that matching skill is
+ * explicitly not certified. Absence of UserSkill rows alone is not evidence of
+ * a failed certification requirement.
  */
 function checkNoCertification(
   user: {
     primaryTrade: string | null
-    userSkills: Array<{
-      tradeId: string
-      proficiencyLevel: string
-      certified: boolean
-      yearsExperience: number | null
-      trade: { id: string; name: string; code: string; category: string | null }
-    }>
+    userSkills: TechnicianSkill[]
   },
   tradeActivity: string | null,
   warnings: EligibilityResult['warnings'],
 ): void {
   if (!tradeActivity) return
 
-  const tradeLower = tradeActivity.toLowerCase()
+  const matchingSkills = user.userSkills.filter((skill) => skillMatchesTradeActivity(skill, tradeActivity))
+  const primaryTradeMatches = tradeValuesCompatible(user.primaryTrade, tradeActivity)
 
-  // Find UserSkill records matching the WO's tradeActivity.
-  // Match against the Trade's name, code, or category (all case-insensitive).
-  const matchingSkills = user.userSkills.filter((us) => {
-    const trade = us.trade
-    return (
-      trade.name.toLowerCase() === tradeLower ||
-      trade.code.toLowerCase() === tradeLower ||
-      (trade.category && trade.category.toLowerCase() === tradeLower)
-    )
-  })
-
-  // Also check primaryTrade string match (in case no UserSkill link exists but
-  // primaryTrade field matches)
-  const primaryTradeMatches = user.primaryTrade
-    ?.toLowerCase() === tradeLower
-
-  // If there's no matching skill at all and primaryTrade doesn't match either,
-  // skip — the TRADE_MISMATCH warning already covers this scenario.
   if (matchingSkills.length === 0 && !primaryTradeMatches) return
 
-  // If there are matching skills, check if any is certified
   if (matchingSkills.length > 0) {
-    const anyCertified = matchingSkills.some((us) => us.certified)
+    const anyCertified = matchingSkills.some((skill) => skill.certified)
     if (!anyCertified) {
       const tradeNames = matchingSkills
-        .map((us) => us.trade.name)
+        .map((skill) => skill.trade.name)
         .join(', ')
       warnings.push({
         code: 'NO_CERTIFICATION',

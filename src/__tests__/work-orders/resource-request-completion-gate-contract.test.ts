@@ -56,9 +56,13 @@ describe('RWOP resource request approval and completion gate contract', () => {
     const notifications = read('src/lib/notifications.ts');
 
     expect(maintenance).toContain('<strong>Trade needed:</strong> {req.requestedTrade}');
-    expect(maintenance).toContain('primaryTrade=');
+    expect(maintenance).toContain('/api/workers?role=technician');
+    expect(maintenance).toContain('worker.skills');
+    expect(maintenance).toContain('Only active technicians in this plant with the requested trade/skill are listed.');
     expect(maintenance).toContain("'Assign & Approve'");
     expect(assistanceRoute).toContain('Please select a technician to assign for this trade request.');
+    expect(assistanceRoute).toContain("row.role.slug === 'maintenance_technician'");
+    expect(assistanceRoute).toContain('Selected technician does not have the requested trade/skill');
     expect(assistanceRoute).toContain("'wo_team_approved'");
     expect(assistanceRoute).toContain("'Team Assignment Approved'");
     expect(toolCreateRoute).toContain("'New Tool Request Submitted'");

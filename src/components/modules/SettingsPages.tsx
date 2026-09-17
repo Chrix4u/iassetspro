@@ -2710,11 +2710,27 @@ export function SettingsGeneralPage() {
   const [profile, setProfile] = useState<CompanyProfile>(defaultCompanyProfile);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [workOrderDefaults, setWorkOrderDefaults] = useState({
+    safetyNotes: '',
+    ppeRequired: '',
+    notes: '',
+  });
+  const [savingWorkOrderDefaults, setSavingWorkOrderDefaults] = useState(false);
 
   useEffect(() => {
-    api.get<CompanyProfile>('/api/company-profile').then(res => {
-      if (res.success && res.data) {
-        setProfile(prev => ({ ...prev, ...res.data }));
+    Promise.all([
+      api.get<CompanyProfile>('/api/company-profile'),
+      api.get<{ safetyNotes: string; ppeRequired: string; notes: string }>('/api/settings/work-order-defaults'),
+    ]).then(([profileRes, defaultsRes]) => {
+      if (profileRes.success && profileRes.data) {
+        setProfile(prev => ({ ...prev, ...profileRes.data }));
+      }
+      if (defaultsRes.success && defaultsRes.data) {
+        setWorkOrderDefaults({
+          safetyNotes: defaultsRes.data.safetyNotes || '',
+          ppeRequired: defaultsRes.data.ppeRequired || '',
+          notes: defaultsRes.data.notes || '',
+        });
       }
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -2757,6 +2773,21 @@ export function SettingsGeneralPage() {
     setSaving(false);
   };
 
+  const handleSaveWorkOrderDefaults = async () => {
+    setSavingWorkOrderDefaults(true);
+    try {
+      const res = await api.put('/api/settings/work-order-defaults', workOrderDefaults);
+      if (res.success) {
+        toast.success('Work order form defaults saved');
+      } else {
+        toast.error(res.error || 'Failed to save work order defaults');
+      }
+    } catch {
+      toast.error('Failed to save work order defaults');
+    }
+    setSavingWorkOrderDefaults(false);
+  };
+
   if (loading) {
     return (
       <div className="page-content flex items-center justify-center min-h-[40vh]">
@@ -2770,6 +2801,49 @@ export function SettingsGeneralPage() {
       <div><h1 className="text-2xl font-bold tracking-tight">General Settings</h1><p className="text-muted-foreground mt-1">Configure system-wide preferences and defaults</p></div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="lg:col-span-2 border-amber-200 dark:border-amber-900/50">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4" />Work Order Form Defaults</CardTitle>
+            <CardDescription>
+              Optional defaults copied into new work orders and Maintenance Request → Work Order conversion forms. Planners can edit them for each job. Leave a field empty to use no default.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Default Safety Notes</Label>
+              <Textarea
+                rows={3}
+                value={workOrderDefaults.safetyNotes}
+                onChange={e => setWorkOrderDefaults(current => ({ ...current, safetyNotes: e.target.value }))}
+                placeholder="Example: isolate equipment and follow the approved LOTO procedure before work begins."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Default PPE Required</Label>
+              <Input
+                value={workOrderDefaults.ppeRequired}
+                onChange={e => setWorkOrderDefaults(current => ({ ...current, ppeRequired: e.target.value }))}
+                placeholder="Example: helmet, safety glasses, gloves, safety boots"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Default General Notes</Label>
+              <Textarea
+                rows={2}
+                value={workOrderDefaults.notes}
+                onChange={e => setWorkOrderDefaults(current => ({ ...current, notes: e.target.value }))}
+                placeholder="Optional standing instructions for newly planned work orders"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSaveWorkOrderDefaults} disabled={savingWorkOrderDefaults} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                {savingWorkOrderDefaults ? <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+                Save Work Order Defaults
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Company Info */}
         <Card>
           <CardHeader><CardTitle className="text-base">Company Info</CardTitle><CardDescription>Organization identification and address</CardDescription></CardHeader>

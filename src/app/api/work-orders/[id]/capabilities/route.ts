@@ -137,6 +137,13 @@ export async function GET(
       ? await checkReadiness(id, 'start')
       : null;
 
+    const canAttemptCompletion = hasMultipleTeamMembers
+      ? (isTeamLeader && wo.status === 'in_progress' && !hasOwnLiveSession)
+      : (isAssignee && wo.status === 'in_progress' && !hasOwnLiveSession);
+    const completionReadiness = canAttemptCompletion
+      ? await checkReadiness(id, 'complete')
+      : null;
+
     const capabilities = {
       // Starting creates a labor timer, therefore only the assigned technician
       // or team leader receives this capability. Admin/manager control authority
@@ -167,9 +174,8 @@ export async function GET(
         (wo.status === 'assigned' && assignmentAccepted)
       ),
       canHandover: (isAssignee || isTeamLeader) && wo.status === 'in_progress' && hasOwnLiveSession,
-      canSubmitCompletion: hasMultipleTeamMembers
-        ? (isTeamLeader && wo.status === 'in_progress' && !hasOwnLiveSession)
-        : (isAssignee && wo.status === 'in_progress' && !hasOwnLiveSession),
+      canSubmitCompletion: canAttemptCompletion,
+      completionReadiness,
       canVerify: (isSupervisor || isAdminUser) && wo.status === 'completed',
       canClose: (isPlanner || isAdminUser) && wo.status === 'verified',
       hasActiveExecutionSession: hasOwnLiveSession,

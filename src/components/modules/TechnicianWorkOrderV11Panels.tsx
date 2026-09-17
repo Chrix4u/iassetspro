@@ -52,6 +52,13 @@ type ToolOption = {
   location?: string | null;
 };
 
+type SearchableResourceOption = {
+  id: string;
+  label: string;
+  detail?: string;
+  searchText: string;
+};
+
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
 function pretty(value?: string | null) {
@@ -74,6 +81,82 @@ function minutesLabel(value?: number | null) {
   const minutes = Math.max(0, Number(value || 0));
   if (minutes < 60) return `${Math.round(minutes)} min`;
   return `${(minutes / 60).toFixed(2)} h`;
+}
+
+function SearchableResourceSelect({
+  selectedId,
+  options,
+  placeholder,
+  emptyText,
+  disabled,
+  onSelect,
+}: {
+  selectedId: string;
+  options: SearchableResourceOption[];
+  placeholder: string;
+  emptyText: string;
+  disabled?: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = useMemo(() => options.find((option) => option.id === selectedId) || null, [options, selectedId]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = useMemo(
+    () => options.filter((option) => !normalizedQuery || option.searchText.includes(normalizedQuery)).slice(0, 100),
+    [normalizedQuery, options],
+  );
+
+  return (
+    <div className="relative">
+      <Input
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        autoComplete="off"
+        value={open ? query : selected?.label || ''}
+        placeholder={placeholder}
+        disabled={disabled}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+        }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setOpen(false);
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+          if (selectedId) onSelect('');
+        }}
+      />
+      {open && !disabled && (
+        <div role="listbox" className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-lg">
+          {filteredOptions.length ? filteredOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="option"
+              aria-selected={option.id === selectedId}
+              className="flex w-full min-w-0 flex-col items-start rounded-sm px-2 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onSelect(option.id);
+                setQuery(option.label);
+                setOpen(false);
+              }}
+            >
+              <span className="w-full truncate font-medium">{option.label}</span>
+              {option.detail && <span className="w-full truncate text-[11px] text-muted-foreground">{option.detail}</span>}
+            </button>
+          )) : (
+            <p className="px-2 py-3 text-sm text-muted-foreground">{emptyText}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilities, onChanged }: Props) {
@@ -151,6 +234,24 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const selectedTool = useMemo(
     () => toolOptions.find((tool) => tool.id === toolRequest.toolId) || null,
     [toolOptions, toolRequest.toolId],
+  );
+  const materialSearchOptions = useMemo<SearchableResourceOption[]>(
+    () => inventoryOptions.map((item) => ({
+      id: item.id,
+      label: `${item.name}${item.itemCode ? ` [${item.itemCode}]` : ''}`,
+      detail: `${Number(item.currentStock ?? 0)} ${item.unitOfMeasure || 'each'} available${item.location ? ` · ${item.location}` : ''}`,
+      searchText: `${item.name} ${item.itemCode || ''} ${item.location || ''}`.toLowerCase(),
+    })),
+    [inventoryOptions],
+  );
+  const toolSearchOptions = useMemo<SearchableResourceOption[]>(
+    () => toolOptions.map((tool) => ({
+      id: tool.id,
+      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
+    })),
+    [toolOptions],
   );
 
   const run = async (key: string, action: () => Promise<any>, success: string, refreshParent = true) => {
@@ -318,34 +419,31 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
             {capabilities?.canRequestMaterials && (
               <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(13rem,2.2fr)_minmax(5rem,.6fr)_minmax(6rem,.8fr)_minmax(6.5rem,.8fr)_minmax(11rem,1.7fr)_auto] lg:items-end">
                 <div className="col-span-2 min-w-0 lg:col-span-1">
-                  <Label>Material / spare part *</Label>
-                  <select
-                    className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
-                    value={material.itemId}
-                    disabled={resourcesLoading}
-                    onChange={(e) => {
-                      const item = inventoryOptions.find((option) => option.id === e.target.value);
+                  <div className="flex min-h-5 items-center justify-between gap-2">
+                    <Label>Material / spare part *</Label>
+                    {selectedMaterial && (
+                      <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
+                        Stock: {Number(selectedMaterial.currentStock ?? 0)} {selectedMaterial.unitOfMeasure || 'each'}{selectedMaterial.location ? ` · ${selectedMaterial.location}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <SearchableResourceSelect
+                    selectedId={material.itemId}
+                    options={materialSearchOptions}
+                    placeholder={resourcesLoading ? 'Loading available materials...' : inventoryOptions.length ? 'Search materials or item codes...' : 'No in-stock materials available'}
+                    emptyText="No matching in-stock materials"
+                    disabled={resourcesLoading || inventoryOptions.length === 0}
+                    onSelect={(id) => {
+                      const item = inventoryOptions.find((option) => option.id === id);
                       setMaterial((v) => ({
                         ...v,
                         itemId: item?.id || '',
                         itemName: item?.name || '',
-                        unit: item?.unitOfMeasure || 'each',
-                        quantity: '1',
+                        unit: item?.unitOfMeasure || '',
+                        quantity: item ? '1' : v.quantity,
                       }));
                     }}
-                  >
-                    <option value="">{resourcesLoading ? 'Loading available materials...' : inventoryOptions.length ? 'Select available material / spare part...' : 'No in-stock materials available'}</option>
-                    {inventoryOptions.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}{item.itemCode ? ` [${item.itemCode}]` : ''} — {Number(item.currentStock ?? 0)} {item.unitOfMeasure || 'each'} available
-                      </option>
-                    ))}
-                  </select>
-                  {selectedMaterial && (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      Stock: {Number(selectedMaterial.currentStock ?? 0)} {selectedMaterial.unitOfMeasure || 'each'}{selectedMaterial.location ? ` · ${selectedMaterial.location}` : ''}
-                    </p>
-                  )}
+                  />
                 </div>
                 <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" max={selectedMaterial ? Number(selectedMaterial.currentStock ?? 0) : undefined} value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
                 <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0 bg-muted/40" value={material.unit} readOnly placeholder="From inventory" /></div>
@@ -372,34 +470,31 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
             {capabilities?.canRequestTools && (
               <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 lg:grid-cols-[minmax(14rem,2.2fr)_minmax(5rem,.6fr)_minmax(6.5rem,.8fr)_minmax(12rem,1.8fr)_auto] lg:items-end">
                 <div className="col-span-2 min-w-0 lg:col-span-1">
-                  <Label>Tool required *</Label>
-                  <select
-                    className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm"
-                    value={toolRequest.toolId}
-                    disabled={resourcesLoading}
-                    onChange={(e) => {
-                      const tool = toolOptions.find((option) => option.id === e.target.value);
+                  <div className="flex min-h-5 items-center justify-between gap-2">
+                    <Label>Tool required *</Label>
+                    {selectedTool && (
+                      <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
+                        Available: {Number(selectedTool.quantity ?? 1)} · {selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <SearchableResourceSelect
+                    selectedId={toolRequest.toolId}
+                    options={toolSearchOptions}
+                    placeholder={resourcesLoading ? 'Loading available tools...' : toolOptions.length ? 'Search tools or tool codes...' : 'No tools currently available'}
+                    emptyText="No matching available tools"
+                    disabled={resourcesLoading || toolOptions.length === 0}
+                    onSelect={(id) => {
+                      const tool = toolOptions.find((option) => option.id === id);
                       setToolRequest((v) => ({
                         ...v,
                         toolId: tool?.id || '',
                         toolName: tool?.name || '',
                         toolCode: tool?.toolCode || '',
-                        quantity: '1',
+                        quantity: tool ? '1' : v.quantity,
                       }));
                     }}
-                  >
-                    <option value="">{resourcesLoading ? 'Loading available tools...' : toolOptions.length ? 'Select available tool...' : 'No tools currently available'}</option>
-                    {toolOptions.map((tool) => (
-                      <option key={tool.id} value={tool.id}>
-                        {tool.name}{tool.toolCode ? ` [${tool.toolCode}]` : ''} — {Number(tool.quantity ?? 1)} available{tool.condition ? ` · ${pretty(tool.condition)}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedTool && (
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
-                    </p>
-                  )}
+                  />
                 </div>
                 <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>

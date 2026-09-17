@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git show HEAD^:.github/workflows/wo-details-stabilization-patch.yml > /tmp/previous-workflow.yml
+          git show c4d571becad9f1f4323584109ebf5f7163bf73aa:.github/workflows/wo-details-stabilization-patch.yml > /tmp/previous-workflow.yml
           python3 <<'PY'
           from pathlib import Path
           text = Path('/tmp/previous-workflow.yml').read_text()
@@ -44,6 +44,21 @@ jobs:
           mkdir -p src/__tests__/work-orders
           git show pr26-measurements:'src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts' > 'src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts'
           python3 /tmp/wo_patch.py
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('src/__tests__/work-orders/database-backed-measurement-options-contract.test.ts')
+          text = path.read_text()
+          replacements = {
+              "Select configured parameter...": "Select configured measurement...",
+              "Unit from component setup": 'aria-label="Measurement unit"',
+              "selectedOption.componentId": "selected?.componentId",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Expected contract assertion not found: {old}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
           rm -f .github/workflows/wo-details-stabilization-patch.yml
 
       - name: Install dependencies

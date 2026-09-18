@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { assistanceRequestReason } from '@/lib/technician-reason-defaults';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
@@ -357,9 +358,10 @@ export async function PATCH(
 
     const body = await request.json();
     const requestedTrade = typeof body.requestedTrade === 'string' ? body.requestedTrade.trim() : '';
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
     if (requestedTrade.length < 2) return NextResponse.json({ success: false, error: 'requestedTrade is required' }, { status: 400 });
-    if (reason.length < 3) return NextResponse.json({ success: false, error: 'reason is required' }, { status: 400 });
+    const reason = typeof body.reason === 'string' && body.reason.trim()
+      ? body.reason.trim()
+      : teamRequest.reason || assistanceRequestReason({ trade: requestedTrade });
 
     const updated = await db.$transaction(async (tx) => {
       const row = await tx.woTeamMemberRequest.update({

@@ -252,6 +252,38 @@ async function main() {
     },
   });
 
+  const existingVibrationPoint = await db.componentInspectionPoint.findFirst({
+    where: {
+      componentId: pumpBearingComponent.id,
+      parameterKey: 'vibration',
+      inspectionType: 'measurement',
+    },
+    select: { id: true },
+  });
+  const vibrationPointData = {
+    name: 'Bearing Vibration',
+    description: 'Drive-end bearing vibration velocity',
+    inspectionType: 'measurement',
+    parameterKey: 'vibration',
+    normalRange: JSON.stringify({ min: 0, max: 4.5, unit: 'mm/s' }),
+    frequency: 'per_start',
+    isActive: true,
+    sortOrder: 10,
+  };
+  if (existingVibrationPoint) {
+    await db.componentInspectionPoint.update({
+      where: { id: existingVibrationPoint.id },
+      data: vibrationPointData,
+    });
+  } else {
+    await db.componentInspectionPoint.create({
+      data: {
+        componentId: pumpBearingComponent.id,
+        ...vibrationPointData,
+      },
+    });
+  }
+
   for (let i = 0; i < DEFAULT_WO_TRANSITIONS.length; i++) {
     await upsertStatusTransition('work_order', DEFAULT_WO_TRANSITIONS[i], i);
   }

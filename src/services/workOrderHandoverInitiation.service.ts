@@ -4,6 +4,7 @@ import { executeTransition } from '@/lib/state-machine';
 import { closeAllActiveWorkSessions } from '@/services/workOrderActiveSession.service';
 import { buildAuditData } from '@/lib/audit-helpers';
 import { sendRepairNotification } from '@/lib/repair-notifications';
+import { handoverReason } from '@/lib/technician-reason-defaults';
 import type {
   HandoverOptions,
   SessionContext,
@@ -195,6 +196,11 @@ export async function initiateCanonicalHandover(
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+    const resolvedReason = options.reason?.trim() || handoverReason({
+      woNumber: wo.woNumber,
+      fromShift: options.fromShift,
+      toShift: options.toShift,
+    });
     if (!wo.plantId) {
       return {
         success: false as const,
@@ -242,7 +248,7 @@ export async function initiateCanonicalHandover(
       workOrderId,
       'pending_handover',
       session,
-      { reason: options.reason, tx },
+      { reason: resolvedReason, tx },
     );
     if (!transition.success) {
       throw new HandoverTransitionError(
@@ -268,7 +274,7 @@ export async function initiateCanonicalHandover(
                 : options.equipmentStatus,
             )
           : null,
-        notes: options.notes || options.reason || null,
+        notes: options.notes || resolvedReason,
         workOrderId,
       },
     });
@@ -342,7 +348,7 @@ export async function initiateCanonicalHandover(
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance technician',
-      details: options.reason ? { reason: options.reason } : undefined,
+      details: { reason: resolvedReason },
     });
   }
 

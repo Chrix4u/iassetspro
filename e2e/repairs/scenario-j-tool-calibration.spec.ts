@@ -25,6 +25,7 @@ import {
 test('UAT-06: Scenario J — Tool Calibration Enforcement', async () => {
   const plannerToken = await getToken('planner');
   const techUserId = await lookupUserByKey(plannerToken, 'tech_single');
+  const supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
   const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
   const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
@@ -50,6 +51,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async () => {
     await approveMR(supervisorToken, mr.id);
     const wo = await convertMR(plannerToken, mr.id, {
       assignedTo: techUserId,
+      assignedSupervisorId: supervisorUserId,
       tradeActivity: 'mechanical',
       workOrderType: 'corrective',
       priority: 'high',
@@ -57,7 +59,7 @@ test('UAT-06: Scenario J — Tool Calibration Enforcement', async () => {
     woId = wo.id;
     expect(woId).toBeTruthy();
 
-    await assignWO(plannerToken, woId, { assignedTo: techUserId });
+    await assignWO(plannerToken, woId, { assignedTo: techUserId, assignedSupervisorId: supervisorUserId });
     await startWO(techToken, woId);
 
     const fetched = await getWO(techToken, woId);

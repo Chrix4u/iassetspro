@@ -2,6 +2,7 @@
   "name": "iassetspro-eam",
   "version": "0.3.0",
   "private": true,
+  "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "npx prisma generate && next dev -p 3000",
     "build:local": "npx prisma generate && next build && cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client && cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb && cp -r node_modules/mariadb .next/standalone/node_modules/mariadb && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",

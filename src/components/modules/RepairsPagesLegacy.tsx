@@ -334,11 +334,11 @@ function canApproveAsSupervisor(user: any): boolean {
 
 function canApproveAsStore(user: any): boolean {
   if (!user) return false;
-  const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
-  // Only store keepers, inventory managers, and admins can do store approval
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  // Keep physical store custody actions aligned with server authorization.
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || hasPermission('repair_material_requests.update');
+  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
 function canViewAllRepairData(user: any): boolean {
@@ -665,7 +665,7 @@ export function RepairMaterialRequestsPage() {
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
                           )}
-                          {r.status === 'issued' && (
+                          {r.status === 'issued' && canApproveAsStore(user) && (
                             <>
                               <Button size="sm" variant="outline" className="h-7 gap-1 border-violet-400 text-violet-700 hover:bg-violet-50" onClick={(e) => { e.stopPropagation(); setReconcileTarget(r); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); setReconcileOpen(true); }}>
                                 <ClipboardList className="h-3.5 w-3.5" /> Reconcile
@@ -760,7 +760,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || detailItem.status === 'issued') && (
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (detailItem.status === 'issued' && canApproveAsStore(user))) && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { mockDb, mockGetSession, mockIsAdmin, mockHasPermission, mockGetPlantScope, mockCanAccessPlantStrict } = vi.hoisted(() => ({
+const { mockDb, mockGetSession, mockIsAdmin, mockHasPermission, mockGetPlantScope, mockCanAccessPlantStrict, mockCheckReadiness } = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findUnique: vi.fn() },
     workOrderTimeLog: { findFirst: vi.fn() },
@@ -11,6 +11,7 @@ const { mockDb, mockGetSession, mockIsAdmin, mockHasPermission, mockGetPlantScop
   mockHasPermission: vi.fn(),
   mockGetPlantScope: vi.fn(),
   mockCanAccessPlantStrict: vi.fn(),
+  mockCheckReadiness: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -22,6 +23,9 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/plant-scope', () => ({
   getPlantScope: mockGetPlantScope,
   canAccessPlantStrict: mockCanAccessPlantStrict,
+}));
+vi.mock('@/services/workOrderReadiness.service', () => ({
+  checkReadiness: mockCheckReadiness,
 }));
 
 import { GET } from '../route';
@@ -68,6 +72,7 @@ describe('GET /api/work-orders/[id]/capabilities start lifecycle', () => {
     });
     mockCanAccessPlantStrict.mockReturnValue(true);
     mockHasPermission.mockReturnValue(false);
+    mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
   });
 

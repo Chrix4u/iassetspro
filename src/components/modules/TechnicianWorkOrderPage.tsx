@@ -6,7 +6,7 @@ import {
   ArrowLeft, Play, Pause, CheckCircle2, XCircle, Clock3, Wrench, Package,
   Users, ShieldAlert, ClipboardList, MessageSquare, Loader2, AlertTriangle,
   RotateCcw, Save, ChevronRight, CalendarDays, UserRound, TimerReset,
-  Paperclip, Upload, UserPlus, ArrowRightLeft, Camera,
+  Paperclip, Upload, UserPlus, ArrowRightLeft, Camera, Trash2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -358,6 +358,18 @@ export function TechnicianWorkOrderPage() {
     }
   };
 
+  const removeAttachment = async (attachment: any) => {
+    if (!id || !attachment?.id) return;
+    const fileName = attachment.fileName || 'this evidence';
+    if (!window.confirm(`Remove "${fileName}"? This cannot be undone.`)) return;
+
+    await perform(
+      `remove-evidence-${attachment.id}`,
+      () => api.delete(`/api/work-orders/${id}/attachments/${attachment.id}`),
+      'Evidence removed',
+    );
+  };
+
   const saveAssistanceRequest = async () => {
     if (!id || assistanceTrade.trim().length < 2) { toast.error('Select the trade or skill required'); return; }
     const resolvedReason = assistanceReason.trim() || assistanceRequestReason({
@@ -629,10 +641,19 @@ export function TechnicianWorkOrderPage() {
               {attachments.length === 0 ? <p className="text-xs text-muted-foreground">No photos or evidence have been attached yet.</p> : (
                 <div className="space-y-2">
                   {attachments.slice(0, 10).map((attachment: any) => (
-                    <button key={attachment.id} onClick={() => openAttachment(attachment.id)} className="w-full rounded-lg border p-3 text-left hover:bg-muted/40 transition-colors" disabled={busy !== null}>
-                      <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium truncate"><Paperclip className="h-3.5 w-3.5 inline mr-1" />{attachment.fileName}</span><span className="text-[11px] text-muted-foreground shrink-0">{attachment.fileSize ? `${(attachment.fileSize / 1024 / 1024).toFixed(1)} MB` : ''}</span></div>
-                      <p className="text-xs text-muted-foreground mt-1">{attachment.uploadedBy?.fullName || 'User'} · {formatDate(attachment.uploadedAt)}</p>
-                    </button>
+                    <div key={attachment.id} className="w-full rounded-lg border p-3 transition-colors hover:bg-muted/40">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <button type="button" onClick={() => openAttachment(attachment.id)} className="min-w-0 flex-1 text-left" disabled={busy !== null}>
+                          <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium truncate"><Paperclip className="h-3.5 w-3.5 inline mr-1" />{attachment.fileName}</span><span className="text-[11px] text-muted-foreground shrink-0">{attachment.fileSize ? `${(attachment.fileSize / 1024 / 1024).toFixed(1)} MB` : ''}</span></div>
+                          <p className="text-xs text-muted-foreground mt-1">{attachment.uploadedBy?.fullName || 'User'} · {formatDate(attachment.uploadedAt)}</p>
+                        </button>
+                        {attachment.canDelete && (
+                          <Button type="button" size="sm" variant="ghost" className="shrink-0 text-red-600 hover:text-red-700" onClick={() => removeAttachment(attachment)} disabled={busy !== null}>
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

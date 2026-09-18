@@ -255,24 +255,39 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
       expect(issueData.data.status).toBe('issued');
     });
 
-    await test.step('A8: Technician records component condition measurement', async () => {
+    await test.step('A8: Technician records configured component condition measurement', async () => {
       const token = await getToken('tech_single');
+      const { status: optionsStatus, data: optionsData } = await apiCall(
+        token,
+        'GET',
+        `/api/work-orders/${woId}/measurements?componentId=${encodeURIComponent(componentId)}`,
+      );
+      expect(optionsStatus).toBe(200);
+      expect(optionsData.success).toBe(true);
+      const configuredPoint = (optionsData.options as Array<any>).find(
+        (option) => option.componentId === componentId && option.parameterKey === 'vibration',
+      );
+      expect(configuredPoint).toBeTruthy();
+      expect(configuredPoint.selectable).toBe(true);
+      expect(configuredPoint.unit).toBe('mm/s');
+      expect(Number(configuredPoint.acceptableMax)).toBe(4.5);
+
       const { status, data } = await apiCall(
         token,
         'POST',
         `/api/work-orders/${woId}/measurements`,
         {
-          componentId,
-          parameterKey: 'vibration',
+          componentId: configuredPoint.componentId,
+          parameterKey: configuredPoint.parameterKey,
           value: 0.45,
-          unit: 'mm/s',
-          acceptableMax: 4.5,
         },
       );
       expect(status).toBe(201);
       expect(data.success).toBe(true);
       expect(data.data.componentId).toBe(componentId);
       expect(data.data.parameterKey).toBe('vibration');
+      expect(data.data.unit).toBe('mm/s');
+      expect(Number(data.data.maxThreshold)).toBe(4.5);
       expect(Number(data.data.value)).toBe(0.45);
       expect(data.data.isAlarm).toBe(false);
 

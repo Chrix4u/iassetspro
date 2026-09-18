@@ -74,6 +74,7 @@ export async function POST(
         assignedSupervisorId: true,
         plannerId: true,
         woNumber: true,
+        title: true,
         plantId: true,
       },
     });
@@ -172,7 +173,7 @@ export async function POST(
           urgency,
           reason: typeof reason === 'string' && reason.trim()
             ? reason.trim()
-            : materialRequestReason({ woNumber: wo.woNumber, itemName: resolvedItemName }),
+            : materialRequestReason({ woNumber: wo.woNumber, title: wo.title, itemName: resolvedItemName }),
           notes: notes || null,
           status: 'pending',
           requestedById: session.userId,

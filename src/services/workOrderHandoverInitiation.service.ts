@@ -314,6 +314,7 @@ export async function initiateCanonicalHandover(
         assignedSupervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
         teamMemberIds: wo.teamMembers.map((member) => member.userId),
+        reason: resolvedReason,
       },
     };
   }).catch((error: unknown) => {
@@ -348,7 +349,7 @@ export async function initiateCanonicalHandover(
       woNumber: outcome.notify.woNumber,
       woId: workOrderId,
       title: session.fullName || 'Maintenance technician',
-      details: { reason: resolvedReason },
+      details: { reason: outcome.notify.reason },
     });
   }
 

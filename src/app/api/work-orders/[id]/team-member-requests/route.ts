@@ -202,7 +202,7 @@ export async function POST(
 
     const resolvedReason = reason || assistanceRequestReason({
       woNumber: wo.woNumber,
-      trade: requestedTrade || targetUser?.primaryTrade || targetUser?.fullName,
+      trade: requestedTrade || targetUser?.fullName,
     });
 
     const teamRequest = await db.woTeamMemberRequest.create({

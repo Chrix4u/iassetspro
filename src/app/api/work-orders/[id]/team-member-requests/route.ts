@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { assistanceRequestReason } from '@/lib/technician-reason-defaults';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
@@ -199,6 +200,11 @@ export async function POST(
       );
     }
 
+    const resolvedReason = reason || assistanceRequestReason({
+      woNumber: wo.woNumber,
+      trade: requestedTrade || targetUser?.primaryTrade || targetUser?.fullName,
+    });
+
     const teamRequest = await db.woTeamMemberRequest.create({
       data: {
         workOrderId: id,
@@ -206,7 +212,7 @@ export async function POST(
         requestedUserId,
         requestedTrade,
         role,
-        reason,
+        reason: resolvedReason,
       },
       include: {
         requestedByUser: { select: { id: true, fullName: true, username: true } },
@@ -225,7 +231,7 @@ export async function POST(
           requestedTrade,
           requestedUser: targetUser?.fullName || null,
           role,
-          reason,
+          reason: resolvedReason,
         }),
       },
     });

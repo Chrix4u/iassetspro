@@ -109,12 +109,14 @@ export async function GET(
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
       select: {
+        status: true,
+        isLocked: true,
         plantId: true,
         assignedTo: true,
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, accessLevel: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },
     });
@@ -146,7 +148,27 @@ export async function GET(
       take: 200,
     });
 
-    return NextResponse.json({ success: true, data: attachments });
+    const isWritableExecutionActor =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId && member.accessLevel !== 'read_only');
+    const canManage =
+      canManageWorkOrder(session, wo) &&
+      (isAdmin(session) || hasPermission(session, 'work_orders.update'));
+    const deletionAllowed = !wo.isLocked && wo.status !== 'closed';
+
+    return NextResponse.json({
+      success: true,
+      data: attachments.map((attachment) => ({
+        ...attachment,
+        canDelete:
+          deletionAllowed &&
+          (
+            (attachment.uploadedById === session.userId && isWritableExecutionActor) ||
+            canManage
+          ),
+      })),
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch attachments';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

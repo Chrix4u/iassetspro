@@ -1,3 +1,4 @@
+import { assignmentDeclineReason } from '@/lib/technician-reason-defaults';
 import { db } from '@/lib/db';
 import { buildAuditData } from '@/lib/audit-helpers';
 import { notifyUser } from '@/lib/notifications';
@@ -42,10 +43,7 @@ export async function respondToWorkOrderAssignment(
   session: AssignmentResponseSession,
   options: { reason?: string; auditCtx?: AssignmentResponseAuditContext } = {},
 ) {
-  const reason = options.reason?.trim() || null;
-  if (decision === 'declined' && (!reason || reason.length < 5)) {
-    return { success: false as const, statusCode: 400, error: 'A clear decline reason of at least 5 characters is required' };
-  }
+  const requestedReason = options.reason?.trim() || null;
 
   const respondedAt = new Date();
   const outcome = await db.$transaction(async (tx) => {
@@ -71,6 +69,9 @@ export async function respondToWorkOrderAssignment(
     });
 
     if (!wo) return { success: false as const, statusCode: 404, error: 'Work order not found' };
+    const reason = decision === 'declined'
+      ? requestedReason || assignmentDeclineReason({ woNumber: wo.woNumber, title: wo.title })
+      : null;
     if (wo.isLocked) return { success: false as const, statusCode: 409, error: 'Work order is locked' };
     if (wo.status !== 'assigned') {
       return { success: false as const, statusCode: 409, error: `Assignment response is only allowed while status is assigned (current: ${wo.status})` };

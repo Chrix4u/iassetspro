@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
+import { toolRequestReason } from '@/lib/technician-reason-defaults';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
@@ -165,11 +166,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { workOrderId, items, reason, notes, urgency } = body;
     if (!Array.isArray(items) || items.length === 0) return NextResponse.json({ success: false, error: 'At least one tool item is required' }, { status: 400 });
-    if (!workOrderId || !reason) return NextResponse.json({ success: false, error: 'workOrderId and reason are required' }, { status: 400 });
+    if (!workOrderId) return NextResponse.json({ success: false, error: 'workOrderId is required' }, { status: 400 });
 
     const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : 'normal';
     const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    const resolvedReason = typeof reason === 'string' && reason.trim()
+      ? reason.trim()
+      : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
@@ -221,7 +225,7 @@ export async function POST(request: NextRequest) {
         workOrderId,
         plantId: wo.plantId,
         toolName: primaryToolName,
-        reason,
+        reason: resolvedReason,
         notes: notes || null,
         status: 'pending',
         requestedById: session.userId,
@@ -243,7 +247,7 @@ export async function POST(request: NextRequest) {
       await notifyUser(wo.plannerId, 'repair_tool_request', 'New Tool Request Submitted', `${toolReq.requestedBy.fullName} requested ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${wo.woNumber}${resolvedUrgency !== 'normal' ? ` [${resolvedUrgency.toUpperCase()}]` : ''}`, 'repair_tool_request', toolReq.id, 'maintenance-work-orders');
     }
 
-    await db.auditLog.create({ data: { userId: session.userId, action: 'create', entityType: 'repair_tool_request', entityId: toolReq.id, newValues: JSON.stringify({ requestNumber, workOrderId, plantId: wo.plantId, itemCount: validatedItems.length, reason, urgency: resolvedUrgency }) } });
+    await db.auditLog.create({ data: { userId: session.userId, action: 'create', entityType: 'repair_tool_request', entityId: toolReq.id, newValues: JSON.stringify({ requestNumber, workOrderId, plantId: wo.plantId, itemCount: validatedItems.length, reason: resolvedReason, urgency: resolvedUrgency }) } });
 
     return NextResponse.json({ success: true, data: toolReq, warnings: warnings.length > 0 ? warnings : undefined }, { status: 201 });
   } catch (error: unknown) {

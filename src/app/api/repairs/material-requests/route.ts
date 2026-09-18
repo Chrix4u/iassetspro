@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
+import { materialRequestReason } from '@/lib/technician-reason-defaults';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 4, high: 3, normal: 2, low: 1 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
@@ -122,8 +123,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { workOrderId, itemId, itemName, quantityRequested, unit, reason, notes, urgency, componentRegistryId } = body;
-    if (!workOrderId || (!itemId && !itemName) || !reason) {
-      return NextResponse.json({ success: false, error: 'workOrderId, itemId or itemName, and reason are required' }, { status: 400 });
+    if (!workOrderId || (!itemId && !itemName)) {
+      return NextResponse.json({ success: false, error: 'workOrderId and itemId or itemName are required' }, { status: 400 });
     }
     const requestedQuantity = Number(quantityRequested);
     if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
@@ -187,6 +188,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const resolvedReason = typeof reason === 'string' && reason.trim()
+      ? reason.trim()
+      : materialRequestReason({ woNumber: wo.woNumber, title: wo.title, itemName: resolvedItemName });
+
     const estimatedCost = requestedQuantity * (resolvedUnitCost ?? 0);
     const matReq = await db.repairMaterialRequest.create({
       data: {
@@ -201,7 +206,7 @@ export async function POST(request: NextRequest) {
         unitCost: resolvedUnitCost,
         estimatedCost,
         urgency: resolvedUrgency,
-        reason,
+        reason: resolvedReason,
         notes: notes || null,
         status: 'pending',
         plantId: wo.plantId,
@@ -236,7 +241,7 @@ export async function POST(request: NextRequest) {
           quantityRequested: requestedQuantity,
           unitCost: resolvedUnitCost,
           urgency: resolvedUrgency,
-          reason,
+          reason: resolvedReason,
           plantId: wo.plantId,
         }),
       },

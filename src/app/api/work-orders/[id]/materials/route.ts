@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { materialRequestReason } from '@/lib/technician-reason-defaults';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
@@ -73,6 +74,7 @@ export async function POST(
         assignedSupervisorId: true,
         plannerId: true,
         woNumber: true,
+        title: true,
         plantId: true,
       },
     });
@@ -169,7 +171,9 @@ export async function POST(
           unitCost: resolvedUnitCost,
           estimatedCost: estimatedCost ?? 0,
           urgency,
-          reason: reason || `Material requested for work order ${wo.woNumber}`,
+          reason: typeof reason === 'string' && reason.trim()
+            ? reason.trim()
+            : materialRequestReason({ woNumber: wo.woNumber, title: wo.title, itemName: resolvedItemName }),
           notes: notes || null,
           status: 'pending',
           requestedById: session.userId,

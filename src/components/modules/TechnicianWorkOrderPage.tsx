@@ -19,6 +19,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { TechnicianWorkOrderV11Panels } from './TechnicianWorkOrderV11Panels';
+import {
+  assistanceRequestReason,
+  assignmentDeclineReason,
+  handoverReason as buildHandoverReason,
+  pauseReason as buildPauseReason,
+  waitingStateReason,
+} from '@/lib/technician-reason-defaults';
 
 type ReadinessItem = {
   code: string;
@@ -130,7 +137,7 @@ export function TechnicianWorkOrderPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [declineMode, setDeclineMode] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
-  const [pauseReason, setPauseReason] = useState('Break / temporary pause');
+  const [pauseReason, setPauseReason] = useState('');
   const [waitingTarget, setWaitingTarget] = useState('waiting_parts');
   const [waitingReason, setWaitingReason] = useState('');
   const [completionNotes, setCompletionNotes] = useState('');
@@ -154,7 +161,7 @@ export function TechnicianWorkOrderPage() {
   const initialShift = currentShift();
   const [handoverUsers, setHandoverUsers] = useState<any[]>([]);
   const [handoverReceiverId, setHandoverReceiverId] = useState('');
-  const [handoverReason, setHandoverReason] = useState('Shift change');
+  const [handoverReason, setHandoverReason] = useState('');
   const [handoverNotes, setHandoverNotes] = useState('');
   const [handoverFromShift, setHandoverFromShift] = useState<'morning' | 'afternoon' | 'night'>(initialShift);
   const [handoverToShift, setHandoverToShift] = useState<'morning' | 'afternoon' | 'night'>(nextShift(initialShift));
@@ -257,11 +264,15 @@ export function TechnicianWorkOrderPage() {
 
   const respondAssignment = async (response: 'accepted' | 'declined') => {
     if (!id) return;
+    const resolvedDeclineReason = declineReason.trim() || assignmentDeclineReason({
+      woNumber: wo?.woNumber,
+      title: wo?.title,
+    });
     const ok = await perform(
       `assignment-${response}`,
       () => api.post(`/api/work-orders/${id}/assignment-response`, {
         response,
-        ...(response === 'declined' ? { reason: declineReason } : {}),
+        ...(response === 'declined' ? { reason: resolvedDeclineReason } : {}),
       }),
       response === 'accepted' ? 'Assignment accepted. Review the job and start when ready.' : 'Assignment declined and returned for reassignment.',
     );
@@ -270,13 +281,17 @@ export function TechnicianWorkOrderPage() {
 
   const startWork = () => id && perform('start', () => api.post(`/api/work-orders/${id}/start`, { notes: wo?.actualStart ? 'Technician resumed work' : 'Technician started work' }), wo?.actualStart ? 'Work resumed — timer running' : 'Work started — timer running');
 
-  const pauseWork = () => id && perform('pause', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: pauseReason }), 'Execution timer paused');
+  const pauseWork = () => id && perform('pause', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: pauseReason.trim() || buildPauseReason({ woNumber: wo?.woNumber, title: wo?.title }) }), 'Execution timer paused');
 
   const moveToWaiting = () => {
     if (!id) return;
-    if (waitingReason.trim().length < 3) { toast.error('Enter a reason for the waiting state'); return; }
+    const resolvedReason = waitingReason.trim() || waitingStateReason({
+      woNumber: wo?.woNumber,
+      title: wo?.title,
+      targetStatus: waitingTarget,
+    });
     perform('waiting', () => api.post(`/api/work-orders/${id}/execution-state`, {
-      action: 'wait', targetStatus: waitingTarget, reason: waitingReason.trim(),
+      action: 'wait', targetStatus: waitingTarget, reason: resolvedReason,
     }), `Work order moved to ${pretty(waitingTarget)}`);
   };
 
@@ -345,8 +360,12 @@ export function TechnicianWorkOrderPage() {
 
   const saveAssistanceRequest = async () => {
     if (!id || assistanceTrade.trim().length < 2) { toast.error('Select the trade or skill required'); return; }
-    if (assistanceReason.trim().length < 3) { toast.error('Explain why assistance is needed'); return; }
-    const body = { requestedTrade: assistanceTrade.trim(), role: 'assistant', reason: assistanceReason.trim() };
+    const resolvedReason = assistanceReason.trim() || assistanceRequestReason({
+      woNumber: wo?.woNumber,
+      title: wo?.title,
+      trade: assistanceTrade,
+    });
+    const body = { requestedTrade: assistanceTrade.trim(), role: 'assistant', reason: resolvedReason };
     const ok = await perform(
       'assistance',
       () => editingAssistanceId
@@ -365,11 +384,16 @@ export function TechnicianWorkOrderPage() {
 
   const submitHandover = async () => {
     if (!id || !handoverReceiverId) { toast.error('Select the incoming technician'); return; }
-    if (handoverReason.trim().length < 3) { toast.error('Enter a handover reason'); return; }
+    const resolvedReason = handoverReason.trim() || buildHandoverReason({
+      woNumber: wo?.woNumber,
+      title: wo?.title,
+      fromShift: handoverFromShift,
+      toShift: handoverToShift,
+    });
     const pendingTasks = tasks.filter((task) => task.status !== 'completed').map((task) => ({ task: task.description, status: task.status }));
     const ok = await perform('handover', () => api.post(`/api/work-orders/${id}/handover`, {
       receivedById: handoverReceiverId,
-      reason: handoverReason.trim(),
+      reason: resolvedReason,
       shiftType: handoverFromShift,
       shiftDate: new Date().toISOString(),
       fromShift: handoverFromShift,
@@ -377,7 +401,7 @@ export function TechnicianWorkOrderPage() {
       tasksSummary: pendingTasks,
       pendingIssues: handoverNotes.trim() || undefined,
       safetyNotes: wo?.safetyNotes || undefined,
-      notes: handoverNotes.trim() || handoverReason.trim(),
+      notes: handoverNotes.trim() || resolvedReason,
       idempotencyKey: `handover-${id}-${user?.id || 'user'}-${Date.now()}`,
     }), 'Shift handover submitted and live work timers stopped');
     if (ok) { setHandoverReceiverId(''); setHandoverNotes(''); }
@@ -475,9 +499,9 @@ export function TechnicianWorkOrderPage() {
             </div>
             {declineMode && (
               <div className="mt-4 grid gap-2 max-w-2xl">
-                <Label>Reason for declining *</Label>
-                <Textarea value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} placeholder="Example: incorrect trade assignment, unavailable, safety qualification required..." />
-                <div className="flex gap-2"><Button variant="outline" onClick={() => setDeclineMode(false)}>Cancel</Button><Button variant="destructive" disabled={declineReason.trim().length < 5 || busy !== null} onClick={() => respondAssignment('declined')}>Confirm Decline</Button></div>
+                <Label>Reason for declining <span className="text-muted-foreground font-normal">(optional — auto-generated)</span></Label>
+                <Textarea value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} placeholder={assignmentDeclineReason({ woNumber: wo?.woNumber, title: wo?.title })} />
+                <div className="flex gap-2"><Button variant="outline" onClick={() => setDeclineMode(false)}>Cancel</Button><Button variant="destructive" disabled={busy !== null} onClick={() => respondAssignment('declined')}>Confirm Decline</Button></div>
               </div>
             )}
           </CardContent>
@@ -663,9 +687,9 @@ export function TechnicianWorkOrderPage() {
                       {availableAssistanceSkills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
                     </select>
                     {availableAssistanceSkills.length === 0 && <p className="text-xs text-amber-600">No active technician skills are configured. Add technician trades/skills in HRMS before requesting skill-based assistance.</p>}
-                    <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder="Why is assistance required?" rows={2} />
+                    <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder={assistanceRequestReason({ woNumber: wo?.woNumber, title: wo?.title, trade: assistanceTrade })} rows={2} />
                     <div className="flex gap-2">
-                      <Button variant="outline" className="flex-1" onClick={saveAssistanceRequest} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>{editingAssistanceId ? 'Update Request' : 'Request Assistance'}</Button>
+                      <Button variant="outline" className="flex-1" onClick={saveAssistanceRequest} disabled={busy !== null || assistanceTrade.trim().length < 2}>{editingAssistanceId ? 'Update Request' : 'Request Assistance'}</Button>
                       {editingAssistanceId && <Button variant="ghost" onClick={() => { setEditingAssistanceId(null); setAssistanceTrade(''); setAssistanceReason(''); }} disabled={busy !== null}>Cancel Edit</Button>}
                     </div>
                   </>
@@ -691,14 +715,14 @@ export function TechnicianWorkOrderPage() {
             <Card className="border-amber-200">
               <CardHeader><CardTitle className="text-base">Pause / Waiting State</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                <div><Label>Timer Pause Reason</Label><Input className="mt-1" value={pauseReason} onChange={(e) => setPauseReason(e.target.value)} /></div>
+                <div><Label>Timer Pause Reason <span className="text-muted-foreground font-normal">(optional)</span></Label><Input className="mt-1" value={pauseReason} onChange={(e) => setPauseReason(e.target.value)} placeholder={buildPauseReason({ woNumber: wo?.woNumber, title: wo?.title })} /></div>
                 <Button variant="outline" className="w-full" onClick={pauseWork} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Pause My Timer</Button>
                 <Separator />
                 <Label>Work Order Waiting State</Label>
                 <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={waitingTarget} onChange={(e) => setWaitingTarget(e.target.value)}>
                   <option value="waiting_parts">Waiting for Parts</option><option value="waiting_tools">Waiting for Tools</option><option value="waiting_shutdown">Waiting for Shutdown</option><option value="waiting_permit">Waiting for Permit</option>
                 </select>
-                <Textarea value={waitingReason} onChange={(e) => setWaitingReason(e.target.value)} placeholder="Why must execution stop?" />
+                <Textarea value={waitingReason} onChange={(e) => setWaitingReason(e.target.value)} placeholder={waitingStateReason({ woNumber: wo?.woNumber, title: wo?.title, targetStatus: waitingTarget })} />
                 <Button variant="secondary" className="w-full" onClick={moveToWaiting} disabled={busy !== null}>Move Work Order to Waiting</Button>
               </CardContent>
             </Card>
@@ -711,9 +735,9 @@ export function TechnicianWorkOrderPage() {
                 <p className="text-xs text-muted-foreground">Hand over live work to the incoming technician. This closes active team timers and moves the work order to Pending Handover.</p>
                 <div><Label>Incoming Technician *</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverReceiverId} onChange={(e) => setHandoverReceiverId(e.target.value)}><option value="">Select technician...</option>{handoverUsers.map((candidate: any) => <option key={candidate.id} value={candidate.id}>{candidate.fullName} ({candidate.username})</option>)}</select></div>
                 <div className="grid grid-cols-2 gap-2"><div><Label>From Shift</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverFromShift} onChange={(e) => setHandoverFromShift(e.target.value as 'morning' | 'afternoon' | 'night')}><option value="morning">Morning 06:00–14:00</option><option value="afternoon">Afternoon 14:00–22:00</option><option value="night">Night 22:00–06:00</option></select></div><div><Label>To Shift</Label><select className="mt-1 w-full h-10 rounded-md border bg-background px-3 text-sm" value={handoverToShift} onChange={(e) => setHandoverToShift(e.target.value as 'morning' | 'afternoon' | 'night')}><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="night">Night</option></select></div></div>
-                <Input value={handoverReason} onChange={(e) => setHandoverReason(e.target.value)} placeholder="Handover reason" />
+                <Input value={handoverReason} onChange={(e) => setHandoverReason(e.target.value)} placeholder={buildHandoverReason({ woNumber: wo?.woNumber, title: wo?.title, fromShift: handoverFromShift, toShift: handoverToShift })} />
                 <Textarea value={handoverNotes} onChange={(e) => setHandoverNotes(e.target.value)} placeholder="Pending issues, equipment condition, safety information..." rows={3} />
-                <Button variant="outline" className="w-full" onClick={submitHandover} disabled={busy !== null || !handoverReceiverId || handoverReason.trim().length < 3}>Submit Shift Handover</Button>
+                <Button variant="outline" className="w-full" onClick={submitHandover} disabled={busy !== null || !handoverReceiverId}>Submit Shift Handover</Button>
               </CardContent>
             </Card>
           )}

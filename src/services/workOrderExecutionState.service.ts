@@ -1,3 +1,4 @@
+import { waitingStateReason } from '@/lib/technician-reason-defaults';
 import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import { closeAllActiveWorkSessions } from '@/services/workOrderActiveSession.service';
@@ -105,7 +106,7 @@ export async function placeWorkOrderInWaitingState(
   targetStatus: WaitingWorkOrderStatus,
   session: ExecutionStateSessionContext,
   options: {
-    reason: string;
+    reason?: string;
     requireExecutionAuthority?: boolean;
     auditCtx?: ExecutionStateAuditContext;
     /** Additional trusted WO fields to update atomically with the state change. */
@@ -116,8 +117,7 @@ export async function placeWorkOrderInWaitingState(
   data?: { status: WaitingWorkOrderStatus; closedTimers: number; actualHours: number };
   error?: string;
 }> {
-  const reason = options.reason?.trim();
-  if (!reason) return { success: false, error: 'A reason is required' };
+  const requestedReason = options.reason?.trim();
   const changedAt = new Date();
 
   const outcome = await db.$transaction(async (tx) => {
@@ -126,6 +126,7 @@ export async function placeWorkOrderInWaitingState(
       select: {
         id: true,
         woNumber: true,
+        title: true,
         status: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -135,6 +136,11 @@ export async function placeWorkOrderInWaitingState(
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+    const reason = requestedReason || waitingStateReason({
+      woNumber: wo.woNumber,
+      title: wo.title,
+      targetStatus,
+    });
 
     if (options.requireExecutionAuthority && !hasWaitingStateAuthority(wo, targetStatus, session)) {
       return {
@@ -194,6 +200,7 @@ export async function placeWorkOrderInWaitingState(
         supervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
         teamMemberIds: wo.teamMembers.map((member) => member.userId),
+        reason,
       },
     };
   }).catch((error: unknown) => {
@@ -225,8 +232,8 @@ export async function placeWorkOrderInWaitingState(
       title: session.fullName || 'Maintenance team',
       details: {
         reason: targetStatus === 'on_hold'
-          ? reason
-          : `${targetStatus.replaceAll('_', ' ')} — ${reason}`,
+          ? outcome.notify.reason
+          : `${targetStatus.replaceAll('_', ' ')} — ${outcome.notify.reason}`,
         status: targetStatus,
       },
     });

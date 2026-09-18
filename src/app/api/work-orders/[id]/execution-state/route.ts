@@ -43,8 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Provide action=wait with a valid technician waiting status, or action=resume' }, { status: 400 });
     }
 
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
-    if (reason.length < 3) return NextResponse.json({ success: false, error: 'A reason is required' }, { status: 400 });
+    const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : undefined;
 
     const result = await placeWorkOrderInWaitingState(
       id,

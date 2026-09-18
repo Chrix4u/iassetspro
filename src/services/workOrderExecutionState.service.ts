@@ -198,6 +198,7 @@ export async function placeWorkOrderInWaitingState(
         supervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
         teamMemberIds: wo.teamMembers.map((member) => member.userId),
+        reason,
       },
     };
   }).catch((error: unknown) => {
@@ -229,8 +230,8 @@ export async function placeWorkOrderInWaitingState(
       title: session.fullName || 'Maintenance team',
       details: {
         reason: targetStatus === 'on_hold'
-          ? reason
-          : `${targetStatus.replaceAll('_', ' ')} — ${reason}`,
+          ? outcome.notify.reason
+          : `${targetStatus.replaceAll('_', ' ')} — ${outcome.notify.reason}`,
         status: targetStatus,
       },
     });

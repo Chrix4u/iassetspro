@@ -186,6 +186,7 @@ export async function initiateCanonicalHandover(
       select: {
         id: true,
         woNumber: true,
+        title: true,
         status: true,
         plantId: true,
         assignedTo: true,
@@ -198,6 +199,7 @@ export async function initiateCanonicalHandover(
     if (!wo) return { success: false as const, error: 'Work order not found' };
     const resolvedReason = options.reason?.trim() || handoverReason({
       woNumber: wo.woNumber,
+      title: wo.title,
       fromShift: options.fromShift,
       toShift: options.toShift,
     });

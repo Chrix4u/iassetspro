@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { RESOURCE_STORE_ROLE_SLUGS, canReviewResourceRequestAsSupervisor, isResourceStoreActor } from '@/lib/resource-request-approval';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
@@ -230,10 +231,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
 
-    const isStoreActor = isAdmin(session) ||
-      hasRole(session, 'store_keeper') ||
-      hasRole(session, 'inventory_manager') ||
-      hasRole(session, 'tools_shop_attendant');
+    const isStoreActor = isResourceStoreActor(session);
     const isExecutionActor =
       matReq.workOrder.assignedTo === session.userId ||
       matReq.workOrder.teamLeaderId === session.userId ||
@@ -241,11 +239,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // ── Role-based access control for workflow actions ──
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
-      if (!isAdmin(session) &&
-          !hasRole(session, 'maintenance_supervisor') &&
-          !hasRole(session, 'maintenance_manager') &&
-          !hasRole(session, 'plant_manager')) {
-        return NextResponse.json({ success: false, error: 'Only admin, maintenance supervisor, maintenance manager, or plant manager can supervisor-approve material requests' }, { status: 403 });
+      if (!canReviewResourceRequestAsSupervisor(session, matReq.workOrder.assignedSupervisorId)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned work-order supervisor may review this material request. Maintenance manager, plant manager, or admin may override for escalation.',
+        }, { status: 403 });
       }
     }
     if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
@@ -304,10 +302,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         });
 
-        const storeKeepers = await db.user.findMany({
-          where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' },
-          select: { id: true },
-        });
+        const storeKeepers = matReq.plantId
+          ? await db.user.findMany({
+              where: {
+                status: 'active',
+                plantAccess: { some: { plantId: matReq.plantId } },
+                userRoles: {
+                  some: {
+                    role: { slug: { in: [...RESOURCE_STORE_ROLE_SLUGS] } },
+                  },
+                },
+              },
+              select: { id: true },
+            })
+          : [];
         for (const sk of storeKeepers) {
           await notifyUser(sk.id, 'repair_material_request', 'Material Request Awaiting Store Approval', `${qty} ${matReq.unit} of ${matReq.itemName} approved by supervisor for WO ${matReq.workOrder.woNumber}`, 'repair_material_request', id, 'maintenance-work-orders');
         }

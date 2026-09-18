@@ -177,7 +177,7 @@ export async function respondToWorkOrderAssignment(
       decision === 'accepted' ? 'Work Order Accepted' : 'Work Order Declined',
       decision === 'accepted'
         ? `${session.fullName || 'Technician'} accepted ${outcome.notify.woNumber}: "${outcome.notify.title}"`
-        : `${session.fullName || 'Technician'} declined ${outcome.notify.woNumber}: ${reason}`,
+        : `${session.fullName || 'Technician'} declined ${outcome.notify.woNumber}: ${outcome.data.assignmentResponseReason || requestedReason || 'Assignment declined'}`,
       'work_order',
       workOrderId,
       `wo-detail?id=${workOrderId}`,

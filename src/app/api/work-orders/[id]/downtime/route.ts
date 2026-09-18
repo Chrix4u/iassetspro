@@ -4,6 +4,7 @@ import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { buildAuditData } from '@/lib/audit-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { downtimeReason } from '@/lib/technician-reason-defaults';
 
 const VALID_CATEGORIES = new Set(['planned', 'unplanned', 'partial']);
 const VALID_IMPACT_LEVELS = new Set(['low', 'medium', 'high', 'critical']);
@@ -12,6 +13,8 @@ const ACTIVE_DOWNTIME_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiti
 
 type AccessWorkOrder = {
   id: string;
+  woNumber: string;
+  title: string;
   plantId: string | null;
   assetId: string | null;
   assetName: string | null;
@@ -38,6 +41,8 @@ async function loadWorkOrder(id: string): Promise<AccessWorkOrder | null> {
     where: { id },
     select: {
       id: true,
+      woNumber: true,
+      title: true,
       plantId: true,
       assetId: true,
       assetName: true,
@@ -134,12 +139,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!auth.ok) return auth.response;
 
     const body = await request.json() as Record<string, unknown>;
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
-    if (reason.length < 3) {
-      return NextResponse.json({ success: false, error: 'Downtime reason must be at least 3 characters' }, { status: 400 });
-    }
-
     const category = typeof body.category === 'string' && VALID_CATEGORIES.has(body.category) ? body.category : 'unplanned';
+    const reason = typeof body.reason === 'string' && body.reason.trim()
+      ? body.reason.trim()
+      : downtimeReason({
+          woNumber: auth.wo.woNumber,
+          title: auth.wo.title,
+          category,
+          assetName: auth.wo.assetName,
+        });
     const impactLevel = typeof body.impactLevel === 'string' && VALID_IMPACT_LEVELS.has(body.impactLevel) ? body.impactLevel : 'medium';
     const start = parseDate(body.downtimeStart, new Date());
     const end = parseDate(body.downtimeEnd);

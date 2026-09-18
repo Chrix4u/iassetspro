@@ -70,6 +70,20 @@ type Task = {
   completedBy?: { fullName?: string } | null;
 };
 
+type MeasurementOption = {
+  inspectionPointId: string;
+  componentId: string;
+  componentName: string;
+  componentCode: string;
+  parameterKey: string;
+  label: string;
+  description?: string | null;
+  unit: string | null;
+  acceptableMin: number | null;
+  acceptableMax: number | null;
+  selectable: boolean;
+};
+
 const WAITING_STATUSES = ['waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit'];
 const TECHNICIAN_HIDDEN_PROFILE_WARNING_CODES = new Set([
   'TECH_ELIG_TRADE_MISMATCH',
@@ -134,7 +148,8 @@ export function TechnicianWorkOrderPage() {
   const [actionDescription, setActionDescription] = useState('');
   const [comment, setComment] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const [measurement, setMeasurement] = useState({ parameterKey: '', value: '', unit: '' });
+  const [measurement, setMeasurement] = useState({ inspectionPointId: '', value: '' });
+  const [measurementOptions, setMeasurementOptions] = useState<MeasurementOption[]>([]);
   const [measurements, setMeasurements] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -172,7 +187,10 @@ export function TechnicianWorkOrderPage() {
     setActionDescription(woRes.data.actionDescription || '');
     if (capRes.success && capRes.data) setCaps(capRes.data as Capabilities);
     if (taskRes.success && Array.isArray(taskRes.data)) setTasks(taskRes.data as Task[]);
-    if (measurementRes.success && Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);
+    if (measurementRes.success && Array.isArray(measurementRes.data)) {
+      setMeasurements(measurementRes.data);
+      setMeasurementOptions(Array.isArray((measurementRes as any).options) ? (measurementRes as any).options : []);
+    }
     if (attachmentRes.success && Array.isArray(attachmentRes.data)) setAttachments(attachmentRes.data);
     if (assistanceRes.success && Array.isArray(assistanceRes.data)) setAssistanceRequests(assistanceRes.data);
     setLoading(false);
@@ -270,15 +288,21 @@ export function TechnicianWorkOrderPage() {
   };
 
   const addMeasurement = async () => {
-    if (!id || !measurement.parameterKey.trim() || !measurement.unit.trim() || !measurement.value.trim()) {
-      toast.error('Parameter, value and unit are required'); return;
+    if (!id || !measurement.inspectionPointId || !measurement.value.trim()) {
+      toast.error('Select a configured measurement and enter a value'); return;
+    }
+    const selectedOption = measurementOptions.find((option) => option.inspectionPointId === measurement.inspectionPointId);
+    if (!selectedOption || !selectedOption.selectable || !selectedOption.unit) {
+      toast.error('This measurement point has no configured unit. Ask a planner to update the component inspection point.'); return;
     }
     const value = Number(measurement.value);
     if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }
     const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {
-      parameterKey: measurement.parameterKey.trim(), value, unit: measurement.unit.trim(),
+      componentId: selectedOption.componentId,
+      parameterKey: selectedOption.parameterKey,
+      value,
     }), 'Measurement recorded');
-    if (ok) setMeasurement({ parameterKey: '', value: '', unit: '' });
+    if (ok) setMeasurement({ inspectionPointId: '', value: '' });
   };
 
   const uploadEvidence = async () => {
@@ -368,6 +392,9 @@ export function TechnicianWorkOrderPage() {
   (item) => !TECHNICIAN_HIDDEN_PROFILE_WARNING_CODES.has(item.code),
 );
   const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
+  const selectedMeasurementOption = measurementOptions.find(
+    (option) => option.inspectionPointId === measurement.inspectionPointId,
+  ) || null;
 
   return (
     <div className="space-y-5 pb-12">
@@ -494,11 +521,25 @@ export function TechnicianWorkOrderPage() {
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><TimerReset className="h-4 w-4" />Measurements & Readings</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="grid sm:grid-cols-4 gap-2">
-                <Input placeholder="Parameter e.g. vibration" value={measurement.parameterKey} onChange={(e) => setMeasurement((m) => ({ ...m, parameterKey: e.target.value }))} />
-                <Input placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
-                <Input placeholder="Unit e.g. mm/s" value={measurement.unit} onChange={(e) => setMeasurement((m) => ({ ...m, unit: e.target.value }))} />
-                <Button variant="outline" onClick={addMeasurement} disabled={busy !== null}>Record Reading</Button>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={measurement.inspectionPointId}
+                  onChange={(e) => setMeasurement((m) => ({ ...m, inspectionPointId: e.target.value }))}
+                >
+                  <option value="">Select configured parameter...</option>
+                  {measurementOptions.map((option) => (
+                    <option key={option.inspectionPointId} value={option.inspectionPointId} disabled={!option.selectable}>
+                      {option.componentName} · {option.label}{option.unit ? ` (${option.unit})` : ' — unit not configured'}
+                    </option>
+                  ))}
+                </select>
+                <Input type="number" step="any" placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
+                <Input placeholder="Unit from component setup" value={selectedMeasurementOption?.unit || ''} readOnly aria-label="Configured measurement unit" />
+                <Button variant="outline" onClick={addMeasurement} disabled={busy !== null || !selectedMeasurementOption?.selectable}>Record Reading</Button>
               </div>
+              {measurementOptions.length === 0 && <p className="text-xs text-muted-foreground">No active measurement inspection points are configured for the components linked to this work order. Ask a planner or reliability administrator to configure the component inspection points first.</p>}
+              {selectedMeasurementOption && !selectedMeasurementOption.selectable && <p className="text-xs text-amber-700 dark:text-amber-300">This inspection point is missing its configured unit and cannot be recorded until the component setup is corrected.</p>}
+              {selectedMeasurementOption?.description && <p className="text-xs text-muted-foreground">{selectedMeasurementOption.description}</p>}
               {measurements.length > 0 && <div className="grid sm:grid-cols-2 gap-2">{measurements.slice(0, 6).map((m: any) => <div key={m.id} className="rounded-lg border p-3 text-sm"><div className="flex justify-between gap-2"><span className="font-medium">{m.parameterKey}</span><span className={m.isAlarm ? 'text-red-600 font-semibold' : ''}>{m.value} {m.unit}</span></div><p className="text-xs text-muted-foreground mt-1">{m.component?.name || 'Linked component'} · {formatDate(m.recordedAt)}</p></div>)}</div>}
             </CardContent>
           </Card>

@@ -4,6 +4,33 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 
+type NormalRange = {
+  min: number | null;
+  max: number | null;
+  unit: string | null;
+};
+
+function finiteNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseNormalRange(value?: string | null): NormalRange {
+  if (!value) return { min: null, max: null, unit: null };
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const rawUnit = typeof parsed.unit === 'string' ? parsed.unit.trim() : '';
+    return {
+      min: finiteNumberOrNull(parsed.min),
+      max: finiteNumberOrNull(parsed.max),
+      unit: rawUnit || null,
+    };
+  } catch {
+    return { min: null, max: null, unit: null };
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,18 +43,16 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { componentId, parameterKey, value, unit, acceptableMin, acceptableMax } = body;
+    const { componentId, parameterKey, value } = body;
 
-    if (!parameterKey || typeof parameterKey !== 'string') {
+    if (!parameterKey || typeof parameterKey !== 'string' || !parameterKey.trim()) {
       return NextResponse.json({ success: false, error: 'parameterKey is required' }, { status: 400 });
     }
-    if (value === undefined || value === null || typeof value !== 'number') {
-      return NextResponse.json({ success: false, error: 'value is required and must be a number' }, { status: 400 });
-    }
-    if (!unit || typeof unit !== 'string') {
-      return NextResponse.json({ success: false, error: 'unit is required' }, { status: 400 });
+    if (value === undefined || value === null || typeof value !== 'number' || !Number.isFinite(value)) {
+      return NextResponse.json({ success: false, error: 'value is required and must be a finite number' }, { status: 400 });
     }
 
+    const normalizedParameterKey = parameterKey.trim();
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
@@ -75,11 +100,16 @@ export async function POST(
 
     let resolvedComponentId = componentId;
     if (!resolvedComponentId) {
-      if (wo.workOrderComponents.length > 0) {
+      if (wo.workOrderComponents.length === 1) {
         resolvedComponentId = wo.workOrderComponents[0].componentRegistryId;
+      } else if (wo.workOrderComponents.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'No components are linked to this work order' },
+          { status: 400 },
+        );
       } else {
         return NextResponse.json(
-          { success: false, error: 'No components linked to this work order. Provide a componentId.' },
+          { success: false, error: 'componentId is required when this work order has multiple linked components' },
           { status: 400 },
         );
       }
@@ -93,21 +123,44 @@ export async function POST(
       }
     }
 
+    const inspectionPoint = await db.componentInspectionPoint.findFirst({
+      where: {
+        componentId: resolvedComponentId,
+        parameterKey: normalizedParameterKey,
+        inspectionType: 'measurement',
+        isActive: true,
+      },
+      select: { id: true, name: true, parameterKey: true, normalRange: true },
+    });
+
+    if (!inspectionPoint) {
+      return NextResponse.json(
+        { success: false, error: 'Measurement parameter is not an active configured inspection point for this component' },
+        { status: 422 },
+      );
+    }
+
+    const canonicalRange = parseNormalRange(inspectionPoint.normalRange);
+    if (!canonicalRange.unit) {
+      return NextResponse.json(
+        { success: false, error: `Measurement point "${inspectionPoint.name}" has no unit configured. Update the component inspection point before recording readings.` },
+        { status: 422 },
+      );
+    }
+
     let isAlarm = false;
-    const minThreshold = acceptableMin ?? null;
-    const maxThreshold = acceptableMax ?? null;
-    if (minThreshold !== null && value < minThreshold) isAlarm = true;
-    if (maxThreshold !== null && value > maxThreshold) isAlarm = true;
+    if (canonicalRange.min !== null && value < canonicalRange.min) isAlarm = true;
+    if (canonicalRange.max !== null && value > canonicalRange.max) isAlarm = true;
 
     const reading = await db.componentConditionReading.create({
       data: {
         componentId: resolvedComponentId,
-        parameterKey,
+        parameterKey: normalizedParameterKey,
         value,
-        unit,
+        unit: canonicalRange.unit,
         quality: 100,
-        minThreshold,
-        maxThreshold,
+        minThreshold: canonicalRange.min,
+        maxThreshold: canonicalRange.max,
         isAlarm,
         source: 'manual',
         recordedById: session.userId,
@@ -150,7 +203,33 @@ export async function GET(
         plannerId: true,
         maintenanceRequest: { select: { requestedBy: true } },
         teamMembers: { select: { userId: true } },
-        workOrderComponents: { select: { componentRegistryId: true } },
+        workOrderComponents: {
+          select: {
+            componentRegistryId: true,
+            componentRegistry: {
+              select: {
+                id: true,
+                name: true,
+                componentCode: true,
+                inspectionPoints: {
+                  where: {
+                    isActive: true,
+                    inspectionType: 'measurement',
+                    parameterKey: { not: null },
+                  },
+                  orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+                  select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    parameterKey: true,
+                    normalRange: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!wo) {
@@ -167,27 +246,47 @@ export async function GET(
     }
 
     const componentIds = wo.workOrderComponents.map((component) => component.componentRegistryId);
-    if (componentIds.length === 0) {
-      return NextResponse.json({ success: true, data: [] });
-    }
-
     if (componentIdFilter && !componentIds.includes(componentIdFilter)) {
       return NextResponse.json({ success: false, error: 'componentId does not belong to this work order' }, { status: 400 });
     }
 
-    const readings = await db.componentConditionReading.findMany({
-      where: {
-        componentId: componentIdFilter || { in: componentIds },
-      },
-      orderBy: { recordedAt: 'desc' },
-      include: {
-        recordedBy: { select: { id: true, fullName: true, username: true } },
-        component: { select: { id: true, name: true, componentCode: true } },
-      },
-      take: 200,
-    });
+    const readingComponentIds = componentIdFilter ? [componentIdFilter] : componentIds;
+    const readings = componentIds.length === 0
+      ? []
+      : await db.componentConditionReading.findMany({
+          where: { componentId: { in: readingComponentIds } },
+          orderBy: { recordedAt: 'desc' },
+          include: {
+            recordedBy: { select: { id: true, fullName: true, username: true } },
+            component: { select: { id: true, name: true, componentCode: true } },
+          },
+          take: 200,
+        });
 
-    return NextResponse.json({ success: true, data: readings });
+    const optionComponents = componentIdFilter
+      ? wo.workOrderComponents.filter((component) => component.componentRegistryId === componentIdFilter)
+      : wo.workOrderComponents;
+
+    const options = optionComponents.flatMap(({ componentRegistry }) =>
+      componentRegistry.inspectionPoints.map((point) => {
+        const range = parseNormalRange(point.normalRange);
+        return {
+          inspectionPointId: point.id,
+          componentId: componentRegistry.id,
+          componentName: componentRegistry.name,
+          componentCode: componentRegistry.componentCode,
+          parameterKey: point.parameterKey,
+          label: point.name,
+          description: point.description,
+          unit: range.unit,
+          acceptableMin: range.min,
+          acceptableMax: range.max,
+          selectable: Boolean(range.unit),
+        };
+      }),
+    );
+
+    return NextResponse.json({ success: true, data: readings, options });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch measurements';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

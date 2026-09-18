@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { downtimeReason, materialRequestReason, toolRequestReason } from '@/lib/technician-reason-defaults';
 
 export interface TechnicianWorkspaceCapabilities {
   assignmentResponseStatus?: 'pending' | 'accepted' | 'declined';
@@ -283,9 +284,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   };
 
   const requestMaterial = async () => {
-    if (!material.itemId || material.reason.trim().length < 3) {
-      toast.error('Select a material / spare part and enter a reason'); return;
+    if (!material.itemId) {
+      toast.error('Select a material / spare part'); return;
     }
+    const resolvedReason = material.reason.trim() || materialRequestReason({
+      woNumber: workOrder.woNumber,
+      title: workOrder.title,
+      itemName: selectedMaterial?.name || material.itemName,
+    });
     const quantity = Number(material.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero'); return; }
     if (selectedMaterial) {
@@ -297,14 +303,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     const ok = await run(
       'material',
       () => editingMaterialRequestId
-        ? api.put(`/api/repairs/material-requests/${editingMaterialRequestId}`, { quantityRequested: quantity, urgency: material.urgency, reason: material.reason.trim() })
+        ? api.put(`/api/repairs/material-requests/${editingMaterialRequestId}`, { quantityRequested: quantity, urgency: material.urgency, reason: resolvedReason })
         : api.post(`/api/work-orders/${workOrderId}/materials`, {
             itemId: selectedMaterial?.id || material.itemId,
             itemName: selectedMaterial?.name || material.itemName,
             quantity,
             unit: selectedMaterial?.unitOfMeasure || material.unit || 'each',
             urgency: material.urgency,
-            reason: material.reason.trim(),
+            reason: resolvedReason,
           }),
       editingMaterialRequestId ? 'Material request updated' : 'Material request submitted',
     );
@@ -323,8 +329,8 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   };
 
   const requestTool = async () => {
-    if (!toolRequest.toolId || toolRequest.reason.trim().length < 3) {
-      toast.error('Select a tool and enter a reason'); return;
+    if (!toolRequest.toolId) {
+      toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
     if (selectedTool) {
@@ -339,11 +345,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toolCode: selectedTool?.toolCode || toolRequest.toolCode || '',
       quantityRequested: quantity,
     };
+    const resolvedReason = toolRequest.reason.trim() || toolRequestReason({
+      woNumber: workOrder.woNumber,
+      title: workOrder.title,
+      toolName: item.toolName,
+    });
     const ok = await run(
       'tool-request',
       () => editingToolRequestId
-        ? api.put(`/api/repairs/tool-requests/${editingToolRequestId}`, { toolName: item.toolName, items: [item], reason: toolRequest.reason.trim(), urgency: toolRequest.urgency })
-        : api.post('/api/repairs/tool-requests', { workOrderId, items: [item], reason: toolRequest.reason.trim(), urgency: toolRequest.urgency }),
+        ? api.put(`/api/repairs/tool-requests/${editingToolRequestId}`, { toolName: item.toolName, items: [item], reason: resolvedReason, urgency: toolRequest.urgency })
+        : api.post('/api/repairs/tool-requests', { workOrderId, items: [item], reason: resolvedReason, urgency: toolRequest.urgency }),
       editingToolRequestId ? 'Tool request updated' : 'Tool request submitted',
     );
     if (ok) resetToolRequest();
@@ -388,7 +399,12 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   };
 
   const recordDowntime = async () => {
-    if (downtimeForm.reason.trim().length < 3) { toast.error('Downtime reason is required'); return; }
+    const resolvedReason = downtimeForm.reason.trim() || downtimeReason({
+      woNumber: workOrder.woNumber,
+      title: workOrder.title,
+      category: downtimeForm.category,
+      assetName: workOrder.assetName,
+    });
     const start = new Date(downtimeForm.downtimeStart);
     const end = downtimeForm.downtimeEnd ? new Date(downtimeForm.downtimeEnd) : null;
     if (!Number.isFinite(start.getTime())) { toast.error('Enter a valid downtime start'); return; }
@@ -397,7 +413,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     const productionLoss = downtimeForm.productionLoss === '' ? undefined : Number(downtimeForm.productionLoss);
     if (productionLoss !== undefined && (!Number.isFinite(productionLoss) || productionLoss < 0)) { toast.error('Production loss must be a non-negative number'); return; }
     const ok = await run('downtime', () => api.post(`/api/work-orders/${workOrderId}/downtime`, {
-      reason: downtimeForm.reason.trim(),
+      reason: resolvedReason,
       category: downtimeForm.category,
       impactLevel: downtimeForm.impactLevel,
       downtimeStart: start.toISOString(),
@@ -511,7 +527,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" max={selectedMaterial ? Number(selectedMaterial.currentStock ?? 0) : undefined} value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
                 <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0 bg-muted/40" value={material.unit} readOnly placeholder="From inventory" /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder="Needed to complete repair" /></div>
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason <span className="text-muted-foreground font-normal">(optional — auto-generated)</span></Label><Input className="w-full min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder={materialRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, itemName: selectedMaterial?.name || material.itemName })} /></div>
                 <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestMaterial} disabled={busy !== null || !material.itemId || (!editingMaterialRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingMaterialRequestId ? 'Update Request' : 'Request Material'}</Button>{editingMaterialRequestId && <Button variant="ghost" onClick={resetMaterialRequest} disabled={busy !== null}>Cancel Edit</Button>}</div>
               </div>
             )}
@@ -562,7 +578,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 </div>
                 <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
-                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason *</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder="Required for disassembly / testing..." /></div>
+                <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason <span className="text-muted-foreground font-normal">(optional — auto-generated)</span></Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder={toolRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, toolName: selectedTool?.name || toolRequest.toolName })} /></div>
                 <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || (!editingToolRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingToolRequestId ? 'Update Request' : 'Request Tool'}</Button>{editingToolRequestId && <Button variant="ghost" onClick={resetToolRequest} disabled={busy !== null}>Cancel Edit</Button>}</div>
               </div>
             )}
@@ -594,7 +610,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
             <div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{downtimeSummary.totalRecords || 0}</p><p className="text-[11px] text-muted-foreground">Records</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{downtimeSummary.ongoing || 0}</p><p className="text-[11px] text-muted-foreground">Ongoing</p></div><div className="rounded-lg bg-muted/40 p-2"><p className="text-lg font-semibold">{minutesLabel(downtimeSummary.totalMinutes)}</p><p className="text-[11px] text-muted-foreground">Recorded</p></div></div>
             {capabilities?.canLogDowntime && (
               <div className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-2">
-                <div className="min-w-0 sm:col-span-2"><Label>Downtime reason *</Label><Input className="w-full min-w-0" value={downtimeForm.reason} onChange={(e) => setDowntimeForm((v) => ({ ...v, reason: e.target.value }))} placeholder="Machine stopped due to bearing failure..." /></div>
+                <div className="min-w-0 sm:col-span-2"><Label>Downtime reason <span className="text-muted-foreground font-normal">(optional — auto-generated)</span></Label><Input className="w-full min-w-0" value={downtimeForm.reason} onChange={(e) => setDowntimeForm((v) => ({ ...v, reason: e.target.value }))} placeholder={downtimeReason({ woNumber: workOrder.woNumber, title: workOrder.title, category: downtimeForm.category, assetName: workOrder.assetName })} /></div>
                 <div className="min-w-0"><Label>Category</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={downtimeForm.category} onChange={(e) => setDowntimeForm((v) => ({ ...v, category: e.target.value }))}><option value="unplanned">Unplanned</option><option value="planned">Planned</option><option value="partial">Partial</option></select></div>
                 <div className="min-w-0"><Label>Impact</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={downtimeForm.impactLevel} onChange={(e) => setDowntimeForm((v) => ({ ...v, impactLevel: e.target.value }))}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="min-w-0"><Label>Started</Label><Input className="w-full min-w-0" type="datetime-local" value={downtimeForm.downtimeStart} onChange={(e) => setDowntimeForm((v) => ({ ...v, downtimeStart: e.target.value }))} /></div>

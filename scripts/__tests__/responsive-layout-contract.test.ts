@@ -19,7 +19,10 @@ describe('responsive layout contract', () => {
     expect(workOrderPanels).toContain('Request Material')
     expect(workOrderPanels).toContain('Request Tool')
     expect(workOrderPanels).toContain(
-      'col-span-2 w-full whitespace-nowrap lg:col-span-1 lg:w-auto',
+      'col-span-2 flex gap-2 lg:col-span-1',
+    )
+    expect(workOrderPanels).toContain(
+      'className="flex-1 whitespace-nowrap"',
     )
   })
 

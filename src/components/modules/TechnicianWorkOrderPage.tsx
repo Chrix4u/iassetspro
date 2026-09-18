@@ -49,6 +49,11 @@ interface Capabilities {
   canRequestAssistance: boolean;
   canHandover: boolean;
   canSubmitCompletion: boolean;
+  completionReadiness?: {
+    ready: boolean;
+    blockers: ReadinessItem[];
+    warnings: ReadinessItem[];
+  } | null;
   canVerify: boolean;
   canClose: boolean;
   hasActiveExecutionSession: boolean;
@@ -134,7 +139,8 @@ export function TechnicianWorkOrderPage() {
   const [actionDescription, setActionDescription] = useState('');
   const [comment, setComment] = useState('');
   const [elapsed, setElapsed] = useState(0);
-  const [measurement, setMeasurement] = useState({ parameterKey: '', value: '', unit: '' });
+  const [measurement, setMeasurement] = useState({ componentId: '', parameterKey: '', value: '', unit: '' });
+  const [measurementOptions, setMeasurementOptions] = useState<any[]>([]);
   const [measurements, setMeasurements] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -143,6 +149,8 @@ export function TechnicianWorkOrderPage() {
   const [assistanceTrade, setAssistanceTrade] = useState('');
   const [assistanceReason, setAssistanceReason] = useState('');
   const [assistanceRequests, setAssistanceRequests] = useState<any[]>([]);
+  const [availableAssistanceSkills, setAvailableAssistanceSkills] = useState<string[]>([]);
+  const [editingAssistanceId, setEditingAssistanceId] = useState<string | null>(null);
   const initialShift = currentShift();
   const [handoverUsers, setHandoverUsers] = useState<any[]>([]);
   const [handoverReceiverId, setHandoverReceiverId] = useState('');
@@ -153,13 +161,14 @@ export function TechnicianWorkOrderPage() {
 
   const load = useCallback(async () => {
     if (!id) return;
-    const [woRes, capRes, taskRes, measurementRes, attachmentRes, assistanceRes] = await Promise.all([
+    const [woRes, capRes, taskRes, measurementRes, attachmentRes, assistanceRes, workerRes] = await Promise.all([
       api.get(`/api/work-orders/${id}`),
       api.get(`/api/work-orders/${id}/capabilities`),
       api.get(`/api/work-orders/${id}/tasks`),
       api.get(`/api/work-orders/${id}/measurements`),
       api.get(`/api/work-orders/${id}/attachments`),
       api.get(`/api/work-orders/${id}/team-member-requests`),
+      api.get('/api/workers?role=technician'),
     ]);
     if (!woRes.success || !woRes.data) {
       toast.error(woRes.error || 'Unable to load work order');
@@ -172,9 +181,31 @@ export function TechnicianWorkOrderPage() {
     setActionDescription(woRes.data.actionDescription || '');
     if (capRes.success && capRes.data) setCaps(capRes.data as Capabilities);
     if (taskRes.success && Array.isArray(taskRes.data)) setTasks(taskRes.data as Task[]);
-    if (measurementRes.success && Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);
+    if (measurementRes.success) {
+      if (Array.isArray(measurementRes.data)) setMeasurements(measurementRes.data);
+      const options = Array.isArray((measurementRes as any).options)
+        ? (measurementRes as any).options.filter((option: any) => option?.parameterKey && option?.unit && option?.selectable !== false)
+        : [];
+      setMeasurementOptions(options);
+      if (options.length === 1) {
+        const only = options[0];
+        setMeasurement((current) => ({ ...current, componentId: only.componentId, parameterKey: only.parameterKey, unit: only.unit || '' }));
+      }
+    }
     if (attachmentRes.success && Array.isArray(attachmentRes.data)) setAttachments(attachmentRes.data);
     if (assistanceRes.success && Array.isArray(assistanceRes.data)) setAssistanceRequests(assistanceRes.data);
+    if (workerRes.success && Array.isArray(workerRes.data)) {
+      const distinct = new Map<string, string>();
+      workerRes.data.forEach((worker: any) => {
+        const primaryTrade = String(worker.trade || '').trim();
+        if (primaryTrade) distinct.set(primaryTrade.toLowerCase(), primaryTrade);
+        (worker.skills || []).forEach((skill: any) => {
+          const label = String(skill.name || skill.code || '').trim();
+          if (label) distinct.set(label.toLowerCase(), label);
+        });
+      });
+      setAvailableAssistanceSkills(Array.from(distinct.values()).sort((a, b) => a.localeCompare(b)));
+    }
     setLoading(false);
   }, [id]);
 
@@ -270,24 +301,26 @@ export function TechnicianWorkOrderPage() {
   };
 
   const addMeasurement = async () => {
-    if (!id || !measurement.parameterKey.trim() || !measurement.unit.trim() || !measurement.value.trim()) {
-      toast.error('Parameter, value and unit are required'); return;
+    if (!id || !measurement.componentId || !measurement.parameterKey || !measurement.value.trim()) {
+      toast.error('Select a configured measurement point and enter a value'); return;
     }
     const value = Number(measurement.value);
     if (!Number.isFinite(value)) { toast.error('Measurement value must be numeric'); return; }
     const ok = await perform('measurement', () => api.post(`/api/work-orders/${id}/measurements`, {
-      parameterKey: measurement.parameterKey.trim(), value, unit: measurement.unit.trim(),
+      componentId: measurement.componentId, parameterKey: measurement.parameterKey, value,
     }), 'Measurement recorded');
-    if (ok) setMeasurement({ parameterKey: '', value: '', unit: '' });
+    if (ok) setMeasurement((current) => ({ ...current, value: '' }));
   };
 
   const uploadEvidence = async () => {
     if (!id || !evidenceFile) { toast.error('Choose a photo or file first'); return; }
+    const maxBytes = 50 * 1024 * 1024;
+    if (evidenceFile.size > maxBytes) { toast.error('Evidence file must be 50 MB or smaller'); return; }
     const form = new FormData();
     form.append('file', evidenceFile);
     form.append('category', 'technician_evidence');
     if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());
-    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form), 'Evidence uploaded');
+    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form, { timeout: 60_000 }), 'Evidence uploaded');
     if (ok) {
       setEvidenceFile(null);
       setEvidenceDescription('');
@@ -310,16 +343,25 @@ export function TechnicianWorkOrderPage() {
     }
   };
 
-  const requestAssistance = async () => {
-    if (!id || assistanceTrade.trim().length < 2) { toast.error('Enter the trade or skill required'); return; }
+  const saveAssistanceRequest = async () => {
+    if (!id || assistanceTrade.trim().length < 2) { toast.error('Select the trade or skill required'); return; }
     if (assistanceReason.trim().length < 3) { toast.error('Explain why assistance is needed'); return; }
-    const ok = await perform('assistance', () => api.post(`/api/work-orders/${id}/team-member-requests`, {
-      requestedTrade: assistanceTrade.trim(),
-      role: 'assistant',
-      reason: assistanceReason.trim(),
-    }), 'Assistance request sent to planner');
-    if (ok) { setAssistanceTrade(''); setAssistanceReason(''); }
+    const body = { requestedTrade: assistanceTrade.trim(), role: 'assistant', reason: assistanceReason.trim() };
+    const ok = await perform(
+      'assistance',
+      () => editingAssistanceId
+        ? api.patch(`/api/work-orders/${id}/team-member-requests/${editingAssistanceId}`, body)
+        : api.post(`/api/work-orders/${id}/team-member-requests`, body),
+      editingAssistanceId ? 'Assistance request updated' : 'Assistance request sent to planner',
+    );
+    if (ok) { setAssistanceTrade(''); setAssistanceReason(''); setEditingAssistanceId(null); }
   };
+
+  const cancelAssistanceRequest = (requestId: string) => id && perform(
+    `cancel-assistance-${requestId}`,
+    () => api.delete(`/api/work-orders/${id}/team-member-requests/${requestId}`),
+    'Assistance request cancelled',
+  );
 
   const submitHandover = async () => {
     if (!id || !handoverReceiverId) { toast.error('Select the incoming technician'); return; }
@@ -368,6 +410,10 @@ export function TechnicianWorkOrderPage() {
   (item) => !TECHNICIAN_HIDDEN_PROFILE_WARNING_CODES.has(item.code),
 );
   const startBlocked = Boolean(caps?.canStart && startReadiness && !startReadiness.ready);
+  const completionReadiness = caps?.completionReadiness || null;
+  const completionBlockers = completionReadiness?.blockers || [];
+  const completionWarnings = completionReadiness?.warnings || [];
+  const completionBlocked = Boolean(caps?.canSubmitCompletion && completionReadiness && !completionReadiness.ready);
 
   return (
     <div className="space-y-5 pb-12">
@@ -444,6 +490,18 @@ export function TechnicianWorkOrderPage() {
         </div>
       )}
 
+      {wo.status === 'completed' && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:bg-blue-950/20 dark:text-blue-200">
+          <strong>Work submitted.</strong> The work order is awaiting supervisor verification. No further technician closure action is required at this stage.
+        </div>
+      )}
+
+      {wo.status === 'verified' && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200">
+          <strong>Work verified.</strong> The work order is awaiting planner or maintenance-management closure.
+        </div>
+      )}
+
       <TechnicianWorkOrderV11Panels workOrderId={id} workOrder={wo} capabilities={caps} onChanged={load} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -493,12 +551,36 @@ export function TechnicianWorkOrderPage() {
           <Card>
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><TimerReset className="h-4 w-4" />Measurements & Readings</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid sm:grid-cols-4 gap-2">
-                <Input placeholder="Parameter e.g. vibration" value={measurement.parameterKey} onChange={(e) => setMeasurement((m) => ({ ...m, parameterKey: e.target.value }))} />
-                <Input placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
-                <Input placeholder="Unit e.g. mm/s" value={measurement.unit} onChange={(e) => setMeasurement((m) => ({ ...m, unit: e.target.value }))} />
-                <Button variant="outline" onClick={addMeasurement} disabled={busy !== null}>Record Reading</Button>
-              </div>
+              {measurementOptions.length === 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                  No configured measurement points are available for this work order. A planner or supervisor must link the relevant component and configure its measurement inspection points before a technician can record readings.
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-4 gap-2">
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm sm:col-span-2"
+                    value={measurement.componentId && measurement.parameterKey ? `${measurement.componentId}::${measurement.parameterKey}` : ''}
+                    onChange={(e) => {
+                      const selected = measurementOptions.find((option: any) => `${option.componentId}::${option.parameterKey}` === e.target.value);
+                      setMeasurement((current) => ({
+                        ...current,
+                        componentId: selected?.componentId || '',
+                        parameterKey: selected?.parameterKey || '',
+                        unit: selected?.unit || '',
+                      }));
+                    }}
+                  >
+                    <option value="">Select configured measurement...</option>
+                    {measurementOptions.map((option: any) => (
+                      <option key={`${option.componentId}-${option.inspectionPointId || option.parameterKey}`} value={`${option.componentId}::${option.parameterKey}`}>
+                        {option.componentName || 'Component'} · {option.label || option.parameterKey} ({option.unit})
+                      </option>
+                    ))}
+                  </select>
+                  <Input placeholder="Value" value={measurement.value} onChange={(e) => setMeasurement((m) => ({ ...m, value: e.target.value }))} />
+                  <div className="flex gap-2"><Input aria-label="Measurement unit" className="bg-muted/40" value={measurement.unit} readOnly placeholder="Unit" /><Button variant="outline" onClick={addMeasurement} disabled={busy !== null || !measurement.componentId || !measurement.parameterKey}>Record</Button></div>
+                </div>
+              )}
               {measurements.length > 0 && <div className="grid sm:grid-cols-2 gap-2">{measurements.slice(0, 6).map((m: any) => <div key={m.id} className="rounded-lg border p-3 text-sm"><div className="flex justify-between gap-2"><span className="font-medium">{m.parameterKey}</span><span className={m.isAlarm ? 'text-red-600 font-semibold' : ''}>{m.value} {m.unit}</span></div><p className="text-xs text-muted-foreground mt-1">{m.component?.name || 'Linked component'} · {formatDate(m.recordedAt)}</p></div>)}</div>}
             </CardContent>
           </Card>
@@ -576,14 +658,31 @@ export function TechnicianWorkOrderPage() {
                 <div className="flex items-center gap-2 text-sm font-medium"><UserPlus className="h-4 w-4" />Team / Assistance</div>
                 {caps?.canRequestAssistance && (
                   <>
-                    <Input value={assistanceTrade} onChange={(e) => setAssistanceTrade(e.target.value)} placeholder="Required trade / skill e.g. Electrician" />
+                    <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={assistanceTrade} onChange={(e) => setAssistanceTrade(e.target.value)}>
+                      <option value="">Select required trade / skill...</option>
+                      {availableAssistanceSkills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
+                    </select>
+                    {availableAssistanceSkills.length === 0 && <p className="text-xs text-amber-600">No active technician skills are configured. Add technician trades/skills in HRMS before requesting skill-based assistance.</p>}
                     <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder="Why is assistance required?" rows={2} />
-                    <Button variant="outline" className="w-full" onClick={requestAssistance} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>Request Assistance</Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1" onClick={saveAssistanceRequest} disabled={busy !== null || assistanceTrade.trim().length < 2 || assistanceReason.trim().length < 3}>{editingAssistanceId ? 'Update Request' : 'Request Assistance'}</Button>
+                      {editingAssistanceId && <Button variant="ghost" onClick={() => { setEditingAssistanceId(null); setAssistanceTrade(''); setAssistanceReason(''); }} disabled={busy !== null}>Cancel Edit</Button>}
+                    </div>
                   </>
                 )}
-                {assistanceRequests.slice(0, 5).map((request: any) => (
-                  <div key={request.id} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2"><span>{request.requestedTrade || request.requestedUser?.fullName || 'Assistance'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
-                ))}
+                {assistanceRequests.slice(0, 5).map((request: any) => {
+                  const ownPending = request.status === 'pending' && (request.requestedBy === user?.id || request.requestedByUser?.id === user?.id);
+                  return (
+                    <div key={request.id} className="rounded-lg bg-muted/40 p-2 text-xs flex items-center justify-between gap-2">
+                      <span>{request.requestedTrade || request.requestedUser?.fullName || 'Assistance'}</span>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline">{pretty(request.status)}</Badge>
+                        {ownPending && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingAssistanceId(request.id); setAssistanceTrade(request.requestedTrade || ''); setAssistanceReason(request.reason || ''); }}>Edit</Button>}
+                        {ownPending && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelAssistanceRequest(request.id)} disabled={busy !== null}>Cancel</Button>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -625,9 +724,26 @@ export function TechnicianWorkOrderPage() {
             <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
               <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">Stop the live timer first. The server will verify open tools, materials, handovers and assistance requests before accepting completion.</p>
+                <p className="text-xs text-muted-foreground">Stop the live timer first. The server verifies tools, materials, handovers, assistance requests, and completion evidence before accepting completion.</p>
+                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}
+                {completionBlockers.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                    <p className="font-semibold">Resolve these items before submitting:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionBlockers.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {completionWarnings.length > 0 && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <p className="font-medium text-foreground">Readiness warnings</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionWarnings.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
                 <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim()}>Submit for Supervisor Review</Button>
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim() || completionBlocked}>Submit for Supervisor Review</Button>
               </CardContent>
             </Card>
           )}

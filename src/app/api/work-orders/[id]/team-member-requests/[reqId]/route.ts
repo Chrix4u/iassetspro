@@ -114,6 +114,14 @@ export async function PUT(
           id: true,
           fullName: true,
           status: true,
+          primaryTrade: true,
+          userRoles: { select: { role: { select: { slug: true } } } },
+          userSkills: {
+            select: {
+              trade: { select: { name: true, code: true } },
+              proficiencyLevel: true,
+            },
+          },
           plantAccess: { where: { plantId: wo.plantId }, select: { id: true } },
         },
       });
@@ -128,6 +136,30 @@ export async function PUT(
           { success: false, error: 'Selected technician does not have access to the work order plant.' },
           { status: 403 },
         );
+      }
+
+      if (teamRequest.requestedTrade) {
+        const isTechnician = assignee.userRoles.some((row) => row.role.slug === 'maintenance_technician');
+        if (!isTechnician) {
+          return NextResponse.json(
+            { success: false, error: 'Selected user is not an active maintenance technician.' },
+            { status: 422 },
+          );
+        }
+
+        const requestedSkill = teamRequest.requestedTrade.trim().toLowerCase();
+        const skillLabels = [
+          assignee.primaryTrade,
+          ...assignee.userSkills.flatMap((row) => [row.trade.name, row.trade.code]),
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase());
+        if (!skillLabels.includes(requestedSkill)) {
+          return NextResponse.json(
+            { success: false, error: `Selected technician does not have the requested trade/skill: ${teamRequest.requestedTrade}` },
+            { status: 422 },
+          );
+        }
       }
 
       const effectiveLeaderId = wo.teamLeaderId || wo.assignedTo || userIdToAssign;
@@ -295,6 +327,64 @@ export async function PUT(
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to review team member request';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/work-orders/[id]/team-member-requests/[reqId]
+ * Requester may edit an unprocessed pending assistance request.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; reqId: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const { id, reqId } = await params;
+    const auth = await authorizeWorkOrderPlant(request, session, id);
+    if (!auth.ok) return auth.response;
+
+    const teamRequest = await db.woTeamMemberRequest.findUnique({ where: { id: reqId } });
+    if (!teamRequest) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
+    if (teamRequest.workOrderId !== id) return NextResponse.json({ success: false, error: 'Request does not belong to this work order' }, { status: 400 });
+    if (teamRequest.requestedBy !== session.userId) return NextResponse.json({ success: false, error: 'Only the requester can edit this assistance request' }, { status: 403 });
+    if (teamRequest.status !== 'pending' || teamRequest.reviewedAt) {
+      return NextResponse.json({ success: false, error: 'Only an unprocessed pending request can be edited' }, { status: 409 });
+    }
+
+    const body = await request.json();
+    const requestedTrade = typeof body.requestedTrade === 'string' ? body.requestedTrade.trim() : '';
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (requestedTrade.length < 2) return NextResponse.json({ success: false, error: 'requestedTrade is required' }, { status: 400 });
+    if (reason.length < 3) return NextResponse.json({ success: false, error: 'reason is required' }, { status: 400 });
+
+    const updated = await db.$transaction(async (tx) => {
+      const row = await tx.woTeamMemberRequest.update({
+        where: { id: reqId },
+        data: { requestedTrade, reason, role: 'assistant' },
+        include: {
+requestedByUser: { select: { id: true, fullName: true, username: true } },
+requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+userId: session.userId,
+action: 'update',
+entityType: 'wo_team_member_request',
+entityId: reqId,
+newValues: JSON.stringify({ workOrderId: id, requestedTrade, reason, status: 'pending' }),
+        },
+      });
+      return row;
+    });
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update team member request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

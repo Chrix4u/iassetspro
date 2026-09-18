@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { RESOURCE_STORE_ROLE_SLUGS, canReviewResourceRequestAsSupervisor, isResourceStoreActor } from '@/lib/resource-request-approval';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeToolRequestPlant } from '@/lib/plant-auth-helpers';
@@ -86,18 +87,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
 
+    const isStoreActor = isResourceStoreActor(session);
+
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
-      if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
-        return NextResponse.json({ success: false, error: 'Only admin, maintenance supervisor, maintenance manager, or plant manager can supervisor-approve tool requests' }, { status: 403 });
+      if (!canReviewResourceRequestAsSupervisor(session, toolReq.workOrder.assignedSupervisorId)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned work-order supervisor may review this tool request. Maintenance manager, plant manager, or admin may override for escalation.',
+        }, { status: 403 });
       }
     }
     if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
-      if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
+      if (!isStoreActor) {
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
     if (action === 'issue') {
-      if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
+      if (!isStoreActor) {
         return NextResponse.json({ success: false, error: "Only admin, store keeper, inventory manager, or tools shop attendant can perform 'issue' on tool requests" }, { status: 403 });
       }
     }
@@ -123,7 +129,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const claim = await db.repairToolRequest.updateMany({ where: { id, status: 'pending' }, data: { status: 'supervisor_approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now } });
         if (claim.count !== 1) throw new ToolOperationConflictError('Supervisor approval was claimed concurrently');
         updated = await db.repairToolRequest.findUnique({ where: { id } });
-        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
+        const storeKeepers = toolReq.plantId
+          ? await db.user.findMany({
+              where: {
+                status: 'active',
+                plantAccess: { some: { plantId: toolReq.plantId } },
+                userRoles: {
+                  some: {
+                    role: { slug: { in: [...RESOURCE_STORE_ROLE_SLUGS] } },
+                  },
+                },
+              },
+              select: { id: true },
+            })
+          : [];
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         const toolLabel = toolReq.items.length > 0 ? `${itemCount} tool${itemCount > 1 ? 's' : ''}` : `"${toolReq.toolName}"`;
         for (const sk of storeKeepers) await notifyUser(sk.id, 'repair_tool_request', 'Tool Request Awaiting Store Approval', `${toolLabel} approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`, 'repair_tool_request', id, `tool-requests?id=${id}`);
@@ -202,10 +221,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         updated = submitResult.updatedRequest;
         if (submitResult.warnings) warnings.push(...submitResult.warnings);
 
-        const storeKeepers = await db.user.findMany({
-          where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' },
-          select: { id: true },
-        });
+        const storeKeepers = toolReq.plantId
+          ? await db.user.findMany({
+              where: {
+                status: 'active',
+                plantAccess: { some: { plantId: toolReq.plantId } },
+                userRoles: {
+                  some: {
+                    role: { slug: { in: [...RESOURCE_STORE_ROLE_SLUGS] } },
+                  },
+                },
+              },
+              select: { id: true },
+            })
+          : [];
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         for (const sk of storeKeepers) {
           await notifyUser(sk.id, 'repair_tool_request', 'Tool Return Pending Confirmation', `${toolReq.requestedBy.fullName} submitted return of ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${toolReq.workOrder.woNumber}. Please inspect and confirm.`, 'repair_tool_request', id, `tool-requests?id=${id}`);
@@ -214,7 +243,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'storekeeper_confirm_return': {
-        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) return NextResponse.json({ success: false, error: 'Only store keeper or admin can confirm returns' }, { status: 403 });
+        if (!isStoreActor) return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can confirm returns' }, { status: 403 });
         const returnResult = await atomicConfirmToolReturn(id, session);
         if (!returnResult.success) return NextResponse.json({ success: false, error: returnResult.error }, { status: returnResult.conflict ? 409 : 400 });
         updated = returnResult.updatedRequest;
@@ -225,8 +254,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'storekeeper_reject_return': {
-        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
-          return NextResponse.json({ success: false, error: 'Only store keeper or admin can reject returns' }, { status: 403 });
+        if (!isStoreActor) {
+          return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can reject returns' }, { status: 403 });
         }
         const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
         updated = await db.$transaction(async (tx) => {

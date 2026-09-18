@@ -1,3 +1,4 @@
+import { waitingStateReason } from '@/lib/technician-reason-defaults';
 import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import { closeAllActiveWorkSessions } from '@/services/workOrderActiveSession.service';
@@ -116,8 +117,7 @@ export async function placeWorkOrderInWaitingState(
   data?: { status: WaitingWorkOrderStatus; closedTimers: number; actualHours: number };
   error?: string;
 }> {
-  const reason = options.reason?.trim();
-  if (!reason) return { success: false, error: 'A reason is required' };
+  const requestedReason = options.reason?.trim();
   const changedAt = new Date();
 
   const outcome = await db.$transaction(async (tx) => {
@@ -135,6 +135,10 @@ export async function placeWorkOrderInWaitingState(
       },
     });
     if (!wo) return { success: false as const, error: 'Work order not found' };
+    const reason = requestedReason || waitingStateReason({
+      woNumber: wo.woNumber,
+      targetStatus,
+    });
 
     if (options.requireExecutionAuthority && !hasWaitingStateAuthority(wo, targetStatus, session)) {
       return {

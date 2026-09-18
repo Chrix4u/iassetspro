@@ -16,7 +16,7 @@ describe('technician low-typing reason contract', () => {
     expect(panels).toContain('materialRequestReason({');
     expect(panels).toContain('toolRequestReason({');
     expect(panels).toContain('downtimeReason({');
-    expect(panels).toContain('(optional — auto-generated)');
+    expect(panels).not.toContain('(optional — auto-generated)');
   });
 
   it('does not block assistance, waiting, handover, pause, or decline on typed reasons', () => {

@@ -6,7 +6,7 @@ import {
   ArrowLeft, Play, Pause, CheckCircle2, XCircle, Clock3, Wrench, Package,
   Users, ShieldAlert, ClipboardList, MessageSquare, Loader2, AlertTriangle,
   RotateCcw, Save, ChevronRight, CalendarDays, UserRound, TimerReset,
-  Paperclip, Upload, UserPlus, ArrowRightLeft, Camera,
+  Paperclip, Upload, UserPlus, ArrowRightLeft, Camera, Trash2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -358,6 +358,15 @@ export function TechnicianWorkOrderPage() {
     }
   };
 
+  const removeAttachment = async (attachmentId: string) => {
+    if (!id) return;
+    await perform(
+      `remove-evidence-${attachmentId}`,
+      () => api.delete(`/api/work-orders/${id}/attachments/${attachmentId}`),
+      'Evidence removed',
+    );
+  };
+
   const saveAssistanceRequest = async () => {
     if (!id || assistanceTrade.trim().length < 2) { toast.error('Select the trade or skill required'); return; }
     const resolvedReason = assistanceReason.trim() || assistanceRequestReason({
@@ -628,12 +637,35 @@ export function TechnicianWorkOrderPage() {
               </div>
               {attachments.length === 0 ? <p className="text-xs text-muted-foreground">No photos or evidence have been attached yet.</p> : (
                 <div className="space-y-2">
-                  {attachments.slice(0, 10).map((attachment: any) => (
-                    <button key={attachment.id} onClick={() => openAttachment(attachment.id)} className="w-full rounded-lg border p-3 text-left hover:bg-muted/40 transition-colors" disabled={busy !== null}>
-                      <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium truncate"><Paperclip className="h-3.5 w-3.5 inline mr-1" />{attachment.fileName}</span><span className="text-[11px] text-muted-foreground shrink-0">{attachment.fileSize ? `${(attachment.fileSize / 1024 / 1024).toFixed(1)} MB` : ''}</span></div>
-                      <p className="text-xs text-muted-foreground mt-1">{attachment.uploadedBy?.fullName || 'User'} · {formatDate(attachment.uploadedAt)}</p>
-                    </button>
-                  ))}
+                  {attachments.slice(0, 10).map((attachment: any) => {
+                    const canRemoveAttachment =
+                      attachment.uploadedById === user?.id ||
+                      caps?.isSupervisor ||
+                      caps?.isPlanner ||
+                      caps?.isAdmin;
+                    return (
+                      <div key={attachment.id} className="flex items-stretch gap-2">
+                        <button onClick={() => openAttachment(attachment.id)} className="min-w-0 flex-1 rounded-lg border p-3 text-left hover:bg-muted/40 transition-colors" disabled={busy !== null}>
+                          <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium truncate"><Paperclip className="h-3.5 w-3.5 inline mr-1" />{attachment.fileName}</span><span className="text-[11px] text-muted-foreground shrink-0">{attachment.fileSize ? `${(attachment.fileSize / 1024 / 1024).toFixed(1)} MB` : ''}</span></div>
+                          <p className="text-xs text-muted-foreground mt-1">{attachment.uploadedBy?.fullName || 'User'} · {formatDate(attachment.uploadedAt)}</p>
+                        </button>
+                        {canRemoveAttachment && wo.status !== 'closed' && !wo.isLocked && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-auto shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30"
+                            aria-label={`Remove ${attachment.fileName}`}
+                            title="Remove evidence"
+                            onClick={() => removeAttachment(attachment.id)}
+                            disabled={busy !== null}
+                          >
+                            {busy === `remove-evidence-${attachment.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

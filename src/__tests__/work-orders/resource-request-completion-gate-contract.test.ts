@@ -49,6 +49,22 @@ describe('RWOP resource request approval and completion gate contract', () => {
     expect(panels).toContain('cancelToolRequest(request.id)');
   });
 
+  it('binds resource approvals to the accountable supervisor and plant-scoped store roles', () => {
+    const materialRoute = read('src/app/api/repairs/material-requests/[id]/route.ts');
+    const toolRoute = read('src/app/api/repairs/tool-requests/[id]/route.ts');
+
+    for (const route of [materialRoute, toolRoute]) {
+      expect(route).toContain('canReviewResourceRequestAsSupervisor');
+      expect(route).toContain('workOrder.assignedSupervisorId');
+      expect(route).toContain('isResourceStoreActor(session)');
+      expect(route).toContain('RESOURCE_STORE_ROLE_SLUGS');
+      expect(route).toContain('plantAccess: { some: { plantId:');
+    }
+
+    expect(materialRoute).toContain('matReq.plantId');
+    expect(toolRoute).toContain('toolReq.plantId');
+  });
+
   it('shows the requested trade to the planner, requires an assignee, and notifies the assigned technician through the normal notification/SMS pipeline', () => {
     const maintenance = read('src/components/modules/MaintenancePages.tsx');
     const assistanceRoute = read('src/app/api/work-orders/[id]/team-member-requests/[reqId]/route.ts');

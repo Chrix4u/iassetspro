@@ -106,7 +106,7 @@ export async function placeWorkOrderInWaitingState(
   targetStatus: WaitingWorkOrderStatus,
   session: ExecutionStateSessionContext,
   options: {
-    reason: string;
+    reason?: string;
     requireExecutionAuthority?: boolean;
     auditCtx?: ExecutionStateAuditContext;
     /** Additional trusted WO fields to update atomically with the state change. */

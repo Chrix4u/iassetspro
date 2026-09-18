@@ -29,11 +29,13 @@ test('UAT-07: Scenario G — Resource Blockers on Completion', async ({ browser 
   let assetId: string;
   let plantId: string;
   let techSingleUserId: string;
+  let supervisorUserId: string;
   let toolRequestId: string;
 
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
@@ -54,6 +56,7 @@ test('UAT-07: Scenario G — Resource Blockers on Completion', async ({ browser 
       await approveMR(supervisorToken, mr.id);
       const wo = await convertMR(planToken, mr.id, {
         assignedTo: techSingleUserId,
+        assignedSupervisorId: supervisorUserId,
         tradeActivity: 'mechanical',
         workOrderType: 'corrective',
         priority: 'high',

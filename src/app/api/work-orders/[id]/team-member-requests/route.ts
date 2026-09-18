@@ -115,6 +115,7 @@ export async function POST(
       select: {
         id: true,
         woNumber: true,
+        title: true,
         plantId: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -202,6 +203,7 @@ export async function POST(
 
     const resolvedReason = reason || assistanceRequestReason({
       woNumber: wo.woNumber,
+      title: wo.title,
       trade: requestedTrade || targetUser?.fullName,
     });
 

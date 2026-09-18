@@ -126,6 +126,7 @@ export async function placeWorkOrderInWaitingState(
       select: {
         id: true,
         woNumber: true,
+        title: true,
         status: true,
         assignedTo: true,
         teamLeaderId: true,
@@ -137,6 +138,7 @@ export async function placeWorkOrderInWaitingState(
     if (!wo) return { success: false as const, error: 'Work order not found' };
     const reason = requestedReason || waitingStateReason({
       woNumber: wo.woNumber,
+      title: wo.title,
       targetStatus,
     });
 

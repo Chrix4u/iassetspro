@@ -499,7 +499,7 @@ export function TechnicianWorkOrderPage() {
             </div>
             {declineMode && (
               <div className="mt-4 grid gap-2 max-w-2xl">
-                <Label>Reason for declining <span className="text-muted-foreground font-normal">(optional — auto-generated)</span></Label>
+                <Label>Reason for declining</Label>
                 <Textarea value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} placeholder={assignmentDeclineReason({ woNumber: wo?.woNumber, title: wo?.title })} />
                 <div className="flex gap-2"><Button variant="outline" onClick={() => setDeclineMode(false)}>Cancel</Button><Button variant="destructive" disabled={busy !== null} onClick={() => respondAssignment('declined')}>Confirm Decline</Button></div>
               </div>

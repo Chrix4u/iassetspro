@@ -11,6 +11,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const app = read('src/components/EAMApp.tsx');
   const moduleHook = read('src/hooks/useModuleEnabled.ts');
   const navStore = read('src/stores/navigationStore.ts');
+  const modulesApi = read('src/app/api/modules/route.ts');
   const pageAccess = read('src/lib/page-access.ts');
   const dashboard = read('src/components/modules/DashboardPages.tsx');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
@@ -40,8 +41,11 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('fails closed for optional disabled or unlicensed modules', () => {
-    expect(navStore).toContain('m.isSystemLicensed === true');
-    expect(navStore).toContain('Boolean(m.licensedAt)');
+    expect(modulesApi).toContain('const systemLicenseValid');
+    expect(modulesApi).toContain('m.isSystemLicensed === true');
+    expect(modulesApi).toContain('m.validUntil >= now');
+    expect(modulesApi).toContain('const isLicensed');
+    expect(navStore).toContain('m.isLicensed === true');
     expect(navStore).toContain('m.isEnabled === true');
     expect(navStore).toContain('m.isActive === true');
     expect(navStore).toContain('set({ enabledModules: new Set<string>() })');

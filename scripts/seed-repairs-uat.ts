@@ -126,9 +126,79 @@ const UAT_USERS: UatUserDef[] = [
   { username: 'uat_planner_plant_b', fullName: 'UAT Planner Plant B Only', email: 'uat_planner_plant_b@test.com', roleSlugs: ['planner', 'maintenance_planner'], plantCodes: ['PLANT-B'], isPrimaryPlant: 'PLANT-B' },
 ];
 
+async function ensureUatModule(input: {
+  code: string;
+  name: string;
+  isCore?: boolean;
+}) {
+  const now = new Date();
+  const validUntil = new Date('2027-12-31T23:59:59.000Z');
+
+  const systemModule = await db.systemModule.upsert({
+    where: { code: input.code },
+    update: {
+      name: input.name,
+      isCore: input.isCore ?? false,
+      isSystemLicensed: true,
+      validFrom: new Date('2024-01-01T00:00:00.000Z'),
+      validUntil,
+    },
+    create: {
+      code: input.code,
+      name: input.name,
+      description: `UAT module fixture for ${input.name}`,
+      version: '2.0.0',
+      isCore: input.isCore ?? false,
+      isSystemLicensed: true,
+      validFrom: new Date('2024-01-01T00:00:00.000Z'),
+      validUntil,
+    },
+  });
+
+  const existing = await db.companyModule.findFirst({
+    where: {
+      systemModuleId: systemModule.id,
+      OR: [{ companyId: '__default__' }, { companyId: null }],
+    },
+    orderBy: [{ companyId: 'desc' }],
+  });
+
+  const data = {
+    isActive: true,
+    isEnabled: true,
+    licensedAt: now,
+    activatedAt: now,
+  };
+
+  if (existing) {
+    await db.companyModule.update({ where: { id: existing.id }, data });
+  } else {
+    await db.companyModule.create({
+      data: {
+        systemModuleId: systemModule.id,
+        companyId: '__default__',
+        ...data,
+      },
+    });
+  }
+}
+
 async function main() {
   console.log('🌱 Starting Repairs UAT seed script...');
   const passwordHash = await hash(PASSWORD, 12);
+
+  for (const moduleDef of [
+    { code: 'core', name: 'Core Platform', isCore: true },
+    { code: 'work_orders', name: 'Work Orders', isCore: true },
+    { code: 'maintenance_requests', name: 'Maintenance Requests', isCore: true },
+    { code: 'inventory', name: 'Inventory & Spare Parts', isCore: true },
+    { code: 'repairs', name: 'Repairs Maintenance' },
+    { code: 'reports', name: 'Reports & Dashboards' },
+    { code: 'tools', name: 'Tool Management' },
+    { code: 'modules', name: 'Module Management', isCore: true },
+  ]) {
+    await ensureUatModule(moduleDef);
+  }
 
   const plantA = await db.plant.upsert({
     where: { code: 'PLANT-A' },

@@ -80,7 +80,13 @@ export async function GET(request: NextRequest) {
             storekeeperApprovedBy: { select: { id: true, fullName: true } },
             issuedByUser: { select: { id: true, fullName: true } },
             returnedByUser: { select: { id: true, fullName: true } },
-            workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+            workOrder: {
+              select: {
+                id: true, woNumber: true, title: true, status: true,
+                assignedTo: true, teamLeaderId: true,
+                teamMembers: { select: { userId: true, role: true } },
+              },
+            },
             item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
             componentRegistry: { select: { id: true, name: true, componentCode: true } },
           },

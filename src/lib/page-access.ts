@@ -118,8 +118,9 @@ export const PAGE_ACCESS: Record<string, PageAccessRule> = {
   'safety-equipment': { permissions: ['safety_equipment.view'], modules: ['safety'] },
   'safety-permits': { permissions: ['safety_permits.view'], modules: ['safety'] },
 
-  // Inventory. inventory.view alone intentionally does NOT grant the full item browser:
-  // repair technicians keep request-catalog lookup without gaining inventory navigation.
+  // Inventory. Broad browsing follows explicit inventory permissions. Maintenance
+  // technicians do not receive inventory.view by default; repair forms use the
+  // limited request catalog instead.
   'inventory-items': { permissions: ['inventory.view', 'inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory.update'], modules: ['inventory'] },
   'inventory-categories': { permissions: ['parts_categories.view'], modules: ['inventory'] },
   'inventory-locations': { permissions: ['inventory_locations.view'], modules: ['inventory'] },

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useAuthStore } from '@/stores/authStore';
+import { canAccessPage } from '@/lib/page-access';
 import { api } from '@/lib/api';
 import {
   CommandDialog,
@@ -112,6 +114,9 @@ export default function GlobalSearch() {
   const [hasSearched, setHasSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // ---- Keyboard shortcut (Ctrl+K / Cmd+K) ----
   useEffect(() => {
@@ -148,7 +153,17 @@ export default function GlobalSearch() {
     try {
       const res = await api.get<SearchResponse>(`/api/search?q=${encodeURIComponent(q.trim())}&limit=10`);
       if (res.success && res.data) {
-        setResults(res.data.results);
+        const visibleGroups = res.data.results
+          .map(group => ({
+            ...group,
+            results: group.results.filter(item => {
+              const nav = getNavigation(item);
+              return canAccessPage(nav.page, enabledModules, hasPermission, isAdmin());
+            }),
+          }))
+          .filter(group => group.results.length > 0)
+          .map(group => ({ ...group, count: group.results.length }));
+        setResults(visibleGroups);
       } else {
         setResults([]);
       }
@@ -158,7 +173,7 @@ export default function GlobalSearch() {
       setLoading(false);
       setHasSearched(true);
     }
-  }, []);
+  }, [enabledModules, hasPermission, isAdmin]);
 
   const handleValueChange = useCallback(
     (value: string) => {
@@ -203,7 +218,7 @@ export default function GlobalSearch() {
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder="Search assets, work orders, inventory, users..."
+        placeholder="Search records you are authorized to access..."
         value={query}
         onValueChange={handleValueChange}
       />
@@ -214,7 +229,7 @@ export default function GlobalSearch() {
             <SearchIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
             <p className="text-sm">Type to search across the system</p>
             <p className="text-xs mt-1 opacity-60">
-              Assets · Work Orders · Maintenance Requests · Inventory · Users
+              Results are limited by your permissions, plant access, and enabled modules
             </p>
           </div>
         )}

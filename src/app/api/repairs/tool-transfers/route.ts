@@ -133,6 +133,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cannot transfer tool to the same person' }, { status: 400 });
     }
 
+    if (!isAdmin(session) && fromUserId !== session.userId) {
+      return NextResponse.json({
+        success: false,
+        error: 'You can only initiate transfer of a tool currently in your custody',
+      }, { status: 403 });
+    }
+
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
 

@@ -38,11 +38,28 @@ describe('navigation, module and workflow authorization contracts', () => {
     expect(isPageModuleAvailable('dashboard', null)).toBe(true);
   });
 
-  it('requires both license activation and enablement before optional modules enter navigation state', () => {
+  it('requires authoritative server licensing before optional modules enter navigation state', () => {
+    const modulesRoute = read('src/app/api/modules/route.ts');
     const navigationStore = read('src/stores/navigationStore.ts');
-    expect(navigationStore).toContain("m.isActive === true && m.isEnabled === true");
+
+    expect(modulesRoute).toContain('m.isSystemLicensed === true');
+    expect(modulesRoute).toContain('companyModule?.isActive === true');
+    expect(modulesRoute).toContain('companyModule?.isEnabled === true');
+    expect(modulesRoute).toContain('validFromOk');
+    expect(modulesRoute).toContain('validUntilOk');
+    expect(modulesRoute).toContain('isAvailable,');
+
+    expect(navigationStore).toContain('m.isAvailable === true');
     expect(navigationStore).toContain("set({ enabledModules: new Set(['core']) })");
     expect(navigationStore).not.toContain('null = not loaded yet (show all)');
+  });
+
+  it('provisions the licensed modules required by Repairs UAT without enabling PM', () => {
+    const seed = read('scripts/seed-repairs-uat.ts');
+    for (const code of ['core', 'work_orders', 'maintenance_requests', 'inventory', 'repairs', 'reports', 'tools', 'modules']) {
+      expect(seed).toContain(`code: '${code}'`);
+    }
+    expect(seed).not.toContain("code: 'pm_schedules', name:");
   });
 
   it('uses one access policy across desktop, mobile, router, palette and global search', () => {

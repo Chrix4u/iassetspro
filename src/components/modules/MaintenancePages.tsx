@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { canAccessPage } from '@/lib/pageAccess';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -7544,8 +7545,9 @@ export function MaintenanceDashboardPage() {
   const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { navigate } = useNavigationStore();
-  const { hasPermission, user } = useAuthStore();
+  const { navigate, enabledModules } = useNavigationStore();
+  const { hasPermission, user, isAdmin } = useAuthStore();
+  const pmEnabled = enabledModules?.has('pm_schedules') ?? false;
 
   useEffect(() => {
     let active = true;
@@ -7632,7 +7634,9 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions.filter(a =>
+    hasPermission(a.permission) && canAccessPage(a.page, hasPermission, isAdmin(), enabledModules),
+  );
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7722,20 +7726,22 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
-        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
-          <CardContent className="p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
-                <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+        {/* PM Compliance — only when PM is licensed and enabled */}
+        {pmEnabled && (
+          <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+            <CardContent className="p-4 relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                </div>
               </div>
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
-            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
-          </CardContent>
-        </Card>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
+              <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">

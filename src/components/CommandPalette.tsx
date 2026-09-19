@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { PageName } from '@/types';
+import { canAccessPage } from '@/lib/pageAccess';
 import {
   CommandDialog,
   CommandEmpty,
@@ -217,7 +218,9 @@ function buildNavigationItems(): PaletteItem[] {
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // ---- Keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K) ----
   useEffect(() => {
@@ -242,7 +245,12 @@ export default function CommandPalette() {
   }, []);
 
   // ---- Build items ----
-  const navItems = useMemo(() => buildNavigationItems(), []);
+  const navItems = useMemo(() => {
+    const admin = isAdmin();
+    return buildNavigationItems().filter((item) =>
+      !item.page || canAccessPage(item.page, hasPermission, admin, enabledModules),
+    );
+  }, [hasPermission, isAdmin, enabledModules]);
 
   const actionItems: PaletteItem[] = useMemo(() => [
     ...(hasPermission('maintenance_requests.create') ? [
@@ -260,7 +268,7 @@ export default function CommandPalette() {
     ...(hasPermission('assets.create') ? [
       { id: 'action-create-asset', label: 'Register New Asset', icon: Building2, group: 'actions' as const, page: 'assets-machines' as PageName, keywords: ['new', 'asset', 'register', 'machine'] },
     ] : []),
-  ], [hasPermission]);
+  ].filter((item) => !item.page || canAccessPage(item.page, hasPermission, isAdmin(), enabledModules)), [hasPermission, isAdmin, enabledModules]);
 
   const settingsItems: PaletteItem[] = useMemo(() => [
     { id: 'settings-users', label: 'Manage Users', icon: Users, group: 'settings' as const, page: 'settings-users', keywords: ['admin', 'user'] },
@@ -270,7 +278,7 @@ export default function CommandPalette() {
     { id: 'settings-health', label: 'System Health', icon: HeartPulse, group: 'settings' as const, page: 'settings-health', keywords: ['health', 'status', 'system'] },
     { id: 'settings-backup', label: 'Backup & Restore', icon: Database, group: 'settings' as const, page: 'settings-backup', keywords: ['backup', 'restore'] },
     { id: 'settings-preferences', label: 'My Preferences', icon: Star, group: 'settings' as const, page: 'settings-preferences', keywords: ['preferences', 'display', 'theme'] },
-  ], []);
+  ].filter((item) => !item.page || canAccessPage(item.page, hasPermission, isAdmin(), enabledModules)), [hasPermission, isAdmin, enabledModules]);
 
   // ---- Recent items ----
   const recentItems: PaletteItem[] = useMemo(() => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { canReviewResourceRequestAsSupervisor } from '@/lib/resource-request-approval';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser } from '@/lib/notifications';
 import { createAuditLog } from '@/lib/audit';
@@ -33,9 +34,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             isLocked: true,
             lockReason: true,
             locker: { select: { id: true, fullName: true } },
+            assignedSupervisorId: true,
+            plannerId: true,
+            assignedTo: true,
+            teamLeaderId: true,
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
             assignee: { select: { id: true, fullName: true, avatar: true } },
+            teamMembers: { select: { userId: true, role: true } },
           },
         },
       },
@@ -59,23 +65,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json();
     const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes } = body;
 
-    // Role-based access for workflow actions
-    if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
-      if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'maintenance_planner')) {
-        return NextResponse.json({ success: false, error: 'Only supervisors, managers, or planners can perform this action' }, { status: 403 });
-      }
-    }
-    if (action === 'planner_close') {
-      if (!isAdmin(session) && !hasRole(session, 'maintenance_planner') && !hasRole(session, 'maintenance_manager')) {
-        return NextResponse.json({ success: false, error: 'Only planners or managers can close work orders' }, { status: 403 });
-      }
-    }
-
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
       include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } }, teamMembers: { select: { userId: true, role: true } } },
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+
+    if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
+      if (!canReviewResourceRequestAsSupervisor(session, wo.assignedSupervisorId)) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned maintenance supervisor may review completion. Maintenance manager, plant manager, or admin may override for escalation.',
+        }, { status: 403 });
+      }
+    }
+
+    if (action === 'planner_close') {
+      const canClose =
+        isAdmin(session) ||
+        hasRole(session, 'maintenance_manager') ||
+        (hasRole(session, 'maintenance_planner') && Boolean(wo.plannerId) && wo.plannerId === session.userId);
+      if (!canClose) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned maintenance planner may close this work order. Maintenance manager or admin may override.',
+        }, { status: 403 });
+      }
+    }
 
     // ── IMMUTABILITY CHECK ──
     // After planner_close, the WO is permanently locked. No mutations allowed.

@@ -8,7 +8,7 @@ interface NavigationState {
   pageParams: Record<string, string>;
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
-  enabledModules: Set<string> | null; // null = not loaded yet (show all)
+  enabledModules: Set<string> | null; // null = not loaded yet; non-core modules fail closed
   fetchModules: () => Promise<void>;
   refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
@@ -75,19 +75,20 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     try {
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
-        const enabled = new Set<string>();
+        const enabled = new Set<string>(['core']);
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
+          if (m.isCore || (m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
         });
-        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        if (enabled.size === 0) {
-          set({ enabledModules: null });
-          return;
-        }
+        // A successful module response is authoritative, even if only core is usable.
         set({ enabledModules: enabled });
+        return;
       }
+      // Fail closed if the response shape is invalid.
+      set({ enabledModules: new Set<string>(['core']) });
     } catch {
-      // On error, keep null so all items stay visible (graceful fallback)
+      // Licensing/activation state is security-sensitive. Never reveal non-core
+      // modules when it cannot be verified.
+      set({ enabledModules: new Set<string>(['core']) });
     }
   },
 

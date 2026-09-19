@@ -37,6 +37,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         workOrder: {
           select: {
             id: true, woNumber: true, title: true, status: true, plantId: true,
+            assignedTo: true, teamLeaderId: true,
+            teamMembers: { select: { userId: true, role: true } },
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
           },
@@ -213,7 +215,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
-    const { action, approvedQuantity, quantityApproved, quantityReturned, notes } = body;
+    const { action, approvedQuantity, quantityApproved, quantityReturned, consumedQty, wastedQty, returnQty, notes } = body;
 
     const matReq = await db.repairMaterialRequest.findUnique({
       where: { id },
@@ -260,8 +262,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }, { status: 403 });
       }
     }
-    // Actual usage/waste is recorded by the execution team, not by stores.
-    if (action === 'consume_material' || action === 'waste_material') {
+    // Actual usage/waste declarations are submitted by the execution team, not by stores.
+    if (action === 'declare_usage' || action === 'consume_material' || action === 'waste_material') {
       if (!isAdmin(session) && !isExecutionActor) {
         return NextResponse.json({
           success: false,
@@ -371,6 +373,106 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         updated = result.updated;
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_record_return', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'record_return', status: result.newStatus, returnQuantity: qtyToReturn, previousReturned: result.previousReturned, cumulativeReturned: result.cumulativeReturned, quantityIssued: matReq.quantityIssued, itemId: matReq.itemId || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', result.newStatus === 'fully_returned' ? 'All Materials Returned' : 'Partial Material Return Recorded', result.newStatus === 'fully_returned' ? `All ${matReq.quantityIssued} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}` : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${result.cumulativeReturned}/${matReq.quantityIssued}`, 'repair_material_request', id, `material-requests?id=${id}`);
+        break;
+      }
+
+      case 'declare_usage': {
+        if (!['issued', 'partially_returned', 'fully_returned'].includes(matReq.status)) {
+          return NextResponse.json({ success: false, error: `Cannot declare usage: current status is ${matReq.status}` }, { status: 400 });
+        }
+
+        const declaredConsumed = Number(consumedQty);
+        const declaredWasted = Number(wastedQty ?? 0);
+        const declaredReturn = Number(returnQty);
+        if (!Number.isFinite(declaredConsumed) || declaredConsumed < 0) {
+          return NextResponse.json({ success: false, error: 'consumedQty must be a non-negative number' }, { status: 400 });
+        }
+        if (!Number.isFinite(declaredWasted) || declaredWasted < 0) {
+          return NextResponse.json({ success: false, error: 'wastedQty must be a non-negative number' }, { status: 400 });
+        }
+        if (!Number.isFinite(declaredReturn) || declaredReturn < 0) {
+          return NextResponse.json({ success: false, error: 'returnQty must be a non-negative number' }, { status: 400 });
+        }
+
+        const issued = Number(matReq.quantityIssued || 0);
+        const accounted = declaredConsumed + declaredWasted + declaredReturn;
+        if (Math.abs(accounted - issued) > 0.001) {
+          return NextResponse.json({
+            success: false,
+            error: `Usage declaration must account for all issued material: used(${declaredConsumed}) + wasted(${declaredWasted}) + to return(${declaredReturn}) = ${accounted}, issued = ${issued}`,
+          }, { status: 400 });
+        }
+        if (declaredReturn + 0.001 < (matReq.quantityReturned ?? 0)) {
+          return NextResponse.json({
+            success: false,
+            error: `Declared return quantity (${declaredReturn}) cannot be less than material already physically returned (${matReq.quantityReturned ?? 0})`,
+          }, { status: 400 });
+        }
+
+        const declarationClaim = await db.repairMaterialRequest.updateMany({
+          where: { id, status: matReq.status, quantityIssued: matReq.quantityIssued },
+          data: {
+            declaredConsumedQty: declaredConsumed,
+            declaredWastedQty: declaredWasted > 0 ? declaredWasted : null,
+            declaredReturnQty: declaredReturn,
+            usageDeclarationNotes: notes || null,
+            usageDeclaredById: session.userId,
+            usageDeclaredAt: now,
+          },
+        });
+        if (declarationClaim.count !== 1) throw new MaterialCustodyConflictError('Material usage declaration changed concurrently');
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
+
+        await db.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'material_request_usage_declared',
+            entityType: 'repair_material_request',
+            entityId: id,
+            newValues: JSON.stringify({
+              action: 'declare_usage',
+              issuedQty: issued,
+              declaredConsumedQty: declaredConsumed,
+              declaredWastedQty: declaredWasted,
+              declaredReturnQty: declaredReturn,
+              notes: notes || null,
+            }),
+          },
+        });
+
+        const storeKeepers = matReq.plantId
+          ? await db.user.findMany({
+              where: {
+                status: 'active',
+                plantAccess: { some: { plantId: matReq.plantId } },
+                userRoles: { some: { role: { slug: { in: [...RESOURCE_STORE_ROLE_SLUGS] } } } },
+              },
+              select: { id: true },
+            })
+          : [];
+        for (const sk of storeKeepers) {
+          if (sk.id === session.userId) continue;
+          await notifyUser(
+            sk.id,
+            'repair_material_request',
+            'Material Usage Declaration Awaiting Verification',
+            `${matReq.itemName} for WO ${matReq.workOrder.woNumber}: ${declaredConsumed} used, ${declaredWasted} wasted, ${declaredReturn} to return. Verify the physical return and reconcile.`,
+            'repair_material_request',
+            id,
+            `material-requests?id=${id}`,
+          );
+        }
+        if (matReq.workOrder.assignedSupervisorId && matReq.workOrder.assignedSupervisorId !== session.userId) {
+          await notifyUser(
+            matReq.workOrder.assignedSupervisorId,
+            'repair_material_request',
+            'Material Usage Declared',
+            `${matReq.itemName} for WO ${matReq.workOrder.woNumber}: ${declaredConsumed} used, ${declaredWasted} wasted, ${declaredReturn} to return.`,
+            'repair_material_request',
+            id,
+            `material-requests?id=${id}`,
+          );
+        }
         break;
       }
 

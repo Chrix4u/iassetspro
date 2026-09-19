@@ -47,7 +47,7 @@ export const PAGE_PERMISSIONS: Partial<Record<PageName, string[]>> = {
   'repairs-material-requests': ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own'],
   'repairs-tool-requests': ['repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.view_own'],
   'repairs-tool-transfers': ['repair_tool_transfers.view', 'repair_tool_transfers.view_all', 'repair_tool_transfers.view_own'],
-  'repairs-downtime': ['work_orders.view', 'work_orders.view_own'],
+  'repairs-downtime': ['work_orders.view', 'work_orders.view_own', 'downtime.view', 'downtime.create'],
   'repairs-completion': ['work_orders.view', 'work_orders.view_own'],
   'repairs-spare-part-returns': ['spare_part_returns.view', 'spare_part_returns.view_all', 'spare_part_returns.view_own'],
   'repairs-damaged-tools': ['damaged_tool_reports.view', 'damaged_tool_reports.view_all'],

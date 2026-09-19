@@ -479,7 +479,7 @@ function PageSwitcher({ page }: { page: string }) {
     // Legacy fallbacks
     'assets': ['assets.view'],
     'asset-detail': ['assets.view'],
-    'inventory': ['inventory.view'],
+    'inventory': ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out'],
     'analytics': ['analytics.view'],
   };
 
@@ -527,7 +527,15 @@ function PageSwitcher({ page }: { page: string }) {
     'settings-notifications': 'core', 'settings-integrations': 'core', 'settings-backup': 'core',
     'settings-audit': 'core', 'settings-security': 'core', 'settings-health': 'core',
     'settings-queues': 'core', 'settings-preferences': 'core',
+    'assets': 'assets', 'asset-detail': 'assets', 'inventory': 'inventory', 'analytics': 'analytics',
   };
+
+  const requiredPermsForPage = pagePermissions[page] ?? (page.startsWith('settings-') ? ['system_settings.view'] : undefined);
+  const settingsAdminDenied = page.startsWith('settings-') && page !== 'settings-preferences' && !isAdmin();
+  const permissionAccessDenied = !isAdmin() && Boolean(
+    settingsAdminDenied ||
+    (requiredPermsForPage && !requiredPermsForPage.some(p => hasPermission(p)))
+  );
 
   const requiredModule = pageModules[page];
   const moduleStateReady = enabledModules !== null;
@@ -546,7 +554,7 @@ function PageSwitcher({ page }: { page: string }) {
   // Permission + module guard: check before loading the page
   useEffect(() => {
     if (!moduleStateReady) return;
-    if (moduleAccessDenied) {
+    if (moduleAccessDenied || permissionAccessDenied) {
       navigate('dashboard');
       return;
     }
@@ -571,12 +579,12 @@ function PageSwitcher({ page }: { page: string }) {
         return;
       }
     }
-  }, [page, hasPermission, isAdmin, navigate, moduleStateReady, moduleAccessDenied]);
+  }, [page, hasPermission, isAdmin, navigate, moduleStateReady, moduleAccessDenied, permissionAccessDenied]);
 
   useEffect(() => {
     // Do not even import/render optional-module pages until licensing state
     // confirms the module is enabled.
-    if (!moduleStateReady || moduleAccessDenied) {
+    if (!moduleStateReady || moduleAccessDenied || permissionAccessDenied) {
       setComponent(null);
       setError(null);
       return;
@@ -610,10 +618,10 @@ function PageSwitcher({ page }: { page: string }) {
       });
 
     return () => { cancelled = true; };
-  }, [page, moduleStateReady, moduleAccessDenied]);
+  }, [page, moduleStateReady, moduleAccessDenied, permissionAccessDenied]);
 
   if (!moduleStateReady) return <LoadingSkeleton />;
-  if (moduleAccessDenied) return <LoadingSkeleton />;
+  if (moduleAccessDenied || permissionAccessDenied) return <LoadingSkeleton />;
 
   if (error) {
     return (

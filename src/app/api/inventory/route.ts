@@ -14,9 +14,8 @@ export async function GET(request: NextRequest) {
     const mode = searchParams.get('mode');
     const requestCatalogMode = mode === 'request_catalog';
 
-    // inventory.view is intentionally sufficient only for the limited repair/
-    // work-order catalog. Full inventory browsing requires an inventory custody
-    // or management permission.
+    // Full inventory browsing requires an explicit Inventory permission.
+    // Repair/work-order users without that permission can only use request_catalog.
     const fullInventoryReadPermissions = [
       'inventory.view',
       'inventory.view_all',

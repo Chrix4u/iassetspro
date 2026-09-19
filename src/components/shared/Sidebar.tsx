@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
 import type { PageName } from '@/types';
+import { CORE_MODULE_CODES, pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 
 import {
   Tooltip,
@@ -103,14 +104,14 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const [manualOpenMenus, setManualOpenMenus] = useState<Set<string>>(new Set());
   const [closedMenus, setClosedMenus] = useState<Set<string>>(new Set());
 
-  // Subscribe to enabled modules from the navigation store.
-  // The store fetches on app init and refreshes when modules are toggled,
-  // so the sidebar stays in sync automatically.
-  const enabledModules = useMemo<Set<string>>(() => {
-    if (!storeModules) return new Set<string>(); // null = not loaded yet → show all (size=0 skips filter)
-    // Store already stores lowercase codes
-    return storeModules;
-  }, [storeModules]);
+  // Optional modules are fail-closed until the licensed/enabled module registry loads.
+  const enabledModules = storeModules;
+  const moduleCodeEnabled = useCallback((code?: string) => {
+    if (!code || code === 'core') return true;
+    const normalized = code.toLowerCase();
+    if (enabledModules === null) return CORE_MODULE_CODES.has(normalized);
+    return enabledModules.has(normalized);
+  }, [enabledModules]);
 
   // Menu group definition
   interface NavGroup {
@@ -151,15 +152,25 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'], moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules'],
+      label: 'Repairs Maintenance', icon: Wrench, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'], moduleCodes: ['work_orders', 'maintenance_requests', 'repairs'],
       children: [
-        { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList, moduleCode: 'work_orders' },
-        { page: 'maintenance-requests', label: 'Requests', icon: MessageSquare, moduleCode: 'maintenance_requests' },
-        { page: 'maintenance-dashboard', label: 'Dashboard', icon: LayoutDashboard, moduleCode: 'work_orders' },
-        { page: 'maintenance-analytics', label: 'Analytics', icon: BarChart3, moduleCode: 'work_orders' },
-        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration' },
-        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment' },
-        { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon, moduleCode: 'tools' },
+        { page: 'maintenance-requests', label: 'Repair Requests', icon: MessageSquare, moduleCode: 'maintenance_requests' },
+        { page: 'maintenance-work-orders', label: 'Repair Work Orders', icon: ClipboardList, moduleCode: 'work_orders' },
+        { page: 'maintenance-dashboard', label: 'Repairs Dashboard', icon: LayoutDashboard, moduleCode: 'work_orders' },
+        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package, moduleCode: 'repairs' },
+        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon, moduleCode: 'repairs' },
+        { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft, moduleCode: 'repairs' },
+        { page: 'repairs-downtime', label: 'Repair Downtime', icon: Timer, moduleCode: 'repairs' },
+        { page: 'repairs-completion', label: 'Completion & Closure', icon: ClipboardCheck, moduleCode: 'repairs' },
+        { page: 'technician-timesheet', label: 'Technician Timesheet', icon: Clock, moduleCode: 'repairs' },
+        { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle, moduleCode: 'repairs' },
+        { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert, moduleCode: 'repairs' },
+        { page: 'repairs-analytics', label: 'Repairs Analytics', icon: BarChart3, moduleCode: 'repairs' },
+      ],
+    },
+    {
+      label: 'PM Maintenance', icon: Calendar, perm: 'pm_schedules.view', moduleCode: 'pm_schedules',
+      children: [
         { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, moduleCode: 'pm_schedules' },
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules' },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules' },
@@ -171,20 +182,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       children: [
         { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
         { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
-      ],
-    },
-    {
-      label: 'Repairs', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'repairs',
-      children: [
-        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
-        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon },
-        { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft },
-        { page: 'repairs-downtime', label: 'Downtime', icon: Timer },
-        { page: 'repairs-completion', label: 'Completion', icon: ClipboardCheck },
-        { page: 'technician-timesheet', label: 'Timesheet', icon: Clock },
-        { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
-        { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
-        { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
       ],
     },
     {
@@ -256,7 +253,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Inventory', icon: Package, perm: 'inventory.view', moduleCode: 'inventory',
+      label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve', 'inventory.export'], moduleCode: 'inventory',
       children: [
         { page: 'inventory-items', label: 'Items', icon: Package },
         { page: 'inventory-categories', label: 'Categories', icon: FolderOpen },
@@ -264,8 +261,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'inventory-transactions', label: 'Transactions', icon: ArrowRightLeft },
         { page: 'inventory-adjustments', label: 'Adjustments', icon: ArrowUpDown },
         { page: 'inventory-requests', label: 'Requests', icon: FileText },
-        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
-        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: Wrench },
         { page: 'inventory-transfers', label: 'Transfers', icon: Truck },
         { page: 'inventory-suppliers', label: 'Suppliers', icon: Building },
         { page: 'inventory-purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
@@ -380,34 +375,36 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     });
   }, [currentPage]);
 
-  // Filter visible groups based on permissions and module activation
+  const childVisible = useCallback((child: NonNullable<NavGroup['children']>[number]) => {
+    const adm = isAdmin();
+    if (child.pageAdminOnly && !adm) return false;
+    if (!pageHasPermission(child.page, hasPermission, adm)) return false;
+    if (!pageModuleIsEnabled(child.page, enabledModules)) return false;
+    if (child.moduleCode && !moduleCodeEnabled(child.moduleCode)) return false;
+    return true;
+  }, [enabledModules, hasPermission, isAdmin, moduleCodeEnabled]);
+
+  // A group is visible only when the actor can actually open at least one child.
   const visibleGroups = useMemo(() => {
     const isAdm = isAdmin();
     return menuGroups.filter(g => {
-      // Admin-only groups: non-admins cannot see them at all
       if (g.adminOnly && !isAdm) return false;
 
-      // Permission check (supports permOr for multiple alternative permissions)
-      if (!isAdm && permissions && permissions.length > 0) {
-        const permOk = g.permOr
-          ? g.permOr.some(p => hasPermission(p))
-          : hasPermission(g.perm);
-        if (!permOk) return false;
+      if (g.page) {
+        if (!pageHasPermission(g.page, hasPermission, isAdm)) return false;
+        if (!pageModuleIsEnabled(g.page, enabledModules)) return false;
+      } else if (!isAdm && permissions && permissions.length > 0) {
+        const permOk = g.permOr ? g.permOr.some(p => hasPermission(p)) : hasPermission(g.perm);
+        if (!permOk && !g.children?.some(childVisible)) return false;
       }
 
-      // Module activation check — only apply once modules have loaded
-      if (enabledModules.size > 0) {
-        // Single module code check
-        if (g.moduleCode && g.moduleCode !== 'core' && !enabledModules.has(g.moduleCode.toLowerCase())) return false;
-        // Multiple module codes check — show if ANY is enabled
-        if (g.moduleCodes && g.moduleCodes.length > 0) {
-          if (!g.moduleCodes.some(code => enabledModules.has(code.toLowerCase()))) return false;
-        }
-      }
+      if (g.moduleCode && !moduleCodeEnabled(g.moduleCode)) return false;
+      if (g.moduleCodes?.length && !g.moduleCodes.some(moduleCodeEnabled)) return false;
+      if (g.children && !g.children.some(childVisible)) return false;
 
       return true;
     });
-  }, [menuGroups, hasPermission, permissions, isAdmin, enabledModules]);
+  }, [menuGroups, hasPermission, permissions, isAdmin, enabledModules, moduleCodeEnabled, childVisible]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {
@@ -517,12 +514,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
                 </button>
                 {isOpen && (
                   <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pl-3">
-                    {group.children!.filter(child => {
-                      if (child.moduleCode && enabledModules.size > 0 && child.moduleCode !== 'core') {
-                        return enabledModules.has(child.moduleCode.toLowerCase());
-                      }
-                      return true;
-                    }).map(child => {
+                    {group.children!.filter(childVisible).map(child => {
                       const childActive = child.page === currentPage ||
                         (child.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) ||
                         (child.page === 'maintenance-work-orders' && currentPage === 'wo-detail');

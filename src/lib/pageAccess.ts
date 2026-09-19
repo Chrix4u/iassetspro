@@ -71,12 +71,13 @@ export const PAGE_ACCESS: Partial<Record<PageName, PageAccessRule>> = {
   'repairs-damaged-tools': { permissions: ['damaged_tool_reports.view', 'damaged_tool_reports.view_all', 'damaged_tool_reports.create'], moduleCode: 'repairs' },
   'repairs-analytics': { permissions: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'repairs' },
   'repairs-reports': { permissions: ['reports.view'], moduleCode: 'repairs' },
+  'repairs-detail-report': { permissions: ['reports.view', 'work_orders.view'], moduleCode: 'repairs' },
   'wo-reports': { permissions: ['reports.view', 'work_orders.view', 'work_orders.view_own'], moduleCode: 'reports' },
   'technician-timesheet': { permissions: ['time_logs.view', 'time_logs.create'], moduleCode: 'repairs' },
 
   // IoT / reliability
   'iot-devices': { permissions: ['iot_devices.view'], moduleCode: 'iot_sensors' },
-  'iot-monitoring': { permissions: ['iot_monitoring.view', 'iot.view'], moduleCode: 'iot_sensors' },
+  'iot-monitoring': { permissions: ['iot_monitoring.view'], moduleCode: 'iot_sensors' },
   'iot-rules': { permissions: ['iot_rules.view'], moduleCode: 'iot_sensors' },
   connectivity: { permissions: ['iot.view'], moduleCode: 'iot_sensors' },
   'reliability-engineering': { permissions: ['digital_twin.view'], moduleCode: 'digital_twin' },

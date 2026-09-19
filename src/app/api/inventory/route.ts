@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, hasRole, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessFullInventory } from '@/lib/inventory-access';
 import { getPlantScope, canAccessPlant, getPlantFilterWhere } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
@@ -10,23 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    const canViewFullInventory =
-      isAdmin(session) ||
-      hasRole(session, 'inventory_manager') ||
-      hasRole(session, 'store_keeper') ||
-      hasRole(session, 'tools_shop_attendant') ||
-      [
-        'inventory.view_all',
-        'inventory.manage',
-        'inventory.create',
-        'inventory.update',
-        'inventory.stock_in',
-        'inventory.stock_out',
-        'inventory.transfer',
-        'inventory.adjust',
-      ].some(permission => hasPermission(session, permission));
-
-    if (!canViewFullInventory) {
+    if (!canAccessFullInventory(session)) {
       return NextResponse.json({
         success: false,
         error: 'Full inventory access is restricted to authorized inventory/store users',

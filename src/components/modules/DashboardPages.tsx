@@ -380,6 +380,8 @@ export function DashboardPage() {
   const productionEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PRODUCTION);
   const qualityEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.QUALITY);
   const pmEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  const assetsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ASSETS);
+  const notificationsEnabled = enabledModules !== null && enabledModules.has('notifications');
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -399,7 +401,7 @@ export function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {myKPIs.unreadNotifications > 0 && (
+          {notificationsEnabled && myKPIs.unreadNotifications > 0 && (
             <Badge variant="destructive" className="text-[11px] font-mono gap-1.5">
               <Bell className="h-3 w-3" />
               {myKPIs.unreadNotifications} new
@@ -532,7 +534,7 @@ export function DashboardPage() {
         )}
 
         {/* Operator fallback */}
-        {isOperator && (
+        {isOperator && notificationsEnabled && (
           <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-pink-100 dark:border-pink-900/40 bg-pink-50 dark:bg-pink-950/30 transition-all hover:shadow-sm">
             <div className="h-9 w-9 rounded-lg bg-pink-100 dark:bg-pink-900/50 flex items-center justify-center shrink-0">
               <Bell className="h-4 w-4 text-pink-600 dark:text-pink-400" />
@@ -758,21 +760,23 @@ export function DashboardPage() {
             />,
           );
         }
-        pmComplianceCards.push(
-          <KPICard
-            key="assets-at-risk"
-            label="Assets at Risk"
-            value={assetsAtRisk}
-            sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
-            color="#f97316"
-            bgColor="bg-orange-50 dark:bg-orange-950/30"
-            borderColor="border-orange-100 dark:border-orange-900/40"
-            iconBg="bg-orange-100 dark:bg-orange-900/50"
-            iconColor="text-orange-600 dark:text-orange-400"
-            icon={AlertTriangle}
-            onClick={() => navigate('assets', { condition: 'at_risk' })}
-          />,
-        );
+        if (assetsEnabled) {
+          pmComplianceCards.push(
+            <KPICard
+              key="assets-at-risk"
+              label="Assets at Risk"
+              value={assetsAtRisk}
+              sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
+              color="#f97316"
+              bgColor="bg-orange-50 dark:bg-orange-950/30"
+              borderColor="border-orange-100 dark:border-orange-900/40"
+              iconBg="bg-orange-100 dark:bg-orange-900/50"
+              iconColor="text-orange-600 dark:text-orange-400"
+              icon={AlertTriangle}
+              onClick={() => navigate('assets', { condition: 'at_risk' })}
+            />,
+          );
+        }
         if (safetyEnabled) {
           pmComplianceCards.push(
             <KPICard

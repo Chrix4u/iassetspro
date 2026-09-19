@@ -11,6 +11,42 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('mode');
+    const requestCatalogMode = mode === 'request_catalog';
+
+    // inventory.view is intentionally sufficient only for the limited repair/
+    // work-order catalog. Full inventory browsing requires an inventory custody
+    // or management permission.
+    const fullInventoryReadPermissions = [
+      'inventory.view_all',
+      'inventory.manage',
+      'inventory.create',
+      'inventory.update',
+      'inventory.delete',
+      'inventory.stock_in',
+      'inventory.stock_out',
+      'stock_transactions.view',
+      'inventory_locations.view',
+      'inventory_adjustments.view',
+      'inventory_transfers.view',
+      'purchase_orders.view',
+    ];
+    const canReadFullInventory = isAdmin(session) || fullInventoryReadPermissions.some((permission) => hasPermission(session, permission));
+    const canUseRequestCatalog =
+      canReadFullInventory ||
+      hasPermission(session, 'inventory.view') ||
+      hasPermission(session, 'repair_material_requests.create') ||
+      hasPermission(session, 'work_orders.create') ||
+      hasPermission(session, 'work_orders.update');
+
+    if (requestCatalogMode) {
+      if (!canUseRequestCatalog) {
+        return NextResponse.json({ success: false, error: 'Insufficient permissions for inventory request catalog' }, { status: 403 });
+      }
+    } else if (!canReadFullInventory) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to browse inventory' }, { status: 403 });
+    }
+
     const category = searchParams.get('category');
     const lowStock = searchParams.get('lowStock');
     const search = searchParams.get('search');
@@ -52,6 +88,32 @@ export async function GET(request: NextRequest) {
       where.plantId = searchPlantId;
     } else {
       Object.assign(where, getPlantFilterWhere(plantScope));
+    }
+
+    if (requestCatalogMode) {
+      const items = await db.inventoryItem.findMany({
+        where,
+        select: {
+          id: true,
+          itemCode: true,
+          name: true,
+          category: true,
+          currentStock: true,
+          unitOfMeasure: true,
+          plantId: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+
+      const catalogItems = lowStock === 'true'
+        ? items.filter(item => {
+            // minStockLevel is deliberately not exposed in catalog mode, so
+            // low-stock filtering is reserved for full inventory views.
+            return item.currentStock <= 0;
+          })
+        : items;
+
+      return NextResponse.json({ success: true, data: catalogItems });
     }
 
     const items = await db.inventoryItem.findMany({

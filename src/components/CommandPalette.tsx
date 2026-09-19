@@ -130,7 +130,7 @@ function buildNavigationItems(): PaletteItem[] {
     { id: 'maintenance-requests', label: 'Repairs - Requests', icon: MessageSquare, group: 'navigation', page: 'maintenance-requests', keywords: ['mr', 'request', 'ticket'] },
     { id: 'maintenance-dashboard', label: 'Repairs - Dashboard', icon: LayoutDashboard, group: 'navigation', page: 'maintenance-dashboard' },
     { id: 'maintenance-analytics', label: 'Repairs - Analytics', icon: BarChart3, group: 'navigation', page: 'maintenance-analytics' },
-    { id: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, group: 'navigation', page: 'maintenance-calibration' },
+    { id: 'maintenance-calibration', label: 'Preventive Maintenance (PM) - Calibration', icon: Crosshair, group: 'navigation', page: 'maintenance-calibration', keywords: ['preventive', 'calibration', 'compliance'] },
     { id: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, group: 'navigation', page: 'maintenance-risk-assessment' },
     { id: 'maintenance-tools', label: 'Maintenance Tools', icon: Wrench, group: 'navigation', page: 'maintenance-tools' },
     { id: 'pm-schedules', label: 'Preventive Maintenance (PM) - Schedules', icon: Clock, group: 'navigation', page: 'pm-schedules', keywords: ['preventive', 'schedule', 'planned'] },

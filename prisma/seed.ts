@@ -372,7 +372,6 @@ const rolePermissionBundles: Record<string, string[]> = {
     'pm_notifications.view', 'pm_analytics.view', 'pm_work_orders.view',
     'calibration.view', 'calibration.create', 'calibration.update',
     'asset_health.view', 'condition_monitoring.view',
-    'inventory.view',
     'parts.view',
     'repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.update',
     'repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.update',

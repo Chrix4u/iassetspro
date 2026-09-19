@@ -2,6 +2,7 @@
 
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useEffect } from 'react';
+import { CORE_MODULE_CODES } from '@/lib/page-access';
 
 /**
  * Hook to check if a module is enabled/active.
@@ -20,8 +21,8 @@ export function useModuleEnabled(moduleCode: string): boolean {
     fetchModules();
   }, [fetchModules]);
 
-  // null means not loaded yet — show everything (graceful fallback)
-  if (enabledModules === null) return true;
+  // Fail closed while loading: optional/disabled modules must never flash into view.
+  if (enabledModules === null) return CORE_MODULE_CODES.has(moduleCode.toLowerCase());
 
   return enabledModules.has(moduleCode.toLowerCase());
 }

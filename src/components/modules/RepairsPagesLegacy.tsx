@@ -584,14 +584,17 @@ export function RepairMaterialRequestsPage() {
 
   // Cache for inventory item lookup (used by AsyncSearchableSelect)
   const inventoryItemsCache = useRef<any[]>([]);
-  const fetchInventoryItems = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+  const fetchInventoryItems = useCallback(async (query?: string) => {
+    if (!createForm.workOrderId) return [];
+    const params = new URLSearchParams({ workOrderId: createForm.workOrderId });
+    if (query?.trim()) params.set('search', query.trim());
+    const res = await api.get(`/api/repairs/material-catalog?${params.toString()}`);
     if (res.success && Array.isArray(res.data)) {
       inventoryItemsCache.current = res.data;
       return res.data.map((i: any) => ({ value: i.id, label: i.name + (i.itemCode ? ` (${i.itemCode})` : '') }));
     }
     return [];
-  }, []);
+  }, [createForm.workOrderId]);
 
   const estimatedCost = useMemo(() => {
     const qty = parseFloat(createForm.quantityRequested) || 0;
@@ -908,7 +911,7 @@ export function RepairMaterialRequestsPage() {
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
             <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '' }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
-            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
+            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? item.name : '' })); }} placeholder={createForm.workOrderId ? "Search available materials..." : "Select a work order first"} searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} disabled={!createForm.workOrderId} /></div>
             <div><Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label><AsyncSearchableSelect value={createForm.componentRegistryId} onValueChange={(v) => setCreateForm(f => ({ ...f, componentRegistryId: v }))} placeholder="Select component..." searchPlaceholder="Search components..." fetchOptions={async () => { if (!createForm.workOrderId) return []; try { const res = await api.get(`/api/work-orders/${createForm.workOrderId}`); if (res.success && res.data?.assetId) { const compRes = await api.get(`/api/component-registry?assetId=${res.data.assetId}`); if (compRes.success && Array.isArray(compRes.data)) return compRes.data.map((c: any) => ({ value: c.id, label: `${c.componentCode || ''} ${c.name}`.trim() })); } } catch {} return []; }} /></div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>

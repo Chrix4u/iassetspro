@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +9,12 @@ export async function GET(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, [
+      'purchase_orders.view', 'purchase_orders.update', 'purchase_orders.approve',
+      'purchase_orders.receive', 'purchase_orders.manage',
+    ])) {
+      return NextResponse.json({ success: false, error: 'Insufficient purchase order permissions' }, { status: 403 });
+    }
 
     const { id } = await params;
     const po = await db.purchaseOrder.findUnique({
@@ -43,7 +49,7 @@ export async function PUT(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'purchase_orders.update') && !hasPermission(session, 'purchase_orders.manage') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

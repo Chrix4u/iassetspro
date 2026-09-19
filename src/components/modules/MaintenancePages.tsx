@@ -59,6 +59,7 @@ import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -3056,6 +3057,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 // ============================================================================
 
 export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [wo, setWo] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -5730,7 +5732,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {(() => {
             const hasSuggestedItems = suggestedParts.length > 0 || suggestedTools.length > 0;
             const pendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter((item: any) => item.pipelineStatus === 'suggested').length;
-            return hasSuggestedItems ? (
+            return repairsEnabled && hasSuggestedItems ? (
           <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -5851,6 +5853,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           })()}
 
           {/* Materials — with approval pipeline */}
+          {repairsEnabled && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
@@ -5968,9 +5971,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Tool Requests (from Repair module) */}
-          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          {repairsEnabled && wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
@@ -6022,6 +6026,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           )}
 
           {/* Repairs Quick Access */}
+          {repairsEnabled && (
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
@@ -6074,6 +6079,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
           <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
@@ -7555,6 +7561,8 @@ export function MaintenanceWorkOrdersPage() {
 }
 
 export function MaintenanceDashboardPage() {
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [stats, setStats] = useState<any>(null);
   const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -7647,7 +7655,10 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions
+    .filter(a => hasPermission(a.permission))
+    .filter(a => a.page !== 'pm-calendar' || pmEnabled)
+    .filter(a => a.page !== 'repairs-analytics' || repairsEnabled);
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7666,7 +7677,7 @@ export function MaintenanceDashboardPage() {
     return (
       <div className="page-content">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+          <div><h1 className="text-2xl font-bold tracking-tight">Repair Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Repair maintenance operations overview and KPIs</p></div>
         </div>
         <Card className="border-red-200 bg-red-50 dark:bg-red-950/20"><CardContent className="p-6"><div className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-red-500" /><div><p className="font-semibold text-red-700 dark:text-red-400">Failed to load dashboard</p><p className="text-sm text-red-600 dark:text-red-500">{error}</p></div></div></CardContent></Card>
       </div>
@@ -7682,8 +7693,8 @@ export function MaintenanceDashboardPage() {
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Maintenance</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Maintenance Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Maintenance operations overview &middot; Key performance indicators</p>
+          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Repair Maintenance Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Repair maintenance operations overview &middot; Key performance indicators</p>
         </div>
         <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary self-start">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
@@ -7737,7 +7748,8 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
+        {/* PM Compliance — only when the separate PM module is enabled */}
+        {pmEnabled && (
         <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
           <CardContent className="p-4 relative">
@@ -7751,6 +7763,7 @@ export function MaintenanceDashboardPage() {
             <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
           </CardContent>
         </Card>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">

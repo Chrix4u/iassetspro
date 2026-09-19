@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { MODULE_CODES, useModuleEnabled } from '@/hooks/useModuleEnabled';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -7546,6 +7547,7 @@ export function MaintenanceDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const { navigate } = useNavigationStore();
   const { hasPermission, user } = useAuthStore();
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
 
   useEffect(() => {
     let active = true;
@@ -7632,7 +7634,9 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions
+    .filter(a => hasPermission(a.permission))
+    .filter(a => a.page !== 'pm-calendar' || pmEnabled);
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7651,7 +7655,7 @@ export function MaintenanceDashboardPage() {
     return (
       <div className="page-content">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+          <div><h1 className="text-2xl font-bold tracking-tight">Repairs Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
         </div>
         <Card className="border-red-200 bg-red-50 dark:bg-red-950/20"><CardContent className="p-6"><div className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-red-500" /><div><p className="font-semibold text-red-700 dark:text-red-400">Failed to load dashboard</p><p className="text-sm text-red-600 dark:text-red-500">{error}</p></div></div></CardContent></Card>
       </div>
@@ -7665,10 +7669,10 @@ export function MaintenanceDashboardPage() {
         <div>
           <div className="flex items-center gap-2.5">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Maintenance</span>
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Repairs Maintenance</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Maintenance Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Maintenance operations overview &middot; Key performance indicators</p>
+          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Repairs Maintenance Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Corrective and repair work overview &middot; Key performance indicators</p>
         </div>
         <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary self-start">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
@@ -7722,20 +7726,22 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
-        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
-          <CardContent className="p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
-                <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+        {/* PM belongs to a separate licensed module. */}
+        {pmEnabled && (
+          <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+            <CardContent className="p-4 relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                </div>
               </div>
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
-            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
-          </CardContent>
-        </Card>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
+              <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">

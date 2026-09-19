@@ -120,7 +120,7 @@ export const PAGE_ACCESS: Record<string, PageAccessRule> = {
 
   // Inventory. inventory.view alone intentionally does NOT grant the full item browser:
   // repair technicians keep request-catalog lookup without gaining inventory navigation.
-  'inventory-items': { permissions: ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory.update'], modules: ['inventory'] },
+  'inventory-items': { permissions: ['inventory.view', 'inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory.update'], modules: ['inventory'] },
   'inventory-categories': { permissions: ['parts_categories.view'], modules: ['inventory'] },
   'inventory-locations': { permissions: ['inventory_locations.view'], modules: ['inventory'] },
   'inventory-transactions': { permissions: ['stock_transactions.view'], modules: ['inventory'] },
@@ -166,7 +166,7 @@ export const PAGE_ACCESS: Record<string, PageAccessRule> = {
   // Legacy aliases
   assets: { permissions: ['assets.view'], modules: ['assets'] },
   'asset-detail': { permissions: ['assets.view'], modules: ['assets'] },
-  inventory: { permissions: ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory.update'], modules: ['inventory'] },
+  inventory: { permissions: ['inventory.view', 'inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory.update'], modules: ['inventory'] },
   analytics: { permissions: ['analytics.view'], modules: ['analytics'] },
 };
 

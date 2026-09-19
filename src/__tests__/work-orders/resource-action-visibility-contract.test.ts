@@ -27,6 +27,14 @@ describe('resource action visibility and custody contract', () => {
     expect(read('src/app/api/repairs/tool-requests/route.ts')).toContain('assignedSupervisorId: true');
   });
 
+  it('does not expose request or transfer approval actions through unrelated generic permissions', () => {
+    const ui = read('src/components/modules/RepairsPagesLegacy.tsx');
+    expect(ui).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.create')");
+    expect(ui).toContain("hasPermission('repair_material_requests.create') || isAdmin()");
+    expect(ui).toContain("hasPermission('repair_tool_requests.create') || isAdmin()");
+    expect(ui).not.toContain("hasPermission('repair_tool_transfers.update')");
+  });
+
   it('restricts tool return and transfer to the actual custodian', () => {
     const toolRoute = read('src/app/api/repairs/tool-requests/[id]/route.ts');
     const transferRoute = read('src/app/api/repairs/tool-transfers/route.ts');

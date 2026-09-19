@@ -29,6 +29,11 @@ describe('RBAC and module navigation hardening contract', () => {
   const purchaseOrderApprove = read('src/app/api/purchase-orders/[id]/approve/route.ts');
   const purchaseOrderReceive = read('src/app/api/purchase-orders/[id]/receive/route.ts');
   const receivingRecords = read('src/app/api/receiving-records/route.ts');
+  const commandPalette = read('src/components/CommandPalette.tsx');
+  const globalSearch = read('src/components/shared/GlobalSearch.tsx');
+  const searchRoute = read('src/app/api/search/route.ts');
+  const enterpriseSearch = read('src/services/enterpriseSearch.service.ts');
+  const pageAccess = read('src/lib/page-access.ts');
 
   it('separates repairs maintenance from preventive maintenance and filters child routes', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -136,5 +141,30 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(dashboard).toContain("!['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'].includes(a.page) || enabledModules.has(MODULE_CODES.PM_SCHEDULES)");
     expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
     expect(maintenance).toContain('{pmEnabled && (');
+  });
+
+
+  it('filters command-palette navigation through the same page RBAC and module rules', () => {
+    expect(pageAccess).toContain('export const PAGE_PERMISSIONS');
+    expect(pageAccess).toContain('export const PAGE_MODULES');
+    expect(pageAccess).toContain('export function canAccessPage');
+    expect(commandPalette).toContain("import { canAccessPage } from '@/lib/page-access'");
+    expect(commandPalette).toContain('buildNavigationItems().filter');
+    expect(commandPalette).toContain('canAccessPage(item.page, enabledModules, hasPermission, isAdmin())');
+    expect(commandPalette).toContain('Preventive Maintenance (PM) - Schedules');
+    expect(commandPalette).toContain('Preventive Maintenance (PM) - Calendar');
+  });
+
+  it('scopes global search by permission, plant, own-record access, and enabled-page visibility', () => {
+    expect(searchRoute).toContain('FULL_INVENTORY_SEARCH_PERMISSIONS');
+    expect(searchRoute).toContain('getPlantScope(request, session)');
+    expect(searchRoute).toContain("requestedTypes.filter(type => allowedTypes.includes(type))");
+    expect(searchRoute).toContain('workOrderOwnUserId');
+    expect(searchRoute).toContain('maintenanceRequestTechnicianId');
+    expect(searchRoute).toContain('maintenanceSupervisorDepartmentIds');
+    expect(enterpriseSearch).toContain('plantIds?: string[]');
+    expect(enterpriseSearch).toContain('workOrderOwnUserId?: string');
+    expect(enterpriseSearch).toContain("teamMembers: { some: { userId: ownUserId } }");
+    expect(globalSearch).toContain('canAccessPage(nav.page, enabledModules, hasPermission, isAdmin())');
   });
 });

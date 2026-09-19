@@ -178,6 +178,14 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
+      label: 'Maintenance Support', icon: Settings2, perm: 'tools.view', permOr: ['tools.view', 'calibration.view', 'work_orders.view', 'work_orders.view_own'], moduleCodes: ['tools', 'calibration', 'risk_assessment'],
+      children: [
+        { page: 'maintenance-tools', label: 'Tool Registry', icon: WrenchIcon, moduleCode: 'tools' },
+        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration' },
+        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment' },
+      ],
+    },
+    {
       label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
       children: [
         { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },

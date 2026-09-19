@@ -356,6 +356,22 @@ function canApproveAsStore(user: any): boolean {
   return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
+function canReviewRepairCompletion(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => ['maintenance_supervisor', 'maintenance_manager', 'maintenance_planner'].includes(slug));
+}
+
+function canCloseRepairCompletion(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => ['maintenance_planner', 'maintenance_manager'].includes(slug));
+}
+
 function canDeclareMaterialUsage(request: any, user: any): boolean {
   if (!user || !request?.workOrder) return false;
   const { isAdmin, user: authUser } = useAuthStore.getState();
@@ -2470,7 +2486,6 @@ export function RepairToolTransfersPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(t); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {t.status === 'storekeeper_approved' && <DropdownMenuItem onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-4 w-4 mr-2" /> Confirm Receipt</DropdownMenuItem>}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -2818,7 +2833,7 @@ export function RepairDowntimePage() {
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             {!r.downtimeEnd && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
-                            {(hasPermission('work_orders.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
+                            {canReviewRepairCompletion(user) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -3611,16 +3626,16 @@ export function RepairCompletionPage() {
               {/* Actions */}
               <Separator />
               <div className="flex flex-wrap gap-3">
-                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && (hasPermission('work_orders.update') || isAdmin()) && (
+                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && canReviewRepairCompletion(user) && (
                   <Button onClick={() => handleSubmit('submit')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> {completion.supervisorStatus === 'rework_requested' ? 'Resubmit Completion' : 'Submit Completion'}</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canReviewRepairCompletion(user) && (
                   <Button variant="destructive" onClick={() => { setReworkDialogOpen(true); }} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canReviewRepairCompletion(user) && (
                   <Button variant="outline" className="border-green-600 text-green-600" onClick={() => handleSubmit('supervisor_approve')} disabled={submitting}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</Button>
                 )}
-                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && (hasPermission('work_orders.update') || isAdmin()) && (                  <>
+                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && canCloseRepairCompletion(user) && (                  <>
                     <div><Label>Closure Notes</Label><Textarea value={form.closureNotes} onChange={(e) => setForm({ ...form, closureNotes: e.target.value })} /></div>
                     <Button className="bg-gray-800" onClick={() => handleSubmit('planner_close')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> Planner Close WO</Button>
                   </>

@@ -891,7 +891,7 @@ export function InventoryAdjustmentsPage() {
     try {
       const [adjRes, itemRes] = await Promise.all([
         api.get<any>('/api/inventory/adjustments'),
-        api.get<any>('/api/inventory'),
+        api.get<any>('/api/inventory?mode=request_catalog'),
       ]);
       if (adjRes.success) { setAdjustments(adjRes.data || []); setKpis(adjRes.kpis || {}); }
       if (itemRes.success) setInventoryItems(itemRes.data || []);
@@ -901,7 +901,7 @@ export function InventoryAdjustmentsPage() {
   useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
 
   const fetchItemOptions = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+    const res = await api.get('/api/inventory?mode=request_catalog&limit=500');
     const items = res.success ? (res.data || []) : [];
     return items.map((item: any) => ({ value: item.id, label: item.name + (item.itemCode ? ` (${item.itemCode})` : '') }));
   }, []);
@@ -1031,7 +1031,7 @@ export function InventoryRequestsPage() {
     try {
       const [reqRes, itemRes] = await Promise.all([
         api.get<any>('/api/inventory/requests'),
-        api.get<any>('/api/inventory'),
+        api.get<any>('/api/inventory?mode=request_catalog'),
       ]);
       if (reqRes.success) { setRequests(reqRes.data || []); setKpis(reqRes.kpis || {}); }
       if (itemRes.success) setInventoryItems(itemRes.data || []);
@@ -1117,7 +1117,7 @@ export function InventoryRequestsPage() {
                 value={form.item}
                 onValueChange={v => setForm({ ...form, item: v })}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=999');
+                  const res = await api.get('/api/inventory?mode=request_catalog&limit=999');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).filter((i: any) => i.isActive !== false).map((i: any) => ({
                       value: i.id,
@@ -1165,7 +1165,7 @@ export function InventoryTransfersPage() {
     try {
       const [txRes, itemRes, locRes] = await Promise.all([
         api.get<any>('/api/inventory/transfers'),
-        api.get<any>('/api/inventory'),
+        api.get<any>('/api/inventory?mode=request_catalog'),
         api.get<any>('/api/inventory/locations'),
       ]);
       if (txRes.success) { setTransfers(txRes.data || []); setKpis(txRes.kpis || {}); }
@@ -1262,7 +1262,7 @@ export function InventoryTransfersPage() {
                 value={form.item}
                 onValueChange={v => setForm({ ...form, item: v })}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=999');
+                  const res = await api.get('/api/inventory?mode=request_catalog&limit=999');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).filter((i: any) => i.isActive !== false).map((i: any) => ({
                       value: i.id,

@@ -488,7 +488,7 @@ function PageSwitcher({ page }: { page: string }) {
   const pageModules: Record<string, string> = {
     'dashboard': 'core', 'chat': 'core', 'notifications': 'core',
     'assets-machines': 'assets', 'assets-hierarchy': 'assets', 'asset-categories': 'assets',
-    'assets-bom': 'assets', 'assets-condition-monitoring': 'assets', 'assets-health': 'assets',
+    'assets-bom': 'bom', 'assets-condition-monitoring': 'condition_monitoring', 'assets-health': 'assets',
     'assets-digital-twin': 'digital_twin', 'digital-twin-viewer': 'digital_twin', 'system-diagrams': 'digital_twin',
     'ai-hub': 'assets', 'ai-config': 'assets', 'ai-history': 'assets',
     'maintenance-work-orders': 'work_orders', 'wo-detail': 'work_orders',
@@ -511,7 +511,7 @@ function PageSwitcher({ page }: { page: string }) {
     'production-capacity': 'production', 'production-efficiency': 'production', 'production-bottlenecks': 'production',
     'production-orders': 'production', 'production-batches': 'production',
     'quality-inspections': 'quality', 'quality-ncr': 'quality', 'quality-audits': 'quality',
-    'quality-control-plans': 'quality', 'quality-spc': 'quality', 'quality-capa': 'quality',
+    'quality-control-plans': 'quality', 'quality-spc': 'quality', 'quality-capa': 'capa',
     'safety-incidents': 'safety', 'safety-inspections': 'safety', 'safety-training': 'safety',
     'safety-equipment': 'safety', 'safety-permits': 'safety',
     'inventory-items': 'inventory', 'inventory-categories': 'inventory', 'inventory-locations': 'inventory',

@@ -142,6 +142,9 @@ describe('RBAC and module navigation hardening contract', () => {
   it('keeps PM separate from Repairs while hiding disabled PM on cross-module surfaces', () => {
     expect(dashboard).toContain('const pmEnabled = enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
     expect(dashboard).toContain("!['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'].includes(a.page) || enabledModules.has(MODULE_CODES.PM_SCHEDULES)");
+    expect(dashboard).toContain("...(pmEnabled ? [{ type: 'preventive'");
+    expect(dashboard).toContain("enabledModules.has('predictive') ? [{ type: 'predictive'");
+    expect(dashboard).toContain('...(pmEnabled ? [<KPICard');
     expect(maintenance).toContain('Repairs Dashboard');
     expect(maintenance).toContain('Repairs Analytics');
     expect(maintenance).not.toContain("label: 'View PM Calendar'");

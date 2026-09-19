@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, getPlantFilterWhere } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
@@ -11,6 +11,33 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('mode');
+    const isLookup = mode === 'lookup';
+
+    // Full inventory browsing is an inventory-workspace privilege. Maintenance
+    // execution users get only the constrained lookup shape needed to request
+    // materials; inventory.view alone must not expose the inventory workspace.
+    const canUseInventoryWorkspace = isAdmin(session) || hasAnyPermission(session, [
+      'inventory.view_all',
+      'inventory.manage',
+      'inventory.create',
+      'inventory.update',
+      'inventory.stock_in',
+      'inventory.stock_out',
+      'inventory.reserve',
+      'inventory.export',
+    ]);
+    const canLookupForWork = isAdmin(session) || hasAnyPermission(session, [
+      'repair_material_requests.create',
+      'repair_material_requests.update',
+      'material_requisitions.create',
+      'material_requisitions.update',
+    ]);
+
+    if (isLookup ? !canLookupForWork && !canUseInventoryWorkspace : !canUseInventoryWorkspace) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const category = searchParams.get('category');
     const lowStock = searchParams.get('lowStock');
     const search = searchParams.get('search');
@@ -56,9 +83,22 @@ export async function GET(request: NextRequest) {
 
     const items = await db.inventoryItem.findMany({
       where,
-      include: {
-        plant: { select: { id: true, name: true, code: true } },
-      },
+      ...(isLookup
+        ? {
+            select: {
+              id: true,
+              itemCode: true,
+              name: true,
+              currentStock: true,
+              unitOfMeasure: true,
+              plantId: true,
+            },
+          }
+        : {
+            include: {
+              plant: { select: { id: true, name: true, code: true } },
+            },
+          }),
       orderBy: { name: 'asc' },
     });
 

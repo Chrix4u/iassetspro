@@ -94,7 +94,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const storeModules = useNavigationStore((s) => s.enabledModules);
   const expanded = forceExpanded ?? sidebarOpen;
   const user = useAuthStore((s) => s.user);
-  const permissions = useAuthStore((s) => s.permissions);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
@@ -143,12 +142,12 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       children: [
         { page: 'assets-machines', label: 'Machines', icon: Building2 },
         { page: 'assets-hierarchy', label: 'Hierarchy', icon: GitBranch },
-        { page: 'assets-bom', label: 'Bill of Materials', icon: ListChecks },
-        { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity },
-        { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box },
-        { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch },
-        { page: 'asset-categories', label: 'Categories', icon: FolderOpen },
-        { page: 'assets-health', label: 'Asset Health', icon: HeartPulse },
+        { page: 'assets-bom', label: 'Bill of Materials', icon: ListChecks, moduleCode: 'bom', perm: 'bom.view' },
+        { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity, moduleCode: 'condition_monitoring', perm: 'condition_monitoring.view' },
+        { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box, moduleCode: 'digital_twin', perm: 'digital_twin.view' },
+        { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch, moduleCode: 'digital_twin', perm: 'digital_twin.view' },
+        { page: 'asset-categories', label: 'Categories', icon: FolderOpen, perm: 'assets.view' },
+        { page: 'assets-health', label: 'Asset Health', icon: HeartPulse, perm: 'asset_health.view' },
       ],
     },
     {
@@ -218,21 +217,21 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     {
       label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCodes: ['analytics', 'kpi_dashboard', 'oee', 'downtime', 'energy'],
       children: [
-        { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target },
-        { page: 'analytics-oee', label: 'OEE', icon: Gauge },
-        { page: 'analytics-downtime', label: 'Downtime', icon: TrendingDown },
-        { page: 'analytics-energy', label: 'Energy', icon: Zap },
+        { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target, moduleCode: 'analytics', perm: 'analytics.view' },
+        { page: 'analytics-oee', label: 'OEE', icon: Gauge, moduleCode: 'oee', perm: 'oee.view' },
+        { page: 'analytics-downtime', label: 'Downtime', icon: TrendingDown, moduleCode: 'downtime', perm: 'downtime.view' },
+        { page: 'analytics-energy', label: 'Energy', icon: Zap, moduleCode: 'energy', perm: 'energy.view' },
       ],
     },
     {
       label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
       children: [
-        { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
-        { page: 'operations-training', label: 'Training', icon: GraduationCap },
-        { page: 'operations-surveys', label: 'Surveys', icon: FileText },
-        { page: 'operations-time-logs', label: 'Time Logs', icon: Clock },
-        { page: 'operations-shift-handover', label: 'Shift Handover', icon: ArrowRightLeft },
-        { page: 'operations-checklists', label: 'Checklists', icon: CheckSquare },
+        { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge, moduleCode: 'meter_readings', perm: 'meters.view' },
+        { page: 'operations-training', label: 'Training', icon: GraduationCap, moduleCode: 'training', perm: 'training.view' },
+        { page: 'operations-surveys', label: 'Surveys', icon: FileText, moduleCode: 'production', perm: 'production_surveys.view' },
+        { page: 'operations-time-logs', label: 'Time Logs', icon: Clock, moduleCode: 'work_orders', perm: 'time_logs.view' },
+        { page: 'operations-shift-handover', label: 'Shift Handover', icon: ArrowRightLeft, moduleCode: 'shift_management', perm: 'shift_handovers.view' },
+        { page: 'operations-checklists', label: 'Checklists', icon: CheckSquare, moduleCode: 'work_orders', perm: 'work_orders.view' },
       ],
     },
     {
@@ -256,7 +255,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'quality-audits', label: 'Audits', icon: ShieldAlert },
         { page: 'quality-control-plans', label: 'Control Plans', icon: ScrollText },
         { page: 'quality-spc', label: 'SPC', icon: BarChart3 },
-        { page: 'quality-capa', label: 'CAPA', icon: HardHat },
+        { page: 'quality-capa', label: 'CAPA', icon: HardHat, moduleCode: 'capa', perm: 'quality_ncr.view' },
       ],
     },
     {

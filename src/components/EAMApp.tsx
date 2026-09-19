@@ -485,22 +485,22 @@ function PageSwitcher({ page }: { page: string }) {
 
   // Page-to-module mapping. Optional modules are deny-by-default until the
   // server confirms that the company has them licensed/enabled.
-  const pageModules: Record<string, string> = {
+  const pageModules: Record<string, string | string[]> = {
     'dashboard': 'core', 'chat': 'core', 'notifications': 'core',
     'assets-machines': 'assets', 'assets-hierarchy': 'assets', 'asset-categories': 'assets',
-    'assets-bom': 'bom', 'assets-condition-monitoring': 'condition_monitoring', 'assets-health': 'assets',
-    'assets-digital-twin': 'digital_twin', 'digital-twin-viewer': 'digital_twin', 'system-diagrams': 'digital_twin',
+    'assets-bom': ['assets', 'bom'], 'assets-condition-monitoring': ['assets', 'condition_monitoring'], 'assets-health': 'assets',
+    'assets-digital-twin': ['assets', 'digital_twin'], 'digital-twin-viewer': ['assets', 'digital_twin'], 'system-diagrams': ['assets', 'digital_twin'],
     'ai-hub': 'assets', 'ai-config': 'assets', 'ai-history': 'assets',
     'maintenance-work-orders': 'work_orders', 'wo-detail': 'work_orders',
     'maintenance-requests': 'maintenance_requests', 'mr-detail': 'maintenance_requests', 'create-mr': 'maintenance_requests',
     'maintenance-dashboard': 'work_orders', 'maintenance-analytics': 'work_orders',
-    'maintenance-calibration': 'calibration', 'maintenance-risk-assessment': 'risk_assessment', 'maintenance-tools': 'tools',
+    'maintenance-calibration': ['work_orders', 'calibration'], 'maintenance-risk-assessment': ['work_orders', 'risk_assessment'], 'maintenance-tools': ['work_orders', 'tools'],
     'pm-schedules': 'pm_schedules', 'pm-templates': 'pm_schedules', 'pm-triggers': 'pm_schedules', 'pm-calendar': 'pm_schedules',
     'planner-workbench': 'work_orders', 'enterprise-reports': 'reports',
     'repairs-material-requests': 'repairs', 'repairs-tool-requests': 'repairs', 'repairs-tool-transfers': 'repairs',
     'repairs-downtime': 'repairs', 'repairs-completion': 'repairs', 'technician-timesheet': 'repairs',
     'repairs-analytics': 'repairs', 'repairs-spare-part-returns': 'repairs', 'repairs-damaged-tools': 'repairs',
-    'repairs-reports': 'repairs', 'repairs-detail-report': 'repairs',
+    'repairs-reports': ['reports', 'repairs'], 'repairs-detail-report': ['reports', 'repairs'],
     'iot-devices': 'iot_sensors', 'iot-monitoring': 'iot_sensors', 'iot-rules': 'iot_sensors', 'connectivity': 'iot_sensors',
     'reliability-engineering': 'digital_twin',
     'analytics-kpi': 'analytics', 'analytics-oee': 'oee', 'analytics-downtime': 'downtime', 'analytics-energy': 'energy',
@@ -511,17 +511,17 @@ function PageSwitcher({ page }: { page: string }) {
     'production-capacity': 'production', 'production-efficiency': 'production', 'production-bottlenecks': 'production',
     'production-orders': 'production', 'production-batches': 'production',
     'quality-inspections': 'quality', 'quality-ncr': 'quality', 'quality-audits': 'quality',
-    'quality-control-plans': 'quality', 'quality-spc': 'quality', 'quality-capa': 'capa',
+    'quality-control-plans': 'quality', 'quality-spc': 'quality', 'quality-capa': ['quality', 'capa'],
     'safety-incidents': 'safety', 'safety-inspections': 'safety', 'safety-training': 'safety',
     'safety-equipment': 'safety', 'safety-permits': 'safety',
     'inventory-items': 'inventory', 'inventory-categories': 'inventory', 'inventory-locations': 'inventory',
     'inventory-transactions': 'inventory', 'inventory-adjustments': 'inventory', 'inventory-requests': 'inventory',
     'inventory-transfers': 'inventory', 'inventory-suppliers': 'inventory', 'inventory-purchase-orders': 'inventory',
     'inventory-receiving': 'inventory',
-    'reports-asset': 'reports', 'equipment-history': 'reports', 'machine-availability': 'reports', 'failure-analysis': 'reports',
-    'reports-maintenance': 'reports', 'reports-inventory': 'reports', 'reports-production': 'reports',
-    'reports-quality': 'reports', 'reports-safety': 'reports', 'reports-financial': 'reports', 'reports-custom': 'reports',
-    'wo-reports': 'reports',
+    'reports-asset': ['reports', 'assets'], 'equipment-history': ['reports', 'assets'], 'machine-availability': ['reports', 'assets'], 'failure-analysis': ['reports', 'failure_analysis'],
+    'reports-maintenance': ['reports', 'work_orders'], 'reports-inventory': ['reports', 'inventory'], 'reports-production': ['reports', 'production'],
+    'reports-quality': ['reports', 'quality'], 'reports-safety': ['reports', 'safety'], 'reports-financial': 'reports', 'reports-custom': 'reports',
+    'wo-reports': ['reports', 'work_orders'],
     'settings-general': 'core', 'settings-users': 'core', 'settings-roles': 'core', 'settings-modules': 'core',
     'settings-company': 'core', 'settings-plants': 'core', 'settings-departments': 'core',
     'settings-notifications': 'core', 'settings-integrations': 'core', 'settings-backup': 'core',
@@ -538,12 +538,13 @@ function PageSwitcher({ page }: { page: string }) {
   );
 
   const requiredModule = pageModules[page];
+  const requiredModules = requiredModule
+    ? (Array.isArray(requiredModule) ? requiredModule : [requiredModule])
+    : [];
   const moduleStateReady = enabledModules !== null;
   const moduleAccessDenied = Boolean(
-    requiredModule &&
-    requiredModule !== 'core' &&
     moduleStateReady &&
-    !enabledModules!.has(requiredModule.toLowerCase())
+    requiredModules.some(code => code !== 'core' && !enabledModules!.has(code.toLowerCase()))
   );
 
 

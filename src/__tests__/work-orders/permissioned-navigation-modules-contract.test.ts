@@ -29,6 +29,7 @@ describe('permissioned navigation and module isolation contract', () => {
   const seed = read('prisma/seed.ts');
   const seedPermissions = read('prisma/seed-permissions-only.ts');
   const ensureRepairs = read('src/app/api/modules/ensure-repairs/route.ts');
+  const repairsUatSeed = read('scripts/seed-repairs-uat.ts');
 
   it('fails closed for disabled or unlicensed business modules', () => {
     expect(navigationStore).toContain("if (code === 'core')");
@@ -120,6 +121,18 @@ describe('permissioned navigation and module isolation contract', () => {
     expect(repairsModuleSeed).toContain('isCore: false');
     expect(ensureRepairs).toContain('isCore: false');
     expect(ensureRepairs).toContain('update: { isCore: false }');
+  });
+
+  it('provisions Repairs UAT licenses without enabling PM', () => {
+    expect(repairsUatSeed).toContain("{ code: 'work_orders', name: 'Work Orders'");
+    expect(repairsUatSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
+    expect(repairsUatSeed).toContain("{ code: 'reports', name: 'Reports & Dashboards'");
+    expect(repairsUatSeed).toContain('isSystemLicensed: true');
+    expect(repairsUatSeed).toContain('isActive: true');
+    expect(repairsUatSeed).toContain('isEnabled: true');
+
+    const moduleFixture = block(repairsUatSeed, 'const UAT_ENABLED_MODULES = [', '] as const;');
+    expect(moduleFixture).not.toContain("'pm_schedules'");
   });
 
   it('maps page access to module/license gates rather than sidebar visibility alone', () => {

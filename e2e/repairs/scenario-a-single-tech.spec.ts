@@ -37,6 +37,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   let plantId = '';
   let componentId = '';
   let techSingleUserId = '';
+  let techAssistantUserId = '';
   let supervisorUserId = '';
   let toolRequestId = '';
   let materialRequestId = '';
@@ -47,6 +48,7 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
   try {
     const plannerToken = await getToken('planner');
     techSingleUserId = await lookupUserByKey(plannerToken, 'tech_single');
+    techAssistantUserId = await lookupUserByKey(plannerToken, 'tech_assistant');
     supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     plantId = await lookupPlantId(plannerToken, 'PLANT-A');
@@ -332,6 +334,34 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
 
       const { data: toolReq } = await apiCall(techToken, 'GET', `/api/repairs/tool-requests/${toolRequestId}`);
       const toolLineId = toolReq.data.items[0].id;
+      const otherTechToken = await getToken('tech_assistant');
+
+      const blockedReturn = await expectFailure(
+        otherTechToken,
+        'POST',
+        `/api/repairs/tool-requests/${toolRequestId}`,
+        {
+          action: 'return',
+          returnedItems: [{ itemId: toolLineId, quantityReturned: 1, conditionAtReturn: 'good' }],
+        },
+      );
+      expect(blockedReturn.status).toBe(403);
+      expect(String(blockedReturn.data.error)).toContain('technician/custodian');
+
+      const blockedTransfer = await expectFailure(
+        otherTechToken,
+        'POST',
+        '/api/repairs/tool-transfers',
+        {
+          toolId: realToolId,
+          fromUserId: techSingleUserId,
+          toUserId: techAssistantUserId,
+          reason: 'Custody validation test',
+        },
+      );
+      expect(blockedTransfer.status).toBe(403);
+      expect(String(blockedTransfer.data.error)).toContain('current tool custodian');
+
       expect((await apiCall(techToken, 'POST', `/api/repairs/tool-requests/${toolRequestId}`, {
         action: 'return',
         returnedItems: [{ itemId: toolLineId, quantityReturned: 1, conditionAtReturn: 'good' }],

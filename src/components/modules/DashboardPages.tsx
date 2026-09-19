@@ -136,9 +136,9 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { navigate } = useNavigationStore();
-
-  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+  const { navigate, enabledModules: storeEnabledModules } = useNavigationStore();
+  // Fail closed while authoritative module/license state is loading.
+  const enabledModules = storeEnabledModules ?? new Set<string>(['core']);
 
   const fetchStats = useCallback(() => {
     let active = true;
@@ -164,24 +164,6 @@ export function DashboardPage() {
     const cleanup = fetchStats();
     return cleanup;
   }, [fetchStats]);
-
-  // Fetch enabled module codes for cross-module filtering
-  useEffect(() => {
-    let active = true;
-    api.get('/api/modules').then(res => {
-      if (!active) return;
-      if (res.success && res.data) {
-        const enabled = new Set<string>();
-        (res.data || []).forEach((m: any) => {
-          if (m.isCore || m.isEnabled) enabled.add(m.code.toLowerCase());
-        });
-        setEnabledModules(enabled);
-      }
-    }).catch(() => {
-      // On error, leave enabledModules empty (show all widgets)
-    });
-    return () => { active = false; };
-  }, []);
 
   // Generate day labels for weekly trend chart (must be before early return for hooks rule)
   const weekLabels = useMemo(() => {
@@ -359,7 +341,13 @@ export function DashboardPage() {
 
   const visibleQuickActions = allQuickActions
     .filter(a => hasPermission(a.permission))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)))
+    .filter(a => {
+      if (a.page === 'pm-schedules') return enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+      if (a.page === 'maintenance-work-orders') return enabledModules.has(MODULE_CODES.WORK_ORDERS);
+      if (a.page === 'maintenance-requests' || a.page === 'create-mr') return enabledModules.has(MODULE_CODES.MAINTENANCE_REQUESTS);
+      return true;
+    });
 
   // Cross-module overview data
   const moduleMap: Record<string, string> = {
@@ -381,19 +369,17 @@ export function DashboardPage() {
   ];
 
   // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = enabledModules.size > 0
-    ? crossModuleData.filter(mod => {
-        const code = moduleMap[mod.label];
-        return !code || enabledModules.has(code.toLowerCase());
-      })
-    : crossModuleData;
+  const filteredCrossModuleData = crossModuleData.filter(mod => {
+    const code = moduleMap[mod.label];
+    return !code || enabledModules.has(code.toLowerCase());
+  });
 
-  // Module-aware visibility for enhanced KPIs
-  const analyticsEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  // Module-aware visibility for enhanced KPIs (fail closed).
+  const analyticsEnabled = enabledModules.has(MODULE_CODES.ANALYTICS);
+  const safetyEnabled = enabledModules.has(MODULE_CODES.SAFETY);
+  const productionEnabled = enabledModules.has(MODULE_CODES.PRODUCTION);
+  const qualityEnabled = enabledModules.has(MODULE_CODES.QUALITY);
+  const pmEnabled = enabledModules.has(MODULE_CODES.PM_SCHEDULES);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">

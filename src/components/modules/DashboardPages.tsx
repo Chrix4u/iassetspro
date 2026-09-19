@@ -501,16 +501,18 @@ export function DashboardPage() {
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sky-400/50 shrink-0" />
             </button>
-            <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
-              <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
-                <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
-                <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
-            </button>
+            {pmEnabled && (
+              <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+                <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
+                  <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
+                  <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
+              </button>
+            )}
             {plannerKPIs.pendingTeamRequests > 0 && (
               <button
                 onClick={() => document.getElementById('pending-team-requests-section')?.scrollIntoView({ behavior: 'smooth' })}

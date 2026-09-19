@@ -13,6 +13,7 @@ describe('RBAC and licensed-module visibility contract', () => {
   const app = read('src/components/EAMApp.tsx');
   const dashboard = read('src/components/modules/DashboardPages.tsx');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
+  const maintenance = read('src/components/modules/MaintenancePages.tsx');
   const inventory = read('src/app/api/inventory/route.ts');
   const inventoryDetail = read('src/app/api/inventory/[id]/route.ts');
   const inventoryAccess = read('src/lib/inventory-access.ts');
@@ -30,13 +31,17 @@ describe('RBAC and licensed-module visibility contract', () => {
     expect(dashboard).not.toContain('enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
   });
 
-  it('keeps PM navigation separate from repair maintenance', () => {
+  it('keeps PM navigation and embedded UI separate from repair maintenance', () => {
     expect(sidebar).toContain("label: 'Repair Maintenance'");
     expect(sidebar).toContain("label: 'Repair Execution'");
     expect(sidebar).toContain("label: 'Preventive Maintenance (PM)'");
     expect(sidebar).toContain("moduleCode: 'pm_schedules'");
     expect(sidebar).toContain("page: 'pm-calendar'");
     expect(mobile).toContain("label: 'Preventive Maintenance'");
+    expect(maintenance).toContain('const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES)');
+    expect(maintenance).toContain('{pmEnabled && (');
+    expect(maintenance).toContain('const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS)');
+    expect(maintenance).toContain('Repair Maintenance Dashboard');
   });
 
   it('filters child menu items by their own permissions instead of parent visibility alone', () => {
@@ -81,6 +86,9 @@ describe('RBAC and licensed-module visibility contract', () => {
     expect(repairs).toContain("roles.has('maintenance_supervisor')");
     expect(repairs).toContain('request.workOrder.assignedSupervisorId === actor?.id');
     expect(repairs).not.toContain("hasPermission('repair_material_requests.update')");
+    expect(maintenance).toContain("wo.assignedSupervisorId === user?.id");
+    expect(maintenance).toContain("hasPermission('repair_material_requests.create')");
+    expect(maintenance).toContain("hasPermission('repair_tool_transfers.create')");
     expect(materialRoute).toContain('assignedSupervisorId: true');
     expect(toolRoute).toContain('assignedSupervisorId: true');
   });

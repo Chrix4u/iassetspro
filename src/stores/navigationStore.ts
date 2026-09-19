@@ -77,7 +77,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
         res.data.forEach((m: any) => {
-          const licensed = m.isCore || (m.isSystemLicensed === true && Boolean(m.licensedAt));
+          const licensed = m.isCore || m.isLicensed === true;
           const operational = m.isCore || (m.isEnabled === true && m.isActive === true);
           if (licensed && operational) enabled.add(String(m.code).toLowerCase());
         });

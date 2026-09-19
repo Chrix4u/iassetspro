@@ -173,19 +173,20 @@ async function main() {
       },
     });
 
-    const existingCompanyModule = await db.companyModule.findFirst({
-      where: {
-        systemModuleId: systemModule.id,
-        OR: [{ companyId: '__default__' }, { companyId: null }],
-      },
-      orderBy: { companyId: 'desc' },
+    const defaultCompanyModule = await db.companyModule.findFirst({
+      where: { systemModuleId: systemModule.id, companyId: '__default__' },
     });
+    const legacyCompanyModule = defaultCompanyModule
+      ? null
+      : await db.companyModule.findFirst({
+          where: { systemModuleId: systemModule.id, companyId: null },
+        });
+    const existingCompanyModule = defaultCompanyModule ?? legacyCompanyModule;
 
     if (existingCompanyModule) {
       await db.companyModule.update({
         where: { id: existingCompanyModule.id },
         data: {
-          companyId: '__default__',
           isActive: true,
           isEnabled: true,
           licensedAt: existingCompanyModule.licensedAt ?? new Date(),

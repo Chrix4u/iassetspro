@@ -115,7 +115,7 @@ const MORE_ITEMS: MoreItem[] = [
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory_locations.view', 'stock_transactions.view', 'inventory_adjustments.view', 'inventory_transfers.view', 'material_requisitions.view', 'vendors.view', 'purchase_orders.view'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module
-  { page: 'pm-schedules', label: 'Preventive Maintenance (PM)', icon: Clock, perm: 'pm_schedules.view', permOr: ['pm_schedules.view', 'pm_templates.view', 'pm_triggers.view'], activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'Preventive Maintenance (PM)', icon: Clock, perm: 'pm_schedules.view', permOr: ['pm_schedules.view', 'pm_templates.view', 'pm_triggers.view', 'calibration.view'], activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar', 'maintenance-calibration'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'], moduleCode: 'reports' },
   // Safety

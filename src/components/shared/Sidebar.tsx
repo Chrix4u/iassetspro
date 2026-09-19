@@ -107,9 +107,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   // Optional modules are fail-closed until the licensed/enabled module registry loads.
   const enabledModules = storeModules;
   const moduleCodeEnabled = useCallback((code?: string) => {
-    if (!code || code === 'core') return true;
+    if (!code) return true;
     const normalized = code.toLowerCase();
-    if (enabledModules === null) return CORE_MODULE_CODES.has(normalized);
+    if (CORE_MODULE_CODES.has(normalized)) return true;
+    if (enabledModules === null) return false;
     return enabledModules.has(normalized);
   }, [enabledModules]);
 

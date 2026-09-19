@@ -586,7 +586,7 @@ export function RepairMaterialRequestsPage() {
   // Cache for inventory item lookup (used by AsyncSearchableSelect)
   const inventoryItemsCache = useRef<any[]>([]);
   const fetchInventoryItems = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+    const res = await api.get('/api/inventory/lookup');
     if (res.success && Array.isArray(res.data)) {
       inventoryItemsCache.current = res.data;
       return res.data.map((i: any) => ({ value: i.id, label: i.name + (i.itemCode ? ` (${i.itemCode})` : '') }));

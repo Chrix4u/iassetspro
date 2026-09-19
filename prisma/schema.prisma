@@ -2537,8 +2537,14 @@ model RepairMaterialRequest {
   issuedAt                    DateTime?
   returnedById                String? // → User
   returnedAt                  DateTime?
-  consumedQty                 Float? // amount actually consumed during repair
-  wastedQty                   Float? // amount wasted/discarded
+  consumedQty                 Float? // authoritative amount consumed after store reconciliation
+  wastedQty                   Float? // authoritative amount wasted/discarded after store reconciliation
+  declaredConsumedQty         Float? // technician-declared amount used before store verification
+  declaredWastedQty           Float? // technician-declared amount wasted/damaged before store verification
+  declaredReturnQty           Float? // technician-declared amount expected back to store
+  usageDeclarationNotes       String?
+  usageDeclaredById           String? // user who submitted the usage declaration
+  usageDeclaredAt             DateTime?
   pickedAt                    DateTime? // when store picked the items
   pickedBy                    String? // who picked the items
   createdAt                   DateTime  @default(now())

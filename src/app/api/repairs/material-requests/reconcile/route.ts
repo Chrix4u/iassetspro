@@ -40,7 +40,36 @@ export async function POST(request: NextRequest) {
     if (!plantAuth.ok) return plantAuth.response;
 
     const resolvedWastedQty = wastedQty ?? 0;
-    const result = await reconcileMaterialRequest(id, session.userId, consumedQty, resolvedWastedQty, notes);
+    const declaration = await db.repairMaterialRequest.findUnique({
+      where: { id },
+      select: {
+        declaredConsumedQty: true,
+        declaredWastedQty: true,
+        declaredReturnQty: true,
+        usageDeclaredAt: true,
+        usageDeclaredById: true,
+      },
+    });
+    if (!declaration) {
+      return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+    }
+
+    const hasTechnicianDeclaration = !!declaration.usageDeclaredAt;
+    const storeAdjustedDeclaration = hasTechnicianDeclaration && (
+      Math.abs((declaration.declaredConsumedQty ?? 0) - consumedQty) > 0.001 ||
+      Math.abs((declaration.declaredWastedQty ?? 0) - resolvedWastedQty) > 0.001
+    );
+    const normalizedNotes = typeof notes === 'string' ? notes.trim() : '';
+    if ((!hasTechnicianDeclaration || storeAdjustedDeclaration) && normalizedNotes.length < 5) {
+      return NextResponse.json({
+        success: false,
+        error: !hasTechnicianDeclaration
+          ? 'Technician usage declaration is missing. Document the reconciliation exception in Notes before continuing.'
+          : 'Store figures differ from the technician declaration. Add a reconciliation note explaining the adjustment.',
+      }, { status: 400 });
+    }
+
+    const result = await reconcileMaterialRequest(id, session.userId, consumedQty, resolvedWastedQty, normalizedNotes || undefined);
     const matReq = result.updated;
     const reconciliationRate = result.issuedQty > 0 ? (consumedQty / result.issuedQty) * 100 : 0;
     const wasteRate = result.issuedQty > 0 ? (resolvedWastedQty / result.issuedQty) * 100 : 0;
@@ -64,6 +93,15 @@ export async function POST(request: NextRequest) {
             reconciliationRate: `${reconciliationRate.toFixed(1)}%`,
             wasteRate: `${wasteRate.toFixed(1)}%`,
             itemId: matReq.itemId || null,
+            technicianDeclaration: hasTechnicianDeclaration ? {
+              declaredConsumedQty: declaration.declaredConsumedQty ?? 0,
+              declaredWastedQty: declaration.declaredWastedQty ?? 0,
+              declaredReturnQty: declaration.declaredReturnQty ?? 0,
+              declaredById: declaration.usageDeclaredById,
+              declaredAt: declaration.usageDeclaredAt,
+            } : null,
+            storeAdjustedDeclaration,
+            reconciliationNotes: normalizedNotes || null,
           }),
         },
       });

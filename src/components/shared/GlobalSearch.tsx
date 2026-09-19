@@ -128,7 +128,7 @@ export default function GlobalSearch() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [hasPermission, isAdmin, enabledModules]);
+  }, []);
 
   // ---- Reset when dialog closes ----
   useEffect(() => {
@@ -174,7 +174,7 @@ export default function GlobalSearch() {
       setLoading(false);
       setHasSearched(true);
     }
-  }, []);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   const handleValueChange = useCallback(
     (value: string) => {

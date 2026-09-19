@@ -59,6 +59,17 @@ describe('permissioned navigation and module isolation contract', () => {
     expect(maintenancePages).toContain("a.page !== 'pm-calendar' || pmEnabled");
   });
 
+  it('hides notifications and asset widgets when their modules are disabled', () => {
+    expect(pageAccess).toContain("notifications: ['notifications']");
+    expect(sidebar).toContain("page: 'notifications', moduleCode: 'notifications'");
+    expect(appShell).toContain("const notificationsEnabled = enabledModules !== null && enabledModules.has('notifications')");
+    expect(appShell).toContain('{notificationsEnabled && <NotificationPopover />}');
+    expect(dashboard).toContain("const assetsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ASSETS)");
+    expect(dashboard).toContain("const notificationsEnabled = enabledModules !== null && enabledModules.has('notifications')");
+    expect(dashboard).toContain('if (assetsEnabled)');
+    expect(dashboard).toContain('notificationsEnabled && myKPIs.unreadNotifications > 0');
+  });
+
   it('removes full Inventory access from maintenance technicians', () => {
     const technicianSeed = block(seed, 'maintenance_technician: [', '// ── 7. PRODUCTION MANAGER');
     const technicianPermissionSeed = block(seedPermissions, 'maintenance_technician: [', '// ── 7. PRODUCTION MANAGER');

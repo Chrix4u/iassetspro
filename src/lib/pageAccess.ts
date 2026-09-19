@@ -35,9 +35,9 @@ export const PAGE_ACCESS: Partial<Record<PageName, PageAccessRule>> = {
   'asset-detail': { permissions: ['assets.view'], moduleCode: 'assets' },
 
   // AI / asset intelligence
-  'ai-hub': { permissions: ['assets.view'], moduleCode: 'assets' },
+  'ai-hub': { permissions: ['assets.create'], moduleCode: 'assets' },
   'ai-config': { permissions: ['system_settings.view'], moduleCode: 'core', adminOnly: true },
-  'ai-history': { permissions: ['assets.view'], moduleCode: 'assets' },
+  'ai-history': { permissions: ['assets.create'], moduleCode: 'assets' },
 
   // Repairs maintenance core workflow
   'maintenance-work-orders': { permissions: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'work_orders' },
@@ -47,7 +47,7 @@ export const PAGE_ACCESS: Partial<Record<PageName, PageAccessRule>> = {
   'create-mr': { permissions: ['maintenance_requests.create'], moduleCode: 'maintenance_requests' },
   'maintenance-dashboard': { permissions: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'work_orders' },
   'maintenance-analytics': { permissions: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'work_orders' },
-  'maintenance-risk-assessment': { permissions: ['risk_assessment.view', 'work_orders.view', 'work_orders.view_own'], moduleCode: 'risk_assessment' },
+  'maintenance-risk-assessment': { permissions: ['risk_assessment.view'], moduleCode: 'risk_assessment' },
   'maintenance-tools': { permissions: ['tools.view'], moduleCode: 'tools' },
 
   // Preventive maintenance — deliberately separate from Repairs
@@ -176,7 +176,8 @@ export const PAGE_ACCESS: Partial<Record<PageName, PageAccessRule>> = {
 };
 
 export function getPageAccessRule(page: PageName | string): PageAccessRule {
-  return PAGE_ACCESS[page as PageName] ?? { permissions: ['dashboard.view'], moduleCode: 'core' };
+  // Unknown/unmapped pages fail closed instead of inheriting dashboard access.
+  return PAGE_ACCESS[page as PageName] ?? { permissions: ['__unmapped_page__'], moduleCode: 'core' };
 }
 
 export function hasPagePermission(

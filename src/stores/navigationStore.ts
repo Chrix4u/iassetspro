@@ -76,21 +76,13 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
-        const now = Date.now();
         res.data.forEach((m: any) => {
           const code = String(m.code || '').toLowerCase();
           if (!code) return;
 
-          const validFromOk = !m.validFrom || new Date(m.validFrom).getTime() <= now;
-          const validUntilOk = !m.validUntil || new Date(m.validUntil).getTime() >= now;
-
-          // Core modules are always available. Non-core modules require BOTH
-          // license activation and company enablement, and the license window
-          // must still be valid.
-          if (
-            m.isCore ||
-            (m.isActive === true && m.isEnabled === true && validFromOk && validUntilOk)
-          ) {
+          // The server computes the authoritative licensing result so ordinary
+          // users never need access to license keys or validity dates.
+          if (m.isCore === true || m.isAvailable === true) {
             enabled.add(code);
           }
         });

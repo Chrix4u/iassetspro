@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const where: Record<string, unknown> = {
+    const where: Prisma.InventoryItemWhereInput = {
       isActive: true,
       plantId: workOrder.plantId,
     };

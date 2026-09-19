@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canViewInventoryArea } from '@/lib/inventory-access';
 
 async function generateReqNumber(): Promise<string> {
   const now = new Date();
@@ -23,6 +24,10 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    if (!canViewInventoryArea(session, 'material_requisitions.view')) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to view inventory requisitions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

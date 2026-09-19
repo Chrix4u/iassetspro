@@ -76,6 +76,9 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboard).toContain("const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules)");
     expect(dashboard).not.toContain('enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
     expect(dashboard).toContain('{pmEnabled && <button onClick={() => navigate(\'pm-schedules\')}');
+    expect(dashboard).toContain("...(pmEnabled ? [{ type: 'preventive'");
+    expect(dashboard).toContain('if (pmEnabled) {');
+    expect(dashboard).toContain('key="planned-ratio"');
     expect(maintenance).toContain('const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES)');
     expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
     expect(maintenance).toContain('{pmEnabled && <Card');

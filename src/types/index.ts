@@ -168,6 +168,7 @@ export interface WorkOrder {
   assignedToId?: string;
   assignedToName?: string;
   teamLeaderId?: string;
+  assignedSupervisorId?: string;
   supervisorId?: string;
   plannerId?: string;
   assignedById?: string;

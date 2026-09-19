@@ -35,7 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
+import { CORE_MODULE_CODES, pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 
 // ============================================================================
 // Types
@@ -182,7 +182,10 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
       const admin = isAdmin();
       if (!pageHasPermission(item.page, hasPermission, admin)) return false;
       if (!pageModuleIsEnabled(item.page, enabledModules)) return false;
-      if (item.moduleCode && enabledModules !== null && !enabledModules.has(item.moduleCode.toLowerCase())) return false;
+      if (item.moduleCode) {
+        const code = item.moduleCode.toLowerCase();
+        if (!CORE_MODULE_CODES.has(code) && (enabledModules === null || !enabledModules.has(code))) return false;
+      }
       return true;
     });
   }, [hasPermission, isAdmin, enabledModules]);

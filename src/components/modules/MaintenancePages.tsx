@@ -7730,8 +7730,8 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
+        {/* PM Compliance — only visible when the PM module is licensed and enabled */}
         {pmEnabled && (
-          {/* PM Compliance */}
           <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
             <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
             <CardContent className="p-4 relative">

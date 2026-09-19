@@ -341,6 +341,17 @@ function canApproveAsStore(user: any): boolean {
   return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
+function canDeclareMaterialUsage(request: any, user: any): boolean {
+  if (!user || !request?.workOrder) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const userId = authUser?.id || user?.id;
+  if (!userId) return false;
+  return request.workOrder.assignedTo === userId
+    || request.workOrder.teamLeaderId === userId
+    || (request.workOrder.teamMembers || []).some((member: any) => member.userId === userId);
+}
+
 function canViewAllRepairData(user: any): boolean {
   if (!user) return false;
   const { hasPermission, isAdmin } = useAuthStore.getState();
@@ -376,6 +387,9 @@ export function RepairMaterialRequestsPage() {
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileTarget, setReconcileTarget] = useState<any>(null);
   const [reconcileForm, setReconcileForm] = useState({ consumedQty: '', wastedQty: '', notes: '' });
+  const [usageDeclarationOpen, setUsageDeclarationOpen] = useState(false);
+  const [usageDeclarationTarget, setUsageDeclarationTarget] = useState<any>(null);
+  const [usageDeclarationForm, setUsageDeclarationForm] = useState({ consumedQty: '', wastedQty: '0', returnQty: '', notes: '' });
   const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
 
   const canViewAll = canViewAllRepairData(user);
@@ -466,6 +480,67 @@ export function RepairMaterialRequestsPage() {
     if (res.success) { toast.success('Items being picked'); fetchRequests(); if (detailOpen && detailItem?.id === id) setDetailOpen(false); }
     else toast.error(res.error || 'Failed to pick');
     setSubmitting(false);
+  };
+
+  const openUsageDeclaration = (target: any) => {
+    const issued = Number(target?.quantityIssued || 0);
+    const declaredConsumed = target?.declaredConsumedQty ?? target?.consumedQty;
+    const declaredWasted = target?.declaredWastedQty ?? target?.wastedQty ?? 0;
+    const hasExistingDeclaration = target?.declaredConsumedQty != null || target?.declaredReturnQty != null || target?.consumedQty != null;
+    const declaredReturn = target?.declaredReturnQty ?? (hasExistingDeclaration ? Math.max(0, issued - Number(declaredConsumed || 0) - Number(declaredWasted || 0)) : '');
+    setUsageDeclarationTarget(target);
+    setUsageDeclarationForm({
+      consumedQty: declaredConsumed == null ? '' : String(declaredConsumed),
+      wastedQty: String(declaredWasted || 0),
+      returnQty: declaredReturn === '' ? '' : String(declaredReturn),
+      notes: target?.usageDeclarationNotes || '',
+    });
+    setUsageDeclarationOpen(true);
+  };
+
+  const handleUsageDeclaration = async () => {
+    if (!usageDeclarationTarget) return;
+    const consumed = Number(usageDeclarationForm.consumedQty);
+    const wasted = Number(usageDeclarationForm.wastedQty || 0);
+    const toReturn = Number(usageDeclarationForm.returnQty);
+    const issued = Number(usageDeclarationTarget.quantityIssued || 0);
+    if (!Number.isFinite(consumed) || consumed < 0) { toast.error('Enter a valid used quantity'); return; }
+    if (!Number.isFinite(wasted) || wasted < 0) { toast.error('Enter a valid wasted/damaged quantity'); return; }
+    if (!Number.isFinite(toReturn) || toReturn < 0) { toast.error('Enter a valid quantity to return'); return; }
+    const accounted = consumed + wasted + toReturn;
+    if (Math.abs(accounted - issued) > 0.001) {
+      toast.error(`Used + wasted + to return must equal issued quantity (${issued}). Current total: ${accounted}`);
+      return;
+    }
+    setSubmitting(true);
+    const res = await api.post(`/api/repairs/material-requests/${usageDeclarationTarget.id}`, {
+      action: 'declare_usage',
+      consumedQty: consumed,
+      wastedQty: wasted,
+      returnQty: toReturn,
+      notes: usageDeclarationForm.notes || undefined,
+    });
+    if (res.success) {
+      toast.success('Usage declaration submitted — awaiting store verification');
+      setUsageDeclarationOpen(false);
+      setUsageDeclarationTarget(null);
+      setUsageDeclarationForm({ consumedQty: '', wastedQty: '0', returnQty: '', notes: '' });
+      fetchRequests();
+      if (detailOpen) setDetailOpen(false);
+    } else {
+      toast.error(res.error || 'Failed to submit usage declaration');
+    }
+    setSubmitting(false);
+  };
+
+  const openStoreReconcile = (target: any) => {
+    setReconcileTarget(target);
+    setReconcileForm({
+      consumedQty: String(target?.declaredConsumedQty ?? target?.consumedQty ?? ''),
+      wastedQty: String(target?.declaredWastedQty ?? target?.wastedQty ?? 0),
+      notes: target?.usageDeclarationNotes || '',
+    });
+    setReconcileOpen(true);
   };
 
   const handleReconcile = async () => {
@@ -665,14 +740,21 @@ export function RepairMaterialRequestsPage() {
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
                           )}
-                          {r.status === 'issued' && canApproveAsStore(user) && (
+                          {['issued', 'partially_returned', 'fully_returned'].includes(r.status) && canDeclareMaterialUsage(r, user) && (
+                            <Button size="sm" variant="outline" className="h-7 gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={(e) => { e.stopPropagation(); openUsageDeclaration(r); }}>
+                              <ClipboardList className="h-3.5 w-3.5" /> Record Usage / Return
+                            </Button>
+                          )}
+                          {['issued', 'partially_returned', 'fully_returned'].includes(r.status) && canApproveAsStore(user) && (
                             <>
-                              <Button size="sm" variant="outline" className="h-7 gap-1 border-violet-400 text-violet-700 hover:bg-violet-50" onClick={(e) => { e.stopPropagation(); setReconcileTarget(r); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); setReconcileOpen(true); }}>
-                                <ClipboardList className="h-3.5 w-3.5" /> Reconcile
+                              <Button size="sm" variant="outline" className="h-7 gap-1 border-violet-400 text-violet-700 hover:bg-violet-50" onClick={(e) => { e.stopPropagation(); openStoreReconcile(r); }}>
+                                <PackageCheck className="h-3.5 w-3.5" /> Verify & Reconcile
                               </Button>
-                              <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'record_return', max: r.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }}>
-                                <RotateCcw className="h-3.5 w-3.5" /> Return
-                              </Button>
+                              {(r.quantityReturned ?? 0) < (r.quantityIssued ?? 0) && (
+                                <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'record_return', max: Math.max(0, (r.quantityIssued || 0) - (r.quantityReturned || 0)), field: 'quantityToReturn' }); setQtyOpen(true); }}>
+                                  <RotateCcw className="h-3.5 w-3.5" /> Record Return
+                                </Button>
+                              )}
                             </>
                           )}
                           <DropdownMenu>
@@ -760,7 +842,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (detailItem.status === 'issued' && canApproveAsStore(user))) && (
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && (canApproveAsStore(user) || canDeclareMaterialUsage(detailItem, user)))) && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">
@@ -782,10 +864,15 @@ export function RepairMaterialRequestsPage() {
                         {detailItem.status === 'picking' && (
                           <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'issue', max: detailItem.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Issue</Button>
                         )}
-                        {detailItem.status === 'issued' && (
+                        {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canDeclareMaterialUsage(detailItem, user) && (
+                          <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700" onClick={() => openUsageDeclaration(detailItem)} disabled={submitting}><ClipboardList className="h-3.5 w-3.5" /> Record Usage / Return</Button>
+                        )}
+                        {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canApproveAsStore(user) && (
                           <>
-                            <Button size="sm" variant="outline" className="gap-1 border-violet-400 text-violet-700" onClick={() => { setReconcileTarget(detailItem); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); setReconcileOpen(true); }} disabled={submitting}><ClipboardList className="h-3.5 w-3.5" /> Reconcile</Button>
-                            <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: detailItem.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return</Button>
+                            <Button size="sm" variant="outline" className="gap-1 border-violet-400 text-violet-700" onClick={() => openStoreReconcile(detailItem)} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Verify Return & Reconcile</Button>
+                            {(detailItem.quantityReturned ?? 0) < (detailItem.quantityIssued ?? 0) && (
+                              <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: Math.max(0, (detailItem.quantityIssued || 0) - (detailItem.quantityReturned || 0)), field: 'quantityToReturn' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Record Return</Button>
+                            )}
                           </>
                         )}
                       </div>
@@ -835,12 +922,65 @@ export function RepairMaterialRequestsPage() {
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Material Request" />
       <QuantityDialog open={qtyOpen} onClose={() => { setQtyOpen(false); setQtyTarget(null); }} onConfirm={(qty) => { if (qtyTarget) handleAction(qtyTarget.id, qtyTarget.action, { [qtyTarget.field]: qty }); }} title={qtyTarget?.action === 'issue' ? 'Issue Quantity' : 'Return Quantity'} description={qtyTarget?.action === 'issue' ? `Enter quantity to issue (max ${qtyTarget?.max || 0})` : `Enter quantity to return (max ${qtyTarget?.max || 0})`} max={qtyTarget?.max || 0} fieldLabel={qtyTarget?.action === 'issue' ? 'Quantity to Issue' : 'Quantity to Return'} />
 
+      {/* Technician Material Usage Declaration */}
+      <ResponsiveDialog open={usageDeclarationOpen} onOpenChange={(v) => { if (!v) { setUsageDeclarationOpen(false); setUsageDeclarationTarget(null); setUsageDeclarationForm({ consumedQty: '', wastedQty: '0', returnQty: '', notes: '' }); } }}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Record Material Usage / Return</h2>
+          <p className="text-sm text-muted-foreground">Account for all {usageDeclarationTarget?.quantityIssued} {usageDeclarationTarget?.unit} issued. The store will verify the physical return and finalize reconciliation.</p>
+        </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label>Used *</Label>
+              <Input type="number" min={0} value={usageDeclarationForm.consumedQty} onChange={e => setUsageDeclarationForm(f => ({ ...f, consumedQty: e.target.value }))} placeholder="0" />
+              <p className="text-[11px] text-muted-foreground mt-1">Actually used in the repair</p>
+            </div>
+            <div>
+              <Label>Wasted / Damaged *</Label>
+              <Input type="number" min={0} value={usageDeclarationForm.wastedQty} onChange={e => setUsageDeclarationForm(f => ({ ...f, wastedQty: e.target.value }))} placeholder="0" />
+              <p className="text-[11px] text-muted-foreground mt-1">Lost, damaged or unusable</p>
+            </div>
+            <div>
+              <Label>To Return *</Label>
+              <Input type="number" min={0} value={usageDeclarationForm.returnQty} onChange={e => setUsageDeclarationForm(f => ({ ...f, returnQty: e.target.value }))} placeholder="0" />
+              <p className="text-[11px] text-muted-foreground mt-1">Physically returning to store</p>
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-3 text-xs">
+            Accounted: <strong>{(Number(usageDeclarationForm.consumedQty) || 0) + (Number(usageDeclarationForm.wastedQty) || 0) + (Number(usageDeclarationForm.returnQty) || 0)}</strong>
+            {' / '}Issued: <strong>{usageDeclarationTarget?.quantityIssued || 0}</strong>
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Textarea value={usageDeclarationForm.notes} onChange={e => setUsageDeclarationForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional note about usage, damage or return..." rows={2} />
+          </div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setUsageDeclarationOpen(false)}>Cancel</Button>
+          <Button className="bg-sky-600 hover:bg-sky-700 text-white gap-2" onClick={handleUsageDeclaration} disabled={submitting || usageDeclarationForm.consumedQty === '' || usageDeclarationForm.returnQty === ''}>
+            <ClipboardList className="h-4 w-4" /> Submit Usage Declaration
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
       {/* Reconciliation Dialog */}
       <ResponsiveDialog open={reconcileOpen} onOpenChange={(v) => { if (!v) { setReconcileOpen(false); setReconcileTarget(null); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); } }}>
         
           <div className="space-y-1.5 mb-4">
-            <h2 className="text-lg font-semibold leading-none tracking-tight">Material Reconciliation</h2>
-            <p className="text-sm text-muted-foreground">Record actual consumption for {reconcileTarget?.itemName} — Issued: {reconcileTarget?.quantityIssued} {reconcileTarget?.unit}</p>
+            <h2 className="text-lg font-semibold leading-none tracking-tight">Verify Return & Reconcile</h2>
+            <p className="text-sm text-muted-foreground">Verify the technician declaration and physical return for {reconcileTarget?.itemName} — Issued: {reconcileTarget?.quantityIssued} {reconcileTarget?.unit}</p>
+            {reconcileTarget?.usageDeclaredAt ? (
+              <div className="mt-3 rounded-lg border bg-sky-50/60 p-3 text-xs text-sky-900">
+                <div className="font-semibold mb-1">Technician declaration</div>
+                <div>Used: <strong>{reconcileTarget.declaredConsumedQty ?? 0}</strong> · Wasted/Damaged: <strong>{reconcileTarget.declaredWastedQty ?? 0}</strong> · To Return: <strong>{reconcileTarget.declaredReturnQty ?? 0}</strong></div>
+                {reconcileTarget.usageDeclarationNotes && <div className="mt-1 text-sky-800">{reconcileTarget.usageDeclarationNotes}</div>}
+                <div className="mt-1 text-sky-700">If store verification changes these figures, enter an explanatory note before confirming.</div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                No technician usage declaration has been submitted. A documented reconciliation note is required for this exception.
+              </div>
+            )}
           </div>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -886,7 +1026,7 @@ export function RepairMaterialRequestsPage() {
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => { setReconcileOpen(false); setReconcileTarget(null); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); }}>Cancel</Button>
             <Button className="bg-violet-600 hover:bg-violet-700 text-white gap-2" onClick={handleReconcile} disabled={submitting || !reconcileForm.consumedQty}>
-              <ClipboardList className="h-4 w-4" /> Submit Reconciliation
+              <PackageCheck className="h-4 w-4" /> Confirm Reconciliation
             </Button>
           </div>
         
@@ -2775,6 +2915,10 @@ interface ReturnTransferItem {
   requestId: string;
   lineItemId?: string;
   toolId?: string;
+  declaredConsumedQty?: number | null;
+  declaredWastedQty?: number | null;
+  declaredReturnQty?: number | null;
+  pendingStoreVerification?: boolean;
 }
 
 function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
@@ -2785,7 +2929,8 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
   // Return modal
   const [returnOpen, setReturnOpen] = useState(false);
-  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; condition: string })[]>([]);
+  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; qtyConsumed: number; qtyWasted: number; condition: string })[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Transfer modal
   const [transferOpen, setTransferOpen] = useState(false);
@@ -2803,7 +2948,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
       if (toolRes.success && toolRes.data) {
         for (const tr of toolRes.data as any[]) {
-          if (tr.status !== 'issued') continue;
+          if (!['issued', 'pending_return'].includes(tr.status)) continue;
           if (tr.items && tr.items.length > 0) {
             for (const item of tr.items) {
               const issued = item.quantityIssued || 0;
@@ -2811,50 +2956,76 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
               const xfer = item.quantityTransferred || 0;
               const remaining = issued - returned - xfer;
               if (remaining <= 0) continue;
-              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, transferredQty: xfer, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '' });
+              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, transferredQty: xfer, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '', pendingStoreVerification: tr.status === 'pending_return' });
             }
           } else {
             const issued = tr.quantityIssued || (tr.tool ? 1 : 0);
             const returned = tr.quantityReturned || 0;
             const remaining = issued - returned;
             if (remaining <= 0) continue;
-            rows.push({ id: tr.id, type: 'tool', name: tr.toolName || tr.tool?.name || 'Unknown Tool', code: tr.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, toolId: tr.toolId || '' });
+            rows.push({ id: tr.id, type: 'tool', name: tr.toolName || tr.tool?.name || 'Unknown Tool', code: tr.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, toolId: tr.toolId || '', pendingStoreVerification: tr.status === 'pending_return' });
           }
         }
       }
 
       if (matRes.success && matRes.data) {
         for (const mr of matRes.data as any[]) {
-          if (mr.status !== 'issued') continue;
+          if (!['issued', 'partially_returned', 'fully_returned'].includes(mr.status)) continue;
           const issued = mr.quantityIssued || 0;
           const returned = mr.quantityReturned || 0;
-          const remaining = issued - returned;
-          if (remaining <= 0) continue;
-          rows.push({ id: mr.id, type: 'material', name: mr.itemName, code: mr.item?.itemCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: mr.unit || 'each', requestId: mr.id });
+          const remaining = Math.max(0, issued - returned);
+          if (issued <= 0) continue;
+          rows.push({
+            id: mr.id,
+            type: 'material',
+            name: mr.itemName,
+            code: mr.item?.itemCode || '',
+            issuedQty: issued,
+            returnedQty: returned,
+            remainingQty: remaining,
+            unit: mr.unit || 'each',
+            requestId: mr.id,
+            declaredConsumedQty: mr.declaredConsumedQty,
+            declaredWastedQty: mr.declaredWastedQty,
+            declaredReturnQty: mr.declaredReturnQty,
+            pendingStoreVerification: !!mr.usageDeclaredAt,
+          });
         }
       }
 
       setAllItems(rows);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [workOrderId]);
+  }, [workOrderId, refreshKey]);
 
   const toolItems = allItems.filter(i => i.type === 'tool');
+  const actionableToolItems = toolItems.filter(i => !i.pendingStoreVerification);
+  const actionableReturnItems = allItems.filter(i => i.type === 'material' || !i.pendingStoreVerification);
   const totalOutstanding = allItems.length;
-  const hasTools = toolItems.length > 0;
+  const hasTools = actionableToolItems.length > 0;
+  const hasReturnActions = actionableReturnItems.length > 0;
 
   // ── Open Return modal ──
   const openReturn = () => {
-    setReturnItems(allItems.map(item => ({
-      ...item,
-      qtyReturn: item.remainingQty,
-      condition: 'good' as string,
-    })));
+    setReturnItems(actionableReturnItems.map(item => {
+      const qtyConsumed = Number(item.declaredConsumedQty || 0);
+      const qtyWasted = Number(item.declaredWastedQty || 0);
+      const qtyReturn = item.type === 'material'
+        ? Number(item.declaredReturnQty ?? 0)
+        : item.remainingQty;
+      return {
+        ...item,
+        qtyReturn,
+        qtyConsumed,
+        qtyWasted,
+        condition: 'good' as string,
+      };
+    }));
     setReturnOpen(true);
   };
 
   // ── Open Transfer modal ──
   const openTransfer = () => {
-    setTransferItems(toolItems.map(item => ({
+    setTransferItems(actionableToolItems.map(item => ({
       ...item,
       qtyTransfer: item.remainingQty,
       toUserId: '',
@@ -2886,9 +3057,9 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
   // ── Submit returns ──
   const handleReturnSubmit = async () => {
-    const activeItems = returnItems.filter(i => i.qtyReturn > 0);
+    const activeItems = returnItems.filter(i => i.type === 'material' || i.qtyReturn > 0);
     if (activeItems.length === 0) {
-      toast.error('No items to return');
+      toast.error('No tool returns or material declarations to submit');
       return;
     }
     setSubmitting(true);
@@ -2904,10 +3075,15 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     }
 
     // Process material returns
-    const matReturnMap = new Map<string, { qtyReturn: number }>();
+    const matReturnMap = new Map<string, { qtyReturn: number; qtyConsumed: number; qtyWasted: number; issuedQty: number }>();
     for (const item of activeItems) {
       if (item.type !== 'material') continue;
-      matReturnMap.set(item.requestId, { qtyReturn: item.qtyReturn });
+      const accounted = item.qtyConsumed + item.qtyWasted + item.qtyReturn;
+      if (Math.abs(accounted - item.issuedQty) > 0.001) {
+        errors.push(`${item.name}: used + wasted + to return must equal issued quantity (${item.issuedQty})`);
+        continue;
+      }
+      matReturnMap.set(item.requestId, { qtyReturn: item.qtyReturn, qtyConsumed: item.qtyConsumed, qtyWasted: item.qtyWasted, issuedQty: item.issuedQty });
     }
 
     // Execute tool returns
@@ -2928,27 +3104,25 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       } catch (e: any) { errors.push(`Tool return error: ${e.message}`); }
     }
 
-    // Execute material returns
-    for (const [requestId, { qtyReturn }] of matReturnMap) {
+    // Submit technician material usage declarations. This does not credit stock;
+    // the store must verify the physical return and perform final reconciliation.
+    for (const [requestId, { qtyReturn, qtyConsumed, qtyWasted }] of matReturnMap) {
       try {
         const res = await api.post(`/api/repairs/material-requests/${requestId}`, {
-          action: 'record_return', approvedQuantity: qtyReturn, notes: 'Returned by technician on completion',
+          action: 'declare_usage',
+          consumedQty: qtyConsumed,
+          wastedQty: qtyWasted,
+          returnQty: qtyReturn,
+          notes: 'Declared by technician during work-order completion',
         });
-        if (!res.success) errors.push(res.error || `Failed to return material`);
-      } catch (e: any) { errors.push(`Material return error: ${e.message}`); }
+        if (!res.success) errors.push(res.error || `Failed to declare material usage`);
+      } catch (e: any) { errors.push(`Material declaration error: ${e.message}`); }
     }
 
     if (errors.length === 0) {
-      toast.success('All returns submitted — awaiting store keeper confirmation');
+      toast.success('Submitted — tool returns and material declarations are awaiting store verification');
       setReturnOpen(false);
-      // Update allItems to reflect returned quantities
-      setAllItems(prev => prev.map(item => {
-        const returnedItem = returnItems.find(ri => ri.id === item.id);
-        if (returnedItem && returnedItem.qtyReturn > 0) {
-          return { ...item, returnedQty: item.returnedQty + returnedItem.qtyReturn, remainingQty: item.remainingQty - returnedItem.qtyReturn };
-        }
-        return item;
-      }).filter(i => i.remainingQty > 0));
+      setRefreshKey(k => k + 1);
     } else {
       errors.forEach(e => toast.error(e));
     }
@@ -3010,7 +3184,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     return (
       <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
         <CheckCircle2 className="h-4 w-4 shrink-0" />
-        <span>All tools and materials have been returned. Work order is ready for closure.</span>
+        <span>All tool custody and material reconciliation obligations are settled. Work order is ready for closure.</span>
       </div>
     );
   }
@@ -3020,7 +3194,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       {/* Header */}
       <div className="flex items-center gap-2 text-sm text-amber-700">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span><strong>{totalOutstanding} outstanding item(s)</strong> — return tools/materials to store or transfer tools to another technician.</span>
+        <span><strong>{totalOutstanding} outstanding item(s)</strong> — return or transfer tools, and declare material usage/return for store verification.</span>
       </div>
 
       {/* Items summary */}
@@ -3032,7 +3206,8 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
             </div>
             <span className="font-medium truncate flex-1">{item.name}</span>
             {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Remaining: <strong>{item.remainingQty}</strong></span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{item.type === 'material' ? 'Issued' : 'Remaining'}: <strong>{item.type === 'material' ? item.issuedQty : item.remainingQty}</strong></span>
+            {item.pendingStoreVerification && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Awaiting Store Verification</Badge>}
             {(item.returnedQty > 0 || (item.transferredQty || 0) > 0) && (
               <span className="text-xs text-muted-foreground whitespace-nowrap">
                 (Returned: {item.returnedQty}{(item.transferredQty || 0) > 0 ? ` · Transferred: ${item.transferredQty}` : ''})
@@ -3044,12 +3219,14 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={openReturn}>
-          <RotateCcw className="h-4 w-4" /> Return All ({totalOutstanding} items)
-        </Button>
+        {hasReturnActions && (
+          <Button variant="outline" className="gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={openReturn}>
+            <RotateCcw className="h-4 w-4" /> Return Tools / Declare Materials
+          </Button>
+        )}
         {hasTools && (
           <Button variant="outline" className="gap-2 bg-sky-600 hover:bg-sky-700 text-white" onClick={openTransfer}>
-            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({toolItems.length})
+            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({actionableToolItems.length})
           </Button>
         )}
       </div>
@@ -3057,8 +3234,8 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       {/* ═══════ Return Modal ═══════ */}
       <ResponsiveDialog open={returnOpen} onOpenChange={setReturnOpen}>
         <div className="space-y-1.5 mb-4">
-          <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools &amp; Materials</h2>
-          <p className="text-sm text-muted-foreground">Set quantity and condition for each item. Click the X button to remove items you don&apos;t want to return.</p>
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Settle Tools &amp; Materials</h2>
+          <p className="text-sm text-muted-foreground">For tools, submit the physical return and condition. For materials, declare Used + Wasted/Damaged + To Return; the store will verify and reconcile.</p>
         </div>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {returnItems.length === 0 && (
@@ -3075,26 +3252,52 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                 <span className="text-xs text-muted-foreground">Available: {item.remainingQty}</span>
                 <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeReturnItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="w-full sm:w-28">
-                  <Label className="text-xs">Qty to Return</Label>
-                  <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
-                    onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
-                    className="h-8" />
+              {item.type === 'tool' ? (
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="w-full sm:w-28">
+                    <Label className="text-xs">Qty to Return</Label>
+                    <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
+                      onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                      className="h-8" />
+                  </div>
+                  <div className="flex-1">
+                    <Label className="text-xs">Condition</Label>
+                    <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="good">Good — ready for reissue</SelectItem>
+                        <SelectItem value="fair">Fair — minor wear</SelectItem>
+                        <SelectItem value="poor">Poor — needs service</SelectItem>
+                        <SelectItem value="damaged">Damaged — needs repair</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <Label className="text-xs">Condition</Label>
-                  <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
-                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="good">Good — ready for reissue</SelectItem>
-                      <SelectItem value="fair">Fair — minor wear</SelectItem>
-                      <SelectItem value="poor">Poor — needs service</SelectItem>
-                      <SelectItem value="damaged">Damaged — needs repair</SelectItem>
-                    </SelectContent>
-                  </Select>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <Label className="text-xs">Used</Label>
+                    <Input type="number" min={0} max={item.issuedQty} value={item.qtyConsumed}
+                      onChange={e => updateReturnItem(item.id, { qtyConsumed: Math.max(0, Math.min(parseFloat(e.target.value) || 0, item.issuedQty)) })}
+                      className="h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Wasted / Damaged</Label>
+                    <Input type="number" min={0} max={item.issuedQty} value={item.qtyWasted}
+                      onChange={e => updateReturnItem(item.id, { qtyWasted: Math.max(0, Math.min(parseFloat(e.target.value) || 0, item.issuedQty)) })}
+                      className="h-8" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">To Return</Label>
+                    <Input type="number" min={0} max={item.issuedQty} value={item.qtyReturn}
+                      onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseFloat(e.target.value) || 0, item.issuedQty)) })}
+                      className="h-8" />
+                  </div>
+                  <div className="sm:col-span-3 text-[11px] text-muted-foreground">
+                    Accounted: <strong>{item.qtyConsumed + item.qtyWasted + item.qtyReturn}</strong> / Issued: <strong>{item.issuedQty}</strong>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ))}
         </div>
@@ -3102,7 +3305,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
           <Button variant="outline" onClick={() => setReturnOpen(false)}>Cancel</Button>
           <Button onClick={handleReturnSubmit} disabled={submitting || returnItems.length === 0} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-            {submitting ? 'Processing...' : `Return ${returnItems.filter(i => i.qtyReturn > 0).length} Item(s)`}
+            {submitting ? 'Processing...' : 'Submit Returns / Declarations'}
           </Button>
         </div>
       </ResponsiveDialog>

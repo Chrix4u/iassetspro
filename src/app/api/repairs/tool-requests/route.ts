@@ -84,7 +84,22 @@ export async function GET(request: NextRequest) {
     if (requestedById) where.requestedById = requestedById;
 
     const canViewAll = hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all']) || isAdmin(session);
-    if (!canViewAll) where.requestedById = session.userId;
+    let canViewWorkOrderExecutionScope = false;
+    if (!canViewAll && workOrderId) {
+      const executionMembership = await db.workOrder.findFirst({
+        where: {
+          id: workOrderId,
+          OR: [
+            { assignedTo: session.userId },
+            { teamLeaderId: session.userId },
+            { teamMembers: { some: { userId: session.userId } } },
+          ],
+        },
+        select: { id: true },
+      });
+      canViewWorkOrderExecutionScope = !!executionMembership;
+    }
+    if (!canViewAll && !canViewWorkOrderExecutionScope) where.requestedById = session.userId;
 
     if (stats) {
       const [total, pending, supervisorApproved, storekeeperApproved, issued, returned, rejected, overdueCount] = await Promise.all([

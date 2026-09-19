@@ -39,7 +39,22 @@ export async function GET(request: NextRequest) {
     if (urgency && VALID_URGENCIES.includes(urgency)) where.urgency = urgency;
 
     const canViewAll = hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all']) || isAdmin(session);
-    if (!canViewAll) where.requestedById = session.userId;
+    let canViewWorkOrderExecutionScope = false;
+    if (!canViewAll && workOrderId) {
+      const executionMembership = await db.workOrder.findFirst({
+        where: {
+          id: workOrderId,
+          OR: [
+            { assignedTo: session.userId },
+            { teamLeaderId: session.userId },
+            { teamMembers: { some: { userId: session.userId } } },
+          ],
+        },
+        select: { id: true },
+      });
+      canViewWorkOrderExecutionScope = !!executionMembership;
+    }
+    if (!canViewAll && !canViewWorkOrderExecutionScope) where.requestedById = session.userId;
 
     if (stats) {
       try {
@@ -80,7 +95,13 @@ export async function GET(request: NextRequest) {
             storekeeperApprovedBy: { select: { id: true, fullName: true } },
             issuedByUser: { select: { id: true, fullName: true } },
             returnedByUser: { select: { id: true, fullName: true } },
-            workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+            workOrder: {
+              select: {
+                id: true, woNumber: true, title: true, status: true,
+                assignedTo: true, teamLeaderId: true,
+                teamMembers: { select: { userId: true, role: true } },
+              },
+            },
             item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
             componentRegistry: { select: { id: true, name: true, componentCode: true } },
           },

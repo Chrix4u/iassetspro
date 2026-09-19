@@ -13,6 +13,8 @@ describe('RWOP resource request approval and completion gate contract', () => {
 
     expect(readiness).toContain('PENDING_MATERIAL_REQUESTS');
     expect(readiness).toContain('unresolvedMaterialRequests');
+    expect(readiness).toContain("if (mr.status !== 'closed') return true");
+    expect(readiness).toContain('still require store verification and final reconciliation before completion');
     expect(readiness).toContain("['pending', 'supervisor_approved', 'storekeeper_approved'].includes(mr.status)");
 
     expect(readiness).toContain('PENDING_ASSISTANCE');

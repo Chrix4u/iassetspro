@@ -420,10 +420,12 @@ function checkUnreconciledMaterials(
   code: string,
 ): void {
   const unreconciled = wo.repairMaterialRequests.filter((mr) => {
-    // Any request that actually issued material must reconcile, regardless of
-    // whether it is currently issued, partially returned, fully returned, or closed.
+    // Any request that actually issued material must be explicitly store-reconciled
+    // and closed. A technician declaration, partial return, or even a fully returned
+    // quantity does not by itself cross the final inventory/accountability boundary.
     if ((mr.quantityIssued ?? 0) <= 0) return false
     if (mr.status === 'rejected' || mr.status === 'cancelled') return false
+    if (mr.status !== 'closed') return true
 
     const consumed = mr.consumedQty ?? 0
     const wasted = mr.wastedQty ?? 0
@@ -436,7 +438,7 @@ function checkUnreconciledMaterials(
     out.push({
       code,
       category: 'material',
-      message: `${unreconciled.length} material request(s) have unaccounted issued quantity (consumed + wasted + returned ≠ issued)`,
+      message: `${unreconciled.length} issued material request(s) still require store verification and final reconciliation before completion`,
       severity: 'blocker',
     })
   }

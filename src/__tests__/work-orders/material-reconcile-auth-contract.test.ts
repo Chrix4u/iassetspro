@@ -13,11 +13,14 @@ describe('material reconciliation authorization contract', () => {
     expect(route).toContain('store keeper, inventory manager, or tools shop attendant can reconcile material requests');
   });
 
-  it('only shows issued-material reconciliation and return actions to store actors', () => {
+  it('keeps final material verification and physical return actions store-controlled', () => {
     const page = read('src/components/modules/RepairsPagesLegacy.tsx');
 
-    expect(page).toContain("{r.status === 'issued' && canApproveAsStore(user) && (");
-    expect(page).toContain("(detailItem.status === 'issued' && canApproveAsStore(user))");
+    expect(page).toContain("['issued', 'partially_returned', 'fully_returned'].includes(r.status) && canApproveAsStore(user)");
+    expect(page).toContain("['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canApproveAsStore(user)");
+    expect(page).toContain('Verify & Reconcile');
+    expect(page).toContain('Verify Return & Reconcile');
+    expect(page).toContain('Record Return');
     expect(page).not.toContain("storeRoles.includes(slug)) || hasPermission('repair_material_requests.update')");
   });
 });

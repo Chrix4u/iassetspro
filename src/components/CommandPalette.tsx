@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { PageName } from '@/types';
+import { canAccessPage } from '@/lib/page-access';
 import {
   CommandDialog,
   CommandEmpty,
@@ -126,13 +127,16 @@ function buildNavigationItems(): PaletteItem[] {
     { id: 'assets-digital-twin', label: 'Assets - Digital Twin', icon: Box, group: 'navigation', page: 'assets-digital-twin', keywords: ['twin', '3d', 'model'] },
     { id: 'assets-health', label: 'Assets - Health', icon: HeartPulse, group: 'navigation', page: 'assets-health', keywords: ['health', 'reliability', 'condition'] },
     { id: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList, group: 'navigation', page: 'maintenance-work-orders', keywords: ['wo', 'work order', 'task', 'job'] },
-    { id: 'maintenance-requests', label: 'Maintenance Requests', icon: MessageSquare, group: 'navigation', page: 'maintenance-requests', keywords: ['mr', 'request', 'ticket'] },
-    { id: 'maintenance-dashboard', label: 'Maintenance Dashboard', icon: LayoutDashboard, group: 'navigation', page: 'maintenance-dashboard' },
-    { id: 'maintenance-analytics', label: 'Maintenance Analytics', icon: BarChart3, group: 'navigation', page: 'maintenance-analytics' },
+    { id: 'maintenance-requests', label: 'Repairs - Requests', icon: MessageSquare, group: 'navigation', page: 'maintenance-requests', keywords: ['mr', 'request', 'ticket'] },
+    { id: 'maintenance-dashboard', label: 'Repairs - Dashboard', icon: LayoutDashboard, group: 'navigation', page: 'maintenance-dashboard' },
+    { id: 'maintenance-analytics', label: 'Repairs - Analytics Overview', icon: BarChart3, group: 'navigation', page: 'maintenance-analytics' },
     { id: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, group: 'navigation', page: 'maintenance-calibration' },
     { id: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, group: 'navigation', page: 'maintenance-risk-assessment' },
     { id: 'maintenance-tools', label: 'Maintenance Tools', icon: Wrench, group: 'navigation', page: 'maintenance-tools' },
-    { id: 'pm-schedules', label: 'PM Schedules', icon: Clock, group: 'navigation', page: 'pm-schedules', keywords: ['preventive', 'schedule', 'planned'] },
+    { id: 'pm-schedules', label: 'PM Maintenance - Schedules', icon: Clock, group: 'navigation', page: 'pm-schedules', keywords: ['preventive', 'schedule', 'planned'] },
+    { id: 'pm-templates', label: 'PM Maintenance - Templates', icon: ClipboardList, group: 'navigation', page: 'pm-templates', keywords: ['preventive', 'template', 'checklist'] },
+    { id: 'pm-triggers', label: 'PM Maintenance - Triggers', icon: Zap, group: 'navigation', page: 'pm-triggers', keywords: ['preventive', 'trigger', 'meter'] },
+    { id: 'pm-calendar', label: 'PM Maintenance - Calendar', icon: Calendar, group: 'navigation', page: 'pm-calendar', keywords: ['preventive', 'calendar', 'schedule'] },
     { id: 'repairs-material-requests', label: 'Repairs - Material Requests', icon: Package, group: 'navigation', page: 'repairs-material-requests', keywords: ['repair', 'material', 'spare'] },
     { id: 'repairs-tool-requests', label: 'Repairs - Tool Requests', icon: Wrench, group: 'navigation', page: 'repairs-tool-requests', keywords: ['repair', 'tool'] },
     { id: 'repairs-tool-transfers', label: 'Repairs - Tool Transfers', icon: ArrowRightLeft, group: 'navigation', page: 'repairs-tool-transfers', keywords: ['repair', 'transfer'] },
@@ -217,7 +221,9 @@ function buildNavigationItems(): PaletteItem[] {
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // ---- Keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K) ----
   useEffect(() => {
@@ -242,11 +248,19 @@ export default function CommandPalette() {
   }, []);
 
   // ---- Build items ----
-  const navItems = useMemo(() => buildNavigationItems(), []);
+  const rawNavItems = useMemo(() => buildNavigationItems(), []);
+  const accessContext = useMemo(
+    () => ({ hasPermission, isAdmin, enabledModules }),
+    [hasPermission, isAdmin, enabledModules]
+  );
+  const navItems = useMemo(
+    () => rawNavItems.filter(item => !item.page || canAccessPage(item.page, accessContext)),
+    [rawNavItems, accessContext]
+  );
 
-  const actionItems: PaletteItem[] = useMemo(() => [
+  const actionItems: PaletteItem[] = useMemo(() => ([
     ...(hasPermission('maintenance_requests.create') ? [
-      { id: 'action-create-mr', label: 'Create Maintenance Request', icon: Plus, group: 'actions' as const, page: 'create-mr' as PageName, keywords: ['new', 'mr', 'request'] },
+      { id: 'action-create-mr', label: 'Create Repair Request', icon: Plus, group: 'actions' as const, page: 'create-mr' as PageName, keywords: ['new', 'mr', 'request', 'repair'] },
     ] : []),
     ...(hasPermission('work_orders.create') ? [
       { id: 'action-create-wo', label: 'Create Work Order', icon: Plus, group: 'actions' as const, page: 'maintenance-work-orders' as PageName, keywords: ['new', 'wo', 'work order'] },
@@ -260,17 +274,17 @@ export default function CommandPalette() {
     ...(hasPermission('assets.create') ? [
       { id: 'action-create-asset', label: 'Register New Asset', icon: Building2, group: 'actions' as const, page: 'assets-machines' as PageName, keywords: ['new', 'asset', 'register', 'machine'] },
     ] : []),
-  ], [hasPermission]);
+  ] as PaletteItem[]).filter(item => !item.page || canAccessPage(item.page, accessContext)), [hasPermission, accessContext]);
 
-  const settingsItems: PaletteItem[] = useMemo(() => [
-    { id: 'settings-users', label: 'Manage Users', icon: Users, group: 'settings' as const, page: 'settings-users', keywords: ['admin', 'user'] },
-    { id: 'settings-roles', label: 'Roles & Permissions', icon: Shield, group: 'settings' as const, page: 'settings-roles', keywords: ['role', 'permission', 'rbac'] },
-    { id: 'settings-general', label: 'General Settings', icon: Settings, group: 'settings' as const, page: 'settings-general' },
-    { id: 'settings-security', label: 'Security Settings', icon: ShieldAlert, group: 'settings' as const, page: 'settings-security' },
-    { id: 'settings-health', label: 'System Health', icon: HeartPulse, group: 'settings' as const, page: 'settings-health', keywords: ['health', 'status', 'system'] },
-    { id: 'settings-backup', label: 'Backup & Restore', icon: Database, group: 'settings' as const, page: 'settings-backup', keywords: ['backup', 'restore'] },
-    { id: 'settings-preferences', label: 'My Preferences', icon: Star, group: 'settings' as const, page: 'settings-preferences', keywords: ['preferences', 'display', 'theme'] },
-  ], []);
+  const settingsItems: PaletteItem[] = useMemo(() => ([
+    { id: 'settings-users', label: 'Manage Users', icon: Users, group: 'settings' as const, page: 'settings-users' as PageName, keywords: ['admin', 'user'] },
+    { id: 'settings-roles', label: 'Roles & Permissions', icon: Shield, group: 'settings' as const, page: 'settings-roles' as PageName, keywords: ['role', 'permission', 'rbac'] },
+    { id: 'settings-general', label: 'General Settings', icon: Settings, group: 'settings' as const, page: 'settings-general' as PageName },
+    { id: 'settings-security', label: 'Security Settings', icon: ShieldAlert, group: 'settings' as const, page: 'settings-security' as PageName },
+    { id: 'settings-health', label: 'System Health', icon: HeartPulse, group: 'settings' as const, page: 'settings-health' as PageName, keywords: ['health', 'status', 'system'] },
+    { id: 'settings-backup', label: 'Backup & Restore', icon: Database, group: 'settings' as const, page: 'settings-backup' as PageName, keywords: ['backup', 'restore'] },
+    { id: 'settings-preferences', label: 'My Preferences', icon: Star, group: 'settings' as const, page: 'settings-preferences' as PageName, keywords: ['preferences', 'display', 'theme'] },
+  ] as PaletteItem[]).filter(item => !item.page || canAccessPage(item.page, accessContext)), [accessContext]);
 
   // ---- Recent items ----
   const recentItems: PaletteItem[] = useMemo(() => {

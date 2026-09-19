@@ -335,7 +335,6 @@ const rolePermissionBundles: Record<string, string[]> = {
     'pm_notifications.view', 'pm_analytics.view', 'pm_work_orders.view',
     'calibration.view', 'calibration.create', 'calibration.update',
     'asset_health.view', 'condition_monitoring.view',
-    'inventory.view', 'parts.view',
     'repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.update',
     'repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.update',
     'repair_tool_transfers.view', 'repair_tool_transfers.view_all', 'repair_tool_transfers.update',
@@ -399,7 +398,6 @@ const rolePermissionBundles: Record<string, string[]> = {
     'repair_tool_transfers.view_own', 'repair_tool_transfers.create',
     'spare_part_returns.view_own', 'spare_part_returns.create',
     'damaged_tool_reports.create',
-    'inventory.view', 'parts.view',
   ],
 
   // ── 7. PRODUCTION MANAGER ──

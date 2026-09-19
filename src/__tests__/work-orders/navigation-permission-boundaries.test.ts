@@ -79,6 +79,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain('const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES)');
     expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
     expect(maintenance).toContain('{pmEnabled && <Card');
+    expect(maintenance).toContain("...(pmEnabled ? [{ type: 'Preventive'");
   });
 
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {

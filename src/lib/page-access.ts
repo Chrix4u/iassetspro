@@ -152,7 +152,7 @@ export const PAGE_PERMISSIONS: Partial<Record<PageName, string[]>> = {
 export const PAGE_MODULES: Partial<Record<PageName, string[]>> = {
   dashboard: ['core'],
   chat: ['core'],
-  notifications: ['core'],
+  notifications: ['notifications'],
 
   'asset-categories': ['assets'],
   'assets-machines': ['assets'],

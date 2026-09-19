@@ -49,6 +49,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
   moduleCode?: string;

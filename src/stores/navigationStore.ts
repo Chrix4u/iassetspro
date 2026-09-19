@@ -76,12 +76,23 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
+        const now = Date.now();
         res.data.forEach((m: any) => {
           const code = String(m.code || '').toLowerCase();
           if (!code) return;
+
+          const validFromOk = !m.validFrom || new Date(m.validFrom).getTime() <= now;
+          const validUntilOk = !m.validUntil || new Date(m.validUntil).getTime() >= now;
+
           // Core modules are always available. Non-core modules require BOTH
-          // vendor/company license activation and company enablement.
-          if (m.isCore || (m.isActive === true && m.isEnabled === true)) enabled.add(code);
+          // license activation and company enablement, and the license window
+          // must still be valid.
+          if (
+            m.isCore ||
+            (m.isActive === true && m.isEnabled === true && validFromOk && validUntilOk)
+          ) {
+            enabled.add(code);
+          }
         });
         // Never fail open. Core remains usable even if every optional module is disabled.
         enabled.add('core');

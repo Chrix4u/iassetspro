@@ -107,6 +107,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, error: "Only admin, store keeper, inventory manager, or tools shop attendant can perform 'issue' on tool requests" }, { status: 403 });
       }
     }
+    if (action === 'return' && !isAdmin(session) && toolReq.requestedById !== session.userId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Only the current tool-request custodian can submit a tool return',
+      }, { status: 403 });
+    }
 
     const now = new Date();
     let updated: any;

@@ -5,6 +5,7 @@ import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { PageName } from '@/types';
+import { arePageModulesEnabled, getPagePermissions } from '@/lib/page-access';
 import {
   Sheet,
   SheetContent,
@@ -49,6 +50,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
 }
@@ -148,8 +150,15 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
   const [moreOpen, setMoreOpen] = useState(false);
+
+  const canAccessPage = useCallback((page: PageName): boolean => {
+    if (page.startsWith('settings-') && page !== 'settings-preferences' && !isAdmin()) return false;
+    const required = getPagePermissions(page);
+    if (!isAdmin() && required.length > 0 && !required.some((permission) => hasPermission(permission))) return false;
+    return arePageModulesEnabled(page, enabledModules);
+  }, [enabledModules, hasPermission, isAdmin]);
 
   const handleNavigate = useCallback((page: PageName) => {
     navigate(page);
@@ -160,30 +169,17 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
     setMoreOpen(false);
   }, [navigate]);
 
-  // Filter visible bottom tabs by permission and module
-  const visibleTabs = useMemo(() => {
-    return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
-        ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
-      if (!permOk) return false;
-      return true;
-    });
-  }, [hasPermission]);
+  // Every mobile navigation surface follows the same canonical page policy
+  // as Sidebar and direct navigation. Unknown module state fails closed.
+  const visibleTabs = useMemo(
+    () => BOTTOM_TABS.filter((tab) => canAccessPage(tab.page)),
+    [canAccessPage],
+  );
 
-  // Filter visible more items by permission
-  const visibleMoreItems = useMemo(() => {
-    return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
-        ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
-      if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
-        return enabledModules.has(item.moduleCode.toLowerCase());
-      }
-      return true;
-    });
-  }, [hasPermission, enabledModules]);
+  const visibleMoreItems = useMemo(
+    () => MORE_ITEMS.filter((item) => canAccessPage(item.page)),
+    [canAccessPage],
+  );
 
   // Don't render at all on desktop
   if (!isMobile) return null;

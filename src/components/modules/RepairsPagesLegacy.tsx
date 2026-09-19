@@ -356,6 +356,31 @@ function canApproveAsStore(user: any): boolean {
   return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
+function canCreateRepairDowntime(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => [
+    'maintenance_technician',
+    'maintenance_supervisor',
+    'maintenance_planner',
+    'maintenance_manager',
+    'production_operator',
+    'production_manager',
+  ].includes(slug));
+}
+
+function canManageRepairDowntime(record: any, user: any): boolean {
+  if (!user || !record) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const userId = authUser?.id || user?.id;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return record.createdById === userId
+    || roles.some((slug: string) => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug));
+}
+
 function canReviewRepairCompletion(user: any): boolean {
   if (!user) return false;
   const { isAdmin, user: authUser } = useAuthStore.getState();
@@ -2746,7 +2771,7 @@ export function RepairDowntimePage() {
             <p className="text-sm text-muted-foreground">Track equipment downtime related to repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+        {canCreateRepairDowntime(user) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -2798,7 +2823,7 @@ export function RepairDowntimePage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : records.length === 0 ? (
             <EmptyState icon={Timer} title="No downtime records" description="Log downtime events for repair work orders">
-              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+              {canCreateRepairDowntime(user) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -2832,8 +2857,8 @@ export function RepairDowntimePage() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {!r.downtimeEnd && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
-                            {canReviewRepairCompletion(user) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
+                            {!r.downtimeEnd && canManageRepairDowntime(r, user) && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
+                            {canManageRepairDowntime(r, user) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

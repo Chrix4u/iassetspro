@@ -110,7 +110,9 @@ const MORE_ITEMS: MoreItem[] = [
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar', 'maintenance-calibration'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'PM Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'maintenance-calibration', label: 'Calibration', icon: ShieldCheck, perm: 'calibration.view', activePages: ['maintenance-calibration'], moduleCode: 'calibration' },
+  { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: ShieldCheck, perm: 'risk_assessment.view', activePages: ['maintenance-risk-assessment'], moduleCode: 'risk_assessment' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety

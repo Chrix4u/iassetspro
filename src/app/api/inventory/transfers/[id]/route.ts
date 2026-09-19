@@ -9,12 +9,18 @@ export async function PUT(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory_transfers.update') && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
-
     const { id } = await params;
     const body = await request.json();
+
+    const requiredPermission = body.action === 'approve'
+      ? 'inventory_transfers.approve'
+      : 'inventory_transfers.update';
+    if (!hasPermission(session, requiredPermission) && !isAdmin(session)) {
+      return NextResponse.json({
+        success: false,
+        error: `Insufficient permissions — requires ${requiredPermission}`,
+      }, { status: 403 });
+    }
     const existing = await db.inventoryTransfer.findUnique({
       where: { id },
       include: { item: true },

@@ -5,10 +5,11 @@ import { useEffect } from 'react';
 
 /**
  * Hook to check if a module is enabled/active.
- * Returns true if:
- * - Modules haven't loaded yet (null = show all, graceful fallback)
- * - The module code is in the enabled set
- * - The module is core (always visible)
+ * Returns true only if:
+ * - the module is core, or
+ * - licensing/activation state has loaded and the module is usable.
+ *
+ * Non-core modules fail closed while module state is unknown.
  *
  * @param moduleCode - The module code to check (case-insensitive), e.g. 'work_orders', 'safety', 'production'
  * @returns boolean - true if the module should be visible
@@ -20,10 +21,13 @@ export function useModuleEnabled(moduleCode: string): boolean {
     fetchModules();
   }, [fetchModules]);
 
-  // null means not loaded yet — show everything (graceful fallback)
-  if (enabledModules === null) return true;
+  const code = moduleCode.toLowerCase();
+  if (code === 'core') return true;
 
-  return enabledModules.has(moduleCode.toLowerCase());
+  // Module licensing/activation is an access boundary: fail closed while unknown.
+  if (enabledModules === null) return false;
+
+  return enabledModules.has(code);
 }
 
 /**

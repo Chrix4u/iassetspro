@@ -612,12 +612,6 @@ export function RepairMaterialRequestsPage() {
     return [];
   }, [createForm.workOrderId]);
 
-  const estimatedCost = useMemo(() => {
-    const qty = parseFloat(createForm.quantityRequested) || 0;
-    const cost = parseFloat(createForm.unitCost) || 0;
-    return qty * cost;
-  }, [createForm.quantityRequested, createForm.unitCost]);
-
   if (!repairsEnabled) {
     return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }

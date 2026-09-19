@@ -8077,13 +8077,13 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
+    { label: 'Total Repair Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Repair Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Repair-focused analytics including MTTR, MTBF, backlog and cost trends</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpis.map(k => { const I = k.icon; return (

@@ -79,14 +79,14 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         res.data.forEach((m: any) => {
           const code = String(m.code || '').toLowerCase();
           if (!code) return;
-          if (m.isCore) {
+          // Only the platform kernel is unconditional. Every business
+          // module — even legacy records marked isCore — must respect company
+          // licensing/activation so disabled modules cannot leak UI.
+          if (code === 'core') {
             enabled.add(code);
             return;
           }
 
-          // A non-core module is operational only when it is licensed AND
-          // activated/enabled for the company. Disabled or unlicensed modules
-          // must never leak navigation or components to users.
           if (m.isSystemLicensed === true && m.isEnabled === true && m.isActive === true) {
             enabled.add(code);
           }

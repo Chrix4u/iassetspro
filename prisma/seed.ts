@@ -1069,7 +1069,7 @@ async function seed() {
   console.log(`  ✅ Created ${totalUsers} demo users (${newDemoUsers.length} new)\n`);
 
   // ══════════════════════════════════════════════════════════════════════════
-  // STEP 6: CREATE SYSTEM MODULES (35 comprehensive EAM modules)
+  // STEP 6: CREATE SYSTEM MODULES (36 comprehensive EAM modules)
   // ══════════════════════════════════════════════════════════════════════════
   console.log('📦 Creating system modules...');
 
@@ -1078,6 +1078,7 @@ async function seed() {
     { code: 'assets', name: 'Asset Management', description: 'Complete asset registry, hierarchy, tracking, and lifecycle management', isCore: true, version: '2.0.0', licensed: true },
     { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Submit, review, approve, and convert maintenance requests with full workflow', isCore: true, version: '2.0.0', licensed: true },
     { code: 'work_orders', name: 'Work Orders', description: 'Plan, assign, execute, and track maintenance work orders with SLA management', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'repairs', name: 'Repairs Maintenance', description: 'Corrective and emergency repair execution, material/tool custody, downtime, completion, and closure workflows', isCore: false, version: '2.0.0', licensed: true },
     { code: 'inventory', name: 'Inventory & Spare Parts', description: 'Manage spare parts inventory, stock levels, locations, and replenishment', isCore: true, version: '2.0.0', licensed: true },
     { code: 'pm_schedules', name: 'PM Schedules', description: 'Preventive maintenance scheduling with auto work order generation', isCore: false, version: '2.0.0', licensed: true },
     { code: 'analytics', name: 'Analytics & KPI', description: 'Advanced analytics, dashboards, and KPI monitoring', isCore: false, version: '1.5.0', licensed: true },

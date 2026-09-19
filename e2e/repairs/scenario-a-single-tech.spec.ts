@@ -65,8 +65,12 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     expect(pumpComponent).toBeTruthy();
     componentId = pumpComponent.id;
 
+    // Full inventory browsing/costing is a store function. The planner/technician
+    // material selector uses /api/inventory/lookup and intentionally cannot see cost.
+    // Use the storekeeper here because this UAT assertion verifies authoritative cost.
+    const storekeeperToken = await getToken('storekeeper');
     const { status: inventoryStatus, data: inventoryData } = await apiCall(
-      plannerToken,
+      storekeeperToken,
       'GET',
       `/api/inventory?search=${encodeURIComponent('UAT-BRG-6205')}&plantId=${plantId}`,
     );

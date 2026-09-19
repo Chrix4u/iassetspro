@@ -592,16 +592,21 @@ export function RepairMaterialRequestsPage() {
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [requests, searchText]);
 
-  // Cache for inventory item lookup (used by AsyncSearchableSelect)
+  // Restricted Repairs catalog: technicians can select plant materials for
+  // their assigned WO without receiving Inventory-module access.
   const inventoryItemsCache = useRef<any[]>([]);
   const fetchInventoryItems = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+    if (!createForm.workOrderId) return [];
+    const res = await api.get(`/api/repairs/material-catalog?workOrderId=${encodeURIComponent(createForm.workOrderId)}`);
     if (res.success && Array.isArray(res.data)) {
       inventoryItemsCache.current = res.data;
-      return res.data.map((i: any) => ({ value: i.id, label: i.name + (i.itemCode ? ` (${i.itemCode})` : '') }));
+      return res.data.map((i: any) => ({
+        value: i.id,
+        label: `${i.name}${i.itemCode ? ` (${i.itemCode})` : ''} — Stock: ${i.currentStock} ${i.unitOfMeasure || ''}`.trim(),
+      }));
     }
     return [];
-  }, []);
+  }, [createForm.workOrderId]);
 
   const estimatedCost = useMemo(() => {
     const qty = parseFloat(createForm.quantityRequested) || 0;
@@ -917,15 +922,13 @@ export function RepairMaterialRequestsPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '' }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
-            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
+            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => { inventoryItemsCache.current = []; setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '', itemId: '', itemName: '', unit: 'each', unitCost: '' })); }} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
+            <div><Label>Material / Spare Part *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item?.name || '', unit: item?.unitOfMeasure || 'each', unitCost: '' })); }} placeholder={createForm.workOrderId ? "Search available plant materials..." : "Select a work order first"} searchPlaceholder="Search by name or item code..." fetchOptions={fetchInventoryItems} /></div>
             <div><Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label><AsyncSearchableSelect value={createForm.componentRegistryId} onValueChange={(v) => setCreateForm(f => ({ ...f, componentRegistryId: v }))} placeholder="Select component..." searchPlaceholder="Search components..." fetchOptions={async () => { if (!createForm.workOrderId) return []; try { const res = await api.get(`/api/work-orders/${createForm.workOrderId}`); if (res.success && res.data?.assetId) { const compRes = await api.get(`/api/component-registry?assetId=${res.data.assetId}`); if (compRes.success && Array.isArray(compRes.data)) return compRes.data.map((c: any) => ({ value: c.id, label: `${c.componentCode || ''} ${c.name}`.trim() })); } } catch {} return []; }} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
-              <div><Label>Unit</Label><Select value={createForm.unit} onValueChange={(v) => setCreateForm({ ...createForm, unit: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="liter">Liter</SelectItem></SelectContent></Select></div>
-              <div><Label>Unit Cost</Label><Input type="number" step="0.01" value={createForm.unitCost} onChange={(e) => setCreateForm({ ...createForm, unitCost: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Quantity *</Label><Input type="number" min="0.001" step="any" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
+              <div><Label>Unit</Label><Input value={createForm.unit} readOnly className="bg-muted/40" /></div>
             </div>
-            {estimatedCost > 0 && <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-center gap-2"><DollarSign className="h-4 w-4 text-teal-600" /><span className="text-sm font-medium text-teal-700">Estimated cost: {formatCurrency(estimatedCost)}</span></div>}
             <div><Label>Urgency</Label><div className="flex gap-2 mt-1">{Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (<button key={key} onClick={() => setCreateForm(f => ({ ...f, urgency: key }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${createForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}><span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}</button>))}</div></div>
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this material needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>

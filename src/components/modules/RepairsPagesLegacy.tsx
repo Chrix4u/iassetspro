@@ -370,10 +370,12 @@ function canManageToolRequestCustody(request: any, user: any): boolean {
   return Boolean(userId) && request.requestedById === userId;
 }
 
-function canViewAllRepairData(user: any): boolean {
+function canViewAllRepairData(user: any, resource: 'material' | 'tool'): boolean {
   if (!user) return false;
   const { hasPermission, isAdmin } = useAuthStore.getState();
-  return isAdmin() || hasPermission('repair_material_requests.view') || hasPermission('repair_material_requests.view_all');
+  if (isAdmin()) return true;
+  const prefix = resource === 'tool' ? 'repair_tool_requests' : 'repair_material_requests';
+  return hasPermission(`${prefix}.view`) || hasPermission(`${prefix}.view_all`);
 }
 
 // ============================================================================
@@ -410,7 +412,7 @@ export function RepairMaterialRequestsPage() {
   const [usageDeclarationForm, setUsageDeclarationForm] = useState({ consumedQty: '', wastedQty: '0', returnQty: '', notes: '' });
   const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
 
-  const canViewAll = canViewAllRepairData(user);
+  const canViewAll = canViewAllRepairData(user, 'material');
   // Auto-switch to 'mine' if user doesn't have view_all permission
   useEffect(() => {
     if (!canViewAll && viewMode === 'all') setViewMode('mine');
@@ -1090,7 +1092,7 @@ export function RepairToolRequestsPage() {
 
   const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
 
-  const canViewAll = canViewAllRepairData(user);
+  const canViewAll = canViewAllRepairData(user, 'tool');
   // Auto-switch to 'mine' if user doesn't have view_all permission
   useEffect(() => {
     if (!canViewAll && viewMode === 'all') setViewMode('mine');

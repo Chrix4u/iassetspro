@@ -117,9 +117,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   }
 
   const menuGroups = useMemo<NavGroup[]>(() => [
-    { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'core' },
-    { label: 'Chat', icon: MessageSquare, perm: 'chat.view', page: 'chat', moduleCode: 'core' },
-    { label: 'Notifications', icon: BellRing, perm: 'notifications.view', page: '  const menuGroups = useMemo<NavGroup[]>(() => [
     { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
     { label: 'Chat', icon: MessageSquare, page: 'chat' },
     { label: 'Notifications', icon: BellRing, page: 'notifications' },
@@ -191,9 +188,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     },
     {
       label: 'Reliability', icon: ShieldAlert,
-      children: [
-        { page: 'reliability-engineering', label: 'Engineering', icon: ShieldAlert },
-      ],
+      children: [{ page: 'reliability-engineering', label: 'Engineering', icon: ShieldAlert }],
     },
     {
       label: 'Analytics', icon: BarChart3,

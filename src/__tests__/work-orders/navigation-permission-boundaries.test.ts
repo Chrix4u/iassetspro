@@ -19,6 +19,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const inventoryApi = read('src/app/api/inventory/route.ts');
   const materialListApi = read('src/app/api/repairs/material-requests/route.ts');
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
+  const toolDetailApi = read('src/app/api/repairs/tool-requests/[id]/route.ts');
+  const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
@@ -123,6 +125,18 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).not.toContain("return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || hasPermission('repair_material_requests.update')");
     expect(materialListApi).toContain('assignedSupervisorId: true');
     expect(toolListApi).toContain('assignedSupervisorId: true');
+  });
+
+  it('keeps tool return and transfer actions aligned with actual custody', () => {
+    expect(toolDetailApi).toContain("if (action === 'return')");
+    expect(toolDetailApi).toContain('toolReq.requestedById !== session.userId');
+    expect(toolDetailApi).toContain('Only the technician/custodian who received this tool request may submit its return');
+    expect(toolTransferApi).toContain('fromUserId !== session.userId');
+    expect(toolTransferApi).toContain('tool.assignedToId !== fromUserId');
+    expect(repairs).toContain('function canActAsToolCustodian(request: any, user: any)');
+    expect(repairs).toContain('function canTransferToolCustody(request: any, user: any)');
+    expect(singleTechUat).toContain('expect(blockedReturn.status).toBe(403)');
+    expect(singleTechUat).toContain('expect(blockedTransfer.status).toBe(403)');
   });
 
   it('shows request creation only when the matching API create permission exists', () => {

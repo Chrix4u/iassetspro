@@ -95,7 +95,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const storeModules = useNavigationStore((s) => s.enabledModules);
   const expanded = forceExpanded ?? sidebarOpen;
   const user = useAuthStore((s) => s.user);
-  const permissions = useAuthStore((s) => s.permissions);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
@@ -157,7 +156,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
         { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
         { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon },
-        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert },
         { page: 'repairs-analytics', label: 'Repair Lifecycle Analytics', icon: Activity },
       ],
     },
@@ -168,7 +166,13 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap },
         { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar },
+      ],
+    },
+    {
+      label: 'Maintenance Compliance', icon: ShieldCheck,
+      children: [
         { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair },
+        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert },
       ],
     },
     {

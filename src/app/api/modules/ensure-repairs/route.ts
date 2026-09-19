@@ -27,13 +27,13 @@ export async function POST(request: Request) {
         code: 'repairs',
         name: 'Repairs & Maintenance',
         description: 'Corrective/emergency repairs, material requests, tool requests, downtime tracking, and completion workflows',
-        isCore: true,
+        isCore: false,
         version: '2.0.0',
         isSystemLicensed: true,
         validFrom: new Date('2024-01-01'),
         validUntil: new Date('2026-12-31'),
       },
-      update: {},
+      update: { isCore: false },
     });
 
     // 2. Ensure company_module exists (try __default__ first, then null)

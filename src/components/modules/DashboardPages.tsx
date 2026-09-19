@@ -5,6 +5,7 @@ import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { arePageModulesEnabled } from '@/lib/page-access';
 import { api } from '@/lib/api';
 import { timeAgo, formatCurrency } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
@@ -136,9 +137,7 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { navigate } = useNavigationStore();
-
-  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+  const { navigate, enabledModules } = useNavigationStore();
 
   const fetchStats = useCallback(() => {
     let active = true;
@@ -164,24 +163,6 @@ export function DashboardPage() {
     const cleanup = fetchStats();
     return cleanup;
   }, [fetchStats]);
-
-  // Fetch enabled module codes for cross-module filtering
-  useEffect(() => {
-    let active = true;
-    api.get('/api/modules').then(res => {
-      if (!active) return;
-      if (res.success && res.data) {
-        const enabled = new Set<string>();
-        (res.data || []).forEach((m: any) => {
-          if (m.isCore || m.isEnabled) enabled.add(m.code.toLowerCase());
-        });
-        setEnabledModules(enabled);
-      }
-    }).catch(() => {
-      // On error, leave enabledModules empty (show all widgets)
-    });
-    return () => { active = false; };
-  }, []);
 
   // Generate day labels for weekly trend chart (must be before early return for hooks rule)
   const weekLabels = useMemo(() => {
@@ -337,7 +318,11 @@ export function DashboardPage() {
     },
   ];
 
-  const visiblePrimaryKPIs = primaryKPICards.filter(c => hasPermission(c.permission));
+  const visiblePrimaryKPIs = primaryKPICards.filter((card, index) => {
+    if (!hasPermission(card.permission)) return false;
+    const moduleCode = index === 3 ? MODULE_CODES.MAINTENANCE_REQUESTS : MODULE_CODES.WORK_ORDERS;
+    return enabledModules !== null && enabledModules.has(moduleCode);
+  });
 
   // ===== Role-Based Quick Actions =====
   const allQuickActions = [
@@ -359,7 +344,8 @@ export function DashboardPage() {
 
   const visibleQuickActions = allQuickActions
     .filter(a => hasPermission(a.permission))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)))
+    .filter(a => arePageModulesEnabled(a.page, enabledModules));
 
   // Cross-module overview data
   const moduleMap: Record<string, string> = {
@@ -381,19 +367,21 @@ export function DashboardPage() {
   ];
 
   // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = enabledModules.size > 0
-    ? crossModuleData.filter(mod => {
+  const filteredCrossModuleData = enabledModules === null
+    ? []
+    : crossModuleData.filter(mod => {
         const code = moduleMap[mod.label];
         return !code || enabledModules.has(code.toLowerCase());
-      })
-    : crossModuleData;
+      });
 
-  // Module-aware visibility for enhanced KPIs
-  const analyticsEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  // Module-aware visibility for enhanced KPIs. Unknown state fails closed.
+  const analyticsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ANALYTICS);
+  const safetyEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.SAFETY);
+  const productionEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PRODUCTION);
+  const qualityEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.QUALITY);
+  const pmEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  const assetsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ASSETS);
+  const notificationsEnabled = enabledModules !== null && enabledModules.has('notifications');
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -413,7 +401,7 @@ export function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {myKPIs.unreadNotifications > 0 && (
+          {notificationsEnabled && myKPIs.unreadNotifications > 0 && (
             <Badge variant="destructive" className="text-[11px] font-mono gap-1.5">
               <Bell className="h-3 w-3" />
               {myKPIs.unreadNotifications} new
@@ -515,16 +503,18 @@ export function DashboardPage() {
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sky-400/50 shrink-0" />
             </button>
-            <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
-              <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
-                <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
-                <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
-            </button>
+            {pmEnabled && (
+              <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+                <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
+                  <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
+                  <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
+              </button>
+            )}
             {plannerKPIs.pendingTeamRequests > 0 && (
               <button
                 onClick={() => document.getElementById('pending-team-requests-section')?.scrollIntoView({ behavior: 'smooth' })}
@@ -544,7 +534,7 @@ export function DashboardPage() {
         )}
 
         {/* Operator fallback */}
-        {isOperator && (
+        {isOperator && notificationsEnabled && (
           <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-pink-100 dark:border-pink-900/40 bg-pink-50 dark:bg-pink-950/30 transition-all hover:shadow-sm">
             <div className="h-9 w-9 rounded-lg bg-pink-100 dark:bg-pink-900/50 flex items-center justify-center shrink-0">
               <Bell className="h-4 w-4 text-pink-600 dark:text-pink-400" />
@@ -770,21 +760,23 @@ export function DashboardPage() {
             />,
           );
         }
-        pmComplianceCards.push(
-          <KPICard
-            key="assets-at-risk"
-            label="Assets at Risk"
-            value={assetsAtRisk}
-            sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
-            color="#f97316"
-            bgColor="bg-orange-50 dark:bg-orange-950/30"
-            borderColor="border-orange-100 dark:border-orange-900/40"
-            iconBg="bg-orange-100 dark:bg-orange-900/50"
-            iconColor="text-orange-600 dark:text-orange-400"
-            icon={AlertTriangle}
-            onClick={() => navigate('assets', { condition: 'at_risk' })}
-          />,
-        );
+        if (assetsEnabled) {
+          pmComplianceCards.push(
+            <KPICard
+              key="assets-at-risk"
+              label="Assets at Risk"
+              value={assetsAtRisk}
+              sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
+              color="#f97316"
+              bgColor="bg-orange-50 dark:bg-orange-950/30"
+              borderColor="border-orange-100 dark:border-orange-900/40"
+              iconBg="bg-orange-100 dark:bg-orange-900/50"
+              iconColor="text-orange-600 dark:text-orange-400"
+              icon={AlertTriangle}
+              onClick={() => navigate('assets', { condition: 'at_risk' })}
+            />,
+          );
+        }
         if (safetyEnabled) {
           pmComplianceCards.push(
             <KPICard

@@ -323,13 +323,28 @@ const TRANSFER_STAGES: PipelineStage[] = [
 // SHARED PERMISSION HELPERS
 // ============================================================================
 
-function canApproveAsSupervisor(user: any): boolean {
-  if (!user) return false;
-  const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
-  // Only supervisors, managers, and planners can approve tool/material requests
-  const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
+function canApproveAsSupervisor(request: any, user: any): boolean {
+  if (!user || !request?.workOrder) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+
+  const userId = authUser?.id || user?.id;
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || hasPermission('repair_material_requests.update');
+
+  // Mirror server-side canReviewResourceRequestAsSupervisor exactly:
+  // maintenance/plant management may act for escalation; a maintenance
+  // supervisor may act only when explicitly assigned to this work order.
+  if (userRoles.includes('maintenance_manager') || userRoles.includes('plant_manager')) return true;
+  return userRoles.includes('maintenance_supervisor')
+    && Boolean(request.workOrder.assignedSupervisorId)
+    && request.workOrder.assignedSupervisorId === userId;
+}
+
+function canManageIssuedToolCustody(request: any, user: any): boolean {
+  if (!user || !request) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  return request.requestedById === (authUser?.id || user?.id);
 }
 
 function canApproveAsStore(user: any): boolean {
@@ -339,6 +354,47 @@ function canApproveAsStore(user: any): boolean {
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
   return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
+}
+
+function canCreateRepairDowntime(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => [
+    'maintenance_technician',
+    'maintenance_supervisor',
+    'maintenance_planner',
+    'maintenance_manager',
+    'production_operator',
+    'production_manager',
+  ].includes(slug));
+}
+
+function canManageRepairDowntime(record: any, user: any): boolean {
+  if (!user || !record) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const userId = authUser?.id || user?.id;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return record.createdById === userId
+    || roles.some((slug: string) => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug));
+}
+
+function canReviewRepairCompletion(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => ['maintenance_supervisor', 'maintenance_manager', 'maintenance_planner'].includes(slug));
+}
+
+function canCloseRepairCompletion(user: any): boolean {
+  if (!user) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return roles.some((slug: string) => ['maintenance_planner', 'maintenance_manager'].includes(slug));
 }
 
 function canDeclareMaterialUsage(request: any, user: any): boolean {
@@ -577,22 +633,21 @@ export function RepairMaterialRequestsPage() {
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [requests, searchText]);
 
-  // Cache for inventory item lookup (used by AsyncSearchableSelect)
+  // Restricted Repairs catalog: technicians can select plant materials for
+  // their assigned WO without receiving Inventory-module access.
   const inventoryItemsCache = useRef<any[]>([]);
   const fetchInventoryItems = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+    if (!createForm.workOrderId) return [];
+    const res = await api.get(`/api/repairs/material-catalog?workOrderId=${encodeURIComponent(createForm.workOrderId)}`);
     if (res.success && Array.isArray(res.data)) {
       inventoryItemsCache.current = res.data;
-      return res.data.map((i: any) => ({ value: i.id, label: i.name + (i.itemCode ? ` (${i.itemCode})` : '') }));
+      return res.data.map((i: any) => ({
+        value: i.id,
+        label: `${i.name}${i.itemCode ? ` (${i.itemCode})` : ''} — Stock: ${i.currentStock} ${i.unitOfMeasure || ''}`.trim(),
+      }));
     }
     return [];
-  }, []);
-
-  const estimatedCost = useMemo(() => {
-    const qty = parseFloat(createForm.quantityRequested) || 0;
-    const cost = parseFloat(createForm.unitCost) || 0;
-    return qty * cost;
-  }, [createForm.quantityRequested, createForm.unitCost]);
+  }, [createForm.workOrderId]);
 
   if (!repairsEnabled) {
     return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
@@ -612,7 +667,7 @@ export function RepairMaterialRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track materials &amp; spare parts for repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('repair_material_requests.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -671,7 +726,7 @@ export function RepairMaterialRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Package} title="No material requests found" description="Create a new request to get started">
-              {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('repair_material_requests.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -718,7 +773,7 @@ export function RepairMaterialRequestsPage() {
                       <TableCell><OverduePulse isOverdue={r.isOverdue} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && canApproveAsSupervisor(user) && (
+                          {r.status === 'pending' && canApproveAsSupervisor(r, user) && (
                             <>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Approve</TooltipContent></Tooltip></TooltipProvider>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
@@ -842,7 +897,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && (canApproveAsStore(user) || canDeclareMaterialUsage(detailItem, user)))) && (
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && (canApproveAsStore(user) || canDeclareMaterialUsage(detailItem, user)))) && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">
@@ -902,15 +957,13 @@ export function RepairMaterialRequestsPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '' }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
-            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
+            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => { inventoryItemsCache.current = []; setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '', itemId: '', itemName: '', unit: 'each', unitCost: '' })); }} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
+            <div><Label>Material / Spare Part *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item?.name || '', unit: item?.unitOfMeasure || 'each', unitCost: '' })); }} placeholder={createForm.workOrderId ? "Search available plant materials..." : "Select a work order first"} searchPlaceholder="Search by name or item code..." fetchOptions={fetchInventoryItems} /></div>
             <div><Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label><AsyncSearchableSelect value={createForm.componentRegistryId} onValueChange={(v) => setCreateForm(f => ({ ...f, componentRegistryId: v }))} placeholder="Select component..." searchPlaceholder="Search components..." fetchOptions={async () => { if (!createForm.workOrderId) return []; try { const res = await api.get(`/api/work-orders/${createForm.workOrderId}`); if (res.success && res.data?.assetId) { const compRes = await api.get(`/api/component-registry?assetId=${res.data.assetId}`); if (compRes.success && Array.isArray(compRes.data)) return compRes.data.map((c: any) => ({ value: c.id, label: `${c.componentCode || ''} ${c.name}`.trim() })); } } catch {} return []; }} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
-              <div><Label>Unit</Label><Select value={createForm.unit} onValueChange={(v) => setCreateForm({ ...createForm, unit: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="liter">Liter</SelectItem></SelectContent></Select></div>
-              <div><Label>Unit Cost</Label><Input type="number" step="0.01" value={createForm.unitCost} onChange={(e) => setCreateForm({ ...createForm, unitCost: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Quantity *</Label><Input type="number" min="0.001" step="any" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
+              <div><Label>Unit</Label><Input value={createForm.unit} readOnly className="bg-muted/40" /></div>
             </div>
-            {estimatedCost > 0 && <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-center gap-2"><DollarSign className="h-4 w-4 text-teal-600" /><span className="text-sm font-medium text-teal-700">Estimated cost: {formatCurrency(estimatedCost)}</span></div>}
             <div><Label>Urgency</Label><div className="flex gap-2 mt-1">{Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (<button key={key} onClick={() => setCreateForm(f => ({ ...f, urgency: key }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${createForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}><span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}</button>))}</div></div>
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this material needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
@@ -1617,7 +1670,7 @@ export function RepairToolRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track tools for repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('repair_tool_requests.create') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1660,7 +1713,7 @@ export function RepairToolRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Wrench} title="No tool requests found" description="Create a new tool request to get started">
-              {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('repair_tool_requests.create') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -1712,7 +1765,7 @@ export function RepairToolRequestsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {r.status === 'pending' && canApproveAsSupervisor(user) && (
+                              {r.status === 'pending' && canApproveAsSupervisor(r, user) && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-4 w-4 mr-2 text-emerald-600" /> Approve</DropdownMenuItem>
@@ -1729,10 +1782,10 @@ export function RepairToolRequestsPage() {
                               {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
                               )}
-                              {hasOutstandingItems(r) && (
+                              {hasOutstandingItems(r) && canManageIssuedToolCustody(r, user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
                               )}
-                              {hasOutstandingItems(r) && (
+                              {hasOutstandingItems(r) && canManageIssuedToolCustody(r, user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openTransferDialog(); }}><ArrowRightLeft className="h-4 w-4 mr-2 text-sky-600" /> Transfer Tools</DropdownMenuItem>
                               )}
                               {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
@@ -1852,14 +1905,14 @@ export function RepairToolRequestsPage() {
                   )}
 
                   {/* ── Workflow Actions ── */}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) ||
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user)) ||
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'pending_return' && canApproveAsStore(user)) ||
-                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem))) && (<>
+                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canManageIssuedToolCustody(detailItem, user))) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
-                      {detailItem.status === 'pending' && canApproveAsSupervisor(user) && (<>
+                      {detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user) && (<>
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
                         <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
                       </>)}
@@ -1890,7 +1943,7 @@ export function RepairToolRequestsPage() {
                           <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject_return' }); setRejectOpen(true); }} disabled={submitting}><XCircle className="h-3.5 w-3.5" /> Reject Return</Button>
                         </div>
                       )}
-                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && (
+                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canManageIssuedToolCustody(detailItem, user) && (
                         <div className="flex gap-2">
                           <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
                           <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
@@ -2434,7 +2487,7 @@ export function RepairToolTransfersPage() {
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           {/* Approve / Reject — store keeper / tools shop attendant only */}
-                          {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && (
+                          {canApproveAsStore(user) && (
                             <div className="flex items-center gap-1">
                               {t.status === 'pending' && (<>
                                 <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
@@ -2458,7 +2511,6 @@ export function RepairToolTransfersPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(t); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {t.status === 'storekeeper_approved' && <DropdownMenuItem onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-4 w-4 mr-2" /> Confirm Receipt</DropdownMenuItem>}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -2521,7 +2573,7 @@ export function RepairToolTransfersPage() {
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
                 {/* Approve / Reject — store keeper / tools shop attendant only */}
-                {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
+                {canApproveAsStore(user) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
@@ -2719,7 +2771,7 @@ export function RepairDowntimePage() {
             <p className="text-sm text-muted-foreground">Track equipment downtime related to repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+        {canCreateRepairDowntime(user) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -2771,7 +2823,7 @@ export function RepairDowntimePage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : records.length === 0 ? (
             <EmptyState icon={Timer} title="No downtime records" description="Log downtime events for repair work orders">
-              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+              {canCreateRepairDowntime(user) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -2805,8 +2857,8 @@ export function RepairDowntimePage() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {!r.downtimeEnd && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
-                            {(hasPermission('work_orders.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
+                            {!r.downtimeEnd && canManageRepairDowntime(r, user) && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
+                            {canManageRepairDowntime(r, user) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -3599,16 +3651,16 @@ export function RepairCompletionPage() {
               {/* Actions */}
               <Separator />
               <div className="flex flex-wrap gap-3">
-                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && (hasPermission('work_orders.update') || isAdmin()) && (
+                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && canReviewRepairCompletion(user) && (
                   <Button onClick={() => handleSubmit('submit')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> {completion.supervisorStatus === 'rework_requested' ? 'Resubmit Completion' : 'Submit Completion'}</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canReviewRepairCompletion(user) && (
                   <Button variant="destructive" onClick={() => { setReworkDialogOpen(true); }} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canReviewRepairCompletion(user) && (
                   <Button variant="outline" className="border-green-600 text-green-600" onClick={() => handleSubmit('supervisor_approve')} disabled={submitting}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</Button>
                 )}
-                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && (hasPermission('work_orders.update') || isAdmin()) && (                  <>
+                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && canCloseRepairCompletion(user) && (                  <>
                     <div><Label>Closure Notes</Label><Textarea value={form.closureNotes} onChange={(e) => setForm({ ...form, closureNotes: e.target.value })} /></div>
                     <Button className="bg-gray-800" onClick={() => handleSubmit('planner_close')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> Planner Close WO</Button>
                   </>

@@ -54,6 +54,60 @@ type TransitionSeed = {
   requiresReason: boolean;
 };
 
+const UAT_ENABLED_MODULES = [
+  { code: 'work_orders', name: 'Work Orders', isCore: true },
+  { code: 'repairs', name: 'Repairs Maintenance', isCore: false },
+  { code: 'reports', name: 'Reports & Dashboards', isCore: false },
+] as const;
+
+async function enableUatModule(moduleDef: (typeof UAT_ENABLED_MODULES)[number]) {
+  const now = new Date();
+  const systemModule = await db.systemModule.upsert({
+    where: { code: moduleDef.code },
+    update: {
+      name: moduleDef.name,
+      isCore: moduleDef.isCore,
+      isSystemLicensed: true,
+    },
+    create: {
+      code: moduleDef.code,
+      name: moduleDef.name,
+      description: `UAT-enabled module: ${moduleDef.name}`,
+      version: '2.0.0',
+      isCore: moduleDef.isCore,
+      isSystemLicensed: true,
+      validFrom: new Date('2024-01-01'),
+    },
+  });
+
+  // companyId is nullable, so do not use Prisma's compound unique upsert.
+  // Keep one single-company activation record and update it idempotently.
+  const existing = await db.companyModule.findFirst({
+    where: { systemModuleId: systemModule.id, companyId: null },
+    select: { id: true },
+  });
+
+  const operational = {
+    isActive: true,
+    isEnabled: true,
+    licensedAt: now,
+    activatedAt: now,
+    activationLocked: false,
+  };
+
+  if (existing) {
+    await db.companyModule.update({ where: { id: existing.id }, data: operational });
+  } else {
+    await db.companyModule.create({
+      data: {
+        systemModuleId: systemModule.id,
+        companyId: null,
+        ...operational,
+      },
+    });
+  }
+}
+
 /**
  * Prisma compound unique inputs do not accept null members even though
  * StatusTransition.fromStatus is intentionally nullable (null = initial state).
@@ -128,6 +182,14 @@ const UAT_USERS: UatUserDef[] = [
 
 async function main() {
   console.log('🌱 Starting Repairs UAT seed script...');
+
+  // Fail-closed module navigation is intentional. The isolated Repairs UAT
+  // database therefore provisions only the licenses required by this suite.
+  // PM is deliberately NOT enabled here; disabled PM UI must remain hidden.
+  for (const moduleDef of UAT_ENABLED_MODULES) {
+    await enableUatModule(moduleDef);
+  }
+
   const passwordHash = await hash(PASSWORD, 12);
 
   const plantA = await db.plant.upsert({

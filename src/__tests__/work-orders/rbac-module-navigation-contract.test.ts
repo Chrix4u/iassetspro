@@ -36,6 +36,7 @@ describe('RBAC and module navigation hardening contract', () => {
   const pageAccess = read('src/lib/page-access.ts');
   const moduleRoute = read('src/app/api/modules/route.ts');
   const seed = read('prisma/seed.ts');
+  const repairsModuleMigration = read('prisma/migrations/20260919130500_ensure_repairs_module/migration.sql');
 
   it('separates repairs maintenance from preventive maintenance and filters child routes', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -75,7 +76,8 @@ describe('RBAC and module navigation hardening contract', () => {
 
   it('fails closed when optional module state cannot be verified or licensed', () => {
     expect(navigationStore).toContain("new Set(['core'])");
-    expect(navigationStore).toContain('m.isLicenseValid && m.isActive && m.isEnabled');
+    expect(navigationStore).toContain("code === 'core' || (m.isLicenseValid && m.isActive && m.isEnabled)");
+    expect(navigationStore).not.toContain('if (m.isCore ||');
     expect(moduleRoute).toContain('isLicenseValid: systemLicenseValid');
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(app).toContain('moduleAccessDenied');
@@ -166,6 +168,8 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(commandPalette).toContain('Preventive Maintenance (PM) - Schedules');
     expect(commandPalette).toContain('Preventive Maintenance (PM) - Calendar');
     expect(seed).toContain("code: 'repairs', name: 'Repairs Maintenance'");
+    expect(repairsModuleMigration).toContain("'repairs', 'Repairs Maintenance'");
+    expect(repairsModuleMigration).toContain('AND NOT EXISTS');
   });
 
   it('scopes global search by permission, plant, own-record access, and enabled-page visibility', () => {

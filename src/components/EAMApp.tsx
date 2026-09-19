@@ -438,7 +438,7 @@ function AppShell() {
   const goBack = useNavigationStore((s) => s.goBack);
   const toggleSidebar = useNavigationStore((s) => s.toggleSidebar);
   const setMobileSidebarOpen = useNavigationStore((s) => s.setMobileSidebarOpen);
-  const fetchModules = useNavigationStore((s) => s.fetchModules);
+  const refreshModules = useNavigationStore((s) => s.refreshModules);
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -450,8 +450,10 @@ function AppShell() {
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
 
   React.useEffect(() => {
-    fetchModules();
-  }, [fetchModules]);
+    if (!isLoading && isAuthenticated && user?.id) {
+      void refreshModules();
+    }
+  }, [refreshModules, isLoading, isAuthenticated, user?.id]);
 
   // Update document title on navigation
   React.useEffect(() => {

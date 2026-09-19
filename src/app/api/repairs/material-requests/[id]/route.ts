@@ -37,6 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         workOrder: {
           select: {
             id: true, woNumber: true, title: true, status: true, plantId: true,
+            assignedSupervisorId: true,
             assignedTo: true, teamLeaderId: true,
             teamMembers: { select: { userId: true, role: true } },
             assignedSupervisor: { select: { id: true, fullName: true } },

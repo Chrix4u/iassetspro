@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { canAccessPage } from '@/lib/pageAccess';
 import {
   CommandDialog,
   CommandEmpty,
@@ -112,6 +114,9 @@ export default function GlobalSearch() {
   const [hasSearched, setHasSearched] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // ---- Keyboard shortcut (Ctrl+K / Cmd+K) ----
   useEffect(() => {
@@ -123,7 +128,7 @@ export default function GlobalSearch() {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // ---- Reset when dialog closes ----
   useEffect(() => {
@@ -148,7 +153,18 @@ export default function GlobalSearch() {
     try {
       const res = await api.get<SearchResponse>(`/api/search?q=${encodeURIComponent(q.trim())}&limit=10`);
       if (res.success && res.data) {
-        setResults(res.data.results);
+        const admin = isAdmin();
+        const filtered = res.data.results
+          .map((group) => ({
+            ...group,
+            results: group.results.filter((item) => {
+              const nav = getNavigation(item);
+              return canAccessPage(nav.page, hasPermission, admin, enabledModules);
+            }),
+          }))
+          .filter((group) => group.results.length > 0)
+          .map((group) => ({ ...group, count: group.results.length }));
+        setResults(filtered);
       } else {
         setResults([]);
       }

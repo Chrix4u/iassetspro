@@ -138,7 +138,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   // Legacy fallbacks
   'assets': ['assets.view'],
   'asset-detail': ['assets.view'],
-  'inventory': ['inventory.view'],
+  'inventory': ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve', 'inventory.export'],
   'analytics': ['analytics.view'],
 };
 

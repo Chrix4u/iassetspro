@@ -79,7 +79,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         res.data.forEach((m: any) => {
           // Core is always available. Optional modules must be both licensed
           // (isActive) and enabled before any navigation/component is exposed.
-          if (m.isCore || (m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
+          if (m.isCore || (m.isLicenseValid && m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
         });
         // Licensing/module visibility is deny-by-default. Core remains available,
         // while optional modules must be explicitly returned as enabled/core.

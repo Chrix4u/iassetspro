@@ -180,10 +180,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
+      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'reports'],
       children: [
-        { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
-        { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
+        { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid, moduleCode: 'work_orders', permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'enterprise-reports', label: 'Reports', icon: Gauge, moduleCode: 'reports', perm: 'reports.view' },
       ],
     },
     {
@@ -224,7 +224,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
+      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', permOr: ['operations.view', 'meters.view', 'training.view', 'production_surveys.view', 'time_logs.view', 'shift_handovers.view', 'work_orders.view'], moduleCodes: ['meter_readings', 'training', 'shift_management', 'production', 'work_orders'],
       children: [
         { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge, moduleCode: 'meter_readings', perm: 'meters.view' },
         { page: 'operations-training', label: 'Training', icon: GraduationCap, moduleCode: 'training', perm: 'training.view' },
@@ -286,19 +286,19 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     {
       label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'reports',
       children: [
-        { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
-        { page: 'machine-availability', label: 'Machine Availability', icon: Activity },
-        { page: 'equipment-history', label: 'Equipment History', icon: History },
-        { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert },
-        { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList, moduleCode: 'work_orders' },
-        { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
-        { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity, moduleCode: 'repairs' },
-        { page: 'reports-inventory', label: 'Inventory Reports', icon: Package },
-        { page: 'reports-production', label: 'Production Reports', icon: Factory },
-        { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck },
-        { page: 'reports-safety', label: 'Safety Reports', icon: HardHat },
-        { page: 'reports-financial', label: 'Financial Reports', icon: TrendingUp },
-        { page: 'reports-custom', label: 'Custom Reports', icon: FileSpreadsheet },
+        { page: 'reports-asset', label: 'Asset Reports', icon: Building2, moduleCode: 'assets', perm: 'reports.view' },
+        { page: 'machine-availability', label: 'Machine Availability', icon: Activity, moduleCode: 'assets', perm: 'reports.view' },
+        { page: 'equipment-history', label: 'Equipment History', icon: History, moduleCode: 'assets', perm: 'reports.view' },
+        { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert, moduleCode: 'failure_analysis', perm: 'reports.view' },
+        { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList, moduleCode: 'work_orders', perm: 'reports.view' },
+        { page: 'reports-maintenance', label: 'Repairs Maintenance Reports', icon: Wrench, moduleCode: 'work_orders', perm: 'reports.view' },
+        { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity, moduleCode: 'repairs', perm: 'reports.view' },
+        { page: 'reports-inventory', label: 'Inventory Reports', icon: Package, moduleCode: 'inventory', perm: 'reports.view' },
+        { page: 'reports-production', label: 'Production Reports', icon: Factory, moduleCode: 'production', perm: 'reports.view' },
+        { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck, moduleCode: 'quality', perm: 'reports.view' },
+        { page: 'reports-safety', label: 'Safety Reports', icon: HardHat, moduleCode: 'safety', perm: 'reports.view' },
+        { page: 'reports-financial', label: 'Financial Reports', icon: TrendingUp, moduleCode: 'reports', perm: 'reports.view' },
+        { page: 'reports-custom', label: 'Custom Reports', icon: FileSpreadsheet, moduleCode: 'reports', perm: 'reports.view' },
       ],
     },
     {

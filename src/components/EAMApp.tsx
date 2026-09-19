@@ -339,6 +339,7 @@ function PageSwitcher({ page }: { page: string }) {
   const [error, setError] = useState<string | null>(null);
   const { hasPermission, isAdmin } = useAuthStore();
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
 
   // Canonical permission/module policy is shared with Sidebar.
 

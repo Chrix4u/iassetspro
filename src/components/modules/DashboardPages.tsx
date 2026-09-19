@@ -241,7 +241,7 @@ export function DashboardPage() {
   ].filter(d => d.count > 0);
 
   const woTypeData = [
-    { type: 'preventive', count: stats?.preventiveWO || 0 },
+    ...(pmEnabled ? [{ type: 'preventive', count: stats?.preventiveWO || 0 }] : []),
     { type: 'corrective', count: stats?.correctiveWO || 0 },
     { type: 'emergency', count: stats?.emergencyWO || 0 },
     { type: 'inspection', count: stats?.inspectionWO || 0 },
@@ -681,21 +681,25 @@ export function DashboardPage() {
               showRing
               ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
             />,
-            <KPICard
-              key="planned-ratio"
-              label="Planned Ratio"
-              value={`${maintenanceKPIs.plannedRatio}%`}
-              sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
-              color="#14b8a6"
-              bgColor="bg-teal-50 dark:bg-teal-950/30"
-              borderColor="border-teal-100 dark:border-teal-900/40"
-              iconBg="bg-teal-100 dark:bg-teal-900/50"
-              iconColor="text-teal-600 dark:text-teal-400"
-              icon={Target}
-              showRing
-              ringValue={maintenanceKPIs.plannedRatio}
-            />,
           );
+          if (pmEnabled) {
+            enhancedCards.push(
+              <KPICard
+                key="planned-ratio"
+                label="Planned Ratio"
+                value={`${maintenanceKPIs.plannedRatio}%`}
+                sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
+                color="#14b8a6"
+                bgColor="bg-teal-50 dark:bg-teal-950/30"
+                borderColor="border-teal-100 dark:border-teal-900/40"
+                iconBg="bg-teal-100 dark:bg-teal-900/50"
+                iconColor="text-teal-600 dark:text-teal-400"
+                icon={Target}
+                showRing
+                ringValue={maintenanceKPIs.plannedRatio}
+              />,
+            );
+          }
         }
         enhancedCards.push(
           <KPICard

@@ -149,7 +149,7 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleNavigate = useCallback((page: PageName) => {
@@ -179,15 +179,13 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
         ? item.permOr.some(p => hasPermission(p))
         : hasPermission(item.perm);
       if (!permOk) return false;
-      if (!pageHasPermission(item.page, hasPermission, false)) return false;
+      const admin = isAdmin();
+      if (!pageHasPermission(item.page, hasPermission, admin)) return false;
       if (!pageModuleIsEnabled(item.page, enabledModules)) return false;
-      if (item.moduleCode) {
-        if (enabledModules === null) return false;
-        return enabledModules.has(item.moduleCode.toLowerCase());
-      }
+      if (item.moduleCode && enabledModules !== null && !enabledModules.has(item.moduleCode.toLowerCase())) return false;
       return true;
     });
-  }, [hasPermission, enabledModules]);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

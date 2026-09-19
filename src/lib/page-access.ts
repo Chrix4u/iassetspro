@@ -248,6 +248,7 @@ export function pageHasPermission(
 export function pageModuleIsEnabled(page: string, enabledModules: Set<string> | null): boolean {
   const code = PAGE_MODULES[page];
   if (!code) return true;
-  if (enabledModules === null) return CORE_MODULE_CODES.has(code);
+  if (CORE_MODULE_CODES.has(code)) return true;
+  if (enabledModules === null) return false;
   return enabledModules.has(code);
 }

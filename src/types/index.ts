@@ -87,6 +87,7 @@ export interface Module {
   isEnabled?: boolean; // company activation
   // Vendor licensing fields
   isSystemLicensed?: boolean;
+  isAvailable?: boolean;
   licenseKey?: string;
   validFrom?: string;
   validUntil?: string;

@@ -37,7 +37,14 @@ export async function GET(request: NextRequest) {
       hasPermission(session, 'inventory.view') ||
       hasPermission(session, 'repair_material_requests.create') ||
       hasPermission(session, 'work_orders.create') ||
-      hasPermission(session, 'work_orders.update');
+      hasPermission(session, 'work_orders.update') ||
+      hasPermission(session, 'inventory_adjustments.view') ||
+      hasPermission(session, 'inventory_adjustments.create') ||
+      hasPermission(session, 'material_requisitions.view') ||
+      hasPermission(session, 'material_requisitions.create') ||
+      hasPermission(session, 'inventory_transfers.view') ||
+      hasPermission(session, 'inventory_transfers.create') ||
+      hasPermission(session, 'inventory_transfers.update');
 
     if (requestCatalogMode) {
       if (!canUseRequestCatalog) {

@@ -3221,7 +3221,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         )}
         {hasTools && (
           <Button variant="outline" className="gap-2 bg-sky-600 hover:bg-sky-700 text-white" onClick={openTransfer}>
-            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({toolItems.length})
+            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({actionableToolItems.length})
           </Button>
         )}
       </div>

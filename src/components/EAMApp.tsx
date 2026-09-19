@@ -448,12 +448,15 @@ function AppShell() {
   const toggleSidebar = useNavigationStore((s) => s.toggleSidebar);
   const setMobileSidebarOpen = useNavigationStore((s) => s.setMobileSidebarOpen);
   const fetchModules = useNavigationStore((s) => s.fetchModules);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+
+  const notificationsEnabled = enabledModules !== null && enabledModules.has('notifications');
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
@@ -555,7 +558,7 @@ function AppShell() {
                 <TooltipContent>Toggle theme</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <NotificationPopover />
+            {notificationsEnabled && <NotificationPopover />}
             <Separator orientation="vertical" className="h-6 mx-1 bg-border/40" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -586,7 +589,7 @@ function AppShell() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2.5" />Dashboard</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>
+                {notificationsEnabled && <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 {hasPermission('system_settings.view') && (
                   <>

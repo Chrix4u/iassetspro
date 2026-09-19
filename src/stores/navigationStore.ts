@@ -77,7 +77,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>(['core']);
         res.data.forEach((m: any) => {
-          if (m.isCore || (m.isSystemLicensed && m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
+          if (m.isCore || (m.isLicenseValid && m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
         });
         // A successful module response is authoritative, even if only core is usable.
         set({ enabledModules: enabled });

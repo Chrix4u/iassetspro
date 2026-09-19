@@ -8021,6 +8021,14 @@ export function MaintenanceAnalyticsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const permissions = useAuthStore((s) => s.permissions);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const pmEnabled = canAccessPage('pm-schedules', {
+    permissions,
+    isAdmin: isAdmin(),
+    enabledModules,
+  });
 
   useEffect(() => {
     let active = true;
@@ -8049,7 +8057,7 @@ export function MaintenanceAnalyticsPage() {
   const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
 
   const typeBreakdown = [
-    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    ...(pmEnabled ? [{ type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }] : []),
     { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
     { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
     { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' },
@@ -8066,13 +8074,13 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
+    { label: 'Total Repair Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Repairs Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Corrective repair analytics including MTTR, MTBF, workload, and cost trends</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpis.map(k => { const I = k.icon; return (

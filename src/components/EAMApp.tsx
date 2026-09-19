@@ -486,7 +486,7 @@ function PageSwitcher({ page }: { page: string }) {
   // Page-to-module mapping. Optional modules are deny-by-default until the
   // server confirms that the company has them licensed/enabled.
   const pageModules: Record<string, string | string[]> = {
-    'dashboard': 'core', 'chat': 'core', 'notifications': 'core',
+    'dashboard': 'core', 'chat': 'core', 'notifications': 'notifications',
     'assets-machines': 'assets', 'assets-hierarchy': 'assets', 'asset-categories': 'assets',
     'assets-bom': ['assets', 'bom'], 'assets-condition-monitoring': ['assets', 'condition_monitoring'], 'assets-health': 'assets',
     'assets-digital-twin': ['assets', 'digital_twin'], 'digital-twin-viewer': ['assets', 'digital_twin'], 'system-diagrams': ['assets', 'digital_twin'],

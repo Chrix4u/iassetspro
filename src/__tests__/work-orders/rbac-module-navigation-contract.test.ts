@@ -28,6 +28,32 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(mobile).toContain("label: 'Preventive Maintenance (PM)'");
   });
 
+  it('keeps mobile landing tiles aligned with exact page permission and module activation', () => {
+    expect(mobile).toContain("page: 'maintenance-requests'");
+    expect(mobile).toContain("permOr: ['maintenance_requests.view', 'maintenance_requests.view_own']");
+    expect(mobile).toContain("page: 'repairs-material-requests', label: 'Repair Resources'");
+    expect(mobile).toContain("'repair_material_requests.view_own'");
+    expect(mobile).toContain("page: 'reports-maintenance', label: 'Reports'");
+    expect(mobile).toContain("moduleCode: 'reports'");
+    expect(mobile).toContain("page: 'safety-incidents', label: 'Safety'");
+    expect(mobile).toContain("moduleCode: 'safety'");
+    expect(mobile).toContain("page: 'production-orders', label: 'Production'");
+    expect(mobile).toContain("moduleCode: 'production'");
+    expect(mobile).toContain("page: 'quality-inspections', label: 'Quality'");
+    expect(mobile).toContain("moduleCode: 'quality'");
+    expect(mobile).toContain("page: 'iot-devices', label: 'IoT'");
+    expect(mobile).toContain("perm: 'iot_devices.view'");
+    expect(mobile).toContain("moduleCode: 'iot_sensors'");
+    expect(mobile).toContain("page: 'analytics-kpi', label: 'Analytics'");
+    expect(mobile).toContain("moduleCode: 'analytics'");
+    expect(mobile).toContain("adminOnly: true");
+  });
+
+  it('treats Notifications as an optional module on navigation and direct-page guards', () => {
+    expect(sidebar).toContain("page: 'notifications', moduleCode: 'notifications'");
+    expect(app).toContain("'notifications': 'notifications'");
+  });
+
   it('fails closed when optional module state cannot be verified', () => {
     expect(navigationStore).toContain("new Set(['core'])");
     expect(navigationStore).toContain('m.isActive && m.isEnabled');

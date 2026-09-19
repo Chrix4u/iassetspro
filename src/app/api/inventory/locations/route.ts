@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, ['inventory_locations.view', 'inventory_locations.create', 'inventory_locations.update'])) {
+      return NextResponse.json({ success: false, error: 'Insufficient inventory location permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

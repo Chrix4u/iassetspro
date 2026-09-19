@@ -98,6 +98,7 @@ export async function GET(request: NextRequest) {
             workOrder: {
               select: {
                 id: true, woNumber: true, title: true, status: true,
+                assignedSupervisorId: true,
                 assignedTo: true, teamLeaderId: true,
                 teamMembers: { select: { userId: true, role: true } },
               },

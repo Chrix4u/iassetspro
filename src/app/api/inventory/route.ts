@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, getPlantFilterWhere } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
@@ -8,6 +8,22 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!isAdmin(session) && !hasAnyPermission(session, [
+      'inventory.view_all',
+      'inventory.manage',
+      'inventory.stock_in',
+      'inventory.stock_out',
+      'inventory_locations.view',
+      'stock_transactions.view',
+      'inventory_adjustments.view',
+      'inventory_transfers.view',
+      'material_requisitions.view',
+      'vendors.view',
+      'purchase_orders.view',
+    ])) {
+      return NextResponse.json({ success: false, error: 'Insufficient inventory permissions' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

@@ -49,8 +49,10 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
+  moduleCode?: string;
 }
 
 interface MoreItem {
@@ -61,6 +63,7 @@ interface MoreItem {
   permOr?: string[];
   activePages?: PageName[];
   moduleCode?: string;
+  adminOnly?: boolean;
 }
 
 // ============================================================================
@@ -78,9 +81,10 @@ const BOTTOM_TABS: NavItem[] = [
     page: 'maintenance-requests',
     label: 'Requests',
     icon: Wrench,
-    perm: 'work_orders.view',
-    permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'],
+    perm: 'maintenance_requests.view',
+    permOr: ['maintenance_requests.view', 'maintenance_requests.view_own'],
     activePages: ['maintenance-requests', 'mr-detail', 'create-mr'],
+    moduleCode: 'maintenance_requests',
   },
   {
     page: 'maintenance-work-orders',
@@ -89,6 +93,7 @@ const BOTTOM_TABS: NavItem[] = [
     perm: 'work_orders.view',
     permOr: ['work_orders.view', 'work_orders.view_own'],
     activePages: ['maintenance-work-orders', 'wo-detail'],
+    moduleCode: 'work_orders',
   },
   {
     page: 'assets-machines',
@@ -96,6 +101,7 @@ const BOTTOM_TABS: NavItem[] = [
     icon: Building2,
     perm: 'assets.view',
     activePages: ['assets-machines', 'assets-hierarchy', 'assets-bom', 'assets-condition-monitoring', 'assets-digital-twin', 'assets-health', 'assets', 'asset-detail'],
+    moduleCode: 'assets',
   },
 ];
 
@@ -105,27 +111,27 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
+  { page: 'repairs-material-requests', label: 'Repair Resources', icon: ArrowRightLeft, perm: 'repair_material_requests.view', permOr: ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
-  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
+  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out', 'inventory_locations.view', 'stock_transactions.view', 'inventory_adjustments.view', 'inventory_transfers.view', 'material_requisitions.view', 'vendors.view', 'purchase_orders.view'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'Preventive Maintenance (PM)', icon: Clock, perm: 'pm_schedules.view', permOr: ['pm_schedules.view', 'pm_templates.view', 'pm_triggers.view', 'calibration.view'], activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar', 'maintenance-calibration'], moduleCode: 'pm_schedules' },
   // Reports
-  { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
+  { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'], moduleCode: 'reports' },
   // Safety
-  { page: 'safety-incidents', label: 'Safety', icon: HardHat, perm: 'safety.view', activePages: ['safety-incidents', 'safety-inspections', 'safety-training', 'safety-equipment', 'safety-permits'] },
+  { page: 'safety-incidents', label: 'Safety', icon: HardHat, perm: 'safety.view', activePages: ['safety-incidents', 'safety-inspections', 'safety-training', 'safety-equipment', 'safety-permits'], moduleCode: 'safety' },
   // Production
-  { page: 'production-orders', label: 'Production', icon: Factory, perm: 'production.view', activePages: ['production-work-centers', 'production-resource-planning', 'production-scheduling', 'production-capacity', 'production-efficiency', 'production-bottlenecks', 'production-orders', 'production-batches'] },
+  { page: 'production-orders', label: 'Production', icon: Factory, perm: 'production.view', activePages: ['production-work-centers', 'production-resource-planning', 'production-scheduling', 'production-capacity', 'production-efficiency', 'production-bottlenecks', 'production-orders', 'production-batches'], moduleCode: 'production' },
   // Quality
-  { page: 'quality-inspections', label: 'Quality', icon: ShieldCheck, perm: 'quality.view', activePages: ['quality-inspections', 'quality-ncr', 'quality-audits', 'quality-control-plans', 'quality-spc', 'quality-capa'] },
+  { page: 'quality-inspections', label: 'Quality', icon: ShieldCheck, perm: 'quality.view', activePages: ['quality-inspections', 'quality-ncr', 'quality-audits', 'quality-control-plans', 'quality-spc', 'quality-capa'], moduleCode: 'quality' },
   // IoT
-  { page: 'iot-devices', label: 'IoT', icon: Radio, perm: 'iot.view', activePages: ['iot-devices', 'iot-monitoring', 'iot-rules'] },
+  { page: 'iot-devices', label: 'IoT', icon: Radio, perm: 'iot_devices.view', activePages: ['iot-devices', 'iot-monitoring', 'iot-rules'], moduleCode: 'iot_sensors' },
   // Analytics
-  { page: 'analytics-kpi', label: 'Analytics', icon: BarChart3, perm: 'analytics.view', activePages: ['analytics-kpi', 'analytics-oee', 'analytics-downtime', 'analytics-energy'] },
+  { page: 'analytics-kpi', label: 'Analytics', icon: BarChart3, perm: 'analytics.view', activePages: ['analytics-kpi', 'analytics-oee', 'analytics-downtime', 'analytics-energy'], moduleCode: 'analytics' },
   // Operations
-  { page: 'operations-checklists', label: 'Operations', icon: GraduationCap, perm: 'operations.view', activePages: ['operations-meter-readings', 'operations-training', 'operations-surveys', 'operations-time-logs', 'operations-shift-handover', 'operations-checklists'] },
+  { page: 'operations-checklists', label: 'Operations', icon: GraduationCap, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['operations-meter-readings', 'operations-training', 'operations-surveys', 'operations-time-logs', 'operations-shift-handover', 'operations-checklists'], moduleCode: 'work_orders' },
   // Settings
-  { page: 'settings-general', label: 'Settings', icon: Settings, perm: 'system_settings.view', activePages: ['settings-general', 'settings-users', 'settings-roles', 'settings-modules', 'settings-company', 'settings-plants', 'settings-departments', 'settings-notifications', 'settings-integrations', 'settings-backup', 'settings-audit', 'settings-security', 'settings-health', 'settings-preferences'] },
+  { page: 'settings-general', label: 'Settings', icon: Settings, perm: 'system_settings.view', activePages: ['settings-general', 'settings-users', 'settings-roles', 'settings-modules', 'settings-company', 'settings-plants', 'settings-departments', 'settings-notifications', 'settings-integrations', 'settings-backup', 'settings-audit', 'settings-security', 'settings-health', 'settings-preferences'], moduleCode: 'core', adminOnly: true },
 ];
 
 // ============================================================================
@@ -148,7 +154,7 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleNavigate = useCallback((page: PageName) => {
@@ -163,27 +169,33 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   // Filter visible bottom tabs by permission and module
   const visibleTabs = useMemo(() => {
     return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
+      const permOk = isAdmin() || (tab.permOr
         ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
+        : hasPermission(tab.perm));
       if (!permOk) return false;
+      if (tab.moduleCode && tab.moduleCode !== 'core') {
+        if (!enabledModules) return false;
+        if (!enabledModules.has(tab.moduleCode.toLowerCase())) return false;
+      }
       return true;
     });
-  }, [hasPermission]);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Filter visible more items by permission
   const visibleMoreItems = useMemo(() => {
     return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
+      if (item.adminOnly && !isAdmin()) return false;
+      const permOk = isAdmin() || (item.permOr
         ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
+        : hasPermission(item.perm));
       if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
+      if (item.moduleCode && item.moduleCode !== 'core') {
+        if (!enabledModules) return false;
         return enabledModules.has(item.moduleCode.toLowerCase());
       }
       return true;
     });
-  }, [hasPermission, enabledModules]);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

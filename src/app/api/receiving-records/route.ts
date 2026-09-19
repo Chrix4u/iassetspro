@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, ['purchase_orders.view', 'purchase_orders.receive', 'purchase_orders.manage'])) {
+      return NextResponse.json({ success: false, error: 'Insufficient receiving permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

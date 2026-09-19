@@ -26,6 +26,17 @@ export interface SearchOptions {
   limit?: number;
   offset?: number;
   plantId?: string;
+  /** Explicit authenticated plant set. undefined means system-wide; [] means no plant access. */
+  plantIds?: string[];
+  /** Restrict work-order search to the execution user's own assignments/team membership. */
+  workOrderOwnUserId?: string;
+  /** Restrict maintenance requests to requests created by this user. */
+  maintenanceRequestRequesterId?: string;
+  /** Technician scope: own requests or requests linked to a WO assigned to the technician. */
+  maintenanceRequestTechnicianId?: string;
+  /** Maintenance-supervisor scope, matching the maintenance request list API. */
+  maintenanceSupervisorId?: string;
+  maintenanceSupervisorDepartmentIds?: string[];
   fuzzy?: boolean;
 }
 
@@ -58,11 +69,22 @@ export class EnterpriseSearchService {
     const searchPromises = searchTypes.map(async (type) => {
       try {
         switch (type) {
-          case 'assets': return this.searchAssets(terms, plantId, limit);
-          case 'work_orders': return this.searchWorkOrders(terms, plantId, limit);
-          case 'maintenance_requests': return this.searchMaintenanceRequests(terms, plantId, limit);
+          case 'assets': return this.searchAssets(terms, options.plantIds, plantId, limit);
+          case 'work_orders': return this.searchWorkOrders(terms, options.plantIds, plantId, limit, options.workOrderOwnUserId);
+          case 'maintenance_requests': return this.searchMaintenanceRequests(
+            terms,
+            options.plantIds,
+            plantId,
+            limit,
+            {
+              requesterId: options.maintenanceRequestRequesterId,
+              technicianId: options.maintenanceRequestTechnicianId,
+              supervisorId: options.maintenanceSupervisorId,
+              supervisorDepartmentIds: options.maintenanceSupervisorDepartmentIds,
+            },
+          );
           case 'components': return this.searchComponents(terms, limit);
-          case 'inventory': return this.searchInventory(terms, limit);
+          case 'inventory': return this.searchInventory(terms, options.plantIds, plantId, limit);
           case 'documents': return this.searchDocuments(terms, limit);
           default: return [];
         }
@@ -95,10 +117,16 @@ export class EnterpriseSearchService {
   /**
    * Search assets
    */
-  private static async searchAssets(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
+  private static async searchAssets(
+    terms: string[],
+    plantIds?: string[],
+    plantId?: string,
+    limit = 10,
+  ): Promise<SearchResult[]> {
     const where: Record<string, unknown> = {};
 
     if (plantId) where.plantId = plantId;
+    else if (plantIds) where.plantId = { in: plantIds };
 
     if (terms.length > 0) {
       where.OR = terms.map(term => [
@@ -140,18 +168,36 @@ export class EnterpriseSearchService {
   /**
    * Search work orders
    */
-  private static async searchWorkOrders(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
-    const where: Record<string, unknown> = {};
-
-    if (plantId) where.plantId = plantId;
-
+  private static async searchWorkOrders(
+    terms: string[],
+    plantIds?: string[],
+    plantId?: string,
+    limit = 10,
+    ownUserId?: string,
+  ): Promise<SearchResult[]> {
+    const and: Record<string, unknown>[] = [];
     if (terms.length > 0) {
-      where.OR = terms.map(term => [
-        { title: { contains: term } },
-        { description: { contains: term } },
-        { woNumber: { contains: term } },
-      ]).flat();
+      and.push({
+        OR: terms.map(term => [
+          { title: { contains: term } },
+          { description: { contains: term } },
+          { woNumber: { contains: term } },
+        ]).flat(),
+      });
     }
+    if (ownUserId) {
+      and.push({
+        OR: [
+          { assignedTo: ownUserId },
+          { teamMembers: { some: { userId: ownUserId } } },
+        ],
+      });
+    }
+
+    const where: Record<string, unknown> = {};
+    if (plantId) where.plantId = plantId;
+    else if (plantIds) where.plantId = { in: plantIds };
+    if (and.length) where.AND = and;
 
     try {
       const wos = await db.workOrder.findMany({
@@ -179,18 +225,50 @@ export class EnterpriseSearchService {
   /**
    * Search maintenance requests
    */
-  private static async searchMaintenanceRequests(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
-    const where: Record<string, unknown> = {};
-
-    if (plantId) where.plantId = plantId;
-
+  private static async searchMaintenanceRequests(
+    terms: string[],
+    plantIds?: string[],
+    plantId?: string,
+    limit = 10,
+    access: {
+      requesterId?: string;
+      technicianId?: string;
+      supervisorId?: string;
+      supervisorDepartmentIds?: string[];
+    } = {},
+  ): Promise<SearchResult[]> {
+    const and: Record<string, unknown>[] = [];
     if (terms.length > 0) {
-      where.OR = terms.map(term => [
-        { title: { contains: term } },
-        { description: { contains: term } },
-        { requestNumber: { contains: term } },
-      ]).flat();
+      and.push({
+        OR: terms.map(term => [
+          { title: { contains: term } },
+          { description: { contains: term } },
+          { requestNumber: { contains: term } },
+        ]).flat(),
+      });
     }
+
+    if (access.technicianId) {
+      and.push({
+        OR: [
+          { requestedBy: access.technicianId },
+          { workOrder: { assignedTo: access.technicianId } },
+        ],
+      });
+    } else if (access.requesterId) {
+      and.push({ requestedBy: access.requesterId });
+    } else if (access.supervisorId) {
+      const scope: Record<string, unknown>[] = [{ supervisorId: access.supervisorId }];
+      if (access.supervisorDepartmentIds?.length) {
+        scope.push({ departmentId: { in: access.supervisorDepartmentIds } });
+      }
+      and.push({ OR: scope });
+    }
+
+    const where: Record<string, unknown> = {};
+    if (plantId) where.plantId = plantId;
+    else if (plantIds) where.plantId = { in: plantIds };
+    if (and.length) where.AND = and;
 
     try {
       const mrs = await db.maintenanceRequest.findMany({
@@ -243,17 +321,27 @@ export class EnterpriseSearchService {
   /**
    * Search inventory items
    */
-  private static async searchInventory(terms: string[], limit = 10): Promise<SearchResult[]> {
+  private static async searchInventory(
+    terms: string[],
+    plantIds?: string[],
+    plantId?: string,
+    limit = 10,
+  ): Promise<SearchResult[]> {
     try {
+      const where: Record<string, unknown> = {};
+      if (plantId) where.plantId = plantId;
+      else if (plantIds) where.plantId = { in: plantIds };
+      if (terms.length > 0) {
+        where.OR = terms.map(term => [
+          { name: { contains: term } },
+          { itemCode: { contains: term } },
+          { description: { contains: term } },
+          { category: { contains: term } },
+        ]).flat();
+      }
+
       const items = await db.inventoryItem.findMany({
-        where: terms.length > 0 ? {
-          OR: terms.map(term => [
-            { name: { contains: term } },
-            { itemCode: { contains: term } },
-            { description: { contains: term } },
-            { category: { contains: term } },
-          ]).flat(),
-        } : undefined,
+        where: Object.keys(where).length > 0 ? where : undefined,
         take: limit,
         orderBy: { updatedAt: 'desc' },
         select: { id: true, name: true, description: true, itemCode: true, category: true, currentStock: true, unitOfMeasure: true },

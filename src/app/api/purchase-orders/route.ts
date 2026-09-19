@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 async function generatePONumber(): Promise<string> {
   const now = new Date();
@@ -23,6 +23,12 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, [
+      'purchase_orders.view', 'purchase_orders.create', 'purchase_orders.update',
+      'purchase_orders.approve', 'purchase_orders.receive', 'purchase_orders.manage',
+    ])) {
+      return NextResponse.json({ success: false, error: 'Insufficient purchase order permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory.create') && !isAdmin(session)) {
+    if (!hasPermission(session, 'purchase_orders.create') && !hasPermission(session, 'purchase_orders.manage') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

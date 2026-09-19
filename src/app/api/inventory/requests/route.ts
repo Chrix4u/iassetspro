@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 async function generateReqNumber(): Promise<string> {
   const now = new Date();
@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, ['material_requisitions.view', 'material_requisitions.create', 'material_requisitions.update', 'material_requisitions.approve', 'material_requisitions.issue', 'material_requisitions.reject'])) {
+      return NextResponse.json({ success: false, error: 'Insufficient material requisition permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

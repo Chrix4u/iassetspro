@@ -142,6 +142,71 @@ async function main() {
   });
   const plants: Record<string, string> = { 'PLANT-A': plantA.id, 'PLANT-B': plantB.id };
 
+  // The production UI now fails closed for optional modules until licensing is
+  // explicitly confirmed. Seed only the modules exercised by Repairs UAT.
+  // PM is intentionally NOT enabled here so Repairs tests also prove that PM
+  // can remain disabled without breaking corrective/repair maintenance.
+  const uatModules = [
+    ['core', 'Core Platform', true],
+    ['assets', 'Asset Management', false],
+    ['maintenance_requests', 'Repair Requests', false],
+    ['work_orders', 'Repairs Work Orders', false],
+    ['repairs', 'Repair Resources', false],
+    ['inventory', 'Inventory', false],
+    ['tools', 'Tool Management', false],
+    ['reports', 'Reports', false],
+  ] as const;
+
+  for (const [code, name, isCore] of uatModules) {
+    const systemModule = await db.systemModule.upsert({
+      where: { code },
+      update: {
+        name,
+        isCore,
+        isSystemLicensed: true,
+      },
+      create: {
+        code,
+        name,
+        isCore,
+        isSystemLicensed: true,
+      },
+    });
+
+    const defaultCompanyModule = await db.companyModule.findFirst({
+      where: { systemModuleId: systemModule.id, companyId: '__default__' },
+    });
+    const legacyCompanyModule = defaultCompanyModule
+      ? null
+      : await db.companyModule.findFirst({
+          where: { systemModuleId: systemModule.id, companyId: null },
+        });
+    const existingCompanyModule = defaultCompanyModule ?? legacyCompanyModule;
+
+    if (existingCompanyModule) {
+      await db.companyModule.update({
+        where: { id: existingCompanyModule.id },
+        data: {
+          isActive: true,
+          isEnabled: true,
+          licensedAt: existingCompanyModule.licensedAt ?? new Date(),
+          activatedAt: existingCompanyModule.activatedAt ?? new Date(),
+        },
+      });
+    } else {
+      await db.companyModule.create({
+        data: {
+          systemModuleId: systemModule.id,
+          companyId: '__default__',
+          isActive: true,
+          isEnabled: true,
+          licensedAt: new Date(),
+          activatedAt: new Date(),
+        },
+      });
+    }
+  }
+
   const tradeMech = await db.trade.upsert({
     where: { name: 'Mechanical' }, update: {},
     create: { name: 'Mechanical', code: 'MECH', category: 'mechanical', description: 'Mechanical maintenance trade' },

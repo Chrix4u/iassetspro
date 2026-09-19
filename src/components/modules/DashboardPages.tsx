@@ -136,9 +136,8 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { navigate } = useNavigationStore();
-
-  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+  const { navigate, enabledModules: storeEnabledModules, fetchModules } = useNavigationStore();
+  const enabledModules = storeEnabledModules ?? new Set<string>(['core']);
 
   const fetchStats = useCallback(() => {
     let active = true;
@@ -165,23 +164,11 @@ export function DashboardPage() {
     return cleanup;
   }, [fetchStats]);
 
-  // Fetch enabled module codes for cross-module filtering
+  // Reuse the central licensed/enabled module state. Optional modules fail
+  // closed while this state is loading or unavailable.
   useEffect(() => {
-    let active = true;
-    api.get('/api/modules').then(res => {
-      if (!active) return;
-      if (res.success && res.data) {
-        const enabled = new Set<string>();
-        (res.data || []).forEach((m: any) => {
-          if (m.isCore || m.isEnabled) enabled.add(m.code.toLowerCase());
-        });
-        setEnabledModules(enabled);
-      }
-    }).catch(() => {
-      // On error, leave enabledModules empty (show all widgets)
-    });
-    return () => { active = false; };
-  }, []);
+    fetchModules();
+  }, [fetchModules]);
 
   // Generate day labels for weekly trend chart (must be before early return for hooks rule)
   const weekLabels = useMemo(() => {
@@ -259,11 +246,11 @@ export function DashboardPage() {
   ].filter(d => d.count > 0);
 
   const woTypeData = [
-    { type: 'preventive', count: stats?.preventiveWO || 0 },
+    ...(pmEnabled ? [{ type: 'preventive', count: stats?.preventiveWO || 0 }] : []),
     { type: 'corrective', count: stats?.correctiveWO || 0 },
     { type: 'emergency', count: stats?.emergencyWO || 0 },
     { type: 'inspection', count: stats?.inspectionWO || 0 },
-    { type: 'predictive', count: stats?.predictiveWO || 0 },
+    ...(enabledModules.has('predictive') ? [{ type: 'predictive', count: stats?.predictiveWO || 0 }] : []),
   ].filter(d => d.count > 0);
 
   const mrStatusData = [
@@ -359,7 +346,8 @@ export function DashboardPage() {
 
   const visibleQuickActions = allQuickActions
     .filter(a => hasPermission(a.permission))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)))
+    .filter(a => !['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'].includes(a.page) || enabledModules.has(MODULE_CODES.PM_SCHEDULES));
 
   // Cross-module overview data
   const moduleMap: Record<string, string> = {
@@ -381,19 +369,18 @@ export function DashboardPage() {
   ];
 
   // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = enabledModules.size > 0
-    ? crossModuleData.filter(mod => {
-        const code = moduleMap[mod.label];
-        return !code || enabledModules.has(code.toLowerCase());
-      })
-    : crossModuleData;
+  const filteredCrossModuleData = crossModuleData.filter(mod => {
+    const code = moduleMap[mod.label];
+    return !code || enabledModules.has(code.toLowerCase());
+  });
 
-  // Module-aware visibility for enhanced KPIs
-  const analyticsEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  // Module-aware visibility is explicit: disabled/unlicensed modules never
+  // contribute dashboard cards, shortcuts, or drill-down links.
+  const analyticsEnabled = enabledModules.has(MODULE_CODES.ANALYTICS);
+  const safetyEnabled = enabledModules.has(MODULE_CODES.SAFETY);
+  const productionEnabled = enabledModules.has(MODULE_CODES.PRODUCTION);
+  const qualityEnabled = enabledModules.has(MODULE_CODES.QUALITY);
+  const pmEnabled = enabledModules.has(MODULE_CODES.PM_SCHEDULES);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -515,16 +502,18 @@ export function DashboardPage() {
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sky-400/50 shrink-0" />
             </button>
-            <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
-              <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
-                <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
-                <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
-            </button>
+            {pmEnabled && (
+              <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+                <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
+                  <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
+                  <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
+              </button>
+            )}
             {plannerKPIs.pendingTeamRequests > 0 && (
               <button
                 onClick={() => document.getElementById('pending-team-requests-section')?.scrollIntoView({ behavior: 'smooth' })}
@@ -698,7 +687,7 @@ export function DashboardPage() {
               showRing
               ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
             />,
-            <KPICard
+            ...(pmEnabled ? [<KPICard
               key="planned-ratio"
               label="Planned Ratio"
               value={`${maintenanceKPIs.plannedRatio}%`}
@@ -711,7 +700,7 @@ export function DashboardPage() {
               icon={Target}
               showRing
               ringValue={maintenanceKPIs.plannedRatio}
-            />,
+            />] : []),
           );
         }
         enhancedCards.push(

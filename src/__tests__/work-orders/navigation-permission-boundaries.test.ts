@@ -23,6 +23,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
   const singleTechUat = read('e2e/repairs/scenario-a-single-tech.spec.ts');
+  const repairsModuleMigration = read('prisma/migrations/20260919215000_register_repairs_module/migration.sql');
 
   it('separates Repairs Maintenance from PM Maintenance', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -108,6 +109,10 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(uatSeed).toContain("isEnabled: true");
     expect(uatSeed).toContain("isActive: true");
     expect(uatSeed).not.toContain("where: { code: 'pm_schedules' }");
+    expect(repairsModuleMigration).toContain("'repairs'");
+    expect(repairsModuleMigration).toContain('INSERT INTO `system_modules`');
+    expect(repairsModuleMigration).toContain('INSERT INTO `company_modules`');
+    expect(repairsModuleMigration).not.toContain("'pm_schedules'");
   });
 
   it('matches resource approval buttons to the accountable supervisor rule', () => {

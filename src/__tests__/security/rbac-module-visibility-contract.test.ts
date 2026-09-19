@@ -43,11 +43,16 @@ describe('RBAC and licensed-module visibility contract', () => {
     expect(sidebar).toContain('permissionAllowed(child.perm, child.permOr)');
     expect(sidebar).toContain("permOr: ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own']");
     expect(sidebar).toContain("perm: 'pm_templates.view'");
+    expect(sidebar).toContain("page: 'inventory-locations', label: 'Locations', icon: MapPin, perm: 'inventory_locations.view'");
+    expect(sidebar).toContain("page: 'reports-inventory', label: 'Inventory Reports', icon: Package, perm: 'reports.view', moduleCode: 'inventory'");
   });
 
   it('blocks disabled modules even when navigating directly to a page', () => {
-    expect(app).toContain("if (pageName.startsWith('pm-')) return 'pm_schedules'");
-    expect(app).toContain("if (pageName.startsWith('inventory-') || pageName === 'inventory') return 'inventory'");
+    expect(app).toContain("if (pageName.startsWith('pm-')) return ['pm_schedules']");
+    expect(app).toContain("if (pageName.startsWith('inventory-') || pageName === 'inventory') return ['inventory']");
+    expect(app).toContain("if (pageName === 'reports-inventory') return ['reports', 'inventory']");
+    expect(app).toContain("if (pageName === 'reports-production') return ['reports', 'production']");
+    expect(app).toContain("nonCoreRequiredModules.some(code => !enabledModules.has(code))");
     expect(app).toContain("if (moduleDisabled)");
     expect(app).toContain("if (modulesPending || moduleDisabled) return <LoadingSkeleton />");
   });

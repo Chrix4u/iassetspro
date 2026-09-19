@@ -71,8 +71,10 @@ describe('permission and licensed-module navigation contract', () => {
     expect(catalog).not.toContain('unitCost: true');
 
     const technicianBundleStart = seed.indexOf('maintenance_technician: [');
+    const technicianBundleEnd = seed.indexOf('maintenance_planner: [', technicianBundleStart);
     expect(technicianBundleStart).toBeGreaterThan(-1);
-    const technicianBundle = seed.slice(technicianBundleStart, technicianBundleStart + 2600);
+    expect(technicianBundleEnd).toBeGreaterThan(technicianBundleStart);
+    const technicianBundle = seed.slice(technicianBundleStart, technicianBundleEnd);
     expect(technicianBundle).not.toContain("'inventory.view'");
   });
 

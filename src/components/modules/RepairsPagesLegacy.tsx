@@ -370,6 +370,39 @@ function canManageToolRequestCustody(request: any, user: any): boolean {
   return Boolean(userId) && request.requestedById === userId;
 }
 
+function canSubmitRepairCompletion(completion: any, user: any): boolean {
+  if (!user || !completion?.workOrder) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+
+  const userId = authUser?.id || user?.id;
+  if (!userId) return false;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  if (roles.includes('maintenance_manager')) return true;
+
+  const wo = completion.workOrder;
+  const additionalTeamMembers = (wo.teamMembers || []).filter((member: any) => member.userId !== wo.assignedTo);
+  if (additionalTeamMembers.length > 0) {
+    return wo.teamLeaderId === userId
+      || (wo.teamMembers || []).some((member: any) => member.userId === userId && member.role === 'team_leader');
+  }
+  return wo.assignedTo === userId;
+}
+
+function canCloseRepairCompletion(completion: any, user: any): boolean {
+  if (!user || !completion?.workOrder) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+
+  const userId = authUser?.id || user?.id;
+  const roles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  if (roles.includes('maintenance_manager')) return true;
+
+  return roles.includes('maintenance_planner')
+    && Boolean(completion.workOrder.plannerId)
+    && completion.workOrder.plannerId === userId;
+}
+
 function canViewAllRepairData(user: any, resource: 'material' | 'tool'): boolean {
   if (!user) return false;
   const { hasPermission, isAdmin } = useAuthStore.getState();
@@ -3619,16 +3652,16 @@ export function RepairCompletionPage() {
               {/* Actions */}
               <Separator />
               <div className="flex flex-wrap gap-3">
-                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && (hasPermission('work_orders.update') || isAdmin()) && (
+                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && canSubmitRepairCompletion(completion, user) && (
                   <Button onClick={() => handleSubmit('submit')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> {completion.supervisorStatus === 'rework_requested' ? 'Resubmit Completion' : 'Submit Completion'}</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canApproveResourceRequestAsSupervisor(completion, user) && (
                   <Button variant="destructive" onClick={() => { setReworkDialogOpen(true); }} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && canApproveResourceRequestAsSupervisor(completion, user) && (
                   <Button variant="outline" className="border-green-600 text-green-600" onClick={() => handleSubmit('supervisor_approve')} disabled={submitting}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</Button>
                 )}
-                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && (hasPermission('work_orders.update') || isAdmin()) && (                  <>
+                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && canCloseRepairCompletion(completion, user) && (                  <>
                     <div><Label>Closure Notes</Label><Textarea value={form.closureNotes} onChange={(e) => setForm({ ...form, closureNotes: e.target.value })} /></div>
                     <Button className="bg-gray-800" onClick={() => handleSubmit('planner_close')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> Planner Close WO</Button>
                   </>

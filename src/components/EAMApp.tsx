@@ -479,32 +479,46 @@ function PageSwitcher({ page }: { page: string }) {
     // Legacy fallbacks
     'assets': ['assets.view'],
     'asset-detail': ['assets.view'],
-    'inventory': ['inventory.view'],
+    'inventory': ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust'],
     'analytics': ['analytics.view'],
   };
 
-  const requiredModuleForPage = (pageName: string): string | null => {
-    if (pageName === 'dashboard' || pageName === 'chat' || pageName === 'notifications') return 'core';
-    if (pageName.startsWith('pm-')) return 'pm_schedules';
-    if (pageName.startsWith('repairs-') || pageName === 'technician-timesheet') return 'repairs';
-    if (pageName.startsWith('inventory-') || pageName === 'inventory') return 'inventory';
-    if (pageName.startsWith('production-')) return 'production';
-    if (pageName.startsWith('quality-')) return 'quality';
-    if (pageName.startsWith('safety-')) return 'safety';
-    if (pageName.startsWith('iot-')) return 'iot_sensors';
-    if (pageName.startsWith('assets-') || pageName === 'assets' || pageName === 'asset-detail' || pageName === 'asset-categories') return 'assets';
-    if (pageName === 'maintenance-work-orders' || pageName === 'wo-detail' || pageName === 'maintenance-dashboard' || pageName === 'maintenance-analytics') return 'work_orders';
-    if (pageName === 'maintenance-requests' || pageName === 'mr-detail' || pageName === 'create-mr') return 'maintenance_requests';
-    if (pageName === 'maintenance-calibration') return 'calibration';
-    if (pageName === 'maintenance-risk-assessment') return 'risk_assessment';
-    if (pageName === 'maintenance-tools') return 'tools';
-    if (pageName.startsWith('reports-') || pageName === 'wo-reports' || pageName === 'enterprise-reports') return 'reports';
-    if (pageName.startsWith('analytics-') || pageName === 'analytics') return 'analytics';
-    return null;
+  const requiredModulesForPage = (pageName: string): string[] => {
+    if (pageName === 'dashboard' || pageName === 'chat' || pageName === 'notifications') return ['core'];
+    if (pageName.startsWith('pm-')) return ['pm_schedules'];
+    if (pageName.startsWith('repairs-') || pageName === 'technician-timesheet') return ['repairs'];
+    if (pageName.startsWith('inventory-') || pageName === 'inventory') return ['inventory'];
+    if (pageName.startsWith('production-')) return ['production'];
+    if (pageName.startsWith('quality-')) return [pageName === 'quality-capa' ? 'capa' : 'quality'];
+    if (pageName.startsWith('safety-')) return ['safety'];
+    if (pageName.startsWith('iot-')) return ['iot_sensors'];
+    if (pageName === 'assets-bom') return ['bom'];
+    if (pageName === 'assets-digital-twin' || pageName === 'digital-twin-viewer' || pageName === 'system-diagrams') return ['digital_twin'];
+    if (pageName.startsWith('assets-') || pageName === 'assets' || pageName === 'asset-detail' || pageName === 'asset-categories') return ['assets'];
+    if (pageName === 'maintenance-work-orders' || pageName === 'wo-detail' || pageName === 'maintenance-dashboard' || pageName === 'maintenance-analytics') return ['work_orders'];
+    if (pageName === 'maintenance-requests' || pageName === 'mr-detail' || pageName === 'create-mr') return ['maintenance_requests'];
+    if (pageName === 'maintenance-calibration') return ['calibration'];
+    if (pageName === 'maintenance-risk-assessment') return ['risk_assessment'];
+    if (pageName === 'maintenance-tools') return ['tools'];
+    if (pageName === 'analytics-kpi') return ['kpi_dashboard'];
+    if (pageName === 'analytics-oee') return ['oee'];
+    if (pageName === 'analytics-downtime') return ['downtime'];
+    if (pageName === 'analytics-energy') return ['energy'];
+    if (pageName === 'analytics') return ['analytics'];
+    if (pageName === 'reports-asset' || pageName === 'machine-availability' || pageName === 'equipment-history') return ['reports', 'assets'];
+    if (pageName === 'failure-analysis' || pageName === 'wo-reports' || pageName === 'reports-maintenance') return ['reports', 'work_orders'];
+    if (pageName === 'repairs-reports') return ['reports', 'repairs'];
+    if (pageName === 'reports-inventory') return ['reports', 'inventory'];
+    if (pageName === 'reports-production') return ['reports', 'production'];
+    if (pageName === 'reports-quality') return ['reports', 'quality'];
+    if (pageName === 'reports-safety') return ['reports', 'safety'];
+    if (pageName.startsWith('reports-') || pageName === 'enterprise-reports') return ['reports'];
+    return [];
   };
-  const requiredModule = requiredModuleForPage(page);
-  const modulesPending = Boolean(requiredModule && requiredModule !== 'core' && enabledModules === null);
-  const moduleDisabled = Boolean(requiredModule && requiredModule !== 'core' && enabledModules !== null && !enabledModules.has(requiredModule));
+  const requiredModules = requiredModulesForPage(page);
+  const nonCoreRequiredModules = requiredModules.filter(code => code !== 'core');
+  const modulesPending = nonCoreRequiredModules.length > 0 && enabledModules === null;
+  const moduleDisabled = enabledModules !== null && nonCoreRequiredModules.some(code => !enabledModules.has(code));
 
   // Permission + license/module guard: check before loading the page.
   useEffect(() => {

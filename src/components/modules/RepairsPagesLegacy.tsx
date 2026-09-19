@@ -969,11 +969,16 @@ export function RepairMaterialRequestsPage() {
           <div className="space-y-1.5 mb-4">
             <h2 className="text-lg font-semibold leading-none tracking-tight">Verify Return & Reconcile</h2>
             <p className="text-sm text-muted-foreground">Verify the technician declaration and physical return for {reconcileTarget?.itemName} — Issued: {reconcileTarget?.quantityIssued} {reconcileTarget?.unit}</p>
-            {reconcileTarget?.usageDeclaredAt && (
+            {reconcileTarget?.usageDeclaredAt ? (
               <div className="mt-3 rounded-lg border bg-sky-50/60 p-3 text-xs text-sky-900">
                 <div className="font-semibold mb-1">Technician declaration</div>
                 <div>Used: <strong>{reconcileTarget.declaredConsumedQty ?? 0}</strong> · Wasted/Damaged: <strong>{reconcileTarget.declaredWastedQty ?? 0}</strong> · To Return: <strong>{reconcileTarget.declaredReturnQty ?? 0}</strong></div>
                 {reconcileTarget.usageDeclarationNotes && <div className="mt-1 text-sky-800">{reconcileTarget.usageDeclarationNotes}</div>}
+                <div className="mt-1 text-sky-700">If store verification changes these figures, enter an explanatory note before confirming.</div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                No technician usage declaration has been submitted. A documented reconciliation note is required for this exception.
               </div>
             )}
           </div>
@@ -3005,7 +3010,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       const qtyConsumed = Number(item.declaredConsumedQty || 0);
       const qtyWasted = Number(item.declaredWastedQty || 0);
       const qtyReturn = item.type === 'material'
-        ? Number(item.declaredReturnQty ?? Math.max(0, item.issuedQty - qtyConsumed - qtyWasted))
+        ? Number(item.declaredReturnQty ?? 0)
         : item.remainingQty;
       return {
         ...item,

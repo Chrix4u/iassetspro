@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessFullInventory } from '@/lib/inventory-access';
 
 export async function GET(
   request: NextRequest,
@@ -10,6 +11,10 @@ export async function GET(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!canAccessFullInventory(session)) {
+      return NextResponse.json({ success: false, error: 'Full inventory access is restricted to authorized inventory/store users' }, { status: 403 });
     }
 
     const { id } = await params;

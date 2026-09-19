@@ -11,6 +11,9 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+    if (!hasPermission(session, 'pm_schedules.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { id } = await params;
 
@@ -49,7 +52,7 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'pm_schedules.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -123,7 +126,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.delete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'pm_schedules.delete') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

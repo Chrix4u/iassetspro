@@ -59,6 +59,7 @@ import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -3056,6 +3057,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 // ============================================================================
 
 export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [wo, setWo] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -4080,7 +4082,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const isSupervisorOrAdminLocal = () => {
     const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+    if (slugs.includes('admin') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo?.assignedSupervisorId)
+      && wo.assignedSupervisorId === user?.id;
   };
 
   const isStoreOrAdminLocal = () => {
@@ -5727,7 +5732,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {(() => {
             const hasSuggestedItems = suggestedParts.length > 0 || suggestedTools.length > 0;
             const pendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter((item: any) => item.pipelineStatus === 'suggested').length;
-            return hasSuggestedItems ? (
+            return repairsEnabled && hasSuggestedItems ? (
           <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -5740,7 +5745,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {pendingSuggestedCount > 0 && (
+                {!workActionDisabled && pendingSuggestedCount > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
                     onClick={handleSendToStore}
                   >
@@ -5848,14 +5853,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           })()}
 
           {/* Materials — with approval pipeline */}
+          {repairsEnabled && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (isAdmin() || hasPermission('repair_material_requests.view') || hasPermission('repair_material_requests.view_all') || hasPermission('repair_material_requests.view_own')) && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
+                {!workActionDisabled && (isAdmin() || hasPermission('repair_material_requests.create')) && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -5944,7 +5952,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               {!isWOFinalized && mr.status === 'picking' && isStoreOrAdminLocal() && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
                               )}
-                              {!isWOFinalized && mr.status === 'issued' && (
+                              {!workActionDisabled && mr.status === 'issued' && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => openSpareReturnFromMR(mr)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
                               )}
                             </div>
@@ -5963,13 +5971,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Tool Requests (from Repair module) */}
-          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          {repairsEnabled && wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
+              {(isAdmin() || hasPermission('repair_tool_requests.view') || hasPermission('repair_tool_requests.view_all') || hasPermission('repair_tool_requests.view_own')) && (
+                <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
+              )}
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -6015,6 +6026,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           )}
 
           {/* Repairs Quick Access */}
+          {repairsEnabled && (
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
@@ -6027,31 +6039,39 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <p className="text-xs text-muted-foreground">Work order is {wo.status?.replace(/_/g, ' ') || 'closed'} — all actions are disabled</p>
                   </div>
                 ) : (
+                !workActionDisabled ? (
                 <>
-                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
-                  <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Request Tool</span>
-                </button>
-                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
-                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
-                  <span className="text-xs font-medium">Transfer Tool</span>
-                </button>
-                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {(isAdmin() || hasPermission('repair_tool_requests.create')) && (
+                  <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                    <span className="text-xs font-medium">Request Tool</span>
+                  </button>
+                )}
+                {(isAdmin() || hasPermission('repair_tool_transfers.create')) && (
+                  <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
+                    <span className="text-xs font-medium">Transfer Tool</span>
+                  </button>
+                )}
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                <button onClick={() => openMatReturn()} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>
                 </>
+                ) : null
                 )}
-                <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">View All Tools</span>
-                </button>
-                {!isWOFinalized && (
-                <button onClick={() => setActionDialog('complete')} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {(isAdmin() || hasPermission('repair_tool_requests.view') || hasPermission('repair_tool_requests.view_all') || hasPermission('repair_tool_requests.view_own')) && (
+                  <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                    <span className="text-xs font-medium">View All Tools</span>
+                  </button>
+                )}
+                {!workActionDisabled && (
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Complete WO</span>
                 </button>
@@ -6059,6 +6079,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
           <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
@@ -7063,7 +7084,7 @@ export function PmSchedulesPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [dueSoonFilter, setDueSoonFilter] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -7102,7 +7123,9 @@ export function PmSchedulesPage() {
 
   // Background PM check: fire-and-forget trigger on page load
   useEffect(() => {
-    api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
+    if (hasPermission('pm_schedules.run') || isAdmin()) {
+      api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
+    }
   }, []);
 
   const resetForm = () => {
@@ -7215,7 +7238,7 @@ export function PmSchedulesPage() {
             <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
             Due Soon
           </Button>
-          {hasPermission('work_orders.create') && (
+          {(hasPermission('pm_schedules.create') || isAdmin()) && (
             <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Plus className="h-3.5 w-3.5 mr-1.5" /> New Schedule
             </Button>
@@ -7383,7 +7406,7 @@ export function PmSchedulesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {s.isActive && (
+                    {s.isActive && (hasPermission('pm_schedules.update') || hasPermission('pm_schedules.delete') || isAdmin()) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -7391,8 +7414,10 @@ export function PmSchedulesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                          {hasPermission('roles.update') && (
+                          {(hasPermission('pm_schedules.update') || isAdmin()) && (
+                            <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          )}
+                          {(hasPermission('pm_schedules.delete') || isAdmin()) && (
                             <DropdownMenuItem onClick={() => handleDeactivate(s.id)} className="text-red-600">
                               <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
                             </DropdownMenuItem>
@@ -7540,6 +7565,8 @@ export function MaintenanceWorkOrdersPage() {
 }
 
 export function MaintenanceDashboardPage() {
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [stats, setStats] = useState<any>(null);
   const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -7632,7 +7659,10 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions
+    .filter(a => hasPermission(a.permission))
+    .filter(a => a.page !== 'pm-calendar' || pmEnabled)
+    .filter(a => a.page !== 'repairs-analytics' || repairsEnabled);
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7651,7 +7681,7 @@ export function MaintenanceDashboardPage() {
     return (
       <div className="page-content">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+          <div><h1 className="text-2xl font-bold tracking-tight">Repair Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Repair maintenance operations overview and KPIs</p></div>
         </div>
         <Card className="border-red-200 bg-red-50 dark:bg-red-950/20"><CardContent className="p-6"><div className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-red-500" /><div><p className="font-semibold text-red-700 dark:text-red-400">Failed to load dashboard</p><p className="text-sm text-red-600 dark:text-red-500">{error}</p></div></div></CardContent></Card>
       </div>
@@ -7667,8 +7697,8 @@ export function MaintenanceDashboardPage() {
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Maintenance</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Maintenance Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Maintenance operations overview &middot; Key performance indicators</p>
+          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Repair Maintenance Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Repair maintenance operations overview &middot; Key performance indicators</p>
         </div>
         <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary self-start">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
@@ -7722,7 +7752,8 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
+        {/* PM Compliance — only when the separate PM module is enabled */}
+        {pmEnabled && (
         <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
           <CardContent className="p-4 relative">
@@ -7736,6 +7767,7 @@ export function MaintenanceDashboardPage() {
             <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
           </CardContent>
         </Card>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
@@ -8049,13 +8081,13 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
+    { label: 'Total Repair Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Repair Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Repair-focused analytics including MTTR, MTBF, backlog and cost trends</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpis.map(k => { const I = k.icon; return (
@@ -8971,7 +9003,7 @@ export function PmTemplatesPage() {
   const [newTaskParts, setNewTaskParts] = useState('');
   const [addTaskLoading, setAddTaskLoading] = useState(false);
 
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -9152,7 +9184,7 @@ export function PmTemplatesPage() {
           <h1 className="text-2xl font-bold tracking-tight">PM Templates</h1>
           <p className="text-sm text-muted-foreground mt-1">Define reusable maintenance task checklists for preventive work orders</p>
         </div>
-        {hasPermission('work_orders.create') && (
+        {(hasPermission('pm_templates.create') || isAdmin()) && (
           <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             <Plus className="h-3.5 w-3.5 mr-1.5" /> New Template
           </Button>
@@ -9269,24 +9301,30 @@ export function PmTemplatesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleToggleActive(t)}>
-                          {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
-                        </DropdownMenuItem>
-                        {t.isActive && (
-                          <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
-                            <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {(hasPermission('pm_templates.update') || hasPermission('pm_templates.delete') || isAdmin()) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {(hasPermission('pm_templates.update') || isAdmin()) && (
+                            <>
+                              <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleActive(t)}>
+                                {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {t.isActive && (hasPermission('pm_templates.delete') || isAdmin()) && (
+                            <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

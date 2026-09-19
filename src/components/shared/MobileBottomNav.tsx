@@ -49,6 +49,8 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
+  moduleCode?: string;
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
 }
@@ -73,6 +75,7 @@ const BOTTOM_TABS: NavItem[] = [
     label: 'Home',
     icon: LayoutDashboard,
     perm: 'dashboard.view',
+    moduleCode: 'core',
   },
   {
     page: 'maintenance-requests',
@@ -81,6 +84,7 @@ const BOTTOM_TABS: NavItem[] = [
     perm: 'work_orders.view',
     permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'],
     activePages: ['maintenance-requests', 'mr-detail', 'create-mr'],
+    moduleCode: 'maintenance_requests',
   },
   {
     page: 'maintenance-work-orders',
@@ -89,6 +93,7 @@ const BOTTOM_TABS: NavItem[] = [
     perm: 'work_orders.view',
     permOr: ['work_orders.view', 'work_orders.view_own'],
     activePages: ['maintenance-work-orders', 'wo-detail'],
+    moduleCode: 'work_orders',
   },
   {
     page: 'assets-machines',
@@ -96,6 +101,7 @@ const BOTTOM_TABS: NavItem[] = [
     icon: Building2,
     perm: 'assets.view',
     activePages: ['assets-machines', 'assets-hierarchy', 'assets-bom', 'assets-condition-monitoring', 'assets-digital-twin', 'assets-health', 'assets', 'asset-detail'],
+    moduleCode: 'assets',
   },
 ];
 
@@ -107,9 +113,9 @@ const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
   { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
-  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
+  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'Preventive Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety
@@ -148,7 +154,8 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin, user } = useAuthStore();
+  const userRoles = useMemo(() => new Set((user?.roles || []).map((r: any) => r.slug).filter(Boolean)), [user]);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleNavigate = useCallback((page: PageName) => {
@@ -163,27 +170,31 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   // Filter visible bottom tabs by permission and module
   const visibleTabs = useMemo(() => {
     return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
-        ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
+      const permOk = isAdmin() || (tab.permOr ? tab.permOr.some(p => hasPermission(p)) : hasPermission(tab.perm));
       if (!permOk) return false;
+      if (tab.moduleCode && tab.moduleCode !== 'core') {
+        if (!enabledModules) return false;
+        if (!enabledModules.has(tab.moduleCode.toLowerCase())) return false;
+      }
       return true;
     });
-  }, [hasPermission]);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Filter visible more items by permission
   const visibleMoreItems = useMemo(() => {
     return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
-        ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
+      let permOk = isAdmin() || (item.permOr ? item.permOr.some(p => hasPermission(p)) : hasPermission(item.perm));
+      if (item.page === 'inventory-items' && !permOk) {
+        permOk = ['inventory_manager', 'store_keeper', 'tools_shop_attendant'].some(role => userRoles.has(role));
+      }
       if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
-        return enabledModules.has(item.moduleCode.toLowerCase());
+      if (item.moduleCode) {
+        if (!enabledModules) return false;
+        if (!enabledModules.has(item.moduleCode.toLowerCase())) return false;
       }
       return true;
     });
-  }, [hasPermission, enabledModules]);
+  }, [hasPermission, isAdmin, enabledModules, userRoles]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

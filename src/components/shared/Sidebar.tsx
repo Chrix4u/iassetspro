@@ -106,11 +106,16 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   // Subscribe to enabled modules from the navigation store.
   // The store fetches on app init and refreshes when modules are toggled,
   // so the sidebar stays in sync automatically.
+  const modulesLoaded = storeModules !== null;
   const enabledModules = useMemo<Set<string>>(() => {
-    if (!storeModules) return new Set<string>(); // null = not loaded yet → show all (size=0 skips filter)
-    // Store already stores lowercase codes
-    return storeModules;
+    // Store already stores lowercase codes. While loading, keep an empty set and
+    // let visibility checks fail closed for every non-core module.
+    return storeModules ?? new Set<string>();
   }, [storeModules]);
+  const userRoleSlugs = useMemo(
+    () => new Set((user?.roles || []).map((role: any) => role.slug).filter(Boolean)),
+    [user],
+  );
 
   // Menu group definition
   interface NavGroup {
@@ -122,7 +127,17 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     page?: PageName;
     moduleCode?: string; // maps to SystemModule.code (lowercase) for module-aware filtering
     moduleCodes?: string[]; // for groups spanning multiple modules (any match = visible)
-    children?: { page: PageName; label: string; icon?: React.ElementType; pageAdminOnly?: boolean; moduleCode?: string }[];
+    roleOr?: string[]; // optional role override for operational groups
+    children?: {
+      page: PageName;
+      label: string;
+      icon?: React.ElementType;
+      pageAdminOnly?: boolean;
+      moduleCode?: string;
+      perm?: string;
+      permOr?: string[];
+      roleOr?: string[];
+    }[];
   }
 
   const menuGroups = useMemo<NavGroup[]>(() => [
@@ -132,162 +147,165 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     {
       label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'assets',
       children: [
-        { page: 'assets-machines', label: 'Machines', icon: Building2 },
-        { page: 'assets-hierarchy', label: 'Hierarchy', icon: GitBranch },
-        { page: 'assets-bom', label: 'Bill of Materials', icon: ListChecks },
-        { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity },
-        { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box },
-        { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch },
-        { page: 'asset-categories', label: 'Categories', icon: FolderOpen },
-        { page: 'assets-health', label: 'Asset Health', icon: HeartPulse },
+        { page: 'assets-machines', label: 'Machines', icon: Building2, perm: 'assets.view', moduleCode: 'assets' },
+        { page: 'assets-hierarchy', label: 'Hierarchy', icon: GitBranch, perm: 'assets.view', moduleCode: 'assets' },
+        { page: 'assets-bom', label: 'Bill of Materials', icon: ListChecks, perm: 'bom.view', moduleCode: 'bom' },
+        { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity, perm: 'condition_monitoring.view', moduleCode: 'assets' },
+        { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box, perm: 'digital_twin.view', moduleCode: 'digital_twin' },
+        { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch, perm: 'digital_twin.view', moduleCode: 'digital_twin' },
+        { page: 'asset-categories', label: 'Categories', icon: FolderOpen, perm: 'assets.view', moduleCode: 'assets' },
+        { page: 'assets-health', label: 'Asset Health', icon: HeartPulse, perm: 'asset_health.view', moduleCode: 'assets' },
       ],
     },
     {
       label: 'AI Intelligence', icon: BrainCircuit, perm: 'assets.create', moduleCode: 'assets',
       children: [
-        { page: 'ai-hub', label: 'AI Hub', icon: BrainCircuit },
-        { page: 'ai-config', label: 'AI Configuration', icon: Settings2 },
-        { page: 'ai-history', label: 'Generation History', icon: History },
+        { page: 'ai-hub', label: 'AI Hub', icon: BrainCircuit, perm: 'assets.view', moduleCode: 'assets' },
+        { page: 'ai-config', label: 'AI Configuration', icon: Settings2, perm: 'system_settings.view', pageAdminOnly: true, moduleCode: 'assets' },
+        { page: 'ai-history', label: 'Generation History', icon: History, perm: 'assets.view', moduleCode: 'assets' },
       ],
     },
     {
-      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'], moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules'],
+      label: 'Repair Maintenance', icon: Wrench, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'], moduleCodes: ['work_orders', 'maintenance_requests'],
       children: [
-        { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList, moduleCode: 'work_orders' },
-        { page: 'maintenance-requests', label: 'Requests', icon: MessageSquare, moduleCode: 'maintenance_requests' },
-        { page: 'maintenance-dashboard', label: 'Dashboard', icon: LayoutDashboard, moduleCode: 'work_orders' },
-        { page: 'maintenance-analytics', label: 'Analytics', icon: BarChart3, moduleCode: 'work_orders' },
-        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration' },
-        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment' },
-        { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon, moduleCode: 'tools' },
-        { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, moduleCode: 'pm_schedules' },
-        { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules' },
-        { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules' },
-        { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar, moduleCode: 'pm_schedules' },
+        { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList, moduleCode: 'work_orders', permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'maintenance-requests', label: 'Repair Requests', icon: MessageSquare, moduleCode: 'maintenance_requests', permOr: ['maintenance_requests.view', 'maintenance_requests.view_own'] },
+        { page: 'maintenance-dashboard', label: 'Repair Dashboard', icon: LayoutDashboard, moduleCode: 'work_orders', permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'maintenance-analytics', label: 'Repair Analytics', icon: BarChart3, moduleCode: 'work_orders', permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment', permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'maintenance-tools', label: 'Maintenance Tools', icon: WrenchIcon, moduleCode: 'tools', perm: 'tools.view' },
+      ],
+    },
+    {
+      label: 'Preventive Maintenance (PM)', icon: Calendar, perm: 'pm_schedules.view', moduleCode: 'pm_schedules',
+      children: [
+        { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, moduleCode: 'pm_schedules', perm: 'pm_schedules.view' },
+        { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules', perm: 'pm_templates.view' },
+        { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules', perm: 'pm_triggers.view' },
+        { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar, moduleCode: 'pm_schedules', perm: 'pm_schedules.view' },
+        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration', perm: 'calibration.view' },
       ],
     },
     {
       label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
       children: [
-        { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
-        { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
+        { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid, permOr: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'work_orders' },
+        { page: 'enterprise-reports', label: 'Reports', icon: Gauge, perm: 'reports.view', moduleCode: 'reports' },
       ],
     },
     {
-      label: 'Repairs', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'repairs',
+      label: 'Repair Execution', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'repairs',
       children: [
-        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
-        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon },
-        { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft },
-        { page: 'repairs-downtime', label: 'Downtime', icon: Timer },
-        { page: 'repairs-completion', label: 'Completion', icon: ClipboardCheck },
-        { page: 'technician-timesheet', label: 'Timesheet', icon: Clock },
-        { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
-        { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
-        { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
+        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package, permOr: ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own'] },
+        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon, permOr: ['repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.view_own'] },
+        { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft, permOr: ['repair_tool_transfers.view', 'repair_tool_transfers.view_all', 'repair_tool_transfers.view_own'] },
+        { page: 'repairs-downtime', label: 'Downtime', icon: Timer, permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'repairs-completion', label: 'Completion', icon: ClipboardCheck, permOr: ['work_orders.view', 'work_orders.view_own'] },
+        { page: 'technician-timesheet', label: 'Timesheet', icon: Clock, permOr: ['time_logs.view', 'time_logs.create'] },
+        { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle, permOr: ['spare_part_returns.view', 'spare_part_returns.view_all', 'spare_part_returns.view_own'] },
+        { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert, permOr: ['damaged_tool_reports.view', 'damaged_tool_reports.view_all', 'damaged_tool_reports.create'] },
+        { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3, permOr: ['work_orders.view', 'work_orders.view_own'] },
       ],
     },
     {
       label: 'IoT', icon: Wifi, perm: 'iot.view', moduleCode: 'iot_sensors',
       children: [
-        { page: 'iot-devices', label: 'Devices', icon: Smartphone },
-        { page: 'iot-monitoring', label: 'Monitoring', icon: Monitor },
-        { page: 'iot-rules', label: 'Rules', icon: Radio },
+        { page: 'iot-devices', label: 'Devices', icon: Smartphone, perm: 'iot_devices.view', moduleCode: 'iot_sensors' },
+        { page: 'iot-monitoring', label: 'Monitoring', icon: Monitor, perm: 'iot_monitoring.view', moduleCode: 'iot_sensors' },
+        { page: 'iot-rules', label: 'Rules', icon: Radio, perm: 'iot_rules.view', moduleCode: 'iot_sensors' },
       ],
     },
     {
       label: 'Reliability', icon: ShieldAlert, perm: 'digital_twin.view', moduleCodes: ['digital_twin'],
       children: [
-        { page: 'reliability-engineering', label: 'Engineering', icon: ShieldAlert },
+        { page: 'reliability-engineering', label: 'Engineering', icon: ShieldAlert, perm: 'digital_twin.view', moduleCode: 'digital_twin' },
       ],
     },
     {
       label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCodes: ['analytics', 'kpi_dashboard', 'oee', 'downtime', 'energy'],
       children: [
-        { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target },
-        { page: 'analytics-oee', label: 'OEE', icon: Gauge },
-        { page: 'analytics-downtime', label: 'Downtime', icon: TrendingDown },
-        { page: 'analytics-energy', label: 'Energy', icon: Zap },
+        { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target, perm: 'analytics.view', moduleCode: 'kpi_dashboard' },
+        { page: 'analytics-oee', label: 'OEE', icon: Gauge, perm: 'oee.view', moduleCode: 'oee' },
+        { page: 'analytics-downtime', label: 'Downtime', icon: TrendingDown, perm: 'downtime.view', moduleCode: 'downtime' },
+        { page: 'analytics-energy', label: 'Energy', icon: Zap, perm: 'energy.view', moduleCode: 'energy' },
       ],
     },
     {
       label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
       children: [
-        { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
-        { page: 'operations-training', label: 'Training', icon: GraduationCap },
-        { page: 'operations-surveys', label: 'Surveys', icon: FileText },
-        { page: 'operations-time-logs', label: 'Time Logs', icon: Clock },
-        { page: 'operations-shift-handover', label: 'Shift Handover', icon: ArrowRightLeft },
-        { page: 'operations-checklists', label: 'Checklists', icon: CheckSquare },
+        { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge, perm: 'meters.view', moduleCode: 'meter_readings' },
+        { page: 'operations-training', label: 'Training', icon: GraduationCap, perm: 'training.view', moduleCode: 'training' },
+        { page: 'operations-surveys', label: 'Surveys', icon: FileText, perm: 'production_surveys.view', moduleCode: 'production' },
+        { page: 'operations-time-logs', label: 'Time Logs', icon: Clock, perm: 'time_logs.view', moduleCode: 'work_orders' },
+        { page: 'operations-shift-handover', label: 'Shift Handover', icon: ArrowRightLeft, perm: 'shift_handovers.view', moduleCode: 'shift_management' },
+        { page: 'operations-checklists', label: 'Checklists', icon: CheckSquare, permOr: ['work_orders.view', 'work_orders.view_own'], moduleCode: 'work_orders' },
       ],
     },
     {
       label: 'Production', icon: Zap, perm: 'production.view', moduleCode: 'production',
       children: [
-        { page: 'production-work-centers', label: 'Work Centers', icon: Factory },
-        { page: 'production-resource-planning', label: 'Resource Planning', icon: Layers },
-        { page: 'production-scheduling', label: 'Scheduling', icon: Calendar },
-        { page: 'production-capacity', label: 'Capacity', icon: Box },
-        { page: 'production-efficiency', label: 'Efficiency', icon: TrendingUp },
-        { page: 'production-bottlenecks', label: 'Bottlenecks', icon: TriangleAlert },
-        { page: 'production-orders', label: 'Orders', icon: ClipboardList },
-        { page: 'production-batches', label: 'Batches', icon: Package },
+        { page: 'production-work-centers', label: 'Work Centers', icon: Factory, perm: 'work_centers.view', moduleCode: 'production' },
+        { page: 'production-resource-planning', label: 'Resource Planning', icon: Layers, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-scheduling', label: 'Scheduling', icon: Calendar, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-capacity', label: 'Capacity', icon: Box, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-efficiency', label: 'Efficiency', icon: TrendingUp, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-bottlenecks', label: 'Bottlenecks', icon: TriangleAlert, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-orders', label: 'Orders', icon: ClipboardList, perm: 'production.view', moduleCode: 'production' },
+        { page: 'production-batches', label: 'Batches', icon: Package, perm: 'production_batches.view', moduleCode: 'production' },
       ],
     },
     {
       label: 'Quality', icon: ShieldCheck, perm: 'quality.view', moduleCodes: ['quality', 'capa'],
       children: [
-        { page: 'quality-inspections', label: 'Inspections', icon: Search },
-        { page: 'quality-ncr', label: 'NCR', icon: FileCheck },
-        { page: 'quality-audits', label: 'Audits', icon: ShieldAlert },
-        { page: 'quality-control-plans', label: 'Control Plans', icon: ScrollText },
-        { page: 'quality-spc', label: 'SPC', icon: BarChart3 },
-        { page: 'quality-capa', label: 'CAPA', icon: HardHat },
+        { page: 'quality-inspections', label: 'Inspections', icon: Search, perm: 'quality_inspections.view', moduleCode: 'quality' },
+        { page: 'quality-ncr', label: 'NCR', icon: FileCheck, perm: 'quality_ncr.view', moduleCode: 'quality' },
+        { page: 'quality-audits', label: 'Audits', icon: ShieldAlert, perm: 'quality_audits.view', moduleCode: 'quality' },
+        { page: 'quality-control-plans', label: 'Control Plans', icon: ScrollText, perm: 'quality_control_plans.view', moduleCode: 'quality' },
+        { page: 'quality-spc', label: 'SPC', icon: BarChart3, perm: 'spc.view', moduleCode: 'quality' },
+        { page: 'quality-capa', label: 'CAPA', icon: HardHat, perm: 'quality_ncr.view', moduleCode: 'capa' },
       ],
     },
     {
       label: 'Safety', icon: HardHat, perm: 'safety.view', moduleCode: 'safety',
       children: [
-        { page: 'safety-incidents', label: 'Incidents', icon: TriangleAlert },
-        { page: 'safety-inspections', label: 'Inspections', icon: Search },
-        { page: 'safety-training', label: 'Training', icon: GraduationCap },
-        { page: 'safety-equipment', label: 'Equipment', icon: HardHat },
-        { page: 'safety-permits', label: 'Permits', icon: FileCheck },
+        { page: 'safety-incidents', label: 'Incidents', icon: TriangleAlert, perm: 'safety_incidents.view', moduleCode: 'safety' },
+        { page: 'safety-inspections', label: 'Inspections', icon: Search, perm: 'safety_inspections.view', moduleCode: 'safety' },
+        { page: 'safety-training', label: 'Training', icon: GraduationCap, perm: 'training.view', moduleCode: 'safety' },
+        { page: 'safety-equipment', label: 'Equipment', icon: HardHat, perm: 'safety_equipment.view', moduleCode: 'safety' },
+        { page: 'safety-permits', label: 'Permits', icon: FileCheck, perm: 'safety_permits.view', moduleCode: 'safety' },
       ],
     },
     {
-      label: 'Inventory', icon: Package, perm: 'inventory.view', moduleCode: 'inventory',
+      label: 'Inventory', icon: Package, perm: 'inventory.view', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust'], roleOr: ['inventory_manager', 'store_keeper', 'tools_shop_attendant'], moduleCode: 'inventory',
       children: [
-        { page: 'inventory-items', label: 'Items', icon: Package },
-        { page: 'inventory-categories', label: 'Categories', icon: FolderOpen },
-        { page: 'inventory-locations', label: 'Locations', icon: MapPin },
-        { page: 'inventory-transactions', label: 'Transactions', icon: ArrowRightLeft },
-        { page: 'inventory-adjustments', label: 'Adjustments', icon: ArrowUpDown },
-        { page: 'inventory-requests', label: 'Requests', icon: FileText },
-        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
-        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: Wrench },
-        { page: 'inventory-transfers', label: 'Transfers', icon: Truck },
-        { page: 'inventory-suppliers', label: 'Suppliers', icon: Building },
-        { page: 'inventory-purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
-        { page: 'inventory-receiving', label: 'Receiving', icon: Download },
+        { page: 'inventory-items', label: 'Items', icon: Package, permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out'], moduleCode: 'inventory' },
+        { page: 'inventory-categories', label: 'Categories', icon: FolderOpen, perm: 'parts_categories.view', moduleCode: 'inventory' },
+        { page: 'inventory-locations', label: 'Locations', icon: MapPin, perm: 'inventory_locations.view', moduleCode: 'inventory' },
+        { page: 'inventory-transactions', label: 'Transactions', icon: ArrowRightLeft, perm: 'stock_transactions.view', moduleCode: 'inventory' },
+        { page: 'inventory-adjustments', label: 'Adjustments', icon: ArrowUpDown, perm: 'inventory_adjustments.view', moduleCode: 'inventory' },
+        { page: 'inventory-requests', label: 'Requests', icon: FileText, perm: 'material_requisitions.view', moduleCode: 'inventory' },
+        { page: 'inventory-transfers', label: 'Transfers', icon: Truck, perm: 'inventory_transfers.view', moduleCode: 'inventory' },
+        { page: 'inventory-suppliers', label: 'Suppliers', icon: Building, perm: 'vendors.view', moduleCode: 'inventory' },
+        { page: 'inventory-purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, perm: 'purchase_orders.view', moduleCode: 'inventory' },
+        { page: 'inventory-receiving', label: 'Receiving', icon: Download, perm: 'purchase_orders.view', moduleCode: 'inventory' },
       ],
     },
     {
       label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'reports',
       children: [
-        { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
-        { page: 'machine-availability', label: 'Machine Availability', icon: Activity },
-        { page: 'equipment-history', label: 'Equipment History', icon: History },
-        { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert },
-        { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList, moduleCode: 'work_orders' },
-        { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
-        { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity, moduleCode: 'repairs' },
-        { page: 'reports-inventory', label: 'Inventory Reports', icon: Package },
-        { page: 'reports-production', label: 'Production Reports', icon: Factory },
-        { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck },
-        { page: 'reports-safety', label: 'Safety Reports', icon: HardHat },
-        { page: 'reports-financial', label: 'Financial Reports', icon: TrendingUp },
-        { page: 'reports-custom', label: 'Custom Reports', icon: FileSpreadsheet },
+        { page: 'reports-asset', label: 'Asset Reports', icon: Building2, perm: 'reports.view', moduleCode: 'assets' },
+        { page: 'machine-availability', label: 'Machine Availability', icon: Activity, perm: 'reports.view', moduleCode: 'assets' },
+        { page: 'equipment-history', label: 'Equipment History', icon: History, perm: 'reports.view', moduleCode: 'assets' },
+        { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert, perm: 'reports.view', moduleCode: 'work_orders' },
+        { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList, perm: 'reports.view', moduleCode: 'work_orders' },
+        { page: 'reports-maintenance', label: 'Repair Maintenance Reports', icon: Wrench, perm: 'reports.view', moduleCode: 'work_orders' },
+        { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity, perm: 'reports.view', moduleCode: 'repairs' },
+        { page: 'reports-inventory', label: 'Inventory Reports', icon: Package, perm: 'reports.view', moduleCode: 'inventory' },
+        { page: 'reports-production', label: 'Production Reports', icon: Factory, perm: 'reports.view', moduleCode: 'production' },
+        { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck, perm: 'reports.view', moduleCode: 'quality' },
+        { page: 'reports-safety', label: 'Safety Reports', icon: HardHat, perm: 'reports.view', moduleCode: 'safety' },
+        { page: 'reports-financial', label: 'Financial Reports', icon: TrendingUp, perm: 'reports.view' },
+        { page: 'reports-custom', label: 'Custom Reports', icon: FileSpreadsheet, perm: 'reports.view' },
       ],
     },
     {
@@ -380,34 +398,45 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     });
   }, [currentPage]);
 
-  // Filter visible groups based on permissions and module activation
+  // Filter visible groups AND children using the same permission/module policy.
+  // Non-core module visibility fails closed until licensing state is loaded.
   const visibleGroups = useMemo(() => {
     const isAdm = isAdmin();
-    return menuGroups.filter(g => {
-      // Admin-only groups: non-admins cannot see them at all
-      if (g.adminOnly && !isAdm) return false;
+    const roleAllowed = (roles?: string[]) => Boolean(roles?.some(role => userRoleSlugs.has(role)));
+    const permissionAllowed = (perm?: string, permOr?: string[]) => {
+      if (isAdm) return true;
+      if (permOr?.length) return permOr.some(p => hasPermission(p));
+      return perm ? hasPermission(perm) : true;
+    };
+    const moduleAllowed = (moduleCode?: string) => {
+      if (!moduleCode || moduleCode === 'core') return true;
+      if (!modulesLoaded) return false;
+      return enabledModules.has(moduleCode.toLowerCase());
+    };
 
-      // Permission check (supports permOr for multiple alternative permissions)
-      if (!isAdm && permissions && permissions.length > 0) {
-        const permOk = g.permOr
-          ? g.permOr.some(p => hasPermission(p))
-          : hasPermission(g.perm);
-        if (!permOk) return false;
-      }
-
-      // Module activation check — only apply once modules have loaded
-      if (enabledModules.size > 0) {
-        // Single module code check
-        if (g.moduleCode && g.moduleCode !== 'core' && !enabledModules.has(g.moduleCode.toLowerCase())) return false;
-        // Multiple module codes check — show if ANY is enabled
-        if (g.moduleCodes && g.moduleCodes.length > 0) {
-          if (!g.moduleCodes.some(code => enabledModules.has(code.toLowerCase()))) return false;
+    return menuGroups
+      .filter(g => {
+        if (g.adminOnly && !isAdm) return false;
+        const permOk = permissionAllowed(g.perm, g.permOr);
+        if (!permOk && !roleAllowed(g.roleOr)) return false;
+        if (g.moduleCode && !moduleAllowed(g.moduleCode)) return false;
+        if (g.moduleCodes?.length) {
+          if (!modulesLoaded || !g.moduleCodes.some(code => enabledModules.has(code.toLowerCase()))) return false;
         }
-      }
-
-      return true;
-    });
-  }, [menuGroups, hasPermission, permissions, isAdmin, enabledModules]);
+        return true;
+      })
+      .map(g => {
+        if (!g.children) return g;
+        const children = g.children.filter(child => {
+          if (child.pageAdminOnly && !isAdm) return false;
+          if (!permissionAllowed(child.perm, child.permOr) && !roleAllowed(child.roleOr)) return false;
+          if (child.moduleCode && !moduleAllowed(child.moduleCode)) return false;
+          return true;
+        });
+        return { ...g, children };
+      })
+      .filter(g => !g.children || g.children.length > 0);
+  }, [menuGroups, hasPermission, permissions, isAdmin, enabledModules, modulesLoaded, userRoleSlugs]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {

@@ -336,8 +336,10 @@ function PageSwitcher({ page }: { page: string }) {
     () => pageCache.get(page) || null
   );
   const [error, setError] = useState<string | null>(null);
-  const { hasPermission, isAdmin } = useAuthStore();
+  const { hasPermission, isAdmin, user } = useAuthStore();
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const userRoles = (user?.roles || []).map((r: any) => r.slug).filter(Boolean);
 
   // Page-to-permission mapping for route guard
   const pagePermissions: Record<string, string[]> = {
@@ -433,7 +435,7 @@ function PageSwitcher({ page }: { page: string }) {
     // Reliability Engineering
     'reliability-engineering': ['digital_twin.view'],
     // Inventory
-    'inventory-items': ['inventory.view'],
+    'inventory-items': ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust'],
     'inventory-categories': ['parts_categories.view'],
     'inventory-locations': ['inventory_locations.view'],
     'inventory-transactions': ['stock_transactions.view'],
@@ -477,15 +479,79 @@ function PageSwitcher({ page }: { page: string }) {
     // Legacy fallbacks
     'assets': ['assets.view'],
     'asset-detail': ['assets.view'],
-    'inventory': ['inventory.view'],
+    'inventory': ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust'],
     'analytics': ['analytics.view'],
   };
 
-  // Permission guard: check before loading the page
+  const requiredModulesForPage = (pageName: string): string[] => {
+    if (pageName === 'dashboard' || pageName === 'chat' || pageName === 'notifications') return ['core'];
+    if (pageName.startsWith('ai-')) return ['assets'];
+    if (pageName === 'planner-workbench') return ['work_orders'];
+    if (pageName === 'reliability-engineering') return ['digital_twin'];
+    if (pageName === 'operations-meter-readings') return ['meter_readings'];
+    if (pageName === 'operations-training') return ['training'];
+    if (pageName === 'operations-surveys') return ['production'];
+    if (pageName === 'operations-time-logs' || pageName === 'operations-checklists') return ['work_orders'];
+    if (pageName === 'operations-shift-handover') return ['shift_management'];
+    if (pageName.startsWith('pm-')) return ['pm_schedules'];
+    if (pageName.startsWith('repairs-') || pageName === 'technician-timesheet') return ['repairs'];
+    if (pageName.startsWith('inventory-') || pageName === 'inventory') return ['inventory'];
+    if (pageName.startsWith('production-')) return ['production'];
+    if (pageName.startsWith('quality-')) return [pageName === 'quality-capa' ? 'capa' : 'quality'];
+    if (pageName.startsWith('safety-')) return ['safety'];
+    if (pageName.startsWith('iot-')) return ['iot_sensors'];
+    if (pageName === 'assets-bom') return ['bom'];
+    if (pageName === 'assets-digital-twin' || pageName === 'digital-twin-viewer' || pageName === 'system-diagrams') return ['digital_twin'];
+    if (pageName.startsWith('assets-') || pageName === 'assets' || pageName === 'asset-detail' || pageName === 'asset-categories') return ['assets'];
+    if (pageName === 'maintenance-work-orders' || pageName === 'wo-detail' || pageName === 'maintenance-dashboard' || pageName === 'maintenance-analytics') return ['work_orders'];
+    if (pageName === 'maintenance-requests' || pageName === 'mr-detail' || pageName === 'create-mr') return ['maintenance_requests'];
+    if (pageName === 'maintenance-calibration') return ['calibration'];
+    if (pageName === 'maintenance-risk-assessment') return ['risk_assessment'];
+    if (pageName === 'maintenance-tools') return ['tools'];
+    if (pageName === 'analytics-kpi') return ['kpi_dashboard'];
+    if (pageName === 'analytics-oee') return ['oee'];
+    if (pageName === 'analytics-downtime') return ['downtime'];
+    if (pageName === 'analytics-energy') return ['energy'];
+    if (pageName === 'analytics') return ['analytics'];
+    if (pageName === 'reports-asset' || pageName === 'machine-availability' || pageName === 'equipment-history') return ['reports', 'assets'];
+    if (pageName === 'failure-analysis' || pageName === 'wo-reports' || pageName === 'reports-maintenance') return ['reports', 'work_orders'];
+    if (pageName === 'repairs-reports') return ['reports', 'repairs'];
+    if (pageName === 'reports-inventory') return ['reports', 'inventory'];
+    if (pageName === 'reports-production') return ['reports', 'production'];
+    if (pageName === 'reports-quality') return ['reports', 'quality'];
+    if (pageName === 'reports-safety') return ['reports', 'safety'];
+    if (pageName.startsWith('reports-') || pageName === 'enterprise-reports') return ['reports'];
+    return [];
+  };
+  const requiredModules = requiredModulesForPage(page);
+  const nonCoreRequiredModules = requiredModules.filter(code => code !== 'core');
+  const modulesPending = nonCoreRequiredModules.length > 0 && enabledModules === null;
+  const moduleDisabled = enabledModules !== null && nonCoreRequiredModules.some(code => !enabledModules.has(code));
+
+  // Permission + license/module guard: check before loading the page.
   useEffect(() => {
     // Admin-only gate: all settings-* pages (except user-level preferences) require admin
     if (page.startsWith('settings-') && page !== 'settings-preferences') {
       if (!isAdmin()) {
+        navigate('dashboard');
+        return;
+      }
+    }
+
+    if (moduleDisabled) {
+      navigate('dashboard');
+      return;
+    }
+
+    // Inventory management is deliberately separate from technician material
+    // selection. A maintenance technician does not gain the Inventory module
+    // merely because a repair request needs a catalog picker.
+    if ((page.startsWith('inventory-') || page === 'inventory') && !isAdmin()) {
+      const inventoryRoles = ['inventory_manager', 'store_keeper', 'tools_shop_attendant'];
+      const roleAccess = inventoryRoles.some(role => userRoles.includes(role));
+      const elevatedPermissionAccess = ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.transfer', 'inventory.adjust']
+        .some(permission => hasPermission(permission));
+      if (!roleAccess && !elevatedPermissionAccess) {
         navigate('dashboard');
         return;
       }
@@ -504,9 +570,14 @@ function PageSwitcher({ page }: { page: string }) {
         return;
       }
     }
-  }, [page, hasPermission, isAdmin, navigate]);
+  }, [page, hasPermission, isAdmin, navigate, moduleDisabled, userRoles.join('|')]);
 
   useEffect(() => {
+    if (modulesPending || moduleDisabled) {
+      setComponent(null);
+      setError(null);
+      return;
+    }
     // If already cached, use it immediately
     if (pageCache.has(page)) {
       setComponent(() => pageCache.get(page)!);
@@ -535,7 +606,9 @@ function PageSwitcher({ page }: { page: string }) {
       });
 
     return () => { cancelled = true; };
-  }, [page]);
+  }, [page, modulesPending, moduleDisabled]);
+
+  if (modulesPending || moduleDisabled) return <LoadingSkeleton />;
 
   if (error) {
     return (

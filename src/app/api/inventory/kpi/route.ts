@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { canAccessFullInventory } from '@/lib/inventory-access';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 /**
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!canAccessFullInventory(session)) {
+      return NextResponse.json({ success: false, error: 'Inventory KPI access is restricted' }, { status: 403 });
     }
 
     const plantScope = await getPlantScope(request, session);

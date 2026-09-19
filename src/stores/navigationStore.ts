@@ -8,7 +8,7 @@ interface NavigationState {
   pageParams: Record<string, string>;
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
-  enabledModules: Set<string> | null; // null = not loaded yet (show all)
+  enabledModules: Set<string> | null; // null = not loaded yet; non-core access fails closed
   fetchModules: () => Promise<void>;
   refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
@@ -77,17 +77,21 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
+          const code = String(m.code || '').toLowerCase();
+          if (!code) return;
+          // Core modules are always available. Non-core modules require BOTH
+          // vendor/company license activation and company enablement.
+          if (m.isCore || (m.isActive === true && m.isEnabled === true)) enabled.add(code);
         });
-        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        if (enabled.size === 0) {
-          set({ enabledModules: null });
-          return;
-        }
+        // Never fail open. Core remains usable even if every optional module is disabled.
+        enabled.add('core');
         set({ enabledModules: enabled });
+        return;
       }
+      set({ enabledModules: new Set(['core']) });
     } catch {
-      // On error, keep null so all items stay visible (graceful fallback)
+      // Module/license state is security-sensitive UI state: fail closed.
+      set({ enabledModules: new Set(['core']) });
     }
   },
 

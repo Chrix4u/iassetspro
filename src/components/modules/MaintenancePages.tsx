@@ -7084,7 +7084,7 @@ export function PmSchedulesPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [dueSoonFilter, setDueSoonFilter] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -7123,7 +7123,9 @@ export function PmSchedulesPage() {
 
   // Background PM check: fire-and-forget trigger on page load
   useEffect(() => {
-    api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
+    if (hasPermission('pm_schedules.run') || isAdmin()) {
+      api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
+    }
   }, []);
 
   const resetForm = () => {
@@ -7236,7 +7238,7 @@ export function PmSchedulesPage() {
             <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
             Due Soon
           </Button>
-          {hasPermission('work_orders.create') && (
+          {(hasPermission('pm_schedules.create') || isAdmin()) && (
             <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Plus className="h-3.5 w-3.5 mr-1.5" /> New Schedule
             </Button>
@@ -7404,7 +7406,7 @@ export function PmSchedulesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {s.isActive && (
+                    {s.isActive && (hasPermission('pm_schedules.update') || hasPermission('pm_schedules.delete') || isAdmin()) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -7412,8 +7414,10 @@ export function PmSchedulesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                          {hasPermission('roles.update') && (
+                          {(hasPermission('pm_schedules.update') || isAdmin()) && (
+                            <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          )}
+                          {(hasPermission('pm_schedules.delete') || isAdmin()) && (
                             <DropdownMenuItem onClick={() => handleDeactivate(s.id)} className="text-red-600">
                               <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
                             </DropdownMenuItem>
@@ -8999,7 +9003,7 @@ export function PmTemplatesPage() {
   const [newTaskParts, setNewTaskParts] = useState('');
   const [addTaskLoading, setAddTaskLoading] = useState(false);
 
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -9180,7 +9184,7 @@ export function PmTemplatesPage() {
           <h1 className="text-2xl font-bold tracking-tight">PM Templates</h1>
           <p className="text-sm text-muted-foreground mt-1">Define reusable maintenance task checklists for preventive work orders</p>
         </div>
-        {hasPermission('work_orders.create') && (
+        {(hasPermission('pm_templates.create') || isAdmin()) && (
           <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             <Plus className="h-3.5 w-3.5 mr-1.5" /> New Template
           </Button>
@@ -9297,24 +9301,30 @@ export function PmTemplatesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleToggleActive(t)}>
-                          {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
-                        </DropdownMenuItem>
-                        {t.isActive && (
-                          <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
-                            <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {(hasPermission('pm_templates.update') || hasPermission('pm_templates.delete') || isAdmin()) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {(hasPermission('pm_templates.update') || isAdmin()) && (
+                            <>
+                              <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleActive(t)}>
+                                {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {t.isActive && (hasPermission('pm_templates.delete') || isAdmin()) && (
+                            <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

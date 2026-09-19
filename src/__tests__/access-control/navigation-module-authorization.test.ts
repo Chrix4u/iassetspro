@@ -138,6 +138,15 @@ describe('navigation, module and workflow authorization contracts', () => {
     expect(transferRoute).toContain("!isAdmin(session) && fromUserId !== session.userId");
   });
 
+  it('does not expose tool-transfer store actions through generic update permission', () => {
+    const ui = read('src/components/modules/RepairsPagesLegacy.tsx');
+    const transferDetailRoute = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
+
+    expect(ui).not.toContain("hasPermission('repair_tool_transfers.update')");
+    expect(ui).not.toContain("['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug))) && (\n                            <Button size=\"sm\" variant=\"ghost\"");
+    expect(transferDetailRoute).toContain('Only admin, store keeper, inventory manager, or tools shop attendant can approve tool transfers');
+  });
+
   it('binds completion review and closure to assigned maintenance responsibility', () => {
     const ui = read('src/components/modules/RepairsPagesLegacy.tsx');
     const route = read('src/app/api/repairs/completion/[workOrderId]/route.ts');

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import type { PageName } from '@/types';
+import { canAccessPage } from '@/lib/page-access';
 import {
   CommandDialog,
   CommandEmpty,
@@ -217,7 +218,10 @@ function buildNavigationItems(): PaletteItem[] {
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
   const hasPermission = useAuthStore((s) => s.hasPermission);
+  const permissions = useAuthStore((s) => s.permissions);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // ---- Keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K) ----
   useEffect(() => {
@@ -242,7 +246,16 @@ export default function CommandPalette() {
   }, []);
 
   // ---- Build items ----
-  const navItems = useMemo(() => buildNavigationItems(), []);
+  const accessContext = useMemo(() => ({
+    permissions,
+    isAdmin: isAdmin(),
+    enabledModules,
+  }), [permissions, isAdmin, enabledModules]);
+
+  const navItems = useMemo(
+    () => buildNavigationItems().filter(item => !item.page || canAccessPage(item.page, accessContext)),
+    [accessContext],
+  );
 
   const actionItems: PaletteItem[] = useMemo(() => [
     ...(hasPermission('maintenance_requests.create') ? [
@@ -262,6 +275,11 @@ export default function CommandPalette() {
     ] : []),
   ], [hasPermission]);
 
+  const accessibleActionItems = useMemo(
+    () => actionItems.filter(item => !item.page || canAccessPage(item.page, accessContext)),
+    [actionItems, accessContext],
+  );
+
   const settingsItems: PaletteItem[] = useMemo(() => [
     { id: 'settings-users', label: 'Manage Users', icon: Users, group: 'settings' as const, page: 'settings-users', keywords: ['admin', 'user'] },
     { id: 'settings-roles', label: 'Roles & Permissions', icon: Shield, group: 'settings' as const, page: 'settings-roles', keywords: ['role', 'permission', 'rbac'] },
@@ -272,14 +290,19 @@ export default function CommandPalette() {
     { id: 'settings-preferences', label: 'My Preferences', icon: Star, group: 'settings' as const, page: 'settings-preferences', keywords: ['preferences', 'display', 'theme'] },
   ], []);
 
+  const accessibleSettingsItems = useMemo(
+    () => settingsItems.filter(item => !item.page || canAccessPage(item.page, accessContext)),
+    [settingsItems, accessContext],
+  );
+
   // ---- Recent items ----
   const recentItems: PaletteItem[] = useMemo(() => {
     const recentIds = getRecentItems();
-    const allItems = [...navItems, ...actionItems];
+    const allItems = [...navItems, ...accessibleActionItems];
     return recentIds
       .map(id => allItems.find(item => item.id === id))
       .filter((item): item is PaletteItem => !!item);
-  }, [navItems, actionItems]);
+  }, [navItems, accessibleActionItems]);
 
   // ---- Handle select ----
   const handleSelect = useCallback((item: PaletteItem) => {
@@ -316,24 +339,24 @@ export default function CommandPalette() {
   }, [query, navItems]);
 
   const filteredActions = useMemo(() => {
-    if (!query.trim()) return actionItems;
+    if (!query.trim()) return accessibleActionItems;
     const q = query.toLowerCase();
-    return actionItems.filter(
+    return accessibleActionItems.filter(
       item =>
         item.label.toLowerCase().includes(q) ||
         item.keywords?.some(kw => kw.toLowerCase().includes(q))
     );
-  }, [query, actionItems]);
+  }, [query, accessibleActionItems]);
 
   const filteredSettings = useMemo(() => {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
-    return settingsItems.filter(
+    return accessibleSettingsItems.filter(
       item =>
         item.label.toLowerCase().includes(q) ||
         item.keywords?.some(kw => kw.toLowerCase().includes(q))
     );
-  }, [query, settingsItems]);
+  }, [query, accessibleSettingsItems]);
 
   const hasResults = filteredRecent.length + filteredNav.length + filteredActions.length + filteredSettings.length > 0;
 

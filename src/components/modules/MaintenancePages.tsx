@@ -5152,18 +5152,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 onValueChange={(val) => {
                   setMatItemId(val);
                 }}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=100');
-                  if (res.success && res.data) {
-                    const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
-                    return items.map((item: any) => ({
+                fetchOptions={async (query) => {
+                  const params = new URLSearchParams({ workOrderId: id, limit: '50' });
+                  if (query.trim()) params.set('search', query.trim());
+                  const res = await api.get(`/api/repairs/material-catalog?${params.toString()}`);
+                  if (res.success && Array.isArray(res.data)) {
+                    return res.data.map((item: any) => ({
                       value: item.id,
-                      label: `${item.itemName || item.name}${item.partNumber ? ` (${item.partNumber})` : ''}${item.unit ? ` — ${item.stockQuantity || 0} ${item.unit} in stock` : ''}`,
+                      label: `${item.name}${item.itemCode ? ` (${item.itemCode})` : ''} — ${item.currentStock} ${item.unitOfMeasure || 'each'} available`,
                     }));
                   }
                   return [];
                 }}
-                placeholder="Search inventory items..."
+                placeholder="Search available materials..."
                 searchPlaceholder="Search by name or part number..."
               />
             </div>

@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+    if (!hasPermission(session, 'pm_schedules.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const assetId = searchParams.get('assetId');
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'work_orders.create') && !isAdmin(session)) {
+    if (!hasPermission(session, 'pm_schedules.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

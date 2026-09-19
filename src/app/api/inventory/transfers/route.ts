@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 
 async function generateTransferNumber(): Promise<string> {
   const now = new Date();
@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!isAdmin(session) && !hasAnyPermission(session, ['inventory_transfers.view', 'inventory_transfers.create', 'inventory_transfers.update', 'inventory_transfers.approve'])) {
+      return NextResponse.json({ success: false, error: 'Insufficient inventory transfer permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

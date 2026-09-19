@@ -34,8 +34,9 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(app).toContain('moduleAccessDenied');
     expect(app).toContain("'pm-calendar': 'pm_schedules'");
-    expect(app).toContain("'assets-bom': 'bom'");
-    expect(app).toContain("'quality-capa': 'capa'");
+    expect(app).toContain("'assets-bom': ['assets', 'bom']");
+    expect(app).toContain("'quality-capa': ['quality', 'capa']");
+    expect(app).toContain("'reports-production': ['reports', 'production']");
     expect(app).toContain('permissionAccessDenied');
   });
 

@@ -65,15 +65,37 @@ test('UAT-01: Scenario A — Single-Tech Full Lifecycle', async ({ browser }) =>
     expect(pumpComponent).toBeTruthy();
     componentId = pumpComponent.id;
 
+    // Maintenance technicians must not gain the full Inventory workspace merely
+    // because they need to select a material for a repair.
+    const techLookupToken = await getToken('tech_single');
+    const blockedInventory = await apiCall(
+      techLookupToken,
+      'GET',
+      `/api/inventory?search=${encodeURIComponent('UAT-BRG-6205')}&plantId=${plantId}`,
+    );
+    expect(blockedInventory.status).toBe(403);
+
+    const { status: lookupStatus, data: lookupData } = await apiCall(
+      techLookupToken,
+      'GET',
+      `/api/inventory?mode=lookup&search=${encodeURIComponent('UAT-BRG-6205')}&plantId=${plantId}`,
+    );
+    expect(lookupStatus).toBe(200);
+    const lookupMaterial = (lookupData.data as Array<any>).find((item) => item.itemCode === 'UAT-BRG-6205');
+    expect(lookupMaterial).toBeTruthy();
+    expect(lookupMaterial.unitCost).toBeUndefined();
+    materialItemId = lookupMaterial.id;
+
+    // Store custody roles retain the authoritative inventory workspace/cost view.
+    const storeLookupToken = await getToken('storekeeper');
     const { status: inventoryStatus, data: inventoryData } = await apiCall(
-      plannerToken,
+      storeLookupToken,
       'GET',
       `/api/inventory?search=${encodeURIComponent('UAT-BRG-6205')}&plantId=${plantId}`,
     );
     expect(inventoryStatus).toBe(200);
     const material = (inventoryData.data as Array<any>).find((item) => item.itemCode === 'UAT-BRG-6205');
     expect(material).toBeTruthy();
-    materialItemId = material.id;
     materialUnitCost = Number(material.unitCost);
     expect(materialUnitCost).toBe(120);
 

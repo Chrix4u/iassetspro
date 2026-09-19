@@ -20,8 +20,11 @@ describe('RBAC and module navigation contract', () => {
     const hook = read('src/hooks/useModuleEnabled.ts');
 
     expect(nav).toContain("new Set<string>(['core'])");
-    expect(nav).toContain('m.isCore || (m.isSystemLicensed && m.isActive && m.isEnabled)');
+    expect(nav).toContain('m.isCore || (m.isLicenseValid && m.isActive && m.isEnabled)');
     expect(nav).not.toContain('keep null so all');
+    const modulesRoute = read('src/app/api/modules/route.ts');
+    expect(modulesRoute).toContain('const isLicenseValid = m.isCore || (m.isSystemLicensed && systemLicenseInWindow)');
+    expect(modulesRoute).toContain('isLicenseValid,');
     expect(hook).toContain('if (enabledModules === null) return false');
     expect(hook).not.toContain('if (enabledModules === null) return true');
   });

@@ -95,7 +95,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const storeModules = useNavigationStore((s) => s.enabledModules);
   const expanded = forceExpanded ?? sidebarOpen;
   const user = useAuthStore((s) => s.user);
-  const permissions = useAuthStore((s) => s.permissions);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);

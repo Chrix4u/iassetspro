@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory.create') && !isAdmin(session)) {
+    if (!hasPermission(session, 'purchase_orders.create') && !hasPermission(session, 'purchase_orders.manage') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

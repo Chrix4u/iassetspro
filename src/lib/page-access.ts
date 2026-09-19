@@ -171,7 +171,7 @@ export const PAGE_MODULES: Partial<Record<PageName, string[]>> = {
   'wo-detail': ['work_orders'],
   'maintenance-dashboard': ['work_orders'],
   'maintenance-analytics': ['work_orders'],
-  'maintenance-risk-assessment': ['work_orders'],
+  'maintenance-risk-assessment': ['risk_assessment'],
   'maintenance-tools': ['tools'],
   'maintenance-requests': ['maintenance_requests'],
   'mr-detail': ['maintenance_requests'],

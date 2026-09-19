@@ -159,7 +159,7 @@ export const PAGE_ACCESS_RULES: Record<PageName, PageAccessRule> = {
   'settings-security': { permissions: ['system_settings.view'], modules: ['modules'], adminOnly: true },
   'settings-health': { permissions: ['system_settings.view'], modules: ['modules'], adminOnly: true },
   'settings-queues': { permissions: ['system_settings.view'], modules: ['modules'], adminOnly: true },
-  'settings-preferences': { permissions: ['system_settings.view'], modules: ['core'] },
+  'settings-preferences': { permissions: ['dashboard.view'], modules: ['core'] },
 
   // Engineering / observability
   'reliability-engineering': { permissions: ['digital_twin.view'], modules: ['digital_twin'] },

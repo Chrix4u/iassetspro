@@ -2487,7 +2487,7 @@ export function RepairToolTransfersPage() {
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           {/* Approve / Reject — store keeper / tools shop attendant only */}
-                          {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && (
+                          {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug))) && (
                             <div className="flex items-center gap-1">
                               {t.status === 'pending' && (<>
                                 <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
@@ -2504,7 +2504,7 @@ export function RepairToolTransfersPage() {
                             <Button size="sm" variant="outline" className="h-7 text-[10px] text-teal-600" onClick={() => handleAction(t.id, 'to_user_accept')}>Accept Receipt</Button>
                           )}
                           {/* Cancel — requester or supervisor */}
-                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || userRoleSlugs.some(slug => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug))) && (
+                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug))) && (
                             <Button size="sm" variant="ghost" className="h-7 text-[10px] text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(t.id, 'cancel'); }}>Cancel</Button>
                           )}
                           <DropdownMenu>
@@ -2574,7 +2574,7 @@ export function RepairToolTransfersPage() {
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
                 {/* Approve / Reject — store keeper / tools shop attendant only */}
-                {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
+                {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug))) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
@@ -2596,7 +2596,7 @@ export function RepairToolTransfersPage() {
                   </div>
                 </>)}
                 {/* Cancel — requester or supervisor */}
-                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || userRoleSlugs.some(slug => ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug))) && (<>
+                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug))) && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="ghost" className="text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(detailItem.id, 'cancel'); }} disabled={submitting}>Cancel Transfer</Button>

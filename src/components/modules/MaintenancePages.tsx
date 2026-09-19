@@ -59,6 +59,7 @@ import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -7546,6 +7547,7 @@ export function MaintenanceDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const { navigate } = useNavigationStore();
   const { hasPermission, user } = useAuthStore();
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
 
   useEffect(() => {
     let active = true;
@@ -7632,7 +7634,7 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions.filter(a => hasPermission(a.permission) && (a.page !== 'pm-calendar' || pmEnabled));
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7722,8 +7724,8 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
-        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+        {/* PM Compliance — only when the PM module is licensed and enabled */}
+        {pmEnabled && <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
           <CardContent className="p-4 relative">
             <div className="flex items-center justify-between mb-3">
@@ -7735,7 +7737,7 @@ export function MaintenanceDashboardPage() {
             <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
@@ -8001,6 +8003,7 @@ export function MaintenanceDashboardPage() {
 }
 
 export function MaintenanceAnalyticsPage() {
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -8049,7 +8052,7 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
     { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 

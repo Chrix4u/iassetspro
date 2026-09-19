@@ -344,6 +344,20 @@ function canApproveAsStore(user: any): boolean {
   return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
+function canActAsToolCustodian(request: any, user: any): boolean {
+  if (!user || !request) return false;
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  if (isAdmin()) return true;
+  const userId = authUser?.id || user?.id;
+  return Boolean(userId) && request.requestedById === userId;
+}
+
+function canTransferToolCustody(request: any, user: any): boolean {
+  if (!canActAsToolCustodian(request, user)) return false;
+  const { hasPermission, isAdmin } = useAuthStore.getState();
+  return isAdmin() || hasPermission('repair_tool_transfers.create');
+}
+
 function canDeclareMaterialUsage(request: any, user: any): boolean {
   if (!user || !request?.workOrder) return false;
   const { isAdmin, user: authUser } = useAuthStore.getState();
@@ -1732,10 +1746,10 @@ export function RepairToolRequestsPage() {
                               {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
                               )}
-                              {hasOutstandingItems(r) && (
+                              {hasOutstandingItems(r) && canActAsToolCustodian(r, user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
                               )}
-                              {hasOutstandingItems(r) && (
+                              {hasOutstandingItems(r) && canTransferToolCustody(r, user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openTransferDialog(); }}><ArrowRightLeft className="h-4 w-4 mr-2 text-sky-600" /> Transfer Tools</DropdownMenuItem>
                               )}
                               {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
@@ -1859,7 +1873,7 @@ export function RepairToolRequestsPage() {
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'pending_return' && canApproveAsStore(user)) ||
-                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem))) && (<>
+                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canActAsToolCustodian(detailItem, user))) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
                       {detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user) && (<>
@@ -1893,10 +1907,12 @@ export function RepairToolRequestsPage() {
                           <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject_return' }); setRejectOpen(true); }} disabled={submitting}><XCircle className="h-3.5 w-3.5" /> Reject Return</Button>
                         </div>
                       )}
-                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && (
+                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canActAsToolCustodian(detailItem, user) && (
                         <div className="flex gap-2">
                           <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
-                          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
+                          {canTransferToolCustody(detailItem, user) && (
+                            <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
+                          )}
                         </div>
                       )}
                     </div>

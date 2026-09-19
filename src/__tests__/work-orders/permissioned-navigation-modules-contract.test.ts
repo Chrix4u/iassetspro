@@ -28,6 +28,7 @@ describe('permissioned navigation and module isolation contract', () => {
   const toolTransferCreate = read('src/app/api/repairs/tool-transfers/route.ts');
   const seed = read('prisma/seed.ts');
   const seedPermissions = read('prisma/seed-permissions-only.ts');
+  const ensureRepairs = read('src/app/api/modules/ensure-repairs/route.ts');
 
   it('fails closed for disabled or unlicensed business modules', () => {
     expect(navigationStore).toContain("if (code === 'core')");
@@ -102,11 +103,21 @@ describe('permissioned navigation and module isolation contract', () => {
     expect(toolTransferCreate).toContain('Only the current tool custodian can initiate a transfer');
   });
 
+  it('keeps Repairs independently toggleable from the platform kernel', () => {
+    expect(seed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
+    const repairsModuleSeed = seed.slice(seed.indexOf("{ code: 'repairs'"), seed.indexOf("{ code: 'inventory'"));
+    expect(repairsModuleSeed).toContain('isCore: false');
+    expect(ensureRepairs).toContain('isCore: false');
+    expect(ensureRepairs).toContain('update: { isCore: false }');
+  });
+
   it('maps page access to module/license gates rather than sidebar visibility alone', () => {
     expect(pageAccess).toContain("'pm-calendar': ['pm_schedules']");
     expect(pageAccess).toContain("'repairs-material-requests': ['repairs']");
     expect(pageAccess).toContain("'inventory-items': ['inventory']");
-    expect(pageAccess).toContain("'maintenance-risk-assessment': ['risk_assessment']");
+    expect(pageAccess).toContain("'maintenance-risk-assessment': ['work_orders', 'risk_assessment']");
+    expect(pageAccess).toContain("'repairs-downtime': ['repairs', 'downtime']");
+    expect(pageAccess).toContain("'reports-production': ['reports', 'production']");
     expect(appShell).toContain('const modulesAllowed = arePageModulesEnabled(page, enabledModules)');
   });
 });

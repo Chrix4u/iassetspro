@@ -338,6 +338,8 @@ function PageSwitcher({ page }: { page: string }) {
   const [error, setError] = useState<string | null>(null);
   const { hasPermission, isAdmin } = useAuthStore();
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const fetchModules = useNavigationStore((s) => s.fetchModules);
 
   // Page-to-permission mapping for route guard
   const pagePermissions: Record<string, string[]> = {
@@ -433,7 +435,7 @@ function PageSwitcher({ page }: { page: string }) {
     // Reliability Engineering
     'reliability-engineering': ['digital_twin.view'],
     // Inventory
-    'inventory-items': ['inventory.view'],
+    'inventory-items': ['inventory.view_all', 'inventory.manage', 'inventory.stock_in', 'inventory.stock_out'],
     'inventory-categories': ['parts_categories.view'],
     'inventory-locations': ['inventory_locations.view'],
     'inventory-transactions': ['stock_transactions.view'],
@@ -481,8 +483,73 @@ function PageSwitcher({ page }: { page: string }) {
     'analytics': ['analytics.view'],
   };
 
-  // Permission guard: check before loading the page
+  // Page-to-module mapping. Optional modules are deny-by-default until the
+  // server confirms that the company has them licensed/enabled.
+  const pageModules: Record<string, string> = {
+    'dashboard': 'core', 'chat': 'core', 'notifications': 'core',
+    'assets-machines': 'assets', 'assets-hierarchy': 'assets', 'asset-categories': 'assets',
+    'assets-bom': 'assets', 'assets-condition-monitoring': 'assets', 'assets-health': 'assets',
+    'assets-digital-twin': 'digital_twin', 'digital-twin-viewer': 'digital_twin', 'system-diagrams': 'digital_twin',
+    'ai-hub': 'assets', 'ai-config': 'assets', 'ai-history': 'assets',
+    'maintenance-work-orders': 'work_orders', 'wo-detail': 'work_orders',
+    'maintenance-requests': 'maintenance_requests', 'mr-detail': 'maintenance_requests', 'create-mr': 'maintenance_requests',
+    'maintenance-dashboard': 'work_orders', 'maintenance-analytics': 'work_orders',
+    'maintenance-calibration': 'calibration', 'maintenance-risk-assessment': 'risk_assessment', 'maintenance-tools': 'tools',
+    'pm-schedules': 'pm_schedules', 'pm-templates': 'pm_schedules', 'pm-triggers': 'pm_schedules', 'pm-calendar': 'pm_schedules',
+    'planner-workbench': 'work_orders', 'enterprise-reports': 'reports',
+    'repairs-material-requests': 'repairs', 'repairs-tool-requests': 'repairs', 'repairs-tool-transfers': 'repairs',
+    'repairs-downtime': 'repairs', 'repairs-completion': 'repairs', 'technician-timesheet': 'repairs',
+    'repairs-analytics': 'repairs', 'repairs-spare-part-returns': 'repairs', 'repairs-damaged-tools': 'repairs',
+    'repairs-reports': 'repairs', 'repairs-detail-report': 'repairs',
+    'iot-devices': 'iot_sensors', 'iot-monitoring': 'iot_sensors', 'iot-rules': 'iot_sensors', 'connectivity': 'iot_sensors',
+    'reliability-engineering': 'digital_twin',
+    'analytics-kpi': 'analytics', 'analytics-oee': 'oee', 'analytics-downtime': 'downtime', 'analytics-energy': 'energy',
+    'operations-meter-readings': 'meter_readings', 'operations-training': 'training',
+    'operations-surveys': 'production', 'operations-time-logs': 'work_orders',
+    'operations-shift-handover': 'shift_management', 'operations-checklists': 'work_orders',
+    'production-work-centers': 'production', 'production-resource-planning': 'production', 'production-scheduling': 'production',
+    'production-capacity': 'production', 'production-efficiency': 'production', 'production-bottlenecks': 'production',
+    'production-orders': 'production', 'production-batches': 'production',
+    'quality-inspections': 'quality', 'quality-ncr': 'quality', 'quality-audits': 'quality',
+    'quality-control-plans': 'quality', 'quality-spc': 'quality', 'quality-capa': 'quality',
+    'safety-incidents': 'safety', 'safety-inspections': 'safety', 'safety-training': 'safety',
+    'safety-equipment': 'safety', 'safety-permits': 'safety',
+    'inventory-items': 'inventory', 'inventory-categories': 'inventory', 'inventory-locations': 'inventory',
+    'inventory-transactions': 'inventory', 'inventory-adjustments': 'inventory', 'inventory-requests': 'inventory',
+    'inventory-transfers': 'inventory', 'inventory-suppliers': 'inventory', 'inventory-purchase-orders': 'inventory',
+    'inventory-receiving': 'inventory',
+    'reports-asset': 'reports', 'equipment-history': 'reports', 'machine-availability': 'reports', 'failure-analysis': 'reports',
+    'reports-maintenance': 'reports', 'reports-inventory': 'reports', 'reports-production': 'reports',
+    'reports-quality': 'reports', 'reports-safety': 'reports', 'reports-financial': 'reports', 'reports-custom': 'reports',
+    'wo-reports': 'reports',
+    'settings-general': 'core', 'settings-users': 'core', 'settings-roles': 'core', 'settings-modules': 'core',
+    'settings-company': 'core', 'settings-plants': 'core', 'settings-departments': 'core',
+    'settings-notifications': 'core', 'settings-integrations': 'core', 'settings-backup': 'core',
+    'settings-audit': 'core', 'settings-security': 'core', 'settings-health': 'core',
+    'settings-queues': 'core', 'settings-preferences': 'core',
+  };
+
+  const requiredModule = pageModules[page];
+  const moduleStateReady = enabledModules !== null;
+  const moduleAccessDenied = Boolean(
+    requiredModule &&
+    requiredModule !== 'core' &&
+    moduleStateReady &&
+    !enabledModules!.has(requiredModule.toLowerCase())
+  );
+
+
   useEffect(() => {
+    fetchModules();
+  }, [fetchModules]);
+
+  // Permission + module guard: check before loading the page
+  useEffect(() => {
+    if (!moduleStateReady) return;
+    if (moduleAccessDenied) {
+      navigate('dashboard');
+      return;
+    }
     // Admin-only gate: all settings-* pages (except user-level preferences) require admin
     if (page.startsWith('settings-') && page !== 'settings-preferences') {
       if (!isAdmin()) {
@@ -504,9 +571,17 @@ function PageSwitcher({ page }: { page: string }) {
         return;
       }
     }
-  }, [page, hasPermission, isAdmin, navigate]);
+  }, [page, hasPermission, isAdmin, navigate, moduleStateReady, moduleAccessDenied]);
 
   useEffect(() => {
+    // Do not even import/render optional-module pages until licensing state
+    // confirms the module is enabled.
+    if (!moduleStateReady || moduleAccessDenied) {
+      setComponent(null);
+      setError(null);
+      return;
+    }
+
     // If already cached, use it immediately
     if (pageCache.has(page)) {
       setComponent(() => pageCache.get(page)!);
@@ -535,7 +610,10 @@ function PageSwitcher({ page }: { page: string }) {
       });
 
     return () => { cancelled = true; };
-  }, [page]);
+  }, [page, moduleStateReady, moduleAccessDenied]);
+
+  if (!moduleStateReady) return <LoadingSkeleton />;
+  if (moduleAccessDenied) return <LoadingSkeleton />;
 
   if (error) {
     return (

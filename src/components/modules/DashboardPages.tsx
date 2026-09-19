@@ -246,11 +246,11 @@ export function DashboardPage() {
   ].filter(d => d.count > 0);
 
   const woTypeData = [
-    { type: 'preventive', count: stats?.preventiveWO || 0 },
+    ...(pmEnabled ? [{ type: 'preventive', count: stats?.preventiveWO || 0 }] : []),
     { type: 'corrective', count: stats?.correctiveWO || 0 },
     { type: 'emergency', count: stats?.emergencyWO || 0 },
     { type: 'inspection', count: stats?.inspectionWO || 0 },
-    { type: 'predictive', count: stats?.predictiveWO || 0 },
+    ...(enabledModules.has('predictive') ? [{ type: 'predictive', count: stats?.predictiveWO || 0 }] : []),
   ].filter(d => d.count > 0);
 
   const mrStatusData = [
@@ -687,7 +687,7 @@ export function DashboardPage() {
               showRing
               ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
             />,
-            <KPICard
+            ...(pmEnabled ? [<KPICard
               key="planned-ratio"
               label="Planned Ratio"
               value={`${maintenanceKPIs.plannedRatio}%`}
@@ -700,7 +700,7 @@ export function DashboardPage() {
               icon={Target}
               showRing
               ringValue={maintenanceKPIs.plannedRatio}
-            />,
+            />] : []),
           );
         }
         enhancedCards.push(

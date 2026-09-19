@@ -43,6 +43,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(app).toContain('PAGE_PERMISSIONS[page]');
     expect(app).toContain('pageModuleIsEnabled(page, enabledModules)');
     expect(pageAccess).toContain("'inventory-items': ['inventory.view_all'");
+    expect(pageAccess).toContain("'inventory': ['inventory.view_all'");
   });
 
   it('maps every permissioned page to a module so direct navigation cannot bypass licensing', () => {

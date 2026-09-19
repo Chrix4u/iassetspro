@@ -405,7 +405,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         return false;
       }
 
-      const requiredModules = explicitModule ? [explicitModule] : getPageModules(page);
+      const requiredModules = Array.from(new Set([
+        ...getPageModules(page),
+        ...(explicitModule ? [explicitModule] : []),
+      ]));
       return requiredModules.every((code) => moduleEnabled(code));
     };
 

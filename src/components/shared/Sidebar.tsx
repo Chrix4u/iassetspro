@@ -167,16 +167,16 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'maintenance-analytics', label: 'Repairs Analytics', icon: BarChart3, moduleCode: 'work_orders', permOr: ['work_orders.view', 'work_orders.view_own'] },
         { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment', permOr: ['work_orders.view', 'work_orders.view_own'] },
         { page: 'maintenance-tools', label: 'Maintenance Tools', icon: WrenchIcon, moduleCode: 'tools', perm: 'tools.view' },
-        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration', perm: 'calibration.view' },
       ],
     },
     {
-      label: 'Preventive Maintenance (PM)', icon: Calendar, perm: 'pm_schedules.view', permOr: ['pm_schedules.view', 'pm_templates.view', 'pm_triggers.view'], moduleCode: 'pm_schedules',
+      label: 'Preventive Maintenance (PM)', icon: Calendar, perm: 'pm_schedules.view', permOr: ['pm_schedules.view', 'pm_templates.view', 'pm_triggers.view', 'calibration.view'], moduleCode: 'pm_schedules',
       children: [
         { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, moduleCode: 'pm_schedules', perm: 'pm_schedules.view' },
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules', perm: 'pm_templates.view' },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules', perm: 'pm_triggers.view' },
         { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar, moduleCode: 'pm_schedules', perm: 'pm_schedules.view' },
+        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair, moduleCode: 'calibration', perm: 'calibration.view' },
       ],
     },
     {

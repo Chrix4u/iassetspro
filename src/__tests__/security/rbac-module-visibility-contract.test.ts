@@ -19,6 +19,9 @@ describe('RBAC and licensed-module visibility contract', () => {
   const inventoryAccess = read('src/lib/inventory-access.ts');
   const materialCatalog = read('src/app/api/repairs/material-catalog/route.ts');
   const materialRoute = read('src/app/api/repairs/material-requests/route.ts');
+  const pmSchedulesRoute = read('src/app/api/pm-schedules/route.ts');
+  const pmScheduleDetailRoute = read('src/app/api/pm-schedules/[id]/route.ts');
+  const pmTemplatesRoute = read('src/app/api/pm-templates/route.ts');
   const toolRoute = read('src/app/api/repairs/tool-requests/route.ts');
   const seed = read('prisma/seed-permissions-only.ts');
 
@@ -60,6 +63,22 @@ describe('RBAC and licensed-module visibility contract', () => {
     expect(app).toContain("nonCoreRequiredModules.some(code => !enabledModules.has(code))");
     expect(app).toContain("if (moduleDisabled)");
     expect(app).toContain("if (modulesPending || moduleDisabled) return <LoadingSkeleton />");
+  });
+
+
+  it('keeps PM authorization independent from repair work-order permissions', () => {
+    expect(pmSchedulesRoute).toContain("hasPermission(session, 'pm_schedules.view')");
+    expect(pmSchedulesRoute).toContain("hasPermission(session, 'pm_schedules.create')");
+    expect(pmSchedulesRoute).not.toContain("hasPermission(session, 'work_orders.create')");
+    expect(pmScheduleDetailRoute).toContain("hasPermission(session, 'pm_schedules.view')");
+    expect(pmScheduleDetailRoute).toContain("hasPermission(session, 'pm_schedules.update')");
+    expect(pmScheduleDetailRoute).toContain("hasPermission(session, 'pm_schedules.delete')");
+    expect(pmScheduleDetailRoute).not.toContain("hasPermission(session, 'work_orders.update')");
+    expect(pmTemplatesRoute).toContain("hasPermission(session, 'pm_templates.view')");
+    expect(maintenance).toContain("hasPermission('pm_schedules.create')");
+    expect(maintenance).toContain("hasPermission('pm_schedules.update')");
+    expect(maintenance).toContain("hasPermission('pm_templates.create')");
+    expect(maintenance).not.toContain("hasPermission('roles.update')");
   });
 
   it('does not grant maintenance technicians the full Inventory module', () => {

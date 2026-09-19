@@ -35,6 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { canAccessPage } from '@/lib/page-access';
 
 // ============================================================================
 // Types
@@ -49,6 +50,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
 }
@@ -105,11 +107,11 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
+  { page: 'repairs-material-requests', label: 'Repairs Maintenance', icon: ArrowRightLeft, perm: 'repair_material_requests.view_own', permOr: ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own'], activePages: ['maintenance-work-orders', 'wo-detail', 'maintenance-requests', 'mr-detail', 'create-mr', 'repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'Preventive Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety
@@ -148,7 +150,8 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const permissions = useAuthStore((s) => s.permissions);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleNavigate = useCallback((page: PageName) => {
@@ -160,30 +163,22 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
     setMoreOpen(false);
   }, [navigate]);
 
-  // Filter visible bottom tabs by permission and module
-  const visibleTabs = useMemo(() => {
-    return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
-        ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
-      if (!permOk) return false;
-      return true;
-    });
-  }, [hasPermission]);
+  const accessContext = useMemo(() => ({
+    permissions,
+    isAdmin: isAdmin(),
+    enabledModules,
+  }), [permissions, isAdmin, enabledModules]);
 
-  // Filter visible more items by permission
-  const visibleMoreItems = useMemo(() => {
-    return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
-        ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
-      if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
-        return enabledModules.has(item.moduleCode.toLowerCase());
-      }
-      return true;
-    });
-  }, [hasPermission, enabledModules]);
+  // Use the exact same page policy as desktop navigation and direct page loading.
+  const visibleTabs = useMemo(
+    () => BOTTOM_TABS.filter(tab => canAccessPage(tab.page, accessContext)),
+    [accessContext],
+  );
+
+  const visibleMoreItems = useMemo(
+    () => MORE_ITEMS.filter(item => canAccessPage(item.page, accessContext)),
+    [accessContext],
+  );
 
   // Don't render at all on desktop
   if (!isMobile) return null;

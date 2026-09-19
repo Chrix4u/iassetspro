@@ -136,6 +136,19 @@ export async function POST(request: NextRequest) {
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
 
+    if (!isAdmin(session) && fromUserId !== session.userId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Only the current tool custodian may initiate a transfer from their custody',
+      }, { status: 403 });
+    }
+    if (tool.assignedToId !== fromUserId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Tool custody does not match the proposed transfer sender',
+      }, { status: 409 });
+    }
+
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, tool.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });

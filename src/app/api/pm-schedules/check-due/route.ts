@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 
@@ -46,8 +46,12 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     const cronSecret = request.headers.get('x-pm-cron-secret');
 
-    if (!session && cronSecret !== CRON_SECRET) {
+    const cronAuthorized = cronSecret === CRON_SECRET;
+    if (!session && !cronAuthorized) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (session && !cronAuthorized && !hasPermission(session, 'pm_schedules.run') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to run PM scheduling' }, { status: 403 });
     }
 
     const now = new Date();

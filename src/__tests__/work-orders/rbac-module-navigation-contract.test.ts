@@ -34,6 +34,8 @@ describe('RBAC and module navigation hardening contract', () => {
   const searchRoute = read('src/app/api/search/route.ts');
   const enterpriseSearch = read('src/services/enterpriseSearch.service.ts');
   const pageAccess = read('src/lib/page-access.ts');
+  const moduleRoute = read('src/app/api/modules/route.ts');
+  const seed = read('prisma/seed.ts');
 
   it('separates repairs maintenance from preventive maintenance and filters child routes', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -68,18 +70,19 @@ describe('RBAC and module navigation hardening contract', () => {
 
   it('treats Notifications as an optional module on navigation and direct-page guards', () => {
     expect(sidebar).toContain("page: 'notifications', moduleCode: 'notifications'");
-    expect(app).toContain("'notifications': 'notifications'");
+    expect(pageAccess).toContain("'notifications': 'notifications'");
   });
 
-  it('fails closed when optional module state cannot be verified', () => {
+  it('fails closed when optional module state cannot be verified or licensed', () => {
     expect(navigationStore).toContain("new Set(['core'])");
-    expect(navigationStore).toContain('m.isActive && m.isEnabled');
+    expect(navigationStore).toContain('m.isLicenseValid && m.isActive && m.isEnabled');
+    expect(moduleRoute).toContain('isLicenseValid: systemLicenseValid');
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(app).toContain('moduleAccessDenied');
-    expect(app).toContain("'pm-calendar': 'pm_schedules'");
-    expect(app).toContain("'assets-bom': ['assets', 'bom']");
-    expect(app).toContain("'quality-capa': ['quality', 'capa']");
-    expect(app).toContain("'reports-production': ['reports', 'production']");
+    expect(pageAccess).toContain("'pm-calendar': 'pm_schedules'");
+    expect(pageAccess).toContain("'assets-bom': ['assets', 'bom']");
+    expect(pageAccess).toContain("'quality-capa': ['quality', 'capa']");
+    expect(pageAccess).toContain("'reports-production': ['reports', 'production']");
     expect(app).toContain('permissionAccessDenied');
   });
 
@@ -136,11 +139,17 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(inventoryTransferAction).toContain("'inventory_transfers.update'");
   });
 
-  it('removes PM widgets and shortcuts when PM is disabled', () => {
+  it('keeps PM separate from Repairs while hiding disabled PM on cross-module surfaces', () => {
     expect(dashboard).toContain('const pmEnabled = enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
     expect(dashboard).toContain("!['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'].includes(a.page) || enabledModules.has(MODULE_CODES.PM_SCHEDULES)");
-    expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
-    expect(maintenance).toContain('{pmEnabled && (');
+    expect(maintenance).toContain('Repairs Dashboard');
+    expect(maintenance).toContain('Repairs Analytics');
+    expect(maintenance).not.toContain("label: 'View PM Calendar'");
+    expect(maintenance).not.toContain('PM Compliance');
+    expect(sidebar).toContain("label: 'Preventive Maintenance (PM)'");
+    expect(sidebar).toContain("page: 'maintenance-calibration', label: 'Calibration'");
+    expect(pageAccess).toContain("'maintenance-calibration': ['pm_schedules', 'calibration']");
+    expect(commandPalette).toContain('Preventive Maintenance (PM) - Calibration');
   });
 
 
@@ -153,6 +162,7 @@ describe('RBAC and module navigation hardening contract', () => {
     expect(commandPalette).toContain('canAccessPage(item.page, enabledModules, hasPermission, isAdmin())');
     expect(commandPalette).toContain('Preventive Maintenance (PM) - Schedules');
     expect(commandPalette).toContain('Preventive Maintenance (PM) - Calendar');
+    expect(seed).toContain("code: 'repairs', name: 'Repairs Maintenance'");
   });
 
   it('scopes global search by permission, plant, own-record access, and enabled-page visibility', () => {

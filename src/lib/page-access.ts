@@ -152,7 +152,7 @@ export const PAGE_MODULES: Record<string, string | string[]> = {
     'maintenance-work-orders': 'work_orders', 'wo-detail': 'work_orders',
     'maintenance-requests': 'maintenance_requests', 'mr-detail': 'maintenance_requests', 'create-mr': 'maintenance_requests',
     'maintenance-dashboard': 'work_orders', 'maintenance-analytics': 'work_orders',
-    'maintenance-calibration': ['work_orders', 'calibration'], 'maintenance-risk-assessment': ['work_orders', 'risk_assessment'], 'maintenance-tools': ['work_orders', 'tools'],
+    'maintenance-calibration': ['pm_schedules', 'calibration'], 'maintenance-risk-assessment': ['work_orders', 'risk_assessment'], 'maintenance-tools': ['work_orders', 'tools'],
     'pm-schedules': 'pm_schedules', 'pm-templates': 'pm_schedules', 'pm-triggers': 'pm_schedules', 'pm-calendar': 'pm_schedules',
     'planner-workbench': 'work_orders', 'enterprise-reports': 'reports',
     'repairs-material-requests': 'repairs', 'repairs-tool-requests': 'repairs', 'repairs-tool-transfers': 'repairs',

@@ -593,6 +593,7 @@ export type PageName =
   | 'repairs-spare-part-returns'
   | 'repairs-damaged-tools'
   | 'repairs-reports'
+  | 'repairs-detail-report'
   | 'wo-reports'
   // IoT (3 subpages)
   | 'iot-devices'

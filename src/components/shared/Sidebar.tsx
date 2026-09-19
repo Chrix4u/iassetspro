@@ -419,22 +419,24 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     return menuGroups.flatMap((group) => {
       if (group.adminOnly && !isAdm) return [];
 
-      if (!isAdm) {
-        const requiredGroupPermissions = group.permOr?.length ? group.permOr : [group.perm];
-        if (!requiredGroupPermissions.some((p) => hasPermission(p))) return [];
-      }
-
-      if (!groupModuleVisible(group)) return [];
-
-      if (group.page && !pageVisible(group.page, group.moduleCode)) return [];
-
       if (group.children) {
+        // For grouped navigation, child page policy is authoritative. This
+        // avoids both overexposure and false hiding when a user is granted one
+        // precise child permission without a broad parent-module permission.
         const children = group.children.filter((child) => {
           if (child.pageAdminOnly && !isAdm) return false;
           return pageVisible(child.page, child.moduleCode);
         });
         if (children.length === 0) return [];
         return [{ ...group, children }];
+      }
+
+      if (!groupModuleVisible(group)) return [];
+      if (group.page && !pageVisible(group.page, group.moduleCode)) return [];
+
+      if (!isAdm) {
+        const requiredGroupPermissions = group.permOr?.length ? group.permOr : [group.perm];
+        if (!requiredGroupPermissions.some((p) => hasPermission(p))) return [];
       }
 
       return [group];

@@ -4080,7 +4080,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const isSupervisorOrAdminLocal = () => {
     const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+    if (slugs.includes('admin') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo?.assignedSupervisorId)
+      && wo.assignedSupervisorId === user?.id;
   };
 
   const isStoreOrAdminLocal = () => {
@@ -5740,7 +5743,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {pendingSuggestedCount > 0 && (
+                {!workActionDisabled && pendingSuggestedCount > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
                     onClick={handleSendToStore}
                   >
@@ -5852,10 +5855,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (isAdmin() || hasPermission('repair_material_requests.view') || hasPermission('repair_material_requests.view_all') || hasPermission('repair_material_requests.view_own')) && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
+                {!workActionDisabled && (isAdmin() || hasPermission('repair_material_requests.create')) && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -5944,7 +5949,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               {!isWOFinalized && mr.status === 'picking' && isStoreOrAdminLocal() && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
                               )}
-                              {!isWOFinalized && mr.status === 'issued' && (
+                              {!workActionDisabled && mr.status === 'issued' && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => openSpareReturnFromMR(mr)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
                               )}
                             </div>
@@ -5969,7 +5974,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
+              {(isAdmin() || hasPermission('repair_tool_requests.view') || hasPermission('repair_tool_requests.view_all') || hasPermission('repair_tool_requests.view_own')) && (
+                <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
+              )}
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -6027,31 +6034,39 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <p className="text-xs text-muted-foreground">Work order is {wo.status?.replace(/_/g, ' ') || 'closed'} — all actions are disabled</p>
                   </div>
                 ) : (
+                !workActionDisabled ? (
                 <>
-                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
-                  <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Request Tool</span>
-                </button>
-                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
-                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
-                  <span className="text-xs font-medium">Transfer Tool</span>
-                </button>
-                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {(isAdmin() || hasPermission('repair_tool_requests.create')) && (
+                  <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                    <span className="text-xs font-medium">Request Tool</span>
+                  </button>
+                )}
+                {(isAdmin() || hasPermission('repair_tool_transfers.create')) && (
+                  <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
+                    <span className="text-xs font-medium">Transfer Tool</span>
+                  </button>
+                )}
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                <button onClick={() => openMatReturn()} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>
                 </>
+                ) : null
                 )}
-                <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">View All Tools</span>
-                </button>
-                {!isWOFinalized && (
-                <button onClick={() => setActionDialog('complete')} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {(isAdmin() || hasPermission('repair_tool_requests.view') || hasPermission('repair_tool_requests.view_all') || hasPermission('repair_tool_requests.view_own')) && (
+                  <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                    <span className="text-xs font-medium">View All Tools</span>
+                  </button>
+                )}
+                {!workActionDisabled && (
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Complete WO</span>
                 </button>

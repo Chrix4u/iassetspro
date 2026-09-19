@@ -21,6 +21,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
+  const uatSeed = read('scripts/seed-repairs-uat.ts');
+  const singleTechUat = read('e2e/repairs/scenario-a-single-tech.spec.ts');
 
   it('separates Repairs Maintenance from PM Maintenance', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -49,7 +51,12 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(navStore).toContain('m.isEnabled === true');
     expect(navStore).toContain('m.isActive === true');
     expect(navStore).toContain('set({ enabledModules: new Set<string>() })');
-    expect(moduleHook).toContain('CORE_MODULE_CODES.has(moduleCode.toLowerCase())');
+    expect(pageAccess).toContain('if (CORE_MODULE_CODES.has(code)) return true');
+    expect(pageAccess).toContain('if (enabledModules === null) return false');
+    expect(sidebar).toContain('if (CORE_MODULE_CODES.has(normalized)) return true');
+    expect(mobile).toContain('if (!CORE_MODULE_CODES.has(code)');
+    expect(moduleHook).toContain('if (CORE_MODULE_CODES.has(normalized)) return true');
+    expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
   });
 
@@ -70,6 +77,9 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(inventoryApi).toContain('unitOfMeasure: true');
     expect(repairs).toContain("api.get('/api/inventory?mode=lookup&limit=500')");
     expect(sidebar).toContain("label: 'Inventory', icon: Package, perm: 'inventory.view_all'");
+    expect(singleTechUat).toContain("expect(blockedInventory.status).toBe(403)");
+    expect(singleTechUat).toContain('/api/inventory?mode=lookup&search=');
+    expect(singleTechUat).toContain('expect(lookupMaterial.unitCost).toBeUndefined()');
   });
 
   it('does not grant the maintenance technician the full inventory workspace in seed bundles', () => {
@@ -81,6 +91,15 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(fullTech?.[1]).not.toContain("'inventory.view'");
     expect(permissionTech?.[1]).toContain("'repair_material_requests.create'");
     expect(fullTech?.[1]).toContain("'repair_material_requests.create'");
+  });
+
+  it('models Repairs as a licensed optional domain without implicitly enabling PM', () => {
+    expect(fullSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
+    expect(uatSeed).toContain("where: { code: 'repairs' }");
+    expect(uatSeed).toContain("isSystemLicensed: true");
+    expect(uatSeed).toContain("isEnabled: true");
+    expect(uatSeed).toContain("isActive: true");
+    expect(uatSeed).not.toContain("where: { code: 'pm_schedules' }");
   });
 
   it('matches resource approval buttons to the accountable supervisor rule', () => {

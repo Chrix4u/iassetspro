@@ -2542,7 +2542,7 @@ model RepairMaterialRequest {
   declaredConsumedQty         Float? // technician-declared amount used before store verification
   declaredWastedQty           Float? // technician-declared amount wasted/damaged before store verification
   declaredReturnQty           Float? // technician-declared amount expected back to store
-  usageDeclarationNotes       String?
+  usageDeclarationNotes       String?   @db.Text
   usageDeclaredById           String? // user who submitted the usage declaration
   usageDeclaredAt             DateTime?
   pickedAt                    DateTime? // when store picked the items

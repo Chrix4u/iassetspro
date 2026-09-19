@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     // work-order catalog. Full inventory browsing requires an inventory custody
     // or management permission.
     const fullInventoryReadPermissions = [
+      'inventory.view',
       'inventory.view_all',
       'inventory.manage',
       'inventory.create',

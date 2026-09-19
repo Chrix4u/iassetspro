@@ -21,10 +21,13 @@ export function useModuleEnabled(moduleCode: string): boolean {
     fetchModules();
   }, [fetchModules]);
 
-  // Fail closed while loading: optional/disabled modules must never flash into view.
-  if (enabledModules === null) return CORE_MODULE_CODES.has(moduleCode.toLowerCase());
+  // Core platform modules are always available by definition. Optional modules
+  // fail closed until the authoritative licensed/enabled registry confirms them.
+  const normalized = moduleCode.toLowerCase();
+  if (CORE_MODULE_CODES.has(normalized)) return true;
+  if (enabledModules === null) return false;
 
-  return enabledModules.has(moduleCode.toLowerCase());
+  return enabledModules.has(normalized);
 }
 
 /**

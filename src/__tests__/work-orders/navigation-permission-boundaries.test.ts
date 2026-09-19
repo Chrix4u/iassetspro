@@ -42,6 +42,14 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(pageAccess).toContain("'inventory-items': ['inventory.view_all'");
   });
 
+  it('maps every permissioned page to a module so direct navigation cannot bypass licensing', () => {
+    const [permissionSection, moduleAndRest] = pageAccess.split('export const PAGE_MODULES');
+    const [moduleSection] = moduleAndRest.split('export const CORE_MODULE_CODES');
+    const permissionPages = [...permissionSection.matchAll(/^\s*'([^']+)':\s*\[/gm)].map((m) => m[1]);
+    const modulePages = new Set([...moduleSection.matchAll(/^\s*'([^']+)':\s*'[^']+'/gm)].map((m) => m[1]));
+    expect(permissionPages.filter((page) => !modulePages.has(page))).toEqual([]);
+  });
+
   it('fails closed for optional disabled or unlicensed modules', () => {
     expect(modulesApi).toContain('const systemLicenseValid');
     expect(modulesApi).toContain('m.isSystemLicensed === true');

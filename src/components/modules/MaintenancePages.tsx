@@ -4080,7 +4080,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const isSupervisorOrAdminLocal = () => {
     const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+    if (isAdmin() || slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo?.assignedSupervisorId)
+      && wo?.assignedSupervisorId === user?.id;
   };
 
   const isStoreOrAdminLocal = () => {

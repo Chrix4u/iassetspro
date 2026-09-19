@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
             returnedByUser: { select: { id: true, fullName: true } },
             workOrder: {
               select: {
-                id: true, woNumber: true, title: true, status: true,
+                id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true,
                 assignedTo: true, teamLeaderId: true,
                 teamMembers: { select: { userId: true, role: true } },
               },

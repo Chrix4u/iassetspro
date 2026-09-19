@@ -485,6 +485,14 @@ function PageSwitcher({ page }: { page: string }) {
 
   const requiredModulesForPage = (pageName: string): string[] => {
     if (pageName === 'dashboard' || pageName === 'chat' || pageName === 'notifications') return ['core'];
+    if (pageName.startsWith('ai-')) return ['assets'];
+    if (pageName === 'planner-workbench') return ['work_orders'];
+    if (pageName === 'reliability-engineering') return ['digital_twin'];
+    if (pageName === 'operations-meter-readings') return ['meter_readings'];
+    if (pageName === 'operations-training') return ['training'];
+    if (pageName === 'operations-surveys') return ['production'];
+    if (pageName === 'operations-time-logs' || pageName === 'operations-checklists') return ['work_orders'];
+    if (pageName === 'operations-shift-handover') return ['shift_management'];
     if (pageName.startsWith('pm-')) return ['pm_schedules'];
     if (pageName.startsWith('repairs-') || pageName === 'technician-timesheet') return ['repairs'];
     if (pageName.startsWith('inventory-') || pageName === 'inventory') return ['inventory'];

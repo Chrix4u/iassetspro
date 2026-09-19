@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { api } from '@/lib/api';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
@@ -7544,8 +7545,13 @@ export function MaintenanceDashboardPage() {
   const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { navigate } = useNavigationStore();
+  const { navigate, enabledModules, fetchModules } = useNavigationStore();
   const { hasPermission, user } = useAuthStore();
+  const pmEnabled = enabledModules?.has(MODULE_CODES.PM_SCHEDULES) ?? false;
+
+  useEffect(() => {
+    fetchModules();
+  }, [fetchModules]);
 
   useEffect(() => {
     let active = true;
@@ -7632,7 +7638,9 @@ export function MaintenanceDashboardPage() {
     { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions
+    .filter(a => hasPermission(a.permission))
+    .filter(a => a.page !== 'pm-calendar' || pmEnabled);
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7722,20 +7730,22 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
-        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
-          <CardContent className="p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
-                <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+        {pmEnabled && (
+          {/* PM Compliance */}
+          <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+            <CardContent className="p-4 relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                </div>
               </div>
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
-            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
-          </CardContent>
-        </Card>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
+              <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
@@ -8004,6 +8014,12 @@ export function MaintenanceAnalyticsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const pmEnabled = useNavigationStore((s) => s.enabledModules?.has(MODULE_CODES.PM_SCHEDULES) ?? false);
+  const fetchModules = useNavigationStore((s) => s.fetchModules);
+
+  useEffect(() => {
+    fetchModules();
+  }, [fetchModules]);
 
   useEffect(() => {
     let active = true;
@@ -8032,7 +8048,7 @@ export function MaintenanceAnalyticsPage() {
   const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
 
   const typeBreakdown = [
-    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    ...(pmEnabled ? [{ type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }] : []),
     { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
     { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
     { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' },
@@ -8049,7 +8065,7 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
     { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 

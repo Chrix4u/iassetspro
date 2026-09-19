@@ -30,9 +30,12 @@ describe('RBAC and module navigation hardening contract', () => {
 
   it('fails closed when optional module state cannot be verified', () => {
     expect(navigationStore).toContain("new Set(['core'])");
+    expect(navigationStore).toContain('m.isActive && m.isEnabled');
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(app).toContain('moduleAccessDenied');
     expect(app).toContain("'pm-calendar': 'pm_schedules'");
+    expect(app).toContain("'assets-bom': 'bom'");
+    expect(app).toContain("'quality-capa': 'capa'");
     expect(app).toContain('permissionAccessDenied');
   });
 

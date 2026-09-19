@@ -608,12 +608,6 @@ export function RepairMaterialRequestsPage() {
     return [];
   }, [createForm.workOrderId]);
 
-  const estimatedCost = useMemo(() => {
-    const qty = parseFloat(createForm.quantityRequested) || 0;
-    const cost = parseFloat(createForm.unitCost) || 0;
-    return qty * cost;
-  }, [createForm.quantityRequested, createForm.unitCost]);
-
   if (!repairsEnabled) {
     return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
@@ -1908,7 +1902,7 @@ export function RepairToolRequestsPage() {
                           <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject_return' }); setRejectOpen(true); }} disabled={submitting}><XCircle className="h-3.5 w-3.5" /> Reject Return</Button>
                         </div>
                       )}
-                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && (
+                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canManageIssuedToolCustody(detailItem, user) && (
                         <div className="flex gap-2">
                           <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
                           <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>

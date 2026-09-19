@@ -10,6 +10,8 @@ describe('RWOP material usage declaration accountability contract', () => {
   const reconcile = read('src/app/api/repairs/material-requests/reconcile/route.ts');
   const ui = read('src/components/modules/RepairsPagesLegacy.tsx');
   const schema = read('prisma/schema.prisma');
+  const materialListRoute = read('src/app/api/repairs/material-requests/route.ts');
+  const toolListRoute = read('src/app/api/repairs/tool-requests/route.ts');
 
   it('keeps technician declaration separate from store reconciliation', () => {
     expect(route).toContain("action === 'declare_usage'");
@@ -26,6 +28,15 @@ describe('RWOP material usage declaration accountability contract', () => {
     expect(schema).toContain('usageDeclaredAt');
     expect(route).toContain("action: 'material_request_usage_declared'");
     expect(route).not.toContain("case 'declare_usage': {\n        const qtyToReturn");
+  });
+
+  it('lets the WO execution team see the complete scoped custody picture', () => {
+    for (const source of [materialListRoute, toolListRoute]) {
+      expect(source).toContain('canViewWorkOrderExecutionScope');
+      expect(source).toContain('{ assignedTo: session.userId }');
+      expect(source).toContain('{ teamLeaderId: session.userId }');
+      expect(source).toContain('{ teamMembers: { some: { userId: session.userId } } }');
+    }
   });
 
   it('does not make the technician completion flow call the store-only material return action', () => {

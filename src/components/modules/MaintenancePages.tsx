@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { canAccessPage } from '@/lib/page-access';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -4080,7 +4081,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const isSupervisorOrAdminLocal = () => {
     const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+    if (isAdmin() || slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo?.assignedSupervisorId)
+      && wo?.assignedSupervisorId === user?.id;
   };
 
   const isStoreOrAdminLocal = () => {
@@ -5149,18 +5153,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 onValueChange={(val) => {
                   setMatItemId(val);
                 }}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=100');
-                  if (res.success && res.data) {
-                    const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
-                    return items.map((item: any) => ({
+                fetchOptions={async (query) => {
+                  const params = new URLSearchParams({ workOrderId: id, limit: '50' });
+                  if (query.trim()) params.set('search', query.trim());
+                  const res = await api.get(`/api/repairs/material-catalog?${params.toString()}`);
+                  if (res.success && Array.isArray(res.data)) {
+                    return res.data.map((item: any) => ({
                       value: item.id,
-                      label: `${item.itemName || item.name}${item.partNumber ? ` (${item.partNumber})` : ''}${item.unit ? ` — ${item.stockQuantity || 0} ${item.unit} in stock` : ''}`,
+                      label: `${item.name}${item.itemCode ? ` (${item.itemCode})` : ''} — ${item.currentStock} ${item.unitOfMeasure || 'each'} available`,
                     }));
                   }
                   return [];
                 }}
-                placeholder="Search inventory items..."
+                placeholder="Search available materials..."
                 searchPlaceholder="Search by name or part number..."
               />
             </div>
@@ -7544,8 +7549,14 @@ export function MaintenanceDashboardPage() {
   const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { navigate } = useNavigationStore();
-  const { hasPermission, user } = useAuthStore();
+  const { navigate, enabledModules } = useNavigationStore();
+  const { hasPermission, user, permissions, isAdmin } = useAuthStore();
+  const accessContext = useMemo(() => ({
+    permissions,
+    isAdmin: isAdmin(),
+    enabledModules,
+  }), [permissions, isAdmin, enabledModules]);
+  const pmEnabled = canAccessPage('pm-schedules', accessContext);
 
   useEffect(() => {
     let active = true;
@@ -7626,13 +7637,15 @@ export function MaintenanceDashboardPage() {
 
   // ===== Quick Actions =====
   const quickActions = [
-    { label: 'New Maintenance Request', icon: ClipboardList, page: 'create-mr' as PageName, permission: 'maintenance_requests.create', color: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border-amber-200 hover:border-amber-300 dark:border-amber-900/40', iconColor: 'text-amber-600 dark:text-amber-400' },
-    { label: 'New Work Order', icon: Wrench, page: 'maintenance-work-orders' as PageName, permission: 'work_orders.create', color: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 border-emerald-200 hover:border-emerald-300 dark:border-emerald-900/40', iconColor: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'New Repair Request', icon: ClipboardList, page: 'create-mr' as PageName, permission: 'maintenance_requests.create', color: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border-amber-200 hover:border-amber-300 dark:border-amber-900/40', iconColor: 'text-amber-600 dark:text-amber-400' },
+    { label: 'New Repair Work Order', icon: Wrench, page: 'maintenance-work-orders' as PageName, permission: 'work_orders.create', color: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 border-emerald-200 hover:border-emerald-300 dark:border-emerald-900/40', iconColor: 'text-emerald-600 dark:text-emerald-400' },
     { label: 'View PM Calendar', icon: CalendarClock, page: 'pm-calendar' as PageName, permission: 'pm_schedules.view', color: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/30 dark:hover:bg-sky-950/50 border-sky-200 hover:border-sky-300 dark:border-sky-900/40', iconColor: 'text-sky-600 dark:text-sky-400' },
-    { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
+    { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'work_orders.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
 
-  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+  const visibleActions = quickActions.filter(a =>
+    hasPermission(a.permission) && canAccessPage(a.page, accessContext)
+  );
 
   // ===== Recent work orders =====
   const recentWOs = stats?.recentWorkOrders || [];
@@ -7651,7 +7664,7 @@ export function MaintenanceDashboardPage() {
     return (
       <div className="page-content">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+          <div><h1 className="text-2xl font-bold tracking-tight">Repairs Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Corrective and emergency repair operations overview</p></div>
         </div>
         <Card className="border-red-200 bg-red-50 dark:bg-red-950/20"><CardContent className="p-6"><div className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-red-500" /><div><p className="font-semibold text-red-700 dark:text-red-400">Failed to load dashboard</p><p className="text-sm text-red-600 dark:text-red-500">{error}</p></div></div></CardContent></Card>
       </div>
@@ -7665,10 +7678,10 @@ export function MaintenanceDashboardPage() {
         <div>
           <div className="flex items-center gap-2.5">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Maintenance</span>
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Repairs Maintenance</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Maintenance Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Maintenance operations overview &middot; Key performance indicators</p>
+          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Repairs Maintenance Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Corrective and emergency repair execution &middot; Key performance indicators</p>
         </div>
         <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary self-start">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
@@ -7722,20 +7735,24 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance */}
-        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
-          <CardContent className="p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
-                <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+        {pmEnabled && (
+          <>
+          {/* PM Compliance — visible only when the PM module is licensed and enabled */}
+          <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+            <CardContent className="p-4 relative">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                  <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                </div>
               </div>
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
-            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
-          </CardContent>
-        </Card>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
+              <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">planned preventive maintenance</p>
+            </CardContent>
+          </Card>
+          </>
+        )}
 
         {/* Avg MTTR */}
         <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
@@ -8004,6 +8021,14 @@ export function MaintenanceAnalyticsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
+  const permissions = useAuthStore((s) => s.permissions);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const pmEnabled = canAccessPage('pm-schedules', {
+    permissions,
+    isAdmin: isAdmin(),
+    enabledModules,
+  });
 
   useEffect(() => {
     let active = true;
@@ -8032,7 +8057,7 @@ export function MaintenanceAnalyticsPage() {
   const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
 
   const typeBreakdown = [
-    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    ...(pmEnabled ? [{ type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' }] : []),
     { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
     { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
     { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' },
@@ -8049,13 +8074,13 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
+    { label: 'Total Repair Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Repairs Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Corrective repair analytics including MTTR, MTBF, workload, and cost trends</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpis.map(k => { const I = k.icon; return (

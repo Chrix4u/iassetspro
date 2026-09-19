@@ -87,6 +87,7 @@ export interface Module {
   isEnabled?: boolean; // company activation
   // Vendor licensing fields
   isSystemLicensed?: boolean;
+  isAvailable?: boolean;
   licenseKey?: string;
   validFrom?: string;
   validUntil?: string;
@@ -167,6 +168,7 @@ export interface WorkOrder {
   assignedToId?: string;
   assignedToName?: string;
   teamLeaderId?: string;
+  assignedSupervisorId?: string;
   supervisorId?: string;
   plannerId?: string;
   assignedById?: string;

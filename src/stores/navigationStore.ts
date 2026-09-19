@@ -8,7 +8,8 @@ interface NavigationState {
   pageParams: Record<string, string>;
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
-  enabledModules: Set<string> | null; // null = not loaded yet (show all)
+  enabledModules: Set<string> | null;
+  modulesLoaded: boolean;
   fetchModules: () => Promise<void>;
   refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
@@ -61,11 +62,13 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   pageParams: {},
   sidebarOpen: true,
   mobileSidebarOpen: false,
-  enabledModules: null,
+  // Fail closed while module state is loading. Only platform essentials are
+  // available until the authoritative module response arrives.
+  enabledModules: new Set(['core', 'modules']),
+  modulesLoaded: false,
 
   fetchModules: async () => {
-    // Avoid duplicate fetches if already loaded
-    if (get().enabledModules !== null) return;
+    if (get().modulesLoaded) return;
     await get().refreshModules();
   },
 
@@ -75,19 +78,18 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     try {
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
-        const enabled = new Set<string>();
+        const enabled = new Set<string>(['core', 'modules']);
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
+          if (m.isAvailable === true) enabled.add(String(m.code).toLowerCase());
         });
-        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        if (enabled.size === 0) {
-          set({ enabledModules: null });
-          return;
-        }
-        set({ enabledModules: enabled });
+        set({ enabledModules: enabled, modulesLoaded: true });
+        return;
       }
+
+      // Never expose business modules when licensing/activation cannot be verified.
+      set({ enabledModules: new Set(['core', 'modules']), modulesLoaded: true });
     } catch {
-      // On error, keep null so all items stay visible (graceful fallback)
+      set({ enabledModules: new Set(['core', 'modules']), modulesLoaded: true });
     }
   },
 

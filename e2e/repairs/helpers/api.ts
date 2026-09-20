@@ -145,7 +145,7 @@ export async function lookupPlantId(token: string, code: string): Promise<string
 const toolCache: Record<string, string> = {};
 export async function lookupToolId(token: string, toolName: string): Promise<string> {
   if (toolCache[toolName]) return toolCache[toolName];
-  const { status, data } = await apiCall(token, 'GET', `/api/tools?search=${encodeURIComponent(toolName)}`);
+  const { status, data } = await apiCall(token, 'GET', `/api/tools?mode=lookup&search=${encodeURIComponent(toolName)}`);
   if (status !== 200 || !data.success) {
     throw new Error(`Failed to look up tool ${toolName}: ${status} ${JSON.stringify(data)}`);
   }

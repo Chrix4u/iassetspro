@@ -580,13 +580,19 @@ export function RepairMaterialRequestsPage() {
   // Cache for inventory item lookup (used by AsyncSearchableSelect)
   const inventoryItemsCache = useRef<any[]>([]);
   const fetchInventoryItems = useCallback(async () => {
-    const res = await api.get('/api/inventory?limit=500');
+    if (!createForm.workOrderId) return [];
+    const params = new URLSearchParams({
+      purpose: 'repair_request',
+      workOrderId: createForm.workOrderId,
+      limit: '500',
+    });
+    const res = await api.get(`/api/inventory?${params.toString()}`);
     if (res.success && Array.isArray(res.data)) {
       inventoryItemsCache.current = res.data;
       return res.data.map((i: any) => ({ value: i.id, label: i.name + (i.itemCode ? ` (${i.itemCode})` : '') }));
     }
     return [];
-  }, []);
+  }, [createForm.workOrderId]);
 
   const estimatedCost = useMemo(() => {
     const qty = parseFloat(createForm.quantityRequested) || 0;

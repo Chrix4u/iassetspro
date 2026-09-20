@@ -129,6 +129,16 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboardApi).toContain('productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders');
   });
 
+  it('initializes dashboard module guards before any KPI or chart reads them', () => {
+    const pmGuardIndex = dashboard.indexOf("const pmEnabled = pageHasPermission('pm-schedules'");
+    const pmChartUseIndex = dashboard.indexOf("...(pmEnabled ? [{ type: 'preventive'");
+    const pmActionUseIndex = dashboard.indexOf("{pmEnabled && <button");
+
+    expect(pmGuardIndex).toBeGreaterThan(-1);
+    expect(pmChartUseIndex).toBeGreaterThan(pmGuardIndex);
+    expect(pmActionUseIndex).toBeGreaterThan(pmGuardIndex);
+  });
+
   it('removes PM widgets and actions when PM is disabled', () => {
     expect(dashboard).toContain("pageHasPermission('pm-schedules', hasPermission, isAdmin())");
     expect(dashboard).toContain("pageModuleIsEnabled('pm-schedules', enabledModules)");

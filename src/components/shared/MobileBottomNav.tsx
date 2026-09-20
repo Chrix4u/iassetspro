@@ -161,16 +161,15 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
     setMoreOpen(false);
   }, [navigate]);
 
-  // Filter visible bottom tabs by permission and module
+  // Bottom tabs follow the exact same permission + licensed/enabled
+  // page contract as the sidebar and direct router.
   const visibleTabs = useMemo(() => {
-    return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
-        ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
-      if (!permOk) return false;
-      return true;
-    });
-  }, [hasPermission]);
+    const admin = isAdmin();
+    return BOTTOM_TABS.filter((tab) =>
+      pageHasPermission(tab.page, hasPermission, admin)
+      && pageModuleIsEnabled(tab.page, enabledModules)
+    );
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Filter visible more items by permission
   const visibleMoreItems = useMemo(() => {

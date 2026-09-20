@@ -3444,7 +3444,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 }
 
 export function RepairCompletionPage() {
-  const { user, hasPermission, isAdmin } = useAuthStore();
+  const { user } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [woId, setWoId] = useState('');

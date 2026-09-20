@@ -108,6 +108,8 @@ export interface MaintenanceRequest {
   assetId?: string;
   assetName?: string;
   location?: string;
+  departmentId?: string;
+  plantId?: string;
   status: 'pending' | 'approved' | 'rejected' | 'converted';
   workflowStatus: string;
   category?: string;
@@ -122,6 +124,7 @@ export interface MaintenanceRequest {
   createdAt: string;
   updatedAt: string;
   // Joined
+  department?: { id: string; name: string; code?: string; plantId?: string; supervisorId?: string | null } | null;
   requester?: { id: string; fullName: string; username: string; department?: { id: string; name: string } | string };
   supervisor?: { id: string; fullName: string; username: string };
   approver?: { id: string; fullName: string; username: string };

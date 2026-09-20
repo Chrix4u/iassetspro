@@ -88,7 +88,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(moduleHook).toContain('if (CORE_MODULE_CODES.has(normalized)) return true');
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
-    expect(mobile).toContain('pageModuleIsEnabled(tab.page, enabledModules)');
+    expect(mobile).toContain('pageModuleIsEnabled(page, enabledModules)');
   });
 
   it('treats assets, WO, requests, and inventory as license-controlled operational modules', () => {
@@ -113,9 +113,11 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('applies module gating to mobile navigation, command palette, app shell, and global search', () => {
-    expect(mobile).toContain('pageModuleIsEnabled(tab.page, enabledModules)');
+    expect(mobile).toContain('pageModuleIsEnabled(page, enabledModules)');
     expect(commandPalette).toContain('pageModuleIsEnabled(page, enabledModules)');
     expect(commandPalette).toContain('buildNavigationItems().filter');
+    expect(mobile).toContain('const resolvedPage = candidates.find((page) => canOpenPage(page))');
+    expect(mobile).toContain('return resolvedPage ? [{ ...item, page: resolvedPage }] : []');
     expect(globalSearch).toContain('setResults(Array.isArray(res.data.groups) ? res.data.groups : [])');
     expect(app).toContain("pageModuleIsEnabled('notifications', enabledModules)");
     expect(searchApi).toContain('buildSearchAccessContext(request, session)');

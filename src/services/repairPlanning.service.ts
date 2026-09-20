@@ -341,60 +341,178 @@ export async function convertMRToWorkOrder(
         });
       }
 
+      const suggestedParts: Array<{
+        id: string;
+        itemId: string;
+        itemName: string;
+        itemCode: string;
+        quantity: number;
+        unit: string;
+        notes: string;
+      }> = [];
+      const suggestedTools: Array<{
+        id: string;
+        toolId: string;
+        toolName: string;
+        toolCode: string;
+        quantity: number;
+        notes: string;
+      }> = [];
+
       if (payload.requiredParts && Array.isArray(payload.requiredParts) && payload.requiredParts.length > 0) {
+        if (!workOrder.plantId) {
+          throw new Error('Operational work order must have a plant before planning materials');
+        }
+
         for (const partEntry of payload.requiredParts) {
           const partId = typeof partEntry === 'object' && partEntry !== null ? partEntry.itemId : partEntry;
-          const partQty = typeof partEntry === 'object' && partEntry !== null ? partEntry.quantity : 1;
-          const part = await tx.inventoryItem.findUnique({ where: { id: partId } });
-          if (part) {
-            await tx.workOrderMaterial.create({
-              data: {
-                workOrderId: workOrder.id,
-                itemId: part.id,
-                itemName: part.name,
-                quantity: partQty || 1,
-                unitCost: part.unitCost || 0,
-                totalCost: (partQty || 1) * (part.unitCost || 0),
-                status: 'planned',
-                requestedBy: session.userId,
-              },
-            });
+          const partQty = Number(typeof partEntry === 'object' && partEntry !== null ? (partEntry.quantity ?? 1) : 1);
+
+          if (!partId || !Number.isFinite(partQty) || partQty <= 0) {
+            throw new Error('Each required part must reference a valid inventory item and positive quantity');
           }
+
+          const part = await tx.inventoryItem.findUnique({
+            where: { id: partId },
+            select: {
+              id: true,
+              name: true,
+              itemCode: true,
+              unitOfMeasure: true,
+              unitCost: true,
+              plantId: true,
+            },
+          });
+
+          if (!part) {
+            throw new Error(`Inventory item ${partId} not found`);
+          }
+          if (part.plantId !== workOrder.plantId) {
+            throw new Error(`Inventory item ${partId} belongs to a different plant`);
+          }
+
+          const unit = part.unitOfMeasure || 'each';
+          const unitCost = part.unitCost ?? 0;
+
+          // Keep the legacy WO material projection and the canonical repair
+          // material request in the same transaction so planner-selected parts
+          // are visible on WO details and immediately actionable by the
+          // supervisor/store workflow.
+          await tx.workOrderMaterial.create({
+            data: {
+              workOrderId: workOrder.id,
+              itemId: part.id,
+              itemName: part.name,
+              quantity: partQty,
+              unitCost,
+              totalCost: partQty * unitCost,
+              status: 'planned',
+              requestedBy: session.userId,
+            },
+          });
+
+          await tx.repairMaterialRequest.create({
+            data: {
+              workOrderId: workOrder.id,
+              itemId: part.id,
+              itemName: part.name,
+              quantityRequested: partQty,
+              unit,
+              unitCost,
+              estimatedCost: partQty * unitCost,
+              urgency: 'normal',
+              reason: `Planned for ${workOrder.woNumber}`,
+              plantId: workOrder.plantId,
+              source: 'planner_suggested',
+              status: 'pending',
+              requestedById: session.userId,
+            },
+          });
+
+          suggestedParts.push({
+            id: crypto.randomUUID(),
+            itemId: part.id,
+            itemName: part.name,
+            itemCode: part.itemCode || '',
+            quantity: partQty,
+            unit,
+            notes: '',
+          });
         }
       }
 
       if (payload.requiredTools && Array.isArray(payload.requiredTools) && payload.requiredTools.length > 0) {
         for (const toolEntry of payload.requiredTools) {
           const toolId = typeof toolEntry === 'object' && toolEntry !== null ? toolEntry.toolId : toolEntry;
-          const toolQty = typeof toolEntry === 'object' && toolEntry !== null ? toolEntry.quantity : 1;
-          const tool = await tx.tool.findUnique({ where: { id: toolId } });
-          if (tool) {
-            const toolRequest = await tx.repairToolRequest.create({
-              data: {
-                workOrderId: workOrder.id,
-                toolId: tool.id,
-                toolName: tool.name,
-                reason: `Planned for ${workOrder.woNumber}`,
-                plantId: workOrder.plantId || undefined,
-                source: 'planner_suggested',
-                status: 'pending',
-                requestedById: session.userId,
-              },
-            });
+          const toolQty = Number(typeof toolEntry === 'object' && toolEntry !== null ? (toolEntry.quantity ?? 1) : 1);
 
-            await tx.repairToolRequestItem.create({
-              data: {
-                repairToolRequestId: toolRequest.id,
-                toolId: tool.id,
-                toolName: tool.name,
-                toolCode: tool.toolCode,
-                category: tool.category,
-                quantityRequested: toolQty || 1,
-                unitCost: tool.purchaseCost ?? undefined,
-              },
-            });
+          if (!toolId || !Number.isFinite(toolQty) || toolQty <= 0) {
+            throw new Error('Each required tool must reference a valid tool and positive quantity');
           }
+
+          const tool = await tx.tool.findUnique({
+            where: { id: toolId },
+            select: {
+              id: true,
+              name: true,
+              toolCode: true,
+              category: true,
+              purchaseCost: true,
+              plantId: true,
+            },
+          });
+
+          if (!tool) {
+            throw new Error(`Tool ${toolId} not found`);
+          }
+          if (tool.plantId && workOrder.plantId && tool.plantId !== workOrder.plantId) {
+            throw new Error(`Tool ${toolId} belongs to a different plant`);
+          }
+
+          const toolRequest = await tx.repairToolRequest.create({
+            data: {
+              workOrderId: workOrder.id,
+              toolId: tool.id,
+              toolName: tool.name,
+              reason: `Planned for ${workOrder.woNumber}`,
+              plantId: workOrder.plantId || undefined,
+              source: 'planner_suggested',
+              status: 'pending',
+              requestedById: session.userId,
+            },
+          });
+
+          await tx.repairToolRequestItem.create({
+            data: {
+              repairToolRequestId: toolRequest.id,
+              toolId: tool.id,
+              toolName: tool.name,
+              toolCode: tool.toolCode,
+              category: tool.category,
+              quantityRequested: toolQty,
+              unitCost: tool.purchaseCost ?? undefined,
+            },
+          });
+
+          suggestedTools.push({
+            id: crypto.randomUUID(),
+            toolId: tool.id,
+            toolName: tool.name,
+            toolCode: tool.toolCode || '',
+            quantity: toolQty,
+            notes: '',
+          });
         }
+      }
+
+      if (suggestedParts.length > 0 || suggestedTools.length > 0) {
+        await tx.workOrder.update({
+          where: { id: workOrder.id },
+          data: {
+            suggestedParts: JSON.stringify(suggestedParts),
+            suggestedTools: JSON.stringify(suggestedTools),
+          },
+        });
       }
 
       const transitionResult = await executeTransition(

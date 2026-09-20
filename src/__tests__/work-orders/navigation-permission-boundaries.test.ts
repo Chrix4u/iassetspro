@@ -17,6 +17,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
+  const toolsApi = read('src/app/api/tools/route.ts');
   const materialListApi = read('src/app/api/repairs/material-requests/route.ts');
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
   const toolDetailApi = read('src/app/api/repairs/tool-requests/[id]/route.ts');
@@ -186,5 +187,21 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).not.toContain('user?.id === t.toUserId || isAdmin()');
     expect(toolTransferDetailApi).toContain('session.userId !== transfer.fromUserId');
     expect(toolTransferDetailApi).toContain('session.userId !== transfer.toUserId');
+  });
+
+  it('separates the Tool Registry workspace from constrained repair tool lookups', () => {
+    expect(toolsApi).toContain("const isLookup = mode === 'lookup'");
+    expect(toolsApi).toContain('const canUseToolWorkspace');
+    expect(toolsApi).toContain('const canLookupForWork');
+    expect(toolsApi).toContain("'repair_tool_requests.create'");
+    expect(toolsApi).toContain("'repair_tool_transfers.create'");
+    expect(toolsApi).toContain("'damaged_tool_reports.create'");
+    expect(toolsApi).toContain('if (isLookup ? !canLookupForWork && !canUseToolWorkspace : !canUseToolWorkspace)');
+    expect(toolsApi).toContain('assignedToId: true');
+    expect(toolsApi).not.toContain('purchaseCost: true');
+    expect(pageAccess).toContain("'maintenance-tools': ['tools.manage', 'tools.create', 'tools.update', 'tools.delete']");
+    expect(maintenance).toContain("api.get('/api/tools?mode=lookup&limit=100')");
+    expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=500')");
+    expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=999')");
   });
 });

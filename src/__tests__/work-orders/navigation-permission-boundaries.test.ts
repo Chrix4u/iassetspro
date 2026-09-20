@@ -40,6 +40,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const woCloseApi = read('src/app/api/work-orders/[id]/close/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
+  const stateMachine = read('src/lib/state-machine.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
   const singleTechUat = read('e2e/repairs/scenario-a-single-tech.spec.ts');
   const repairsModuleMigration = read('prisma/migrations/20260919215000_register_repairs_module/migration.sql');
@@ -107,6 +108,17 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboard).toContain("page: 'inventory-items' as PageName");
     expect(dashboard).toContain("pageHasPermission('analytics-kpi', hasPermission, isAdmin())");
     expect(dashboard).toContain("pageHasPermission('reports-financial', hasPermission, isAdmin())");
+  });
+
+  it('uses one canonical state-machine source for production and UAT transition seeding', () => {
+    expect(fullSeed).toContain("import { seedCanonicalTransitions } from '../src/lib/state-machine'");
+    expect(fullSeed).toContain('await seedCanonicalTransitions(db)');
+    expect(fullSeed).not.toContain('const woTransitions = [');
+    expect(fullSeed).not.toContain('const mrTransitions = [');
+    expect(uatSeed).toContain("DEFAULT_WO_TRANSITIONS");
+    expect(uatSeed).toContain("DEFAULT_MR_TRANSITIONS");
+    expect(stateMachine).toContain("fromStatus: 'in_progress', toStatus: 'pending_handover'");
+    expect(stateMachine).toContain("fromStatus: 'on_hold', toStatus: 'in_progress'");
   });
 
   it('keeps repair UAT tool discovery on the constrained lookup endpoint', () => {

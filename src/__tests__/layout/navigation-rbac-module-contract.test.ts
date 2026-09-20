@@ -9,6 +9,7 @@ describe('navigation and Repairs RBAC contract', () => {
   const sidebar = read('src/components/shared/Sidebar.tsx');
   const mobile = read('src/components/shared/MobileBottomNav.tsx');
   const navigationStore = read('src/stores/navigationStore.ts');
+  const modulesApi = read('src/app/api/modules/route.ts');
   const repairsUi = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
   const toolsApi = read('src/app/api/tools/route.ts');
@@ -24,7 +25,9 @@ describe('navigation and Repairs RBAC contract', () => {
   });
 
   it('requires system licensing plus company activation for non-core modules', () => {
-    expect(navigationStore).toContain('m.isSystemLicensed && m.isActive && m.isEnabled');
+    expect(modulesApi).toContain('const isUsable = systemLicensed && companyLicensed && companyEnabled');
+    expect(modulesApi).toContain('withinLicenseWindow');
+    expect(navigationStore).toContain('m.isUsable === true');
     expect(navigationStore).toContain('new Set<string>()');
   });
 

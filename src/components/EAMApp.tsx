@@ -24,7 +24,7 @@ import {
   LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
 import type { PageName } from '@/types';
-import { PAGE_PERMISSIONS, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
+import { PAGE_PERMISSIONS, pageHasPermission, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
 
 // ============================================================================
 // PAGE TITLE MAP — module-level (no hook dependency)
@@ -447,12 +447,25 @@ function AppShell() {
   const toggleSidebar = useNavigationStore((s) => s.toggleSidebar);
   const setMobileSidebarOpen = useNavigationStore((s) => s.setMobileSidebarOpen);
   const fetchModules = useNavigationStore((s) => s.fetchModules);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const notificationsVisible = pageHasPermission('notifications', hasPermission, isAdmin())
+    && pageModuleIsEnabled('notifications', enabledModules);
+  const currentPageAdminAllowed = !currentPage.startsWith('settings-')
+    || currentPage === 'settings-preferences'
+    || isAdmin();
+  const currentPageVisible = currentPageAdminAllowed
+    && pageModuleStateResolved(currentPage, enabledModules)
+    && pageModuleIsEnabled(currentPage, enabledModules)
+    && pageHasPermission(currentPage, hasPermission, isAdmin());
+  const visiblePageTitle = currentPageVisible
+    ? (PAGE_TITLES[currentPage] || 'Dashboard')
+    : 'iAssetsPro';
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
@@ -461,11 +474,13 @@ function AppShell() {
     fetchModules();
   }, [fetchModules]);
 
-  // Update document title on navigation
+  // Do not expose disabled/unauthorized module names while a deep link is
+  // waiting for registry state or being rejected.
   React.useEffect(() => {
-    const title = PAGE_TITLES[currentPage] || 'Dashboard';
-    document.title = `${title} — iAssetsPro`;
-  }, [currentPage]);
+    document.title = currentPageVisible
+      ? `${visiblePageTitle} — iAssetsPro`
+      : 'iAssetsPro';
+  }, [currentPageVisible, visiblePageTitle]);
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -505,7 +520,7 @@ function AppShell() {
             {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
           <div className="hidden sm:flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">{PAGE_TITLES[currentPage] || 'Dashboard'}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{visiblePageTitle}</h2>
             <Separator orientation="vertical" className="h-4 bg-border/60" />
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
@@ -554,7 +569,7 @@ function AppShell() {
                 <TooltipContent>Toggle theme</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <NotificationPopover />
+            {notificationsVisible && <NotificationPopover />}
             <Separator orientation="vertical" className="h-6 mx-1 bg-border/40" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -585,7 +600,7 @@ function AppShell() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2.5" />Dashboard</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>
+                {notificationsVisible && <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 {hasPermission('system_settings.view') && (
                   <>

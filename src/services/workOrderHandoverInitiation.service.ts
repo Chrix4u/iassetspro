@@ -46,13 +46,13 @@ function hasHandoverAuthority(
 
 export function handoverUserHasEffectivePermission(
   user: {
-    userRoles: Array<{
+    userRoles?: Array<{
       role: {
         slug: string;
-        rolePermissions: Array<{ permission: { slug: string } }>;
+        rolePermissions?: Array<{ permission: { slug: string } }>;
       };
     }>;
-    directPerms: Array<{
+    directPerms?: Array<{
       isGranted: boolean;
       expiresAt: Date | null;
       permission: { slug: string };
@@ -60,17 +60,20 @@ export function handoverUserHasEffectivePermission(
   },
   permissionSlug: string,
 ): boolean {
-  if (user.userRoles.some((userRole) => userRole.role.slug === 'admin')) return true;
+  const userRoles = user.userRoles ?? [];
+  const directPerms = user.directPerms ?? [];
+
+  if (userRoles.some((userRole) => userRole.role.slug === 'admin')) return true;
 
   const permissions = new Set<string>();
-  for (const userRole of user.userRoles) {
-    for (const rolePermission of userRole.role.rolePermissions) {
+  for (const userRole of userRoles) {
+    for (const rolePermission of userRole.role.rolePermissions ?? []) {
       permissions.add(rolePermission.permission.slug);
     }
   }
 
   const now = new Date();
-  for (const directPermission of user.directPerms) {
+  for (const directPermission of directPerms) {
     if (directPermission.permission.slug !== permissionSlug) continue;
     if (directPermission.expiresAt && directPermission.expiresAt < now) {
       permissions.delete(permissionSlug);

@@ -82,7 +82,7 @@ interface PaletteItem {
   id: string;
   label: string;
   icon: React.ElementType;
-  group: 'recent' | 'navigation' | 'actions' | 'settings';
+  group: 'recent' | 'navigation' | 'reports' | 'actions' | 'settings';
   page?: PageName;
   action?: () => void;
   keywords?: string[];
@@ -274,7 +274,7 @@ export default function CommandPalette() {
     ] : []),
   ], [hasPermission, canOpenPage]);
 
-  const settingsItems: PaletteItem[] = useMemo(() => [
+  const settingsItems = useMemo<PaletteItem[]>(() => [
     { id: 'settings-users', label: 'Manage Users', icon: Users, group: 'settings' as const, page: 'settings-users', keywords: ['admin', 'user'] },
     { id: 'settings-roles', label: 'Roles & Permissions', icon: Shield, group: 'settings' as const, page: 'settings-roles', keywords: ['role', 'permission', 'rbac'] },
     { id: 'settings-general', label: 'General Settings', icon: Settings, group: 'settings' as const, page: 'settings-general' },

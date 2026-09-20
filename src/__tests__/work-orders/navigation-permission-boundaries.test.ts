@@ -291,7 +291,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.close')");
     expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.cancel')");
     expect(woTransitionsApi).toContain('canViewWorkOrder(session, wo)');
-    expect(woTransitionsApi).toContain('canPerformWorkOrderTransition(session, wo, transition.toStatus)');
+    expect(woTransitionsApi).toContain('canPerformWorkOrderTransition(session, accessSnapshot, transition.toStatus)');
     expect(maintenance).toContain('(canEdit || transitionActions.length > 0)');
     expect(maintenance).not.toContain('const canTakeActions = useMemo');
   });
@@ -300,8 +300,8 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(workOrderAccess).toContain("workOrder.status === 'completed' || workOrder.status === 'verified'");
     expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.verify')");
     expect(maintenance).toContain("actionName = 'rework'");
-    expect(maintenance).toContain("action: 'rework'");
-    expect(maintenance).toContain("api.post(\`/api/work-orders/\${id}/verify\`");
+    expect(maintenance).toContain("api.post(\`/api/work-orders/\${id}/rework\`");
+    expect(maintenance).not.toContain("action: 'rework'");
   });
 
   it('preserves assigned planner ownership when management overrides approval or planning', () => {

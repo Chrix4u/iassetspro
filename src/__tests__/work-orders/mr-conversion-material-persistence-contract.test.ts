@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const read = (path: string) => fs.readFileSync(path, 'utf8');
 
 describe('MR conversion planner-material persistence', () => {
+  const backfillMigration = read('prisma/migrations/20260920222500_backfill_mr_conversion_materials/migration.sql');
   it('persists planner-selected parts into both WO and canonical repair material pipelines', () => {
     const service = read('src/services/repairPlanning.service.ts');
 
@@ -33,6 +34,15 @@ describe('MR conversion planner-material persistence', () => {
     expect(route).toContain('if (suggestedParts.length === 0 && wo.materials.length > 0)');
     expect(route).toContain("itemName: material.itemName || 'Planned material'");
     expect(route).toContain('quantity: material.quantity ?? 1');
+  });
+
+  it('backfills already-converted WOs into the canonical Materials & Parts pipeline', () => {
+    expect(backfillMigration).toContain("wm.\`status\` = 'planned'");
+    expect(backfillMigration).toContain("'planner_suggested'");
+    expect(backfillMigration).toContain('INSERT INTO \`repair_material_requests\`');
+    expect(backfillMigration).toContain('NOT EXISTS');
+    expect(backfillMigration).toContain('rmr.\`workOrderId\` = wm.\`workOrderId\`');
+    expect(backfillMigration).toContain('rmr.\`itemId\` = wm.\`itemId\`');
   });
 
   it('materializes missing canonical requests before a legacy planner material is sent to store', () => {

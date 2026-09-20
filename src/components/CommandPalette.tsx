@@ -224,6 +224,9 @@ export default function CommandPalette() {
 
   const canOpenPage = useCallback((page: PageName) => {
     const admin = isAdmin();
+    const adminOnlyPage = page.startsWith('settings-') && page !== 'settings-preferences';
+    if (adminOnlyPage && !admin) return false;
+
     return pageHasPermission(page, hasPermission, admin)
       && pageModuleIsEnabled(page, enabledModules);
   }, [enabledModules, hasPermission, isAdmin]);

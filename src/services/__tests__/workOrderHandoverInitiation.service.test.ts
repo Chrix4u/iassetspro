@@ -31,7 +31,7 @@ vi.mock('@/services/workOrderActiveSession.service', () => ({
 vi.mock('@/lib/audit-helpers', () => ({ buildAuditData: mockBuildAuditData }));
 vi.mock('@/lib/repair-notifications', () => ({ sendRepairNotification: mockSendRepairNotification }));
 
-import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
+import { handoverUserHasEffectivePermission, initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
 const technicianSession: SessionContext = {
@@ -101,6 +101,10 @@ function installDefaults() {
 }
 
 describe('workOrderHandoverInitiation.initiateCanonicalHandover', () => {
+  it('fails closed when effective-permission relations are absent', () => {
+    expect(handoverUserHasEffectivePermission({}, 'work_orders.start')).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     installDefaults();

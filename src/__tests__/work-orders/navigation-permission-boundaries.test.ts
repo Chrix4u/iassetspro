@@ -35,7 +35,9 @@ describe('navigation, module, and action permission boundaries', () => {
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
   const toolDetailApi = read('src/app/api/repairs/tool-requests/[id]/route.ts');
   const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
+  const toolTransferCandidateApi = read('src/app/api/repairs/tool-transfers/candidates/route.ts');
   const toolTransferDetailApi = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
+  const toolTransferService = read('src/services/toolTransfer.service.ts');
   const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
   const mrDetailApi = read('src/app/api/maintenance-requests/[id]/route.ts');
   const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
@@ -346,6 +348,23 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).toContain('completion.workOrder.assignedSupervisorId === userId');
     expect(repairs).toContain('completion.workOrder.plannerId === userId');
     expect(repairs).not.toContain("completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin())");
+  });
+
+  it('scopes tool transfer recipients and detail visibility to the custody workflow', () => {
+    expect(maintenance).toContain("/api/repairs/tool-transfers/candidates?");
+    expect(maintenance).not.toContain("api.get('/api/workers?role=technician')");
+    expect(toolTransferCandidateApi).toContain("'repair_tool_transfers.create'");
+    expect(toolTransferCandidateApi).toContain("role: { slug: 'maintenance_technician' }");
+    expect(toolTransferCandidateApi).toContain("plantAccess: { some: { plantId: tool.plantId } }");
+    expect(toolTransferCandidateApi).toContain("status: 'active'");
+    expect(toolTransferService).toContain('async function validateTransferRecipient');
+    expect(toolTransferService).toContain('Transfer recipient is not authorized for the tool plant');
+    expect(toolTransferService).toContain('Transfer recipient must be an active maintenance technician');
+    expect(toolTransferDetailApi).toContain("'repair_tool_transfers.view_own'");
+    expect(toolTransferDetailApi).toContain('transfer.fromUserId === session.userId');
+    expect(toolTransferDetailApi).toContain('transfer.toUserId === session.userId');
+    expect(toolTransferDetailApi).toContain('transfer.requestedById === session.userId');
+    expect(toolTransferApi).toContain("plantAccess: { some: { plantId: tool.plantId } }");
   });
 
   it('keeps tool transfer approvals and physical handover controls aligned with the API', () => {

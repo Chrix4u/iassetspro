@@ -158,6 +158,12 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update')");
   });
 
+  it('does not let update permissions imply domain-wide repair visibility', () => {
+    expect(repairs).toContain("canViewAllRepairData(user, ['repair_material_requests.view', 'repair_material_requests.view_all'])");
+    expect(repairs).toContain("canViewAllRepairData(user, ['repair_tool_requests.view', 'repair_tool_requests.view_all'])");
+    expect(repairs).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.view_all')");
+  });
+
   it('does not render or load a page before its permission and module checks pass', () => {
     expect(app).toContain('const pageAllowed = permissionAllowed && moduleAllowed');
     expect(app).toContain('if (!pageAllowed) return;');

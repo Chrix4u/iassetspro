@@ -103,13 +103,29 @@ describe('checkTransition', () => {
     expect(mockDb.statusTransition.findFirst).not.toHaveBeenCalled();
   });
 
-  it('rejects a missing transition rule', async () => {
+  it('rejects a missing persisted rule for a canonical transition', async () => {
     (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(null);
 
-    const result = await checkTransition('work_order', 'nonexistent', 'assigned', adminSession);
+    const result = await checkTransition('work_order', 'draft', 'requested', adminSession);
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('No transition rule found');
+  });
+
+  it('rejects persisted lifecycle pairs that are not canonical', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
+      mockTransitionRule({
+        fromStatus: 'completed',
+        toStatus: 'closed',
+        allowedRoleSlugs: JSON.stringify(['admin']),
+      }),
+    );
+
+    const result = await checkTransition('work_order', 'completed', 'closed', adminSession);
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not part of the canonical work_order lifecycle');
+    expect(mockDb.statusTransition.findFirst).not.toHaveBeenCalled();
   });
 
   it('rejects a role that is not allowed by the transition', async () => {
@@ -310,9 +326,15 @@ describe('getAvailableTransitions', () => {
     (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
   });
 
-  it('returns the role-filtered transition contract', async () => {
+  it('returns only canonical role-filtered transition rows', async () => {
     (mockDb.statusTransition.findMany as Mock).mockResolvedValue([
       mockTransitionRule(),
+      mockTransitionRule({
+        id: 'stale-rule',
+        fromStatus: 'draft',
+        toStatus: 'closed',
+        allowedRoleSlugs: JSON.stringify(['admin']),
+      }),
     ]);
 
     const transitions = await getAvailableTransitions('work_order', 'draft', adminSession);

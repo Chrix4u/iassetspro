@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate tool code TL-NNNN
@@ -27,10 +27,35 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('mode');
+    const isLookup = mode === 'lookup';
+
+    // Tool Registry is a custody/administration workspace. Repair execution
+    // users receive only a constrained lookup shape for selectors and requests.
+    const canUseToolWorkspace = isAdmin(session) || hasAnyPermission(session, [
+      'tools.manage',
+      'tools.create',
+      'tools.update',
+      'tools.delete',
+    ]);
+    const canLookupForWork = isAdmin(session) || hasAnyPermission(session, [
+      'tools.view',
+      'repair_tool_requests.create',
+      'repair_tool_requests.update',
+      'repair_tool_transfers.create',
+      'damaged_tool_reports.create',
+      'work_orders.create',
+      'work_orders.update',
+    ]);
+
+    if (isLookup ? !canLookupForWork && !canUseToolWorkspace : !canUseToolWorkspace) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
 
-    const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const category = searchParams.get('category');
     const condition = searchParams.get('condition');
@@ -59,11 +84,27 @@ export async function GET(request: NextRequest) {
     const [tools, total] = await Promise.all([
       db.tool.findMany({
         where: Object.keys(where).length > 1 || where.OR ? where : undefined,
-        include: {
-          assignedTo: { select: { id: true, fullName: true, username: true } },
-          createdBy: { select: { id: true, fullName: true, username: true } },
-          _count: { select: { transactions: true } },
-        },
+        ...(isLookup
+          ? {
+              select: {
+                id: true,
+                toolCode: true,
+                name: true,
+                category: true,
+                status: true,
+                condition: true,
+                quantity: true,
+                assignedToId: true,
+                plantId: true,
+              },
+            }
+          : {
+              include: {
+                assignedTo: { select: { id: true, fullName: true, username: true } },
+                createdBy: { select: { id: true, fullName: true, username: true } },
+                _count: { select: { transactions: true } },
+              },
+            }),
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -91,13 +132,17 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-      kpis: {
-        total: totalCount,
-        available: availableCount,
-        checkedOut: checkedOutCount,
-        inRepair: inRepairCount,
-        retired: retiredCount,
-      },
+      ...(isLookup
+        ? {}
+        : {
+            kpis: {
+              total: totalCount,
+              available: availableCount,
+              checkedOut: checkedOutCount,
+              inRepair: inRepairCount,
+              retired: retiredCount,
+            },
+          }),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load tools';

@@ -1,0 +1,52 @@
+-- Reclassify legacy operational modules that were previously marked as core.
+-- Only 'core' and 'modules' are non-disableable control-plane modules.
+--
+-- Preserve current production behavior during rollout by ensuring the
+-- reclassified modules remain licensed + enabled + active initially. Admins
+-- may disable them normally after this migration.
+
+UPDATE `system_modules`
+SET `isCore` = 0,
+    `isSystemLicensed` = 1
+WHERE `code` IN ('assets', 'maintenance_requests', 'work_orders', 'inventory');
+
+UPDATE `system_modules`
+SET `isCore` = 1,
+    `isSystemLicensed` = 1
+WHERE `code` IN ('core', 'modules');
+
+INSERT INTO `company_modules`
+  (`id`, `systemModuleId`, `companyId`, `isActive`, `isEnabled`,
+   `licensedAt`, `licensedBy`, `activatedAt`, `activatedBy`,
+   `activationLocked`, `createdAt`, `updatedAt`)
+SELECT
+  CONCAT('cm_', REPLACE(UUID(), '-', '')),
+  sm.`id`,
+  '__default__',
+  1,
+  1,
+  COALESCE(sm.`validFrom`, NOW(3)),
+  NULL,
+  NOW(3),
+  NULL,
+  0,
+  NOW(3),
+  NOW(3)
+FROM `system_modules` sm
+WHERE sm.`code` IN ('assets', 'maintenance_requests', 'work_orders', 'inventory')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM `company_modules` cm
+    WHERE cm.`systemModuleId` = sm.`id`
+      AND cm.`companyId` = '__default__'
+  );
+
+UPDATE `company_modules` cm
+JOIN `system_modules` sm ON sm.`id` = cm.`systemModuleId`
+SET cm.`isActive` = 1,
+    cm.`isEnabled` = 1,
+    cm.`licensedAt` = COALESCE(cm.`licensedAt`, NOW(3)),
+    cm.`activatedAt` = COALESCE(cm.`activatedAt`, NOW(3)),
+    cm.`updatedAt` = NOW(3)
+WHERE sm.`code` IN ('assets', 'maintenance_requests', 'work_orders', 'inventory')
+  AND cm.`companyId` = '__default__';

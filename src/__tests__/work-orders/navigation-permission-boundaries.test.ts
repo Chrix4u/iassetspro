@@ -28,6 +28,14 @@ describe('navigation, module, and action permission boundaries', () => {
   const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
   const mrDetailApi = read('src/app/api/maintenance-requests/[id]/route.ts');
   const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
+  const workOrderAccess = read('src/services/workOrderAccess.service.ts');
+  const woTransitionsApi = read('src/app/api/work-orders/[id]/transitions/route.ts');
+  const woRequestApi = read('src/app/api/work-orders/[id]/request/route.ts');
+  const woApproveApi = read('src/app/api/work-orders/[id]/approve/route.ts');
+  const woPlanApi = read('src/app/api/work-orders/[id]/plan/route.ts');
+  const woAssignApi = read('src/app/api/work-orders/[id]/assign/route.ts');
+  const woCancelApi = read('src/app/api/work-orders/[id]/cancel/route.ts');
+  const woCloseApi = read('src/app/api/work-orders/[id]/close/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
@@ -275,5 +283,26 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("api.get('/api/tools?mode=lookup&limit=100')");
     expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=500')");
     expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=999')");
+  });
+
+  it('filters WO lifecycle actions by endpoint permission and accountable actor', () => {
+    expect(workOrderAccess).toContain('function hasWorkOrderTransitionPermission');
+    expect(workOrderAccess).toContain('export function canPerformWorkOrderTransition');
+    expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.close')");
+    expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.cancel')");
+    expect(woTransitionsApi).toContain('canViewWorkOrder(session, wo)');
+    expect(woTransitionsApi).toContain('canPerformWorkOrderTransition(session, wo, transition.toStatus)');
+    expect(maintenance).toContain('(canEdit || transitionActions.length > 0)');
+    expect(maintenance).not.toContain('const canTakeActions = useMemo');
+  });
+
+  it('binds broad WO planning routes to their accountable lifecycle owners', () => {
+    expect(woRequestApi).toContain('canPlanWorkOrderForActor(session, wo)');
+    expect(woApproveApi).toContain('canPlanWorkOrderForActor(session, wo)');
+    expect(woPlanApi).toContain('canPlanWorkOrderForActor(session, wo)');
+    expect(woAssignApi).toContain('canAssignWorkOrderForActor(session, wo)');
+    expect(woCancelApi).toContain('canCancelWorkOrderForActor(session, wo)');
+    expect(woCloseApi).toContain("hasAnyPermission(session, ['work_orders.close'])");
+    expect(woCloseApi).not.toContain("['work_orders.update', 'work_orders.close']");
   });
 });

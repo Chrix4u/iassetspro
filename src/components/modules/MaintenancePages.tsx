@@ -3642,8 +3642,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         res = await api.post(`/api/work-orders/${id}/verify`, { notes: extra?.notes });
         break;
       case 'rework':
-        res = await api.post(`/api/work-orders/${id}/verify`, {
-          action: 'rework',
+        res = await api.post(`/api/work-orders/${id}/rework`, {
           reason: extra?.notes,
           notes: extra?.notes,
         });
@@ -4369,6 +4368,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       } else if (wo.status !== 'assigned') {
         actionName = 'resume';
       }
+    } else if (t.toStatus === 'pending_handover') {
+      actionName = 'handover';
     }
 
     return {
@@ -4376,7 +4377,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       actionName,
       label: actionName === 'rework'
         ? 'Request Rework'
-        : t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        : actionName === 'handover'
+          ? 'Shift Handover'
+          : t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
       requiresReason: t.requiresReason,
     };
   });
@@ -4400,20 +4403,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   // WO is finalized when completed/verified/closed/cancelled/locked — all action buttons disabled
   const isWOFinalized = ['completed', 'verified', 'closed', 'cancelled'].includes(wo.status) || wo.isLocked;
-  const isWOReadOnly = isWOFinalized; // alias for clarity
+  const isHandoverPending = wo.status === 'pending_handover';
+  const isWOReadOnly = isWOFinalized || isHandoverPending;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
-  // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
-  const canEdit = !['completed', 'closed', 'cancelled', 'verified'].includes(wo.status) && (
+  // Edit: accountable planning/assignment actors may edit only outside terminal
+  // states and outside the custody-frozen handover state.
+  const canEdit = !['completed', 'closed', 'cancelled', 'verified', 'pending_handover'].includes(wo.status) && (
     canManageTeamDirectly ||
     isAdmin() ||
     (wo.plannerId === user?.id)
   );
 
-  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers or finalized WOs
-  const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
-  // Disable ALL interactive buttons for completed/closed WOs
-  const allActionsDisabled = isWOFinalized;
+  // Pending handover is a custody freeze: execution/resources cannot continue
+  // until the designated receiver confirms and resumes the WO.
+  const workActionDisabled = isReadOnly || isWOReadOnly || !isWorkerOnThisWO;
+  const allActionsDisabled = isWOReadOnly;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -4454,7 +4458,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               {canEdit && !isReadOnly && <DropdownMenuSeparator />}
               {transitionActions.map(ta => (
                 <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
-                  if (needsDialog.has(ta.actionName)) {
+                  if (ta.actionName === 'handover') {
+                    setHandoverOpen(true);
+                  } else if (needsDialog.has(ta.actionName)) {
                     setActionDialog(ta.actionName);
                   } else if (ta.requiresReason) {
                     setActionDialog(`reason:${ta.actionName}`);

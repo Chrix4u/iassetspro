@@ -296,6 +296,14 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).not.toContain('const canTakeActions = useMemo');
   });
 
+  it('routes completed and verified rework through the canonical verification service', () => {
+    expect(workOrderAccess).toContain("workOrder.status === 'completed' || workOrder.status === 'verified'");
+    expect(workOrderAccess).toContain("hasPermission(session, 'work_orders.verify')");
+    expect(maintenance).toContain("actionName = 'rework'");
+    expect(maintenance).toContain("action: 'rework'");
+    expect(maintenance).toContain("api.post(\`/api/work-orders/\${id}/verify\`");
+  });
+
   it('binds broad WO planning routes to their accountable lifecycle owners', () => {
     expect(woRequestApi).toContain('canPlanWorkOrderForActor(session, wo)');
     expect(woApproveApi).toContain('canPlanWorkOrderForActor(session, wo)');

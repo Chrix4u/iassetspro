@@ -3523,6 +3523,108 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setTlLoading(false);
   };
 
+  const refreshWorkOrderLifecycle = async () => {
+    await Promise.all([
+      fetchWO(),
+      fetchTransitions(),
+      fetchHandoverState(),
+    ]);
+    onUpdate();
+  };
+
+  const resetHandoverForm = () => {
+    setHandoverReceiverId('');
+    setHandoverReason('');
+    setHandoverFromShift('');
+    setHandoverToShift('');
+    setHandoverPendingIssues('');
+    setHandoverSafetyNotes('');
+    setHandoverNotes('');
+  };
+
+  const handleInitiateHandover = async () => {
+    if (!handoverReceiverId) {
+      toast.error('Select the incoming technician');
+      return;
+    }
+    if (handoverReason.trim().length < 5) {
+      toast.error('Enter a clear handover reason');
+      return;
+    }
+
+    setHandoverSubmitting(true);
+    const res = await api.post(`/api/work-orders/${id}/handover`, {
+      receivedById: handoverReceiverId,
+      reason: handoverReason.trim(),
+      fromShift: handoverFromShift || undefined,
+      toShift: handoverToShift || undefined,
+      shiftType: handoverToShift || undefined,
+      pendingIssues: handoverPendingIssues.trim() || undefined,
+      safetyNotes: handoverSafetyNotes.trim() || undefined,
+      notes: handoverNotes.trim() || undefined,
+    });
+    setHandoverSubmitting(false);
+
+    if (!res.success) {
+      toast.error(res.error || 'Failed to initiate shift handover');
+      return;
+    }
+
+    toast.success('Shift handover sent to the incoming technician');
+    setHandoverOpen(false);
+    resetHandoverForm();
+    await refreshWorkOrderLifecycle();
+  };
+
+  const handleConfirmHandover = async () => {
+    const handoverId = handoverState?.handover?.id;
+    if (!handoverId) return;
+
+    setHandoverLifecycleLoading(true);
+    const res = await api.post(`/api/shift-handovers/${handoverId}/confirm`, {});
+    setHandoverLifecycleLoading(false);
+
+    if (!res.success) {
+      toast.error(res.error || 'Failed to confirm shift handover');
+      return;
+    }
+
+    toast.success('Shift handover confirmed');
+    await refreshWorkOrderLifecycle();
+  };
+
+  const handleResumeHandover = async () => {
+    const handover = handoverState?.handover;
+    if (!handover) return;
+
+    const isManagementOverride = handover.receivedById !== user?.id;
+    const overrideReason = handoverReason.trim();
+    if (isManagementOverride && overrideReason.length < 5) {
+      toast.error('Enter a reason for the management release');
+      return;
+    }
+
+    setHandoverLifecycleLoading(true);
+    const res = await api.post(`/api/work-orders/${id}/handover`, {
+      action: 'resume',
+      reason: overrideReason || undefined,
+    });
+    setHandoverLifecycleLoading(false);
+
+    if (!res.success) {
+      toast.error(res.error || 'Failed to resume after handover');
+      return;
+    }
+
+    toast.success(
+      res.data?.executionSessionOpened
+        ? 'Handover complete — your execution timer is running'
+        : 'Handover released — incoming technician must start execution',
+    );
+    setHandoverReason('');
+    await refreshWorkOrderLifecycle();
+  };
+
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
     let res;
@@ -3583,10 +3685,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       fetchWO();
       onUpdate();
       setActionDialog(null);
-      // Re-fetch available transitions for the new status
-      api.get(`/api/work-orders/${id}/transitions`).then(tres => {
-        if (tres.success && tres.data) setAvailableTransitions(tres.data);
-      });
+      // Re-fetch actor-scoped transitions and custody state for the new status.
+      fetchTransitions();
+      fetchHandoverState();
     } else {
       toast.error(res.error || 'Action failed');
     }

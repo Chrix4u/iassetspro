@@ -35,6 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { hasPagePermission, isPageModuleAvailable } from '@/lib/page-access';
 
 // ============================================================================
 // Types
@@ -49,6 +50,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   /** Pages that should be considered "active" for this item */
   activePages?: PageName[];
 }

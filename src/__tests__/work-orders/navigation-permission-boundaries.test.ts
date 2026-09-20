@@ -214,6 +214,21 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("...(pmEnabled ? [{ type: 'Preventive'");
   });
 
+  it('gates Repairs resource pages and completion embeds by their source modules', () => {
+    expect(pageAccess).toContain("'repairs-material-requests': ['repairs', 'inventory']");
+    expect(pageAccess).toContain("'repairs-spare-part-returns': ['repairs', 'inventory']");
+    expect(pageAccess).toContain("'repairs-tool-requests': ['repairs', 'tools']");
+    expect(pageAccess).toContain("'repairs-tool-transfers': ['repairs', 'tools']");
+    expect(pageAccess).toContain("'repairs-damaged-tools': ['repairs', 'tools']");
+    expect(repairs).toContain('const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY)');
+    expect(repairs).toContain('const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS)');
+    expect(repairs).toContain('const reportsEnabled = useModuleEnabled(MODULE_CODES.REPORTS)');
+    expect(repairs).toContain('const analyticsEnabled = useModuleEnabled(MODULE_CODES.ANALYTICS)');
+    expect(repairs).toContain('toolsEnabled');
+    expect(repairs).toContain('inventoryEnabled');
+    expect(repairs).toContain('{(toolsEnabled || inventoryEnabled) && <Card');
+    expect(repairs).toContain("{assetsEnabled && <div className='space-y-2'>");
+  });
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {
     expect(inventoryApi).toContain("const isLookup = mode === 'lookup'");
     expect(inventoryApi).toContain('const canUseInventoryWorkspace');

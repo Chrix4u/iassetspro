@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
+import { buildOperationalModuleSet } from '@/lib/module-access';
 
 // Prevent caching — dashboard data changes frequently
 export const dynamic = 'force-dynamic';
@@ -60,31 +61,37 @@ export async function GET(request: NextRequest) {
       ? {}
       : { device: { ...plantFilter } };
 
-    // Resolve optional-module licensing/activation before exposing any
-    // cross-module dashboard data. Missing optional modules fail closed.
-    const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports'];
+    // Resolve every operational module used by the dashboard. Missing,
+    // unlicensed, disabled, inactive, or expired modules fail closed even for
+    // admins. Admin only bypasses user-level permissions, never licensing.
+    const dashboardModuleCodes = [
+      'assets',
+      'maintenance_requests',
+      'work_orders',
+      'repairs',
+      'tools',
+      'inventory',
+      'safety',
+      'production',
+      'iot_sensors',
+      'quality',
+      'pm_schedules',
+      'analytics',
+      'reports',
+    ];
     const moduleRows = await db.systemModule.findMany({
-      where: { code: { in: optionalCodes } },
+      where: { code: { in: dashboardModuleCodes } },
       include: { companyModules: true },
     });
-    const moduleOperational = (code: string) => {
-      const systemModule = moduleRows.find((row) => row.code === code);
-      if (!systemModule) return false;
-      if (systemModule.isCore) return true;
-      const companyModule = systemModule.companyModules.find((cm) => cm.companyId === '__default__')
-        ?? systemModule.companyModules.find((cm) => cm.companyId === null)
-        ?? systemModule.companyModules[0];
-      const now = new Date();
-      const systemLicenseValid = systemModule.isSystemLicensed === true
-        && (!systemModule.validFrom || systemModule.validFrom <= now)
-        && (!systemModule.validUntil || systemModule.validUntil >= now);
-      return systemLicenseValid
-        && Boolean(companyModule?.licensedAt)
-        && companyModule?.isEnabled === true
-        && companyModule?.isActive === true;
-    };
+    const operationalModules = buildOperationalModuleSet(moduleRows);
+    const moduleOperational = (code: string) => operationalModules.has(code.toLowerCase());
 
-    const canViewAssetKPIs = isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']);
+    const canViewWorkOrderKPIs = moduleOperational('work_orders')
+      && (isAdm || hasAnyPermission(session, ['work_orders.view', 'work_orders.view_own']));
+    const canViewRequestKPIs = moduleOperational('maintenance_requests')
+      && (isAdm || hasAnyPermission(session, ['maintenance_requests.view', 'maintenance_requests.view_own']));
+    const canViewAssetKPIs = moduleOperational('assets')
+      && (isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']));
     const canViewSafetyKPIs = moduleOperational('safety')
       && (isAdm || hasPermission(session, 'safety_incidents.view'));
     const canViewProductionKPIs = moduleOperational('production')
@@ -93,21 +100,27 @@ export async function GET(request: NextRequest) {
       && (isAdm || hasPermission(session, 'iot_devices.view'));
     const canViewQualityKPIs = moduleOperational('quality')
       && (isAdm || hasPermission(session, 'quality_ncr.view'));
-    const canViewInventoryKPIs = isAdm || hasAnyPermission(session, [
-      'inventory.view_all',
-      'inventory.manage',
-      'inventory.create',
-      'inventory.update',
-      'inventory.stock_in',
-      'inventory.stock_out',
-      'inventory.reserve',
-      'inventory.export',
-    ]);
+    const canViewInventoryKPIs = moduleOperational('inventory')
+      && (isAdm || hasAnyPermission(session, [
+        'inventory.view_all',
+        'inventory.manage',
+        'inventory.create',
+        'inventory.update',
+        'inventory.stock_in',
+        'inventory.stock_out',
+        'inventory.reserve',
+        'inventory.export',
+      ]));
+    const canViewToolsKPIs = moduleOperational('tools')
+      && (isAdm || hasAnyPermission(session, ['tools.view', 'repair_tool_requests.view', 'repair_tool_requests.view_own']));
     const canViewPmKPIs = moduleOperational('pm_schedules')
+      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'pm_schedules.view'));
     const canViewAnalyticsKPIs = moduleOperational('analytics')
+      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'analytics.view'));
     const canViewFinancialKPIs = moduleOperational('reports')
+      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'reports.view'));
 
     // Build base where clauses for role-based filtering

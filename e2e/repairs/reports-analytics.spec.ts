@@ -58,11 +58,11 @@ test.describe('Repairs Reports & Analytics', () => {
       });
     });
 
-    await page.evaluate(() => {
-      const state = { eam_nav: true, page: 'repairs-reports', params: {} };
-      window.history.pushState(state, '', '#/repairs-reports');
-      window.dispatchEvent(new PopStateEvent('popstate', { state }));
-    });
+    // Use a real deep-link reload instead of dispatching popstate manually.
+    // The app intentionally guards browser history; synthetic popstate can race
+    // that guard and leave the Zustand route on Dashboard even while the URL
+    // reads #/repairs-reports.
+    await page.goto('/#/repairs-reports');
 
     await expect(page.getByRole('heading', { name: 'Repairs / RWOP Reporting' })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText('Plant-isolated maintenance reporting, analytics and audit-ready exports')).toBeVisible();

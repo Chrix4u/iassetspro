@@ -13,6 +13,7 @@ const {
     user: { findUnique: vi.fn() },
     userPlant: { findFirst: vi.fn() },
     shiftHandover: { create: vi.fn() },
+    workOrderTeamMember: { findFirst: vi.fn(), create: vi.fn() },
     auditLog: { create: vi.fn() },
     idempotencyRecord: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
@@ -72,8 +73,20 @@ function workOrder(overrides: Record<string, unknown> = {}) {
 function installDefaults() {
   mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) => callback(mockDb));
   mockDb.workOrder.findUnique.mockResolvedValue(workOrder());
-  mockDb.user.findUnique.mockResolvedValue({ id: 'tech-in', status: 'active' });
+  mockDb.user.findUnique.mockResolvedValue({
+    id: 'tech-in',
+    status: 'active',
+    userRoles: [{
+      role: {
+        slug: 'maintenance_technician',
+        rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+      },
+    }],
+    directPerms: [],
+  });
   mockDb.userPlant.findFirst.mockResolvedValue({ id: 'user-plant-1' });
+  mockDb.workOrderTeamMember.findFirst.mockResolvedValue(null);
+  mockDb.workOrderTeamMember.create.mockResolvedValue({ id: 'handover-receiver-member' });
   mockDb.shiftHandover.create.mockResolvedValue({ id: 'handover-1' });
   mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });
   mockDb.idempotencyRecord.findUnique.mockResolvedValue(null);

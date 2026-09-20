@@ -35,7 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { CORE_MODULE_CODES, pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
+import { pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 
 // ============================================================================
 // Types
@@ -161,33 +161,31 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
     setMoreOpen(false);
   }, [navigate]);
 
+  const canOpenPage = useCallback((page: PageName) => {
+    const admin = isAdmin();
+    const adminOnlyPage = page.startsWith('settings-') && page !== 'settings-preferences';
+    if (adminOnlyPage && !admin) return false;
+
+    return pageHasPermission(page, hasPermission, admin)
+      && pageModuleIsEnabled(page, enabledModules);
+  }, [enabledModules, hasPermission, isAdmin]);
+
   // Bottom tabs follow the same page permission + licensed/enabled
   // module contract as the sidebar and direct page router.
-  const visibleTabs = useMemo(() => {
-    const admin = isAdmin();
-    return BOTTOM_TABS.filter((tab) =>
-      pageHasPermission(tab.page, hasPermission, admin)
-      && pageModuleIsEnabled(tab.page, enabledModules)
-    );
-  }, [hasPermission, isAdmin, enabledModules]);
+  const visibleTabs = useMemo(
+    () => BOTTOM_TABS.filter((tab) => canOpenPage(tab.page)),
+    [canOpenPage],
+  );
 
-  // Filter visible more items by permission
+  // Multi-module groups must not depend on one arbitrary anchor page. Resolve
+  // each group to the first child the actor can actually open.
   const visibleMoreItems = useMemo(() => {
-    return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
-        ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
-      if (!permOk) return false;
-      const admin = isAdmin();
-      if (!pageHasPermission(item.page, hasPermission, admin)) return false;
-      if (!pageModuleIsEnabled(item.page, enabledModules)) return false;
-      if (item.moduleCode) {
-        const code = item.moduleCode.toLowerCase();
-        if (!CORE_MODULE_CODES.has(code) && (enabledModules === null || !enabledModules.has(code))) return false;
-      }
-      return true;
+    return MORE_ITEMS.flatMap((item) => {
+      const candidates = item.activePages?.length ? item.activePages : [item.page];
+      const resolvedPage = candidates.find((page) => canOpenPage(page));
+      return resolvedPage ? [{ ...item, page: resolvedPage }] : [];
     });
-  }, [hasPermission, isAdmin, enabledModules]);
+  }, [canOpenPage]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

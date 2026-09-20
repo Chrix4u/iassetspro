@@ -152,6 +152,15 @@ async function completeToolTransferTx(tx: Tx, transferId: string, now: Date) {
     throw new ToolTransferConflictError('Tool custodian changed before transfer completion');
   }
 
+  // Recipient eligibility can change after request/approval. Re-check at the
+  // exact custody movement so disabled/transferred-out staff cannot receive a tool.
+  await validateTransferRecipient(
+    tx,
+    transfer.toUserId,
+    transfer.fromUserId,
+    transfer.tool.plantId,
+  );
+
   const origin = await resolveOriginatingRequestItem(tx, transfer.toolId, transfer.fromUserId);
 
   const claimed = await tx.toolTransferRequest.updateMany({

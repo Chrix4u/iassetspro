@@ -108,6 +108,7 @@ describe('workOrderAccess actor-aware lifecycle authority', () => {
     expect(canVerifyWorkOrderForActor(otherSupervisor, completed)).toBe(false);
     expect(canPerformWorkOrderTransition(assignedSupervisor, completed, 'verified')).toBe(true);
     expect(canPerformWorkOrderTransition(otherSupervisor, completed, 'verified')).toBe(false);
+    expect(canPerformWorkOrderTransition(assignedSupervisor, completed, 'in_progress')).toBe(true);
     expect(canPerformWorkOrderTransition(otherSupervisor, completed, 'in_progress')).toBe(false);
   });
 

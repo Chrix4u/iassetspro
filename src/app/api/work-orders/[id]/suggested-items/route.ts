@@ -55,6 +55,7 @@ export async function GET(
             status: true,
             toolId: true,
             tool: { select: { toolCode: true, status: true } },
+            items: { select: { toolId: true, quantityRequested: true } },
             source: true,
           },
         },
@@ -68,8 +69,36 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
-    const suggestedParts = JSON.parse(wo.suggestedParts || '[]');
-    const suggestedTools = JSON.parse(wo.suggestedTools || '[]');
+    const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+    const storedSuggestedTools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+
+    // Older MR→WO conversions created canonical planner requests without a JSON
+    // suggestion snapshot (and, historically, materials were missing from the
+    // canonical pipeline entirely). Derive a display snapshot from the
+    // authoritative planner_suggested requests whenever the JSON projection is
+    // absent so existing work orders remain visible after reconciliation.
+    const suggestedParts = storedSuggestedParts.length > 0
+      ? storedSuggestedParts
+      : wo.repairMaterialRequests.map((mr) => ({
+          id: mr.id,
+          itemId: mr.itemId,
+          itemName: mr.itemName,
+          itemCode: mr.item?.itemCode || '',
+          quantity: mr.quantityRequested,
+          unit: mr.unit || 'each',
+          notes: '',
+        }));
+
+    const suggestedTools = storedSuggestedTools.length > 0
+      ? storedSuggestedTools
+      : wo.repairToolRequests.map((tr) => ({
+          id: tr.id,
+          toolId: tr.toolId,
+          toolName: tr.toolName,
+          toolCode: tr.tool?.toolCode || '',
+          quantity: tr.items.find((item) => item.toolId === tr.toolId)?.quantityRequested || 1,
+          notes: '',
+        }));
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(

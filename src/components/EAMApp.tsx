@@ -24,7 +24,7 @@ import {
   LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
 import type { PageName } from '@/types';
-import { PAGE_PERMISSIONS, pageModuleIsEnabled } from '@/lib/page-access';
+import { PAGE_PERMISSIONS, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
 
 // ============================================================================
 // PAGE TITLE MAP — module-level (no hook dependency)
@@ -353,20 +353,28 @@ function PageSwitcher({ page }: { page: string }) {
   const adminOnlyPage = page.startsWith('settings-') && page !== 'settings-preferences';
   const permissionAllowed = (!adminOnlyPage || admin)
     && (admin || !requiredPerms || requiredPerms.some((p) => hasPermission(p)));
+  const moduleResolved = pageModuleStateResolved(page, enabledModules);
   const moduleAllowed = pageModuleIsEnabled(page, enabledModules);
   const pageAllowed = permissionAllowed && moduleAllowed;
 
-  // Unauthorized and disabled/unlicensed pages are never routable.
+  // Registry loading is not the same as "disabled." Keep the page unloaded
+  // until module state resolves, then redirect only when the authoritative
+  // module registry says this operational page is unavailable.
   useEffect(() => {
+    if (!moduleResolved) {
+      setComponent(null);
+      setError(null);
+      return;
+    }
     if (!pageAllowed) {
       setComponent(null);
       setError(null);
       if (page !== 'dashboard') navigate('dashboard');
     }
-  }, [page, pageAllowed, navigate]);
+  }, [page, moduleResolved, pageAllowed, navigate]);
 
   useEffect(() => {
-    if (!pageAllowed) return;
+    if (!moduleResolved || !pageAllowed) return;
 
     // If already cached, use it immediately
     if (pageCache.has(page)) {
@@ -396,9 +404,9 @@ function PageSwitcher({ page }: { page: string }) {
       });
 
     return () => { cancelled = true; };
-  }, [page, pageAllowed]);
+  }, [page, moduleResolved, pageAllowed]);
 
-  if (!pageAllowed) return <LoadingSkeleton />;
+  if (!moduleResolved || !pageAllowed) return <LoadingSkeleton />;
 
   if (error) {
     return (

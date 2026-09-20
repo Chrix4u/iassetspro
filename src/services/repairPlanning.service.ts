@@ -184,6 +184,20 @@ export async function convertMRToWorkOrder(
     return { success: false, error: 'Maintenance request not found' };
   }
 
+  if (mr.status !== 'approved') {
+    return {
+      success: false,
+      error: `Only approved maintenance requests can be converted to work orders. Current status: ${mr.status}`,
+    };
+  }
+
+  if (mr.assignedPlannerId && mr.assignedPlannerId !== session.userId && !isAdmin) {
+    return {
+      success: false,
+      error: 'Only the planner assigned to this maintenance request can convert it to a work order',
+    };
+  }
+
   if (payload.teamMembers && Array.isArray(payload.teamMembers)) {
     for (const member of payload.teamMembers) {
       if (!member.userId || !member.role) {

@@ -54,6 +54,10 @@ export async function GET(
       handoverReceiverId: wo.shiftHandovers[0]?.receivedById ?? null,
     };
     const transitions = (await getAvailableTransitions('work_order', wo.status, session))
+      // pending_handover -> in_progress is not a generic transition in the UI:
+      // the designated receiver must confirm the handover first, then resume
+      // through the canonical /handover endpoint.
+      .filter((transition) => !(wo.status === 'pending_handover' && transition.toStatus === 'in_progress'))
       .filter((transition) => canPerformWorkOrderTransition(session, accessSnapshot, transition.toStatus));
 
     return NextResponse.json({ success: true, data: transitions });

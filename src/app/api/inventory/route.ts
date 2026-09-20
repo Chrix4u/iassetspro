@@ -15,6 +15,36 @@ export async function GET(request: NextRequest) {
     const lowStock = searchParams.get('lowStock');
     const search = searchParams.get('search');
     const searchPlantId = searchParams.get('plantId');
+    const purpose = searchParams.get('purpose');
+    const workOrderId = searchParams.get('workOrderId');
+
+    const canViewInventory = isAdmin(session) || hasPermission(session, 'inventory.view');
+    let repairLookupPlantId: string | null = null;
+
+    if (!canViewInventory) {
+      // Technicians may query a minimal inventory catalog only in the context
+      // of a repair WO they are actively assigned to. This is NOT Inventory
+      // module access and does not expose supplier/cost/management data.
+      if (purpose !== 'repair_request' || !workOrderId) {
+        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+      }
+
+      const wo = await db.workOrder.findFirst({
+        where: {
+          id: workOrderId,
+          OR: [
+            { assignedTo: session.userId },
+            { teamLeaderId: session.userId },
+            { teamMembers: { some: { userId: session.userId } } },
+          ],
+        },
+        select: { id: true, plantId: true },
+      });
+      if (!wo?.plantId) {
+        return NextResponse.json({ success: false, error: 'Repair work order access required' }, { status: 403 });
+      }
+      repairLookupPlantId = wo.plantId;
+    }
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
@@ -43,7 +73,12 @@ export async function GET(request: NextRequest) {
     // - A plantId query is allowed only when the actor can access that plant.
     // - Without either, regular users are restricted to their assigned plants.
     // - System-wide users remain unrestricted unless they explicitly request a plant.
-    if (plantScope.isScoped && plantScope.plantId) {
+    if (repairLookupPlantId) {
+      if (!canAccessPlant(plantScope, repairLookupPlantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      where.plantId = repairLookupPlantId;
+    } else if (plantScope.isScoped && plantScope.plantId) {
       where.plantId = plantScope.plantId;
     } else if (searchPlantId) {
       if (!canAccessPlant(plantScope, searchPlantId)) {
@@ -66,6 +101,21 @@ export async function GET(request: NextRequest) {
     let filteredItems = items;
     if (lowStock === 'true') {
       filteredItems = items.filter(item => item.currentStock <= item.minStockLevel);
+    }
+
+    if (!canViewInventory) {
+      return NextResponse.json({
+        success: true,
+        data: filteredItems.map((item) => ({
+          id: item.id,
+          itemCode: item.itemCode,
+          name: item.name,
+          category: item.category,
+          currentStock: item.currentStock,
+          unitOfMeasure: item.unitOfMeasure,
+          plantId: item.plantId,
+        })),
+      });
     }
 
     return NextResponse.json({ success: true, data: filteredItems });

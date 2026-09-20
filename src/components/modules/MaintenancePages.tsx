@@ -3514,6 +3514,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       case 'verify':
         res = await api.post(`/api/work-orders/${id}/verify`, { notes: extra?.notes });
         break;
+      case 'rework':
+        res = await api.post(`/api/work-orders/${id}/verify`, {
+          action: 'rework',
+          reason: extra?.notes,
+          notes: extra?.notes,
+        });
+        break;
       case 'close':
         res = await api.post(`/api/work-orders/${id}/close`, { notes: extra?.notes });
         break;
@@ -4226,13 +4233,27 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'cancelled': 'cancel', 'waiting_parts': 'wait-parts',
   };
 
-  // Build transition actions from state machine
-  const transitionActions = availableTransitions.map(t => ({
-    toStatus: t.toStatus,
-    actionName: t.toStatus === 'in_progress' && wo.status !== 'assigned' ? 'resume' : (statusToAction[t.toStatus] || t.toStatus),
-    label: t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    requiresReason: t.requiresReason,
-  }));
+  // Build transition actions from the state machine while preserving the
+  // semantic endpoint behind each in_progress transition.
+  const transitionActions = availableTransitions.map((t) => {
+    let actionName = statusToAction[t.toStatus] || t.toStatus;
+    if (t.toStatus === 'in_progress') {
+      if (wo.status === 'completed' || wo.status === 'verified') {
+        actionName = 'rework';
+      } else if (wo.status !== 'assigned') {
+        actionName = 'resume';
+      }
+    }
+
+    return {
+      toStatus: t.toStatus,
+      actionName,
+      label: actionName === 'rework'
+        ? 'Request Rework'
+        : t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      requiresReason: t.requiresReason,
+    };
+  });
 
   // Special actions that need dialogs
   const needsDialog = new Set(['assign', 'complete']);

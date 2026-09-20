@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
       'work_orders',
       'repairs',
       'tools',
+      'notifications',
       'inventory',
       'safety',
       'production',
@@ -113,6 +114,8 @@ export async function GET(request: NextRequest) {
       ]));
     const canViewToolsKPIs = moduleOperational('tools')
       && (isAdm || hasAnyPermission(session, ['tools.view', 'repair_tool_requests.view', 'repair_tool_requests.view_own']));
+    const canViewNotificationsKPIs = moduleOperational('notifications')
+      && (isAdm || hasPermission(session, 'notifications.view'));
     const canViewPmKPIs = moduleOperational('pm_schedules')
       && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'pm_schedules.view'));
@@ -570,9 +573,11 @@ export async function GET(request: NextRequest) {
         },
       }), 0),
       // Tools checked out by me
-      safe(db.tool.count({
-        where: { status: 'checked_out', assignedToId: session.userId },
-      }), 0),
+      canViewToolsKPIs
+        ? safe(db.tool.count({
+            where: { status: 'checked_out', assignedToId: session.userId },
+          }), 0)
+        : Promise.resolve(0),
       // Team pending approvals (for supervisors)
       isAdm || session.roles.includes('maintenance_supervisor')
         ? safe(db.maintenanceRequest.count({
@@ -622,9 +627,11 @@ export async function GET(request: NextRequest) {
           }), [])
         : Promise.resolve([]),
       // Unread notification count
-      safe(db.notification.count({
-        where: { userId: session.userId, isRead: false },
-      }), 0),
+      canViewNotificationsKPIs
+        ? safe(db.notification.count({
+            where: { userId: session.userId, isRead: false },
+          }), 0)
+        : Promise.resolve(0),
       // WO type breakdown for donut chart (role-filtered to match status chart)
       safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0),
       safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0),

@@ -184,7 +184,6 @@ export async function GET(
           (wo.status === 'assigned' && assignmentAccepted)
         ),
       canHandover: wo.status === 'in_progress'
-        && hasOwnLiveSession
         && canPerformWorkOrderTransition(session, wo, 'pending_handover'),
       canSubmitCompletion: canAttemptCompletion,
       completionReadiness,

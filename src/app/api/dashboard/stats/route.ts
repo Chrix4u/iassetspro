@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
-import { Prisma } from '@prisma/client';
 
 // Prevent caching — dashboard data changes frequently
 export const dynamic = 'force-dynamic';
@@ -99,7 +98,19 @@ export async function GET(request: NextRequest) {
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
       if (session.roles.includes('maintenance_technician')) {
-        (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        const teamWoIds = await db.workOrderTeamMember.findMany({
+          where: { userId: session.userId },
+          select: { workOrderId: true },
+        });
+        const teamIds = teamWoIds.map((row) => row.workOrderId);
+        if (teamIds.length > 0) {
+          (woWhere as Record<string, unknown>).OR = [
+            { assignedTo: session.userId },
+            { id: { in: teamIds } },
+          ];
+        } else {
+          (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        }
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
       } else if (session.roles.includes('production_operator')) {
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
@@ -140,19 +151,22 @@ export async function GET(request: NextRequest) {
     const isPlannerRole = session.roles.includes('maintenance_planner');
 
     if (isAdm || isSupervisorLike) {
-      // Admins, supervisors, managers, plant managers — see ALL pending+approved requests
-      pendingMrWhere = { status: { in: ['pending', 'approved'] } };
+      // Admins, supervisors, managers, plant managers — actionable requests in
+      // the validated plant scope only.
+      pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] } };
     } else if (isPlannerRole) {
-      // Planners only need to see approved (ready for planning/assignment)
-      pendingMrWhere = { status: 'approved' };
+      // Planners only need approved requests in their accessible plant scope.
+      pendingMrWhere = { ...plantFilter, status: 'approved' };
     } else {
-      // Technicians, operators — only their own requests
-      pendingMrWhere = { status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
+      // Technicians, operators — only their own requests in plant scope.
+      pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
     }
 
     // Today's start for trend queries
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(todayStart);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
     // Helper: generate array of last 7 day dates
     const last7Days: string[] = [];
@@ -163,9 +177,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Helper: fill a day-count map into a 7-element array matching last7Days
-    function fillTrendArray(dayCounts: { day: string; count: number }[]): number[] {
-      const map = new Map(dayCounts.map((r) => [r.day, r.count]));
-      return last7Days.map((d) => map.get(d) || 0);
+    function fillTrendArray(
+      rows: Array<Record<string, Date | null>>,
+      field: string,
+    ): number[] {
+      const map = new Map<string, number>();
+      for (const row of rows) {
+        const value = row[field];
+        if (!value) continue;
+        const day = value.toISOString().slice(0, 10);
+        map.set(day, (map.get(day) || 0) + 1);
+      }
+      return last7Days.map((day) => map.get(day) || 0);
     }
 
     // Date boundaries for this month and last month
@@ -173,11 +196,6 @@ export async function GET(request: NextRequest) {
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-
-    // Merge plant filter into raw SQL where clause if scoped
-    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
-      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
-      : Prisma.sql``;
 
     const emptyAggregate = { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 }, _count: 0 };
     const emptyWoList: { id: string; actualStart: Date | null; actualEnd: Date | null; actualHours: number | null; updatedAt: Date; type: string }[] = [];
@@ -290,27 +308,27 @@ export async function GET(request: NextRequest) {
       // Pending approvals (requests in 'pending' or 'in_progress' workflow)
       safe(db.maintenanceRequest.count({
         where: {
-          ...plantFilter,
+          ...mrWhere,
           status: { in: ['pending', 'in_progress'] },
         },
       }), 0),
       // Overdue WOs — must match WO list API filter exactly
       safe(db.workOrder.count({
         where: {
-          ...plantFilter,
+          ...woWhere,
           plannedEnd: { lt: new Date() },
           status: { notIn: ['completed', 'verified', 'closed', 'cancelled'] },
         },
       }), 0),
       // Today's counts for trends
       safe(db.maintenanceRequest.count({
-        where: { ...plantFilter, createdAt: { gte: todayStart } },
+        where: { ...mrWhere, createdAt: { gte: todayStart } },
       }), 0),
       safe(db.workOrder.count({
-        where: { ...plantFilter, actualEnd: { gte: todayStart }, status: 'completed' },
+        where: { ...woWhere, actualEnd: { gte: todayStart }, status: 'completed' },
       }), 0),
       safe(db.workOrder.count({
-        where: { ...plantFilter, createdAt: { gte: todayStart } },
+        where: { ...woWhere, createdAt: { gte: todayStart } },
       }), 0),
       // Recent activity — also filtered by role
       safe(db.maintenanceRequest.findMany({
@@ -386,14 +404,25 @@ export async function GET(request: NextRequest) {
       }), []),
       // Inventory: pending requests
       safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0),
-      // Weekly trends: work orders created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
-      // Weekly trends: work orders completed per day (by actualEnd, separate fetch)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(actualEnd) as day, COUNT(*) as count FROM work_orders WHERE actualEnd >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND status = 'completed'${plantSqlFilter} GROUP BY DATE(actualEnd) ORDER BY day`), []),
-      // Weekly trends: maintenance requests created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
-      // Weekly trends: production orders created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
+      // Weekly trends use the same role/plant scope as their destination lists.
+      safe(db.workOrder.findMany({
+        where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true },
+      }), []),
+      safe(db.workOrder.findMany({
+        where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
+        select: { actualEnd: true },
+      }), []),
+      safe(db.maintenanceRequest.findMany({
+        where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true },
+      }), []),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.findMany({
+            where: { ...plantFilter, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
       // ===== Enhanced KPIs =====
       // Completed WOs with actual hours for MTBF/MTTR
       safe(db.workOrder.findMany({
@@ -561,10 +590,10 @@ export async function GET(request: NextRequest) {
 
     // Build weekly trend arrays
     const weeklyTrends = {
-      workOrders: fillTrendArray(weeklyWoResult as { day: string; count: number }[]),
-      completedWorkOrders: fillTrendArray(weeklyCompletedWoResult as { day: string; count: number }[]),
-      maintenanceRequests: fillTrendArray(weeklyMrResult as { day: string; count: number }[]),
-      productionOrders: fillTrendArray(weeklyProdResult as { day: string; count: number }[]),
+      workOrders: fillTrendArray(weeklyWoResult as Array<{ createdAt: Date }>, 'createdAt'),
+      completedWorkOrders: fillTrendArray(weeklyCompletedWoResult as Array<{ actualEnd: Date | null }>, 'actualEnd'),
+      maintenanceRequests: fillTrendArray(weeklyMrResult as Array<{ createdAt: Date }>, 'createdAt'),
+      productionOrders: fillTrendArray(weeklyProdResult as Array<{ createdAt: Date }>, 'createdAt'),
     };
 
     // ===== Compute Enhanced KPIs =====

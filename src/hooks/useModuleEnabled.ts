@@ -2,6 +2,7 @@
 
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useEffect } from 'react';
+import { CORE_MODULE_CODES } from '@/lib/page-access';
 
 /**
  * Hook to check if a module is enabled/active.
@@ -20,10 +21,13 @@ export function useModuleEnabled(moduleCode: string): boolean {
     fetchModules();
   }, [fetchModules]);
 
-  // null means not loaded yet — show everything (graceful fallback)
-  if (enabledModules === null) return true;
+  // Core platform modules are always available by definition. Optional modules
+  // fail closed until the authoritative licensed/enabled registry confirms them.
+  const normalized = moduleCode.toLowerCase();
+  if (CORE_MODULE_CODES.has(normalized)) return true;
+  if (enabledModules === null) return false;
 
-  return enabledModules.has(moduleCode.toLowerCase());
+  return enabledModules.has(normalized);
 }
 
 /**

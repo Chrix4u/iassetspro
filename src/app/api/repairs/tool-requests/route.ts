@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
           storekeeperApprovedBy: { select: { id: true, fullName: true } },
           issuedByUser: { select: { id: true, fullName: true } },
           returnedByUser: { select: { id: true, fullName: true } },
-          workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+          workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true } },
           tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
           items: { include: { tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } } }, orderBy: { createdAt: 'asc' } },
         },

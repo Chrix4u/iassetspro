@@ -35,6 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { CORE_MODULE_CODES, pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 
 // ============================================================================
 // Types
@@ -105,11 +106,11 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
+  { page: 'repairs-material-requests', label: 'Repairs Maintenance', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
-  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
+  { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve', 'inventory.export'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'PM Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety
@@ -148,7 +149,7 @@ function isTabActive(currentPage: PageName, item: NavItem | MoreItem): boolean {
 export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   const isMobile = useIsMobile();
   const { currentPage, navigate, enabledModules } = useNavigationStore();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const handleNavigate = useCallback((page: PageName) => {
@@ -178,12 +179,16 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
         ? item.permOr.some(p => hasPermission(p))
         : hasPermission(item.perm);
       if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
-        return enabledModules.has(item.moduleCode.toLowerCase());
+      const admin = isAdmin();
+      if (!pageHasPermission(item.page, hasPermission, admin)) return false;
+      if (!pageModuleIsEnabled(item.page, enabledModules)) return false;
+      if (item.moduleCode) {
+        const code = item.moduleCode.toLowerCase();
+        if (!CORE_MODULE_CODES.has(code) && (enabledModules === null || !enabledModules.has(code))) return false;
       }
       return true;
     });
-  }, [hasPermission, enabledModules]);
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

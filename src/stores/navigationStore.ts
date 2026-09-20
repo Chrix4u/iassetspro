@@ -8,7 +8,7 @@ interface NavigationState {
   pageParams: Record<string, string>;
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
-  enabledModules: Set<string> | null; // null = not loaded yet (show all)
+  enabledModules: Set<string> | null; // null = not loaded yet (non-core modules stay hidden)
   fetchModules: () => Promise<void>;
   refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
@@ -77,17 +77,17 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
+          const licensed = m.isCore || m.isLicensed === true;
+          const operational = m.isCore || (m.isEnabled === true && m.isActive === true);
+          if (licensed && operational) enabled.add(String(m.code).toLowerCase());
         });
-        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        if (enabled.size === 0) {
-          set({ enabledModules: null });
-          return;
-        }
         set({ enabledModules: enabled });
+      } else {
+        set({ enabledModules: new Set<string>() });
       }
     } catch {
-      // On error, keep null so all items stay visible (graceful fallback)
+      // Fail closed: an unavailable module registry must never reveal optional modules.
+      set({ enabledModules: new Set<string>() });
     }
   },
 

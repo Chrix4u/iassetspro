@@ -142,6 +142,58 @@ async function main() {
   });
   const plants: Record<string, string> = { 'PLANT-A': plantA.id, 'PLANT-B': plantB.id };
 
+  // Repairs UAT intentionally licenses only the Repairs/RWOP optional module.
+  // PM Maintenance is not seeded here so fail-closed navigation proves that
+  // disabled/unlicensed PM content cannot leak into Repairs views.
+  const repairsModule = await db.systemModule.upsert({
+    where: { code: 'repairs' },
+    update: {
+      name: 'Repairs Maintenance',
+      description: 'Corrective repairs/RWOP execution, resource custody, completion and reporting workflows',
+      version: '2.0.0',
+      isCore: false,
+      isSystemLicensed: true,
+      validFrom: new Date('2024-01-01T00:00:00.000Z'),
+      validUntil: new Date('2099-12-31T23:59:59.999Z'),
+    },
+    create: {
+      code: 'repairs',
+      name: 'Repairs Maintenance',
+      description: 'Corrective repairs/RWOP execution, resource custody, completion and reporting workflows',
+      version: '2.0.0',
+      isCore: false,
+      isSystemLicensed: true,
+      validFrom: new Date('2024-01-01T00:00:00.000Z'),
+      validUntil: new Date('2099-12-31T23:59:59.999Z'),
+    },
+  });
+  const existingRepairsCompanyModule = await db.companyModule.findFirst({
+    where: { systemModuleId: repairsModule.id, companyId: null },
+    select: { id: true },
+  });
+  if (existingRepairsCompanyModule) {
+    await db.companyModule.update({
+      where: { id: existingRepairsCompanyModule.id },
+      data: {
+        isActive: true,
+        isEnabled: true,
+        licensedAt: new Date('2024-01-01T00:00:00.000Z'),
+        activatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      },
+    });
+  } else {
+    await db.companyModule.create({
+      data: {
+        systemModuleId: repairsModule.id,
+        companyId: null,
+        isActive: true,
+        isEnabled: true,
+        licensedAt: new Date('2024-01-01T00:00:00.000Z'),
+        activatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      },
+    });
+  }
+
   const tradeMech = await db.trade.upsert({
     where: { name: 'Mechanical' }, update: {},
     create: { name: 'Mechanical', code: 'MECH', category: 'mechanical', description: 'Mechanical maintenance trade' },

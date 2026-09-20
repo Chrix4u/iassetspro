@@ -130,7 +130,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const menuGroups = useMemo<NavGroup[]>(() => [
     { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'core' },
     { label: 'Chat', icon: MessageSquare, perm: 'chat.view', page: 'chat', moduleCode: 'core' },
-    { label: 'Notifications', icon: BellRing, perm: 'notifications.view', page: 'notifications', moduleCode: 'core' },
+    { label: 'Notifications', icon: BellRing, perm: 'notifications.view', page: 'notifications', moduleCode: 'notifications' },
     {
       label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'assets',
       children: [
@@ -295,7 +295,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Settings', icon: Cog, perm: 'system_settings.view', adminOnly: true, moduleCode: 'modules',
+      label: 'Settings', icon: Cog, perm: 'system_settings.view', adminOnly: true, moduleCode: 'core',
       children: [
         { page: 'settings-general', label: 'General', icon: Settings },
         { page: 'settings-users', label: 'Users', icon: Users },

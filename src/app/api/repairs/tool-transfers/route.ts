@@ -133,6 +133,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Cannot transfer tool to the same person' }, { status: 400 });
     }
 
+    // Custody transfer must originate from the authenticated current custodian.
+    // Store/admin roles approve the transfer later; they do not impersonate the holder.
+    if (fromUserId !== session.userId) {
+      return NextResponse.json({ success: false, error: 'Only the current tool custodian can initiate a transfer' }, { status: 403 });
+    }
+
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
 

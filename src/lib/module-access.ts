@@ -1,3 +1,9 @@
+export const CONTROL_PLANE_CORE_MODULE_CODES = new Set(['core', 'modules']);
+
+export function isControlPlaneCoreModule(code: string): boolean {
+  return CONTROL_PLANE_CORE_MODULE_CODES.has(code.toLowerCase());
+}
+
 export interface CompanyModuleState {
   companyId: string | null;
   isActive: boolean;
@@ -29,7 +35,7 @@ export function isSystemModuleLicensed(
   systemModule: SystemModuleState,
   now = new Date(),
 ): boolean {
-  if (systemModule.isCore) return true;
+  if (isControlPlaneCoreModule(systemModule.code)) return true;
 
   const systemLicenseValid = systemModule.isSystemLicensed === true
     && (!systemModule.validFrom || systemModule.validFrom <= now)
@@ -43,7 +49,7 @@ export function isSystemModuleOperational(
   systemModule: SystemModuleState,
   now = new Date(),
 ): boolean {
-  if (systemModule.isCore) return true;
+  if (isControlPlaneCoreModule(systemModule.code)) return true;
 
   const companyModule = pickEffectiveCompanyModule(systemModule.companyModules);
   return isSystemModuleLicensed(systemModule, now)

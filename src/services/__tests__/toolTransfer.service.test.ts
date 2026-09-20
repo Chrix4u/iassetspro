@@ -4,6 +4,7 @@ const { db, tx } = vi.hoisted(() => {
   const tx = {
     $queryRaw: vi.fn(),
     tool: { findUnique: vi.fn(), updateMany: vi.fn() },
+    user: { findUnique: vi.fn() },
     toolTransferRequest: { findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     repairToolRequest: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     repairToolRequestItem: { findMany: vi.fn(), updateMany: vi.fn() },
@@ -48,6 +49,12 @@ beforeEach(() => {
   tx.repairToolRequestItem.findMany.mockResolvedValue([{ quantityIssued: 1, quantityReturned: 0, quantityTransferred: 1 }]);
   tx.toolTransaction.create.mockResolvedValue({});
   tx.repairToolRequest.findMany.mockResolvedValue([sourceRequest()]);
+  tx.user.findUnique.mockResolvedValue({
+    id: 'tech-2',
+    status: 'active',
+    userRoles: [{ role: { slug: 'maintenance_technician' } }],
+    plantAccess: [{ id: 'up-1' }],
+  });
 });
 
 describe('createToolTransferRequest', () => {
@@ -56,6 +63,51 @@ describe('createToolTransferRequest', () => {
     await expect(createToolTransferRequest({
       toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', reason: 'handover', requestedById: 'admin-1',
     })).rejects.toBeInstanceOf(ToolTransferConflictError);
+    expect(tx.toolTransferRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inactive transfer recipient', async () => {
+    tx.tool.findUnique.mockResolvedValue({ id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' });
+    tx.user.findUnique.mockResolvedValue({
+      id: 'tech-2',
+      status: 'inactive',
+      userRoles: [{ role: { slug: 'maintenance_technician' } }],
+      plantAccess: [{ id: 'up-1' }],
+    });
+
+    await expect(createToolTransferRequest({
+      toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', reason: 'handover', requestedById: 'tech-1',
+    })).rejects.toThrow('Transfer recipient is not active');
+    expect(tx.toolTransferRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recipient who is not a maintenance technician', async () => {
+    tx.tool.findUnique.mockResolvedValue({ id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' });
+    tx.user.findUnique.mockResolvedValue({
+      id: 'user-2',
+      status: 'active',
+      userRoles: [{ role: { slug: 'production_operator' } }],
+      plantAccess: [{ id: 'up-1' }],
+    });
+
+    await expect(createToolTransferRequest({
+      toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'user-2', reason: 'handover', requestedById: 'tech-1',
+    })).rejects.toThrow('Transfer recipient must be an active maintenance technician');
+    expect(tx.toolTransferRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a technician without access to the tool plant', async () => {
+    tx.tool.findUnique.mockResolvedValue({ id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' });
+    tx.user.findUnique.mockResolvedValue({
+      id: 'tech-2',
+      status: 'active',
+      userRoles: [{ role: { slug: 'maintenance_technician' } }],
+      plantAccess: [],
+    });
+
+    await expect(createToolTransferRequest({
+      toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', reason: 'handover', requestedById: 'tech-1',
+    })).rejects.toThrow('Transfer recipient is not authorized for the tool plant');
     expect(tx.toolTransferRequest.create).not.toHaveBeenCalled();
   });
 

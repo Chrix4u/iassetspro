@@ -145,7 +145,7 @@ export async function resumeConfirmedHandover(
 
       const existingMember = await tx.workOrderTeamMember.findFirst({
         where: { workOrderId, userId: receiverId },
-        select: { id: true },
+        select: { id: true, role: true, accessLevel: true },
       });
       if (!existingMember) {
         await tx.workOrderTeamMember.create({
@@ -156,6 +156,19 @@ export async function resumeConfirmedHandover(
             accessLevel: 'full',
             addedVia: 'shift_handover',
             assignedAt: now,
+          },
+        });
+      } else if (
+        existingMember.accessLevel !== 'full'
+        || existingMember.role === 'handover_receiver'
+      ) {
+        await tx.workOrderTeamMember.update({
+          where: { id: existingMember.id },
+          data: {
+            accessLevel: 'full',
+            role: existingMember.role === 'handover_receiver'
+              ? 'assistant'
+              : existingMember.role,
           },
         });
       }

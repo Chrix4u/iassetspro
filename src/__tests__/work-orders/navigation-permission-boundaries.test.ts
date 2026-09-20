@@ -21,6 +21,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
   const toolDetailApi = read('src/app/api/repairs/tool-requests/[id]/route.ts');
   const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
+  const toolTransferDetailApi = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
+  const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
@@ -92,6 +94,11 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(inventoryApi).toContain("'repair_material_requests.create'");
     expect(inventoryApi).toContain('unitOfMeasure: true');
     expect(repairs).toContain("api.get('/api/inventory?mode=lookup&limit=500')");
+    expect(inventoryApi).toContain("'work_orders.create'");
+    expect(inventoryApi).toContain("'work_orders.update'");
+    expect(inventoryApi).toContain("'maintenance_requests.update'");
+    expect(maintenance).toContain("api.get('/api/inventory?mode=lookup&limit=100')");
+    expect(maintenance).not.toContain("api.get('/api/inventory?limit=100')");
     expect(sidebar).toContain("label: 'Inventory', icon: Package, perm: 'inventory.view_all'");
     expect(singleTechUat).toContain("expect(blockedInventory.status).toBe(403)");
     expect(singleTechUat).toContain('/api/inventory?mode=lookup&search=');
@@ -148,5 +155,36 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).toContain("hasPermission('repair_material_requests.create') || isAdmin()");
     expect(repairs).toContain("hasPermission('repair_tool_requests.create') || isAdmin()");
     expect(repairs).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update')");
+  });
+
+  it('does not render or load a page before its permission and module checks pass', () => {
+    expect(app).toContain('const pageAllowed = permissionAllowed && moduleAllowed');
+    expect(app).toContain('if (!pageAllowed) return;');
+    expect(app).toContain('if (!pageAllowed) return <LoadingSkeleton />;');
+  });
+
+  it('binds completion review and closure to the assigned accountable actors', () => {
+    expect(completionApi).toContain('wo.assignedSupervisorId === session.userId');
+    expect(completionApi).toContain('wo.plannerId === session.userId');
+    expect(completionApi).toContain("hasRole(session, 'maintenance_supervisor')");
+    expect(completionApi).toContain("hasRole(session, 'maintenance_planner')");
+    expect(completionApi).not.toContain('Only supervisors, managers, or planners can perform this action');
+    expect(repairs).toContain('function canSubmitCompletion(completion: any, user: any)');
+    expect(repairs).toContain('function canReviewCompletion(completion: any, user: any)');
+    expect(repairs).toContain('function canCloseCompletion(completion: any, user: any)');
+    expect(repairs).toContain('completion.workOrder.assignedSupervisorId === userId');
+    expect(repairs).toContain('completion.workOrder.plannerId === userId');
+    expect(repairs).not.toContain("completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin())");
+  });
+
+  it('keeps tool transfer approvals and physical handover controls aligned with the API', () => {
+    expect(repairs).not.toContain("hasPermission('repair_tool_transfers.update')");
+    expect(repairs).toContain('canApproveAsStore(user)');
+    expect(repairs).toContain("t.status === 'awaiting_handover' && user?.id === t.fromUserId");
+    expect(repairs).toContain("t.status === 'awaiting_handover' && user?.id === t.toUserId");
+    expect(repairs).not.toContain('user?.id === t.fromUserId || isAdmin()');
+    expect(repairs).not.toContain('user?.id === t.toUserId || isAdmin()');
+    expect(toolTransferDetailApi).toContain('session.userId !== transfer.fromUserId');
+    expect(toolTransferDetailApi).toContain('session.userId !== transfer.toUserId');
   });
 });

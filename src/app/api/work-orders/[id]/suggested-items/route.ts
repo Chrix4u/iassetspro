@@ -77,17 +77,52 @@ export async function GET(
     // canonical pipeline entirely). Derive a display snapshot from the
     // authoritative planner_suggested requests whenever the JSON projection is
     // absent so existing work orders remain visible after reconciliation.
-    const suggestedParts = storedSuggestedParts.length > 0
-      ? storedSuggestedParts
-      : wo.repairMaterialRequests.map((mr) => ({
-          id: mr.id,
-          itemId: mr.itemId,
-          itemName: mr.itemName,
-          itemCode: mr.item?.itemCode || '',
-          quantity: mr.quantityRequested,
-          unit: mr.unit || 'each',
-          notes: '',
-        }));
+    // Reconcile materials from every durable conversion trace instead of
+    // trusting only the JSON snapshot. This covers legacy/current paths where
+    // one projection exists without the others.
+    const rejectedItemIds = new Set(
+      wo.repairMaterialRequests
+        .filter((request) => request.status === 'rejected' && request.itemId)
+        .map((request) => request.itemId as string),
+    );
+
+    const reconciledParts = new Map<string, Record<string, unknown>>();
+
+    for (const suggestion of storedSuggestedParts) {
+      const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      reconciledParts.set(itemId, { ...suggestion });
+    }
+
+    for (const material of wo.materials) {
+      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      const current = reconciledParts.get(material.itemId) || {};
+      reconciledParts.set(material.itemId, {
+        ...current,
+        id: current.id || material.id,
+        itemId: material.itemId,
+        itemName: current.itemName || material.itemName || 'Planned material',
+        quantity: current.quantity || material.quantity || 1,
+        notes: current.notes || '',
+      });
+    }
+
+    for (const request of wo.repairMaterialRequests) {
+      if (!request.itemId || request.status === 'rejected') continue;
+      const current = reconciledParts.get(request.itemId) || {};
+      reconciledParts.set(request.itemId, {
+        ...current,
+        id: current.id || request.id,
+        itemId: request.itemId,
+        itemName: current.itemName || request.itemName || 'Planned material',
+        itemCode: current.itemCode || request.item?.itemCode || '',
+        quantity: current.quantity || request.quantityRequested || 1,
+        unit: current.unit || request.unit || 'each',
+        notes: current.notes || '',
+      });
+    }
+
+    const suggestedParts = [...reconciledParts.values()];
 
     const suggestedTools = storedSuggestedTools.length > 0
       ? storedSuggestedTools

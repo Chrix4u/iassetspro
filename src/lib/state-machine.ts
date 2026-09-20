@@ -264,6 +264,20 @@ async function ensureTransitionsSeeded(): Promise<boolean> {
 // HELPERS
 // ============================================================================
 
+function isCanonicalTransitionPair(
+  entityType: EntityType,
+  fromStatus: string | null,
+  toStatus: string,
+): boolean {
+  const definitions = entityType === 'work_order'
+    ? DEFAULT_WO_TRANSITIONS
+    : DEFAULT_MR_TRANSITIONS;
+
+  return definitions.some(
+    (transition) => transition.fromStatus === fromStatus && transition.toStatus === toStatus,
+  );
+}
+
 /**
  * Parse a JSON string array safely.
  * Returns an empty array on failure or non-array input.
@@ -318,6 +332,16 @@ export async function checkTransition(
   tx?: Prisma.TransactionClient,
 ): Promise<TransitionCheck> {
   const client = tx ?? db;
+
+  // Persisted transition rows are data, not authority. Old deployments may
+  // contain obsolete lifecycle pairs; fail closed unless the pair is present in
+  // the canonical definitions shipped with this application version.
+  if (!isCanonicalTransitionPair(entityType, fromStatus, toStatus)) {
+    return {
+      allowed: false,
+      reason: `Transition from "${fromStatus ?? 'initial'}" to "${toStatus}" is not part of the canonical ${entityType} lifecycle.`,
+    };
+  }
 
   let rule = await client.statusTransition.findFirst({
     where: {
@@ -544,8 +568,13 @@ export async function getAvailableTransitions(
       allowedRoleSlugs: parseRoleSlugs(rule.allowedRoleSlugs),
       requiresReason: rule.requiresReason,
     }))
-    .filter((t) => {
+    .filter((transition) => isCanonicalTransitionPair(
+      entityType,
+      transition.fromStatus,
+      transition.toStatus,
+    ))
+    .filter((transition) => {
       if (admin) return true;
-      return t.allowedRoleSlugs.some((slug) => session.roles.includes(slug));
+      return transition.allowedRoleSlugs.some((slug) => session.roles.includes(slug));
     });
 }

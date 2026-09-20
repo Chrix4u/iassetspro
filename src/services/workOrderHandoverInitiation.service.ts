@@ -305,6 +305,26 @@ export async function initiateCanonicalHandover(
       };
     }
 
+    // The incoming worker must be able to inspect the WO and handover evidence
+    // before confirming it, but cannot execute work until confirmation/resume.
+    const existingReceiverMember = await tx.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: receiverId },
+      select: { id: true },
+    });
+    if (!existingReceiverMember) {
+      await tx.workOrderTeamMember.create({
+        data: {
+          workOrderId,
+          userId: receiverId,
+          role: 'handover_receiver',
+          accessLevel: 'read_only',
+          addedVia: 'shift_handover_pending',
+          addedById: session.userId,
+          assignedAt: now,
+        },
+      });
+    }
+
     const closed = await closeAllActiveWorkSessions(
       tx,
       workOrderId,
@@ -383,6 +403,7 @@ export async function initiateCanonicalHandover(
         assignedSupervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
         teamMemberIds: wo.teamMembers.map((member) => member.userId),
+        receivedById: receiverId,
         reason: resolvedReason,
       },
     };
@@ -406,6 +427,7 @@ export async function initiateCanonicalHandover(
     outcome.notify.teamLeaderId,
     outcome.notify.assignedSupervisorId,
     outcome.notify.plannerId,
+    outcome.notify.receivedById,
     ...outcome.notify.teamMemberIds,
   ]) {
     if (userId && userId !== session.userId) recipients.add(userId);

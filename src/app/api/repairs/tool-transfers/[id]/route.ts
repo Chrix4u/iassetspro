@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasRole, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { acceptToolTransfer, completeToolTransfer, ToolTransferConflictError, ToolTransferNotFoundError } from '@/services/toolTransfer.service';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
@@ -12,6 +12,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['repair_tool_transfers.view', 'repair_tool_transfers.view_all', 'repair_tool_transfers.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { id } = await params;
     const transfer = await db.toolTransferRequest.findUnique({
@@ -31,6 +34,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const recordPlantId = transfer.plantId || transfer.tool?.plantId;
     if (plantScope.denyAccess || !canAccessPlant(plantScope, recordPlantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const canViewAll = isAdmin(session)
+      || hasAnyPermission(session, ['repair_tool_transfers.view', 'repair_tool_transfers.view_all']);
+    if (!canViewAll) {
+      const isParticipant = transfer.fromUserId === session.userId
+        || transfer.toUserId === session.userId
+        || transfer.requestedById === session.userId;
+      if (!isParticipant) {
+        return NextResponse.json({ success: false, error: 'Access denied — transfer is outside your custody workflow' }, { status: 403 });
+      }
     }
 
     return NextResponse.json({ success: true, data: transfer });

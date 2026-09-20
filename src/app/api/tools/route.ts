@@ -114,7 +114,20 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Also get KPI counts
+    if (isLookup) {
+      return NextResponse.json({
+        success: true,
+        data: tools,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    }
+
+    // Full Tool Registry only: calculate workspace KPI counts.
     const [totalCount, availableCount, checkedOutCount, inRepairCount, retiredCount] = await Promise.all([
       db.tool.count({ where: { isActive: true, ...plantFilter } }),
       db.tool.count({ where: { isActive: true, status: 'available', ...plantFilter } }),
@@ -132,17 +145,13 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-      ...(isLookup
-        ? {}
-        : {
-            kpis: {
-              total: totalCount,
-              available: availableCount,
-              checkedOut: checkedOutCount,
-              inRepair: inRepairCount,
-              retired: retiredCount,
-            },
-          }),
+      kpis: {
+        total: totalCount,
+        available: availableCount,
+        checkedOut: checkedOutCount,
+        inRepair: inRepairCount,
+        retired: retiredCount,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load tools';

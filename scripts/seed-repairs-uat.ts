@@ -195,6 +195,12 @@ async function main() {
       description: 'Operational KPI and maintenance analytics',
       version: '1.0.0',
     },
+    {
+      code: 'shift_management',
+      name: 'Shift Management',
+      description: 'Shift scheduling, handover logs, and workforce planning',
+      version: '1.0.0',
+    },
   ] as const;
 
   for (const moduleDef of uatModules) {

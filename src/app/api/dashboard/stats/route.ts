@@ -38,6 +38,28 @@ export async function GET(request: NextRequest) {
     }
     const plantFilter = getPlantFilterWhere(plantScope);
 
+    // Some optional-module tables are not directly plant-scoped. Resolve the
+    // plant boundary through their actual owning relation/department rather
+    // than spreading a non-existent plantId field into Prisma queries.
+    const scopedDepartmentIds = plantScope.isSystemWide
+      ? []
+      : (await db.department.findMany({
+          where: { ...plantFilter },
+          select: { id: true },
+        })).map((department) => department.id);
+    const departmentPlantFilter: Record<string, unknown> = plantScope.isSystemWide
+      ? {}
+      : {
+          departmentId: {
+            in: scopedDepartmentIds.length > 0
+              ? scopedDepartmentIds
+              : ['__ACCESS_DENIED__'],
+          },
+        };
+    const iotAlertPlantFilter: Record<string, unknown> = plantScope.isSystemWide
+      ? {}
+      : { device: { ...plantFilter } };
+
     // Resolve optional-module licensing/activation before exposing any
     // cross-module dashboard data. Missing optional modules fail closed.
     const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports'];

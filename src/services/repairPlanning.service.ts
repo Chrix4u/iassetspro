@@ -502,13 +502,12 @@ export async function convertMRToWorkOrder(
       }
 
       if (suggestedParts.length > 0 || suggestedTools.length > 0) {
-        workOrder = await tx.workOrder.update({
+        await tx.workOrder.update({
           where: { id: workOrder.id },
           data: {
             suggestedParts: JSON.stringify(suggestedParts),
             suggestedTools: JSON.stringify(suggestedTools),
           },
-          include: woInclude,
         });
       }
 

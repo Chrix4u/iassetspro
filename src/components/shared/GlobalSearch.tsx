@@ -43,7 +43,7 @@ interface SearchGroup {
 
 interface SearchResponse {
   query: string;
-  results: SearchGroup[];
+  groups: SearchGroup[];
   total: number;
 }
 
@@ -148,7 +148,7 @@ export default function GlobalSearch() {
     try {
       const res = await api.get<SearchResponse>(`/api/search?q=${encodeURIComponent(q.trim())}&limit=10`);
       if (res.success && res.data) {
-        setResults(res.data.results);
+        setResults(Array.isArray(res.data.groups) ? res.data.groups : []);
       } else {
         setResults([]);
       }

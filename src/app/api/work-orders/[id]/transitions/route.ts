@@ -29,6 +29,12 @@ export async function GET(
         plannerId: true,
         assignedBy: true,
         teamMembers: { select: { userId: true, role: true } },
+        shiftHandovers: {
+          where: { status: { in: ['pending', 'confirmed'] } },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          select: { receivedById: true },
+        },
         maintenanceRequest: { select: { requestedBy: true } },
       },
     });
@@ -43,8 +49,12 @@ export async function GET(
       );
     }
 
+    const accessSnapshot = {
+      ...wo,
+      handoverReceiverId: wo.shiftHandovers[0]?.receivedById ?? null,
+    };
     const transitions = (await getAvailableTransitions('work_order', wo.status, session))
-      .filter((transition) => canPerformWorkOrderTransition(session, wo, transition.toStatus));
+      .filter((transition) => canPerformWorkOrderTransition(session, accessSnapshot, transition.toStatus));
 
     return NextResponse.json({ success: true, data: transitions });
   } catch (error: unknown) {

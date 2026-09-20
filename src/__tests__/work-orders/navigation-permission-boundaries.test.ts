@@ -15,6 +15,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const pageAccess = read('src/lib/page-access.ts');
   const dashboard = read('src/components/modules/DashboardPages.tsx');
   const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
+  const repairsUatApi = read('e2e/repairs/helpers/api.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
@@ -96,6 +97,24 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboard).toContain("page: 'inventory-items' as PageName");
     expect(dashboard).toContain("pageHasPermission('analytics-kpi', hasPermission, isAdmin())");
     expect(dashboard).toContain("pageHasPermission('reports-financial', hasPermission, isAdmin())");
+  });
+
+  it('keeps repair UAT tool discovery on the constrained lookup endpoint', () => {
+    expect(repairsUatApi).toContain("/api/tools?mode=lookup&search=");
+    expect(repairsUatApi).not.toContain("/api/tools?search=");
+  });
+
+  it('uses valid indirect plant scopes for optional-module dashboard models', () => {
+    expect(dashboardApi).toContain('const departmentPlantFilter');
+    expect(dashboardApi).toContain('const iotAlertPlantFilter');
+    expect(dashboardApi).toContain('...departmentPlantFilter');
+    expect(dashboardApi).toContain('...iotAlertPlantFilter');
+    expect(dashboardApi).toContain('canViewSafetyKPIs');
+    expect(dashboardApi).toContain('canViewIoTKPIs');
+    expect(dashboardApi).toContain('canViewQualityKPIs');
+    expect(dashboardApi).not.toContain("db.iotAlert.count({ where: { ...plantFilter, status: 'active' } })");
+    expect(dashboardApi).not.toContain("db.nonConformanceReport.count({ where: { ...plantFilter");
+    expect(dashboardApi).not.toContain("db.qualityAudit.count({ where: { ...plantFilter");
   });
 
   it('redacts unauthorized or disabled cross-module dashboard data server-side', () => {

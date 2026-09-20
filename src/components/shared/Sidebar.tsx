@@ -95,7 +95,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const storeModules = useNavigationStore((s) => s.enabledModules);
   const expanded = forceExpanded ?? sidebarOpen;
   const user = useAuthStore((s) => s.user);
-  const permissions = useAuthStore((s) => s.permissions);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
@@ -162,6 +161,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'technician-timesheet', label: 'Timesheet', icon: Clock },
         { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
         { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
+        { page: 'repairs-analytics', label: 'Repairs Analytics', icon: BarChart3 },
         { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, moduleCode: 'risk_assessment' },
       ],
     },

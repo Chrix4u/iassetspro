@@ -35,7 +35,6 @@ function wo(overrides: Record<string, unknown> = {}) {
     assignedSupervisorId: 'sup-1',
     plannerId: 'planner-1',
     assignedBy: 'planner-1',
-    createdById: 'planner-1',
     teamMembers: [],
     maintenanceRequest: { requestedBy: 'requester-1' },
     ...overrides,

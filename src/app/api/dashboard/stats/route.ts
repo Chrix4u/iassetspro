@@ -488,18 +488,24 @@ export async function GET(request: NextRequest) {
         ? safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0)
         : Promise.resolve(0),
       // Weekly trends use the same role/plant scope as their destination lists.
-      safe(db.workOrder.findMany({
-        where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
-        select: { createdAt: true },
-      }), []),
-      safe(db.workOrder.findMany({
-        where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
-        select: { actualEnd: true },
-      }), []),
-      safe(db.maintenanceRequest.findMany({
-        where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
-        select: { createdAt: true },
-      }), []),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
+            select: { actualEnd: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewRequestKPIs
+        ? safe(db.maintenanceRequest.findMany({
+            where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
       canViewProductionKPIs
         ? safe(db.productionOrder.findMany({
             where: { ...plantFilter, createdAt: { gte: sevenDaysAgo } },
@@ -508,70 +514,92 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
       // ===== Enhanced KPIs =====
       // Completed WOs with actual hours for MTBF/MTTR
-      safe(db.workOrder.findMany({
-        where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
-        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
-        orderBy: { actualEnd: 'desc' },
-        take: 200,
-      }), emptyWoList),
+      canViewAnalyticsKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
+            select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
+            orderBy: { actualEnd: 'desc' },
+            take: 200,
+          }), emptyWoList)
+        : Promise.resolve(emptyWoList),
       // Preventive vs corrective count for planned ratio
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0),
+      canViewAnalyticsKPIs && canViewPmKPIs
+        ? safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0)
+        : Promise.resolve(0),
+      canViewAnalyticsKPIs
+        ? safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0)
+        : Promise.resolve(0),
       // PM schedules due (nextDueDate within 7 days) — plant filter routes through asset relation
-      safe(db.pmSchedule.count({
-        where: {
-          asset: { ...plantFilter },
-          isActive: true,
-          nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-        },
-      }), 0),
+      canViewPmKPIs
+        ? safe(db.pmSchedule.count({
+            where: {
+              asset: { ...plantFilter },
+              isActive: true,
+              nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // PM schedules overdue — plant filter routes through asset relation
-      safe(db.pmSchedule.count({
-        where: {
-          asset: { ...plantFilter },
-          isActive: true,
-          nextDueDate: { lt: new Date() },
-        },
-      }), 0),
+      canViewPmKPIs
+        ? safe(db.pmSchedule.count({
+            where: {
+              asset: { ...plantFilter },
+              isActive: true,
+              nextDueDate: { lt: new Date() },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // This month cost (exclude draft & cancelled — matches by-category filter)
-      safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled', 'draft'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }), emptyAggregate),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.aggregate({
+            where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled', 'draft'] } },
+            _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+            _count: true,
+          }), emptyAggregate)
+        : Promise.resolve(emptyAggregate),
       // Last month cost (exclude draft & cancelled — matches by-category filter)
-      safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled', 'draft'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }), emptyAggregate),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.aggregate({
+            where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled', 'draft'] } },
+            _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+            _count: true,
+          }), emptyAggregate)
+        : Promise.resolve(emptyAggregate),
       // Cost by WO type
-      safe(db.workOrder.groupBy({
-        by: ['type'],
-        _sum: { totalCost: true, laborCost: true, partsCost: true },
-        where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
-      }), []),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.groupBy({
+            by: ['type'],
+            _sum: { totalCost: true, laborCost: true, partsCost: true },
+            where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
+          }), [])
+        : Promise.resolve([]),
       // My active WOs (assigned to me, not terminal)
-      safe(db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
-        },
-      }), 0),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.count({
+            where: {
+              ...plantFilter,
+              assignedTo: session.userId,
+              status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // My pending tasks (MRs I submitted that are pending/approved — matches nav filter)
-      safe(db.maintenanceRequest.count({
-        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'approved'] } },
-      }), 0),
+      canViewRequestKPIs
+        ? safe(db.maintenanceRequest.count({
+            where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'approved'] } },
+          }), 0)
+        : Promise.resolve(0),
       // My completed this week
-      safe(db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: 'completed',
-          updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-      }), 0),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.count({
+            where: {
+              ...plantFilter,
+              assignedTo: session.userId,
+              status: 'completed',
+              updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // Tools checked out by me
       canViewToolsKPIs
         ? safe(db.tool.count({
@@ -579,25 +607,25 @@ export async function GET(request: NextRequest) {
           }), 0)
         : Promise.resolve(0),
       // Team pending approvals (for supervisors)
-      isAdm || session.roles.includes('maintenance_supervisor')
+      canViewRequestKPIs && (isAdm || session.roles.includes('maintenance_supervisor'))
         ? safe(db.maintenanceRequest.count({
             where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
           }), 0)
         : Promise.resolve(0),
       // Team active WOs (for supervisors — consistent with myActiveWOs definition)
-      isAdm || session.roles.includes('maintenance_supervisor')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_supervisor'))
         ? safe(db.workOrder.count({
             where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] } },
           }), 0)
         : Promise.resolve(0),
       // Planning queue (for planners)
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.workOrder.count({
             where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
           }), 0)
         : Promise.resolve(0),
       // Pending team member requests (for planner/admin — count WOs where current user is planner or assigner)
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.woTeamMemberRequest.count({
             where: {
               status: 'pending',
@@ -609,7 +637,7 @@ export async function GET(request: NextRequest) {
           }), 0)
         : Promise.resolve(0),
       // Pending team requests detail (WO number + trade) for dashboard cards
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.woTeamMemberRequest.findMany({
             where: {
               status: 'pending',
@@ -633,19 +661,19 @@ export async function GET(request: NextRequest) {
           }), 0)
         : Promise.resolve(0),
       // WO type breakdown for donut chart (role-filtered to match status chart)
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'emergency' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'inspection' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'predictive' } }), 0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'emergency' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'inspection' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'predictive' } }), 0) : Promise.resolve(0),
       // Priority breakdown for MR (role-filtered to match status chart)
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: { in: ['high', 'urgent'] } } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'medium' } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'low' } }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: { in: ['high', 'urgent'] } } }), 0) : Promise.resolve(0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'medium' } }), 0) : Promise.resolve(0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'low' } }), 0) : Promise.resolve(0),
       // Role-based: pending + approved requests (actionable by current user, no plant filter)
-      safe(db.maintenanceRequest.count({ where: pendingMrWhere }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: pendingMrWhere }), 0) : Promise.resolve(0),
       // Role-based: new today (pending + approved created today, no plant filter)
-      safe(db.maintenanceRequest.count({ where: { ...pendingMrWhere, createdAt: { gte: todayStart } } }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...pendingMrWhere, createdAt: { gte: todayStart } } }), 0) : Promise.resolve(0),
     ]);
 
     const mrStats: Record<string, number> = {};

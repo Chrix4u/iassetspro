@@ -27,7 +27,7 @@ function transfer(overrides: Record<string, unknown> = {}) {
     id: 'xfer-1', toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', requestedById: 'tech-1',
     reason: 'Shift handover', status: 'awaiting_handover', transferredAt: null,
     fromUserAcceptedAt: new Date('2026-09-14T10:00:00Z'), toUserAcceptedAt: new Date('2026-09-14T10:01:00Z'),
-    toolConditionAtTransfer: 'good', tool: { id: 'tool-1', assignedToId: 'tech-1' },
+    toolConditionAtTransfer: 'good', tool: { id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' },
     ...overrides,
   };
 }
@@ -145,6 +145,20 @@ describe('completeToolTransfer', () => {
     });
     expect(tx.repairToolRequestItem.updateMany).toHaveBeenCalledTimes(1);
     expect(tx.toolTransaction.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks completion if the recipient becomes ineligible before custody moves', async () => {
+    tx.toolTransferRequest.findUnique.mockResolvedValue(transfer());
+    tx.user.findUnique.mockResolvedValue({
+      id: 'tech-2',
+      status: 'inactive',
+      userRoles: [{ role: { slug: 'maintenance_technician' } }],
+      plantAccess: [{ id: 'up-1' }],
+    });
+
+    await expect(completeToolTransfer('xfer-1')).rejects.toThrow('Transfer recipient is not active');
+    expect(tx.tool.updateMany).not.toHaveBeenCalled();
+    expect(tx.toolTransaction.create).not.toHaveBeenCalled();
   });
 
   it('blocks completion when physical custodian changed', async () => {

@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       where: { code: 'repairs' },
       create: {
         code: 'repairs',
-        name: 'Repairs & Maintenance',
+        name: 'Repairs Maintenance',
         description: 'Corrective/emergency repairs, material requests, tool requests, downtime tracking, and completion workflows',
         isCore: true,
         version: '2.0.0',

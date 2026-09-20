@@ -7,7 +7,6 @@ export interface WorkOrderAccessSnapshot {
   assignedSupervisorId?: string | null;
   plannerId?: string | null;
   assignedBy?: string | null;
-  createdById?: string | null;
   teamMembers?: Array<{ userId: string; role?: string | null }> | null;
   maintenanceRequest?: {
     requestedBy?: string | null;
@@ -95,11 +94,11 @@ function hasPlannerRole(session: SessionData): boolean {
 
 export function isAccountablePlanner(
   session: SessionData,
-  workOrder: Pick<WorkOrderAccessSnapshot, 'plannerId' | 'createdById'>,
+  workOrder: Pick<WorkOrderAccessSnapshot, 'plannerId' | 'assignedBy'>,
 ): boolean {
   if (workOrder.plannerId === session.userId) return true;
   return !workOrder.plannerId
-    && workOrder.createdById === session.userId
+    && workOrder.assignedBy === session.userId
     && hasPlannerRole(session);
 }
 

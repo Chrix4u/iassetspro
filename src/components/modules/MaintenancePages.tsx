@@ -5676,16 +5676,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <AsyncSearchableSelect
               value={handoverReceiverId}
               onValueChange={setHandoverReceiverId}
-              fetchOptions={async () => {
-                if (!wo?.plantId) return [];
-                const res = await api.get(`/api/workers?role=technician&plantId=${encodeURIComponent(wo.plantId)}`);
+              fetchOptions={async (query) => {
+                const params = new URLSearchParams({ mode: 'candidates' });
+                if (query.trim()) params.set('search', query.trim());
+                const res = await api.get(`/api/work-orders/${id}/handover?${params.toString()}`);
                 if (!res.success || !Array.isArray(res.data)) return [];
-                return res.data
-                  .filter((worker: any) => worker.id !== user?.id)
-                  .map((worker: any) => ({
-                    value: worker.id,
-                    label: `${worker.fullName}${worker.staffId ? ` (${worker.staffId})` : ''}${worker.trade ? ` — ${worker.trade}` : ''}`,
-                  }));
+                return res.data.map((worker: any) => ({
+                  value: worker.id,
+                  label: `${worker.fullName}${worker.staffId ? ` (${worker.staffId})` : ''}${worker.trade ? ` — ${worker.trade}` : ''}`,
+                }));
               }}
               placeholder="Select incoming technician..."
               searchPlaceholder="Search technicians..."

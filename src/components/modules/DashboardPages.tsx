@@ -232,6 +232,8 @@ export function DashboardPage() {
   // Module widgets/cards must satisfy both licensing and the same permission
   // contract as their destination pages. Keep these declarations before any
   // chart/KPI data that consumes them to avoid temporal-dead-zone runtime errors.
+  const assetsEnabled = pageHasPermission('assets-machines', hasPermission, isAdmin())
+    && pageModuleIsEnabled('assets-machines', enabledModules);
   const workOrdersEnabled = pageHasPermission('maintenance-work-orders', hasPermission, isAdmin())
     && pageModuleIsEnabled('maintenance-work-orders', enabledModules);
   const requestsEnabled = pageHasPermission('maintenance-requests', hasPermission, isAdmin())
@@ -809,36 +811,38 @@ export function DashboardPage() {
       })()}
 
       {/* ===== Weekly Trends Chart ===== */}
-      <Card className="border">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+      {(workOrdersEnabled || requestsEnabled || productionEnabled) && (
+        <Card className="border">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">7-Day Activity Trends</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Activity created per day for enabled modules</CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-base font-semibold">7-Day Activity Trends</CardTitle>
-              <CardDescription className="text-xs mt-0.5">Work orders, requests &amp; production created per day</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <ChartContainer config={weeklyTrendConfig} className="h-[280px] w-full">
-            <BarChart data={weeklyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="workOrders" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="maintenanceRequests" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="productionOrders" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ChartContainer config={weeklyTrendConfig} className="h-[280px] w-full">
+              <BarChart data={weeklyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                {workOrdersEnabled && <Bar dataKey="workOrders" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+                {requestsEnabled && <Bar dataKey="maintenanceRequests" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+                {productionEnabled && <Bar dataKey="productionOrders" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ===== Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+      {workOrdersEnabled && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* WO Status Bar Chart */}
         <Card className="border lg:col-span-2 h-full flex flex-col">
           <CardHeader className="pb-2">
@@ -905,12 +909,12 @@ export function DashboardPage() {
             </ChartContainer>
           </CardContent>
         </Card>
-      </div>
+      </div>}
 
       {/* ===== Second Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      {(requestsEnabled || workOrdersEnabled) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* MR Status + Priority */}
-        <Card className="border h-full flex flex-col">
+        {requestsEnabled && <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
@@ -956,10 +960,10 @@ export function DashboardPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Operations Summary + Completion */}
-        <Card className="border h-full flex flex-col">
+        {(requestsEnabled || workOrdersEnabled) && <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
@@ -972,7 +976,7 @@ export function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0 space-y-5">
-            <div className="grid grid-cols-2 gap-3">
+            {requestsEnabled && <div className="grid grid-cols-2 gap-3">
               {[
                 { label: 'Pending Approvals', value: pendingApprovals, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-100 dark:border-orange-900/40', page: 'maintenance-requests' as PageName, params: { status: 'pending,in_progress' } },
                 { label: 'Total Requests', value: stats?.totalRequests || 0, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/30', border: 'border-sky-100 dark:border-sky-900/40', page: 'maintenance-requests' as PageName },
@@ -987,8 +991,8 @@ export function DashboardPage() {
                   <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                 </button>
               ))}
-            </div>
-            <div className="space-y-2">
+            </div>}
+            {workOrdersEnabled && <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground">Overall Completion</span>
                 <span className="text-sm font-bold text-primary">{completionRate}%</span>
@@ -1003,16 +1007,16 @@ export function DashboardPage() {
                 <span>{completedWOs} completed</span>
                 <span>{totalWOs - completedWOs} not completed</span>
               </div>
-            </div>
+            </div>}
           </CardContent>
-        </Card>
-      </div>
+        </Card>}
+      </div>}
 
       {/* ===== Asset Health + Cost Breakdown Row (Manager/Admin) ===== */}
-      {(isManager || isPlanner) && (
+      {(isManager || isPlanner) && (assetsEnabled || financialReportsEnabled) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Asset Health Distribution */}
-          <Card className="border">
+          {assetsEnabled && <Card className="border">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
@@ -1050,10 +1054,10 @@ export function DashboardPage() {
                 <EmptyState icon={WrenchIcon} title="No assets" description="No active assets found." />
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Cost Breakdown */}
-          <Card className="border">
+          {financialReportsEnabled && <Card className="border">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
@@ -1108,7 +1112,7 @@ export function DashboardPage() {
                 )}
               </div>
             </CardContent>
-          </Card>
+          </Card>}
         </div>
       )}
 
@@ -1140,8 +1144,8 @@ export function DashboardPage() {
       )}
 
       {/* ===== Recent Activity Panels ===== */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        {hasPermission('maintenance_requests.view') && (
+      {(requestsEnabled || workOrdersEnabled) && <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+        {requestsEnabled && (
           <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -1186,7 +1190,7 @@ export function DashboardPage() {
           </Card>
         )}
 
-        {hasPermission('work_orders.view') && (
+        {workOrdersEnabled && (
           <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -1230,7 +1234,7 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+      </div>}
 
       {/* ===== System Health Footer ===== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

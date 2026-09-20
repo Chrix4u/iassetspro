@@ -100,47 +100,86 @@ export async function GET(
     let suggestedParts = parseSuggestionArray(wo.suggestedParts);
     let suggestedTools = parseSuggestionArray(wo.suggestedTools);
 
-    // Backward compatibility for WOs converted before planner materials/tools
-    // were persisted into suggestedParts/suggestedTools. WorkOrderMaterial and
-    // planner-suggested tool requests are authoritative evidence that the
-    // planner selected the resource during conversion.
-    if (suggestedParts.length === 0 && wo.materials.length > 0) {
-      const itemIds = wo.materials
-        .map((material) => material.itemId)
-        .filter((itemId): itemId is string => Boolean(itemId));
-      const inventoryItems = itemIds.length > 0
-        ? await db.inventoryItem.findMany({
-            where: { id: { in: itemIds } },
-            select: {
-              id: true,
-              itemCode: true,
-              unitOfMeasure: true,
-            },
-          })
-        : [];
-      const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
-
-      const rejectedItemIds = new Set(
-        wo.repairMaterialRequests
-          .filter((request) => request.status === 'rejected' && request.itemId)
-          .map((request) => request.itemId as string),
-      );
-
-      suggestedParts = wo.materials
-        .filter((material) => Boolean(material.itemId) && !rejectedItemIds.has(material.itemId as string))
-        .map((material) => {
-          const item = material.itemId ? inventoryById.get(material.itemId) : undefined;
-          return {
-            id: material.id,
-            itemId: material.itemId,
-            itemName: material.itemName || 'Planned material',
-            itemCode: item?.itemCode || '',
-            quantity: material.quantity ?? 1,
-            unit: item?.unitOfMeasure || 'each',
-            notes: '',
-          };
-        });
+    // Reconcile planner-selected materials from every durable source.
+    // Older conversion paths could persist RepairMaterialRequest without the
+    // companion WorkOrderMaterial/suggestedParts snapshot. Tools already had a
+    // request-backed fallback; materials must have the same resilience.
+    const materialItemIds = new Set<string>();
+    for (const suggestion of suggestedParts) {
+      if (typeof suggestion.itemId === 'string' && suggestion.itemId) {
+        materialItemIds.add(suggestion.itemId);
+      }
     }
+    for (const material of wo.materials) {
+      if (material.itemId) materialItemIds.add(material.itemId);
+    }
+    for (const request of wo.repairMaterialRequests) {
+      if (request.itemId) materialItemIds.add(request.itemId);
+    }
+
+    const inventoryItems = materialItemIds.size > 0
+      ? await db.inventoryItem.findMany({
+          where: { id: { in: [...materialItemIds] } },
+          select: {
+            id: true,
+            itemCode: true,
+            unitOfMeasure: true,
+          },
+        })
+      : [];
+    const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+    const rejectedItemIds = new Set(
+      wo.repairMaterialRequests
+        .filter((request) => request.status === 'rejected' && request.itemId)
+        .map((request) => request.itemId as string),
+    );
+
+    const reconciledParts = new Map<string, Record<string, unknown>>();
+
+    // 1. Preserve the planner snapshot when present.
+    for (const suggestion of suggestedParts) {
+      const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      reconciledParts.set(itemId, suggestion);
+    }
+
+    // 2. Fill any missing suggestion from planned WO material rows.
+    for (const material of wo.materials) {
+      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      const item = inventoryById.get(material.itemId);
+      const current = reconciledParts.get(material.itemId);
+      reconciledParts.set(material.itemId, {
+        id: current?.id || material.id,
+        itemId: material.itemId,
+        itemName: current?.itemName || material.itemName || 'Planned material',
+        itemCode: current?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || material.quantity || 1,
+        unit: current?.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    // 3. Repair the exact legacy gap: planner material request exists even when
+    // no WorkOrderMaterial/snapshot row was created.
+    for (const request of wo.repairMaterialRequests) {
+      if (!request.itemId || request.status === 'rejected') continue;
+      const item = inventoryById.get(request.itemId);
+      const current = reconciledParts.get(request.itemId);
+      reconciledParts.set(request.itemId, {
+        id: current?.id || request.id,
+        itemId: request.itemId,
+        itemName: current?.itemName || request.itemName || 'Planned material',
+        itemCode: current?.itemCode || request.item?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || request.quantityRequested || 1,
+        unit: current?.unit || request.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    suggestedParts = [...reconciledParts.values()];
 
     if (suggestedTools.length === 0 && wo.repairToolRequests.length > 0) {
       suggestedTools = wo.repairToolRequests.flatMap((request) => {

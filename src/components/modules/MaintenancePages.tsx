@@ -960,7 +960,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     try {
       const requestPlantId = (mr as any).plantId ? String((mr as any).plantId) : '';
       const inventoryRequest = requestPlantId
-        ? api.get(`/api/inventory?limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
+        ? api.get(`/api/inventory?mode=lookup&limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
         : Promise.resolve({ success: true, data: [] as any[] });
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
@@ -2487,7 +2487,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     if (departments.length === 0) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?limit=100'),
+        api.get('/api/inventory?mode=lookup&limit=100'),
         api.get('/api/tools?limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
@@ -3639,7 +3639,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (editOpen) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?limit=100'),
+        api.get('/api/inventory?mode=lookup&limit=100'),
         api.get('/api/tools?limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
@@ -5151,12 +5151,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   setMatItemId(val);
                 }}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=100');
+                  const res = await api.get('/api/inventory?mode=lookup&limit=100');
                   if (res.success && res.data) {
                     const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
                     return items.map((item: any) => ({
                       value: item.id,
-                      label: `${item.itemName || item.name}${item.partNumber ? ` (${item.partNumber})` : ''}${item.unit ? ` — ${item.stockQuantity || 0} ${item.unit} in stock` : ''}`,
+                      label: `${item.itemName || item.name}${item.itemCode ? ` (${item.itemCode})` : ''}${item.unitOfMeasure ? ` — ${item.currentStock ?? 0} ${item.unitOfMeasure} in stock` : ''}`,
                     }));
                   }
                   return [];

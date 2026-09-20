@@ -44,7 +44,7 @@ function hasHandoverAuthority(
   );
 }
 
-function hasEffectivePermission(
+export function handoverUserHasEffectivePermission(
   user: {
     userRoles: Array<{
       role: {
@@ -287,7 +287,7 @@ export async function initiateCanonicalHandover(
         error: 'Designated handover receiver is not an active user',
       };
     }
-    if (!hasEffectivePermission(receiver, 'work_orders.start')) {
+    if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {
       return {
         success: false as const,
         error: 'Designated handover receiver is not authorized to execute maintenance work',

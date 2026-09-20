@@ -3269,7 +3269,13 @@ function ToolMaterialReturnPrompt({
     return (
       <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
         <CheckCircle2 className="h-4 w-4 shrink-0" />
-        <span>All tool custody and material reconciliation obligations are settled. Work order is ready for closure.</span>
+        <span>
+          {toolsEnabled && inventoryEnabled
+            ? 'All tool custody and material reconciliation obligations are settled. Work order is ready for closure.'
+            : toolsEnabled
+              ? 'All tool custody obligations are settled. Work order is ready for closure.'
+              : 'All material reconciliation obligations are settled. Work order is ready for closure.'}
+        </span>
       </div>
     );
   }
@@ -3279,7 +3285,15 @@ function ToolMaterialReturnPrompt({
       {/* Header */}
       <div className="flex items-center gap-2 text-sm text-amber-700">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span><strong>{totalOutstanding} outstanding item(s)</strong> — return or transfer tools, and declare material usage/return for store verification.</span>
+        <span>
+          <strong>{totalOutstanding} outstanding item(s)</strong>
+          {' — '}
+          {toolsEnabled && inventoryEnabled
+            ? 'return or transfer tools, and declare material usage/return for store verification.'
+            : toolsEnabled
+              ? 'return or transfer outstanding tools.'
+              : 'declare material usage/return for store verification.'}
+        </span>
       </div>
 
       {/* Items summary */}
@@ -3306,7 +3320,8 @@ function ToolMaterialReturnPrompt({
       <div className="flex flex-wrap gap-2">
         {hasReturnActions && (
           <Button variant="outline" className="gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={openReturn}>
-            <RotateCcw className="h-4 w-4" /> Return Tools / Declare Materials
+            <RotateCcw className="h-4 w-4" />
+            {toolsEnabled && inventoryEnabled ? 'Return Tools / Declare Materials' : toolsEnabled ? 'Return Tools' : 'Declare Materials'}
           </Button>
         )}
         {hasTools && (
@@ -3319,8 +3334,16 @@ function ToolMaterialReturnPrompt({
       {/* ═══════ Return Modal ═══════ */}
       <ResponsiveDialog open={returnOpen} onOpenChange={setReturnOpen}>
         <div className="space-y-1.5 mb-4">
-          <h2 className="text-lg font-semibold leading-none tracking-tight">Settle Tools &amp; Materials</h2>
-          <p className="text-sm text-muted-foreground">For tools, submit the physical return and condition. For materials, declare Used + Wasted/Damaged + To Return; the store will verify and reconcile.</p>
+          <h2 className="text-lg font-semibold leading-none tracking-tight">
+            Settle {toolsEnabled && inventoryEnabled ? 'Tools & Materials' : toolsEnabled ? 'Tools' : 'Materials'}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {toolsEnabled && inventoryEnabled
+              ? 'For tools, submit the physical return and condition. For materials, declare Used + Wasted/Damaged + To Return; the store will verify and reconcile.'
+              : toolsEnabled
+                ? 'Submit the physical tool return and condition.'
+                : 'Declare Used + Wasted/Damaged + To Return; the store will verify and reconcile.'}
+          </p>
         </div>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {returnItems.length === 0 && (
@@ -3390,7 +3413,13 @@ function ToolMaterialReturnPrompt({
           <Button variant="outline" onClick={() => setReturnOpen(false)}>Cancel</Button>
           <Button onClick={handleReturnSubmit} disabled={submitting || returnItems.length === 0} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-            {submitting ? 'Processing...' : 'Submit Returns / Declarations'}
+            {submitting
+              ? 'Processing...'
+              : toolsEnabled && inventoryEnabled
+                ? 'Submit Returns / Declarations'
+                : toolsEnabled
+                  ? 'Submit Returns'
+                  : 'Submit Declarations'}
           </Button>
         </div>
       </ResponsiveDialog>

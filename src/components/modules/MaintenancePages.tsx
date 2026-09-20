@@ -3410,20 +3410,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
   }, [wo, user, fullAccess, canManageTeamDirectly]);
 
-  // Permission: can take modification actions on this WO (not just view it)
-  // Used for: status transitions, edit, approve/reject etc. — includes planner via permissions
-  const canTakeActions = useMemo(() => {
-    if (!wo || !user) return false;
-    if (isAdmin()) return true;
-    if (hasPermission('work_orders.update')) return true;
-    if (hasPermission('work_orders.start')) return true;
-    if (hasPermission('work_orders.complete')) return true;
-    // Team members and assignees can take actions (log time, request materials, etc.)
-    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id) || false;
-    const isAssignee = wo.assignedToId === user.id;
-    return isTeamMember || isAssignee;
-  }, [wo, user, isAdmin, hasPermission]);
-
   // Permission: can perform WORK actions on this WO (time log, start work, personal tools, material/tool requests)
   // Restricted to admin, the assigned technician, and team members — NOT planner
   const isWorkerOnThisWO = useMemo(() => {
@@ -4312,7 +4298,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       {/* Actions Bar */}
       <div className="pb-4 flex items-center gap-2">
         {/* When permanently locked or user has no action permission, hide the entire Actions dropdown */}
-        {!isWOPermanentlyLocked && (canManageTeamDirectly || canTakeActions) && (
+        {!isWOPermanentlyLocked && (canEdit || transitionActions.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isReadOnly}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
@@ -4398,7 +4384,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             Permanently locked — no modifications allowed
           </div>
         )}
-        {!isWOPermanentlyLocked && !isReadOnly && !canTakeActions && !canManageTeamDirectly && (
+        {!isWOPermanentlyLocked && !isReadOnly && !isWorkerOnThisWO && !canManageTeamDirectly && !canEdit && transitionActions.length === 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600">
             <Eye className="h-3.5 w-3.5 shrink-0" />
             View Only — you don't have permission to modify this work order

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
@@ -38,6 +38,56 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
     const plantFilter = getPlantFilterWhere(plantScope);
+
+    // Resolve optional-module licensing/activation before exposing any
+    // cross-module dashboard data. Missing optional modules fail closed.
+    const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports'];
+    const moduleRows = await db.systemModule.findMany({
+      where: { code: { in: optionalCodes } },
+      include: { companyModules: true },
+    });
+    const moduleOperational = (code: string) => {
+      const module = moduleRows.find((row) => row.code === code);
+      if (!module) return false;
+      if (module.isCore) return true;
+      const companyModule = module.companyModules.find((cm) => cm.companyId === '__default__')
+        ?? module.companyModules.find((cm) => cm.companyId === null)
+        ?? module.companyModules[0];
+      const now = new Date();
+      const systemLicenseValid = module.isSystemLicensed === true
+        && (!module.validFrom || module.validFrom <= now)
+        && (!module.validUntil || module.validUntil >= now);
+      return systemLicenseValid
+        && Boolean(companyModule?.licensedAt)
+        && companyModule?.isEnabled === true
+        && companyModule?.isActive === true;
+    };
+
+    const canViewAssetKPIs = isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']);
+    const canViewSafetyKPIs = moduleOperational('safety')
+      && (isAdm || hasPermission(session, 'safety_incidents.view'));
+    const canViewProductionKPIs = moduleOperational('production')
+      && (isAdm || hasPermission(session, 'production.view'));
+    const canViewIoTKPIs = moduleOperational('iot_sensors')
+      && (isAdm || hasPermission(session, 'iot_devices.view'));
+    const canViewQualityKPIs = moduleOperational('quality')
+      && (isAdm || hasPermission(session, 'quality_ncr.view'));
+    const canViewInventoryKPIs = isAdm || hasAnyPermission(session, [
+      'inventory.view_all',
+      'inventory.manage',
+      'inventory.create',
+      'inventory.update',
+      'inventory.stock_in',
+      'inventory.stock_out',
+      'inventory.reserve',
+      'inventory.export',
+    ]);
+    const canViewPmKPIs = moduleOperational('pm_schedules')
+      && (isAdm || hasPermission(session, 'pm_schedules.view'));
+    const canViewAnalyticsKPIs = moduleOperational('analytics')
+      && (isAdm || hasPermission(session, 'analytics.view'));
+    const canViewFinancialKPIs = moduleOperational('reports')
+      && (isAdm || hasPermission(session, 'reports.view'));
 
     // Build base where clauses for role-based filtering
     const mrWhere: Record<string, unknown> = { ...plantFilter };
@@ -608,7 +658,7 @@ export async function GET(request: NextRequest) {
         completedWO: woStats['completed'] || 0,
         closedWO: woStats['closed'] || 0,
         // WO type breakdown for donut chart
-        preventiveWO,
+        preventiveWO: canViewPmKPIs ? preventiveWO : 0,
         correctiveWO,
         emergencyWO,
         inspectionWO,
@@ -622,57 +672,60 @@ export async function GET(request: NextRequest) {
         recentWorkOrders,
 
         // ===== Cross-Module KPIs =====
-        assetHealth: {
+        assetHealth: canViewAssetKPIs ? {
           atRisk: assetsAtRiskCount,
           poor: assetPoorCount,
           critical: assetCriticalCount,
           total: assetTotalCount,
           byCondition: assetConditionMap,
-        },
-        safetyAlerts: {
+        } : { atRisk: 0, poor: 0, critical: 0, total: 0, byCondition: {} },
+        safetyAlerts: canViewSafetyKPIs ? {
           openIncidents: safetyOpenIncidents,
           overdueInspections: safetyOverdueInspections,
-        },
-        production: {
+        } : { openIncidents: 0, overdueInspections: 0 },
+        production: canViewProductionKPIs ? {
           activeOrders: productionActiveOrders,
           overdueOrders: productionOverdueOrders,
           completionRate: productionCompletionRate,
-        },
-        iotStatus: {
+        } : { activeOrders: 0, overdueOrders: 0, completionRate: 0 },
+        iotStatus: canViewIoTKPIs ? {
           totalDevices: iotTotalDevices,
           offlineCount: iotOfflineCount,
           alertCount: iotAlertCount,
-        },
-        quality: {
+        } : { totalDevices: 0, offlineCount: 0, alertCount: 0 },
+        quality: canViewQualityKPIs ? {
           openNcrs: qualityOpenNcrs,
           failedInspections: qualityFailedInspections,
           pendingAudits: qualityPendingAudits,
-        },
-        inventoryAlerts: {
+        } : { openNcrs: 0, failedInspections: 0, pendingAudits: 0 },
+        inventoryAlerts: canViewInventoryKPIs ? {
           lowStock: lowStock,
           pendingRequests: inventoryPendingRequests,
+        } : { lowStock: 0, pendingRequests: 0 },
+        weeklyTrends: {
+          ...weeklyTrends,
+          productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders : last7Days.map(() => 0),
         },
-        weeklyTrends,
 
         // ===== Enhanced KPIs =====
 
         // Maintenance KPIs
         maintenanceKPIs: {
-          mtbf, // hours between failures
-          mttr, // hours to repair
-          plannedRatio, // % planned vs reactive
-          preventiveCount: preventiveWOsForKPI,
-          reactiveCount: correctiveWOsForKPI,
+          mtbf: canViewAnalyticsKPIs ? mtbf : 0, // hours between failures
+          mttr: canViewAnalyticsKPIs ? mttr : 0, // hours to repair
+          plannedRatio: canViewAnalyticsKPIs && canViewPmKPIs ? plannedRatio : 0,
+          preventiveCount: canViewAnalyticsKPIs && canViewPmKPIs ? preventiveWOsForKPI : 0,
+          reactiveCount: canViewAnalyticsKPIs ? correctiveWOsForKPI : 0,
         },
 
         // PM Schedules
-        pmScheduleAlerts: {
+        pmScheduleAlerts: canViewPmKPIs ? {
           dueSoon: pmSchedulesDue - pmSchedulesOverdue,
           overdue: pmSchedulesOverdue,
-        },
+        } : { dueSoon: 0, overdue: 0 },
 
         // Cost Analysis
-        costAnalysis: {
+        costAnalysis: canViewFinancialKPIs ? {
           thisMonthTotal: Math.round(thisMonthTotal * 100) / 100,
           lastMonthTotal: Math.round(lastMonthTotal * 100) / 100,
           changePercent: costChangePercent,
@@ -680,6 +733,14 @@ export async function GET(request: NextRequest) {
           thisMonthParts: Math.round((thisMonthCostResult._sum.partsCost || 0) * 100) / 100,
           thisMonthContractor: Math.round((thisMonthCostResult._sum.contractorCost || 0) * 100) / 100,
           byCategory: costByCategory,
+        } : {
+          thisMonthTotal: 0,
+          lastMonthTotal: 0,
+          changePercent: 0,
+          thisMonthLabor: 0,
+          thisMonthParts: 0,
+          thisMonthContractor: 0,
+          byCategory: {},
         },
 
         // ===== Role-Based Personal KPIs =====
@@ -700,7 +761,7 @@ export async function GET(request: NextRequest) {
         // Planner KPIs
         plannerKPIs: {
           planningQueue: planningQueueWOs,
-          pmSchedulesDue: pmSchedulesDue - pmSchedulesOverdue,
+          pmSchedulesDue: canViewPmKPIs ? pmSchedulesDue - pmSchedulesOverdue : 0,
           pendingTeamRequests,
         },
         // Pending team requests detail

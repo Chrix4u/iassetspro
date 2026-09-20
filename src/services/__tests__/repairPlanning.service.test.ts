@@ -320,11 +320,13 @@ describe('Tool vs material distinction (documented)', () => {
     expect(payload.requiredTools![0].quantity).toBeUndefined();
   });
 
-  it('should document that parts create WorkOrderMaterial (status: planned)', () => {
-    // This test documents the business rule:
-    // Parts → WorkOrderMaterial with status 'planned'
+  it('should document that parts create both compatibility and canonical planner-suggested records', () => {
+    // Parts selected by a planner during MR conversion must be visible on the
+    // WO detail page and enter the store approval pipeline.
     const PLANNED_STATUS = 'planned';
+    const PLANNER_SUGGESTED_SOURCE = 'planner_suggested';
     expect(PLANNED_STATUS).toBe('planned');
+    expect(PLANNER_SUGGESTED_SOURCE).toBe('planner_suggested');
   });
 
   it('should document that tools create RepairToolRequest (source: planner_suggested)', () => {
@@ -384,6 +386,156 @@ describe('convertMRToWorkOrder function contract', () => {
     // This would fail at compile time if the signature changed
     const result: Promise<ConvertMRToWOResult> = convertMRToWorkOrder(mrId, payload, session);
     expect(result).toBeInstanceOf(Promise);
+  });
+
+  it('persists planner-selected materials into the canonical WO material pipeline during MR conversion', async () => {
+    (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
+      id: 'mr-1',
+      title: 'Pump bearing failure',
+      status: 'approved',
+      requestedBy: 'planner-1',
+      description: 'Bearing noise',
+      priority: 'high',
+      plantId: 'plant-1',
+      workOrderId: null,
+      estimatedHours: null,
+      plannedStart: null,
+      plannedEnd: null,
+      assetId: null,
+      departmentId: null,
+    });
+
+    const tx = {
+      workOrder: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({
+          id: 'wo-1',
+          woNumber: 'WO-202609-0001',
+          title: 'Pump bearing failure',
+          plantId: 'plant-1',
+        }),
+        update: vi.fn().mockResolvedValue({ id: 'wo-1' }),
+      },
+      maintenanceRequest: {
+        update: vi.fn(),
+      },
+      workOrderTeamMember: {
+        createMany: vi.fn(),
+        create: vi.fn(),
+      },
+      inventoryItem: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'part-1',
+          name: '6205 Bearing',
+          itemCode: 'BRG-6205',
+          unitOfMeasure: 'each',
+          unitCost: 125,
+          plantId: 'plant-1',
+        }),
+      },
+      workOrderMaterial: {
+        create: vi.fn().mockResolvedValue({ id: 'wom-1' }),
+      },
+      repairMaterialRequest: {
+        create: vi.fn().mockResolvedValue({ id: 'rmr-1' }),
+      },
+      tool: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'tool-1',
+          name: 'Bearing Puller',
+          toolCode: 'TL-BP-01',
+          category: 'mechanical',
+          purchaseCost: 300,
+          plantId: 'plant-1',
+        }),
+      },
+      repairToolRequest: {
+        create: vi.fn().mockResolvedValue({ id: 'rtr-1' }),
+      },
+      repairToolRequestItem: {
+        create: vi.fn().mockResolvedValue({ id: 'rtri-1' }),
+      },
+      auditLog: {
+        create: vi.fn().mockResolvedValue({ id: 'audit-1' }),
+      },
+    };
+
+    (mockDb.$transaction as Mock).mockImplementation(async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx));
+    mockExecuteTransition.mockResolvedValue({ success: true });
+
+    const result = await convertMRToWorkOrder(
+      'mr-1',
+      {
+        requiredParts: [{ itemId: 'part-1', quantity: 2 }],
+        requiredTools: [{ toolId: 'tool-1', quantity: 1 }],
+      },
+      { userId: 'planner-1', fullName: 'Planner One', roles: ['admin', 'maintenance_planner'] },
+    );
+
+    expect(result.success).toBe(true);
+
+    expect(tx.workOrderMaterial.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workOrderId: 'wo-1',
+        itemId: 'part-1',
+        itemName: '6205 Bearing',
+        quantity: 2,
+        unitCost: 125,
+        totalCost: 250,
+        status: 'planned',
+        requestedBy: 'planner-1',
+      }),
+    });
+
+    expect(tx.repairMaterialRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workOrderId: 'wo-1',
+        itemId: 'part-1',
+        itemName: '6205 Bearing',
+        quantityRequested: 2,
+        unit: 'each',
+        unitCost: 125,
+        estimatedCost: 250,
+        source: 'planner_suggested',
+        status: 'pending',
+        requestedById: 'planner-1',
+        plantId: 'plant-1',
+      }),
+    });
+
+    expect(tx.repairToolRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workOrderId: 'wo-1',
+        toolId: 'tool-1',
+        source: 'planner_suggested',
+        status: 'pending',
+      }),
+    });
+
+    const snapshotCall = tx.workOrder.update.mock.calls.find(
+      ([args]) => args?.data?.suggestedParts && args?.data?.suggestedTools,
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotData = snapshotCall![0].data;
+    expect(JSON.parse(snapshotData.suggestedParts)).toEqual([
+      expect.objectContaining({
+        itemId: 'part-1',
+        itemName: '6205 Bearing',
+        itemCode: 'BRG-6205',
+        quantity: 2,
+        unit: 'each',
+      }),
+    ]);
+    expect(JSON.parse(snapshotData.suggestedTools)).toEqual([
+      expect.objectContaining({
+        toolId: 'tool-1',
+        toolName: 'Bearing Puller',
+        toolCode: 'TL-BP-01',
+        quantity: 1,
+      }),
+    ]);
   });
 
   it('should handle P2002 race condition in the outer catch', async () => {

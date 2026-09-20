@@ -2990,7 +2990,15 @@ interface ReturnTransferItem {
   pendingStoreVerification?: boolean;
 }
 
-function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
+function ToolMaterialReturnPrompt({
+  workOrderId,
+  toolsEnabled,
+  inventoryEnabled,
+}: {
+  workOrderId: string;
+  toolsEnabled: boolean;
+  inventoryEnabled: boolean;
+}) {
   const { user, isAdmin } = useAuthStore();
   const [allItems, setAllItems] = useState<ReturnTransferItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3005,13 +3013,21 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferItems, setTransferItems] = useState<(ReturnTransferItem & { qtyTransfer: number; toUserId: string; toUserName: string; transferReason: string })[]>([]);
 
-  // Fetch all outstanding tools and materials
+  // Fetch only resource domains whose source modules are operational.
   useEffect(() => {
-    if (!workOrderId) return;
+    if (!workOrderId || (!toolsEnabled && !inventoryEnabled)) {
+      setAllItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.all([
-      api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`),
-      api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`),
+      toolsEnabled
+        ? api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`)
+        : Promise.resolve({ success: true, data: [] }),
+      inventoryEnabled
+        ? api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`)
+        : Promise.resolve({ success: true, data: [] }),
     ]).then(([toolRes, matRes]) => {
       const rows: ReturnTransferItem[] = [];
 
@@ -3064,7 +3080,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
       setAllItems(rows);
     }).catch(() => {}).finally(() => setLoading(false));
-  }, [workOrderId, refreshKey]);
+  }, [workOrderId, refreshKey, toolsEnabled, inventoryEnabled]);
 
   const toolItems = allItems.filter(i => i.type === 'tool');
   const actionableToolItems = toolItems.filter(i => !i.pendingStoreVerification);
@@ -3450,6 +3466,9 @@ export function RepairCompletionPage() {
   const { user } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const [woId, setWoId] = useState('');
   const [completion, setCompletion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -3494,8 +3513,13 @@ export function RepairCompletionPage() {
     if (woId) fetchCompletion();
   }, [woId, fetchCompletion]);
 
-  // Fetch available components when assetId is known
+  // Asset/component information must disappear with the Assets module.
   useEffect(() => {
+    if (!assetsEnabled) {
+      setAvailableComponents([]);
+      setSelectedComponentIds([]);
+      return;
+    }
     const assetId = completion?.workOrder?.assetId;
     if (!assetId) return;
     (async () => {
@@ -3508,18 +3532,21 @@ export function RepairCompletionPage() {
       }
       setComponentsLoading(false);
     })();
-  }, [completion?.workOrder?.assetId]);
+  }, [completion?.workOrder?.assetId, assetsEnabled]);
 
-  // Fetch already-linked components for this WO
+  // Fetch linked asset components only while Assets is operational.
   useEffect(() => {
-    if (!woId) return;
+    if (!assetsEnabled || !woId) {
+      setSelectedComponentIds([]);
+      return;
+    }
     (async () => {
       const res = await api.get(`/api/work-orders/${woId}/components`);
       if (res.success && Array.isArray(res.data)) {
         setSelectedComponentIds(res.data.map((c: any) => c.componentRegistry?.id || c.componentRegistryId || c.id));
       }
     })();
-  }, [woId]);
+  }, [woId, assetsEnabled]);
 
   const handleSubmit = async (action: string) => {
     if (!woId) return;
@@ -3541,7 +3568,7 @@ export function RepairCompletionPage() {
     if (res.success) {
       toast.success('Action completed');
       // Save linked components
-      if (woId && selectedComponentIds.length >= 0) {
+      if (assetsEnabled && woId && selectedComponentIds.length >= 0) {
         await api.put(`/api/work-orders/${woId}/components`, { componentIds: selectedComponentIds });
       }
       fetchCompletion();
@@ -3609,7 +3636,7 @@ export function RepairCompletionPage() {
           <Card>
             <CardHeader><CardTitle>Completion Details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className='space-y-2'>
+              {assetsEnabled && <div className='space-y-2'>
                 <Label className='text-sm font-medium'>Parts/Components Worked On</Label>
                 <Input
                   placeholder='Search components...'
@@ -3651,7 +3678,7 @@ export function RepairCompletionPage() {
                 {selectedComponentIds.length > 0 && (
                   <p className='text-xs text-muted-foreground'>{selectedComponentIds.length} component(s) selected</p>
                 )}
-              </div>
+              </div>}
               <div><Label>Completion Notes</Label><Textarea value={form.completionNotes} onChange={(e) => setForm({ ...form, completionNotes: e.target.value })} placeholder="Describe work completed..." rows={3} /></div>
               <div className="grid md:grid-cols-2 gap-4">
                 <div><Label>Findings</Label><Textarea value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></div>
@@ -3660,8 +3687,8 @@ export function RepairCompletionPage() {
               <div><Label>Corrective Action</Label><Textarea value={form.correctiveAction} onChange={(e) => setForm({ ...form, correctiveAction: e.target.value })} /></div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div><Label>Labor Hours</Label><Input type="number" step="0.5" value={form.totalLaborHours} onChange={(e) => setForm({ ...form, totalLaborHours: e.target.value })} placeholder={String(completion.totalLaborHours || 0)} /></div>
-                <div><Label>Material Cost (₵)</Label><Input type="number" step="0.01" value={form.totalMaterialCost} onChange={(e) => setForm({ ...form, totalMaterialCost: e.target.value })} placeholder={String(completion.totalMaterialCost || 0)} /></div>
-                <div><Label>Tool Cost (₵)</Label><Input type="number" step="0.01" value={form.totalToolCost} onChange={(e) => setForm({ ...form, totalToolCost: e.target.value })} placeholder={String(completion.totalToolCost || 0)} /></div>
+                {inventoryEnabled && <div><Label>Material Cost (₵)</Label><Input type="number" step="0.01" value={form.totalMaterialCost} onChange={(e) => setForm({ ...form, totalMaterialCost: e.target.value })} placeholder={String(completion.totalMaterialCost || 0)} /></div>}
+                {toolsEnabled && <div><Label>Tool Cost (₵)</Label><Input type="number" step="0.01" value={form.totalToolCost} onChange={(e) => setForm({ ...form, totalToolCost: e.target.value })} placeholder={String(completion.totalToolCost || 0)} /></div>}
                 <div><Label>Downtime (min)</Label><Input type="number" value={form.totalDowntimeMinutes} onChange={(e) => setForm({ ...form, totalDowntimeMinutes: e.target.value })} placeholder={String(completion.totalDowntimeMinutes || 0)} /></div>
               </div>
 
@@ -3686,16 +3713,25 @@ export function RepairCompletionPage() {
             </CardContent>
           </Card>
 
-          {/* Outstanding Tools & Materials Return Reminder */}
-          <Card className="border-amber-200 bg-amber-50/30">
+          {/* Outstanding resource return reminder */}
+          {(toolsEnabled || inventoryEnabled) && <Card className="border-amber-200 bg-amber-50/30">
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4 text-amber-600" />Outstanding Tools & Materials</CardTitle>
-              <CardDescription className="text-xs">Return or transfer tools and reusable materials before closing this work order</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2">
+                <PackageCheck className="h-4 w-4 text-amber-600" />
+                Outstanding {toolsEnabled && inventoryEnabled ? 'Tools & Materials' : toolsEnabled ? 'Tools' : 'Materials'}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {toolsEnabled && inventoryEnabled
+                  ? 'Return or transfer tools and reconcile reusable materials before closing this work order'
+                  : toolsEnabled
+                    ? 'Return or transfer outstanding tools before closing this work order'
+                    : 'Reconcile reusable materials before closing this work order'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <ToolMaterialReturnPrompt workOrderId={woId} />
+              <ToolMaterialReturnPrompt workOrderId={woId} toolsEnabled={toolsEnabled} inventoryEnabled={inventoryEnabled} />
             </CardContent>
-          </Card>
+          </Card>}
         </div>
       )}
 

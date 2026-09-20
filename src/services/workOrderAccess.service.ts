@@ -261,10 +261,14 @@ function hasWorkOrderTransitionPermission(
       return hasPermission(session, 'work_orders.update')
         || hasPermission(session, 'work_orders.start');
     case 'in_progress':
-      return workOrder.status === 'assigned'
-        ? hasPermission(session, 'work_orders.start')
-        : hasPermission(session, 'work_orders.update')
-          || hasPermission(session, 'work_orders.start');
+      if (workOrder.status === 'assigned') {
+        return hasPermission(session, 'work_orders.start');
+      }
+      if (workOrder.status === 'completed' || workOrder.status === 'verified') {
+        return hasPermission(session, 'work_orders.verify');
+      }
+      return hasPermission(session, 'work_orders.update')
+        || hasPermission(session, 'work_orders.start');
     default:
       return hasPermission(session, 'work_orders.update');
   }

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { handoverUserHasEffectivePermission, initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
-import { canInitiateWorkOrderHandoverForActor, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 export async function GET(
   request: NextRequest,
@@ -57,7 +57,7 @@ export async function GET(
 
     const mode = new URL(request.url).searchParams.get('mode');
     if (mode === 'candidates') {
-      if (wo.status !== 'in_progress' || !canInitiateWorkOrderHandoverForActor(session, wo)) {
+      if (wo.status !== 'in_progress' || !canPerformWorkOrderTransition(session, wo, 'pending_handover')) {
         return NextResponse.json(
           { success: false, error: 'You are not authorized to initiate a handover for this work order' },
           { status: 403 },
@@ -137,7 +137,7 @@ export async function GET(
     const handover = wo.shiftHandovers[0] ?? null;
     const managementOverride = isAdmin(session) || session.roles.includes('maintenance_manager');
     const canInitiate = wo.status === 'in_progress'
-      && canInitiateWorkOrderHandoverForActor(session, wo);
+      && canPerformWorkOrderTransition(session, wo, 'pending_handover');
     const canConfirm = Boolean(
       handover
       && handover.status === 'pending'
@@ -170,6 +170,12 @@ export async function POST(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!isAdmin(session) && !hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions for work-order handover' },
+        { status: 403 },
+      );
     }
 
     const { id } = await params;

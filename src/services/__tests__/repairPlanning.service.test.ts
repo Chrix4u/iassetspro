@@ -13,6 +13,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 
 // ---- Hoisted mocks for DB and state-machine ----
 const { mockDb, mockExecuteTransition } = vi.hoisted(() => ({
@@ -575,6 +577,30 @@ describe('convertMRToWorkOrder function contract', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('DB connection lost');
+  });
+});
+
+describe('MR conversion material reconciliation source contract', () => {
+  it('backfills legacy converted WO materials and derives missing suggestion snapshots', () => {
+    const migration = fs.readFileSync(
+      path.join(process.cwd(), 'prisma/migrations/20260920194000_backfill_mr_conversion_materials/migration.sql'),
+      'utf8',
+    );
+    const suggestedRoute = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/work-orders/[id]/suggested-items/route.ts'),
+      'utf8',
+    );
+
+    expect(migration).toContain("INSERT INTO `repair_material_requests`");
+    expect(migration).toContain("w.`maintenanceRequestId` IS NOT NULL");
+    expect(migration).toContain("wom.`status` = 'planned'");
+    expect(migration).toContain("'planner_suggested'");
+    expect(migration).toContain('NOT EXISTS');
+
+    expect(suggestedRoute).toContain('storedSuggestedParts.length > 0');
+    expect(suggestedRoute).toContain('wo.repairMaterialRequests.map');
+    expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
+    expect(suggestedRoute).toContain('wo.repairToolRequests.map');
   });
 });
 

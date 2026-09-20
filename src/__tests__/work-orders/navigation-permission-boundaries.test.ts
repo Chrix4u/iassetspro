@@ -348,6 +348,9 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'repair_material_requests.create')");
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'assistance_requests.create')");
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'time_logs.create')");
+    expect(woCapabilitiesApi).toContain("hasPermission(session, 'work_orders.update')");
+    expect(woCapabilitiesApi).toContain('canManageWorkOrder(session, wo)');
+    expect(woCapabilitiesApi).not.toContain("const canManageDowntime = isSupervisor || isPlanner");
     expect(woCapabilitiesApi).not.toContain("canVerify: (isSupervisor || isAdminUser)");
     expect(woCapabilitiesApi).not.toContain("canClose: (isPlanner || isAdminUser)");
   });

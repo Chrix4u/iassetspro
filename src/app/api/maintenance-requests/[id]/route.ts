@@ -89,7 +89,7 @@ export async function GET(
     const department = mr.departmentId
       ? await db.department.findFirst({
           where: { id: mr.departmentId, ...(mr.plantId ? { plantId: mr.plantId } : {}) },
-          select: { id: true, name: true, code: true, plantId: true },
+          select: { id: true, name: true, code: true, plantId: true, supervisorId: true },
         })
       : null;
 

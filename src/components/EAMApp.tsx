@@ -342,39 +342,32 @@ function PageSwitcher({ page }: { page: string }) {
 
   const enabledModules = useNavigationStore((s) => s.enabledModules);
 
+  // Resolve access synchronously before the dynamic page component is allowed to
+  // load or render. This prevents a cached/loaded component from flashing before
+  // the redirect effect runs.
+  const admin = isAdmin();
+  let requiredPerms = PAGE_PERMISSIONS[page];
+  if (!requiredPerms && page.startsWith('settings-')) {
+    requiredPerms = ['system_settings.view'];
+  }
+  const adminOnlyPage = page.startsWith('settings-') && page !== 'settings-preferences';
+  const permissionAllowed = (!adminOnlyPage || admin)
+    && (admin || !requiredPerms || requiredPerms.some((p) => hasPermission(p)));
+  const moduleAllowed = pageModuleIsEnabled(page, enabledModules);
+  const pageAllowed = permissionAllowed && moduleAllowed;
 
-
-  // Permission guard: check before loading the page
+  // Unauthorized and disabled/unlicensed pages are never routable.
   useEffect(() => {
-    // Admin-only gate: all settings-* pages (except user-level preferences) require admin
-    if (page.startsWith('settings-') && page !== 'settings-preferences') {
-      if (!isAdmin()) {
-        navigate('dashboard');
-        return;
-      }
+    if (!pageAllowed) {
+      setComponent(null);
+      setError(null);
+      if (page !== 'dashboard') navigate('dashboard');
     }
-
-    let requiredPerms = PAGE_PERMISSIONS[page];
-    // Wildcard: any settings-* page not explicitly listed requires system_settings.view
-    if (!requiredPerms && page.startsWith('settings-')) {
-      requiredPerms = ['system_settings.view'];
-    }
-    if (requiredPerms && !isAdmin()) {
-      const hasAccess = requiredPerms.some(p => hasPermission(p));
-      if (!hasAccess) {
-        navigate('dashboard');
-        return;
-      }
-    }
-
-    // Disabled/unlicensed modules are not routable even through a direct hash URL.
-    if (!pageModuleIsEnabled(page, enabledModules)) {
-      navigate('dashboard');
-      return;
-    }
-  }, [page, hasPermission, isAdmin, navigate, enabledModules]);
+  }, [page, pageAllowed, navigate]);
 
   useEffect(() => {
+    if (!pageAllowed) return;
+
     // If already cached, use it immediately
     if (pageCache.has(page)) {
       setComponent(() => pageCache.get(page)!);
@@ -403,7 +396,9 @@ function PageSwitcher({ page }: { page: string }) {
       });
 
     return () => { cancelled = true; };
-  }, [page]);
+  }, [page, pageAllowed]);
+
+  if (!pageAllowed) return <LoadingSkeleton />;
 
   if (error) {
     return (

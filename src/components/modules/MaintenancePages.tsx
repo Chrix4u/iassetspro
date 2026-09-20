@@ -960,12 +960,12 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     try {
       const requestPlantId = (mr as any).plantId ? String((mr as any).plantId) : '';
       const inventoryRequest = requestPlantId
-        ? api.get(`/api/inventory?limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
+        ? api.get(`/api/inventory?mode=lookup&limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
         : Promise.resolve({ success: true, data: [] as any[] });
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
         inventoryRequest,
-        api.get('/api/tools?limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
         api.get('/api/users?limit=100'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
@@ -1183,14 +1183,15 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  // Only admin or the request sender's own department supervisor can approve/assign
+  // Use the same authoritative department-supervisor identity as the API.
   const isAdminUser = isAdmin();
-  const isDeptSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin')
-    && (mr.departmentId
-      // The frontend can't easily query Department.supervisorId, so we rely on the API
-      // server-side check. Here we use the supervisorId field as a heuristic:
-      ? mr.supervisorId === user?.id
-      : false);
+  const isMaintenanceSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin') ?? false;
+  const accountableSupervisorId = mr.departmentId
+    ? mr.department?.supervisorId
+    : mr.supervisorId;
+  const isDeptSupervisor = isMaintenanceSupervisor
+    && Boolean(accountableSupervisorId)
+    && accountableSupervisorId === user?.id;
 
   const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
@@ -2487,8 +2488,8 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     if (departments.length === 0) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?limit=100'),
-        api.get('/api/tools?limit=100'),
+        api.get('/api/inventory?mode=lookup&limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setInventoryItems(invRes.data);
@@ -3639,8 +3640,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (editOpen) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?limit=100'),
-        api.get('/api/tools?limit=100'),
+        api.get('/api/inventory?mode=lookup&limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
@@ -5151,12 +5152,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   setMatItemId(val);
                 }}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?limit=100');
+                  const res = await api.get('/api/inventory?mode=lookup&limit=100');
                   if (res.success && res.data) {
                     const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
                     return items.map((item: any) => ({
                       value: item.id,
-                      label: `${item.itemName || item.name}${item.partNumber ? ` (${item.partNumber})` : ''}${item.unit ? ` — ${item.stockQuantity || 0} ${item.unit} in stock` : ''}`,
+                      label: `${item.itemName || item.name}${item.itemCode ? ` (${item.itemCode})` : ''}${item.unitOfMeasure ? ` — ${item.currentStock ?? 0} ${item.unitOfMeasure} in stock` : ''}`,
                     }));
                   }
                   return [];
@@ -5220,7 +5221,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
-                        const res = await api.get('/api/tools?limit=100');
+                        const res = await api.get('/api/tools?mode=lookup&limit=100');
                         if (res.success && Array.isArray(res.data)) {
                           toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
                           return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));

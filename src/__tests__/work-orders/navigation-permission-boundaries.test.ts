@@ -14,13 +14,20 @@ describe('navigation, module, and action permission boundaries', () => {
   const modulesApi = read('src/app/api/modules/route.ts');
   const pageAccess = read('src/lib/page-access.ts');
   const dashboard = read('src/components/modules/DashboardPages.tsx');
+  const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
+  const repairsUatApi = read('e2e/repairs/helpers/api.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
+  const toolsApi = read('src/app/api/tools/route.ts');
   const materialListApi = read('src/app/api/repairs/material-requests/route.ts');
   const toolListApi = read('src/app/api/repairs/tool-requests/route.ts');
   const toolDetailApi = read('src/app/api/repairs/tool-requests/[id]/route.ts');
   const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
+  const toolTransferDetailApi = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
+  const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
+  const mrDetailApi = read('src/app/api/maintenance-requests/[id]/route.ts');
+  const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
@@ -72,8 +79,59 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
   });
 
+  it('keeps dashboard own-work cards and data aligned with view_own scope', () => {
+    expect(dashboard).toContain('pageHasPermission(card.page, hasPermission, isAdmin())');
+    expect(dashboard).toContain('pageHasPermission(action.page, hasPermission, isAdmin())');
+    expect(dashboardApi).toContain("where: { userId: session.userId }");
+    expect(dashboardApi).toContain("{ assignedTo: session.userId }");
+    expect(dashboardApi).toContain("{ id: { in: teamIds } }");
+    expect(dashboardApi).toContain("where: { ...woWhere, createdAt: { gte: sevenDaysAgo } }");
+    expect(dashboardApi).toContain("where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } }");
+    expect(dashboardApi).toContain("pendingMrWhere = { ...plantFilter");
+    expect(dashboardApi).not.toContain('db.$queryRaw');
+  });
+
+  it('hides dashboard module cards when their destination page is not authorized', () => {
+    expect(dashboard).toContain('pageHasPermission(mod.page, hasPermission, isAdmin())');
+    expect(dashboard).toContain('pageModuleIsEnabled(mod.page, enabledModules)');
+    expect(dashboard).toContain("page: 'inventory-items' as PageName");
+    expect(dashboard).toContain("pageHasPermission('analytics-kpi', hasPermission, isAdmin())");
+    expect(dashboard).toContain("pageHasPermission('reports-financial', hasPermission, isAdmin())");
+  });
+
+  it('keeps repair UAT tool discovery on the constrained lookup endpoint', () => {
+    expect(repairsUatApi).toContain("/api/tools?mode=lookup&search=");
+    expect(repairsUatApi).not.toContain("/api/tools?search=");
+  });
+
+  it('uses valid indirect plant scopes for optional-module dashboard models', () => {
+    expect(dashboardApi).toContain('const departmentPlantFilter');
+    expect(dashboardApi).toContain('const iotAlertPlantFilter');
+    expect(dashboardApi).toContain('...departmentPlantFilter');
+    expect(dashboardApi).toContain('...iotAlertPlantFilter');
+    expect(dashboardApi).toContain('canViewSafetyKPIs');
+    expect(dashboardApi).toContain('canViewIoTKPIs');
+    expect(dashboardApi).toContain('canViewQualityKPIs');
+    expect(dashboardApi).not.toContain("db.iotAlert.count({ where: { ...plantFilter, status: 'active' } })");
+    expect(dashboardApi).not.toContain("db.nonConformanceReport.count({ where: { ...plantFilter");
+    expect(dashboardApi).not.toContain("db.qualityAudit.count({ where: { ...plantFilter");
+  });
+
+  it('redacts unauthorized or disabled cross-module dashboard data server-side', () => {
+    expect(dashboardApi).toContain("const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports']");
+    expect(dashboardApi).toContain('const moduleOperational = (code: string)');
+    expect(dashboardApi).toContain('const canViewInventoryKPIs');
+    expect(dashboardApi).toContain("moduleOperational('pm_schedules')");
+    expect(dashboardApi).toContain('assetHealth: canViewAssetKPIs ?');
+    expect(dashboardApi).toContain('inventoryAlerts: canViewInventoryKPIs ?');
+    expect(dashboardApi).toContain('pmScheduleAlerts: canViewPmKPIs ?');
+    expect(dashboardApi).toContain('costAnalysis: canViewFinancialKPIs ?');
+    expect(dashboardApi).toContain('productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders');
+  });
+
   it('removes PM widgets and actions when PM is disabled', () => {
-    expect(dashboard).toContain("const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules)");
+    expect(dashboard).toContain("pageHasPermission('pm-schedules', hasPermission, isAdmin())");
+    expect(dashboard).toContain("pageModuleIsEnabled('pm-schedules', enabledModules)");
     expect(dashboard).not.toContain('enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
     expect(dashboard).toContain('{pmEnabled && <button onClick={() => navigate(\'pm-schedules\')}');
     expect(dashboard).toContain("...(pmEnabled ? [{ type: 'preventive'");
@@ -92,6 +150,11 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(inventoryApi).toContain("'repair_material_requests.create'");
     expect(inventoryApi).toContain('unitOfMeasure: true');
     expect(repairs).toContain("api.get('/api/inventory?mode=lookup&limit=500')");
+    expect(inventoryApi).toContain("'work_orders.create'");
+    expect(inventoryApi).toContain("'work_orders.update'");
+    expect(inventoryApi).toContain("'maintenance_requests.update'");
+    expect(maintenance).toContain("api.get('/api/inventory?mode=lookup&limit=100')");
+    expect(maintenance).not.toContain("api.get('/api/inventory?limit=100')");
     expect(sidebar).toContain("label: 'Inventory', icon: Package, perm: 'inventory.view_all'");
     expect(singleTechUat).toContain("expect(blockedInventory.status).toBe(403)");
     expect(singleTechUat).toContain('/api/inventory?mode=lookup&search=');
@@ -148,5 +211,69 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).toContain("hasPermission('repair_material_requests.create') || isAdmin()");
     expect(repairs).toContain("hasPermission('repair_tool_requests.create') || isAdmin()");
     expect(repairs).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update')");
+  });
+
+  it('does not let update permissions imply domain-wide repair visibility', () => {
+    expect(repairs).toContain("canViewAllRepairData(user, ['repair_material_requests.view', 'repair_material_requests.view_all'])");
+    expect(repairs).toContain("canViewAllRepairData(user, ['repair_tool_requests.view', 'repair_tool_requests.view_all'])");
+    expect(repairs).not.toContain("hasPermission('repair_material_requests.update') || hasPermission('work_orders.view_all')");
+  });
+
+  it('does not render or load a page before its permission and module checks pass', () => {
+    expect(app).toContain('const pageAllowed = permissionAllowed && moduleAllowed');
+    expect(app).toContain('if (!pageAllowed) return;');
+    expect(app).toContain('if (!pageAllowed) return <LoadingSkeleton />;');
+  });
+
+  it('uses the authoritative department supervisor for MR action visibility and rejection', () => {
+    expect(mrDetailApi).toContain('supervisorId: true');
+    expect(maintenance).toContain('const accountableSupervisorId = mr.departmentId');
+    expect(maintenance).toContain('mr.department?.supervisorId');
+    expect(maintenance).not.toContain('The frontend can\'t easily query Department.supervisorId');
+    expect(mrRejectApi).toContain('const department = await db.department.findUnique');
+    expect(mrRejectApi).toContain('department.supervisorId !== session.userId');
+    expect(mrRejectApi).not.toContain('const requesterDept = mr.requester?.department');
+    expect(mrRejectApi).not.toContain('const deptMatch = requesterDept && userDept');
+  });
+
+  it('binds completion review and closure to the assigned accountable actors', () => {
+    expect(completionApi).toContain('wo.assignedSupervisorId === session.userId');
+    expect(completionApi).toContain('wo.plannerId === session.userId');
+    expect(completionApi).toContain("hasRole(session, 'maintenance_supervisor')");
+    expect(completionApi).toContain("hasRole(session, 'maintenance_planner')");
+    expect(completionApi).not.toContain('Only supervisors, managers, or planners can perform this action');
+    expect(repairs).toContain('function canSubmitCompletion(completion: any, user: any)');
+    expect(repairs).toContain('function canReviewCompletion(completion: any, user: any)');
+    expect(repairs).toContain('function canCloseCompletion(completion: any, user: any)');
+    expect(repairs).toContain('completion.workOrder.assignedSupervisorId === userId');
+    expect(repairs).toContain('completion.workOrder.plannerId === userId');
+    expect(repairs).not.toContain("completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin())");
+  });
+
+  it('keeps tool transfer approvals and physical handover controls aligned with the API', () => {
+    expect(repairs).not.toContain("hasPermission('repair_tool_transfers.update')");
+    expect(repairs).toContain('canApproveAsStore(user)');
+    expect(repairs).toContain("t.status === 'awaiting_handover' && user?.id === t.fromUserId");
+    expect(repairs).toContain("t.status === 'awaiting_handover' && user?.id === t.toUserId");
+    expect(repairs).not.toContain('user?.id === t.fromUserId || isAdmin()');
+    expect(repairs).not.toContain('user?.id === t.toUserId || isAdmin()');
+    expect(toolTransferDetailApi).toContain('session.userId !== transfer.fromUserId');
+    expect(toolTransferDetailApi).toContain('session.userId !== transfer.toUserId');
+  });
+
+  it('separates the Tool Registry workspace from constrained repair tool lookups', () => {
+    expect(toolsApi).toContain("const isLookup = mode === 'lookup'");
+    expect(toolsApi).toContain('const canUseToolWorkspace');
+    expect(toolsApi).toContain('const canLookupForWork');
+    expect(toolsApi).toContain("'repair_tool_requests.create'");
+    expect(toolsApi).toContain("'repair_tool_transfers.create'");
+    expect(toolsApi).toContain("'damaged_tool_reports.create'");
+    expect(toolsApi).toContain('if (isLookup ? !canLookupForWork && !canUseToolWorkspace : !canUseToolWorkspace)');
+    expect(toolsApi).toContain('assignedToId: true');
+    expect(toolsApi).not.toContain('purchaseCost: true');
+    expect(pageAccess).toContain("'maintenance-tools': ['tools.manage', 'tools.create', 'tools.update', 'tools.delete']");
+    expect(maintenance).toContain("api.get('/api/tools?mode=lookup&limit=100')");
+    expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=500')");
+    expect(repairs).toContain("api.get('/api/tools?mode=lookup&limit=999')");
   });
 });

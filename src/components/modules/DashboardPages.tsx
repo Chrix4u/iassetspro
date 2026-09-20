@@ -5,7 +5,7 @@ import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { MODULE_CODES } from '@/hooks/useModuleEnabled';
-import { pageModuleIsEnabled } from '@/lib/page-access';
+import { pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 import { api } from '@/lib/api';
 import { timeAgo, formatCurrency } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
@@ -283,7 +283,7 @@ export function DashboardPage() {
       color: '#10b981', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
       borderColor: 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
-      icon: Wrench, permission: 'work_orders.view',
+      icon: Wrench, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
       onClick: isManager ? () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold' }) : () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold', assignedTo: 'me' }),
     },
@@ -293,7 +293,7 @@ export function DashboardPage() {
       color: '#14b8a6', bgColor: 'bg-teal-50 dark:bg-teal-950/30',
       borderColor: 'border-teal-100 dark:border-teal-900/40',
       iconBg: 'bg-teal-100 dark:bg-teal-900/50', iconColor: 'text-teal-600 dark:text-teal-400',
-      icon: CheckCircle2, permission: 'work_orders.view',
+      icon: CheckCircle2, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       showRing: true, ringValue: completionRate,
     },
     {
@@ -304,7 +304,7 @@ export function DashboardPage() {
       borderColor: overdueWOs > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50',
       iconColor: overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
-      icon: AlertTriangle, permission: 'work_orders.view',
+      icon: AlertTriangle, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       onClick: () => navigate('maintenance-work-orders', { overdue: 'true' }),
     },
     {
@@ -313,13 +313,16 @@ export function DashboardPage() {
       color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
-      icon: ClipboardList, permission: 'maintenance_requests.view',
+      icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName,
       barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
       onClick: () => navigate('maintenance-requests', { status: 'pending,approved' }),
     },
   ];
 
-  const visiblePrimaryKPIs = primaryKPICards.filter(c => hasPermission(c.permission));
+  const visiblePrimaryKPIs = primaryKPICards.filter((card) =>
+    pageHasPermission(card.page, hasPermission, isAdmin())
+    && pageModuleIsEnabled(card.page, enabledModules)
+  );
 
   // ===== Role-Based Quick Actions =====
   const allQuickActions = [
@@ -340,20 +343,11 @@ export function DashboardPage() {
   ];
 
   const visibleQuickActions = allQuickActions
-    .filter(a => hasPermission(a.permission))
-    .filter(a => pageModuleIsEnabled(a.page, enabledModules))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter((action) => pageHasPermission(action.page, hasPermission, isAdmin()))
+    .filter((action) => pageModuleIsEnabled(action.page, enabledModules))
+    .filter((action) => action.roles.includes('all') || action.roles.some((role) => userRoles.includes(role)));
 
   // Cross-module overview data
-  const moduleMap: Record<string, string> = {
-    'Assets': 'assets',
-    'Safety': 'safety',
-    'Production': 'production',
-    'IoT': 'iot_sensors',
-    'Quality': 'quality',
-    'Inventory': 'inventory',
-  };
-
   const crossModuleData = [
     { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40', page: 'assets' as PageName, params: assetsAtRisk > 0 ? { condition: 'at_risk' } : undefined },
     { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} inspections overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40', page: 'safety-incidents' as PageName },
@@ -363,20 +357,28 @@ export function DashboardPage() {
     { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} pending reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40', page: 'inventory-items' as PageName, params: lowStockItems > 0 ? { filter: 'low_stock' } : undefined },
   ];
 
-  // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = crossModuleData.filter(mod => {
-    const code = moduleMap[mod.label];
-    if (!code) return true;
-    if (enabledModules === null) return false;
-    return enabledModules.has(code.toLowerCase());
-  });
+  // Cross-module cards follow the same permission + licensing contract as
+  // their destination pages. Do not expose KPIs for a workspace the actor
+  // cannot open.
+  const filteredCrossModuleData = crossModuleData.filter((mod) =>
+    pageHasPermission(mod.page, hasPermission, isAdmin())
+    && pageModuleIsEnabled(mod.page, enabledModules)
+  );
 
-  // Module-aware visibility is fail-closed for optional modules.
-  const analyticsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules);
+  // Module widgets must satisfy both licensing and the same permission contract
+  // as the page they represent.
+  const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
+    && pageModuleIsEnabled('analytics-kpi', enabledModules);
+  const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
+    && pageModuleIsEnabled('safety-incidents', enabledModules);
+  const productionEnabled = pageHasPermission('production-orders', hasPermission, isAdmin())
+    && pageModuleIsEnabled('production-orders', enabledModules);
+  const qualityEnabled = pageHasPermission('quality-ncr', hasPermission, isAdmin())
+    && pageModuleIsEnabled('quality-ncr', enabledModules);
+  const pmEnabled = pageHasPermission('pm-schedules', hasPermission, isAdmin())
+    && pageModuleIsEnabled('pm-schedules', enabledModules);
+  const financialReportsEnabled = pageHasPermission('reports-financial', hasPermission, isAdmin())
+    && pageModuleIsEnabled('reports-financial', enabledModules);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -701,22 +703,24 @@ export function DashboardPage() {
             );
           }
         }
-        enhancedCards.push(
-          <KPICard
-            key="maint-cost"
-            label="Maintenance Cost"
-            value={formatCurrency(costAnalysis.thisMonthTotal)}
-            sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
-            color={costTrend > 0 ? '#ef4444' : '#10b981'}
-            bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
-            borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
-            iconBg={costTrend > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
-            iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
-            icon={DollarSign}
-            trend={costTrend}
-            onClick={() => navigate('reports-financial' as PageName)}
-          />,
-        );
+        if (financialReportsEnabled) {
+          enhancedCards.push(
+            <KPICard
+              key="maint-cost"
+              label="Maintenance Cost"
+              value={formatCurrency(costAnalysis.thisMonthTotal)}
+              sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
+              color={costTrend > 0 ? '#ef4444' : '#10b981'}
+              bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+              borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+              iconBg={costTrend > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+              iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+              icon={DollarSign}
+              trend={costTrend}
+              onClick={() => navigate('reports-financial' as PageName)}
+            />,
+          );
+        }
         return enhancedCards.length > 0 ? (
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
             {enhancedCards}

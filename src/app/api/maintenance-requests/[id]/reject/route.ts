@@ -48,21 +48,29 @@ export async function POST(
       );
     }
 
-    // Access control: only admin or the requester's department supervisor can reject
+    // Access control: use the authoritative Department.supervisorId rule,
+    // matching approve and assign-planner. Department-name equality is not an
+    // authorization boundary.
     if (!isAdmin(session)) {
       const currentUser = await db.user.findUnique({
         where: { id: session.userId },
-        select: { id: true, department: true, userRoles: { select: { role: { select: { slug: true } } } } },
+        select: { id: true, userRoles: { select: { role: { select: { slug: true } } } } },
       });
       const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
       if (!isSupervisor) {
         return NextResponse.json({ success: false, error: 'Only admin or department supervisor can reject requests' }, { status: 403 });
       }
-      const requesterDept = mr.requester?.department;
-      const userDept = currentUser?.department;
-      const deptMatch = requesterDept && userDept && requesterDept === userDept;
-      if (!deptMatch) {
-        return NextResponse.json({ success: false, error: 'You can only reject requests from your own department' }, { status: 403 });
+
+      if (mr.departmentId) {
+        const department = await db.department.findUnique({
+          where: { id: mr.departmentId },
+          select: { supervisorId: true },
+        });
+        if (!department || department.supervisorId !== session.userId) {
+          return NextResponse.json({ success: false, error: 'You can only reject requests from departments you supervise' }, { status: 403 });
+        }
+      } else if (mr.supervisorId !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only reject requests assigned to you' }, { status: 403 });
       }
     }
 

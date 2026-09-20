@@ -1,9 +1,8 @@
 import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
-import { Prisma } from '@prisma/client';
 
 // Prevent caching — dashboard data changes frequently
 export const dynamic = 'force-dynamic';
@@ -39,6 +38,78 @@ export async function GET(request: NextRequest) {
     }
     const plantFilter = getPlantFilterWhere(plantScope);
 
+    // Some optional-module tables are not directly plant-scoped. Resolve the
+    // plant boundary through their actual owning relation/department rather
+    // than spreading a non-existent plantId field into Prisma queries.
+    const scopedDepartmentIds = plantScope.isSystemWide
+      ? []
+      : (await db.department.findMany({
+          where: { ...plantFilter },
+          select: { id: true },
+        })).map((department) => department.id);
+    const departmentPlantFilter: Record<string, unknown> = plantScope.isSystemWide
+      ? {}
+      : {
+          departmentId: {
+            in: scopedDepartmentIds.length > 0
+              ? scopedDepartmentIds
+              : ['__ACCESS_DENIED__'],
+          },
+        };
+    const iotAlertPlantFilter: Record<string, unknown> = plantScope.isSystemWide
+      ? {}
+      : { device: { ...plantFilter } };
+
+    // Resolve optional-module licensing/activation before exposing any
+    // cross-module dashboard data. Missing optional modules fail closed.
+    const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports'];
+    const moduleRows = await db.systemModule.findMany({
+      where: { code: { in: optionalCodes } },
+      include: { companyModules: true },
+    });
+    const moduleOperational = (code: string) => {
+      const systemModule = moduleRows.find((row) => row.code === code);
+      if (!systemModule) return false;
+      if (systemModule.isCore) return true;
+      const companyModule = systemModule.companyModules.find((cm) => cm.companyId === '__default__')
+        ?? systemModule.companyModules.find((cm) => cm.companyId === null)
+        ?? systemModule.companyModules[0];
+      const now = new Date();
+      const systemLicenseValid = systemModule.isSystemLicensed === true
+        && (!systemModule.validFrom || systemModule.validFrom <= now)
+        && (!systemModule.validUntil || systemModule.validUntil >= now);
+      return systemLicenseValid
+        && Boolean(companyModule?.licensedAt)
+        && companyModule?.isEnabled === true
+        && companyModule?.isActive === true;
+    };
+
+    const canViewAssetKPIs = isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']);
+    const canViewSafetyKPIs = moduleOperational('safety')
+      && (isAdm || hasPermission(session, 'safety_incidents.view'));
+    const canViewProductionKPIs = moduleOperational('production')
+      && (isAdm || hasPermission(session, 'production.view'));
+    const canViewIoTKPIs = moduleOperational('iot_sensors')
+      && (isAdm || hasPermission(session, 'iot_devices.view'));
+    const canViewQualityKPIs = moduleOperational('quality')
+      && (isAdm || hasPermission(session, 'quality_ncr.view'));
+    const canViewInventoryKPIs = isAdm || hasAnyPermission(session, [
+      'inventory.view_all',
+      'inventory.manage',
+      'inventory.create',
+      'inventory.update',
+      'inventory.stock_in',
+      'inventory.stock_out',
+      'inventory.reserve',
+      'inventory.export',
+    ]);
+    const canViewPmKPIs = moduleOperational('pm_schedules')
+      && (isAdm || hasPermission(session, 'pm_schedules.view'));
+    const canViewAnalyticsKPIs = moduleOperational('analytics')
+      && (isAdm || hasPermission(session, 'analytics.view'));
+    const canViewFinancialKPIs = moduleOperational('reports')
+      && (isAdm || hasPermission(session, 'reports.view'));
+
     // Build base where clauses for role-based filtering
     const mrWhere: Record<string, unknown> = { ...plantFilter };
     const woWhere: Record<string, unknown> = { ...plantFilter };
@@ -49,7 +120,19 @@ export async function GET(request: NextRequest) {
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
       if (session.roles.includes('maintenance_technician')) {
-        (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        const teamWoIds = await db.workOrderTeamMember.findMany({
+          where: { userId: session.userId },
+          select: { workOrderId: true },
+        });
+        const teamIds = teamWoIds.map((row) => row.workOrderId);
+        if (teamIds.length > 0) {
+          (woWhere as Record<string, unknown>).OR = [
+            { assignedTo: session.userId },
+            { id: { in: teamIds } },
+          ];
+        } else {
+          (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        }
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
       } else if (session.roles.includes('production_operator')) {
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
@@ -90,19 +173,22 @@ export async function GET(request: NextRequest) {
     const isPlannerRole = session.roles.includes('maintenance_planner');
 
     if (isAdm || isSupervisorLike) {
-      // Admins, supervisors, managers, plant managers — see ALL pending+approved requests
-      pendingMrWhere = { status: { in: ['pending', 'approved'] } };
+      // Admins, supervisors, managers, plant managers — actionable requests in
+      // the validated plant scope only.
+      pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] } };
     } else if (isPlannerRole) {
-      // Planners only need to see approved (ready for planning/assignment)
-      pendingMrWhere = { status: 'approved' };
+      // Planners only need approved requests in their accessible plant scope.
+      pendingMrWhere = { ...plantFilter, status: 'approved' };
     } else {
-      // Technicians, operators — only their own requests
-      pendingMrWhere = { status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
+      // Technicians, operators — only their own requests in plant scope.
+      pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
     }
 
     // Today's start for trend queries
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const sevenDaysAgo = new Date(todayStart);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
     // Helper: generate array of last 7 day dates
     const last7Days: string[] = [];
@@ -113,9 +199,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Helper: fill a day-count map into a 7-element array matching last7Days
-    function fillTrendArray(dayCounts: { day: string; count: number }[]): number[] {
-      const map = new Map(dayCounts.map((r) => [r.day, r.count]));
-      return last7Days.map((d) => map.get(d) || 0);
+    function fillTrendArray(
+      rows: Array<Record<string, Date | null>>,
+      field: string,
+    ): number[] {
+      const map = new Map<string, number>();
+      for (const row of rows) {
+        const value = row[field];
+        if (!value) continue;
+        const day = value.toISOString().slice(0, 10);
+        map.set(day, (map.get(day) || 0) + 1);
+      }
+      return last7Days.map((day) => map.get(day) || 0);
     }
 
     // Date boundaries for this month and last month
@@ -123,11 +218,6 @@ export async function GET(request: NextRequest) {
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-
-    // Merge plant filter into raw SQL where clause if scoped
-    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
-      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
-      : Prisma.sql``;
 
     const emptyAggregate = { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 }, _count: 0 };
     const emptyWoList: { id: string; actualStart: Date | null; actualEnd: Date | null; actualHours: number | null; updatedAt: Date; type: string }[] = [];
@@ -240,27 +330,27 @@ export async function GET(request: NextRequest) {
       // Pending approvals (requests in 'pending' or 'in_progress' workflow)
       safe(db.maintenanceRequest.count({
         where: {
-          ...plantFilter,
+          ...mrWhere,
           status: { in: ['pending', 'in_progress'] },
         },
       }), 0),
       // Overdue WOs — must match WO list API filter exactly
       safe(db.workOrder.count({
         where: {
-          ...plantFilter,
+          ...woWhere,
           plannedEnd: { lt: new Date() },
           status: { notIn: ['completed', 'verified', 'closed', 'cancelled'] },
         },
       }), 0),
       // Today's counts for trends
       safe(db.maintenanceRequest.count({
-        where: { ...plantFilter, createdAt: { gte: todayStart } },
+        where: { ...mrWhere, createdAt: { gte: todayStart } },
       }), 0),
       safe(db.workOrder.count({
-        where: { ...plantFilter, actualEnd: { gte: todayStart }, status: 'completed' },
+        where: { ...woWhere, actualEnd: { gte: todayStart }, status: 'completed' },
       }), 0),
       safe(db.workOrder.count({
-        where: { ...plantFilter, createdAt: { gte: todayStart } },
+        where: { ...woWhere, createdAt: { gte: todayStart } },
       }), 0),
       // Recent activity — also filtered by role
       safe(db.maintenanceRequest.findMany({
@@ -280,70 +370,108 @@ export async function GET(request: NextRequest) {
           assigner: { select: { id: true, fullName: true } },
         },
       }), []),
-      // Assets at risk: poor condition OR critical criticality (single query avoids double-counting)
-      safe(db.asset.count({ where: { isActive: true, ...plantFilter, OR: [{ condition: 'poor' }, { criticality: 'critical' }] } }), 0),
-      // Separate counts for sublabel
-      safe(db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }), 0),
-      safe(db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }), 0),
-      // Asset total
-      safe(db.asset.count({ where: { isActive: true, ...plantFilter } }), 0),
-      // Asset by condition breakdown
-      safe(db.asset.groupBy({
-        by: ['condition'],
-        _count: { condition: true },
-        where: { isActive: true, ...plantFilter },
+      // Assets at risk: only query when this actor can open Asset Management.
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { isActive: true, ...plantFilter, OR: [{ condition: 'poor' }, { criticality: 'critical' }] } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.groupBy({
+            by: ['condition'],
+            _count: { condition: true },
+            where: { isActive: true, ...plantFilter },
+          }), [])
+        : Promise.resolve([]),
+      // Safety: only query an operational/authorized module. SafetyInspection
+      // scopes through department because that table has no direct plantId.
+      canViewSafetyKPIs
+        ? safe(db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }), 0)
+        : Promise.resolve(0),
+      canViewSafetyKPIs
+        ? safe(db.safetyInspection.count({
+            where: {
+              ...departmentPlantFilter,
+              scheduledDate: { lt: new Date() },
+              status: { notIn: ['completed', 'failed'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
+      // Production
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({
+            where: {
+              ...plantFilter,
+              scheduledEnd: { lt: new Date() },
+              status: { notIn: ['completed', 'cancelled'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      // IoT alerts scope through their owning device.
+      canViewIoTKPIs
+        ? safe(db.iotDevice.count({ where: { ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewIoTKPIs
+        ? safe(db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }), 0)
+        : Promise.resolve(0),
+      canViewIoTKPIs
+        ? safe(db.iotAlert.count({ where: { ...iotAlertPlantFilter, status: 'active' } }), 0)
+        : Promise.resolve(0),
+      // Quality NCR/audit tables scope through department; inspections own plantId.
+      canViewQualityKPIs
+        ? safe(db.nonConformanceReport.count({ where: { ...departmentPlantFilter, status: { in: ['open', 'investigating', 'root_cause_found', 'corrective_action'] } } }), 0)
+        : Promise.resolve(0),
+      canViewQualityKPIs
+        ? safe(db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }), 0)
+        : Promise.resolve(0),
+      canViewQualityKPIs
+        ? safe(db.qualityAudit.count({ where: { ...departmentPlantFilter, status: { in: ['planned', 'in_progress'] } } }), 0)
+        : Promise.resolve(0),
+      // Inventory
+      canViewInventoryKPIs
+        ? safe(db.inventoryItem.findMany({
+            where: { isActive: true, ...plantFilter },
+            select: { id: true, currentStock: true, minStockLevel: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewInventoryKPIs
+        ? safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0)
+        : Promise.resolve(0),
+      // Weekly trends use the same role/plant scope as their destination lists.
+      safe(db.workOrder.findMany({
+        where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true },
       }), []),
-      // Safety: open incidents (open + investigating)
-      safe(db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }), 0),
-      // Safety: overdue inspections (scheduled date past, not completed/failed)
-      safe(db.safetyInspection.count({
-        where: {
-          ...plantFilter,
-          scheduledDate: { lt: new Date() },
-          status: { notIn: ['completed', 'failed'] },
-        },
-      }), 0),
-      // Production: active orders (in_progress)
-      safe(db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }), 0),
-      // Production: overdue orders (past scheduled end, not completed/cancelled)
-      safe(db.productionOrder.count({
-        where: {
-          ...plantFilter,
-          scheduledEnd: { lt: new Date() },
-          status: { notIn: ['completed', 'cancelled'] },
-        },
-      }), 0),
-      // Production: completed orders for rate calculation
-      safe(db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }), 0),
-      // Production: total orders
-      safe(db.productionOrder.count({ where: { ...plantFilter } }), 0),
-      // IoT: total devices
-      safe(db.iotDevice.count({ where: { ...plantFilter } }), 0),
-      // IoT: offline devices
-      safe(db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }), 0),
-      // IoT: active/new alerts
-      safe(db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }), 0),
-      // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
-      safe(db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating', 'root_cause_found', 'corrective_action'] } } }), 0),
-      // Quality: failed inspections
-      safe(db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }), 0),
-      // Quality: pending audits (planned + in_progress)
-      safe(db.qualityAudit.count({ where: { ...plantFilter, status: { in: ['planned', 'in_progress'] } } }), 0),
-      // Inventory: low stock items
-      safe(db.inventoryItem.findMany({
-        where: { isActive: true, ...plantFilter },
-        select: { id: true, currentStock: true, minStockLevel: true },
+      safe(db.workOrder.findMany({
+        where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
+        select: { actualEnd: true },
       }), []),
-      // Inventory: pending requests
-      safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0),
-      // Weekly trends: work orders created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
-      // Weekly trends: work orders completed per day (by actualEnd, separate fetch)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(actualEnd) as day, COUNT(*) as count FROM work_orders WHERE actualEnd >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND status = 'completed'${plantSqlFilter} GROUP BY DATE(actualEnd) ORDER BY day`), []),
-      // Weekly trends: maintenance requests created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
-      // Weekly trends: production orders created per day (MySQL-compatible, with plant filter)
-      safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
+      safe(db.maintenanceRequest.findMany({
+        where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
+        select: { createdAt: true },
+      }), []),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.findMany({
+            where: { ...plantFilter, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
       // ===== Enhanced KPIs =====
       // Completed WOs with actual hours for MTBF/MTTR
       safe(db.workOrder.findMany({
@@ -511,10 +639,10 @@ export async function GET(request: NextRequest) {
 
     // Build weekly trend arrays
     const weeklyTrends = {
-      workOrders: fillTrendArray(weeklyWoResult as { day: string; count: number }[]),
-      completedWorkOrders: fillTrendArray(weeklyCompletedWoResult as { day: string; count: number }[]),
-      maintenanceRequests: fillTrendArray(weeklyMrResult as { day: string; count: number }[]),
-      productionOrders: fillTrendArray(weeklyProdResult as { day: string; count: number }[]),
+      workOrders: fillTrendArray(weeklyWoResult as Array<{ createdAt: Date }>, 'createdAt'),
+      completedWorkOrders: fillTrendArray(weeklyCompletedWoResult as Array<{ actualEnd: Date | null }>, 'actualEnd'),
+      maintenanceRequests: fillTrendArray(weeklyMrResult as Array<{ createdAt: Date }>, 'createdAt'),
+      productionOrders: fillTrendArray(weeklyProdResult as Array<{ createdAt: Date }>, 'createdAt'),
     };
 
     // ===== Compute Enhanced KPIs =====
@@ -608,7 +736,7 @@ export async function GET(request: NextRequest) {
         completedWO: woStats['completed'] || 0,
         closedWO: woStats['closed'] || 0,
         // WO type breakdown for donut chart
-        preventiveWO,
+        preventiveWO: canViewPmKPIs ? preventiveWO : 0,
         correctiveWO,
         emergencyWO,
         inspectionWO,
@@ -622,57 +750,60 @@ export async function GET(request: NextRequest) {
         recentWorkOrders,
 
         // ===== Cross-Module KPIs =====
-        assetHealth: {
+        assetHealth: canViewAssetKPIs ? {
           atRisk: assetsAtRiskCount,
           poor: assetPoorCount,
           critical: assetCriticalCount,
           total: assetTotalCount,
           byCondition: assetConditionMap,
-        },
-        safetyAlerts: {
+        } : { atRisk: 0, poor: 0, critical: 0, total: 0, byCondition: {} },
+        safetyAlerts: canViewSafetyKPIs ? {
           openIncidents: safetyOpenIncidents,
           overdueInspections: safetyOverdueInspections,
-        },
-        production: {
+        } : { openIncidents: 0, overdueInspections: 0 },
+        production: canViewProductionKPIs ? {
           activeOrders: productionActiveOrders,
           overdueOrders: productionOverdueOrders,
           completionRate: productionCompletionRate,
-        },
-        iotStatus: {
+        } : { activeOrders: 0, overdueOrders: 0, completionRate: 0 },
+        iotStatus: canViewIoTKPIs ? {
           totalDevices: iotTotalDevices,
           offlineCount: iotOfflineCount,
           alertCount: iotAlertCount,
-        },
-        quality: {
+        } : { totalDevices: 0, offlineCount: 0, alertCount: 0 },
+        quality: canViewQualityKPIs ? {
           openNcrs: qualityOpenNcrs,
           failedInspections: qualityFailedInspections,
           pendingAudits: qualityPendingAudits,
-        },
-        inventoryAlerts: {
+        } : { openNcrs: 0, failedInspections: 0, pendingAudits: 0 },
+        inventoryAlerts: canViewInventoryKPIs ? {
           lowStock: lowStock,
           pendingRequests: inventoryPendingRequests,
+        } : { lowStock: 0, pendingRequests: 0 },
+        weeklyTrends: {
+          ...weeklyTrends,
+          productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders : last7Days.map(() => 0),
         },
-        weeklyTrends,
 
         // ===== Enhanced KPIs =====
 
         // Maintenance KPIs
         maintenanceKPIs: {
-          mtbf, // hours between failures
-          mttr, // hours to repair
-          plannedRatio, // % planned vs reactive
-          preventiveCount: preventiveWOsForKPI,
-          reactiveCount: correctiveWOsForKPI,
+          mtbf: canViewAnalyticsKPIs ? mtbf : 0, // hours between failures
+          mttr: canViewAnalyticsKPIs ? mttr : 0, // hours to repair
+          plannedRatio: canViewAnalyticsKPIs && canViewPmKPIs ? plannedRatio : 0,
+          preventiveCount: canViewAnalyticsKPIs && canViewPmKPIs ? preventiveWOsForKPI : 0,
+          reactiveCount: canViewAnalyticsKPIs ? correctiveWOsForKPI : 0,
         },
 
         // PM Schedules
-        pmScheduleAlerts: {
+        pmScheduleAlerts: canViewPmKPIs ? {
           dueSoon: pmSchedulesDue - pmSchedulesOverdue,
           overdue: pmSchedulesOverdue,
-        },
+        } : { dueSoon: 0, overdue: 0 },
 
         // Cost Analysis
-        costAnalysis: {
+        costAnalysis: canViewFinancialKPIs ? {
           thisMonthTotal: Math.round(thisMonthTotal * 100) / 100,
           lastMonthTotal: Math.round(lastMonthTotal * 100) / 100,
           changePercent: costChangePercent,
@@ -680,6 +811,14 @@ export async function GET(request: NextRequest) {
           thisMonthParts: Math.round((thisMonthCostResult._sum.partsCost || 0) * 100) / 100,
           thisMonthContractor: Math.round((thisMonthCostResult._sum.contractorCost || 0) * 100) / 100,
           byCategory: costByCategory,
+        } : {
+          thisMonthTotal: 0,
+          lastMonthTotal: 0,
+          changePercent: 0,
+          thisMonthLabor: 0,
+          thisMonthParts: 0,
+          thisMonthContractor: 0,
+          byCategory: {},
         },
 
         // ===== Role-Based Personal KPIs =====
@@ -700,7 +839,7 @@ export async function GET(request: NextRequest) {
         // Planner KPIs
         plannerKPIs: {
           planningQueue: planningQueueWOs,
-          pmSchedulesDue: pmSchedulesDue - pmSchedulesOverdue,
+          pmSchedulesDue: canViewPmKPIs ? pmSchedulesDue - pmSchedulesOverdue : 0,
           pendingTeamRequests,
         },
         // Pending team requests detail

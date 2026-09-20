@@ -32,6 +32,11 @@ export async function GET(request: NextRequest) {
       'repair_material_requests.update',
       'material_requisitions.create',
       'material_requisitions.update',
+      // Resource selectors in repair planning / WO editing may look up parts
+      // without granting the full Inventory workspace or commercial data.
+      'work_orders.create',
+      'work_orders.update',
+      'maintenance_requests.update',
     ]);
 
     if (isLookup ? !canLookupForWork && !canUseInventoryWorkspace : !canUseInventoryWorkspace) {
@@ -90,6 +95,7 @@ export async function GET(request: NextRequest) {
               itemCode: true,
               name: true,
               currentStock: true,
+              minStockLevel: true,
               unitOfMeasure: true,
               plantId: true,
             },

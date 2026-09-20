@@ -345,15 +345,6 @@ export function DashboardPage() {
     .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
 
   // Cross-module overview data
-  const moduleMap: Record<string, string> = {
-    'Assets': 'assets',
-    'Safety': 'safety',
-    'Production': 'production',
-    'IoT': 'iot_sensors',
-    'Quality': 'quality',
-    'Inventory': 'inventory',
-  };
-
   const crossModuleData = [
     { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40', page: 'assets' as PageName, params: assetsAtRisk > 0 ? { condition: 'at_risk' } : undefined },
     { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} inspections overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40', page: 'safety-incidents' as PageName },

@@ -14,6 +14,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const modulesApi = read('src/app/api/modules/route.ts');
   const pageAccess = read('src/lib/page-access.ts');
   const dashboard = read('src/components/modules/DashboardPages.tsx');
+  const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
@@ -79,10 +80,25 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboard).toContain('pageHasPermission(mod.page, hasPermission, isAdmin())');
     expect(dashboard).toContain('pageModuleIsEnabled(mod.page, enabledModules)');
     expect(dashboard).toContain("page: 'inventory-items' as PageName");
+    expect(dashboard).toContain("pageHasPermission('analytics-kpi', hasPermission, isAdmin())");
+    expect(dashboard).toContain("pageHasPermission('reports-financial', hasPermission, isAdmin())");
+  });
+
+  it('redacts unauthorized or disabled cross-module dashboard data server-side', () => {
+    expect(dashboardApi).toContain("const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports']");
+    expect(dashboardApi).toContain('const moduleOperational = (code: string)');
+    expect(dashboardApi).toContain('const canViewInventoryKPIs');
+    expect(dashboardApi).toContain("moduleOperational('pm_schedules')");
+    expect(dashboardApi).toContain('assetHealth: canViewAssetKPIs ?');
+    expect(dashboardApi).toContain('inventoryAlerts: canViewInventoryKPIs ?');
+    expect(dashboardApi).toContain('pmScheduleAlerts: canViewPmKPIs ?');
+    expect(dashboardApi).toContain('costAnalysis: canViewFinancialKPIs ?');
+    expect(dashboardApi).toContain('productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders');
   });
 
   it('removes PM widgets and actions when PM is disabled', () => {
-    expect(dashboard).toContain("const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules)");
+    expect(dashboard).toContain("pageHasPermission('pm-schedules', hasPermission, isAdmin())");
+    expect(dashboard).toContain("pageModuleIsEnabled('pm-schedules', enabledModules)");
     expect(dashboard).not.toContain('enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES)');
     expect(dashboard).toContain('{pmEnabled && <button onClick={() => navigate(\'pm-schedules\')}');
     expect(dashboard).toContain("...(pmEnabled ? [{ type: 'preventive'");

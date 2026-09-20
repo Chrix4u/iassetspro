@@ -146,7 +146,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
 export const PAGE_MODULES: Record<string, string> = {
   'dashboard': 'core',
   'chat': 'core',
-  'notifications': 'core',
+  'notifications': 'notifications',
   'asset-categories': 'assets',
   'assets-machines': 'assets',
   'assets-hierarchy': 'assets',
@@ -262,10 +262,12 @@ export const PAGE_MODULES: Record<string, string> = {
   'asset-detail': 'assets',
   'inventory': 'inventory',
   'analytics': 'analytics',
-  'settings-modules': 'modules',
+  'settings-modules': 'core',
 };
 
-export const CORE_MODULE_CODES = new Set(['core', 'assets', 'maintenance_requests', 'work_orders', 'inventory', 'modules']);
+// Only the true application control plane bypasses the authoritative module
+// registry. Operational domains must be licensed + enabled + active.
+export const CORE_MODULE_CODES = new Set(['core']);
 
 export function pageHasPermission(
   page: string,
@@ -275,6 +277,12 @@ export function pageHasPermission(
   if (isAdmin) return true;
   const required = PAGE_PERMISSIONS[page];
   return !required || required.some(hasPermission);
+}
+
+export function pageModuleStateResolved(page: string, enabledModules: Set<string> | null): boolean {
+  const code = PAGE_MODULES[page];
+  if (!code || CORE_MODULE_CODES.has(code)) return true;
+  return enabledModules !== null;
 }
 
 export function pageModuleIsEnabled(page: string, enabledModules: Set<string> | null): boolean {

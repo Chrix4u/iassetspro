@@ -56,7 +56,17 @@ function installDefaults() {
     receivedById: 'tech-in',
     updatedAt: new Date('2026-09-09T10:00:00.000Z'),
   });
-  mockDb.user.findUnique.mockResolvedValue({ id: 'tech-in', status: 'active' });
+  mockDb.user.findUnique.mockResolvedValue({
+    id: 'tech-in',
+    status: 'active',
+    userRoles: [{
+      role: {
+        slug: 'maintenance_technician',
+        rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+      },
+    }],
+    directPerms: [],
+  });
   mockDb.userPlant.findFirst.mockResolvedValue({ id: 'user-plant-1' });
   mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
   mockDb.workOrderTeamMember.findFirst.mockResolvedValue({ id: 'member-1' });

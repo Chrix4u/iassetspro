@@ -197,7 +197,6 @@ export interface WorkOrder {
   causeDescription?: string;
   actionDescription?: string;
   isLocked: boolean;
-  createdById?: string;
   createdAt: string;
   updatedAt: string;
   // Joined

@@ -107,7 +107,7 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs Maintenance', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
+  { page: 'repairs-completion', label: 'Repairs Maintenance', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve', 'inventory.export'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module

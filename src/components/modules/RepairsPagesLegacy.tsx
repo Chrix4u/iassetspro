@@ -1154,7 +1154,7 @@ export function RepairToolRequestsPage() {
   // Cache for tool lookup (used by AsyncSearchableSelect)
   const toolsCache = useRef<any[]>([]);
   const fetchTools = useCallback(async () => {
-    const res = await api.get('/api/tools?limit=500');
+    const res = await api.get('/api/tools?mode=lookup&limit=500');
     if (res.success && Array.isArray(res.data)) {
       toolsCache.current = res.data;
       return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}${t.serialNumber ? ` [${t.serialNumber}]` : ''}` }));
@@ -2636,7 +2636,7 @@ export function RepairToolTransfersPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Transfer Request</h2><p className="text-sm text-muted-foreground">Request transfer of a tool to another technician</p></div>
           <div className="space-y-4">
-            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
+            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?mode=lookup&limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
             <div className="relative">
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
@@ -5090,7 +5090,7 @@ export function DamagedToolReportsPage() {
           <div className="space-y-2">
             <Label>Tool *</Label>
             <AsyncSearchableSelect placeholder="Search tool..." fetchOptions={async (q) => {
-              const res = await api.get(`/api/tools?search=${q}&limit=20`);
+              const res = await api.get(`/api/tools?mode=lookup&search=${q}&limit=20`);
               if (res.success) return (res.data || []).map((t: any) => ({ value: t.id, label: `${t.toolCode} - ${t.name}` }));
               return [];
             }} value={createForm.toolId} onValueChange={v => setCreateForm(p => ({ ...p, toolId: v }))} />

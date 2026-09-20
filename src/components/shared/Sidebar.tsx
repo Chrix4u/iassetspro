@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
 import type { PageName } from '@/types';
+import { PAGE_MODULES, PAGE_PERMISSIONS } from '@/lib/page-access';
 
 import {
   Tooltip,
@@ -390,17 +391,21 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     if (child.pageAdminOnly && !isAdm) return false;
 
     if (!isAdm) {
+      const canonicalPerms = PAGE_PERMISSIONS[child.page] || [];
       const permOk = child.permOr
         ? child.permOr.some(p => hasPermission(p))
         : child.perm
           ? hasPermission(child.perm)
-          : true;
+          : canonicalPerms.length > 0
+            ? canonicalPerms.some(p => hasPermission(p))
+            : true;
       if (!permOk) return false;
     }
 
-    if (child.moduleCode && child.moduleCode !== 'core') {
+    const requiredModule = child.moduleCode || PAGE_MODULES[child.page];
+    if (requiredModule && requiredModule !== 'core') {
       if (storeModules === null) return false;
-      if (!enabledModules.has(child.moduleCode.toLowerCase())) return false;
+      if (!enabledModules.has(requiredModule.toLowerCase())) return false;
     }
 
     return true;

@@ -146,7 +146,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
 export const PAGE_MODULES: Record<string, string> = {
   'dashboard': 'core',
   'chat': 'core',
-  'notifications': 'core',
+  'notifications': 'notifications',
   'asset-categories': 'assets',
   'assets-machines': 'assets',
   'assets-hierarchy': 'assets',

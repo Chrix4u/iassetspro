@@ -76,6 +76,18 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
   });
 
+  it('keeps dashboard own-work cards and data aligned with view_own scope', () => {
+    expect(dashboard).toContain('pageHasPermission(card.page, hasPermission, isAdmin())');
+    expect(dashboard).toContain('pageHasPermission(action.page, hasPermission, isAdmin())');
+    expect(dashboardApi).toContain("where: { userId: session.userId }");
+    expect(dashboardApi).toContain("{ assignedTo: session.userId }");
+    expect(dashboardApi).toContain("{ id: { in: teamIds } }");
+    expect(dashboardApi).toContain("where: { ...woWhere, createdAt: { gte: sevenDaysAgo } }");
+    expect(dashboardApi).toContain("where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } }");
+    expect(dashboardApi).toContain("pendingMrWhere = { ...plantFilter");
+    expect(dashboardApi).not.toContain('db.$queryRaw');
+  });
+
   it('hides dashboard module cards when their destination page is not authorized', () => {
     expect(dashboard).toContain('pageHasPermission(mod.page, hasPermission, isAdmin())');
     expect(dashboard).toContain('pageModuleIsEnabled(mod.page, enabledModules)');

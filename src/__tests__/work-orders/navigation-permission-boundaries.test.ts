@@ -31,6 +31,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const workOrderAccess = read('src/services/workOrderAccess.service.ts');
   const woTransitionsApi = read('src/app/api/work-orders/[id]/transitions/route.ts');
   const woHandoverApi = read('src/app/api/work-orders/[id]/handover/route.ts');
+  const woCapabilitiesApi = read('src/app/api/work-orders/[id]/capabilities/route.ts');
   const woRequestApi = read('src/app/api/work-orders/[id]/request/route.ts');
   const woApproveApi = read('src/app/api/work-orders/[id]/approve/route.ts');
   const woPlanApi = read('src/app/api/work-orders/[id]/plan/route.ts');
@@ -321,6 +322,20 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("new URLSearchParams({ mode: 'candidates' })");
     expect(maintenance).toContain("/api/work-orders/\${id}/handover?\${params.toString()}");
     expect(maintenance).not.toContain("/api/workers?role=technician&plantId=\${encodeURIComponent(wo.plantId)}");
+  });
+
+  it('keeps WO capability flags aligned with actor-aware lifecycle and endpoint permissions', () => {
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'on_hold')");
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'in_progress')");
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'completed')");
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'verified')");
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'closed')");
+    expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'pending_handover')");
+    expect(woCapabilitiesApi).toContain("hasPermission(session, 'repair_material_requests.create')");
+    expect(woCapabilitiesApi).toContain("hasPermission(session, 'assistance_requests.create')");
+    expect(woCapabilitiesApi).toContain("hasPermission(session, 'time_logs.create')");
+    expect(woCapabilitiesApi).not.toContain("canVerify: (isSupervisor || isAdminUser)");
+    expect(woCapabilitiesApi).not.toContain("canClose: (isPlanner || isAdminUser)");
   });
 
   it('binds broad WO planning routes to their accountable lifecycle owners', () => {

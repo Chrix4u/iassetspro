@@ -44,6 +44,45 @@ function hasHandoverAuthority(
   );
 }
 
+function hasEffectivePermission(
+  user: {
+    userRoles: Array<{
+      role: {
+        slug: string;
+        rolePermissions: Array<{ permission: { slug: string } }>;
+      };
+    }>;
+    directPerms: Array<{
+      isGranted: boolean;
+      expiresAt: Date | null;
+      permission: { slug: string };
+    }>;
+  },
+  permissionSlug: string,
+): boolean {
+  if (user.userRoles.some((userRole) => userRole.role.slug === 'admin')) return true;
+
+  const permissions = new Set<string>();
+  for (const userRole of user.userRoles) {
+    for (const rolePermission of userRole.role.rolePermissions) {
+      permissions.add(rolePermission.permission.slug);
+    }
+  }
+
+  const now = new Date();
+  for (const directPermission of user.directPerms) {
+    if (directPermission.permission.slug !== permissionSlug) continue;
+    if (directPermission.expiresAt && directPermission.expiresAt < now) {
+      permissions.delete(permissionSlug);
+      continue;
+    }
+    if (directPermission.isGranted) permissions.add(permissionSlug);
+    else permissions.delete(permissionSlug);
+  }
+
+  return permissions.has(permissionSlug);
+}
+
 function parseStructuredArray(value: unknown, key: 'task' | 'issue'): string {
   if (!value) return JSON.stringify([]);
   return JSON.stringify(typeof value === 'string' ? [{ [key]: value }] : value);
@@ -218,12 +257,40 @@ export async function initiateCanonicalHandover(
 
     const receiver = await tx.user.findUnique({
       where: { id: receiverId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        userRoles: {
+          select: {
+            role: {
+              select: {
+                slug: true,
+                rolePermissions: {
+                  select: { permission: { select: { slug: true } } },
+                },
+              },
+            },
+          },
+        },
+        directPerms: {
+          select: {
+            isGranted: true,
+            expiresAt: true,
+            permission: { select: { slug: true } },
+          },
+        },
+      },
     });
     if (!receiver || receiver.status !== 'active') {
       return {
         success: false as const,
         error: 'Designated handover receiver is not an active user',
+      };
+    }
+    if (!hasEffectivePermission(receiver, 'work_orders.start')) {
+      return {
+        success: false as const,
+        error: 'Designated handover receiver is not authorized to execute maintenance work',
       };
     }
 

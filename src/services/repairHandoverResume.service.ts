@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import type { SessionContext, TransitionResult } from '@/services/workExecution.service';
 import type { Prisma } from '@prisma/client';
+import { handoverUserHasEffectivePermission } from '@/services/workOrderHandoverInitiation.service';
 
 export interface ResumeConfirmedHandoverOptions {
   reason?: string;
@@ -58,10 +59,35 @@ export async function resumeConfirmedHandover(
 
       const receiver = await tx.user.findUnique({
         where: { id: receiverId },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          userRoles: {
+            select: {
+              role: {
+                select: {
+                  slug: true,
+                  rolePermissions: {
+                    select: { permission: { select: { slug: true } } },
+                  },
+                },
+              },
+            },
+          },
+          directPerms: {
+            select: {
+              isGranted: true,
+              expiresAt: true,
+              permission: { select: { slug: true } },
+            },
+          },
+        },
       });
       if (!receiver || receiver.status !== 'active') {
         throw new Error('Cannot resume work: designated handover receiver is not an active user');
+      }
+      if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {
+        throw new Error('Cannot resume work: designated handover receiver is no longer authorized to execute maintenance work');
       }
 
       const receiverPlant = await tx.userPlant.findFirst({

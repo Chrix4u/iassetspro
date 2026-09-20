@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canManageWorkOrder, canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { checkReadiness } from '@/services/workOrderReadiness.service';
 
 export async function GET(
@@ -87,8 +87,12 @@ export async function GET(
     const canCreateToolRequest = isAdminAccount || hasPermission(session, 'repair_tool_requests.create');
     const canCreateMaterialRequest = isAdminAccount || hasPermission(session, 'repair_material_requests.create');
     const canCreateAssistanceRequest = isAdminAccount || hasPermission(session, 'assistance_requests.create');
-    const canCreateTimeLog = isAdminAccount || hasPermission(session, 'time_logs.create');
-    const canManageDowntime = isSupervisor || isPlanner || isExecutionManager || hasPermission(session, 'work_orders.update');
+    const canCreateTimeLog = isAdminAccount
+      || hasPermission(session, 'work_orders.update')
+      || hasPermission(session, 'time_logs.create');
+    const canManageDowntime = (
+      isAdminAccount || hasPermission(session, 'work_orders.update')
+    ) && canManageWorkOrder(session, wo);
 
     // Canonical first execution begins only after assignment. A planned WO must
     // be assigned before it can transition to in_progress.

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
+import { handoverUserHasEffectivePermission, initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
 import { canInitiateWorkOrderHandoverForActor, canViewWorkOrder } from '@/services/workOrderAccess.service';
@@ -53,6 +53,85 @@ export async function GET(
         { success: false, error: 'Access denied — you are not part of this work order workflow' },
         { status: 403 },
       );
+    }
+
+    const mode = new URL(request.url).searchParams.get('mode');
+    if (mode === 'candidates') {
+      if (wo.status !== 'in_progress' || !canInitiateWorkOrderHandoverForActor(session, wo)) {
+        return NextResponse.json(
+          { success: false, error: 'You are not authorized to initiate a handover for this work order' },
+          { status: 403 },
+        );
+      }
+      if (!wo.plantId) {
+        return NextResponse.json(
+          { success: false, error: 'Operational work order must have a plant before handover' },
+          { status: 400 },
+        );
+      }
+
+      const search = new URL(request.url).searchParams.get('search')?.trim() || '';
+      const candidates = await db.user.findMany({
+        where: {
+          id: { not: session.userId },
+          status: 'active',
+          plantAccess: { some: { plantId: wo.plantId } },
+          userRoles: {
+            some: {
+              role: { slug: 'maintenance_technician' },
+            },
+          },
+          ...(search
+            ? {
+                OR: [
+                  { fullName: { contains: search } },
+                  { staffId: { contains: search } },
+                  { username: { contains: search } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          fullName: true,
+          staffId: true,
+          username: true,
+          primaryTrade: true,
+          userRoles: {
+            select: {
+              role: {
+                select: {
+                  slug: true,
+                  rolePermissions: {
+                    select: { permission: { select: { slug: true } } },
+                  },
+                },
+              },
+            },
+          },
+          directPerms: {
+            select: {
+              isGranted: true,
+              expiresAt: true,
+              permission: { select: { slug: true } },
+            },
+          },
+        },
+        orderBy: { fullName: 'asc' },
+        take: 50,
+      });
+
+      const eligible = candidates
+        .filter((candidate) => handoverUserHasEffectivePermission(candidate, 'work_orders.start'))
+        .map((candidate) => ({
+          id: candidate.id,
+          fullName: candidate.fullName,
+          staffId: candidate.staffId,
+          username: candidate.username,
+          trade: candidate.primaryTrade,
+        }));
+
+      return NextResponse.json({ success: true, data: eligible });
     }
 
     const handover = wo.shiftHandovers[0] ?? null;

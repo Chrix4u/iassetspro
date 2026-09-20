@@ -660,7 +660,7 @@ export function DashboardPage() {
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
       {(isManager || isPlanner || isSupervisor) && (() => {

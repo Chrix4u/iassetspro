@@ -238,6 +238,8 @@ export function DashboardPage() {
     && pageModuleIsEnabled('maintenance-requests', enabledModules);
   const toolsWorkspaceEnabled = pageHasPermission('maintenance-tools', hasPermission, isAdmin())
     && pageModuleIsEnabled('maintenance-tools', enabledModules);
+  const notificationsEnabled = pageHasPermission('notifications', hasPermission, isAdmin())
+    && pageModuleIsEnabled('notifications', enabledModules);
   const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
     && pageModuleIsEnabled('analytics-kpi', enabledModules);
   const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
@@ -405,7 +407,7 @@ export function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {myKPIs.unreadNotifications > 0 && (
+          {notificationsEnabled && myKPIs.unreadNotifications > 0 && (
             <Badge variant="destructive" className="text-[11px] font-mono gap-1.5">
               <Bell className="h-3 w-3" />
               {myKPIs.unreadNotifications} new
@@ -535,7 +537,7 @@ export function DashboardPage() {
         )}
 
         {/* Operator fallback */}
-        {isOperator && (
+        {isOperator && notificationsEnabled && (
           <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-pink-100 dark:border-pink-900/40 bg-pink-50 dark:bg-pink-950/30 transition-all hover:shadow-sm">
             <div className="h-9 w-9 rounded-lg bg-pink-100 dark:bg-pink-900/50 flex items-center justify-center shrink-0">
               <Bell className="h-4 w-4 text-pink-600 dark:text-pink-400" />

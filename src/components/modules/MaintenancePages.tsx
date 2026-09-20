@@ -3275,6 +3275,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setLoading(false);
   }, [id]);
 
+  const fetchTransitions = useCallback(async () => {
+    const res = await api.get(`/api/work-orders/${id}/transitions`);
+    setAvailableTransitions(res.success && Array.isArray(res.data) ? res.data : []);
+  }, [id]);
+
+  const fetchHandoverState = useCallback(async () => {
+    const res = await api.get(`/api/work-orders/${id}/handover`);
+    if (res.success) {
+      setHandoverState(res.data || null);
+    } else {
+      setHandoverState(null);
+    }
+  }, [id]);
+
   // Fetch team member requests (separate call for permission-filtered results)
   const fetchTeamRequests = useCallback(async () => {
     const res = await api.get(`/api/work-orders/${id}/team-member-requests`);
@@ -3336,10 +3350,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         setLoading(false);
       }
     });
-    // Fetch available transitions from state machine
-    api.get(`/api/work-orders/${id}/transitions`).then(res => {
-      if (active && res.success && res.data) setAvailableTransitions(res.data);
-    });
+    // Fetch available actor-scoped transitions and handover custody state.
+    fetchTransitions();
+    fetchHandoverState();
     // Fetch status history
     api.get(`/api/work-orders/${id}/status-history`).then(res => {
       if (active && res.success && res.data) setStatusHistory(res.data);
@@ -3367,7 +3380,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     // Fetch suggested items
     fetchSuggestedItems();
     return () => { active = false; };
-  }, [id, fetchSuggestedItems]);
+  }, [id, fetchSuggestedItems, fetchTransitions, fetchHandoverState]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {

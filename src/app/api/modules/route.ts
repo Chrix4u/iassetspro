@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
-import { isSystemModuleLicensed, pickEffectiveCompanyModule } from '@/lib/module-access';
+import { isControlPlaneCoreModule, isSystemModuleLicensed, pickEffectiveCompanyModule } from '@/lib/module-access';
 
 // Prevent any response caching — module states change dynamically
 export const dynamic = 'force-dynamic';
@@ -63,7 +63,9 @@ export async function GET(request: NextRequest) {
         name: m.name,
         description: m.description,
         version: m.version,
-        isCore: m.isCore,
+        // Normalize legacy DB rows: only actual platform/control-plane
+        // modules are non-disableable core from the application's perspective.
+        isCore: isControlPlaneCoreModule(m.code),
         isSystemLicensed: m.isSystemLicensed,
         isLicensed,
         licenseKey: isAdm ? m.licenseKey : null,

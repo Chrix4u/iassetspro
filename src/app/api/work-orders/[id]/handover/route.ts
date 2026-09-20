@@ -1,10 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
+import { canInitiateWorkOrderHandoverForActor, canViewWorkOrder } from '@/services/workOrderAccess.service';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        plantId: true,
+        status: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamMembers: { select: { userId: true, role: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+        shiftHandovers: {
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          include: {
+            handedOverBy: { select: { id: true, fullName: true, username: true } },
+            receivedBy: { select: { id: true, fullName: true, username: true } },
+          },
+        },
+      },
+    });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
+    }
+
+    const handover = wo.shiftHandovers[0] ?? null;
+    const managementOverride = isAdmin(session) || session.roles.includes('maintenance_manager');
+    const canInitiate = wo.status === 'in_progress'
+      && canInitiateWorkOrderHandoverForActor(session, wo);
+    const canConfirm = Boolean(
+      handover
+      && handover.status === 'pending'
+      && handover.receivedById === session.userId,
+    );
+    const canResume = Boolean(
+      handover
+      && handover.status === 'confirmed'
+      && (handover.receivedById === session.userId || managementOverride),
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        handover,
+        capabilities: { canInitiate, canConfirm, canResume },
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load work-order handover';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
 
 export async function POST(
   request: NextRequest,

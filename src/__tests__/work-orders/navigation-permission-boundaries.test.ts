@@ -75,6 +75,12 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
   });
 
+  it('hides dashboard module cards when their destination page is not authorized', () => {
+    expect(dashboard).toContain('pageHasPermission(mod.page, hasPermission, isAdmin())');
+    expect(dashboard).toContain('pageModuleIsEnabled(mod.page, enabledModules)');
+    expect(dashboard).toContain("page: 'inventory-items' as PageName");
+  });
+
   it('removes PM widgets and actions when PM is disabled', () => {
     expect(dashboard).toContain("const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules)");
     expect(dashboard).not.toContain('enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES)');

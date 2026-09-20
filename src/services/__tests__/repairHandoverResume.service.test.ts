@@ -69,7 +69,11 @@ function installDefaults() {
   });
   mockDb.userPlant.findFirst.mockResolvedValue({ id: 'user-plant-1' });
   mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
-  mockDb.workOrderTeamMember.findFirst.mockResolvedValue({ id: 'member-1' });
+  mockDb.workOrderTeamMember.findFirst.mockResolvedValue({
+    id: 'member-1',
+    role: 'assistant',
+    accessLevel: 'full',
+  });
   mockDb.workOrder.update.mockResolvedValue({ id: 'wo-1' });
   mockDb.workOrderTimeLog.create.mockResolvedValue({ id: 'log-1' });
   mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });

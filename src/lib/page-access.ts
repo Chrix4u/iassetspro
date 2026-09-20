@@ -145,6 +145,7 @@ export interface PageModuleRequirement {
 }
 
 export const PAGE_MODULE_REQUIREMENTS: Partial<Record<PageName, PageModuleRequirement>> = {
+  notifications: { all: ['notifications'] },
   'asset-categories': { all: ['assets'] },
   'assets-machines': { all: ['assets'] },
   'assets-hierarchy': { all: ['assets'] },
@@ -174,6 +175,7 @@ export const PAGE_MODULE_REQUIREMENTS: Partial<Record<PageName, PageModuleRequir
   'pm-triggers': { all: ['pm_schedules'] },
   'pm-calendar': { all: ['pm_schedules'] },
   'planner-workbench': { any: ['repairs', 'pm_schedules'] },
+  'enterprise-reports': { all: ['reports'] },
 
   'repairs-material-requests': { all: ['repairs'] },
   'repairs-tool-requests': { all: ['repairs'] },
@@ -200,6 +202,10 @@ export const PAGE_MODULE_REQUIREMENTS: Partial<Record<PageName, PageModuleRequir
   'operations-meter-readings': { all: ['meter_readings'] },
   'operations-training': { all: ['training'] },
   'operations-shift-handover': { all: ['shift_management'] },
+  'operations-surveys': { all: ['production'] },
+  'operations-time-logs': { all: ['repairs'] },
+  'operations-checklists': { all: ['repairs', 'work_orders'] },
+  'reliability-engineering': { all: ['digital_twin'] },
 
   'production-work-centers': { all: ['production'] },
   'production-resource-planning': { all: ['production'] },
@@ -235,6 +241,9 @@ export const PAGE_MODULE_REQUIREMENTS: Partial<Record<PageName, PageModuleRequir
   'inventory-receiving': { all: ['inventory'] },
 
   'reports-asset': { all: ['reports', 'assets'] },
+  'machine-availability': { all: ['reports', 'assets'] },
+  'equipment-history': { all: ['reports', 'assets'] },
+  'failure-analysis': { all: ['reports', 'failure_analysis'] },
   'reports-maintenance': { all: ['reports', 'repairs'] },
   'wo-reports': { all: ['reports', 'repairs'] },
   'reports-inventory': { all: ['reports', 'inventory'] },

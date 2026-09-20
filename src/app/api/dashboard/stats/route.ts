@@ -370,62 +370,89 @@ export async function GET(request: NextRequest) {
           assigner: { select: { id: true, fullName: true } },
         },
       }), []),
-      // Assets at risk: poor condition OR critical criticality (single query avoids double-counting)
-      safe(db.asset.count({ where: { isActive: true, ...plantFilter, OR: [{ condition: 'poor' }, { criticality: 'critical' }] } }), 0),
-      // Separate counts for sublabel
-      safe(db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }), 0),
-      safe(db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }), 0),
-      // Asset total
-      safe(db.asset.count({ where: { isActive: true, ...plantFilter } }), 0),
-      // Asset by condition breakdown
-      safe(db.asset.groupBy({
-        by: ['condition'],
-        _count: { condition: true },
-        where: { isActive: true, ...plantFilter },
-      }), []),
-      // Safety: open incidents (open + investigating)
-      safe(db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }), 0),
-      // Safety: overdue inspections (scheduled date past, not completed/failed)
-      safe(db.safetyInspection.count({
-        where: {
-          ...plantFilter,
-          scheduledDate: { lt: new Date() },
-          status: { notIn: ['completed', 'failed'] },
-        },
-      }), 0),
-      // Production: active orders (in_progress)
-      safe(db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }), 0),
-      // Production: overdue orders (past scheduled end, not completed/cancelled)
-      safe(db.productionOrder.count({
-        where: {
-          ...plantFilter,
-          scheduledEnd: { lt: new Date() },
-          status: { notIn: ['completed', 'cancelled'] },
-        },
-      }), 0),
-      // Production: completed orders for rate calculation
-      safe(db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }), 0),
-      // Production: total orders
-      safe(db.productionOrder.count({ where: { ...plantFilter } }), 0),
-      // IoT: total devices
-      safe(db.iotDevice.count({ where: { ...plantFilter } }), 0),
-      // IoT: offline devices
-      safe(db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }), 0),
-      // IoT: active/new alerts
-      safe(db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }), 0),
-      // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
-      safe(db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating', 'root_cause_found', 'corrective_action'] } } }), 0),
-      // Quality: failed inspections
-      safe(db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }), 0),
-      // Quality: pending audits (planned + in_progress)
-      safe(db.qualityAudit.count({ where: { ...plantFilter, status: { in: ['planned', 'in_progress'] } } }), 0),
-      // Inventory: low stock items
-      safe(db.inventoryItem.findMany({
-        where: { isActive: true, ...plantFilter },
-        select: { id: true, currentStock: true, minStockLevel: true },
-      }), []),
-      // Inventory: pending requests
-      safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0),
+      // Assets at risk: only query when this actor can open Asset Management.
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { isActive: true, ...plantFilter, OR: [{ condition: 'poor' }, { criticality: 'critical' }] } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.count({ where: { isActive: true, ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewAssetKPIs
+        ? safe(db.asset.groupBy({
+            by: ['condition'],
+            _count: { condition: true },
+            where: { isActive: true, ...plantFilter },
+          }), [])
+        : Promise.resolve([]),
+      // Safety: only query an operational/authorized module. SafetyInspection
+      // scopes through department because that table has no direct plantId.
+      canViewSafetyKPIs
+        ? safe(db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }), 0)
+        : Promise.resolve(0),
+      canViewSafetyKPIs
+        ? safe(db.safetyInspection.count({
+            where: {
+              ...departmentPlantFilter,
+              scheduledDate: { lt: new Date() },
+              status: { notIn: ['completed', 'failed'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
+      // Production
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({
+            where: {
+              ...plantFilter,
+              scheduledEnd: { lt: new Date() },
+              status: { notIn: ['completed', 'cancelled'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }), 0)
+        : Promise.resolve(0),
+      canViewProductionKPIs
+        ? safe(db.productionOrder.count({ where: { ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      // IoT alerts scope through their owning device.
+      canViewIoTKPIs
+        ? safe(db.iotDevice.count({ where: { ...plantFilter } }), 0)
+        : Promise.resolve(0),
+      canViewIoTKPIs
+        ? safe(db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }), 0)
+        : Promise.resolve(0),
+      canViewIoTKPIs
+        ? safe(db.iotAlert.count({ where: { ...iotAlertPlantFilter, status: 'active' } }), 0)
+        : Promise.resolve(0),
+      // Quality NCR/audit tables scope through department; inspections own plantId.
+      canViewQualityKPIs
+        ? safe(db.nonConformanceReport.count({ where: { ...departmentPlantFilter, status: { in: ['open', 'investigating', 'root_cause_found', 'corrective_action'] } } }), 0)
+        : Promise.resolve(0),
+      canViewQualityKPIs
+        ? safe(db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }), 0)
+        : Promise.resolve(0),
+      canViewQualityKPIs
+        ? safe(db.qualityAudit.count({ where: { ...departmentPlantFilter, status: { in: ['planned', 'in_progress'] } } }), 0)
+        : Promise.resolve(0),
+      // Inventory
+      canViewInventoryKPIs
+        ? safe(db.inventoryItem.findMany({
+            where: { isActive: true, ...plantFilter },
+            select: { id: true, currentStock: true, minStockLevel: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewInventoryKPIs
+        ? safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0)
+        : Promise.resolve(0),
       // Weekly trends use the same role/plant scope as their destination lists.
       safe(db.workOrder.findMany({
         where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },

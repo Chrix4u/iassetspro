@@ -26,6 +26,18 @@ export async function GET(
         suggestedParts: true,
         suggestedTools: true,
         plantId: true,
+        materials: {
+          where: { status: 'planned' },
+          select: {
+            id: true,
+            itemId: true,
+            itemName: true,
+            quantity: true,
+            unitCost: true,
+            status: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
         assignedTo: true,
         teamLeaderId: true,
         assignedSupervisorId: true,
@@ -55,6 +67,14 @@ export async function GET(
             status: true,
             toolId: true,
             tool: { select: { toolCode: true, status: true } },
+            items: {
+              select: {
+                toolId: true,
+                toolName: true,
+                toolCode: true,
+                quantityRequested: true,
+              },
+            },
             source: true,
           },
         },
@@ -68,8 +88,78 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
-    const suggestedParts = JSON.parse(wo.suggestedParts || '[]');
-    const suggestedTools = JSON.parse(wo.suggestedTools || '[]');
+    const parseSuggestionArray = (value: string | null | undefined): Array<Record<string, unknown>> => {
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    let suggestedParts = parseSuggestionArray(wo.suggestedParts);
+    let suggestedTools = parseSuggestionArray(wo.suggestedTools);
+
+    // Backward compatibility for WOs converted before planner materials/tools
+    // were persisted into suggestedParts/suggestedTools. WorkOrderMaterial and
+    // planner-suggested tool requests are authoritative evidence that the
+    // planner selected the resource during conversion.
+    if (suggestedParts.length === 0 && wo.materials.length > 0) {
+      const itemIds = wo.materials
+        .map((material) => material.itemId)
+        .filter((itemId): itemId is string => Boolean(itemId));
+      const inventoryItems = itemIds.length > 0
+        ? await db.inventoryItem.findMany({
+            where: { id: { in: itemIds } },
+            select: {
+              id: true,
+              itemCode: true,
+              unitOfMeasure: true,
+            },
+          })
+        : [];
+      const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+      suggestedParts = wo.materials
+        .filter((material) => Boolean(material.itemId))
+        .map((material) => {
+          const item = material.itemId ? inventoryById.get(material.itemId) : undefined;
+          return {
+            id: material.id,
+            itemId: material.itemId,
+            itemName: material.itemName || 'Planned material',
+            itemCode: item?.itemCode || '',
+            quantity: material.quantity ?? 1,
+            unit: item?.unitOfMeasure || 'each',
+            notes: '',
+          };
+        });
+    }
+
+    if (suggestedTools.length === 0 && wo.repairToolRequests.length > 0) {
+      suggestedTools = wo.repairToolRequests.flatMap((request) => {
+        if (request.items.length > 0) {
+          return request.items.map((item) => ({
+            id: `${request.id}:${item.toolId}`,
+            toolId: item.toolId,
+            toolName: item.toolName,
+            toolCode: item.toolCode || '',
+            quantity: item.quantityRequested || 1,
+            notes: '',
+          }));
+        }
+        return request.toolId
+          ? [{
+              id: request.id,
+              toolId: request.toolId,
+              toolName: request.toolName,
+              toolCode: request.tool?.toolCode || '',
+              quantity: 1,
+              notes: '',
+            }]
+          : [];
+      });
+    }
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(

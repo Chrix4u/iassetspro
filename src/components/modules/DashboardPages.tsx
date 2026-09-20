@@ -672,11 +672,15 @@ export function DashboardPage() {
               showRing
               ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
             />,
+          );
+        }
+        if (analyticsEnabled && pmEnabled) {
+          enhancedCards.push(
             <KPICard
               key="planned-ratio"
-              label="Planned Ratio"
+              label="Planned / Preventive Ratio"
               value={`${maintenanceKPIs.plannedRatio}%`}
-              sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
+              sublabel={`${maintenanceKPIs.preventiveCount} preventive vs ${maintenanceKPIs.reactiveCount} reactive`}
               color="#14b8a6"
               bgColor="bg-teal-50 dark:bg-teal-950/30"
               borderColor="border-teal-100 dark:border-teal-900/40"

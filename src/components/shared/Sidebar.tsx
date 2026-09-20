@@ -187,7 +187,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
+      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs', 'reports'],
       children: [
         { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
         { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
@@ -217,7 +217,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
+      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management', 'production', 'work_orders'],
       children: [
         { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
         { page: 'operations-training', label: 'Training', icon: GraduationCap },

@@ -6,10 +6,12 @@ import { CORE_MODULE_CODES } from '@/lib/page-access';
 
 /**
  * Hook to check if a module is enabled/active.
- * Returns true if:
- * - Modules haven't loaded yet (null = show all, graceful fallback)
- * - The module code is in the enabled set
- * - The module is core (always visible)
+ * Returns true only if:
+ * - The module is true platform core, or
+ * - The authoritative module registry has loaded and includes the module as
+ *   licensed + enabled + active.
+ *
+ * Registry loading and failures are fail-closed for operational modules.
  *
  * @param moduleCode - The module code to check (case-insensitive), e.g. 'work_orders', 'safety', 'production'
  * @returns boolean - true if the module should be visible

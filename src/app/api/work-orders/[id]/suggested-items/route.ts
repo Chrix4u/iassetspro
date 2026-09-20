@@ -164,7 +164,8 @@ export async function GET(
       );
       const inventoryItem = typeof p.itemId === 'string' ? inventoryById.get(p.itemId) : undefined;
       const compatibilityStatus = typeof p.compatibilityStatus === 'string' ? p.compatibilityStatus : undefined;
-      const { compatibilityStatus: _compatibilityStatus, ...part } = p;
+      const part = { ...p };
+      delete part.compatibilityStatus;
       return {
         ...part,
         pipelineId: matReq?.id || null,

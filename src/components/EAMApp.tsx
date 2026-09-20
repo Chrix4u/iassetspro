@@ -338,6 +338,7 @@ function PageSwitcher({ page }: { page: string }) {
   const [error, setError] = useState<string | null>(null);
   const { hasPermission, isAdmin } = useAuthStore();
   const navigate = useNavigationStore((s) => s.navigate);
+  const enabledModules = useNavigationStore((s) => s.enabledModules);
 
   // Page-to-permission mapping for route guard
   const pagePermissions: Record<string, string[]> = {
@@ -481,8 +482,42 @@ function PageSwitcher({ page }: { page: string }) {
     'analytics': ['analytics.view'],
   };
 
-  // Permission guard: check before loading the page
+  const pageModules: Record<string, string> = {
+    'assets-machines': 'assets', 'assets-hierarchy': 'assets', 'assets-bom': 'assets',
+    'assets-condition-monitoring': 'assets', 'assets-digital-twin': 'assets', 'assets-health': 'assets',
+    'maintenance-work-orders': 'work_orders', 'wo-detail': 'work_orders',
+    'maintenance-requests': 'maintenance_requests', 'create-mr': 'maintenance_requests', 'mr-detail': 'maintenance_requests',
+    'maintenance-dashboard': 'work_orders', 'maintenance-analytics': 'work_orders',
+    'maintenance-calibration': 'calibration', 'maintenance-risk-assessment': 'risk_assessment', 'maintenance-tools': 'tools',
+    'pm-schedules': 'pm_schedules', 'pm-templates': 'pm_schedules', 'pm-triggers': 'pm_schedules', 'pm-calendar': 'pm_schedules',
+    'planner-workbench': 'work_orders',
+    'repairs-material-requests': 'repairs', 'repairs-tool-requests': 'repairs', 'repairs-tool-transfers': 'repairs',
+    'repairs-downtime': 'repairs', 'repairs-completion': 'repairs', 'repairs-spare-part-returns': 'repairs',
+    'repairs-damaged-tools': 'repairs', 'repairs-analytics': 'repairs', 'repairs-reports': 'repairs',
+    'technician-timesheet': 'repairs',
+    'inventory-items': 'inventory', 'inventory-categories': 'inventory', 'inventory-locations': 'inventory',
+    'inventory-transactions': 'inventory', 'inventory-adjustments': 'inventory', 'inventory-requests': 'inventory',
+    'inventory-transfers': 'inventory', 'inventory-suppliers': 'inventory', 'inventory-purchase-orders': 'inventory',
+    'inventory-receiving': 'inventory', 'inventory': 'inventory',
+    'production-work-centers': 'production', 'production-resource-planning': 'production', 'production-scheduling': 'production',
+    'production-capacity': 'production', 'production-efficiency': 'production', 'production-bottlenecks': 'production',
+    'production-orders': 'production', 'production-batches': 'production',
+    'safety-incidents': 'safety', 'safety-inspections': 'safety', 'safety-equipment': 'safety', 'safety-permits': 'safety',
+    'analytics-kpi': 'analytics', 'reports-maintenance': 'reports', 'reports-inventory': 'reports',
+  };
+
+  // Permission + module guard: check before loading the page.
   useEffect(() => {
+    const requiredModule = pageModules[page];
+    if (requiredModule && requiredModule !== 'core') {
+      // Fail closed while module state is loading or when the module is not
+      // both licensed and company-enabled.
+      if (enabledModules === null || !enabledModules.has(requiredModule)) {
+        navigate('dashboard');
+        return;
+      }
+    }
+
     // Admin-only gate: all settings-* pages (except user-level preferences) require admin
     if (page.startsWith('settings-') && page !== 'settings-preferences') {
       if (!isAdmin()) {
@@ -504,7 +539,7 @@ function PageSwitcher({ page }: { page: string }) {
         return;
       }
     }
-  }, [page, hasPermission, isAdmin, navigate]);
+  }, [page, hasPermission, isAdmin, navigate, enabledModules]);
 
   useEffect(() => {
     // If already cached, use it immediately

@@ -229,6 +229,22 @@ export function DashboardPage() {
   const pendingReqs = stats?.pendingRequests || 0;
   const pendingApprovals = stats?.pendingApprovals || 0;
 
+  // Module widgets/cards must satisfy both licensing and the same permission
+  // contract as their destination pages. Keep these declarations before any
+  // chart/KPI data that consumes them to avoid temporal-dead-zone runtime errors.
+  const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
+    && pageModuleIsEnabled('analytics-kpi', enabledModules);
+  const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
+    && pageModuleIsEnabled('safety-incidents', enabledModules);
+  const productionEnabled = pageHasPermission('production-orders', hasPermission, isAdmin())
+    && pageModuleIsEnabled('production-orders', enabledModules);
+  const qualityEnabled = pageHasPermission('quality-ncr', hasPermission, isAdmin())
+    && pageModuleIsEnabled('quality-ncr', enabledModules);
+  const pmEnabled = pageHasPermission('pm-schedules', hasPermission, isAdmin())
+    && pageModuleIsEnabled('pm-schedules', enabledModules);
+  const financialReportsEnabled = pageHasPermission('reports-financial', hasPermission, isAdmin())
+    && pageModuleIsEnabled('reports-financial', enabledModules);
+
   // Chart Data
   const woStatusData = [
     { status: 'draft', count: stats?.draftWO || 0 },
@@ -364,21 +380,6 @@ export function DashboardPage() {
     pageHasPermission(mod.page, hasPermission, isAdmin())
     && pageModuleIsEnabled(mod.page, enabledModules)
   );
-
-  // Module widgets must satisfy both licensing and the same permission contract
-  // as the page they represent.
-  const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
-    && pageModuleIsEnabled('analytics-kpi', enabledModules);
-  const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
-    && pageModuleIsEnabled('safety-incidents', enabledModules);
-  const productionEnabled = pageHasPermission('production-orders', hasPermission, isAdmin())
-    && pageModuleIsEnabled('production-orders', enabledModules);
-  const qualityEnabled = pageHasPermission('quality-ncr', hasPermission, isAdmin())
-    && pageModuleIsEnabled('quality-ncr', enabledModules);
-  const pmEnabled = pageHasPermission('pm-schedules', hasPermission, isAdmin())
-    && pageModuleIsEnabled('pm-schedules', enabledModules);
-  const financialReportsEnabled = pageHasPermission('reports-financial', hasPermission, isAdmin())
-    && pageModuleIsEnabled('reports-financial', enabledModules);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">

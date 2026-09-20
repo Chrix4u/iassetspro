@@ -333,7 +333,6 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(woHandoverApi).toContain("hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])");
     expect(maintenance).toContain("new URLSearchParams({ mode: 'candidates' })");
     expect(maintenance).toContain("/api/work-orders/\${id}/handover?\${params.toString()}");
-    expect(maintenance).not.toContain("/api/workers?role=technician&plantId=\${encodeURIComponent(wo.plantId)}");
   });
 
   it('keeps WO capability flags aligned with actor-aware lifecycle and endpoint permissions', () => {

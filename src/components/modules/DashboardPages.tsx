@@ -5,7 +5,7 @@ import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { MODULE_CODES } from '@/hooks/useModuleEnabled';
-import { pageModuleIsEnabled } from '@/lib/page-access';
+import { pageHasPermission, pageModuleIsEnabled } from '@/lib/page-access';
 import { api } from '@/lib/api';
 import { timeAgo, formatCurrency } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
@@ -345,15 +345,6 @@ export function DashboardPage() {
     .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
 
   // Cross-module overview data
-  const moduleMap: Record<string, string> = {
-    'Assets': 'assets',
-    'Safety': 'safety',
-    'Production': 'production',
-    'IoT': 'iot_sensors',
-    'Quality': 'quality',
-    'Inventory': 'inventory',
-  };
-
   const crossModuleData = [
     { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40', page: 'assets' as PageName, params: assetsAtRisk > 0 ? { condition: 'at_risk' } : undefined },
     { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} inspections overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40', page: 'safety-incidents' as PageName },
@@ -363,13 +354,13 @@ export function DashboardPage() {
     { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} pending reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40', page: 'inventory-items' as PageName, params: lowStockItems > 0 ? { filter: 'low_stock' } : undefined },
   ];
 
-  // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = crossModuleData.filter(mod => {
-    const code = moduleMap[mod.label];
-    if (!code) return true;
-    if (enabledModules === null) return false;
-    return enabledModules.has(code.toLowerCase());
-  });
+  // Cross-module cards follow the same permission + licensing contract as
+  // their destination pages. Do not expose KPIs for a workspace the actor
+  // cannot open.
+  const filteredCrossModuleData = crossModuleData.filter((mod) =>
+    pageHasPermission(mod.page, hasPermission, isAdmin())
+    && pageModuleIsEnabled(mod.page, enabledModules)
+  );
 
   // Module-aware visibility is fail-closed for optional modules.
   const analyticsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ANALYTICS);

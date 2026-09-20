@@ -32,6 +32,19 @@ export async function GET(
         plannerId: true,
         teamMembers: { select: { userId: true } },
         maintenanceRequest: { select: { requestedBy: true } },
+        materials: {
+          where: { status: 'planned' },
+          select: {
+            id: true,
+            itemId: true,
+            itemName: true,
+            quantity: true,
+            unitCost: true,
+            totalCost: true,
+            status: true,
+            createdAt: true,
+          },
+        },
         repairMaterialRequests: {
           where: { source: 'planner_suggested' },
           select: {
@@ -72,22 +85,67 @@ export async function GET(
     const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
     const storedSuggestedTools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
 
-    // Older MR→WO conversions created canonical planner requests without a JSON
-    // suggestion snapshot (and, historically, materials were missing from the
-    // canonical pipeline entirely). Derive a display snapshot from the
-    // authoritative planner_suggested requests whenever the JSON projection is
-    // absent so existing work orders remain visible after reconciliation.
-    const suggestedParts = storedSuggestedParts.length > 0
-      ? storedSuggestedParts
-      : wo.repairMaterialRequests.map((mr) => ({
-          id: mr.id,
-          itemId: mr.itemId,
-          itemName: mr.itemName,
-          itemCode: mr.item?.itemCode || '',
-          quantity: mr.quantityRequested,
-          unit: mr.unit || 'each',
-          notes: '',
-        }));
+    // Reconcile planner-selected materials from every legitimate projection.
+    // Historical MR→WO conversions can have only a WorkOrderMaterial row, while
+    // newer conversions also persist the JSON snapshot + canonical Repairs request.
+    // Merge all sources by item identity so a planner-selected part can never
+    // disappear from the WO details page merely because one projection is absent.
+    const materialItemIds = Array.from(new Set(
+      wo.materials
+        .map((material) => material.itemId)
+        .filter((itemId): itemId is string => Boolean(itemId)),
+    ));
+    const inventoryItems = materialItemIds.length > 0
+      ? await db.inventoryItem.findMany({
+          where: { id: { in: materialItemIds } },
+          select: { id: true, name: true, itemCode: true, unitOfMeasure: true, currentStock: true, unitCost: true },
+        })
+      : [];
+    const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+    const suggestedPartMap = new Map<string, Record<string, unknown>>();
+    const partKey = (part: Record<string, unknown>) => {
+      const itemId = typeof part.itemId === 'string' && part.itemId ? part.itemId : null;
+      if (itemId) return `item:${itemId}`;
+      const id = typeof part.id === 'string' && part.id ? part.id : crypto.randomUUID();
+      return `row:${id}`;
+    };
+
+    for (const part of storedSuggestedParts) {
+      suggestedPartMap.set(partKey(part), part);
+    }
+
+    for (const mr of wo.repairMaterialRequests) {
+      const part = {
+        id: mr.id,
+        itemId: mr.itemId,
+        itemName: mr.itemName,
+        itemCode: mr.item?.itemCode || '',
+        quantity: mr.quantityRequested,
+        unit: mr.unit || 'each',
+        notes: '',
+      };
+      const key = partKey(part);
+      if (!suggestedPartMap.has(key)) suggestedPartMap.set(key, part);
+    }
+
+    for (const material of wo.materials) {
+      const inventoryItem = material.itemId ? inventoryById.get(material.itemId) : undefined;
+      const part = {
+        id: material.id,
+        itemId: material.itemId,
+        itemName: material.itemName || inventoryItem?.name || 'Planned Material',
+        itemCode: inventoryItem?.itemCode || '',
+        quantity: material.quantity ?? 1,
+        unit: inventoryItem?.unitOfMeasure || 'each',
+        notes: '',
+        compatibilityStatus: material.status || 'planned',
+      };
+      const key = partKey(part);
+      if (!suggestedPartMap.has(key)) suggestedPartMap.set(key, part);
+    }
+
+    const suggestedParts = Array.from(suggestedPartMap.values());
 
     const suggestedTools = storedSuggestedTools.length > 0
       ? storedSuggestedTools
@@ -104,14 +162,17 @@ export async function GET(
       const matReq = wo.repairMaterialRequests.find(
         (mr: { itemId: string | null }) => mr.itemId === p.itemId
       );
+      const inventoryItem = typeof p.itemId === 'string' ? inventoryById.get(p.itemId) : undefined;
+      const compatibilityStatus = typeof p.compatibilityStatus === 'string' ? p.compatibilityStatus : undefined;
+      const { compatibilityStatus: _compatibilityStatus, ...part } = p;
       return {
-        ...p,
+        ...part,
         pipelineId: matReq?.id || null,
-        pipelineStatus: matReq?.status || 'suggested',
+        pipelineStatus: matReq?.status || compatibilityStatus || 'suggested',
         quantityApproved: matReq?.quantityApproved || 0,
         quantityIssued: matReq?.quantityIssued || 0,
-        currentStock: matReq?.item?.currentStock || 0,
-        unitCost: matReq?.item?.unitCost || 0,
+        currentStock: matReq?.item?.currentStock ?? inventoryItem?.currentStock ?? 0,
+        unitCost: matReq?.item?.unitCost ?? inventoryItem?.unitCost ?? 0,
       };
     });
 

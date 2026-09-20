@@ -283,7 +283,7 @@ export function DashboardPage() {
       color: '#10b981', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
       borderColor: 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
-      icon: Wrench, permission: 'work_orders.view',
+      icon: Wrench, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
       onClick: isManager ? () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold' }) : () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold', assignedTo: 'me' }),
     },
@@ -293,7 +293,7 @@ export function DashboardPage() {
       color: '#14b8a6', bgColor: 'bg-teal-50 dark:bg-teal-950/30',
       borderColor: 'border-teal-100 dark:border-teal-900/40',
       iconBg: 'bg-teal-100 dark:bg-teal-900/50', iconColor: 'text-teal-600 dark:text-teal-400',
-      icon: CheckCircle2, permission: 'work_orders.view',
+      icon: CheckCircle2, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       showRing: true, ringValue: completionRate,
     },
     {
@@ -304,7 +304,7 @@ export function DashboardPage() {
       borderColor: overdueWOs > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50',
       iconColor: overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
-      icon: AlertTriangle, permission: 'work_orders.view',
+      icon: AlertTriangle, permission: 'work_orders.view', page: 'maintenance-work-orders' as PageName,
       onClick: () => navigate('maintenance-work-orders', { overdue: 'true' }),
     },
     {
@@ -313,13 +313,16 @@ export function DashboardPage() {
       color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
-      icon: ClipboardList, permission: 'maintenance_requests.view',
+      icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName,
       barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
       onClick: () => navigate('maintenance-requests', { status: 'pending,approved' }),
     },
   ];
 
-  const visiblePrimaryKPIs = primaryKPICards.filter(c => hasPermission(c.permission));
+  const visiblePrimaryKPIs = primaryKPICards.filter((card) =>
+    pageHasPermission(card.page, hasPermission, isAdmin())
+    && pageModuleIsEnabled(card.page, enabledModules)
+  );
 
   // ===== Role-Based Quick Actions =====
   const allQuickActions = [
@@ -340,9 +343,9 @@ export function DashboardPage() {
   ];
 
   const visibleQuickActions = allQuickActions
-    .filter(a => hasPermission(a.permission))
-    .filter(a => pageModuleIsEnabled(a.page, enabledModules))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter((action) => pageHasPermission(action.page, hasPermission, isAdmin()))
+    .filter((action) => pageModuleIsEnabled(action.page, enabledModules))
+    .filter((action) => action.roles.includes('all') || action.roles.some((role) => userRoles.includes(role)));
 
   // Cross-module overview data
   const crossModuleData = [

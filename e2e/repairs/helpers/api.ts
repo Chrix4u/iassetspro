@@ -199,6 +199,8 @@ export async function convertMR(
     tradeActivity?: string;
     workOrderType?: string;
     priority?: string;
+    requiredParts?: Array<{ itemId: string; quantity?: number }>;
+    requiredTools?: Array<{ toolId: string; quantity?: number }>;
   },
 ) {
   const { status, data: resp } = await apiCall(token, 'POST', `/api/maintenance-requests/${mrId}/convert`, payload || {});

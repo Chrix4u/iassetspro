@@ -58,7 +58,13 @@ export async function POST(
       {
         reason: notes,
         extraData: {
-          plannerId: session.userId,
+          // Preserve the accountable planner during management overrides.
+          // Approval authority must not silently transfer planner ownership.
+          plannerId: wo.plannerId ?? (
+            session.roles.includes('planner') || session.roles.includes('maintenance_planner')
+              ? session.userId
+              : null
+          ),
           estimatedHours: estimatedHours ?? wo.estimatedHours,
           plannedStart: plannedStart ? new Date(plannedStart) : wo.plannedStart,
           plannedEnd: plannedEnd ? new Date(plannedEnd) : wo.plannedEnd,

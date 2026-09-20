@@ -30,7 +30,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'maintenance-analytics': ['work_orders.view', 'work_orders.view_own'],
   'maintenance-calibration': ['calibration.view'],
   'maintenance-risk-assessment': ['work_orders.view', 'work_orders.view_own'],
-  'maintenance-tools': ['tools.view'],
+  'maintenance-tools': ['tools.manage', 'tools.create', 'tools.update', 'tools.delete'],
   'pm-schedules': ['pm_schedules.view'],
   'pm-templates': ['pm_templates.view'],
   'pm-triggers': ['pm_triggers.view'],

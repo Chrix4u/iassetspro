@@ -74,8 +74,17 @@ export async function GET(request: NextRequest) {
       licensedByUsers = Object.fromEntries(users.map((u) => [u.id, { id: u.id, fullName: u.fullName }]));
     }
 
+    const now = Date.now();
     const data = modules.map((m, idx) => {
       const companyModule = picked[idx];
+      const withinLicenseWindow =
+        (!m.validFrom || m.validFrom.getTime() <= now) &&
+        (!m.validUntil || m.validUntil.getTime() >= now);
+      const systemLicensed = m.isCore || (m.isSystemLicensed && withinLicenseWindow);
+      const companyLicensed = m.isCore || Boolean(companyModule?.isActive);
+      const companyEnabled = m.isCore || Boolean(companyModule?.isEnabled);
+      const isUsable = systemLicensed && companyLicensed && companyEnabled;
+
       return {
         id: m.id,
         code: m.code,
@@ -84,6 +93,7 @@ export async function GET(request: NextRequest) {
         version: m.version,
         isCore: m.isCore,
         isSystemLicensed: m.isSystemLicensed,
+        isUsable,
         licenseKey: isAdm ? m.licenseKey : null,
         validFrom: isAdm ? m.validFrom : null,
         validUntil: isAdm ? m.validUntil : null,

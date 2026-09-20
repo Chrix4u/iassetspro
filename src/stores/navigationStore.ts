@@ -79,7 +79,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         res.data.forEach((m: any) => {
           // Company module is usable only when licensed (isActive) AND enabled.
           // Core modules remain available regardless of company activation flags.
-          if (m.isCore || (m.isSystemLicensed && m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
+          if (m.isUsable === true) enabled.add(m.code.toLowerCase());
         });
         set({ enabledModules: enabled });
         return;

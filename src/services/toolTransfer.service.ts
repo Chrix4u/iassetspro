@@ -34,6 +34,51 @@ const transferInclude = {
   requestedBy: { select: { id: true, fullName: true } },
 } satisfies Prisma.ToolTransferRequestInclude;
 
+async function validateTransferRecipient(
+  tx: Tx,
+  toUserId: string,
+  fromUserId: string,
+  plantId: string | null,
+) {
+  if (toUserId === fromUserId) {
+    throw new ToolTransferConflictError('Cannot transfer tool to the same person');
+  }
+  if (!plantId) {
+    throw new ToolTransferConflictError('Tool must belong to a plant before it can be transferred');
+  }
+
+  const recipient = await tx.user.findUnique({
+    where: { id: toUserId },
+    select: {
+      id: true,
+      status: true,
+      userRoles: {
+        select: {
+          role: { select: { slug: true } },
+        },
+      },
+      plantAccess: {
+        where: { plantId },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+
+  if (!recipient) {
+    throw new ToolTransferNotFoundError('Transfer recipient not found');
+  }
+  if (recipient.status !== 'active') {
+    throw new ToolTransferConflictError('Transfer recipient is not active');
+  }
+  if (!recipient.userRoles.some((userRole) => userRole.role.slug === 'maintenance_technician')) {
+    throw new ToolTransferConflictError('Transfer recipient must be an active maintenance technician');
+  }
+  if (recipient.plantAccess.length === 0) {
+    throw new ToolTransferConflictError('Transfer recipient is not authorized for the tool plant');
+  }
+}
+
 async function resolveOriginatingRequestItem(tx: Tx, toolId: string, fromUserId: string) {
   const requests = await tx.repairToolRequest.findMany({
     where: {
@@ -182,6 +227,13 @@ export async function createToolTransferRequest(input: CreateTransferInput) {
     if (tool.assignedToId !== input.fromUserId) {
       throw new ToolTransferConflictError('Tool is not currently assigned to the specified user');
     }
+
+    await validateTransferRecipient(
+      tx,
+      input.toUserId,
+      input.fromUserId,
+      tool.plantId,
+    );
 
     const active = await tx.toolTransferRequest.findFirst({
       where: {

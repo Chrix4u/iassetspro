@@ -166,6 +166,7 @@ export interface WorkOrder {
   assetId?: string;
   assetName?: string;
   departmentId?: string;
+  plantId?: string;
   requestId?: string;
   assignedToId?: string;
   assignedToName?: string;

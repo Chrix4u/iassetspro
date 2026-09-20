@@ -5,6 +5,7 @@ import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { closeAllActiveWorkSessions } from '@/services/workOrderActiveSession.service';
+import { canCancelWorkOrderForActor } from '@/services/workOrderAccess.service';
 import { buildAuditData } from '@/lib/audit-helpers';
 
 const CANCELLABLE_STATES = [
@@ -73,11 +74,22 @@ export async function POST(
         woNumber: true,
         status: true,
         assignedTo: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        assignedBy: true,
+        createdById: true,
         maintenanceRequestId: true,
       },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (!canCancelWorkOrderForActor(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'You are not the accountable planner/supervisor for this work order' },
+        { status: 403 },
+      );
     }
 
     if (!CANCELLABLE_STATES.includes(wo.status as (typeof CANCELLABLE_STATES)[number])) {

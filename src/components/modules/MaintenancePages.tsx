@@ -4260,8 +4260,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const canEdit = !['completed', 'closed', 'cancelled', 'verified'].includes(wo.status) && (
     canManageTeamDirectly ||
     isAdmin() ||
-    (wo.plannerId === user?.id) ||
-    (wo.createdById === user?.id && hasPermission('work_orders.create'))
+    (wo.plannerId === user?.id)
   );
 
   // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers or finalized WOs

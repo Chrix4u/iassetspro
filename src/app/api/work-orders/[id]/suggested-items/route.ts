@@ -120,8 +120,14 @@ export async function GET(
         : [];
       const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
 
+      const rejectedItemIds = new Set(
+        wo.repairMaterialRequests
+          .filter((request) => request.status === 'rejected' && request.itemId)
+          .map((request) => request.itemId as string),
+      );
+
       suggestedParts = wo.materials
-        .filter((material) => Boolean(material.itemId))
+        .filter((material) => Boolean(material.itemId) && !rejectedItemIds.has(material.itemId as string))
         .map((material) => {
           const item = material.itemId ? inventoryById.get(material.itemId) : undefined;
           return {
@@ -452,6 +458,122 @@ export async function PUT(
     }
 
     if (action === 'send_to_store') {
+      // Repair legacy MR→WO conversions that persisted only WorkOrderMaterial
+      // rows. Materialize missing canonical planner_suggested requests before
+      // notifying the store so old work orders remain fully actionable.
+      const legacyPlannedMaterials = await db.workOrderMaterial.findMany({
+        where: {
+          workOrderId: id,
+          status: 'planned',
+          itemId: { not: null },
+        },
+        select: {
+          id: true,
+          itemId: true,
+          itemName: true,
+          quantity: true,
+          unitCost: true,
+        },
+      });
+
+      if (legacyPlannedMaterials.length > 0) {
+        const legacyItemIds = legacyPlannedMaterials
+          .map((material) => material.itemId)
+          .filter((itemId): itemId is string => Boolean(itemId));
+
+        const [existingRequests, inventoryItems] = await Promise.all([
+          db.repairMaterialRequest.findMany({
+            where: {
+              workOrderId: id,
+              source: 'planner_suggested',
+              itemId: { in: legacyItemIds },
+            },
+            select: { itemId: true },
+          }),
+          db.inventoryItem.findMany({
+            where: { id: { in: legacyItemIds } },
+            select: {
+              id: true,
+              name: true,
+              itemCode: true,
+              unitOfMeasure: true,
+              unitCost: true,
+              plantId: true,
+            },
+          }),
+        ]);
+
+        const existingItemIds = new Set(
+          existingRequests
+            .map((request) => request.itemId)
+            .filter((itemId): itemId is string => Boolean(itemId)),
+        );
+        const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+        const missingMaterials = legacyPlannedMaterials.filter(
+          (material) => material.itemId && !existingItemIds.has(material.itemId),
+        );
+
+        if (missingMaterials.length > 0) {
+          await db.$transaction(async (tx) => {
+            for (const material of missingMaterials) {
+              if (!material.itemId) continue;
+              const item = inventoryById.get(material.itemId);
+              if (!item || item.plantId !== wo.plantId) continue;
+
+              const quantity = material.quantity ?? 1;
+              const unitCost = material.unitCost ?? item.unitCost ?? 0;
+              await tx.repairMaterialRequest.create({
+                data: {
+                  workOrderId: id,
+                  itemId: item.id,
+                  itemName: material.itemName || item.name,
+                  quantityRequested: quantity,
+                  unit: item.unitOfMeasure || 'each',
+                  unitCost,
+                  estimatedCost: unitCost * quantity,
+                  urgency: 'normal',
+                  reason: 'Planner suggested material (legacy conversion repair)',
+                  plantId: wo.plantId,
+                  source: 'planner_suggested',
+                  status: 'pending',
+                  requestedById: session.userId,
+                },
+              });
+            }
+
+            const currentSuggestedParts = (() => {
+              try {
+                const parsed = JSON.parse(wo.suggestedParts || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })();
+
+            if (currentSuggestedParts.length === 0) {
+              const repairedSuggestions = legacyPlannedMaterials
+                .filter((material) => Boolean(material.itemId))
+                .map((material) => {
+                  const item = material.itemId ? inventoryById.get(material.itemId) : undefined;
+                  return {
+                    id: material.id,
+                    itemId: material.itemId,
+                    itemName: material.itemName || item?.name || 'Planned material',
+                    itemCode: item?.itemCode || '',
+                    quantity: material.quantity ?? 1,
+                    unit: item?.unitOfMeasure || 'each',
+                    notes: '',
+                  };
+                });
+              await tx.workOrder.update({
+                where: { id },
+                data: { suggestedParts: JSON.stringify(repairedSuggestions) },
+              });
+            }
+          });
+        }
+      }
+
       const pendingMatReqs = await db.repairMaterialRequest.findMany({
         where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
       });

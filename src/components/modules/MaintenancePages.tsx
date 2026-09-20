@@ -4283,6 +4283,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Disable ALL interactive buttons for completed/closed WOs
   const allActionsDisabled = isWOFinalized;
 
+  // Legacy MR→WO conversions can contain a planned WorkOrderMaterial without
+  // the canonical RepairMaterialRequest that newer conversions create. Keep
+  // those planner-selected materials visible on the WO details page while
+  // deduplicating against canonical requests restored by the backfill migration.
+  const compatibilityPlannedMaterials = (wo.materials || []).filter((material: any) => {
+    if (material.status !== 'planned') return false;
+    return !(wo.repairMaterialRequests || []).some((request: any) => {
+      if (material.itemId && request.itemId) return material.itemId === request.itemId;
+      return !material.itemId
+        && Boolean(material.itemName)
+        && material.itemName === request.itemName;
+    });
+  });
+  const visibleMaterialCount = (wo.repairMaterialRequests?.length || 0) + compatibilityPlannedMaterials.length;
+
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -5852,7 +5867,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Materials — with approval pipeline */}
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
+              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{visibleMaterialCount} material{visibleMaterialCount === 1 ? '' : 's'}</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
@@ -5862,8 +5877,37 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               {/* Repair Material Requests — full approval pipeline */}
-              {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 ? (
+              {visibleMaterialCount > 0 ? (
                 <div className="space-y-3">
+                  {compatibilityPlannedMaterials.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2">
+                        <p className="text-xs font-medium text-violet-800">Planner-selected materials</p>
+                        <p className="text-[11px] text-violet-700/80">These planned materials came from the MR conversion and are being reconciled into the approval pipeline.</p>
+                      </div>
+                      {compatibilityPlannedMaterials.map((material: any) => (
+                        <div key={material.id || material.itemId || material.itemName} className="p-3 rounded-lg border bg-muted/30">
+                          <div className="flex items-start gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 mt-0.5">
+                              <PackageSearch className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-medium truncate">{material.itemName || 'Planned Material'}</p>
+                                <Badge variant="outline" className="text-[9px] bg-violet-50 text-violet-700 border-violet-200">planned</Badge>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                                <span>Qty: <strong>{material.quantity ?? 1}</strong></span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 && (
+                    <>
                   <div className="p-3 rounded-lg bg-muted/50 border overflow-hidden">
                     <div className="flex items-center gap-2 sm:gap-4 text-[10px] text-muted-foreground mb-1 min-w-0">
                       {['Pending', 'Supervisor', 'Store', 'Picking', 'Issued', 'Done'].map(stage => (
@@ -5955,6 +5999,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       </div>
                     ))}
                   </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-6">

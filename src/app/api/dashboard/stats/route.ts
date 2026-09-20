@@ -117,7 +117,6 @@ export async function GET(request: NextRequest) {
     const canViewNotificationsKPIs = moduleOperational('notifications')
       && (isAdm || hasPermission(session, 'notifications.view'));
     const canViewPmKPIs = moduleOperational('pm_schedules')
-      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'pm_schedules.view'));
     const canViewAnalyticsKPIs = moduleOperational('analytics')
       && canViewWorkOrderKPIs

@@ -47,16 +47,16 @@ export async function GET(request: NextRequest) {
       include: { companyModules: true },
     });
     const moduleOperational = (code: string) => {
-      const module = moduleRows.find((row) => row.code === code);
-      if (!module) return false;
-      if (module.isCore) return true;
-      const companyModule = module.companyModules.find((cm) => cm.companyId === '__default__')
-        ?? module.companyModules.find((cm) => cm.companyId === null)
-        ?? module.companyModules[0];
+      const systemModule = moduleRows.find((row) => row.code === code);
+      if (!systemModule) return false;
+      if (systemModule.isCore) return true;
+      const companyModule = systemModule.companyModules.find((cm) => cm.companyId === '__default__')
+        ?? systemModule.companyModules.find((cm) => cm.companyId === null)
+        ?? systemModule.companyModules[0];
       const now = new Date();
-      const systemLicenseValid = module.isSystemLicensed === true
-        && (!module.validFrom || module.validFrom <= now)
-        && (!module.validUntil || module.validUntil >= now);
+      const systemLicenseValid = systemModule.isSystemLicensed === true
+        && (!systemModule.validFrom || systemModule.validFrom <= now)
+        && (!systemModule.validUntil || systemModule.validUntil >= now);
       return systemLicenseValid
         && Boolean(companyModule?.licensedAt)
         && companyModule?.isEnabled === true

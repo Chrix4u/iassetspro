@@ -77,7 +77,6 @@ export async function POST(
         assignedSupervisorId: true,
         plannerId: true,
         assignedBy: true,
-        createdById: true,
         maintenanceRequestId: true,
       },
     });

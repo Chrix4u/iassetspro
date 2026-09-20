@@ -67,6 +67,7 @@ export const MODULE_CODES = {
   RISK_ASSESSMENT: 'risk_assessment',
   REPORTS: 'reports',
   TOOLS: 'tools',
+  NOTIFICATIONS: 'notifications',
   BOM: 'bom',
 } as const;
 

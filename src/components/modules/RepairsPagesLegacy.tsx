@@ -2298,7 +2298,7 @@ export function RepairToolTransfersPage() {
   const [conditionTarget, setConditionTarget] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<any>(null);
-  const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
+  const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: user?.id || '', toUserId: '', reason: '', notes: '' });
 
   // Auto-fill create form from pageParams (e.g., from RepairCompletion's "Transfer" button)
   useEffect(() => {
@@ -2345,7 +2345,7 @@ export function RepairToolTransfersPage() {
     if (createForm.fromUserId === createForm.toUserId) { toast.error('From and To users must be different'); return; }
     setSubmitting(true);
     const res = await api.post('/api/repairs/tool-transfers', createForm);
-    if (res.success) { toast.success('Transfer request submitted'); setCreateOpen(false); setCreateForm({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' }); fetchTransfers(); }
+    if (res.success) { toast.success('Transfer request submitted'); setCreateOpen(false); setCreateForm({ toolId: '', fromUserId: user?.id || '', toUserId: '', reason: '', notes: '' }); fetchTransfers(); }
     else toast.error(res.error || 'Failed');
     setSubmitting(false);
   };
@@ -2380,7 +2380,7 @@ export function RepairToolTransfersPage() {
             <p className="text-sm text-muted-foreground">Manage tool custody transfers between technicians</p>
           </div>
         </div>
-        {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+        {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => { setCreateForm(f => ({ ...f, fromUserId: user?.id || '' })); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -2590,16 +2590,12 @@ export function RepairToolTransfersPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Transfer Request</h2><p className="text-sm text-muted-foreground">Request transfer of a tool to another technician</p></div>
           <div className="space-y-4">
-            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
-            <div className="relative">
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== createForm.fromUserId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-              </div>
-              {createForm.fromUserId && createForm.toUserId && createForm.fromUserId === createForm.toUserId && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> From and To users must be different</p>
-              )}
+            <div><Label>Tool in My Custody *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v, fromUserId: user?.id || '' }))} placeholder="Select a tool in your custody..." searchPlaceholder="Search your tools..." fetchOptions={async (q) => { const qs = new URLSearchParams(); if (q.trim()) qs.set('search', q.trim()); const res = await api.get(`/api/repairs/catalog/my-tools?${qs}`); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})${t.serialNumber ? ` [${t.serialNumber}]` : ''}` })); return []; }} /></div>
+            <div>
+              <Label>Current Custodian</Label>
+              <div className="h-10 rounded-md border bg-muted/40 px-3 flex items-center text-sm">{user?.fullName || 'You'}</div>
             </div>
+            <div><Label>Transfer To *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v, fromUserId: user?.id || '' }))} placeholder="Select receiving technician..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this transfer needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
           </div>

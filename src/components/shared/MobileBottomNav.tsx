@@ -162,30 +162,22 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
     setMoreOpen(false);
   }, [navigate]);
 
-  // Filter visible bottom tabs by permission and module
+  // Use the same page-level permission and licensed-module policy as desktop.
   const visibleTabs = useMemo(() => {
-    return BOTTOM_TABS.filter(tab => {
-      const permOk = tab.permOr
-        ? tab.permOr.some(p => hasPermission(p))
-        : hasPermission(tab.perm);
-      if (!permOk) return false;
-      return true;
-    });
-  }, [hasPermission]);
+    const adm = isAdmin();
+    return BOTTOM_TABS.filter(tab =>
+      hasPagePermission(tab.page, hasPermission, adm) &&
+      isPageModuleAvailable(tab.page, enabledModules)
+    );
+  }, [hasPermission, isAdmin, enabledModules]);
 
-  // Filter visible more items by permission
   const visibleMoreItems = useMemo(() => {
-    return MORE_ITEMS.filter(item => {
-      const permOk = item.permOr
-        ? item.permOr.some(p => hasPermission(p))
-        : hasPermission(item.perm);
-      if (!permOk) return false;
-      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
-        return enabledModules.has(item.moduleCode.toLowerCase());
-      }
-      return true;
-    });
-  }, [hasPermission, enabledModules]);
+    const adm = isAdmin();
+    return MORE_ITEMS.filter(item =>
+      hasPagePermission(item.page, hasPermission, adm) &&
+      isPageModuleAvailable(item.page, enabledModules)
+    );
+  }, [hasPermission, isAdmin, enabledModules]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

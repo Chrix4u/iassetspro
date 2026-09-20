@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +15,14 @@ export async function GET(request: NextRequest) {
     const plantId = searchParams.get('plantId');
     const search = searchParams.get('search');
     const role = searchParams.get('role'); // technician | supervisor | all
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (plantId && !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied to requested plant' }, { status: 403 });
+    }
 
     // Build where clause
     const where: Record<string, unknown> = {
@@ -62,11 +71,18 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filter by plant access if plantId provided
+    // Workers are always plant-scoped for non-system-wide callers. Omitting
+    // plantId means all plants the caller may access, never every plant.
     if (plantId) {
+      where.plantAccess = { some: { plantId } };
+    } else if (!plantScope.isSystemWide) {
       where.plantAccess = {
         some: {
-          plantId,
+          plantId: {
+            in: plantScope.accessiblePlantIds.length > 0
+              ? plantScope.accessiblePlantIds
+              : ['__ACCESS_DENIED__'],
+          },
         },
       };
     }

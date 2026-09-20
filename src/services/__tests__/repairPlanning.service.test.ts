@@ -356,6 +356,42 @@ describe('convertMRToWorkOrder function contract', () => {
     expect(result.error).toContain('not found');
   });
 
+  it('should reject conversion when the maintenance request is not approved', async () => {
+    (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
+      id: 'mr-pending',
+      title: 'Pending MR',
+      status: 'pending',
+      requestedBy: 'user-1',
+      assignedPlannerId: 'planner-1',
+      description: 'desc',
+    });
+
+    const session: SessionLike = { userId: 'planner-1', roles: ['planner'] };
+    const result = await convertMRToWorkOrder('mr-pending', {}, session);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Only approved maintenance requests');
+    expect(mockDb.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('should reject conversion by a planner other than the assigned planner', async () => {
+    (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
+      id: 'mr-1',
+      title: 'Approved MR',
+      status: 'approved',
+      requestedBy: 'user-1',
+      assignedPlannerId: 'planner-owner',
+      description: 'desc',
+    });
+
+    const session: SessionLike = { userId: 'planner-other', roles: ['planner'] };
+    const result = await convertMRToWorkOrder('mr-1', {}, session);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('planner assigned to this maintenance request');
+    expect(mockDb.$transaction).not.toHaveBeenCalled();
+  });
+
   it('should return error when team members lack userId or role', async () => {
     (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
       id: 'mr-1',

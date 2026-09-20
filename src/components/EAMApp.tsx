@@ -24,7 +24,7 @@ import {
   LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
 import type { PageName } from '@/types';
-import { PAGE_PERMISSIONS, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
+import { PAGE_PERMISSIONS, pageHasPermission, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
 
 // ============================================================================
 // PAGE TITLE MAP — module-level (no hook dependency)
@@ -456,6 +456,16 @@ function AppShell() {
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const notificationsVisible = pageHasPermission('notifications', hasPermission, isAdmin())
     && pageModuleIsEnabled('notifications', enabledModules);
+  const currentPageAdminAllowed = !currentPage.startsWith('settings-')
+    || currentPage === 'settings-preferences'
+    || isAdmin();
+  const currentPageVisible = currentPageAdminAllowed
+    && pageModuleStateResolved(currentPage, enabledModules)
+    && pageModuleIsEnabled(currentPage, enabledModules)
+    && pageHasPermission(currentPage, hasPermission, isAdmin());
+  const visiblePageTitle = currentPageVisible
+    ? (PAGE_TITLES[currentPage] || 'Dashboard')
+    : 'iAssetsPro';
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
@@ -464,11 +474,13 @@ function AppShell() {
     fetchModules();
   }, [fetchModules]);
 
-  // Update document title on navigation
+  // Never expose a disabled/unauthorized module name in the browser title
+  // while a deep link is being rejected or the module registry is loading.
   React.useEffect(() => {
-    const title = PAGE_TITLES[currentPage] || 'Dashboard';
-    document.title = `${title} — iAssetsPro`;
-  }, [currentPage]);
+    document.title = currentPageVisible
+      ? `${visiblePageTitle} — iAssetsPro`
+      : 'iAssetsPro';
+  }, [currentPageVisible, visiblePageTitle]);
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -508,7 +520,7 @@ function AppShell() {
             {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
           <div className="hidden sm:flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">{PAGE_TITLES[currentPage] || 'Dashboard'}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{visiblePageTitle}</h2>
             <Separator orientation="vertical" className="h-4 bg-border/60" />
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>

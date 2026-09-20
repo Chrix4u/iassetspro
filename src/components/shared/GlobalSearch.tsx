@@ -203,7 +203,7 @@ export default function GlobalSearch() {
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder="Search assets, work orders, inventory, users..."
+        placeholder="Search available records..."
         value={query}
         onValueChange={handleValueChange}
       />
@@ -212,9 +212,9 @@ export default function GlobalSearch() {
         {!loading && !hasSearched && (
           <div className="py-8 text-center text-muted-foreground">
             <SearchIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Type to search across the system</p>
+            <p className="text-sm">Type to search available records</p>
             <p className="text-xs mt-1 opacity-60">
-              Assets · Work Orders · Maintenance Requests · Inventory · Users
+              Results follow your module licenses, permissions, and plant access
             </p>
           </div>
         )}

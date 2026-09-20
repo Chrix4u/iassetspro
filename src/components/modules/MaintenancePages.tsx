@@ -3593,12 +3593,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     await refreshWorkOrderLifecycle();
   };
 
-  const handleResumeHandover = async () => {
+  const handleResumeHandover = async (reasonOverride?: string) => {
     const handover = handoverState?.handover;
     if (!handover) return;
 
     const isManagementOverride = handover.receivedById !== user?.id;
-    const overrideReason = handoverReason.trim();
+    const overrideReason = (reasonOverride ?? handoverReason).trim();
     if (isManagementOverride && overrideReason.length < 5) {
       toast.error('Enter a reason for the management release');
       return;
@@ -4483,7 +4483,53 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {/* Print Work Order Button */}
+        {isHandoverPending && handoverState?.handover && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            <ArrowRightLeft className="h-4 w-4 shrink-0" />
+            <span className="font-medium">
+              Shift handover {handoverState.handover.status === 'confirmed' ? 'confirmed' : 'awaiting confirmation'}
+            </span>
+            <span className="text-sky-700">
+              → {handoverState.handover.receivedBy?.fullName || 'designated receiver'}
+            </span>
+            {handoverState?.capabilities?.canConfirm && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-sky-300 bg-white text-sky-700"
+                disabled={handoverLifecycleLoading}
+                onClick={handleConfirmHandover}
+              >
+                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                Confirm Handover
+              </Button>
+            )}
+            {handoverState?.capabilities?.canResume && handoverState.handover.receivedById === user?.id && (
+              <Button
+                size="sm"
+                className="h-7 bg-emerald-600 text-white hover:bg-emerald-700"
+                disabled={handoverLifecycleLoading}
+                onClick={() => handleResumeHandover()}
+              >
+                <Play className="mr-1 h-3.5 w-3.5" />
+                Resume Work
+              </Button>
+            )}
+            {handoverState?.capabilities?.canResume && handoverState.handover.receivedById !== user?.id && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-amber-300 bg-white text-amber-700"
+                disabled={handoverLifecycleLoading}
+                onClick={() => setActionDialog('reason:resume-handover')}
+              >
+                <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                Management Release
+              </Button>
+            )}
+          </div>
+        )}
+                {/* Print Work Order Button */}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -5594,7 +5640,123 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         </div>
       </ResponsiveDialog>
 
-      {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
+      {/* ═══════ Canonical Shift Handover Dialog ═══════ */}
+      <ResponsiveDialog
+        open={handoverOpen}
+        onOpenChange={(open) => {
+          setHandoverOpen(open);
+          if (!open) resetHandoverForm();
+        }}
+        title="Shift Handover"
+        description="Transfer this active work order to the incoming maintenance technician with an auditable custody record."
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setHandoverOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-sky-600 text-white hover:bg-sky-700"
+              disabled={handoverSubmitting || !handoverReceiverId || handoverReason.trim().length < 5}
+              onClick={handleInitiateHandover}
+            >
+              {handoverSubmitting ? 'Sending Handover...' : 'Send Handover'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+            <p className="text-xs font-medium text-sky-800">Custody workflow</p>
+            <p className="mt-1 text-xs text-sky-700">
+              Active execution timers will close. The incoming technician gets read-only access to review the WO,
+              must confirm acceptance, and receives full execution access only when the handover is resumed.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Incoming Technician *</Label>
+            <AsyncSearchableSelect
+              value={handoverReceiverId}
+              onValueChange={setHandoverReceiverId}
+              fetchOptions={async () => {
+                if (!wo?.plantId) return [];
+                const res = await api.get(`/api/workers?role=technician&plantId=${encodeURIComponent(wo.plantId)}`);
+                if (!res.success || !Array.isArray(res.data)) return [];
+                return res.data
+                  .filter((worker: any) => worker.id !== user?.id)
+                  .map((worker: any) => ({
+                    value: worker.id,
+                    label: `${worker.fullName}${worker.staffId ? ` (${worker.staffId})` : ''}${worker.trade ? ` — ${worker.trade}` : ''}`,
+                  }));
+              }}
+              placeholder="Select incoming technician..."
+              searchPlaceholder="Search technicians..."
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>From Shift</Label>
+              <Select value={handoverFromShift} onValueChange={setHandoverFromShift}>
+                <SelectTrigger><SelectValue placeholder="Current shift" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning · 06:00–14:00</SelectItem>
+                  <SelectItem value="afternoon">Afternoon · 14:00–22:00</SelectItem>
+                  <SelectItem value="night">Night · 22:00–06:00</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>To Shift</Label>
+              <Select value={handoverToShift} onValueChange={setHandoverToShift}>
+                <SelectTrigger><SelectValue placeholder="Incoming shift" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning · 06:00–14:00</SelectItem>
+                  <SelectItem value="afternoon">Afternoon · 14:00–22:00</SelectItem>
+                  <SelectItem value="night">Night · 22:00–06:00</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Reason / Handover Summary *</Label>
+            <Textarea
+              value={handoverReason}
+              onChange={(e) => setHandoverReason(e.target.value)}
+              placeholder="What has been completed and why is the handover required?"
+              rows={3}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Pending Issues</Label>
+            <Textarea
+              value={handoverPendingIssues}
+              onChange={(e) => setHandoverPendingIssues(e.target.value)}
+              placeholder="Outstanding faults, parts, permits, tests, or follow-up actions..."
+              rows={2}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Safety Notes</Label>
+            <Textarea
+              value={handoverSafetyNotes}
+              onChange={(e) => setHandoverSafetyNotes(e.target.value)}
+              placeholder="LOTO state, isolation, hazards, PPE, permits, or other safety conditions..."
+              rows={2}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Additional Notes</Label>
+            <Textarea
+              value={handoverNotes}
+              onChange={(e) => setHandoverNotes(e.target.value)}
+              placeholder="Any additional context for the incoming technician..."
+              rows={2}
+            />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+            {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
       <ResponsiveDialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)} title="Confirm Action" description="Please provide a reason for this action.">
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -5605,7 +5767,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               const reason = (document.getElementById('transition-reason') as HTMLTextAreaElement)?.value;
               if (!reason?.trim()) { toast.error('Reason is required'); return; }
               const actionName = actionDialog?.replace('reason:', '') || '';
-              handleAction(actionName, { notes: reason });
+              if (actionName === 'resume-handover') {
+                handleResumeHandover(reason);
+              } else {
+                handleAction(actionName, { notes: reason });
+              }
             }}>
               {actionLoading ? 'Processing...' : 'Confirm'}
             </Button>

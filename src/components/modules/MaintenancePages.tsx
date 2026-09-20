@@ -1183,14 +1183,15 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  // Only admin or the request sender's own department supervisor can approve/assign
+  // Use the same authoritative department-supervisor identity as the API.
   const isAdminUser = isAdmin();
-  const isDeptSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin')
-    && (mr.departmentId
-      // The frontend can't easily query Department.supervisorId, so we rely on the API
-      // server-side check. Here we use the supervisorId field as a heuristic:
-      ? mr.supervisorId === user?.id
-      : false);
+  const isMaintenanceSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin') ?? false;
+  const accountableSupervisorId = mr.departmentId
+    ? mr.department?.supervisorId
+    : mr.supervisorId;
+  const isDeptSupervisor = isMaintenanceSupervisor
+    && Boolean(accountableSupervisorId)
+    && accountableSupervisorId === user?.id;
 
   const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);

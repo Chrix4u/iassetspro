@@ -7,6 +7,7 @@ export interface WorkOrderAccessSnapshot {
   assignedSupervisorId?: string | null;
   plannerId?: string | null;
   assignedBy?: string | null;
+  handoverReceiverId?: string | null;
   teamMembers?: Array<{ userId: string; role?: string | null }> | null;
   maintenanceRequest?: {
     requestedBy?: string | null;
@@ -202,6 +203,11 @@ export function canResumeWorkOrderForActor(
   session: SessionData,
   workOrder: WorkOrderAccessSnapshot,
 ): boolean {
+  if (workOrder.status === 'pending_handover') {
+    return hasExecutionControlOverride(session)
+      || workOrder.handoverReceiverId === session.userId;
+  }
+
   if (workOrder.status === 'on_hold') {
     return hasExecutionControlOverride(session)
       || workOrder.assignedSupervisorId === session.userId;
@@ -209,6 +215,15 @@ export function canResumeWorkOrderForActor(
 
   return hasExecutionControlOverride(session)
     || workOrder.plannerId === session.userId
+    || isAssignedExecutionLeader(session, workOrder);
+}
+
+export function canInitiateWorkOrderHandoverForActor(
+  session: SessionData,
+  workOrder: WorkOrderAccessSnapshot,
+): boolean {
+  return hasExecutionControlOverride(session)
+    || workOrder.assignedSupervisorId === session.userId
     || isAssignedExecutionLeader(session, workOrder);
 }
 
@@ -309,9 +324,7 @@ export function canPerformWorkOrderTransition(
     case 'waiting_permit':
       return canPlaceWorkOrderInWaitingStateForActor(session, workOrder, toStatus);
     case 'pending_handover':
-      return hasWorkOrderManagementOverride(session)
-        || canManageWorkOrder(session, workOrder)
-        || isAssignedExecutionLeader(session, workOrder);
+      return canInitiateWorkOrderHandoverForActor(session, workOrder);
     case 'in_progress':
       if (workOrder.status === 'assigned') {
         return canStartWorkOrderForActor(session, workOrder);

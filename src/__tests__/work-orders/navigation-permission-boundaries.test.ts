@@ -25,6 +25,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
   const toolTransferDetailApi = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
   const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
+  const mrDetailApi = read('src/app/api/maintenance-requests/[id]/route.ts');
+  const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
@@ -202,6 +204,17 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(app).toContain('const pageAllowed = permissionAllowed && moduleAllowed');
     expect(app).toContain('if (!pageAllowed) return;');
     expect(app).toContain('if (!pageAllowed) return <LoadingSkeleton />;');
+  });
+
+  it('uses the authoritative department supervisor for MR action visibility and rejection', () => {
+    expect(mrDetailApi).toContain('supervisorId: true');
+    expect(maintenance).toContain('const accountableSupervisorId = mr.departmentId');
+    expect(maintenance).toContain('mr.department?.supervisorId');
+    expect(maintenance).not.toContain('The frontend can\'t easily query Department.supervisorId');
+    expect(mrRejectApi).toContain('const department = await db.department.findUnique');
+    expect(mrRejectApi).toContain('department.supervisorId !== session.userId');
+    expect(mrRejectApi).not.toContain('const requesterDept = mr.requester?.department');
+    expect(mrRejectApi).not.toContain('const deptMatch = requesterDept && userDept');
   });
 
   it('binds completion review and closure to the assigned accountable actors', () => {

@@ -5273,6 +5273,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 const cached = woToolOptions.current.find(t => t.value === val);
                 setToolXferToolId(val);
                 setToolXferToolName(cached?.name || '');
+                // Recipient eligibility is tool/plant-specific.
+                setToolXferToUserId('');
+                setToolXferToUserName('');
               }}
               fetchOptions={async () => {
                 // Only show tools from this WO's issued requests (not transferred/returned)
@@ -5322,14 +5325,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <AsyncSearchableSelect
               value={toolXferToUserId}
               onValueChange={(val) => { setToolXferToUserId(val); }}
-              fetchOptions={async () => {
-                const res = await api.get('/api/workers?role=technician');
+              fetchOptions={async (query) => {
+                if (!toolXferToolId) return [];
+                const params = new URLSearchParams({ toolId: toolXferToolId });
+                if (query.trim()) params.set('search', query.trim());
+                const res = await api.get(`/api/repairs/tool-transfers/candidates?${params.toString()}`);
                 if (res.success && Array.isArray(res.data)) {
-                  return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName}${u.username ? ` (${u.username})` : ''}` }));
+                  return res.data.map((candidate: any) => ({
+                    value: candidate.id,
+                    label: `${candidate.fullName}${candidate.staffId ? ` (${candidate.staffId})` : candidate.username ? ` (${candidate.username})` : ''}${candidate.trade ? ` — ${candidate.trade}` : ''}`,
+                  }));
                 }
                 return [];
               }}
-              placeholder="Select technician..."
+              placeholder={toolXferToolId ? 'Select eligible technician...' : 'Select a tool first...'}
               searchPlaceholder="Search technicians..."
             />
           </div>

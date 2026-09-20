@@ -28,7 +28,6 @@ export async function GET(
         assignedSupervisorId: true,
         plannerId: true,
         assignedBy: true,
-        createdById: true,
         teamMembers: { select: { userId: true, role: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { hash } from 'bcryptjs';
+import { seedCanonicalTransitions } from '../src/lib/state-machine';
 
 // ══════════════════════════════════════════════════════════════════════════
 // DATABASE CONNECTION — Robust, adapter-free for seed scripts
@@ -1153,83 +1154,12 @@ async function seed() {
   // ══════════════════════════════════════════════════════════════════════════
   console.log('🔄 Creating status transitions...');
 
-  // Maintenance Request transitions
-  const mrTransitions = [
-    { fromStatus: null, toStatus: 'pending', allowedRoleSlugs: JSON.stringify(['operator', 'supervisor', 'planner', 'admin', 'production_operator', 'plant_manager', 'maintenance_manager']) },
-    { fromStatus: 'pending', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'pending', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'pending', toStatus: 'rejected', allowedRoleSlugs: JSON.stringify(['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
-    { fromStatus: 'approved', toStatus: 'converted', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
-  ];
-
-  for (const t of mrTransitions) {
-    await db.statusTransition.create({
-      data: {
-        entityType: 'maintenance_request',
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason || false,
-      },
-    });
-  }
-
-  // Work Order transitions (existing + new additions)
-  const woTransitions = [
-    // Original transitions
-    { fromStatus: null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
-    { fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
-    { fromStatus: 'approved', toStatus: 'planned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
-    // Direct assign shortcuts (bypass planned step for faster workflows)
-    { fromStatus: 'draft', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'requested', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'approved', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'planned', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'assigned', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']) },
-    { fromStatus: 'in_progress', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
-    { fromStatus: 'in_progress', toStatus: 'completed', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']) },
-    { fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
-    { fromStatus: 'completed', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'approved', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'in_progress', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'completed', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-    // New transitions added
-    { fromStatus: 'completed', toStatus: 'verified', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'verified', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
-    { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    // Reopen transitions
-    { fromStatus: 'closed', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
-    { fromStatus: 'closed', toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
-    // Cancel from more states
-    { fromStatus: 'planned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'on_hold', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-    // Waiting parts ↔ hold (edge case transitions)
-    { fromStatus: 'on_hold', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['planner', 'technician', 'admin', 'maintenance_planner', 'maintenance_technician', 'maintenance_manager']), requiresReason: true },
-    { fromStatus: 'waiting_parts', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['planner', 'technician', 'admin', 'maintenance_planner', 'maintenance_technician', 'maintenance_manager']), requiresReason: true },
-    // Completed → rework (back to in_progress if quality fails)
-    { fromStatus: 'verified', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
-  ];
-
-  for (const t of woTransitions) {
-    await db.statusTransition.create({
-      data: {
-        entityType: 'work_order',
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason || false,
-      },
-    });
-  }
-
-  console.log(`  ✅ MR transitions: ${mrTransitions.length}`);
-  console.log(`  ✅ WO transitions: ${woTransitions.length} (28 total: full lifecycle with reopen, cancel, rework)\n`);
+  // Keep production/bootstrap seeding on the exact same canonical transition
+  // source used by runtime auto-seeding and Repairs UAT. This prevents a normal
+  // prisma seed from creating stale role rules that suppress later canonical
+  // auto-seeding merely because the table is non-empty.
+  const seededTransitionCount = await seedCanonicalTransitions(db);
+  console.log(`  ✅ Canonical status transitions synchronized: ${seededTransitionCount}\n`);
 
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 8: SAMPLE MAINTENANCE REQUESTS

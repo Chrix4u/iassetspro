@@ -60,7 +60,7 @@ export async function GET(
           },
         },
         repairToolRequests: {
-          where: { source: 'planner_suggested' },
+          where: { source: 'planner_suggested', status: { not: 'rejected' } },
           select: {
             id: true,
             toolName: true,
@@ -262,6 +262,9 @@ export async function PUT(
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { status: 'rejected', notes: `Rejected by ${session.fullName}` },
           });
+          await tx.workOrderMaterial.deleteMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+          });
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
@@ -317,12 +320,25 @@ export async function PUT(
         parts.push(newPart);
         await db.$transaction(async (tx) => {
           await tx.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(parts) } });
+          const unitCost = inventoryItem.unitCost ?? 0;
+          await tx.workOrderMaterial.create({
+            data: {
+              workOrderId: id,
+              itemId: inventoryItem.id,
+              itemName: inventoryItem.name,
+              quantity,
+              unitCost,
+              totalCost: unitCost * quantity,
+              status: 'planned',
+              requestedBy: session.userId,
+            },
+          });
           await tx.repairMaterialRequest.create({
             data: {
               workOrderId: id, itemId: inventoryItem.id, itemName: inventoryItem.name,
               quantityRequested: quantity, unit: inventoryItem.unitOfMeasure || 'each',
-              unitCost: inventoryItem.unitCost ?? 0,
-              estimatedCost: (inventoryItem.unitCost ?? 0) * quantity,
+              unitCost,
+              estimatedCost: unitCost * quantity,
               reason: newPart.notes || `Added by ${session.fullName}`,
               plantId: wo.plantId, source: 'planner_suggested', status: 'pending', requestedById: session.userId,
             },
@@ -354,11 +370,20 @@ export async function PUT(
         tools.push(newTool);
         await db.$transaction(async (tx) => {
           await tx.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(tools) } });
-          await tx.repairToolRequest.create({
+          const toolRequest = await tx.repairToolRequest.create({
             data: {
               workOrderId: id, toolId: tool.id, toolName: tool.name,
               reason: newTool.notes || `Added by ${session.fullName}`,
               plantId: wo.plantId, source: 'planner_suggested', status: 'pending', urgency: 'normal', requestedById: session.userId,
+            },
+          });
+          await tx.repairToolRequestItem.create({
+            data: {
+              repairToolRequestId: toolRequest.id,
+              toolId: tool.id,
+              toolName: tool.name,
+              toolCode: tool.toolCode,
+              quantityRequested: quantity,
             },
           });
           await tx.auditLog.create({
@@ -387,12 +412,36 @@ export async function PUT(
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { quantityRequested: quantity },
           });
+          const plannedMaterials = await tx.workOrderMaterial.findMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+            select: { id: true, unitCost: true },
+          });
+          for (const material of plannedMaterials) {
+            const unitCost = material.unitCost ?? 0;
+            await tx.workOrderMaterial.update({
+              where: { id: material.id },
+              data: { quantity, totalCost: unitCost * quantity },
+            });
+          }
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
             where: { id },
             data: { suggestedTools: JSON.stringify(tools.map((t) => t.toolId === itemId ? { ...t, quantity } : t)) },
           });
+          const toolRequests = await tx.repairToolRequest.findMany({
+            where: { workOrderId: id, toolId: itemId, source: 'planner_suggested', status: 'pending' },
+            select: { id: true },
+          });
+          if (toolRequests.length > 0) {
+            await tx.repairToolRequestItem.updateMany({
+              where: {
+                repairToolRequestId: { in: toolRequests.map((request) => request.id) },
+                toolId: itemId,
+              },
+              data: { quantityRequested: Math.max(1, Math.round(quantity)) },
+            });
+          }
         }
         await tx.auditLog.create({
           data: { userId: session.userId, action: 'update_suggested_item_qty', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, itemId, quantity }) },

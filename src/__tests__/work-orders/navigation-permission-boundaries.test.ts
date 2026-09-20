@@ -342,7 +342,9 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'completed')");
     expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'verified')");
     expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'closed')");
+    expect(woCapabilitiesApi).toContain("canHandover: wo.status === 'in_progress'");
     expect(woCapabilitiesApi).toContain("canPerformWorkOrderTransition(session, wo, 'pending_handover')");
+    expect(woCapabilitiesApi).not.toContain("canHandover: wo.status === 'in_progress'\n        && hasOwnLiveSession");
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'repair_material_requests.create')");
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'assistance_requests.create')");
     expect(woCapabilitiesApi).toContain("hasPermission(session, 'time_logs.create')");

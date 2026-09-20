@@ -430,6 +430,7 @@ export function RepairMaterialRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -658,8 +659,8 @@ export function RepairMaterialRequestsPage() {
     return qty * cost;
   }, [createForm.quantityRequested, createForm.unitCost]);
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !inventoryEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Inventory modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -1116,6 +1117,7 @@ export function RepairToolRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -1663,8 +1665,8 @@ export function RepairToolRequestsPage() {
     </div>
   );
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !toolsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Tools modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -2329,6 +2331,7 @@ export function RepairToolTransfersPage() {
   const userRoleSlugs = (user?.roles || []).map(role => role.slug);
   const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -2408,8 +2411,8 @@ export function RepairToolTransfersPage() {
     !searchText || t.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || t.fromUser?.fullName?.toLowerCase().includes(searchText.toLowerCase()) || t.toUser?.fullName?.toLowerCase().includes(searchText.toLowerCase())
   ), [transfers, searchText]);
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !toolsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Tools modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -3721,6 +3724,7 @@ export function RepairCompletionPage() {
 
 export function RepairAnalyticsPage() {
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const analyticsEnabled = useModuleEnabled(MODULE_CODES.ANALYTICS);
   const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reconReport, setReconReport] = useState<any>(null);
@@ -3821,8 +3825,8 @@ export function RepairAnalyticsPage() {
     }
   }, [dateFrom, dateTo, activeAnalyticsTab]);
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !analyticsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Analytics modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   if (loading) return <LoadingSkeleton />;
@@ -4450,6 +4454,7 @@ const SPARE_RETURN_STAGES: PipelineStage[] = [
 export function SparePartReturnsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4521,8 +4526,8 @@ export function SparePartReturnsPage() {
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.returnNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [returns, searchText]);
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !inventoryEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Inventory modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -4849,6 +4854,7 @@ const DAMAGE_STAGES: PipelineStage[] = [
 export function DamagedToolReportsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4914,8 +4920,8 @@ export function DamagedToolReportsPage() {
     !searchText || r.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || r.reportNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.damageDescription?.toLowerCase().includes(searchText.toLowerCase())
   ), [reports, searchText]);
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !toolsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Tools modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -5199,6 +5205,9 @@ export function DamagedToolReportsPage() {
 export function MaintenanceReportsPage() {
   const { user } = useAuthStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const reportsEnabled = useModuleEnabled(MODULE_CODES.REPORTS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const [reportType, setReportType] = useState('lifecycle');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -5211,9 +5220,9 @@ export function MaintenanceReportsPage() {
     { value: 'lifecycle', label: 'Full Lifecycle', icon: Activity, description: 'MR → WO end-to-end turnaround analysis' },
     { value: 'execution', label: 'WO Execution', icon: ClipboardList, description: 'Completion rates, actual vs estimated hours, rework' },
     { value: 'technician_performance', label: 'Technician Performance', icon: User, description: 'Per-technician WO completion, time accuracy, rework' },
-    { value: 'materials', label: 'Materials & Parts', icon: Package, description: 'Material usage, reconciliation, spare part returns' },
+    ...(inventoryEnabled ? [{ value: 'materials', label: 'Materials & Parts', icon: Package, description: 'Material usage, reconciliation, spare part returns' }] : []),
     { value: 'downtime', label: 'Downtime Analysis', icon: Timer, description: 'Equipment downtime by asset, category, impact' },
-    { value: 'tools', label: 'Tool Management', icon: Wrench, description: 'Damage rates, repair costs, transfers' },
+    ...(toolsEnabled ? [{ value: 'tools', label: 'Tool Management', icon: Wrench, description: 'Damage rates, repair costs, transfers' }] : []),
   ];
 
   const generateReport = async () => {
@@ -5259,8 +5268,8 @@ export function MaintenanceReportsPage() {
     toast.success('Report exported');
   };
 
-  if (!repairsEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled || !reportsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Required Repairs/Reports modules are not active.</p><p className="text-sm text-muted-foreground mt-1">Enable the licensed modules in Settings → Modules.</p></div></div>);
   }
 
   return (

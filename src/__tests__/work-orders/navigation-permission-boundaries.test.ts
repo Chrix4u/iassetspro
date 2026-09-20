@@ -16,6 +16,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const moduleUpdateApi = read('src/app/api/modules/[id]/route.ts');
   const pageAccess = read('src/lib/page-access.ts');
   const commandPalette = read('src/components/CommandPalette.tsx');
+  const globalSearch = read('src/components/shared/GlobalSearch.tsx');
   const searchApi = read('src/app/api/search/route.ts');
   const searchSuggestApi = read('src/app/api/search/suggest/route.ts');
   const searchAccess = read('src/lib/search-access.ts');
@@ -115,8 +116,12 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(mobile).toContain('pageModuleIsEnabled(tab.page, enabledModules)');
     expect(commandPalette).toContain('pageModuleIsEnabled(page, enabledModules)');
     expect(commandPalette).toContain('buildNavigationItems().filter');
+    expect(globalSearch).toContain('setResults(Array.isArray(res.data.groups) ? res.data.groups : [])');
     expect(app).toContain("pageModuleIsEnabled('notifications', enabledModules)");
     expect(searchApi).toContain('buildSearchAccessContext(request, session)');
+    expect(searchApi).toContain('const groups = [...grouped.entries()]');
+    expect(searchApi).toContain('...results,');
+    expect(searchApi).toContain('groups,');
     expect(searchSuggestApi).toContain('buildSearchAccessContext(request, session)');
     expect(searchAccess).toContain('buildOperationalModuleSet(moduleRows)');
     expect(searchAccess).toContain("operationalModules.has('work_orders')");

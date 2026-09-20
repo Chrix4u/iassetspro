@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { isControlPlaneCoreModule } from '@/lib/module-access';
 
 /**
  * Consolidate all CompanyModule records for a given systemModuleId into one.
@@ -90,14 +91,14 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ success: false, error: 'Module not found' }, { status: 404 });
     }
 
-    // Core modules are always active and cannot be deactivated
-    if (systemModule.isCore && isActive === false) {
-      return NextResponse.json({ success: false, error: 'Core modules cannot be deactivated' }, { status: 400 });
-    }
+    const protectedCore = isControlPlaneCoreModule(systemModule.code);
 
-    // Core modules are always enabled and cannot be disabled
-    if (systemModule.isCore && isEnabled === false) {
-      return NextResponse.json({ success: false, error: 'Core modules cannot be disabled' }, { status: 400 });
+    // Only the true platform/control-plane modules are non-disableable.
+    if (protectedCore && isActive === false) {
+      return NextResponse.json({ success: false, error: 'Core platform modules cannot be deactivated' }, { status: 400 });
+    }
+    if (protectedCore && isEnabled === false) {
+      return NextResponse.json({ success: false, error: 'Core platform modules cannot be disabled' }, { status: 400 });
     }
 
     // Consolidate any duplicate records BEFORE the update.

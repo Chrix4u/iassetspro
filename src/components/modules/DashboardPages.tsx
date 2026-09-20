@@ -173,12 +173,15 @@ export function DashboardPage() {
       if (res.success && res.data) {
         const enabled = new Set<string>();
         (res.data || []).forEach((m: any) => {
-          if (m.isCore || m.isEnabled) enabled.add(m.code.toLowerCase());
+          if (m.isCore || (m.isActive === true && m.isEnabled === true)) {
+            enabled.add(String(m.code).toLowerCase());
+          }
         });
         setEnabledModules(enabled);
       }
     }).catch(() => {
-      // On error, leave enabledModules empty (show all widgets)
+      // Fail closed: non-core widgets remain hidden when module state cannot be verified.
+      setEnabledModules(new Set());
     });
     return () => { active = false; };
   }, []);
@@ -359,7 +362,8 @@ export function DashboardPage() {
 
   const visibleQuickActions = allQuickActions
     .filter(a => hasPermission(a.permission))
-    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
+    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)))
+    .filter(a => a.page !== 'pm-schedules' || enabledModules.has(MODULE_CODES.PM_SCHEDULES));
 
   // Cross-module overview data
   const moduleMap: Record<string, string> = {
@@ -380,20 +384,18 @@ export function DashboardPage() {
     { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} pending reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40', page: 'inventory-items' as PageName, params: lowStockItems > 0 ? { filter: 'low_stock' } : undefined },
   ];
 
-  // Filter cross-module cards to only show enabled modules
-  const filteredCrossModuleData = enabledModules.size > 0
-    ? crossModuleData.filter(mod => {
-        const code = moduleMap[mod.label];
-        return !code || enabledModules.has(code.toLowerCase());
-      })
-    : crossModuleData;
+  // Filter cross-module cards to only show licensed + enabled modules.
+  const filteredCrossModuleData = crossModuleData.filter(mod => {
+    const code = moduleMap[mod.label];
+    return !code || enabledModules.has(code.toLowerCase());
+  });
 
-  // Module-aware visibility for enhanced KPIs
-  const analyticsEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+  // Module-aware visibility for enhanced KPIs. Unknown/empty state is fail-closed.
+  const analyticsEnabled = enabledModules.has(MODULE_CODES.ANALYTICS);
+  const safetyEnabled = enabledModules.has(MODULE_CODES.SAFETY);
+  const productionEnabled = enabledModules.has(MODULE_CODES.PRODUCTION);
+  const qualityEnabled = enabledModules.has(MODULE_CODES.QUALITY);
+  const pmEnabled = enabledModules.has(MODULE_CODES.PM_SCHEDULES);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">

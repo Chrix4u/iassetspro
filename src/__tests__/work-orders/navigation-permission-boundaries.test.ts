@@ -304,6 +304,13 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("api.post(\`/api/work-orders/\${id}/verify\`");
   });
 
+  it('preserves assigned planner ownership when management overrides approval or planning', () => {
+    expect(woApproveApi).toContain('plannerId: wo.plannerId ?? (');
+    expect(woPlanApi).toContain('plannerId: wo.plannerId ?? (');
+    expect(woApproveApi).not.toContain('plannerId: session.userId,');
+    expect(woPlanApi).not.toContain('plannerId: session.userId,');
+  });
+
   it('binds broad WO planning routes to their accountable lifecycle owners', () => {
     expect(woRequestApi).toContain('canPlanWorkOrderForActor(session, wo)');
     expect(woApproveApi).toContain('canPlanWorkOrderForActor(session, wo)');

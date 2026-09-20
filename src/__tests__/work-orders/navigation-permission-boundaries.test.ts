@@ -26,6 +26,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
   const repairsUatApi = read('e2e/repairs/helpers/api.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
+  const repairPlanning = read('src/services/repairPlanning.service.ts');
+  const suggestedItemsApi = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
   const toolsApi = read('src/app/api/tools/route.ts');
@@ -355,6 +357,20 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).not.toContain('user?.id === t.toUserId || isAdmin()');
     expect(toolTransferDetailApi).toContain('session.userId !== transfer.fromUserId');
     expect(toolTransferDetailApi).toContain('session.userId !== transfer.toUserId');
+  });
+
+  it('persists planner-selected MR conversion materials into the visible WO resource pipeline', () => {
+    expect(maintenance).toContain('requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined');
+    expect(maintenance).toContain('requiredTools: convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined');
+    expect(repairPlanning).toContain('await tx.workOrderMaterial.create');
+    expect(repairPlanning).toContain('await tx.repairMaterialRequest.create');
+    expect(repairPlanning).toContain("source: 'planner_suggested'");
+    expect(repairPlanning).toContain('suggestedParts: JSON.stringify(suggestedParts)');
+    expect(repairPlanning).toContain('suggestedTools: JSON.stringify(suggestedTools)');
+    expect(suggestedItemsApi).toContain("where: { status: 'planned' }");
+    expect(suggestedItemsApi).toContain('Repair legacy MR→WO conversions');
+    expect(suggestedItemsApi).toContain('legacyPlannedMaterials');
+    expect(suggestedItemsApi).toContain('await tx.repairMaterialRequest.create');
   });
 
   it('separates the Tool Registry workspace from constrained repair tool lookups', () => {

@@ -230,17 +230,61 @@ export function canCancelWorkOrderForActor(
   return isAccountablePlanner(session, workOrder);
 }
 
+function hasWorkOrderTransitionPermission(
+  session: SessionData,
+  workOrder: WorkOrderAccessSnapshot,
+  toStatus: string,
+): boolean {
+  if (isAdmin(session)) return true;
+
+  switch (toStatus) {
+    case 'requested':
+    case 'approved':
+    case 'planned':
+      return hasPermission(session, 'work_orders.update');
+    case 'assigned':
+      return hasPermission(session, 'work_orders.assign_supervisor')
+        || hasPermission(session, 'work_orders.assign_technician');
+    case 'completed':
+      return hasPermission(session, 'work_orders.complete');
+    case 'verified':
+      return hasPermission(session, 'work_orders.verify');
+    case 'closed':
+      return hasPermission(session, 'work_orders.close');
+    case 'cancelled':
+      return hasPermission(session, 'work_orders.cancel');
+    case 'on_hold':
+    case 'waiting_parts':
+    case 'waiting_tools':
+    case 'waiting_shutdown':
+    case 'waiting_permit':
+    case 'pending_handover':
+      return hasPermission(session, 'work_orders.update')
+        || hasPermission(session, 'work_orders.start');
+    case 'in_progress':
+      return workOrder.status === 'assigned'
+        ? hasPermission(session, 'work_orders.start')
+        : hasPermission(session, 'work_orders.update')
+          || hasPermission(session, 'work_orders.start');
+    default:
+      return hasPermission(session, 'work_orders.update');
+  }
+}
+
 /**
  * Relationship-aware capability filter layered on top of the state-machine
  * role rule. The state machine decides whether a transition exists for a role;
  * this helper decides whether this specific actor owns the corresponding action
- * on this specific work order.
+ * on this specific work order and has the endpoint permission required to
+ * execute it.
  */
 export function canPerformWorkOrderTransition(
   session: SessionData,
   workOrder: WorkOrderAccessSnapshot,
   toStatus: string,
 ): boolean {
+  if (!hasWorkOrderTransitionPermission(session, workOrder, toStatus)) return false;
+
   switch (toStatus) {
     case 'requested':
     case 'approved':

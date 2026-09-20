@@ -268,6 +268,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(uatSeed).toContain("code: 'tools'");
     expect(uatSeed).toContain("code: 'reports'");
     expect(uatSeed).toContain("code: 'analytics'");
+    expect(uatSeed).toContain("code: 'shift_management'");
     expect(uatSeed).toContain("companyId: '__default__'");
     expect(uatSeed).toContain("isSystemLicensed: true");
     expect(uatSeed).toContain("isEnabled: true");

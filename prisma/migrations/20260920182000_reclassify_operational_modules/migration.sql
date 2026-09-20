@@ -17,18 +17,21 @@ WHERE `code` IN ('core', 'modules');
 -- reclassified module. The app prefers '__default__' over legacy NULL rows.
 INSERT INTO `company_modules`
   (`id`, `systemModuleId`, `companyId`, `isActive`, `isEnabled`,
-   `licensedAt`, `activatedAt`, `activationLocked`, `createdAt`, `updatedAt`)
+   `licensedAt`, `licensedBy`, `activatedAt`, `activatedBy`,
+   `activationLocked`, `createdAt`, `updatedAt`)
 SELECT
   CONCAT('cm_', REPLACE(UUID(), '-', '')),
   sm.`id`,
   '__default__',
   1,
   1,
-  COALESCE(sm.`validFrom`, NOW()),
-  NOW(),
+  COALESCE(sm.`validFrom`, NOW(3)),
+  NULL,
+  NOW(3),
+  NULL,
   0,
-  NOW(),
-  NOW()
+  NOW(3),
+  NOW(3)
 FROM `system_modules` sm
 WHERE sm.`code` IN ('assets', 'maintenance_requests', 'work_orders', 'inventory')
   AND NOT EXISTS (
@@ -44,8 +47,8 @@ UPDATE `company_modules` cm
 JOIN `system_modules` sm ON sm.`id` = cm.`systemModuleId`
 SET cm.`isActive` = 1,
     cm.`isEnabled` = 1,
-    cm.`licensedAt` = COALESCE(cm.`licensedAt`, NOW()),
-    cm.`activatedAt` = COALESCE(cm.`activatedAt`, NOW()),
-    cm.`updatedAt` = NOW()
+    cm.`licensedAt` = COALESCE(cm.`licensedAt`, NOW(3)),
+    cm.`activatedAt` = COALESCE(cm.`activatedAt`, NOW(3)),
+    cm.`updatedAt` = NOW(3)
 WHERE sm.`code` IN ('assets', 'maintenance_requests', 'work_orders', 'inventory')
   AND cm.`companyId` = '__default__';

@@ -362,12 +362,20 @@ export function DashboardPage() {
     && pageModuleIsEnabled(mod.page, enabledModules)
   );
 
-  // Module-aware visibility is fail-closed for optional modules.
-  const analyticsEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.ANALYTICS);
-  const safetyEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.SAFETY);
-  const productionEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.PRODUCTION);
-  const qualityEnabled = enabledModules !== null && enabledModules.has(MODULE_CODES.QUALITY);
-  const pmEnabled = pageModuleIsEnabled('pm-schedules', enabledModules);
+  // Module widgets must satisfy both licensing and the same permission contract
+  // as the page they represent.
+  const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
+    && pageModuleIsEnabled('analytics-kpi', enabledModules);
+  const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
+    && pageModuleIsEnabled('safety-incidents', enabledModules);
+  const productionEnabled = pageHasPermission('production-orders', hasPermission, isAdmin())
+    && pageModuleIsEnabled('production-orders', enabledModules);
+  const qualityEnabled = pageHasPermission('quality-ncr', hasPermission, isAdmin())
+    && pageModuleIsEnabled('quality-ncr', enabledModules);
+  const pmEnabled = pageHasPermission('pm-schedules', hasPermission, isAdmin())
+    && pageModuleIsEnabled('pm-schedules', enabledModules);
+  const financialReportsEnabled = pageHasPermission('reports-financial', hasPermission, isAdmin())
+    && pageModuleIsEnabled('reports-financial', enabledModules);
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -692,22 +700,24 @@ export function DashboardPage() {
             );
           }
         }
-        enhancedCards.push(
-          <KPICard
-            key="maint-cost"
-            label="Maintenance Cost"
-            value={formatCurrency(costAnalysis.thisMonthTotal)}
-            sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
-            color={costTrend > 0 ? '#ef4444' : '#10b981'}
-            bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
-            borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
-            iconBg={costTrend > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
-            iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
-            icon={DollarSign}
-            trend={costTrend}
-            onClick={() => navigate('reports-financial' as PageName)}
-          />,
-        );
+        if (financialReportsEnabled) {
+          enhancedCards.push(
+            <KPICard
+              key="maint-cost"
+              label="Maintenance Cost"
+              value={formatCurrency(costAnalysis.thisMonthTotal)}
+              sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
+              color={costTrend > 0 ? '#ef4444' : '#10b981'}
+              bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+              borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+              iconBg={costTrend > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+              iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+              icon={DollarSign}
+              trend={costTrend}
+              onClick={() => navigate('reports-financial' as PageName)}
+            />,
+          );
+        }
         return enhancedCards.length > 0 ? (
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
             {enhancedCards}

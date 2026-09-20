@@ -164,7 +164,21 @@ export async function POST(request: NextRequest) {
     });
 
     // Notify store keepers
-    const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
+    const storeKeepers = await db.user.findMany({
+      where: {
+        userRoles: {
+          some: {
+            OR: [
+              { role: { slug: 'store_keeper' } },
+              { role: { slug: 'tools_shop_attendant' } },
+            ],
+          },
+        },
+        status: 'active',
+        ...(tool.plantId ? { plantAccess: { some: { plantId: tool.plantId } } } : {}),
+      },
+      select: { id: true },
+    });
     for (const sk of storeKeepers) {
       await notifyUser(
         sk.id, 'tool_transfer_request',

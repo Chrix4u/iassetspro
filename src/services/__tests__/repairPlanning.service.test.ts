@@ -320,11 +320,14 @@ describe('Tool vs material distinction (documented)', () => {
     expect(payload.requiredTools![0].quantity).toBeUndefined();
   });
 
-  it('should document that parts create WorkOrderMaterial (status: planned)', () => {
-    // This test documents the business rule:
-    // Parts → WorkOrderMaterial with status 'planned'
+  it('should document that planner parts create both WO history and canonical material requests', () => {
+    // Planner-selected parts must exist in both representations:
+    // 1) WorkOrderMaterial(status=planned) for WO history/cost compatibility
+    // 2) RepairMaterialRequest(source=planner_suggested) for approval/store workflow
     const PLANNED_STATUS = 'planned';
+    const PLANNER_SUGGESTED_SOURCE = 'planner_suggested';
     expect(PLANNED_STATUS).toBe('planned');
+    expect(PLANNER_SUGGESTED_SOURCE).toBe('planner_suggested');
   });
 
   it('should document that tools create RepairToolRequest (source: planner_suggested)', () => {

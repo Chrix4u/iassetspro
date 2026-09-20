@@ -590,6 +590,10 @@ describe('MR conversion material reconciliation source contract', () => {
       path.join(process.cwd(), 'src/app/api/work-orders/[id]/suggested-items/route.ts'),
       'utf8',
     );
+    const maintenancePage = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
+      'utf8',
+    );
 
     expect(migration).toContain("INSERT INTO `repair_material_requests`");
     expect(migration).toContain("w.`maintenanceRequestId` IS NOT NULL");
@@ -597,10 +601,19 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(migration).toContain("'planner_suggested'");
     expect(migration).toContain('NOT EXISTS');
 
-    expect(suggestedRoute).toContain('storedSuggestedParts.length > 0');
-    expect(suggestedRoute).toContain('wo.repairMaterialRequests.map');
+    expect(suggestedRoute).toContain("materials: {");
+    expect(suggestedRoute).toContain("where: { status: 'planned' }");
+    expect(suggestedRoute).toContain('const suggestedPartMap = new Map');
+    expect(suggestedRoute).toContain('for (const material of wo.materials)');
+    expect(suggestedRoute).toContain("compatibilityStatus: material.status || 'planned'");
+    expect(suggestedRoute).toContain("pipelineStatus: matReq?.status || compatibilityStatus || 'suggested'");
     expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
     expect(suggestedRoute).toContain('wo.repairToolRequests.map');
+
+    expect(maintenancePage).toContain('const compatibilityPlannedMaterials = (wo.materials || []).filter');
+    expect(maintenancePage).toContain('const visibleMaterialCount =');
+    expect(maintenancePage).toContain('Planner-selected materials');
+    expect(maintenancePage).toContain('being reconciled into the approval pipeline');
   });
 });
 

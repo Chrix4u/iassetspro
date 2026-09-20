@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { executeTransition } from '@/lib/state-machine';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canPlanWorkOrderForActor } from '@/services/workOrderAccess.service';
 
 /**
  * POST /api/work-orders/[id]/plan
@@ -50,6 +51,13 @@ export async function POST(
     const wo = await db.workOrder.findUnique({ where: { id } });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (!canPlanWorkOrderForActor(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Only the accountable planner or authorized maintenance management can plan this work order' },
+        { status: 403 },
+      );
     }
 
     if (estimatedHours !== undefined) {

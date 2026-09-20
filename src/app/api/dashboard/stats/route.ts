@@ -123,9 +123,15 @@ export async function GET(request: NextRequest) {
       && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'reports.view'));
 
-    // Build base where clauses for role-based filtering
-    const mrWhere: Record<string, unknown> = { ...plantFilter };
-    const woWhere: Record<string, unknown> = { ...plantFilter };
+    // Build base where clauses for role-based filtering. Disabled/unlicensed
+    // modules receive an impossible scope so downstream queries fail closed
+    // even if a future card forgets to add its own display guard.
+    const mrWhere: Record<string, unknown> = canViewRequestKPIs
+      ? { ...plantFilter }
+      : { id: '__MODULE_DISABLED__' };
+    const woWhere: Record<string, unknown> = canViewWorkOrderKPIs
+      ? { ...plantFilter }
+      : { id: '__MODULE_DISABLED__' };
 
     // Track supervised departments for reuse (pending-count and dashboard pending queries)
     let supervisedDeptIds: string[] = [];
@@ -133,47 +139,57 @@ export async function GET(request: NextRequest) {
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
       if (session.roles.includes('maintenance_technician')) {
-        const teamWoIds = await db.workOrderTeamMember.findMany({
-          where: { userId: session.userId },
-          select: { workOrderId: true },
-        });
-        const teamIds = teamWoIds.map((row) => row.workOrderId);
-        if (teamIds.length > 0) {
-          (woWhere as Record<string, unknown>).OR = [
-            { assignedTo: session.userId },
-            { id: { in: teamIds } },
-          ];
-        } else {
-          (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        if (canViewWorkOrderKPIs) {
+          const teamWoIds = await db.workOrderTeamMember.findMany({
+            where: { userId: session.userId },
+            select: { workOrderId: true },
+          });
+          const teamIds = teamWoIds.map((row) => row.workOrderId);
+          if (teamIds.length > 0) {
+            (woWhere as Record<string, unknown>).OR = [
+              { assignedTo: session.userId },
+              { id: { in: teamIds } },
+            ];
+          } else {
+            (woWhere as Record<string, unknown>).assignedTo = session.userId;
+          }
         }
-        (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        if (canViewRequestKPIs) {
+          (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        }
       } else if (session.roles.includes('production_operator')) {
-        (mrWhere as Record<string, unknown>).requestedBy = session.userId;
-        // Operators only see WOs created from their requests
-        const myMRIds = await db.maintenanceRequest.findMany({
-          where: { requestedBy: session.userId },
-          select: { id: true },
-        });
-        if (myMRIds.length > 0) {
-          (woWhere as Record<string, unknown>).maintenanceRequestId = { in: myMRIds.map(mr => mr.id) };
-        } else {
-          // No MRs, so no WOs to show
-          (woWhere as Record<string, unknown>).id = '__none__';
+        if (canViewRequestKPIs) {
+          (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        }
+        // Operators only see WOs created from requests when both modules are
+        // operational. Never query disabled request data to derive WO scope.
+        if (canViewWorkOrderKPIs && canViewRequestKPIs) {
+          const myMRIds = await db.maintenanceRequest.findMany({
+            where: { requestedBy: session.userId },
+            select: { id: true },
+          });
+          if (myMRIds.length > 0) {
+            (woWhere as Record<string, unknown>).maintenanceRequestId = { in: myMRIds.map(mr => mr.id) };
+          } else {
+            (woWhere as Record<string, unknown>).id = '__none__';
+          }
         }
       } else if (session.roles.includes('maintenance_supervisor')) {
-        // Supervisors see requests from their supervised departments AND explicitly assigned to them
-        const supervisedDepts = await db.department.findMany({
-          where: { supervisorId: session.userId },
-          select: { id: true },
-        });
-        supervisedDeptIds = supervisedDepts.map(d => d.id);
-        if (supervisedDeptIds.length > 0) {
-          (mrWhere as Record<string, unknown>).OR = [
-            { supervisorId: session.userId },
-            { departmentId: { in: supervisedDeptIds } },
-          ];
-        } else {
-          (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+        if (canViewRequestKPIs) {
+          // Supervisors see requests from their supervised departments AND explicitly assigned to them.
+          const supervisedDepts = await db.department.findMany({
+            where: { supervisorId: session.userId },
+            select: { id: true },
+          });
+          supervisedDeptIds = supervisedDepts.map(d => d.id);
+          if (supervisedDeptIds.length > 0) {
+            (mrWhere as Record<string, unknown>).OR = [
+              { supervisorId: session.userId },
+              { departmentId: { in: supervisedDeptIds } },
+            ];
+          } else {
+            (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+          }
         }
       }
       // Planners and admins see everything
@@ -185,7 +201,9 @@ export async function GET(request: NextRequest) {
     const isSupervisorLike = isAdm || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('plant_manager');
     const isPlannerRole = session.roles.includes('maintenance_planner');
 
-    if (isAdm || isSupervisorLike) {
+    if (!canViewRequestKPIs) {
+      pendingMrWhere = { id: '__MODULE_DISABLED__' };
+    } else if (isAdm || isSupervisorLike) {
       // Admins, supervisors, managers, plant managers — actionable requests in
       // the validated plant scope only.
       pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] } };

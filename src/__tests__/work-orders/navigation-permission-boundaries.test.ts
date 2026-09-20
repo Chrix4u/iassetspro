@@ -231,6 +231,22 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(repairs).toContain('{(toolsEnabled || inventoryEnabled) && <Card');
     expect(repairs).toContain("{assetsEnabled && <div className='space-y-2'>");
   });
+  it('keeps planner-selected MR conversion materials visible on WO details', () => {
+    expect(repairPlanning).toContain('await tx.workOrderMaterial.create');
+    expect(repairPlanning).toContain('await tx.repairMaterialRequest.create');
+    expect(repairPlanning).toContain('suggestedParts.push');
+    expect(repairPlanning).toContain("source: 'planner_suggested'");
+
+    // Materials must reconcile from every durable conversion trace, including
+    // the exact legacy gap where only RepairMaterialRequest survived.
+    expect(suggestedItemsApi).toContain('const reconciledParts = new Map');
+    expect(suggestedItemsApi).toContain('for (const material of wo.materials)');
+    expect(suggestedItemsApi).toContain('for (const request of wo.repairMaterialRequests)');
+    expect(suggestedItemsApi).toContain('request.quantityRequested || 1');
+    expect(suggestedItemsApi).toContain('suggestedParts = [...reconciledParts.values()]');
+    expect(suggestedItemsApi).toContain("pipelineStatus: matReq?.status || 'suggested'");
+  });
+
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {
     expect(inventoryApi).toContain("const isLookup = mode === 'lookup'");
     expect(inventoryApi).toContain('const canUseInventoryWorkspace');

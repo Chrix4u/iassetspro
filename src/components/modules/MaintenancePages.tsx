@@ -965,7 +965,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
         inventoryRequest,
-        api.get('/api/tools?limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
         api.get('/api/users?limit=100'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
@@ -2488,7 +2488,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       Promise.all([
         api.get('/api/departments?limit=100'),
         api.get('/api/inventory?mode=lookup&limit=100'),
-        api.get('/api/tools?limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setInventoryItems(invRes.data);
@@ -3640,7 +3640,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       Promise.all([
         api.get('/api/departments?limit=100'),
         api.get('/api/inventory?mode=lookup&limit=100'),
-        api.get('/api/tools?limit=100'),
+        api.get('/api/tools?mode=lookup&limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
@@ -5220,7 +5220,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
-                        const res = await api.get('/api/tools?limit=100');
+                        const res = await api.get('/api/tools?mode=lookup&limit=100');
                         if (res.success && Array.isArray(res.data)) {
                           toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
                           return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));

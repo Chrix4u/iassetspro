@@ -30,6 +30,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
   const workOrderAccess = read('src/services/workOrderAccess.service.ts');
   const woTransitionsApi = read('src/app/api/work-orders/[id]/transitions/route.ts');
+  const woHandoverApi = read('src/app/api/work-orders/[id]/handover/route.ts');
   const woRequestApi = read('src/app/api/work-orders/[id]/request/route.ts');
   const woApproveApi = read('src/app/api/work-orders/[id]/approve/route.ts');
   const woPlanApi = read('src/app/api/work-orders/[id]/plan/route.ts');
@@ -309,6 +310,17 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(woPlanApi).toContain('plannerId: wo.plannerId ?? (');
     expect(woApproveApi).not.toContain('plannerId: session.userId,');
     expect(woPlanApi).not.toContain('plannerId: session.userId,');
+  });
+
+  it('scopes shift-handover candidate discovery to the exact work order', () => {
+    expect(woHandoverApi).toContain("mode === 'candidates'");
+    expect(woHandoverApi).toContain("canPerformWorkOrderTransition(session, wo, 'pending_handover')");
+    expect(woHandoverApi).toContain("role: { slug: 'maintenance_technician' }");
+    expect(woHandoverApi).toContain("handoverUserHasEffectivePermission(candidate, 'work_orders.start')");
+    expect(woHandoverApi).toContain("hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])");
+    expect(maintenance).toContain("new URLSearchParams({ mode: 'candidates' })");
+    expect(maintenance).toContain("/api/work-orders/\${id}/handover?\${params.toString()}");
+    expect(maintenance).not.toContain("/api/workers?role=technician&plantId=\${encodeURIComponent(wo.plantId)}");
   });
 
   it('binds broad WO planning routes to their accountable lifecycle owners', () => {

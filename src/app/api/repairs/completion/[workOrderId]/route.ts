@@ -33,9 +33,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             isLocked: true,
             lockReason: true,
             locker: { select: { id: true, fullName: true } },
+            assignedTo: true,
+            assignedSupervisorId: true,
+            plannerId: true,
+            teamLeaderId: true,
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
             assignee: { select: { id: true, fullName: true, avatar: true } },
+            teamMembers: { select: { userId: true, role: true } },
           },
         },
       },
@@ -59,23 +64,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json();
     const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes } = body;
 
-    // Role-based access for workflow actions
-    if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
-      if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'maintenance_planner')) {
-        return NextResponse.json({ success: false, error: 'Only supervisors, managers, or planners can perform this action' }, { status: 403 });
-      }
-    }
-    if (action === 'planner_close') {
-      if (!isAdmin(session) && !hasRole(session, 'maintenance_planner') && !hasRole(session, 'maintenance_manager')) {
-        return NextResponse.json({ success: false, error: 'Only planners or managers can close work orders' }, { status: 403 });
-      }
-    }
-
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
       include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } }, teamMembers: { select: { userId: true, role: true } } },
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+
+    // Workflow actions are tied to the accountable actor, not merely to a broad
+    // permission/role. Managers/admins retain an explicit operational override.
+    const workflowManagerOverride = isAdmin(session) || hasRole(session, 'maintenance_manager');
+    if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
+      const isAssignedSupervisor = hasRole(session, 'maintenance_supervisor')
+        && wo.assignedSupervisorId === session.userId;
+      if (!workflowManagerOverride && !isAssignedSupervisor) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned maintenance supervisor or maintenance manager can review this completion',
+        }, { status: 403 });
+      }
+    }
+    if (action === 'planner_close') {
+      const isAssignedPlanner = hasRole(session, 'maintenance_planner')
+        && wo.plannerId === session.userId;
+      if (!workflowManagerOverride && !isAssignedPlanner) {
+        return NextResponse.json({
+          success: false,
+          error: 'Only the assigned maintenance planner or maintenance manager can close this work order',
+        }, { status: 403 });
+      }
+    }
 
     // ── IMMUTABILITY CHECK ──
     // After planner_close, the WO is permanently locked. No mutations allowed.

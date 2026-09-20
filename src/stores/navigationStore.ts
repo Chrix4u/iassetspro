@@ -8,7 +8,7 @@ interface NavigationState {
   pageParams: Record<string, string>;
   sidebarOpen: boolean;
   mobileSidebarOpen: boolean;
-  enabledModules: Set<string> | null; // null = not loaded yet (show all)
+  enabledModules: Set<string> | null; // null = module state is still loading; non-core UI must fail closed
   fetchModules: () => Promise<void>;
   refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
@@ -77,17 +77,18 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
+          // Company module is usable only when licensed (isActive) AND enabled.
+          // Core modules remain available regardless of company activation flags.
+          if (m.isCore || (m.isActive && m.isEnabled)) enabled.add(m.code.toLowerCase());
         });
-        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        if (enabled.size === 0) {
-          set({ enabledModules: null });
-          return;
-        }
         set({ enabledModules: enabled });
+        return;
       }
+      // Authenticated module discovery failed semantically: fail closed.
+      set({ enabledModules: new Set<string>() });
     } catch {
-      // On error, keep null so all items stay visible (graceful fallback)
+      // Security-first fallback: never expose unverified/licensed modules when discovery fails.
+      set({ enabledModules: new Set<string>() });
     }
   },
 

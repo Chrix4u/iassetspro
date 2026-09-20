@@ -369,6 +369,53 @@ function canDeclareMaterialUsage(request: any, user: any): boolean {
     || (request.workOrder.teamMembers || []).some((member: any) => member.userId === userId);
 }
 
+function getActorContext(user: any) {
+  const { isAdmin, user: authUser } = useAuthStore.getState();
+  const actor = authUser || user;
+  return {
+    isAdmin: isAdmin(),
+    userId: actor?.id as string | undefined,
+    roles: (actor?.roles || []).map((r: any) => r.slug).filter(Boolean) as string[],
+  };
+}
+
+function canSubmitCompletion(completion: any, user: any): boolean {
+  if (!completion?.workOrder || !user) return false;
+  const { isAdmin, userId, roles } = getActorContext(user);
+  if (isAdmin || roles.includes('maintenance_manager')) return true;
+  if (!userId) return false;
+
+  const wo = completion.workOrder;
+  const teamMembers = wo.teamMembers || [];
+  const distinctSupportingTechs = new Set(
+    teamMembers.map((member: any) => member.userId).filter((id: string) => id && id !== wo.assignedTo),
+  ).size;
+  const isMultiTech = distinctSupportingTechs >= 2;
+  const isAssignee = wo.assignedTo === userId || wo.assignee?.id === userId;
+  const isTeamLeader = wo.teamLeaderId === userId
+    || teamMembers.some((member: any) => member.userId === userId && member.role === 'team_leader');
+
+  return isMultiTech ? isTeamLeader : isAssignee;
+}
+
+function canReviewCompletion(completion: any, user: any): boolean {
+  if (!completion?.workOrder || !user) return false;
+  const { isAdmin, userId, roles } = getActorContext(user);
+  if (isAdmin || roles.includes('maintenance_manager')) return true;
+  return Boolean(userId)
+    && roles.includes('maintenance_supervisor')
+    && completion.workOrder.assignedSupervisorId === userId;
+}
+
+function canCloseCompletion(completion: any, user: any): boolean {
+  if (!completion?.workOrder || !user) return false;
+  const { isAdmin, userId, roles } = getActorContext(user);
+  if (isAdmin || roles.includes('maintenance_manager')) return true;
+  return Boolean(userId)
+    && roles.includes('maintenance_planner')
+    && completion.workOrder.plannerId === userId;
+}
+
 function canViewAllRepairData(user: any): boolean {
   if (!user) return false;
   const { hasPermission, isAdmin } = useAuthStore.getState();
@@ -2453,7 +2500,7 @@ export function RepairToolTransfersPage() {
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                           {/* Approve / Reject — store keeper / tools shop attendant only */}
-                          {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && (
+                          {canApproveAsStore(user) && (
                             <div className="flex items-center gap-1">
                               {t.status === 'pending' && (<>
                                 <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
@@ -2462,11 +2509,11 @@ export function RepairToolTransfersPage() {
                             </div>
                           )}
                           {/* From User Accept Handover */}
-                          {t.status === 'awaiting_handover' && (user?.id === t.fromUserId || isAdmin()) && (
+                          {t.status === 'awaiting_handover' && user?.id === t.fromUserId && (
                             <Button size="sm" variant="outline" className="h-7 text-[10px] text-sky-600" onClick={() => handleAction(t.id, 'from_user_accept')}>Accept Handover</Button>
                           )}
                           {/* To User Accept Receipt */}
-                          {t.status === 'awaiting_handover' && (user?.id === t.toUserId || isAdmin()) && (
+                          {t.status === 'awaiting_handover' && user?.id === t.toUserId && (
                             <Button size="sm" variant="outline" className="h-7 text-[10px] text-teal-600" onClick={() => handleAction(t.id, 'to_user_accept')}>Accept Receipt</Button>
                           )}
                           {/* Cancel — requester or supervisor */}
@@ -2477,7 +2524,7 @@ export function RepairToolTransfersPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(t); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {t.status === 'storekeeper_approved' && <DropdownMenuItem onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-4 w-4 mr-2" /> Confirm Receipt</DropdownMenuItem>}
+                              {t.status === 'awaiting_handover' && user?.id === t.toUserId && <DropdownMenuItem onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-4 w-4 mr-2" /> Confirm Receipt</DropdownMenuItem>}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -2540,7 +2587,7 @@ export function RepairToolTransfersPage() {
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
                 {/* Approve / Reject — store keeper / tools shop attendant only */}
-                {(isAdmin() || userRoleSlugs.some(slug => ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(slug)) || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
+                {canApproveAsStore(user) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
@@ -2548,14 +2595,14 @@ export function RepairToolTransfersPage() {
                   </div>
                 </>)}
                 {/* From User Accept Handover */}
-                {detailItem.status === 'awaiting_handover' && (user?.id === detailItem.fromUserId || isAdmin()) && (<>
+                {detailItem.status === 'awaiting_handover' && user?.id === detailItem.fromUserId && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" className="gap-1 text-sky-600" onClick={() => handleAction(detailItem.id, 'from_user_accept')} disabled={submitting}><Handshake className="h-3.5 w-3.5" /> Accept Handover</Button>
                   </div>
                 </>)}
                 {/* To User Accept Receipt */}
-                {(detailItem.status === 'storekeeper_approved' || detailItem.status === 'awaiting_handover') && (user?.id === detailItem.toUserId || isAdmin()) && (<>
+                {detailItem.status === 'awaiting_handover' && user?.id === detailItem.toUserId && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Accept Receipt</Button>
@@ -3618,16 +3665,16 @@ export function RepairCompletionPage() {
               {/* Actions */}
               <Separator />
               <div className="flex flex-wrap gap-3">
-                {(completion.supervisorStatus === 'pending_review' || completion.supervisorStatus === 'rework_requested') && (hasPermission('work_orders.update') || isAdmin()) && (
+                {((completion.supervisorStatus === 'pending_review' && completion.workOrder?.status !== 'completed') || completion.supervisorStatus === 'rework_requested') && canSubmitCompletion(completion, user) && (
                   <Button onClick={() => handleSubmit('submit')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> {completion.supervisorStatus === 'rework_requested' ? 'Resubmit Completion' : 'Submit Completion'}</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && completion.workOrder?.status === 'completed' && canReviewCompletion(completion, user) && (
                   <Button variant="destructive" onClick={() => { setReworkDialogOpen(true); }} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
                 )}
-                {completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin()) && (
+                {completion.supervisorStatus === 'pending_review' && completion.workOrder?.status === 'completed' && canReviewCompletion(completion, user) && (
                   <Button variant="outline" className="border-green-600 text-green-600" onClick={() => handleSubmit('supervisor_approve')} disabled={submitting}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</Button>
                 )}
-                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && (hasPermission('work_orders.update') || isAdmin()) && (                  <>
+                {completion.supervisorStatus === 'approved' && completion.plannerStatus === 'pending_closure' && canCloseCompletion(completion, user) && (                  <>
                     <div><Label>Closure Notes</Label><Textarea value={form.closureNotes} onChange={(e) => setForm({ ...form, closureNotes: e.target.value })} /></div>
                     <Button className="bg-gray-800" onClick={() => handleSubmit('planner_close')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> Planner Close WO</Button>
                   </>

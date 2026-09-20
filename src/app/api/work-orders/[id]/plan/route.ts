@@ -122,7 +122,13 @@ export async function POST(
       {
         reason: notes,
         extraData: {
-          plannerId: session.userId,
+          // A management override may change the plan without silently
+          // replacing the planner who remains accountable for closeout.
+          plannerId: wo.plannerId ?? (
+            session.roles.includes('planner') || session.roles.includes('maintenance_planner')
+              ? session.userId
+              : null
+          ),
           estimatedHours: estimatedHours !== undefined ? Number(estimatedHours) : wo.estimatedHours,
           plannedStart: parsedPlannedStart,
           plannedEnd: parsedPlannedEnd,

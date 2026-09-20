@@ -638,29 +638,31 @@ export function DashboardPage() {
       )}
 
       {/* ===== Cross-Module Overview Section ===== */}
-      {filteredCrossModuleData.length > 0 && <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
+      {filteredCrossModuleData.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
+          </div>
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {filteredCrossModuleData.map((mod) => (
+              <button
+                key={mod.label}
+                onClick={() => mod.page && navigate(mod.page, (mod as any).params)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm cursor-pointer text-left ${mod.page ? 'hover:scale-[1.02] active:scale-[0.98]' : ''}`}
+              >
+                <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{mod.label}</p>
+                  <p className={`text-lg font-bold ${mod.textColor}`}>{mod.value}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{mod.detail}</p>
+                </div>
+                {mod.page && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {filteredCrossModuleData.map((mod) => (
-            <button
-              key={mod.label}
-              onClick={() => mod.page && navigate(mod.page, (mod as any).params)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm cursor-pointer text-left ${mod.page ? 'hover:scale-[1.02] active:scale-[0.98]' : ''}`}
-            >
-              <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{mod.label}</p>
-                <p className={`text-lg font-bold ${mod.textColor}`}>{mod.value}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{mod.detail}</p>
-              </div>
-              {mod.page && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </div>}
+      )}
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
       {(isManager || isPlanner || isSupervisor) && (() => {

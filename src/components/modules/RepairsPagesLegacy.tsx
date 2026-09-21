@@ -466,7 +466,7 @@ export function RepairMaterialRequestsPage() {
     if (pageParams?.workOrderId) {
       setWorkOrderIdFilter(pageParams.workOrderId);
     }
-  }, [inventoryEnabled]);
+  }, [pageParams]);
 
   const activeFilters = useMemo(() => {
     let c = 0;

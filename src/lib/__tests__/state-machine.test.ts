@@ -162,6 +162,99 @@ describe('checkTransition', () => {
     expect(result.allowed).toBe(true);
   });
 
+  it('requires explicit close permission instead of generic update permission', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
+      mockTransitionRule({
+        fromStatus: 'verified',
+        toStatus: 'closed',
+        allowedRoleSlugs: JSON.stringify(['planner']),
+      }),
+    );
+
+    const updateOnly = await checkTransition(
+      'work_order',
+      'verified',
+      'closed',
+      { userId: 'planner-1', roles: ['planner'], permissions: ['work_orders.update'] },
+    );
+    const closeAllowed = await checkTransition(
+      'work_order',
+      'verified',
+      'closed',
+      { userId: 'planner-1', roles: ['planner'], permissions: ['work_orders.close'] },
+    );
+
+    expect(updateOnly.allowed).toBe(false);
+    expect(closeAllowed.allowed).toBe(true);
+  });
+
+  it('requires verification permission for completed or verified rework transitions', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
+      mockTransitionRule({
+        fromStatus: 'completed',
+        toStatus: 'in_progress',
+        allowedRoleSlugs: JSON.stringify(['maintenance_supervisor']),
+        requiresReason: true,
+      }),
+    );
+
+    const updateOnly = await checkTransition(
+      'work_order',
+      'completed',
+      'in_progress',
+      { userId: 'sup-1', roles: ['maintenance_supervisor'], permissions: ['work_orders.update'] },
+    );
+    const verifier = await checkTransition(
+      'work_order',
+      'completed',
+      'in_progress',
+      { userId: 'sup-1', roles: ['maintenance_supervisor'], permissions: ['work_orders.verify'] },
+    );
+
+    expect(updateOnly.allowed).toBe(false);
+    expect(verifier.allowed).toBe(true);
+  });
+
+  it('accepts start permission for handover initiation and receiver resume', async () => {
+    (mockDb.statusTransition.findFirst as Mock)
+      .mockResolvedValueOnce(
+        mockTransitionRule({
+          fromStatus: 'in_progress',
+          toStatus: 'pending_handover',
+          allowedRoleSlugs: JSON.stringify(['maintenance_technician']),
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockTransitionRule({
+          fromStatus: 'pending_handover',
+          toStatus: 'in_progress',
+          allowedRoleSlugs: JSON.stringify(['maintenance_technician']),
+        }),
+      );
+
+    const session = {
+      userId: 'tech-1',
+      roles: ['maintenance_technician'],
+      permissions: ['work_orders.start'],
+    };
+
+    const initiate = await checkTransition(
+      'work_order',
+      'in_progress',
+      'pending_handover',
+      session,
+    );
+    const resume = await checkTransition(
+      'work_order',
+      'pending_handover',
+      'in_progress',
+      session,
+    );
+
+    expect(initiate.allowed).toBe(true);
+    expect(resume.allowed).toBe(true);
+  });
+
   it('allows admin to bypass the transition role list', async () => {
     (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
       mockTransitionRule({ allowedRoleSlugs: JSON.stringify(['planner']) }),

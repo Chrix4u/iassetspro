@@ -1570,7 +1570,6 @@ export function RepairToolRequestsPage() {
       try {
         const res = await api.post('/api/repairs/tool-transfers', {
           toolId: item.toolId,
-          fromUserId: user?.id,
           toUserId: item.toUserId,
           reason: item.transferReason,
           notes: `WO transfer: ${item.quantityToTransfer}x ${item.toolName}`,
@@ -2221,10 +2220,16 @@ export function RepairToolRequestsPage() {
                     }}
                     placeholder="Search technician..."
                     searchPlaceholder="Search by name or username..."
-                    fetchOptions={async () => {
-                      const res = await api.get('/api/workers?role=technician');
-                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                      return [];
+                    fetchOptions={async (query) => {
+                      if (!item.toolId) return [];
+                      const params = new URLSearchParams({ toolId: item.toolId });
+                      if (query.trim()) params.set('search', query.trim());
+                      const res = await api.get(`/api/repairs/tool-transfers/candidates?${params.toString()}`);
+                      const candidates = res.success && Array.isArray(res.data?.candidates) ? res.data.candidates : [];
+                      return candidates.map((u: any) => ({
+                        value: u.id,
+                        label: `${u.fullName}${u.staffId ? ` [${u.staffId}]` : u.username ? ` (${u.username})` : ''}`,
+                      }));
                     }}
                   />
                 </div>
@@ -2344,7 +2349,7 @@ export function RepairToolTransfersPage() {
   const [conditionTarget, setConditionTarget] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<any>(null);
-  const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
+  const [createForm, setCreateForm] = useState({ toolId: '', toUserId: '', reason: '', notes: '' });
 
   // Auto-fill create form from pageParams (e.g., from RepairCompletion's "Transfer" button)
   useEffect(() => {
@@ -2352,7 +2357,6 @@ export function RepairToolTransfersPage() {
       setCreateForm(prev => ({
         ...prev,
         toolId: pageParams.toolId,
-        fromUserId: pageParams.fromUserId || user?.id || '',
         reason: `Transfer from WO completion — ${pageParams.toolName || 'tool'}`,
       }));
       setCreateOpen(true);
@@ -2385,14 +2389,17 @@ export function RepairToolTransfersPage() {
   useEffect(() => { fetchTransfers(); }, [fetchTransfers]);
 
   const handleCreate = async () => {
-    if (!createForm.toolId || !createForm.fromUserId || !createForm.toUserId || !createForm.reason || createForm.reason.length < 5) {
-      toast.error('All fields required. Reason must be at least 5 characters.'); return;
+    if (!createForm.toolId || !createForm.toUserId || !createForm.reason || createForm.reason.length < 5) {
+      toast.error('Tool, receiving technician, and reason (min 5 chars) are required.'); return;
     }
-    if (createForm.fromUserId === createForm.toUserId) { toast.error('From and To users must be different'); return; }
     setSubmitting(true);
     const res = await api.post('/api/repairs/tool-transfers', createForm);
-    if (res.success) { toast.success('Transfer request submitted'); setCreateOpen(false); setCreateForm({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' }); fetchTransfers(); }
-    else toast.error(res.error || 'Failed');
+    if (res.success) {
+      toast.success('Transfer request submitted');
+      setCreateOpen(false);
+      setCreateForm({ toolId: '', toUserId: '', reason: '', notes: '' });
+      fetchTransfers();
+    } else toast.error(res.error || 'Failed');
     setSubmitting(false);
   };
 
@@ -2636,15 +2643,31 @@ export function RepairToolTransfersPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Transfer Request</h2><p className="text-sm text-muted-foreground">Request transfer of a tool to another technician</p></div>
           <div className="space-y-4">
-            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?mode=lookup&limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
-            <div className="relative">
-              <div className="grid grid-cols-2 gap-3">
-                <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== createForm.fromUserId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
+            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v, toUserId: '' }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?mode=lookup&limit=999'); if (res.success && Array.isArray(res.data)) return res.data.filter((t: any) => isAdmin() || t.assignedToId === user?.id).map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
+            <div className="space-y-2">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Current custodian is determined from the selected tool's custody record. Only eligible technicians in that tool's plant are listed below.</p>
               </div>
-              {createForm.fromUserId && createForm.toUserId && createForm.fromUserId === createForm.toUserId && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> From and To users must be different</p>
-              )}
+              <div>
+                <Label>Transfer To *</Label>
+                <AsyncSearchableSelect
+                  value={createForm.toUserId}
+                  onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))}
+                  placeholder={createForm.toolId ? 'Select receiving technician...' : 'Select a tool first...'}
+                  searchPlaceholder="Search eligible technicians..."
+                  fetchOptions={async (query) => {
+                    if (!createForm.toolId) return [];
+                    const params = new URLSearchParams({ toolId: createForm.toolId });
+                    if (query.trim()) params.set('search', query.trim());
+                    const res = await api.get(`/api/repairs/tool-transfers/candidates?${params.toString()}`);
+                    const candidates = res.success && Array.isArray(res.data?.candidates) ? res.data.candidates : [];
+                    return candidates.map((u: any) => ({
+                      value: u.id,
+                      label: `${u.fullName}${u.staffId ? ` [${u.staffId}]` : u.username ? ` (${u.username})` : ''}`,
+                    }));
+                  }}
+                />
+              </div>
             </div>
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this transfer needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
@@ -3218,7 +3241,6 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       try {
         const res = await api.post('/api/repairs/tool-transfers', {
           toolId: item.toolId,
-          fromUserId: user?.id,
           toUserId: item.toUserId,
           reason: item.transferReason,
           notes: `WO completion transfer: ${item.qtyTransfer}x ${item.name}`,
@@ -3411,10 +3433,16 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                     onValueChange={v => updateTransferItem(item.id, { toUserId: v, toUserName: '' })}
                     placeholder="Search technician..."
                     searchPlaceholder="Search by name or username..."
-                    fetchOptions={async () => {
-                      const res = await api.get('/api/workers?role=technician');
-                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                      return [];
+                    fetchOptions={async (query) => {
+                      if (!item.toolId) return [];
+                      const params = new URLSearchParams({ toolId: item.toolId });
+                      if (query.trim()) params.set('search', query.trim());
+                      const res = await api.get(`/api/repairs/tool-transfers/candidates?${params.toString()}`);
+                      const candidates = res.success && Array.isArray(res.data?.candidates) ? res.data.candidates : [];
+                      return candidates.map((u: any) => ({
+                        value: u.id,
+                        label: `${u.fullName}${u.staffId ? ` [${u.staffId}]` : u.username ? ` (${u.username})` : ''}`,
+                      }));
                     }}
                   />
                 </div>

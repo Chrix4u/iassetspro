@@ -415,10 +415,28 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const plantAuth = await authorizeToolRequestPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    const toolReq = await db.repairToolRequest.findUnique({ where: { id }, include: { tool: true, items: true } });
+    const toolReq = await db.repairToolRequest.findUnique({
+      where: { id },
+      include: {
+        tool: true,
+        items: true,
+        workOrder: { select: { assignedSupervisorId: true } },
+      },
+    });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
     if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: 'Cannot delete: request is no longer pending' }, { status: 400 });
-    if (toolReq.requestedById !== session.userId && !isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
+    const ownsRequest = toolReq.requestedById === session.userId;
+    const canCancelAsManagement = canReviewResourceRequestAsSupervisor(
+      session,
+      toolReq.workOrder?.assignedSupervisorId,
+      'repair_tool_requests.update',
+    );
+    if (!ownsRequest && !canCancelAsManagement) {
+      return NextResponse.json(
+        { success: false, error: 'Only the requester or accountable maintenance management can cancel this pending tool request' },
+        { status: 403 },
+      );
+    }
 
     const deleted = await db.repairToolRequest.deleteMany({ where: { id, status: 'pending' } });
     if (deleted.count !== 1) return NextResponse.json({ success: false, error: 'Tool request changed concurrently and can no longer be cancelled' }, { status: 409 });

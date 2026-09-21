@@ -66,6 +66,17 @@ describe('MR → WO planner material visibility', () => {
     expect(technicianPanels).toContain('const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests]');
   });
 
+  it('repairs missing planner tool requests before store submission', () => {
+    expect(suggestedItemsApi).toContain('const existingPlannerToolRequests = toolResourcesOperational');
+    expect(suggestedItemsApi).toContain('const existingToolIds = new Set<string>()');
+    expect(suggestedItemsApi).toContain('for (const item of request.items)');
+    expect(suggestedItemsApi).toContain('const missingSuggestedTools = suggestedToolSnapshot.filter');
+    expect(suggestedItemsApi).toContain('await tx.repairToolRequest.create({');
+    expect(suggestedItemsApi).toContain('await tx.repairToolRequestItem.create({');
+    expect(suggestedItemsApi).toContain('Recovered from suggestedTools snapshot before store submission');
+    expect(suggestedItemsApi).toContain("['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin']");
+  });
+
   it('hydrates planner materials from the main WO payload before auxiliary requests finish', () => {
     expect(maintenanceUi).toContain('const hydrateSuggestedResourcesFromWO = useCallback');
     expect(maintenanceUi).toContain('for (const part of parseSnapshot(workOrder?.suggestedParts))');

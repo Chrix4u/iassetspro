@@ -1,10 +1,141 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
+import { handoverUserHasEffectivePermission, initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import { resumeConfirmedHandover } from '@/services/repairHandoverResume.service';
 import type { SessionContext } from '@/services/workExecution.service';
+import { canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const plantScope = await getPlantScope(request, session);
+
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        plantId: true,
+        status: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        assignedBy: true,
+        teamMembers: { select: { userId: true, role: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+      },
+    });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
+    }
+
+    const mode = new URL(request.url).searchParams.get('mode');
+    if (mode !== 'candidates') {
+      return NextResponse.json(
+        { success: false, error: 'Unsupported handover lookup mode' },
+        { status: 400 },
+      );
+    }
+    if (!wo.plantId) {
+      return NextResponse.json(
+        { success: false, error: 'Operational work order must have a plant before handover' },
+        { status: 400 },
+      );
+    }
+    if (
+      wo.status !== 'in_progress'
+      || !canPerformWorkOrderTransition(session, wo, 'pending_handover')
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'You are not authorized to initiate a handover for this work order' },
+        { status: 403 },
+      );
+    }
+
+    const search = new URL(request.url).searchParams.get('search')?.trim() || '';
+    const candidates = await db.user.findMany({
+      where: {
+        id: { not: session.userId },
+        status: 'active',
+        plantAccess: { some: { plantId: wo.plantId } },
+        userRoles: { some: { role: { slug: 'maintenance_technician' } } },
+        ...(search
+          ? {
+              OR: [
+                { fullName: { contains: search } },
+                { staffId: { contains: search } },
+                { username: { contains: search } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        staffId: true,
+        username: true,
+        primaryTrade: true,
+        userRoles: {
+          select: {
+            role: {
+              select: {
+                slug: true,
+                rolePermissions: {
+                  select: { permission: { select: { slug: true } } },
+                },
+              },
+            },
+          },
+        },
+        directPerms: {
+          select: {
+            isGranted: true,
+            expiresAt: true,
+            permission: { select: { slug: true } },
+          },
+        },
+      },
+      orderBy: { fullName: 'asc' },
+      take: 50,
+    });
+
+    const eligible = candidates
+      .filter((candidate) =>
+        handoverUserHasEffectivePermission(candidate, 'work_orders.start')
+      )
+      .map((candidate) => ({
+        id: candidate.id,
+        fullName: candidate.fullName,
+        staffId: candidate.staffId,
+        username: candidate.username,
+        trade: candidate.primaryTrade,
+      }));
+
+    return NextResponse.json({ success: true, data: eligible });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load handover candidates';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -14,6 +145,12 @@ export async function POST(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!isAdmin(session) && !hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])) {
+      return NextResponse.json(
+        { success: false, error: 'Insufficient permissions for work-order handover' },
+        { status: 403 },
+      );
     }
 
     const { id } = await params;

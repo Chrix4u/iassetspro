@@ -219,19 +219,15 @@ export function TechnicianWorkOrderPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!caps?.canHandover) { setHandoverUsers([]); return; }
+    if (!caps?.canHandover || !id) { setHandoverUsers([]); return; }
     let active = true;
-    api.get<any[]>('/api/users?role=maintenance_technician&status=active').then((res) => {
+    const params = new URLSearchParams({ mode: 'candidates' });
+    api.get<any[]>(`/api/work-orders/${id}/handover?${params.toString()}`).then((res) => {
       if (!active || !res.success || !Array.isArray(res.data)) return;
-      const options = res.data.filter((candidate: any) => {
-        if (candidate.id === user?.id) return false;
-        if (!wo?.plantId) return true;
-        return Array.isArray(candidate.plants) && candidate.plants.some((plant: any) => plant.id === wo.plantId);
-      });
-      setHandoverUsers(options);
+      setHandoverUsers(res.data);
     });
     return () => { active = false; };
-  }, [caps?.canHandover, user?.id, wo?.plantId]);
+  }, [caps?.canHandover, id]);
 
   const liveLog = useMemo(() => {
     if (!wo || !user) return null;

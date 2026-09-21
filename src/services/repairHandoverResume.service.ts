@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import type { SessionContext, TransitionResult } from '@/services/workExecution.service';
 import type { Prisma } from '@prisma/client';
+import { handoverUserHasEffectivePermission, handoverUserIsMaintenanceTechnician } from '@/services/workOrderHandoverInitiation.service';
 
 export interface ResumeConfirmedHandoverOptions {
   reason?: string;
@@ -58,10 +59,38 @@ export async function resumeConfirmedHandover(
 
       const receiver = await tx.user.findUnique({
         where: { id: receiverId },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          userRoles: {
+            select: {
+              role: {
+                select: {
+                  slug: true,
+                  rolePermissions: {
+                    select: { permission: { select: { slug: true } } },
+                  },
+                },
+              },
+            },
+          },
+          directPerms: {
+            select: {
+              isGranted: true,
+              expiresAt: true,
+              permission: { select: { slug: true } },
+            },
+          },
+        },
       });
       if (!receiver || receiver.status !== 'active') {
         throw new Error('Cannot resume work: designated handover receiver is not an active user');
+      }
+      if (!handoverUserIsMaintenanceTechnician(receiver)) {
+        throw new Error('Cannot resume work: designated handover receiver is no longer an active maintenance technician');
+      }
+      if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {
+        throw new Error('Cannot resume work: designated handover receiver is no longer authorized to execute maintenance work');
       }
 
       const receiverPlant = await tx.userPlant.findFirst({
@@ -119,7 +148,7 @@ export async function resumeConfirmedHandover(
 
       const existingMember = await tx.workOrderTeamMember.findFirst({
         where: { workOrderId, userId: receiverId },
-        select: { id: true },
+        select: { id: true, role: true, accessLevel: true },
       });
       if (!existingMember) {
         await tx.workOrderTeamMember.create({
@@ -130,6 +159,19 @@ export async function resumeConfirmedHandover(
             accessLevel: 'full',
             addedVia: 'shift_handover',
             assignedAt: now,
+          },
+        });
+      } else if (
+        existingMember.accessLevel !== 'full'
+        || existingMember.role === 'handover_receiver'
+      ) {
+        await tx.workOrderTeamMember.update({
+          where: { id: existingMember.id },
+          data: {
+            accessLevel: 'full',
+            role: existingMember.role === 'handover_receiver'
+              ? 'assistant'
+              : existingMember.role,
           },
         });
       }

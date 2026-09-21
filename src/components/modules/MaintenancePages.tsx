@@ -3820,6 +3820,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       case 'resume':
         res = await api.post(`/api/work-orders/${id}/resume`, { notes: extra?.notes, ...extra });
         break;
+      case 'rework':
+        res = await api.post(`/api/work-orders/${id}/rework`, {
+          reason: extra?.notes,
+          notes: extra?.notes,
+          ...extra,
+        });
+        break;
       case 'cancel':
         res = await api.post(`/api/work-orders/${id}/cancel`, { notes: extra?.notes, ...extra });
         break;
@@ -3838,7 +3845,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         res = await api.put(`/api/work-orders/${id}`, { ...extra });
     }
     if (res.success) {
-      toast.success(`Work order ${action}d`);
+      toast.success(action === 'rework' ? 'Work order returned for rework' : `Work order ${action}d`);
       fetchWO();
       onUpdate();
       setActionDialog(null);
@@ -4564,13 +4571,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'cancelled': 'cancel', 'waiting_parts': 'wait-parts',
   };
 
-  // Build transition actions from state machine
-  const transitionActions = availableTransitions.map(t => ({
-    toStatus: t.toStatus,
-    actionName: t.toStatus === 'in_progress' && wo.status !== 'assigned' ? 'resume' : (statusToAction[t.toStatus] || t.toStatus),
-    label: t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    requiresReason: t.requiresReason,
-  }));
+  // Build transition actions from state machine. Completed/verified → in_progress
+  // is a controlled rework request, not a generic execution resume.
+  const transitionActions = availableTransitions.map(t => {
+    const isRework = t.toStatus === 'in_progress'
+      && ['completed', 'verified'].includes(wo.status);
+    const actionName = isRework
+      ? 'rework'
+      : t.toStatus === 'in_progress' && wo.status !== 'assigned'
+        ? 'resume'
+        : (statusToAction[t.toStatus] || t.toStatus);
+
+    return {
+      toStatus: t.toStatus,
+      actionName,
+      label: isRework
+        ? 'Request Rework'
+        : t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      requiresReason: isRework ? true : t.requiresReason,
+    };
+  });
 
   // Special actions that need dialogs
   const needsDialog = new Set(['assign', 'complete']);
@@ -4585,6 +4605,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'close': { description: 'Are you sure you want to close this work order? This action cannot be easily reversed.', label: 'Yes, Close', variant: 'destructive' },
     'hold': { description: 'Are you sure you want to put this work order on hold?', label: 'Yes, Put On Hold' },
     'resume': { description: 'Are you sure you want to resume this work order?', label: 'Yes, Resume' },
+    'rework': { description: 'Return this completed/verified work order for corrective rework. A reason is required and will be audited.', label: 'Yes, Request Rework' },
     'cancel': { description: 'Are you sure you want to cancel this work order? This will stop all work and cannot be easily reversed.', label: 'Yes, Cancel', variant: 'destructive' },
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };
@@ -7063,19 +7084,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <AsyncSearchableSelect
                     value={newMemberUserId}
                     onValueChange={setNewMemberUserId}
-                    fetchOptions={async () => {
-                      const res = await api.get('/api/workers?role=all');
-                      if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                      return [];
+                    fetchOptions={async (query) => {
+                      const params = new URLSearchParams();
+                      if (query.trim()) params.set('search', query.trim());
+                      const res = await api.get(`/api/work-orders/${id}/team-candidates?${params.toString()}`);
+                      if (!res.success || !Array.isArray(res.data)) return [];
+                      return res.data.map((u: any) => ({
+                        value: u.id,
+                        label: u.staffId
+                          ? `${u.fullName} [${u.staffId}]${u.primaryTrade ? ` — ${u.primaryTrade}` : ''}`
+                          : `${u.fullName}${u.primaryTrade ? ` — ${u.primaryTrade}` : ''}`,
+                      }));
                     }}
-                    placeholder="Search users..."
-                    searchPlaceholder="Search by name..."
+                    placeholder="Search eligible technicians..."
+                    searchPlaceholder="Search by name, staff ID, or trade..."
                   />
                 </div>
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={newMemberRole} onValueChange={setNewMemberRole}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="technician">Technician</SelectItem><SelectItem value="team_leader">Team Leader</SelectItem></SelectContent>
                   </Select>
                 </div>
               </div>
@@ -7114,7 +7142,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={reqMemberRole} onValueChange={setReqMemberRole}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="technician">Technician</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5"><Label>Reason</Label>
@@ -7149,46 +7177,30 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <AsyncSearchableSelect
                     value={approveAssignUserId}
                     onValueChange={setApproveAssignUserId}
-                    fetchOptions={async () => {
+                    fetchOptions={async (query) => {
                       try {
                         const req = teamRequests.find((r: any) => r.id === approveReqId);
                         const tradeFilter = String(req?.requestedTrade || '').trim();
-                        const workerUrl = wo.plantId
-                          ? `/api/workers?role=technician&plantId=${encodeURIComponent(wo.plantId)}`
-                          : '/api/workers?role=technician';
-                        const res = await api.get(workerUrl);
-                        if (res.success && res.data) {
-                          let users = Array.isArray(res.data) ? res.data : [];
-                          if (tradeFilter) {
-                            const requested = tradeFilter.toLowerCase();
-                            users = users.filter((worker: any) => {
-                              const skillLabels = [
-                                worker.trade,
-                                ...(Array.isArray(worker.skills)
-                                  ? worker.skills.flatMap((skill: any) => [skill?.name, skill?.code])
-                                  : []),
-                              ]
-                                .filter(Boolean)
-                                .map((value: unknown) => String(value).trim().toLowerCase());
-                              return skillLabels.includes(requested);
-                            });
-                          }
-                          return users.map((u: any) => {
-                            const matchingSkill = tradeFilter
-                              ? (u.skills || []).find((skill: any) =>
-                                  [skill?.name, skill?.code].some((value) =>
-                                    String(value || '').trim().toLowerCase() === tradeFilter.toLowerCase(),
-                                  ),
-                                )
-                              : null;
-                            const tradeLabel = matchingSkill?.name || u.trade || tradeFilter || 'Technician';
-                            const proficiency = matchingSkill?.proficiency ? ` · ${matchingSkill.proficiency}` : '';
-                            return {
-                              value: u.id,
-                              label: `${u.fullName} — ${tradeLabel}${proficiency}${u.department ? ` (${u.department})` : ''}`,
-                            };
-                          });
-                        }
+                        const params = new URLSearchParams();
+                        if (tradeFilter) params.set('trade', tradeFilter);
+                        if (query.trim()) params.set('search', query.trim());
+                        const res = await api.get(`/api/work-orders/${id}/team-candidates?${params.toString()}`);
+                        if (!res.success || !Array.isArray(res.data)) return [];
+                        return res.data.map((u: any) => {
+                          const matchingSkill = tradeFilter
+                            ? (u.skills || []).find((skill: any) =>
+                                [skill?.name, skill?.code].some((value) =>
+                                  String(value || '').trim().toLowerCase() === tradeFilter.toLowerCase(),
+                                ),
+                              )
+                            : null;
+                          const tradeLabel = matchingSkill?.name || u.primaryTrade || tradeFilter || 'Technician';
+                          const proficiency = matchingSkill?.proficiency ? ` · ${matchingSkill.proficiency}` : '';
+                          return {
+                            value: u.id,
+                            label: `${u.fullName} — ${tradeLabel}${proficiency}${u.department ? ` (${u.department})` : ''}`,
+                          };
+                        });
                       } catch { /* ignore */ }
                       return [];
                     }}

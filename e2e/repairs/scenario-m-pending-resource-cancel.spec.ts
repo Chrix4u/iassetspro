@@ -118,11 +118,15 @@ test('UAT-13: technician cancels pending recommended material/tool requests from
   const cancelMaterial = page.getByTitle('Cancel pending material request').first();
   await expect(cancelMaterial).toBeVisible({ timeout: 15_000 });
   await cancelMaterial.click();
+  await expect(page.getByText('Cancel Material Request', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel Request' }).click();
   await expect(page.getByText('Material request cancelled', { exact: true })).toBeVisible({ timeout: 10_000 });
 
   const cancelTool = page.getByTitle('Cancel pending tool request').first();
   await expect(cancelTool).toBeVisible({ timeout: 15_000 });
   await cancelTool.click();
+  await expect(page.getByText('Cancel Tool Request', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel Request' }).click();
   await expect(page.getByText('Tool request cancelled', { exact: true })).toBeVisible({ timeout: 10_000 });
 
   const { status: suggestedStatus, data: suggestedResponse } = await apiCall(

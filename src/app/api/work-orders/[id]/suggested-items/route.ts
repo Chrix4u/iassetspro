@@ -200,24 +200,35 @@ export async function GET(
         });
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
-      const matReq = wo.repairMaterialRequests.find(
-        (mr: { itemId: string | null }) => mr.itemId === p.itemId
+      const matchingRequests = wo.repairMaterialRequests.filter(
+        (mr: { itemId: string | null }) => mr.itemId === p.itemId,
       );
+      // #51 created planner_suggested/pending rows automatically. Those rows
+      // predate the recommendation-vs-request boundary and therefore represent
+      // an unaccepted recommendation, not a technician request. Prefer an
+      // execution-submitted request or a legacy request that has already moved
+      // beyond pending; otherwise keep the item in "suggested" state.
+      const matReq =
+        matchingRequests.find((mr) => mr.source === 'technician_from_planner_recommendation' && mr.status !== 'rejected')
+        ?? matchingRequests.find((mr) => mr.source === 'planner_suggested' && !['pending', 'rejected'].includes(mr.status));
       return {
         ...p,
         pipelineId: matReq?.id || null,
         pipelineStatus: matReq?.status || 'suggested',
         quantityApproved: matReq?.quantityApproved || 0,
         quantityIssued: matReq?.quantityIssued || 0,
-        currentStock: matReq?.item?.currentStock || 0,
-        unitCost: matReq?.item?.unitCost || 0,
+        currentStock: matReq?.item?.currentStock || matchingRequests[0]?.item?.currentStock || 0,
+        unitCost: matReq?.item?.unitCost || matchingRequests[0]?.item?.unitCost || 0,
       };
     });
 
     const toolsWithStatus = suggestedTools.map((t: Record<string, unknown>) => {
-      const toolReq = wo.repairToolRequests.find(
-        (tr: { toolId: string | null }) => tr.toolId === t.toolId
+      const matchingRequests = wo.repairToolRequests.filter(
+        (tr: { toolId: string | null }) => tr.toolId === t.toolId,
       );
+      const toolReq =
+        matchingRequests.find((tr) => tr.source === 'technician_from_planner_recommendation' && tr.status !== 'rejected')
+        ?? matchingRequests.find((tr) => tr.source === 'planner_suggested' && !['pending', 'rejected'].includes(tr.status));
       return {
         ...t,
         pipelineId: toolReq?.id || null,
@@ -655,16 +666,35 @@ export async function PUT(
       const existingMaterialRequests = await db.repairMaterialRequest.findMany({
         where: {
           workOrderId: id,
-          source: { in: recommendationSources },
-          status: { not: 'rejected' },
+          OR: [
+            {
+              source: 'technician_from_planner_recommendation',
+              status: { not: 'rejected' },
+            },
+            {
+              // Preserve legacy planner-generated requests that were already
+              // approved/issued. Plain pending planner rows remain editable
+              // recommendations and must not suppress technician submission.
+              source: 'planner_suggested',
+              status: { notIn: ['pending', 'rejected'] },
+            },
+          ],
         },
         select: { itemId: true },
       });
       const existingToolRequests = await db.repairToolRequest.findMany({
         where: {
           workOrderId: id,
-          source: { in: recommendationSources },
-          status: { not: 'rejected' },
+          OR: [
+            {
+              source: 'technician_from_planner_recommendation',
+              status: { not: 'rejected' },
+            },
+            {
+              source: 'planner_suggested',
+              status: { notIn: ['pending', 'rejected'] },
+            },
+          ],
         },
         select: { toolId: true },
       });
@@ -692,6 +722,18 @@ export async function PUT(
           if (!item || item.plantId !== wo.plantId || !Number.isFinite(quantity) || quantity <= 0) continue;
 
           const unitCost = item.unitCost ?? 0;
+          await tx.repairMaterialRequest.updateMany({
+            where: {
+              workOrderId: id,
+              itemId: item.id,
+              source: 'planner_suggested',
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              notes: `Superseded when ${session.fullName} explicitly submitted the planner recommendation`,
+            },
+          });
           await tx.repairMaterialRequest.create({
             data: {
               workOrderId: id,
@@ -736,6 +778,18 @@ export async function PUT(
           });
           if (!tool || (tool.plantId && tool.plantId !== wo.plantId) || !Number.isFinite(quantity) || quantity <= 0) continue;
 
+          await tx.repairToolRequest.updateMany({
+            where: {
+              workOrderId: id,
+              toolId: tool.id,
+              source: 'planner_suggested',
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              rejectionReason: `Superseded when ${session.fullName} explicitly submitted the planner recommendation`,
+            },
+          });
           const toolRequest = await tx.repairToolRequest.create({
             data: {
               workOrderId: id,

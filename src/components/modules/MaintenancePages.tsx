@@ -3618,7 +3618,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!wo || !user) return false;
     if (fullAccess) return false;
     if (canManageTeamDirectly) return false;
-    return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
+
+    // The primary assignee owns execution on this work order. A stale or
+    // duplicate team-member row must never downgrade that accountable actor to
+    // read-only and disable time/material/tool execution controls.
+    if (wo.assignedToId === user.id) return false;
+
+    return wo.teamMembers?.some(
+      tm => tm.userId === user.id && tm.accessLevel === 'read_only'
+    ) || false;
   }, [wo, user, fullAccess, canManageTeamDirectly]);
 
   // Permission: can take modification actions on this WO (not just view it)

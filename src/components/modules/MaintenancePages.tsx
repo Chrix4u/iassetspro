@@ -3576,15 +3576,28 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return false;
   }, [wo, user]);
 
-  // Permission: can directly add/remove team members (admin, planner, or the person who assigned)
+  // Permission: mirror the server's accountable assignment boundary.
+  // A broad assignment permission alone must not expose WO team controls.
   const canManageTeamDirectly = useMemo(() => {
     if (!wo || !user) return false;
     if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign_supervisor')) return true;
-    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
-    if (wo.plannerId === user.id) return true;
-    if (wo.assignedById === user.id) return true;
-    return false;
+
+    const hasAssignmentPermission =
+      hasPermission('work_orders.assign_supervisor') ||
+      hasPermission('work_orders.assign_technician');
+    if (!hasAssignmentPermission) return false;
+
+    const roleSlugs = (user.roles || [])
+      .map((role: any) => typeof role === 'string' ? role : role?.slug)
+      .filter(Boolean);
+    const hasManagementOverride =
+      roleSlugs.includes('maintenance_manager') ||
+      roleSlugs.includes('plant_manager');
+
+    return hasManagementOverride ||
+      wo.assignedSupervisorId === user.id ||
+      wo.plannerId === user.id ||
+      wo.assignedById === user.id;
   }, [wo, user, isAdmin, hasPermission]);
 
   // Permission: can request team members (technician or team member, but not admin/planner — they add directly)
@@ -3596,16 +3609,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return isTeamMember || isAssignee;
   }, [wo, user, canManageTeamDirectly]);
 
-  // Permission: can approve/reject team member requests (assigner, admin, planner)
-  const canReviewTeamRequests = useMemo(() => {
-    if (!wo || !user) return false;
-    if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign_supervisor')) return true;
-    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
-    if (wo.plannerId === user.id) return true;
-    if (wo.assignedById === user.id) return true;
-    return false;
-  }, [wo, user, isAdmin, hasPermission]);
+  // Reviewing assistance requests uses the same accountable assignment rule
+  // as directly adding team members on the server.
+  const canReviewTeamRequests = canManageTeamDirectly;
 
   // Permission: can log time for other team members (only team leader or admin)
   const canLogForOthers = useMemo(() => {

@@ -39,6 +39,7 @@ describe('worker and user directory plant/privacy boundaries', () => {
     expect(lookupSection).toContain('fullName: true');
     expect(lookupSection).toContain('staffId: true');
     expect(lookupSection).toContain('primaryTrade: true');
+    expect(lookupSection).toContain('take: 100');
   });
 
   it('redacts password and password-reset secrets from administrative directory output', () => {

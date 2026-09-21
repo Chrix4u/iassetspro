@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 import { hash } from 'bcryptjs';
 
 export async function GET(request: NextRequest) {
@@ -18,26 +19,41 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role');
     const primaryTrade = searchParams.get('primaryTrade');
     const includeSkills = searchParams.get('includeSkills') === 'true';
+    const admin = isAdmin(session);
 
-    // Admin-only for unrestricted queries (no role filter)
-    // Allow any authenticated user for role-filtered queries (e.g., supervisors fetching planners)
-    if (!role && !isAdmin(session)) {
+    // Full user-directory access remains an administrative workspace. Existing
+    // role-filtered calls are treated as assignment lookups and receive a
+    // minimal, plant-scoped projection only.
+    if (!role && !admin) {
       return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
     const where: Record<string, unknown> = {};
     if (department) where.department = department;
-    if (status) where.status = status;
     if (primaryTrade) where.primaryTrade = primaryTrade;
-    if (search) {
-      where.OR = [
-        { username: { contains: search } },
-        { fullName: { contains: search } },
-        { email: { contains: search } },
-      ];
+
+    // Non-admin directory lookups are active-worker lookups only. Admin user
+    // management keeps the requested status filter, including inactive users.
+    if (admin) {
+      if (status) where.status = status;
+    } else {
+      where.status = 'active';
     }
 
-    // Department-based filtering: look up department names from IDs
+    if (search) {
+      where.OR = admin
+        ? [
+            { username: { contains: search } },
+            { fullName: { contains: search } },
+            { email: { contains: search } },
+          ]
+        : [
+            { username: { contains: search } },
+            { fullName: { contains: search } },
+            { staffId: { contains: search } },
+          ];
+    }
+
     if (departmentIds) {
       const deptIds = departmentIds.split(',').filter(Boolean);
       if (deptIds.length > 0) {
@@ -52,20 +68,101 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Role-based filtering: find users with a specific role slug
     if (role) {
       const roleRecord = await db.role.findUnique({
         where: { slug: role },
         select: { id: true },
       });
-      if (roleRecord) {
-        where.userRoles = {
-          some: { roleId: roleRecord.id },
-        };
+      if (!roleRecord) {
+        return NextResponse.json({ success: true, data: [] });
       }
+      where.userRoles = {
+        some: { roleId: roleRecord.id },
+      };
     }
 
-    // Build include clause conditionally
+    if (!admin) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+
+      if (plantScope.isScoped && plantScope.plantId) {
+        where.plantAccess = { some: { plantId: plantScope.plantId } };
+      } else if (!plantScope.isSystemWide) {
+        where.plantAccess = {
+          some: {
+            plantId: { in: plantScope.accessiblePlantIds },
+          },
+        };
+      }
+
+      const lookupUsers = await db.user.findMany({
+        where,
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          staffId: true,
+          department: true,
+          status: true,
+          primaryTrade: true,
+          userRoles: {
+            select: {
+              role: { select: { id: true, name: true, slug: true } },
+            },
+          },
+          plantAccess: {
+            select: {
+              plant: { select: { id: true, name: true, code: true } },
+            },
+          },
+          ...(includeSkills
+            ? {
+                userSkills: {
+                  select: {
+                    trade: {
+                      select: { id: true, name: true, code: true, category: true, color: true },
+                    },
+                    proficiencyLevel: true,
+                    yearsExperience: true,
+                    certified: true,
+                  },
+                },
+              }
+            : {}),
+        },
+        orderBy: { fullName: 'asc' },
+      });
+
+      const safeLookupUsers = lookupUsers.map((user) => ({
+        id: user.id,
+        username: user.username,
+        fullName: user.fullName,
+        staffId: user.staffId,
+        department: user.department,
+        status: user.status,
+        primaryTrade: user.primaryTrade,
+        roles: user.userRoles.map((ur) => ur.role),
+        plants: user.plantAccess.map((up) => up.plant),
+        ...(includeSkills
+          ? {
+              skills:
+                'userSkills' in user && Array.isArray(user.userSkills)
+                  ? user.userSkills.map((us) => ({
+                      ...us.trade,
+                      proficiencyLevel: us.proficiencyLevel,
+                      yearsExperience: us.yearsExperience,
+                      certified: us.certified,
+                    }))
+                  : [],
+            }
+          : {}),
+      }));
+
+      return NextResponse.json({ success: true, data: safeLookupUsers });
+    }
+
     const include: Record<string, unknown> = {
       userRoles: {
         include: { role: { select: { id: true, name: true, slug: true } } },
@@ -91,8 +188,14 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Remove passwordHash from each user
-    const safeUsers = users.map(({ passwordHash: _, ...user }) => ({
+    // Authentication secrets never belong in a directory response, including
+    // the administrative user-management view.
+    const safeUsers = users.map(({
+      passwordHash: _passwordHash,
+      resetToken: _resetToken,
+      resetTokenExpires: _resetTokenExpires,
+      ...user
+    }) => ({
       ...user,
       primaryTrade: user.primaryTrade,
       roles: (user.userRoles || []).map((ur) => ur.role),

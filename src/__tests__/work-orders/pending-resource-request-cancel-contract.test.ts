@@ -19,6 +19,10 @@ describe('RWOP pending resource request cancellation contract', () => {
     expect(materialApi).toContain("existing.workOrder?.assignedSupervisorId");
     expect(materialApi).toContain("'repair_material_requests.update'");
     expect(materialApi).toContain("where: { id, status: 'pending' }");
+    expect(materialApi).toContain("existing.source === 'technician_from_planner_recommendation'");
+    expect(materialApi).toContain("status: 'requested'");
+    expect(materialApi).toContain("data: { status: 'planned' }");
+    expect(materialApi).toContain('await db.$transaction(async (tx) =>');
     expect(materialApi).toContain("entityType: 'repair_material_request'");
   });
 
@@ -30,8 +34,11 @@ describe('RWOP pending resource request cancellation contract', () => {
     expect(toolApi).toContain('canReviewResourceRequestAsSupervisor(');
     expect(toolApi).toContain('toolReq.workOrder?.assignedSupervisorId');
     expect(toolApi).toContain("'repair_tool_requests.update'");
-    expect(toolApi).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(toolApi).toContain('await db.$transaction(async (tx) =>');
+    expect(toolApi).toContain("where: { id, status: 'pending' }");
     expect(toolApi).toContain("entityType: 'repair_tool_request'");
+    expect(toolApi).toContain("oldValues: JSON.stringify(toolReq)");
+    expect(toolApi).toContain("'Tool request cancelled'");
   });
 
   it('shows cancel only to an allowed actor while the request is pending', () => {

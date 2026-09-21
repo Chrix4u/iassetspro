@@ -10,6 +10,58 @@ import {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 const DEFAULT_TIMEOUT_MS = 15_000; // 15 second default timeout
 export const OFFLINE_CACHE_STATE_EVENT = 'iassetspro:offline-cache-state';
+export const AUTH_SESSION_EXPIRED_EVENT = 'iassetspro:auth-session-expired';
+
+const AUTH_STORAGE_KEYS = [
+  'eam_token',
+  'eam_user_id',
+  'user_permissions',
+  'user_roles',
+  'user_plant_id',
+  'user_plant_access',
+] as const;
+
+const PUBLIC_AUTH_ENDPOINTS = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+] as const;
+
+function isPublicAuthEndpoint(endpoint: string): boolean {
+  const path = endpoint.split('?')[0];
+  return PUBLIC_AUTH_ENDPOINTS.some((candidate) => path === candidate);
+}
+
+function clearClientAuthStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    for (const key of AUTH_STORAGE_KEYS) localStorage.removeItem(key);
+  } catch {
+    // Storage may be unavailable in restricted browser contexts. The
+    // auth-expired event still lets the in-memory store fail closed.
+  }
+}
+
+function isSessionAuthFailure(endpoint: string, status: number, error?: string): boolean {
+  if (isPublicAuthEndpoint(endpoint)) return false;
+  if (status === 401) return true;
+  if (status !== 403) return false;
+
+  const normalized = (error || '').trim().toLowerCase();
+  return normalized === 'authentication required'
+    || normalized === 'not authenticated'
+    || normalized === 'invalid or expired session'
+    || normalized.includes('session expired');
+}
+
+function notifySessionExpired(endpoint: string, status: number, error?: string): void {
+  if (typeof window === 'undefined' || !isSessionAuthFailure(endpoint, status, error)) return;
+  clearClientAuthStorage();
+  window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+    detail: { endpoint, status, error: error || 'Session expired' },
+  }));
+}
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -311,7 +363,9 @@ export async function apiFetch<T = any>(
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
       if (!res.ok) {
-        return { success: false, error: `Request failed with status ${res.status}`, status: res.status };
+        const error = `Request failed with status ${res.status}`;
+        notifySessionExpired(endpoint, res.status, error);
+        return { success: false, error, status: res.status };
       }
       return { success: true, status: res.status };
     }
@@ -326,6 +380,15 @@ export async function apiFetch<T = any>(
     const payload: Record<string, any> = json && typeof json === 'object' ? json : {};
 
     if (!res.ok || payload.success === false) {
+      const error = typeof payload.error === 'string' && payload.error
+        ? payload.error
+        : `Request failed with status ${res.status}`;
+
+      // A dead/cleared bearer token must fail closed across the entire SPA.
+      // Without this, already-mounted pages keep firing protected requests and
+      // flood the console with repeated Authentication required responses.
+      notifySessionExpired(endpoint, res.status, error);
+
       // Preserve every structured field returned by the domain endpoint. Older
       // behavior collapsed failures to {success,error}, which discarded data
       // such as readiness blockers and the conflicting active work order and
@@ -333,9 +396,7 @@ export async function apiFetch<T = any>(
       return {
         ...payload,
         success: false,
-        error: typeof payload.error === 'string' && payload.error
-          ? payload.error
-          : `Request failed with status ${res.status}`,
+        error,
         status: res.status,
       } as ApiResponse<T>;
     }

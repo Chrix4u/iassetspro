@@ -82,7 +82,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   fetchMe: async () => {
     const token = localStorage.getItem(LS_TOKEN);
-    if (!token) return;
+    if (!token) {
+      set({
+        user: null,
+        isAuthenticated: false,
+        permissions: [],
+        role: null,
+        isLoading: false,
+      });
+      return;
+    }
     set({ isLoading: true });
     try {
       const res = await api.get<{ user: User; permissions: string[] }>('/api/auth/me');
@@ -97,11 +106,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       } else {
         clearAuthData();
-        set({ isLoading: false });
+        set({
+          user: null,
+          isAuthenticated: false,
+          permissions: [],
+          role: null,
+          isLoading: false,
+        });
       }
     } catch {
       clearAuthData();
-      set({ isLoading: false });
+      set({
+        user: null,
+        isAuthenticated: false,
+        permissions: [],
+        role: null,
+        isLoading: false,
+      });
     }
   },
 

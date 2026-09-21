@@ -3077,7 +3077,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const { hasPermission, user, isAdmin } = useAuthStore();
+  const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
@@ -3450,13 +3450,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
-    if (!toolResourcesEnabled) {
+    if (!isAuthenticated || !user?.id || !toolResourcesEnabled) {
       setPersonalTools([]);
       return;
     }
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
-  }, [id, toolResourcesEnabled]);
+  }, [id, isAuthenticated, toolResourcesEnabled, user?.id]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {

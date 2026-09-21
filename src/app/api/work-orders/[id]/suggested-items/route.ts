@@ -123,24 +123,18 @@ export async function GET(
       : [];
     const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
 
-    const rejectedItemIds = new Set(
-      wo.repairMaterialRequests
-        .filter((request) => request.status === 'rejected' && request.itemId)
-        .map((request) => request.itemId as string),
-    );
-
     const reconciledParts = new Map<string, Record<string, unknown>>();
 
     // 1. Preserve the planner snapshot when present.
     for (const suggestion of storedSuggestedParts) {
       const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
-      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      if (!itemId) continue;
       reconciledParts.set(itemId, suggestion);
     }
 
     // 2. Fill missing recommendations from planned WO material rows.
     for (const material of wo.materials) {
-      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      if (!material.itemId) continue;
       const item = inventoryById.get(material.itemId);
       const current = reconciledParts.get(material.itemId);
       reconciledParts.set(material.itemId, {
@@ -157,9 +151,16 @@ export async function GET(
 
     // 3. Preserve compatibility with legacy planner_suggested request rows.
     for (const request of wo.repairMaterialRequests) {
-      if (!request.itemId || request.status === 'rejected') continue;
+      if (!request.itemId) continue;
       const item = inventoryById.get(request.itemId);
       const current = reconciledParts.get(request.itemId);
+
+      // A rejected request without a surviving snapshot/planned projection means
+      // the recommendation itself was removed. If a recommendation still exists,
+      // keep it visible so a rejected/superseded request can be revised and
+      // explicitly resubmitted by execution staff.
+      if (request.status === 'rejected' && !current) continue;
+
       reconciledParts.set(request.itemId, {
         id: current?.id || request.id,
         itemId: request.itemId,

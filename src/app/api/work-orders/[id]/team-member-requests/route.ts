@@ -106,6 +106,13 @@ export async function POST(
     const role = typeof body.role === 'string' && body.role.trim() ? body.role.trim() : 'assistant';
     const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : null;
 
+    if (!['assistant', 'technician'].includes(role)) {
+      return NextResponse.json(
+        { success: false, error: 'role must be assistant or technician' },
+        { status: 400 },
+      );
+    }
+
     if (!requestedTrade && !requestedUserId) {
       return NextResponse.json({ success: false, error: 'requestedTrade or requestedUserId is required' }, { status: 400 });
     }
@@ -163,6 +170,14 @@ export async function POST(
           id: true,
           fullName: true,
           status: true,
+          primaryTrade: true,
+          userRoles: { select: { role: { select: { slug: true } } } },
+          userSkills: {
+            select: {
+              trade: { select: { name: true, code: true } },
+              proficiencyLevel: true,
+            },
+          },
           plantAccess: { where: { plantId: wo.plantId }, select: { id: true } },
         },
       });
@@ -174,6 +189,30 @@ export async function POST(
       }
       if (user.plantAccess.length === 0) {
         return NextResponse.json({ success: false, error: 'Requested user does not have access to the work order plant' }, { status: 403 });
+      }
+      const isMaintenanceTechnician = user.userRoles.some(
+        (row) => row.role.slug === 'maintenance_technician',
+      );
+      if (!isMaintenanceTechnician) {
+        return NextResponse.json(
+          { success: false, error: 'Requested user must be an active maintenance technician' },
+          { status: 422 },
+        );
+      }
+      if (requestedTrade) {
+        const requestedSkill = requestedTrade.toLowerCase();
+        const skillLabels = [
+          user.primaryTrade,
+          ...user.userSkills.flatMap((row) => [row.trade.name, row.trade.code]),
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).trim().toLowerCase());
+        if (!skillLabels.includes(requestedSkill)) {
+          return NextResponse.json(
+            { success: false, error: `Requested user does not have the requested trade/skill: ${requestedTrade}` },
+            { status: 422 },
+          );
+        }
       }
       targetUser = user;
 

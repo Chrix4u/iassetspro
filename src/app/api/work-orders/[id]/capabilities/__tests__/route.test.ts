@@ -71,7 +71,7 @@ describe('GET /api/work-orders/[id]/capabilities start lifecycle', () => {
       accessLevel: 'write',
     });
     mockCanAccessPlantStrict.mockReturnValue(true);
-    mockHasPermission.mockReturnValue(false);
+    mockHasPermission.mockImplementation((_session, permission) => permission === 'work_orders.start');
     mockCheckReadiness.mockResolvedValue({ ready: true, blockers: [], warnings: [] });
     mockDb.workOrderTimeLog.findFirst.mockResolvedValue(null);
   });

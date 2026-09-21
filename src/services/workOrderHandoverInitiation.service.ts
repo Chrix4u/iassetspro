@@ -44,6 +44,56 @@ function hasHandoverAuthority(
   );
 }
 
+export function handoverUserHasEffectivePermission(
+  user: {
+    userRoles?: Array<{
+      role: {
+        slug: string;
+        rolePermissions?: Array<{ permission: { slug: string } }>;
+      };
+    }>;
+    directPerms?: Array<{
+      isGranted: boolean;
+      expiresAt: Date | null;
+      permission: { slug: string };
+    }>;
+  },
+  permissionSlug: string,
+): boolean {
+  const userRoles = user.userRoles ?? [];
+  const directPerms = user.directPerms ?? [];
+
+  if (userRoles.some((userRole) => userRole.role.slug === 'admin')) return true;
+
+  const permissions = new Set<string>();
+  for (const userRole of userRoles) {
+    for (const rolePermission of userRole.role.rolePermissions ?? []) {
+      permissions.add(rolePermission.permission.slug);
+    }
+  }
+
+  const now = new Date();
+  for (const directPermission of directPerms) {
+    if (directPermission.permission.slug !== permissionSlug) continue;
+    if (directPermission.expiresAt && directPermission.expiresAt < now) {
+      permissions.delete(permissionSlug);
+      continue;
+    }
+    if (directPermission.isGranted) permissions.add(permissionSlug);
+    else permissions.delete(permissionSlug);
+  }
+
+  return permissions.has(permissionSlug);
+}
+
+export function handoverUserIsMaintenanceTechnician(
+  user: { userRoles?: Array<{ role: { slug: string } }> },
+): boolean {
+  return (user.userRoles ?? []).some(
+    (userRole) => userRole.role.slug === 'maintenance_technician',
+  );
+}
+
 function parseStructuredArray(value: unknown, key: 'task' | 'issue'): string {
   if (!value) return JSON.stringify([]);
   return JSON.stringify(typeof value === 'string' ? [{ [key]: value }] : value);
@@ -218,12 +268,46 @@ export async function initiateCanonicalHandover(
 
     const receiver = await tx.user.findUnique({
       where: { id: receiverId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        userRoles: {
+          select: {
+            role: {
+              select: {
+                slug: true,
+                rolePermissions: {
+                  select: { permission: { select: { slug: true } } },
+                },
+              },
+            },
+          },
+        },
+        directPerms: {
+          select: {
+            isGranted: true,
+            expiresAt: true,
+            permission: { select: { slug: true } },
+          },
+        },
+      },
     });
     if (!receiver || receiver.status !== 'active') {
       return {
         success: false as const,
         error: 'Designated handover receiver is not an active user',
+      };
+    }
+    if (!handoverUserIsMaintenanceTechnician(receiver)) {
+      return {
+        success: false as const,
+        error: 'Designated handover receiver must be an active maintenance technician',
+      };
+    }
+    if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {
+      return {
+        success: false as const,
+        error: 'Designated handover receiver is not authorized to execute maintenance work',
       };
     }
 
@@ -236,6 +320,24 @@ export async function initiateCanonicalHandover(
         success: false as const,
         error: 'Designated handover receiver does not have access to this plant',
       };
+    }
+
+    const existingReceiverMember = await tx.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: receiverId },
+      select: { id: true },
+    });
+    if (!existingReceiverMember) {
+      await tx.workOrderTeamMember.create({
+        data: {
+          workOrderId,
+          userId: receiverId,
+          role: 'handover_receiver',
+          accessLevel: 'read_only',
+          addedVia: 'shift_handover_pending',
+          addedById: session.userId,
+          assignedAt: now,
+        },
+      });
     }
 
     const closed = await closeAllActiveWorkSessions(
@@ -316,6 +418,7 @@ export async function initiateCanonicalHandover(
         assignedSupervisorId: wo.assignedSupervisorId,
         plannerId: wo.plannerId,
         teamMemberIds: wo.teamMembers.map((member) => member.userId),
+        receivedById: receiverId,
         reason: resolvedReason,
       },
     };
@@ -339,6 +442,7 @@ export async function initiateCanonicalHandover(
     outcome.notify.teamLeaderId,
     outcome.notify.assignedSupervisorId,
     outcome.notify.plannerId,
+    outcome.notify.receivedById,
     ...outcome.notify.teamMemberIds,
   ]) {
     if (userId && userId !== session.userId) recipients.add(userId);

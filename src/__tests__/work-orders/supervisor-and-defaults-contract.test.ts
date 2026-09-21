@@ -35,7 +35,9 @@ describe('work order supervisor ownership and defaults', () => {
     const capabilities = read('src/app/api/work-orders/[id]/capabilities/route.ts');
 
     expect(capabilities).toContain('canSubmitCompletion:');
-    expect(capabilities).toContain("canVerify: (isSupervisor || isAdminUser) && wo.status === 'completed'");
-    expect(capabilities).toContain("canClose: (isPlanner || isAdminUser) && wo.status === 'verified'");
+    expect(capabilities).toContain("canVerify: wo.status === 'completed'");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'verified')");
+    expect(capabilities).toContain("canClose: wo.status === 'verified'");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'closed')");
   });
 });

@@ -6843,19 +6843,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <AsyncSearchableSelect
                     value={newMemberUserId}
                     onValueChange={setNewMemberUserId}
-                    fetchOptions={async () => {
-                      const res = await api.get('/api/users?limit=100');
-                      if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                      return [];
+                    fetchOptions={async (query) => {
+                      const params = new URLSearchParams();
+                      if (query.trim()) params.set('search', query.trim());
+                      const res = await api.get(`/api/work-orders/${id}/team-candidates?${params.toString()}`);
+                      if (!res.success || !Array.isArray(res.data)) return [];
+                      return res.data.map((u: any) => ({
+                        value: u.id,
+                        label: u.staffId
+                          ? `${u.fullName} [${u.staffId}]${u.primaryTrade ? ` — ${u.primaryTrade}` : ''}`
+                          : `${u.fullName}${u.primaryTrade ? ` — ${u.primaryTrade}` : ''}`,
+                      }));
                     }}
-                    placeholder="Search users..."
-                    searchPlaceholder="Search by name..."
+                    placeholder="Search eligible technicians..."
+                    searchPlaceholder="Search by name, staff ID, or trade..."
                   />
                 </div>
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={newMemberRole} onValueChange={setNewMemberRole}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="technician">Technician</SelectItem><SelectItem value="team_leader">Team Leader</SelectItem></SelectContent>
                   </Select>
                 </div>
               </div>
@@ -6894,7 +6901,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={reqMemberRole} onValueChange={setReqMemberRole}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="technician">Technician</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5"><Label>Reason</Label>
@@ -6929,46 +6936,30 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <AsyncSearchableSelect
                     value={approveAssignUserId}
                     onValueChange={setApproveAssignUserId}
-                    fetchOptions={async () => {
+                    fetchOptions={async (query) => {
                       try {
                         const req = teamRequests.find((r: any) => r.id === approveReqId);
                         const tradeFilter = String(req?.requestedTrade || '').trim();
-                        const workerUrl = wo.plantId
-                          ? `/api/workers?role=technician&plantId=${encodeURIComponent(wo.plantId)}`
-                          : '/api/workers?role=technician';
-                        const res = await api.get(workerUrl);
-                        if (res.success && res.data) {
-                          let users = Array.isArray(res.data) ? res.data : [];
-                          if (tradeFilter) {
-                            const requested = tradeFilter.toLowerCase();
-                            users = users.filter((worker: any) => {
-                              const skillLabels = [
-                                worker.trade,
-                                ...(Array.isArray(worker.skills)
-                                  ? worker.skills.flatMap((skill: any) => [skill?.name, skill?.code])
-                                  : []),
-                              ]
-                                .filter(Boolean)
-                                .map((value: unknown) => String(value).trim().toLowerCase());
-                              return skillLabels.includes(requested);
-                            });
-                          }
-                          return users.map((u: any) => {
-                            const matchingSkill = tradeFilter
-                              ? (u.skills || []).find((skill: any) =>
-                                  [skill?.name, skill?.code].some((value) =>
-                                    String(value || '').trim().toLowerCase() === tradeFilter.toLowerCase(),
-                                  ),
-                                )
-                              : null;
-                            const tradeLabel = matchingSkill?.name || u.trade || tradeFilter || 'Technician';
-                            const proficiency = matchingSkill?.proficiency ? ` · ${matchingSkill.proficiency}` : '';
-                            return {
-                              value: u.id,
-                              label: `${u.fullName} — ${tradeLabel}${proficiency}${u.department ? ` (${u.department})` : ''}`,
-                            };
-                          });
-                        }
+                        const params = new URLSearchParams();
+                        if (tradeFilter) params.set('trade', tradeFilter);
+                        if (query.trim()) params.set('search', query.trim());
+                        const res = await api.get(`/api/work-orders/${id}/team-candidates?${params.toString()}`);
+                        if (!res.success || !Array.isArray(res.data)) return [];
+                        return res.data.map((u: any) => {
+                          const matchingSkill = tradeFilter
+                            ? (u.skills || []).find((skill: any) =>
+                                [skill?.name, skill?.code].some((value) =>
+                                  String(value || '').trim().toLowerCase() === tradeFilter.toLowerCase(),
+                                ),
+                              )
+                            : null;
+                          const tradeLabel = matchingSkill?.name || u.primaryTrade || tradeFilter || 'Technician';
+                          const proficiency = matchingSkill?.proficiency ? ` · ${matchingSkill.proficiency}` : '';
+                          return {
+                            value: u.id,
+                            label: `${u.fullName} — ${tradeLabel}${proficiency}${u.department ? ` (${u.department})` : ''}`,
+                          };
+                        });
                       } catch { /* ignore */ }
                       return [];
                     }}

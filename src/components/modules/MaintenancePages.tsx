@@ -3083,6 +3083,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
+  const [resourceCancelTarget, setResourceCancelTarget] = useState<{
+    kind: 'material' | 'tool';
+    requestRow: any;
+    label: string;
+  } | null>(null);
+  const [resourceCancelLoading, setResourceCancelLoading] = useState(false);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { navigate } = useNavigationStore();
@@ -4348,30 +4354,47 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     } else toast.error(res.error || 'Failed');
   };
 
-  const handleCancelMaterialRequest = async (requestRow: any) => {
-    if (!confirm(`Cancel the pending material request for "${requestRow.itemName || 'this item'}"?`)) return;
-    const res = await api.delete(`/api/repairs/material-requests/${requestRow.id}`);
-    if (res.success) {
-      toast.success('Material request cancelled');
-      fetchWO();
-      fetchSuggestedItems();
-    } else {
-      toast.error(res.error || 'Failed to cancel material request');
-    }
+  const handleCancelMaterialRequest = (requestRow: any) => {
+    setResourceCancelTarget({
+      kind: 'material',
+      requestRow,
+      label: requestRow.itemName || 'this material',
+    });
   };
 
-  const handleCancelToolRequest = async (requestRow: any) => {
+  const handleCancelToolRequest = (requestRow: any) => {
     const label = requestRow.toolName
       || requestRow.items?.map((item: any) => item.toolName).filter(Boolean).join(', ')
       || 'this tool request';
-    if (!confirm(`Cancel the pending tool request for "${label}"?`)) return;
-    const res = await api.delete(`/api/repairs/tool-requests/${requestRow.id}`);
-    if (res.success) {
-      toast.success('Tool request cancelled');
-      fetchWO();
-      fetchSuggestedItems();
-    } else {
-      toast.error(res.error || 'Failed to cancel tool request');
+    setResourceCancelTarget({ kind: 'tool', requestRow, label });
+  };
+
+  const confirmPendingResourceCancel = async () => {
+    if (!resourceCancelTarget || resourceCancelLoading) return;
+
+    const { kind, requestRow } = resourceCancelTarget;
+    setResourceCancelLoading(true);
+    try {
+      const endpoint = kind === 'material'
+        ? `/api/repairs/material-requests/${requestRow.id}`
+        : `/api/repairs/tool-requests/${requestRow.id}`;
+      const res = await api.delete(endpoint);
+
+      if (res.success) {
+        toast.success(kind === 'material' ? 'Material request cancelled' : 'Tool request cancelled');
+        setResourceCancelTarget(null);
+        fetchWO();
+        fetchSuggestedItems();
+      } else {
+        toast.error(
+          res.error ||
+          (kind === 'material'
+            ? 'Failed to cancel material request'
+            : 'Failed to cancel tool request'),
+        );
+      }
+    } finally {
+      setResourceCancelLoading(false);
     }
   };
 
@@ -5817,6 +5840,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </Button>
           </div>
       </ResponsiveDialog>
+
+      {/* Pending Resource Request Cancellation */}
+      <ConfirmDialog
+        open={!!resourceCancelTarget}
+        onOpenChange={(open) => {
+          if (!open && !resourceCancelLoading) setResourceCancelTarget(null);
+        }}
+        title={resourceCancelTarget?.kind === 'material'
+          ? 'Cancel Material Request'
+          : 'Cancel Tool Request'}
+        description={
+          resourceCancelTarget
+            ? `Cancel the pending ${resourceCancelTarget.kind} request for "${resourceCancelTarget.label}"? ${resourceCancelTarget.kind === 'material' ? 'Any linked planner recommendation will return to planned status so it can be reviewed or submitted again.' : 'The pending request will be removed and the recommendation can be reviewed or submitted again.'}`
+            : 'Cancel this pending resource request?'
+        }
+        confirmLabel="Cancel Request"
+        variant="destructive"
+        loading={resourceCancelLoading}
+        onConfirm={confirmPendingResourceCancel}
+      />
 
       {/* WO Action Confirmation Dialog */}
       <ConfirmDialog

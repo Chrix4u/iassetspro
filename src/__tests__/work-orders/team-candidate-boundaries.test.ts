@@ -56,9 +56,21 @@ describe('work-order team candidate boundaries', () => {
   });
 
   it('keeps UI team roles aligned with canonical execution roles', () => {
-    expect(maintenance).toContain('<SelectItem value="assistant">Assistant</SelectItem>');
-    expect(maintenance).toContain('<SelectItem value="technician">Technician</SelectItem>');
-    expect(maintenance).toContain('<SelectItem value="team_leader">Team Leader</SelectItem>');
-    expect(maintenance).not.toContain('<SelectItem value="specialist">Specialist</SelectItem>');
+    const addDialog = maintenance.match(
+      /\{\/\* Add Team Member Dialog \*\/\}[\s\S]*?\{\/\* Request Team Member Dialog/
+    )?.[0] || '';
+    expect(addDialog).toContain('<SelectItem value="assistant">Assistant</SelectItem>');
+    expect(addDialog).toContain('<SelectItem value="technician">Technician</SelectItem>');
+    expect(addDialog).toContain('<SelectItem value="team_leader">Team Leader</SelectItem>');
+    expect(addDialog).not.toContain('<SelectItem value="specialist">Specialist</SelectItem>');
+    expect(addDialog).not.toContain('<SelectItem value="supervisor">Supervisor</SelectItem>');
+
+    const requestDialog = maintenance.match(
+      /\{\/\* Request Team Member Dialog[\s\S]*?\{\/\* Assign Technician Dialog/
+    )?.[0] || '';
+    expect(requestDialog).toContain('<SelectItem value="assistant">Assistant</SelectItem>');
+    expect(requestDialog).toContain('<SelectItem value="technician">Technician</SelectItem>');
+    expect(requestDialog).not.toContain('<SelectItem value="team_leader">Team Leader</SelectItem>');
+    expect(requestDialog).not.toContain('<SelectItem value="specialist">Specialist</SelectItem>');
   });
 });

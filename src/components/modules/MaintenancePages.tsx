@@ -3691,18 +3691,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
         if (toolsRes.success && Array.isArray(toolsRes.data)) {
           setEditToolsData(toolsRes.data);
-          // Populate requiredTools by matching WO material names to tool IDs
-          const toolMaterials = wo?.materials?.filter((m: any) => !m.itemId) || [];
-          if (toolMaterials.length > 0) {
-            const toolIds = toolMaterials
-              .map((m: any) => {
-                const match = toolsRes.data.find((t: any) => (t.toolName || t.name) === m.itemName);
-                return match?.id;
-              })
-              .filter(Boolean);
-            if (toolIds.length > 0) {
-              setEditForm(prev => ({ ...prev, requiredTools: toolIds }));
+          // Planner edit mode loads only planner recommendations, never
+          // technician-requested/issued tool records.
+          let plannedToolIds: string[] = [];
+          try {
+            const parsed = JSON.parse((wo as any)?.suggestedTools || '[]');
+            if (Array.isArray(parsed)) {
+              plannedToolIds = parsed
+                .map((entry: any) => entry?.toolId)
+                .filter((toolId: unknown): toolId is string => typeof toolId === 'string' && Boolean(toolId));
             }
+          } catch {
+            plannedToolIds = [];
+          }
+          if (plannedToolIds.length > 0) {
+            setEditForm(prev => ({ ...prev, requiredTools: plannedToolIds }));
           }
         }
       }).catch(() => {/* dropdowns will be empty */});
@@ -3734,7 +3737,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         ? (wo.assignedSupervisorId || '')
         : (wo.teamLeaderId || ''),
       responsibleSupervisorId: (wo as any).assignmentType === 'via_supervisor' ? '' : (wo.assignedSupervisorId || ''),
-      requiredParts: wo.materials?.map((m: any) => m.itemId).filter(Boolean) || [],
+      requiredParts: wo.materials
+        ?.filter((m: any) => m.status === 'planned' && m.itemId)
+        .map((m: any) => m.itemId)
+        .filter(Boolean) || [],
       requiredTools: [], // populated after editToolsData loads (see useEffect below)
       // Section 4: Safety
       safetyNotes: (wo as any).safetyNotes || '',

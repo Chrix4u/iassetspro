@@ -33,6 +33,18 @@ export async function GET(
         plannerId: true,
         teamMembers: { select: { userId: true } },
         maintenanceRequest: { select: { requestedBy: true } },
+        materials: {
+          where: { status: 'planned' },
+          select: {
+            id: true,
+            itemId: true,
+            itemName: true,
+            quantity: true,
+            unitCost: true,
+            status: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
         repairMaterialRequests: {
           where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] } },
           select: {
@@ -49,7 +61,7 @@ export async function GET(
           },
         },
         repairToolRequests: {
-          where: { source: 'planner_suggested' },
+          where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] }, status: { not: 'rejected' } },
           select: {
             id: true,
             toolName: true,
@@ -70,36 +82,122 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
-    const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-    const storedSuggestedTools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+    const parseSuggestionArray = (value: string | null | undefined): Array<Record<string, unknown>> => {
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
 
-    // Older MR→WO conversions created canonical planner requests without a JSON
-    // suggestion snapshot (and, historically, materials were missing from the
-    // canonical pipeline entirely). Derive a display snapshot from the
-    // authoritative planner_suggested requests whenever the JSON projection is
-    // absent so existing work orders remain visible after reconciliation.
-    const suggestedParts = storedSuggestedParts.length > 0
-      ? storedSuggestedParts
-      : wo.repairMaterialRequests.map((mr) => ({
-          id: mr.id,
-          itemId: mr.itemId,
-          itemName: mr.itemName,
-          itemCode: mr.item?.itemCode || '',
-          quantity: mr.quantityRequested,
-          unit: mr.unit || 'each',
-          notes: '',
-        }));
+    const storedSuggestedParts = parseSuggestionArray(wo.suggestedParts);
+    const storedSuggestedTools = parseSuggestionArray(wo.suggestedTools);
+
+    // Reconcile planner-selected materials from every durable source. Under the
+    // recommendation model there may intentionally be no RepairMaterialRequest
+    // until a technician submits the recommendation, so planned WO material rows
+    // must also be able to reconstruct the recommendation display.
+    const materialItemIds = new Set<string>();
+    for (const suggestion of storedSuggestedParts) {
+      if (typeof suggestion.itemId === 'string' && suggestion.itemId) {
+        materialItemIds.add(suggestion.itemId);
+      }
+    }
+    for (const material of wo.materials) {
+      if (material.itemId) materialItemIds.add(material.itemId);
+    }
+    for (const request of wo.repairMaterialRequests) {
+      if (request.itemId) materialItemIds.add(request.itemId);
+    }
+
+    const inventoryItems = materialItemIds.size > 0
+      ? await db.inventoryItem.findMany({
+          where: { id: { in: [...materialItemIds] } },
+          select: {
+            id: true,
+            itemCode: true,
+            unitOfMeasure: true,
+          },
+        })
+      : [];
+    const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+    const rejectedItemIds = new Set(
+      wo.repairMaterialRequests
+        .filter((request) => request.status === 'rejected' && request.itemId)
+        .map((request) => request.itemId as string),
+    );
+
+    const reconciledParts = new Map<string, Record<string, unknown>>();
+
+    // 1. Preserve the planner snapshot when present.
+    for (const suggestion of storedSuggestedParts) {
+      const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      reconciledParts.set(itemId, suggestion);
+    }
+
+    // 2. Fill missing recommendations from planned WO material rows.
+    for (const material of wo.materials) {
+      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      const item = inventoryById.get(material.itemId);
+      const current = reconciledParts.get(material.itemId);
+      reconciledParts.set(material.itemId, {
+        id: current?.id || material.id,
+        itemId: material.itemId,
+        itemName: current?.itemName || material.itemName || 'Planned material',
+        itemCode: current?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || material.quantity || 1,
+        unit: current?.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    // 3. Preserve compatibility with legacy planner_suggested request rows.
+    for (const request of wo.repairMaterialRequests) {
+      if (!request.itemId || request.status === 'rejected') continue;
+      const item = inventoryById.get(request.itemId);
+      const current = reconciledParts.get(request.itemId);
+      reconciledParts.set(request.itemId, {
+        id: current?.id || request.id,
+        itemId: request.itemId,
+        itemName: current?.itemName || request.itemName || 'Planned material',
+        itemCode: current?.itemCode || request.item?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || request.quantityRequested || 1,
+        unit: current?.unit || request.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    const suggestedParts = [...reconciledParts.values()];
 
     const suggestedTools = storedSuggestedTools.length > 0
       ? storedSuggestedTools
-      : wo.repairToolRequests.map((tr) => ({
-          id: tr.id,
-          toolId: tr.toolId,
-          toolName: tr.toolName,
-          toolCode: tr.tool?.toolCode || '',
-          quantity: tr.items.find((item) => item.toolId === tr.toolId)?.quantityRequested || 1,
-          notes: '',
-        }));
+      : wo.repairToolRequests.flatMap((tr) => {
+          if (tr.items.length > 0) {
+            return tr.items.map((item) => ({
+              id: `${tr.id}:${item.toolId}`,
+              toolId: item.toolId,
+              toolName: tr.toolName,
+              toolCode: tr.tool?.toolCode || '',
+              quantity: item.quantityRequested || 1,
+              notes: '',
+            }));
+          }
+          return tr.toolId
+            ? [{
+                id: tr.id,
+                toolId: tr.toolId,
+                toolName: tr.toolName,
+                toolCode: tr.tool?.toolCode || '',
+                quantity: 1,
+                notes: '',
+              }]
+            : [];
+        });
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(

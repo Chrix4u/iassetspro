@@ -157,6 +157,15 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("...(pmEnabled ? [{ type: 'Preventive'");
   });
 
+  it('never lets a read-only team row disable the primary assignee resource controls', () => {
+    expect(maintenance).toContain('if (wo.assignedToId === user.id) return false');
+    expect(maintenance).toContain("tm.accessLevel === 'read_only'");
+    expect(maintenance).toContain('const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO');
+    expect(maintenance).toContain("api.get('/api/inventory?mode=lookup&limit=100')");
+    expect(maintenance).toContain("api.get('/api/tools?mode=lookup&limit=100')");
+    expect(maintenance).not.toContain("api.get('/api/tools?status=available&limit=100')");
+  });
+
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {
     expect(inventoryApi).toContain("const isLookup = mode === 'lookup'");
     expect(inventoryApi).toContain('const canUseInventoryWorkspace');

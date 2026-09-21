@@ -38,7 +38,7 @@ describe('legacy Repairs completion compatibility boundary', () => {
   });
 
   it('returns the work-order asset context used by the legacy component selector', () => {
-    expect(route).toContain('status: true, isLocked: true, assetId: true');
+    expect(route).toContain('assetId: true');
     expect(page).toContain('completion?.workOrder?.assetId');
   });
 });

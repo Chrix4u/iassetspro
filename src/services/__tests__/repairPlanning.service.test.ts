@@ -590,6 +590,33 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(suggestedRoute).toContain("action: 'decline_planner_resource_recommendation'");
     expect(suggestedRoute).toContain("action: 'amend_planner_resource_recommendation'");
   });
+
+  it('keeps planner WO edits and technician recommendation decisions separate', () => {
+    const workOrderRoute = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/work-orders/[id]/route.ts'),
+      'utf8',
+    );
+    const detailsUi = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
+      'utf8',
+    );
+
+    expect(workOrderRoute).toContain("await tx.workOrderMaterial.deleteMany({");
+    expect(workOrderRoute).toContain("where: { workOrderId: id, status: 'planned' }");
+    expect(workOrderRoute).toContain("data: { suggestedParts: JSON.stringify(resolvedParts) }");
+    expect(workOrderRoute).toContain("data: { suggestedTools: JSON.stringify(resolvedTools) }");
+    expect(workOrderRoute).not.toContain("reason: 'Planner suggested material (updated)'");
+    expect(workOrderRoute).not.toContain("reason: 'Planner suggested tool (updated)'");
+
+    expect(detailsUi).toContain('Planner Recommended Resources');
+    expect(detailsUi).toContain('Recommendations only — assigned technicians may adjust quantities');
+    expect(detailsUi).toContain('handleSuggestedQuantityChange');
+    expect(detailsUi).toContain('handleSubmitSuggestedRecommendations');
+    expect(detailsUi).toContain("action: 'submit_recommendations'");
+    expect(detailsUi).toContain('Request Extra Material');
+    expect(detailsUi).toContain('Request Extra Tool');
+    expect(detailsUi).toContain("m.status === 'planned' && m.itemId");
+  });
 });
 
 // ============================================================================

@@ -31,6 +31,20 @@ describe('work-order handover candidate scope', () => {
     expect(resume).toContain("accessLevel: 'full'");
   });
 
+  it('keeps WO capability flags on the same actor-aware contract', () => {
+    const capabilities = read('src/app/api/work-orders/[id]/capabilities/route.ts');
+
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'on_hold')");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'in_progress')");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'completed')");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'pending_handover')");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'verified')");
+    expect(capabilities).toContain("canPerformWorkOrderTransition(session, wo, 'closed')");
+    expect(capabilities).toContain("hasPermission(session, 'repair_material_requests.create')");
+    expect(capabilities).toContain("hasPermission(session, 'assistance_requests.create')");
+    expect(capabilities).toContain("hasPermission(session, 'time_logs.create')");
+  });
+
   it('requires explicit handover execution permission at the route boundary', () => {
     const route = read('src/app/api/work-orders/[id]/handover/route.ts');
     expect(route).toContain("hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])");

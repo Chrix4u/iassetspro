@@ -33,6 +33,13 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('Tools — Request, Issue & Personal Tools');
   });
 
+  it('keeps edit cancellation compact inside resource cards', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(panel).not.toContain('Cancel Edit');
+    expect(panel).toContain('className="shrink-0 whitespace-nowrap" onClick={resetMaterialRequest}');
+    expect(panel).toContain('className="shrink-0 whitespace-nowrap" onClick={resetToolRequest}');
+  });
+
   it('prefetches available store materials, tools and units instead of free-text resource identities', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
     expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100')");

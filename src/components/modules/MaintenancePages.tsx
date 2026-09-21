@@ -3067,6 +3067,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
+  const repairsModuleEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const inventoryModuleEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsModuleEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
+  const materialResourcesEnabled = repairsModuleEnabled && inventoryModuleEnabled;
+  const toolResourcesEnabled = repairsModuleEnabled && toolsModuleEnabled;
   const isMobile = useIsMobile();
   const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(r.slug)) ?? false;
   // Edit WO
@@ -3276,17 +3281,22 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {
+    if (!materialResourcesEnabled && !toolResourcesEnabled) {
+      setSuggestedParts([]);
+      setSuggestedTools([]);
+      return;
+    }
     try {
       const res = await api.get(`/api/work-orders/${id}/suggested-items`);
       if (res.success && res.data) {
-        setSuggestedParts(res.data.suggestedParts || []);
-        setSuggestedTools(res.data.suggestedTools || []);
+        setSuggestedParts(materialResourcesEnabled ? (res.data.suggestedParts || []) : []);
+        setSuggestedTools(toolResourcesEnabled ? (res.data.suggestedTools || []) : []);
       }
     } catch (err) {
       // Suggested items are optional; don't block the UI
       console.error('Failed to fetch suggested items:', err);
     }
-  }, [id]);
+  }, [id, materialResourcesEnabled, toolResourcesEnabled]);
 
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
     if (!confirm(`Remove this suggested ${itemType}?`)) return;
@@ -5850,7 +5860,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           })()}
 
           {/* Materials — with approval pipeline */}
-          <Card className="border-0 shadow-sm overflow-hidden">
+          {materialResourcesEnabled && <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -5964,10 +5974,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Tool Requests (from Repair module) */}
-          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          {toolResourcesEnabled && wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>

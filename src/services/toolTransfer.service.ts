@@ -66,6 +66,38 @@ async function resolveOriginatingRequestItem(tx: Tx, toolId: string, fromUserId:
   return matches[0];
 }
 
+async function assertEligibleTransferRecipient(
+  tx: Tx,
+  toUserId: string,
+  plantId: string | null,
+) {
+  if (!plantId) {
+    throw new ToolTransferConflictError('Tool must belong to a plant before transfer');
+  }
+
+  const recipient = await tx.user.findUnique({
+    where: { id: toUserId },
+    select: {
+      status: true,
+      plantAccess: { where: { plantId }, select: { id: true } },
+      userRoles: {
+        where: { role: { slug: 'maintenance_technician' } },
+        select: { id: true },
+      },
+    },
+  });
+
+  if (!recipient || recipient.status !== 'active') {
+    throw new ToolTransferConflictError('Receiving technician is not active');
+  }
+  if (recipient.plantAccess.length === 0) {
+    throw new ToolTransferConflictError('Receiving technician does not have access to the tool plant');
+  }
+  if (recipient.userRoles.length === 0) {
+    throw new ToolTransferConflictError('Receiving user must be a maintenance technician');
+  }
+}
+
 async function closeOriginatingRequestIfComplete(tx: Tx, requestId: string, now: Date) {
   const request = await tx.repairToolRequest.findUnique({
     where: { id: requestId },
@@ -106,6 +138,13 @@ async function completeToolTransferTx(tx: Tx, transferId: string, now: Date) {
   if (transfer.tool.assignedToId !== transfer.fromUserId) {
     throw new ToolTransferConflictError('Tool custodian changed before transfer completion');
   }
+  if (transfer.toUserId === transfer.fromUserId) {
+    throw new ToolTransferConflictError('Cannot transfer tool to the same person');
+  }
+
+  // Re-check recipient eligibility at physical handover completion in case the
+  // user's status, role, or plant access changed after the request was created.
+  await assertEligibleTransferRecipient(tx, transfer.toUserId, transfer.tool.plantId);
 
   const origin = await resolveOriginatingRequestItem(tx, transfer.toolId, transfer.fromUserId);
 
@@ -179,9 +218,17 @@ export async function createToolTransferRequest(input: CreateTransferInput) {
 
     const tool = await tx.tool.findUnique({ where: { id: input.toolId } });
     if (!tool) throw new ToolTransferNotFoundError('Tool not found');
+    if (!tool.plantId) {
+      throw new ToolTransferConflictError('Tool must belong to a plant before transfer');
+    }
     if (tool.assignedToId !== input.fromUserId) {
       throw new ToolTransferConflictError('Tool is not currently assigned to the specified user');
     }
+    if (input.toUserId === input.fromUserId) {
+      throw new ToolTransferConflictError('Cannot transfer tool to the same person');
+    }
+
+    await assertEligibleTransferRecipient(tx, input.toUserId, tool.plantId);
 
     const active = await tx.toolTransferRequest.findFirst({
       where: {

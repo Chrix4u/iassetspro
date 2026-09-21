@@ -182,20 +182,47 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       }
     }
 
-    const deleted = await db.repairMaterialRequest.deleteMany({ where: { id, status: 'pending' } });
-    if (deleted.count !== 1) {
+    const cancellation = await db.$transaction(async (tx) => {
+      const deleted = await tx.repairMaterialRequest.deleteMany({
+        where: { id, status: 'pending' },
+      });
+      if (deleted.count !== 1) return { cancelled: false };
+
+      // A submitted planner recommendation temporarily promotes its planned
+      // WorkOrderMaterial projection to "requested". Cancelling the still-
+      // pending request must restore that projection so the recommendation can
+      // be reviewed/submitted again without leaving stale requested state.
+      if (
+        existing.source === 'technician_from_planner_recommendation'
+        && existing.itemId
+        && existing.workOrderId
+      ) {
+        await tx.workOrderMaterial.updateMany({
+          where: {
+            workOrderId: existing.workOrderId,
+            itemId: existing.itemId,
+            status: 'requested',
+          },
+          data: { status: 'planned' },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'repair_material_request',
+          entityId: id,
+          oldValues: JSON.stringify(existing),
+        },
+      });
+
+      return { cancelled: true };
+    });
+
+    if (!cancellation.cancelled) {
       return NextResponse.json({ success: false, error: 'Material request changed concurrently and can no longer be cancelled' }, { status: 409 });
     }
-
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'delete',
-        entityType: 'repair_material_request',
-        entityId: id,
-        oldValues: JSON.stringify(existing),
-      },
-    });
 
     return NextResponse.json({ success: true, message: 'Material request cancelled' });
   } catch (error: unknown) {

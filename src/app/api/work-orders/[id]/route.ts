@@ -412,6 +412,23 @@ export async function PUT(
       await db.$transaction(async (tx) => {
         // Planner edits update recommendations only. Existing technician/store
         // pipeline requests are never created, replaced, or deleted here.
+        // Retire only legacy #51 auto-generated planner/pending rows for items
+        // the planner explicitly removed so they cannot reconstruct themselves
+        // as recommendations on the next details fetch.
+        const desiredPartIds = resolvedParts.map((part) => part.itemId);
+        await tx.repairMaterialRequest.updateMany({
+          where: {
+            workOrderId: id,
+            source: 'planner_suggested',
+            status: 'pending',
+            ...(desiredPartIds.length > 0 ? { itemId: { notIn: desiredPartIds } } : {}),
+          },
+          data: {
+            status: 'rejected',
+            notes: 'Removed from planner recommendations before technician submission',
+          },
+        });
+
         await tx.workOrderMaterial.deleteMany({
           where: { workOrderId: id, status: 'planned' },
         });
@@ -437,9 +454,24 @@ export async function PUT(
     }
 
     if (resolvedTools) {
-      await db.workOrder.update({
-        where: { id },
-        data: { suggestedTools: JSON.stringify(resolvedTools) },
+      const desiredToolIds = resolvedTools.map((tool) => tool.toolId);
+      await db.$transaction(async (tx) => {
+        await tx.repairToolRequest.updateMany({
+          where: {
+            workOrderId: id,
+            source: 'planner_suggested',
+            status: 'pending',
+            ...(desiredToolIds.length > 0 ? { toolId: { notIn: desiredToolIds } } : {}),
+          },
+          data: {
+            status: 'rejected',
+            rejectionReason: 'Removed from planner recommendations before technician submission',
+          },
+        });
+        await tx.workOrder.update({
+          where: { id },
+          data: { suggestedTools: JSON.stringify(resolvedTools) },
+        });
       });
     }
 

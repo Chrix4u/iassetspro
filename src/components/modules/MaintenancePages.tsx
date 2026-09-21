@@ -162,7 +162,7 @@ export function MaintenanceRequestsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const { hasPermission, user, isAdmin } = useAuthStore();
+  const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
   // Track autoOpen to avoid race condition between filter effect and fetch effect
@@ -3450,13 +3450,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
-    if (!toolResourcesEnabled) {
+    if (!isAuthenticated || !user?.id || !toolResourcesEnabled) {
       setPersonalTools([]);
       return;
     }
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
-  }, [id, toolResourcesEnabled]);
+  }, [id, isAuthenticated, toolResourcesEnabled, user?.id]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {

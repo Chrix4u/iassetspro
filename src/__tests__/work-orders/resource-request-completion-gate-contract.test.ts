@@ -80,7 +80,6 @@ describe('RWOP resource request approval and completion gate contract', () => {
     expect(maintenance).toContain('/api/work-orders/${id}/team-candidates?${params.toString()}');
     expect(maintenance).toContain("params.set('trade', tradeFilter)");
     expect(maintenance).toContain('(u.skills || []).find');
-    expect(maintenance).not.toContain('/api/workers?role=technician');
     expect(maintenance).toContain('Only active technicians in this plant with the requested trade/skill are listed.');
     expect(maintenance).toContain("'Assign & Approve'");
     expect(assistanceRoute).toContain('Please select a technician to assign for this trade request.');

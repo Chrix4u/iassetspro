@@ -602,13 +602,15 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(suggestedRoute).toContain('const reconciledParts = new Map');
     expect(suggestedRoute).toContain('for (const material of wo.materials)');
     expect(suggestedRoute).toContain('for (const request of wo.repairMaterialRequests)');
-    expect(suggestedRoute).toContain('suggestedParts = [...reconciledParts.values()]');
+    expect(suggestedRoute).toContain('suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : []');
     expect(suggestedRoute).toContain('tx.workOrderMaterial.deleteMany');
     expect(suggestedRoute).toContain('tx.workOrderMaterial.updateMany');
-    expect(suggestedRoute).toContain('const plannedMaterials = await db.workOrderMaterial.findMany');
-    expect(suggestedRoute).toContain('const existingPlannerMaterialRequests = await db.repairMaterialRequest.findMany');
+    expect(suggestedRoute).toContain('const plannedMaterials = inventoryResourcesOperational ? await db.workOrderMaterial.findMany');
+    expect(suggestedRoute).toContain('const existingPlannerMaterialRequests = inventoryResourcesOperational ? await db.repairMaterialRequest.findMany');
     expect(suggestedRoute).toContain('Recovered from planned work-order material before store submission');
     expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
+    expect(suggestedRoute).toContain('toolResourcesOperational');
+    expect(suggestedRoute).toContain('inventoryResourcesOperational');
     expect(suggestedRoute).toContain('wo.repairToolRequests.map');
   });
 });

@@ -21,7 +21,7 @@ describe('MR conversion accountable-planner boundary', () => {
 
   it('keeps permission and plant authorization ahead of planner ownership', () => {
     const permissionIndex = route.indexOf('maintenance_requests.convert_to_wo');
-    const plantIndex = route.indexOf('authorizeMaintenanceRequestPlant');
+    const plantIndex = route.indexOf('const plantAuth = await authorizeMaintenanceRequestPlant');
     const ownerIndex = route.indexOf('mr.assignedPlannerId && mr.assignedPlannerId !== session.userId');
     expect(permissionIndex).toBeGreaterThan(-1);
     expect(plantIndex).toBeGreaterThan(permissionIndex);

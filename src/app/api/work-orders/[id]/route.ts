@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 export async function GET(
   request: NextRequest,
@@ -148,7 +149,63 @@ export async function GET(
       (wo as Record<string, unknown>).workOrderComponents = [];
     }
 
-    return NextResponse.json({ success: true, data: wo });
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'assets',
+      'maintenance_requests',
+      'pm_schedules',
+      'repairs',
+      'inventory',
+      'tools',
+    ]));
+    const redacted: Record<string, unknown> = { ...wo };
+
+    if (unavailableModules.has('maintenance_requests')) {
+      redacted.maintenanceRequest = null;
+      redacted.maintenanceRequestId = null;
+    } else if (
+      unavailableModules.has('assets')
+      && redacted.maintenanceRequest
+      && typeof redacted.maintenanceRequest === 'object'
+    ) {
+      redacted.maintenanceRequest = {
+        ...(redacted.maintenanceRequest as Record<string, unknown>),
+        asset: null,
+      };
+    }
+
+    if (unavailableModules.has('pm_schedules')) {
+      redacted.pmSchedule = null;
+      redacted.pmScheduleId = null;
+    }
+
+    if (unavailableModules.has('assets')) {
+      redacted.assetId = null;
+      redacted.workOrderComponents = [];
+    }
+
+    if (unavailableModules.has('inventory')) {
+      redacted.materials = [];
+      redacted.suggestedParts = '[]';
+    }
+
+    if (
+      unavailableModules.has('repairs')
+      || unavailableModules.has('inventory')
+    ) {
+      redacted.repairMaterialRequests = [];
+    }
+
+    if (
+      unavailableModules.has('repairs')
+      || unavailableModules.has('tools')
+    ) {
+      redacted.repairToolRequests = [];
+    }
+    if (unavailableModules.has('tools')) {
+      redacted.suggestedTools = '[]';
+    }
+
+    return NextResponse.json({ success: true, data: redacted });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load work order';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

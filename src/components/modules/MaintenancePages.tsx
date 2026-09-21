@@ -887,7 +887,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       }
     });
     return () => { active = false; };
-  }, [id, hydrateSuggestedResourcesFromWO]);
+  }, [id]);
 
   const handleRefresh = useCallback(() => {
     api.get<MaintenanceRequest>(`/api/maintenance-requests/${id}`).then(res => {
@@ -3413,7 +3413,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       }
     }
     setLoading(false);
-  }, [id]);
+  }, [id, hydrateSuggestedResourcesFromWO]);
 
   // Fetch team member requests (separate call for permission-filtered results)
   const fetchTeamRequests = useCallback(async () => {

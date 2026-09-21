@@ -189,9 +189,15 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     const [downRes, timeRes, personalToolsRes, inventoryRes, toolsRes] = await Promise.all([
       api.get<any[]>(`/api/work-orders/${workOrderId}/downtime`),
       api.get<any>(`/api/work-orders/${workOrderId}/time-logs${teamLogs}`),
-      api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`),
-      api.get<InventoryOption[]>('/api/inventory'),
-      api.get<ToolOption[]>('/api/tools?status=available&limit=100'),
+      (capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools)
+        ? api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`)
+        : Promise.resolve({ success: true, data: [] as any[] }),
+      capabilities?.canRequestMaterials
+        ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100')
+        : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
+      capabilities?.canRequestTools
+        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100')
+        : Promise.resolve({ success: true, data: [] as ToolOption[] }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
       setDowntime(downRes.data);
@@ -221,7 +227,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setToolOptions([]);
     }
     setResourcesLoading(false);
-  }, [capabilities?.isTeamLeader, workOrderId]);
+  }, [
+    capabilities?.canLogOwnTime,
+    capabilities?.canRequestMaterials,
+    capabilities?.canRequestTools,
+    capabilities?.isTeamLeader,
+    workOrderId,
+  ]);
 
   useEffect(() => { void loadPanels(); }, [loadPanels]);
 
@@ -447,7 +459,45 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   ];
 
   const materialRequests = Array.isArray(workOrder.repairMaterialRequests) ? workOrder.repairMaterialRequests : [];
-  const toolRequests = Array.isArray(workOrder.repairToolRequests) ? workOrder.repairToolRequests : [];
+  const canonicalToolRequests = Array.isArray(workOrder.repairToolRequests) ? workOrder.repairToolRequests : [];
+  const representedPlannerToolIds = new Set<string>();
+  for (const request of canonicalToolRequests) {
+    if (request?.toolId) representedPlannerToolIds.add(String(request.toolId));
+    for (const item of Array.isArray(request?.items) ? request.items : []) {
+      if (item?.toolId) representedPlannerToolIds.add(String(item.toolId));
+    }
+  }
+  const plannerToolSnapshot = (() => {
+    if (Array.isArray(workOrder.suggestedTools)) return workOrder.suggestedTools;
+    if (typeof workOrder.suggestedTools !== 'string') return [];
+    try {
+      const parsed = JSON.parse(workOrder.suggestedTools || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const projectedPlannerToolRequests = plannerToolSnapshot
+    .filter((tool: any) => tool?.toolId && !representedPlannerToolIds.has(String(tool.toolId)))
+    .map((tool: any) => ({
+      id: `planned:tool:snapshot:${tool.toolId}`,
+      requestNumber: null,
+      toolId: tool.toolId,
+      toolName: tool.toolName || 'Planned tool',
+      source: 'planner_suggested',
+      status: 'planned',
+      urgency: 'normal',
+      reason: 'Planner-selected tool',
+      items: [{
+        id: `planned:tool:snapshot:${tool.toolId}:item`,
+        toolId: tool.toolId,
+        toolName: tool.toolName || 'Planned tool',
+        toolCode: tool.toolCode || '',
+        quantityRequested: Math.max(1, Math.floor(Number(tool.quantity) || 1)),
+      }],
+      projectionOnly: true,
+    }));
+  const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests];
   const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);
   const teamTimeCandidates = Array.from(new Map([
     ...(workOrder.assignee?.id ? [[workOrder.assignee.id, workOrder.assignee.fullName || 'Assigned technician']] : []),
@@ -587,7 +637,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requestNumber || request.toolName || 'Tool request'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>
-                  {request.status === 'pending' && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelToolRequest(request.id)} disabled={busy !== null}>Cancel</Button></div>}
+                  {request.status === 'pending' && !request.projectionOnly && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelToolRequest(request.id)} disabled={busy !== null}>Cancel</Button></div>}
                 </div>
               ))}
             </div>

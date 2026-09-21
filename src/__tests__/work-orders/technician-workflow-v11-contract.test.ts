@@ -35,8 +35,10 @@ describe('technician workflow V1.1 completion contract', () => {
 
   it('prefetches available store materials, tools and units instead of free-text resource identities', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
-    expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory')");
-    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
+    expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100')");
+    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100')");
+    expect(panel).not.toContain("api.get<InventoryOption[]>('/api/inventory')");
+    expect(panel).not.toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
     expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
     expect(panel).toContain(".filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
     expect(panel).toContain('selectedId={material.itemId}');

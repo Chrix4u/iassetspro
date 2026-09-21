@@ -78,8 +78,16 @@ export async function GET(
             toolName: true,
             status: true,
             toolId: true,
-            tool: { select: { toolCode: true, status: true } },
-            items: { select: { toolId: true, quantityRequested: true } },
+            tool: { select: { id: true, name: true, toolCode: true, status: true } },
+            items: {
+              select: {
+                toolId: true,
+                toolName: true,
+                toolCode: true,
+                quantityRequested: true,
+                tool: { select: { id: true, name: true, toolCode: true, status: true } },
+              },
+            },
             source: true,
           },
         },
@@ -185,18 +193,64 @@ export async function GET(
 
     suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : [];
 
-    const suggestedTools = !toolResourcesOperational
-      ? []
-      : storedSuggestedTools.length > 0
-      ? storedSuggestedTools
-      : wo.repairToolRequests.map((tr) => ({
-          id: tr.id,
-          toolId: tr.toolId,
-          toolName: tr.toolName,
-          toolCode: tr.tool?.toolCode || '',
-          quantity: tr.items.find((item) => item.toolId === tr.toolId)?.quantityRequested || 1,
-          notes: '',
-        }));
+    // Reconcile planner-selected tools from every durable representation.
+    // A request may keep the tool only in RepairToolRequestItem, and older
+    // conversions may keep only the suggestedTools JSON snapshot.
+    const rejectedToolIds = new Set<string>();
+    if (toolResourcesOperational) {
+      for (const request of wo.repairToolRequests) {
+        if (request.status !== 'rejected') continue;
+        if (request.toolId) rejectedToolIds.add(request.toolId);
+        for (const item of request.items) {
+          if (item.toolId) rejectedToolIds.add(item.toolId);
+        }
+      }
+    }
+
+    const reconciledTools = new Map<string, Record<string, unknown>>();
+
+    if (toolResourcesOperational) {
+      for (const suggestion of storedSuggestedTools) {
+        const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
+        if (!toolId || rejectedToolIds.has(toolId)) continue;
+        reconciledTools.set(toolId, suggestion);
+      }
+
+      for (const request of wo.repairToolRequests) {
+        if (request.status === 'rejected') continue;
+        const requestItems = request.items.length > 0
+          ? request.items
+          : request.toolId
+            ? [{
+                toolId: request.toolId,
+                toolName: request.toolName,
+                toolCode: request.tool?.toolCode || '',
+                quantityRequested: 1,
+                tool: request.tool,
+              }]
+            : [];
+
+        for (const item of requestItems) {
+          const toolId = item.toolId || request.toolId;
+          if (!toolId || rejectedToolIds.has(toolId)) continue;
+
+          const current = reconciledTools.get(toolId) || {};
+          reconciledTools.set(toolId, {
+            id: current.id || `${request.id}:${toolId}`,
+            toolId,
+            toolName: current.toolName || item.tool?.name || item.toolName || request.toolName || 'Planned tool',
+            toolCode: current.toolCode || item.tool?.toolCode || item.toolCode || request.tool?.toolCode || '',
+            quantity: current.quantity || item.quantityRequested || 1,
+            notes: current.notes || '',
+            ...current,
+          });
+        }
+      }
+    }
+
+    const suggestedTools = toolResourcesOperational
+      ? [...reconciledTools.values()]
+      : [];
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(
@@ -215,7 +269,7 @@ export async function GET(
 
     const toolsWithStatus = suggestedTools.map((t: Record<string, unknown>) => {
       const toolReq = wo.repairToolRequests.find(
-        (tr: { toolId: string | null }) => tr.toolId === t.toolId
+        (tr) => tr.toolId === t.toolId || tr.items.some((item) => item.toolId === t.toolId)
       );
       return {
         ...t,
@@ -557,6 +611,109 @@ export async function PUT(
         });
       }
 
+      // Do the same durable repair for planner-selected tools. A legacy/partial
+      // conversion may retain suggestedTools without a canonical RepairToolRequest,
+      // or the tool identity may exist only in a request item. Rebuild only truly
+      // missing planner rows before the store workflow counts/notifies them.
+      const suggestedToolSnapshot = toolResourcesOperational
+        ? (() => {
+            try {
+              const parsed = JSON.parse(wo.suggestedTools || '[]');
+              return Array.isArray(parsed) ? parsed as Array<Record<string, unknown>> : [];
+            } catch {
+              return [] as Array<Record<string, unknown>>;
+            }
+          })()
+        : [];
+
+      const existingPlannerToolRequests = toolResourcesOperational
+        ? await db.repairToolRequest.findMany({
+            where: { workOrderId: id, source: 'planner_suggested' },
+            select: {
+              toolId: true,
+              items: { select: { toolId: true } },
+            },
+          })
+        : [];
+
+      const existingToolIds = new Set<string>();
+      for (const request of existingPlannerToolRequests) {
+        if (request.toolId) existingToolIds.add(request.toolId);
+        for (const item of request.items) {
+          if (item.toolId) existingToolIds.add(item.toolId);
+        }
+      }
+
+      const missingSuggestedTools = suggestedToolSnapshot.filter((suggestion) => {
+        const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
+        return Boolean(toolId) && !existingToolIds.has(toolId);
+      });
+
+      if (missingSuggestedTools.length > 0) {
+        const missingToolIds = missingSuggestedTools
+          .map((suggestion) => suggestion.toolId)
+          .filter((toolId): toolId is string => typeof toolId === 'string' && Boolean(toolId));
+
+        const tools = await db.tool.findMany({
+          where: {
+            id: { in: missingToolIds },
+            OR: [
+              { plantId: wo.plantId },
+              { plantId: null },
+            ],
+          },
+          select: {
+            id: true,
+            name: true,
+            toolCode: true,
+            category: true,
+            purchaseCost: true,
+          },
+        });
+        const toolById = new Map(tools.map((tool) => [tool.id, tool]));
+
+        await db.$transaction(async (tx) => {
+          for (const suggestion of missingSuggestedTools) {
+            const toolId = suggestion.toolId as string;
+            const tool = toolById.get(toolId);
+            if (!tool) continue;
+
+            const rawQuantity = Number(suggestion.quantity ?? 1);
+            const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0
+              ? Math.max(1, Math.floor(rawQuantity))
+              : 1;
+
+            const toolRequest = await tx.repairToolRequest.create({
+              data: {
+                workOrderId: id,
+                toolId: tool.id,
+                toolName: tool.name,
+                reason: `Planned for work order ${id}`,
+                notes: 'Recovered from suggestedTools snapshot before store submission',
+                plantId: wo.plantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                urgency: 'normal',
+                requestedById: wo.plannerId || session.userId,
+              },
+            });
+
+            await tx.repairToolRequestItem.create({
+              data: {
+                repairToolRequestId: toolRequest.id,
+                toolId: tool.id,
+                toolName: tool.name,
+                toolCode: tool.toolCode,
+                category: tool.category,
+                quantityRequested: quantity,
+                quantityIssued: 0,
+                unitCost: tool.purchaseCost ?? undefined,
+              },
+            });
+          }
+        });
+      }
+
       const pendingMatReqs = inventoryResourcesOperational
         ? await db.repairMaterialRequest.findMany({
             where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
@@ -570,7 +727,7 @@ export async function PUT(
 
       const storekeepers = await db.user.findMany({
         where: {
-          userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } },
+          userRoles: { some: { role: { slug: { in: ['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin'] } } } },
           plantAccess: { some: { plantId: wo.plantId } },
         },
         select: { id: true, fullName: true },

@@ -278,6 +278,107 @@ export async function GET(
       ...projectedMaterialRequests,
     ];
 
+    // Planner-selected tools need the same durability guarantee as materials.
+    // Older/partial conversions may retain suggestedTools while the canonical
+    // RepairToolRequest row is missing. Project those snapshot rows into the
+    // WO detail response so every WO view can still render the planner choice.
+    if (toolResourcesOperational) {
+      const actualToolRequests = Array.isArray(wo.repairToolRequests)
+        ? [...wo.repairToolRequests]
+        : [];
+      const representedToolIds = new Set<string>();
+
+      for (const request of actualToolRequests) {
+        if (request.toolId) representedToolIds.add(request.toolId);
+        for (const item of Array.isArray(request.items) ? request.items : []) {
+          if (item.toolId) representedToolIds.add(item.toolId);
+        }
+      }
+
+      const projectedToolRequests: Array<Record<string, unknown>> = [];
+      try {
+        const storedSuggestedTools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+        for (const suggestion of Array.isArray(storedSuggestedTools) ? storedSuggestedTools : []) {
+          const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
+          if (!toolId || representedToolIds.has(toolId)) continue;
+
+          representedToolIds.add(toolId);
+          const toolName = typeof suggestion.toolName === 'string' && suggestion.toolName
+            ? suggestion.toolName
+            : 'Planned tool';
+          const toolCode = typeof suggestion.toolCode === 'string' ? suggestion.toolCode : '';
+          const quantityValue = Number(suggestion.quantity ?? 1);
+          const quantity = Number.isFinite(quantityValue) && quantityValue > 0
+            ? Math.max(1, Math.floor(quantityValue))
+            : 1;
+          const requestId = `planned:tool:snapshot:${toolId}`;
+
+          projectedToolRequests.push({
+            id: requestId,
+            requestNumber: null,
+            workOrderId: wo.id,
+            toolId,
+            toolName,
+            reason: 'Planner-selected tool',
+            notes: typeof suggestion.notes === 'string' ? suggestion.notes : '',
+            plantId: wo.plantId,
+            source: 'planner_suggested',
+            status: 'planned',
+            urgency: 'normal',
+            requestedById: null,
+            requestedBy: wo.planner || null,
+            supervisorApprovedBy: null,
+            storekeeperApprovedBy: null,
+            issuedByUser: null,
+            tool: {
+              id: toolId,
+              name: toolName,
+              toolCode,
+              category: null,
+            },
+            items: [{
+              id: `${requestId}:item`,
+              repairToolRequestId: requestId,
+              toolId,
+              toolName,
+              toolCode,
+              category: null,
+              quantityRequested: quantity,
+              quantityApproved: null,
+              quantityIssued: 0,
+              quantityReturned: 0,
+              quantityTransferred: 0,
+              unitCost: null,
+              availabilityStatus: null,
+              issueNotes: null,
+              conditionAtIssue: null,
+              conditionAtReturn: null,
+              pendingReturnQty: null,
+              pendingReturnCondition: null,
+              pendingReturnNotes: null,
+              tool: {
+                id: toolId,
+                name: toolName,
+                toolCode,
+                category: null,
+              },
+              projectionOnly: true,
+            }],
+            projectionOnly: true,
+            createdAt: wo.createdAt,
+            updatedAt: wo.updatedAt,
+          });
+        }
+      } catch {
+        // Invalid legacy JSON must never hide canonical tool-request rows.
+      }
+
+      (wo as Record<string, unknown>).repairToolRequests = [
+        ...actualToolRequests,
+        ...projectedToolRequests,
+      ];
+    }
+
     if (!wo.workOrderComponents) {
       (wo as Record<string, unknown>).workOrderComponents = [];
     }

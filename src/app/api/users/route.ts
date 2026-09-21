@@ -69,15 +69,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (role) {
-      const roleRecord = await db.role.findUnique({
-        where: { slug: role },
-        select: { id: true },
-      });
-      if (!roleRecord) {
-        return NextResponse.json({ success: true, data: [] });
-      }
+      // Assignment controls use friendly aliases while RBAC stores canonical
+      // maintenance role slugs. Resolve those aliases explicitly; arbitrary
+      // role strings remain an exact slug filter and therefore fail closed.
+      const roleSlugAliases: Record<string, string[]> = {
+        technician: ['maintenance_technician'],
+        supervisor: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'],
+      };
+      const targetRoleSlugs = roleSlugAliases[role] || [role];
       where.userRoles = {
-        some: { roleId: roleRecord.id },
+        some: {
+          role: {
+            slug: { in: targetRoleSlugs },
+          },
+        },
       };
     }
 

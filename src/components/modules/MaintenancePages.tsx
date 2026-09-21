@@ -3776,6 +3776,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       case 'resume':
         res = await api.post(`/api/work-orders/${id}/resume`, { notes: extra?.notes, ...extra });
         break;
+      case 'rework':
+        res = await api.post(`/api/work-orders/${id}/rework`, {
+          reason: extra?.notes,
+          notes: extra?.notes,
+          ...extra,
+        });
+        break;
       case 'cancel':
         res = await api.post(`/api/work-orders/${id}/cancel`, { notes: extra?.notes, ...extra });
         break;
@@ -3794,7 +3801,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         res = await api.put(`/api/work-orders/${id}`, { ...extra });
     }
     if (res.success) {
-      toast.success(`Work order ${action}d`);
+      toast.success(action === 'rework' ? 'Work order returned for rework' : `Work order ${action}d`);
       fetchWO();
       onUpdate();
       setActionDialog(null);
@@ -4476,13 +4483,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'cancelled': 'cancel', 'waiting_parts': 'wait-parts',
   };
 
-  // Build transition actions from state machine
-  const transitionActions = availableTransitions.map(t => ({
-    toStatus: t.toStatus,
-    actionName: t.toStatus === 'in_progress' && wo.status !== 'assigned' ? 'resume' : (statusToAction[t.toStatus] || t.toStatus),
-    label: t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    requiresReason: t.requiresReason,
-  }));
+  // Build transition actions from state machine. Completed/verified → in_progress
+  // is a controlled rework request, not a generic execution resume.
+  const transitionActions = availableTransitions.map(t => {
+    const isRework = t.toStatus === 'in_progress'
+      && ['completed', 'verified'].includes(wo.status);
+    const actionName = isRework
+      ? 'rework'
+      : t.toStatus === 'in_progress' && wo.status !== 'assigned'
+        ? 'resume'
+        : (statusToAction[t.toStatus] || t.toStatus);
+
+    return {
+      toStatus: t.toStatus,
+      actionName,
+      label: isRework
+        ? 'Request Rework'
+        : t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      requiresReason: isRework ? true : t.requiresReason,
+    };
+  });
 
   // Special actions that need dialogs
   const needsDialog = new Set(['assign', 'complete']);
@@ -4497,6 +4517,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'close': { description: 'Are you sure you want to close this work order? This action cannot be easily reversed.', label: 'Yes, Close', variant: 'destructive' },
     'hold': { description: 'Are you sure you want to put this work order on hold?', label: 'Yes, Put On Hold' },
     'resume': { description: 'Are you sure you want to resume this work order?', label: 'Yes, Resume' },
+    'rework': { description: 'Return this completed/verified work order for corrective rework. A reason is required and will be audited.', label: 'Yes, Request Rework' },
     'cancel': { description: 'Are you sure you want to cancel this work order? This will stop all work and cannot be easily reversed.', label: 'Yes, Cancel', variant: 'destructive' },
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };

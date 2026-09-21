@@ -28,9 +28,12 @@ describe('work-order team candidate boundaries', () => {
     expect(candidates).toContain('return labels.includes(normalizedTrade)');
   });
 
-  it('rejects non-technicians in direct-add and specific-person request flows', () => {
+  it('rejects non-technicians and invalid assistance roles before assignment', () => {
+    expect(directTeam).toContain("const VALID_TEAM_ROLES = ['assistant', 'technician', 'team_leader']");
     expect(directTeam).toContain("row.role.slug === 'maintenance_technician'");
     expect(directTeam).toContain('Selected user must be an active maintenance technician');
+    expect(requests).toContain("if (!['assistant', 'technician'].includes(role))");
+    expect(requests).toContain('role must be assistant or technician');
     expect(requests).toContain("row.role.slug === 'maintenance_technician'");
     expect(requests).toContain('Requested user must be an active maintenance technician');
   });

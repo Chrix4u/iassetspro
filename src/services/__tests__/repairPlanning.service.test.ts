@@ -390,7 +390,7 @@ describe('convertMRToWorkOrder function contract', () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it('persists planner-selected materials into the canonical WO material pipeline during MR conversion', async () => {
+  it('persists planner resources as recommendations without auto-submitting approval requests', async () => {
     (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
       id: 'mr-1',
       title: 'Pump bearing failure',
@@ -490,30 +490,11 @@ describe('convertMRToWorkOrder function contract', () => {
       }),
     });
 
-    expect(tx.repairMaterialRequest.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        workOrderId: 'wo-1',
-        itemId: 'part-1',
-        itemName: '6205 Bearing',
-        quantityRequested: 2,
-        unit: 'each',
-        unitCost: 125,
-        estimatedCost: 250,
-        source: 'planner_suggested',
-        status: 'pending',
-        requestedById: 'planner-1',
-        plantId: 'plant-1',
-      }),
-    });
-
-    expect(tx.repairToolRequest.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        workOrderId: 'wo-1',
-        toolId: 'tool-1',
-        source: 'planner_suggested',
-        status: 'pending',
-      }),
-    });
+    // Planner recommendations must not enter the approval/issue pipeline
+    // until assigned execution staff explicitly submit them.
+    expect(tx.repairMaterialRequest.create).not.toHaveBeenCalled();
+    expect(tx.repairToolRequest.create).not.toHaveBeenCalled();
+    expect(tx.repairToolRequestItem.create).not.toHaveBeenCalled();
 
     const snapshotCall = tx.workOrder.update.mock.calls.find(
       ([args]) => args?.data?.suggestedParts && args?.data?.suggestedTools,
@@ -528,6 +509,7 @@ describe('convertMRToWorkOrder function contract', () => {
         itemCode: 'BRG-6205',
         quantity: 2,
         unit: 'each',
+        recommendedById: 'planner-1',
       }),
     ]);
     expect(JSON.parse(snapshotData.suggestedTools)).toEqual([
@@ -536,6 +518,7 @@ describe('convertMRToWorkOrder function contract', () => {
         toolName: 'Bearing Puller',
         toolCode: 'TL-BP-01',
         quantity: 1,
+        recommendedById: 'planner-1',
       }),
     ]);
   });
@@ -597,10 +580,15 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(migration).toContain("'planner_suggested'");
     expect(migration).toContain('NOT EXISTS');
 
-    expect(suggestedRoute).toContain('storedSuggestedParts.length > 0');
-    expect(suggestedRoute).toContain('wo.repairMaterialRequests.map');
-    expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
-    expect(suggestedRoute).toContain('wo.repairToolRequests.map');
+    expect(suggestedRoute).toContain('Reconcile planner-selected materials from every durable source');
+    expect(suggestedRoute).toContain('for (const material of wo.materials)');
+    expect(suggestedRoute).toContain('for (const request of wo.repairMaterialRequests)');
+    expect(suggestedRoute).toContain("source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] }");
+    expect(suggestedRoute).toContain("action === 'submit_recommendations'");
+    expect(suggestedRoute).toContain('Only assigned execution staff can submit recommended resources for approval');
+    expect(suggestedRoute).toContain("source: 'technician_from_planner_recommendation'");
+    expect(suggestedRoute).toContain("action: 'decline_planner_resource_recommendation'");
+    expect(suggestedRoute).toContain("action: 'amend_planner_resource_recommendation'");
   });
 });
 

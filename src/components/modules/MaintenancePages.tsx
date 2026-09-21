@@ -3466,13 +3466,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   // Permission: can perform WORK actions on this WO (time log, start work, personal tools, material/tool requests)
   // Restricted to admin, the assigned technician, and team members — NOT planner
-  const isWorkerOnThisWO = useMemo(() => {
+  const isExecutionActorOnThisWO = useMemo(() => {
     if (!wo || !user) return false;
-    if (isAdmin()) return true;
     const isAssignee = wo.assignedToId === user.id;
     const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id) || false;
     return isAssignee || isTeamMember;
-  }, [wo, user, isAdmin]);
+  }, [wo, user]);
+
+  const isWorkerOnThisWO = useMemo(() => {
+    if (isAdmin()) return true;
+    return isExecutionActorOnThisWO;
+  }, [isAdmin, isExecutionActorOnThisWO]);
 
   // Fetch global active session and set up live timer
   const fetchActiveSession = useCallback(async () => {
@@ -5783,7 +5787,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       Recommendations only — assigned technicians may adjust quantities, remove items, or submit the remaining recommendations for approval.
                     </CardDescription>
                   </div>
-                  {!workActionDisabled && pendingSuggestedCount > 0 && (
+                  {!isWOFinalized && !isReadOnly && isExecutionActorOnThisWO && pendingSuggestedCount > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -5816,7 +5820,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 {part.itemCode && <p className="text-[10px] font-mono text-muted-foreground">{part.itemCode}</p>}
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                {isRecommendation && !workActionDisabled ? (
+                                {isRecommendation && !isWOFinalized && !isReadOnly && isExecutionActorOnThisWO ? (
                                   <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
                                     <button
                                       type="button"
@@ -5847,7 +5851,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   {isRecommendation ? 'recommended' : String(part.pipelineStatus || '').replace(/_/g, ' ')}
                                 </Badge>
 
-                                {!workActionDisabled && isRecommendation && (
+                                {!isWOFinalized && !isReadOnly && isExecutionActorOnThisWO && isRecommendation && (
                                   <button
                                     type="button"
                                     onClick={() => handleRejectSuggestedItem('part', part.itemId)}
@@ -5884,7 +5888,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 {tool.toolCode && <p className="text-[10px] font-mono text-muted-foreground">{tool.toolCode}</p>}
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                {isRecommendation && !workActionDisabled ? (
+                                {isRecommendation && !isWOFinalized && !isReadOnly && isExecutionActorOnThisWO ? (
                                   <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
                                     <button
                                       type="button"
@@ -5915,7 +5919,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   {isRecommendation ? 'recommended' : String(tool.pipelineStatus || '').replace(/_/g, ' ')}
                                 </Badge>
 
-                                {!workActionDisabled && isRecommendation && (
+                                {!isWOFinalized && !isReadOnly && isExecutionActorOnThisWO && isRecommendation && (
                                   <button
                                     type="button"
                                     onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
@@ -5933,7 +5937,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </div>
                   )}
 
-                  {!workActionDisabled && (
+                  {!isWOFinalized && !isReadOnly && isExecutionActorOnThisWO && (
                     <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
                       <span className="text-xs text-muted-foreground mr-1">Need something different?</span>
                       <Button

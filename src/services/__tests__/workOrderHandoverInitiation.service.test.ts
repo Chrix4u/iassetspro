@@ -13,6 +13,7 @@ const {
     user: { findUnique: vi.fn() },
     userPlant: { findFirst: vi.fn() },
     shiftHandover: { create: vi.fn() },
+    workOrderTeamMember: { findFirst: vi.fn(), create: vi.fn() },
     auditLog: { create: vi.fn() },
     idempotencyRecord: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
   },
@@ -30,7 +31,7 @@ vi.mock('@/services/workOrderActiveSession.service', () => ({
 vi.mock('@/lib/audit-helpers', () => ({ buildAuditData: mockBuildAuditData }));
 vi.mock('@/lib/repair-notifications', () => ({ sendRepairNotification: mockSendRepairNotification }));
 
-import { initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
+import { handoverUserHasEffectivePermission, initiateCanonicalHandover } from '@/services/workOrderHandoverInitiation.service';
 import type { SessionContext } from '@/services/workExecution.service';
 
 const technicianSession: SessionContext = {
@@ -72,8 +73,20 @@ function workOrder(overrides: Record<string, unknown> = {}) {
 function installDefaults() {
   mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockDb) => unknown) => callback(mockDb));
   mockDb.workOrder.findUnique.mockResolvedValue(workOrder());
-  mockDb.user.findUnique.mockResolvedValue({ id: 'tech-in', status: 'active' });
+  mockDb.user.findUnique.mockResolvedValue({
+    id: 'tech-in',
+    status: 'active',
+    userRoles: [{
+      role: {
+        slug: 'maintenance_technician',
+        rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+      },
+    }],
+    directPerms: [],
+  });
   mockDb.userPlant.findFirst.mockResolvedValue({ id: 'user-plant-1' });
+  mockDb.workOrderTeamMember.findFirst.mockResolvedValue(null);
+  mockDb.workOrderTeamMember.create.mockResolvedValue({ id: 'handover-receiver-member' });
   mockDb.shiftHandover.create.mockResolvedValue({ id: 'handover-1' });
   mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });
   mockDb.idempotencyRecord.findUnique.mockResolvedValue(null);
@@ -88,6 +101,10 @@ function installDefaults() {
 }
 
 describe('workOrderHandoverInitiation.initiateCanonicalHandover', () => {
+  it('fails closed when effective-permission relations are absent', () => {
+    expect(handoverUserHasEffectivePermission({}, 'work_orders.start')).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     installDefaults();
@@ -120,6 +137,30 @@ describe('workOrderHandoverInitiation.initiateCanonicalHandover', () => {
         workOrderId: 'wo-1',
       }),
     });
+  });
+
+  it('rejects a non-technician receiver even when another role has start permission', async () => {
+    mockDb.user.findUnique.mockResolvedValue({
+      id: 'tech-in',
+      status: 'active',
+      userRoles: [{
+        role: {
+          slug: 'maintenance_supervisor',
+          rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+        },
+      }],
+      directPerms: [],
+    });
+
+    const result = await initiateCanonicalHandover('wo-1', supervisorSession, {
+      receivedById: 'tech-in',
+      reason: 'Shift change',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('maintenance technician');
+    expect(mockCloseAllActiveWorkSessions).not.toHaveBeenCalled();
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
   });
 
   it('does not grant plant management direct execution-handover authority', async () => {

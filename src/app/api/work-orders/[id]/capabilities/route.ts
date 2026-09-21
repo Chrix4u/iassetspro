@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canManageWorkOrder, canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { checkReadiness } from '@/services/workOrderReadiness.service';
 
 export async function GET(
@@ -71,8 +71,6 @@ export async function GET(
     const isMaintenanceManager = session.roles.includes('maintenance_manager');
     const isPlantManager = session.roles.includes('plant_manager');
     const isAdminUser = isAdminAccount || isMaintenanceManager || isPlantManager;
-    const isExecutionManager = isAdminAccount || isMaintenanceManager;
-
     const isTeamLeader = isTeamLeaderFromField || isTeamLeaderFromMembers;
     const isAssignedExecutionActor = isAssignee || isTeamLeader;
     const assignmentActorIds = new Set<string>();
@@ -83,11 +81,16 @@ export async function GET(
       : isAssignedExecutionActor;
     const assignmentPending = wo.status === 'assigned' && wo.assignmentResponseStatus === 'pending';
     const assignmentAccepted = wo.assignmentResponseStatus === 'accepted';
-    const hasHoldControlAuthority = isSupervisor || isExecutionManager;
-    const hasPlannerControlAuthority = isPlanner || isExecutionManager;
     const hasMultipleTeamMembers = (wo.teamMembers?.length ?? 0) > 1;
     const canCreateToolRequest = isAdminAccount || hasPermission(session, 'repair_tool_requests.create');
-    const canManageDowntime = isSupervisor || isPlanner || isExecutionManager || hasPermission(session, 'work_orders.update');
+    const canCreateMaterialRequest = isAdminAccount || hasPermission(session, 'repair_material_requests.create');
+    const canCreateAssistanceRequest = isAdminAccount || hasPermission(session, 'assistance_requests.create');
+    const canCreateTimeLog = isAdminAccount
+      || hasPermission(session, 'work_orders.update')
+      || hasPermission(session, 'time_logs.create');
+    const canManageDowntime = (
+      isAdminAccount || hasPermission(session, 'work_orders.update')
+    ) && canManageWorkOrder(session, wo);
 
     // Canonical first execution begins only after assignment. A planned WO must
     // be assigned before it can transition to in_progress.
@@ -113,23 +116,18 @@ export async function GET(
       : null;
 
     const hasOwnLiveSession = Boolean(ownLiveSession);
-    const canHold = hasHoldControlAuthority && wo.status === 'in_progress';
+    const canHold = wo.status === 'in_progress'
+      && canPerformWorkOrderTransition(session, wo, 'on_hold');
     const canResume = (
-      wo.status === 'on_hold'
-        ? hasHoldControlAuthority
-        : technicianWaitingStatuses.includes(wo.status) && (
-            isAssignedExecutionActor || hasPlannerControlAuthority
-          )
-    );
+      wo.status === 'on_hold' || technicianWaitingStatuses.includes(wo.status)
+    ) && canPerformWorkOrderTransition(session, wo, 'in_progress');
     const resumeOpensExecutionSession = canResume &&
       technicianWaitingStatuses.includes(wo.status) &&
       isAssignedExecutionActor;
 
-    // Keep canStart as an authority/status capability so the client can keep the
-    // Start/Resume action visible. Readiness is exposed separately and is sourced
-    // from the same canonical service enforced by POST /start. This lets the UI
-    // explain blockers before the technician clicks instead of hiding the action.
-    const canAttemptStart = isAssignedExecutionActor && (
+    // Keep Start visible only when both lifecycle state and actor/endpoint
+    // authority match the same central transition contract used by the API.
+    const canAttemptStart = canPerformWorkOrderTransition(session, wo, 'in_progress') && (
       (preExecutionStatuses.includes(wo.status) && assignmentAccepted) ||
       (wo.status === 'in_progress' && !hasOwnLiveSession)
     );
@@ -137,9 +135,9 @@ export async function GET(
       ? await checkReadiness(id, 'start')
       : null;
 
-    const canAttemptCompletion = hasMultipleTeamMembers
-      ? (isTeamLeader && wo.status === 'in_progress' && !hasOwnLiveSession)
-      : (isAssignee && wo.status === 'in_progress' && !hasOwnLiveSession);
+    const canAttemptCompletion = wo.status === 'in_progress'
+      && !hasOwnLiveSession
+      && canPerformWorkOrderTransition(session, wo, 'completed');
     const completionReadiness = canAttemptCompletion
       ? await checkReadiness(id, 'complete')
       : null;
@@ -162,22 +160,36 @@ export async function GET(
       canHold,
       canResume,
       resumeOpensExecutionSession,
-      canLogOwnTime: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
-      canLogTeamTime: isTeamLeader && hasMultipleTeamMembers && activeExecutionStatuses.includes(wo.status),
-      canRequestTools: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status) && canCreateToolRequest,
-      canRequestMaterials: (isAssignee || isTeamMember || isTeamLeader) && activeExecutionStatuses.includes(wo.status),
+      canLogOwnTime: canCreateTimeLog
+        && (isAssignee || isTeamMember || isTeamLeader)
+        && activeExecutionStatuses.includes(wo.status),
+      canLogTeamTime: canCreateTimeLog
+        && isTeamLeader
+        && hasMultipleTeamMembers
+        && activeExecutionStatuses.includes(wo.status),
+      canRequestTools: canCreateToolRequest
+        && (isAssignee || isTeamMember || isTeamLeader)
+        && activeExecutionStatuses.includes(wo.status),
+      canRequestMaterials: canCreateMaterialRequest
+        && (isAssignee || isTeamMember || isTeamLeader)
+        && activeExecutionStatuses.includes(wo.status),
       canLogDowntime: activeExecutionStatuses.includes(wo.status) && (
         isAssignee || isTeamMember || isTeamLeader || canManageDowntime
       ),
-      canRequestAssistance: (isAssignee || isTeamMember || isTeamLeader) && (
-        activeExecutionStatuses.includes(wo.status) ||
-        (wo.status === 'assigned' && assignmentAccepted)
-      ),
-      canHandover: (isAssignee || isTeamLeader) && wo.status === 'in_progress' && hasOwnLiveSession,
+      canRequestAssistance: canCreateAssistanceRequest
+        && (isAssignee || isTeamMember || isTeamLeader)
+        && (
+          activeExecutionStatuses.includes(wo.status) ||
+          (wo.status === 'assigned' && assignmentAccepted)
+        ),
+      canHandover: wo.status === 'in_progress'
+        && canPerformWorkOrderTransition(session, wo, 'pending_handover'),
       canSubmitCompletion: canAttemptCompletion,
       completionReadiness,
-      canVerify: (isSupervisor || isAdminUser) && wo.status === 'completed',
-      canClose: (isPlanner || isAdminUser) && wo.status === 'verified',
+      canVerify: wo.status === 'completed'
+        && canPerformWorkOrderTransition(session, wo, 'verified'),
+      canClose: wo.status === 'verified'
+        && canPerformWorkOrderTransition(session, wo, 'closed'),
       hasActiveExecutionSession: hasOwnLiveSession,
       isTeamLeader,
       isTeamMember,

@@ -3083,6 +3083,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
+  const [resourceCancelTarget, setResourceCancelTarget] = useState<{
+    kind: 'material' | 'tool';
+    requestRow: any;
+    label: string;
+  } | null>(null);
+  const [resourceCancelLoading, setResourceCancelLoading] = useState(false);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { navigate } = useNavigationStore();
@@ -4333,6 +4339,50 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
   };
 
+  const handleCancelMaterialRequest = (requestRow: any) => {
+    setResourceCancelTarget({
+      kind: 'material',
+      requestRow,
+      label: requestRow.itemName || 'this material',
+    });
+  };
+
+  const handleCancelToolRequest = (requestRow: any) => {
+    const label = requestRow.toolName
+      || requestRow.items?.map((item: any) => item.toolName).filter(Boolean).join(', ')
+      || 'this tool request';
+    setResourceCancelTarget({ kind: 'tool', requestRow, label });
+  };
+
+  const confirmPendingResourceCancel = async () => {
+    if (!resourceCancelTarget || resourceCancelLoading) return;
+
+    const { kind, requestRow } = resourceCancelTarget;
+    setResourceCancelLoading(true);
+    try {
+      const endpoint = kind === 'material'
+        ? `/api/repairs/material-requests/${requestRow.id}`
+        : `/api/repairs/tool-requests/${requestRow.id}`;
+      const res = await api.delete(endpoint);
+
+      if (res.success) {
+        toast.success(kind === 'material' ? 'Material request cancelled' : 'Tool request cancelled');
+        setResourceCancelTarget(null);
+        await fetchWO();
+        await fetchSuggestedItems();
+      } else {
+        toast.error(
+          res.error ||
+          (kind === 'material'
+            ? 'Failed to cancel material request'
+            : 'Failed to cancel tool request'),
+        );
+      }
+    } finally {
+      setResourceCancelLoading(false);
+    }
+  };
+
   // Personal tools handlers
   const handleAddPersonalTool = async () => {
     if (!ptForm.toolName) { toast.error('Tool name is required'); return; }
@@ -4526,6 +4576,29 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isWOFinalized = ['completed', 'verified', 'closed', 'cancelled'].includes(wo.status) || wo.isLocked;
   const isWOReadOnly = isWOFinalized; // alias for clarity
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
+
+  const canCancelPendingResourceRequest = (
+    requestRow: any,
+    kind: 'material' | 'tool',
+  ) => {
+    if (!user || isWOFinalized || requestRow?.status !== 'pending') return false;
+    if (requestRow.requestedById === user.id || requestRow.requestedBy?.id === user.id) return true;
+    if (isAdmin()) return true;
+
+    const requiredPermission = kind === 'material'
+      ? 'repair_material_requests.update'
+      : 'repair_tool_requests.update';
+    if (!hasPermission(requiredPermission)) return false;
+
+    const roleSlugs = (user.roles || [])
+      .map((role: any) => typeof role === 'string' ? role : role?.slug)
+      .filter(Boolean);
+
+    if (roleSlugs.includes('maintenance_manager') || roleSlugs.includes('plant_manager')) return true;
+    return roleSlugs.includes('maintenance_supervisor')
+      && wo.assignedSupervisorId === user.id;
+  };
+
   // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
   // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
   const canEdit = !['completed', 'closed', 'cancelled', 'verified'].includes(wo.status) && (
@@ -5739,6 +5812,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </div>
       </ResponsiveDialog>
 
+      {/* Pending Resource Request Cancellation */}
+      <ConfirmDialog
+        open={!!resourceCancelTarget}
+        onOpenChange={(open) => {
+          if (!open && !resourceCancelLoading) setResourceCancelTarget(null);
+        }}
+        title={resourceCancelTarget?.kind === 'material'
+          ? 'Cancel Material Request'
+          : 'Cancel Tool Request'}
+        description={
+          resourceCancelTarget
+            ? `Cancel the pending ${resourceCancelTarget.kind} request for "${resourceCancelTarget.label}"? Only pending requests can be cancelled.`
+            : 'Cancel this pending resource request?'
+        }
+        confirmLabel="Cancel Request"
+        variant="destructive"
+        loading={resourceCancelLoading}
+        onConfirm={confirmPendingResourceCancel}
+      />
+
       {/* WO Action Confirmation Dialog */}
       <ConfirmDialog
         open={!!woConfirmAction}
@@ -6193,6 +6286,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {canCancelPendingResourceRequest(mr, 'material') && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => handleCancelMaterialRequest(mr)}
+                                  title="Cancel pending material request"
+                                >
+                                  <X className="h-3 w-3 mr-1" />Cancel
+                                </Button>
+                              )}
                               {!isWOFinalized && mr.status === 'pending' && isSupervisorOrAdminLocal() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
@@ -6344,7 +6448,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
                             {isFinalStatus && <span className="text-[10px] text-muted-foreground">{tr.status === 'transferred' ? '🔄 Transferred out' : tr.status === 'returned' ? '↩️ Returned' : '✓ Done'}</span>}
                           </div>
-                          {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                            {canCancelPendingResourceRequest(tr, 'tool') && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                onClick={() => handleCancelToolRequest(tr)}
+                                title="Cancel pending tool request"
+                              >
+                                <X className="h-3 w-3 mr-1" />Cancel
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         {/* Per-item details */}
                         {toolItems.map((item: any, ii: number) => {

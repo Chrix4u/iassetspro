@@ -30,6 +30,13 @@ describe('pending WO resource request cancellation', () => {
     expect(tool).toContain('db.$transaction');
   });
 
+  it('hides material approval controls from unrelated supervisors', () => {
+    expect(ui).toContain("hasPermission('repair_material_requests.update')");
+    expect(ui).toContain("slugs.includes('maintenance_supervisor')");
+    expect(ui).toContain('wo?.assignedSupervisorId === user.id');
+    expect(ui).toContain("mr.status === 'pending' && isSupervisorOrAdminLocal()");
+  });
+
   it('shows cancellation only for authorized pending rows and refreshes recommendations', () => {
     expect(ui).toContain('resourceCancelTarget');
     expect(ui).toContain('canCancelPendingResourceRequest');

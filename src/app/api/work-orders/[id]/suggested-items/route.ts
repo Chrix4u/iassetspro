@@ -4,6 +4,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
+import { notifyUser } from '@/lib/notifications';
 
 // GET /api/work-orders/[id]/suggested-items — Fetch suggested parts & tools
 export async function GET(
@@ -57,7 +58,7 @@ export async function GET(
         teamMembers: { select: { userId: true } },
         maintenanceRequest: { select: { requestedBy: true } },
         repairMaterialRequests: {
-          where: { source: 'planner_suggested' },
+          where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] } },
           select: {
             id: true,
             itemName: true,
@@ -72,7 +73,7 @@ export async function GET(
           },
         },
         repairToolRequests: {
-          where: { source: 'planner_suggested' },
+          where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] }, status: { not: 'rejected' } },
           select: {
             id: true,
             toolName: true,
@@ -142,24 +143,18 @@ export async function GET(
       : [];
     const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
 
-    const rejectedItemIds = new Set(
-      (inventoryResourcesOperational ? wo.repairMaterialRequests : [])
-        .filter((request) => request.status === 'rejected' && request.itemId)
-        .map((request) => request.itemId as string),
-    );
-
     const reconciledParts = new Map<string, Record<string, unknown>>();
 
     // 1. Preserve planner snapshot rows when present.
     for (const suggestion of suggestedParts) {
       const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
-      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      if (!itemId) continue;
       reconciledParts.set(itemId, suggestion);
     }
 
     // 2. Recover planner materials that exist only in WorkOrderMaterial.
     if (inventoryResourcesOperational) for (const material of wo.materials) {
-      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      if (!material.itemId) continue;
       const item = inventoryById.get(material.itemId);
       const current = reconciledParts.get(material.itemId);
       reconciledParts.set(material.itemId, {
@@ -176,9 +171,10 @@ export async function GET(
 
     // 3. Recover planner materials that exist only in RepairMaterialRequest.
     if (inventoryResourcesOperational) for (const request of wo.repairMaterialRequests) {
-      if (!request.itemId || request.status === 'rejected') continue;
+      if (!request.itemId) continue;
       const item = inventoryById.get(request.itemId);
       const current = reconciledParts.get(request.itemId);
+      if (request.status === 'rejected' && !current) continue;
       reconciledParts.set(request.itemId, {
         id: current?.id || request.id,
         itemId: request.itemId,
@@ -196,23 +192,12 @@ export async function GET(
     // Reconcile planner-selected tools from every durable representation.
     // A request may keep the tool only in RepairToolRequestItem, and older
     // conversions may keep only the suggestedTools JSON snapshot.
-    const rejectedToolIds = new Set<string>();
-    if (toolResourcesOperational) {
-      for (const request of wo.repairToolRequests) {
-        if (request.status !== 'rejected') continue;
-        if (request.toolId) rejectedToolIds.add(request.toolId);
-        for (const item of request.items) {
-          if (item.toolId) rejectedToolIds.add(item.toolId);
-        }
-      }
-    }
-
     const reconciledTools = new Map<string, Record<string, unknown>>();
 
     if (toolResourcesOperational) {
       for (const suggestion of storedSuggestedTools) {
         const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
-        if (!toolId || rejectedToolIds.has(toolId)) continue;
+        if (!toolId) continue;
         reconciledTools.set(toolId, suggestion);
       }
 
@@ -232,7 +217,7 @@ export async function GET(
 
         for (const item of requestItems) {
           const toolId = item.toolId || request.toolId;
-          if (!toolId || rejectedToolIds.has(toolId)) continue;
+          if (!toolId) continue;
 
           const current = reconciledTools.get(toolId) || {};
           reconciledTools.set(toolId, {
@@ -253,24 +238,30 @@ export async function GET(
       : [];
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
-      const matReq = wo.repairMaterialRequests.find(
-        (mr: { itemId: string | null }) => mr.itemId === p.itemId
+      const matchingRequests = wo.repairMaterialRequests.filter(
+        (mr: { itemId: string | null }) => mr.itemId === p.itemId,
       );
+      const matReq =
+        matchingRequests.find((mr) => mr.source === 'technician_from_planner_recommendation' && mr.status !== 'rejected')
+        ?? matchingRequests.find((mr) => mr.source === 'planner_suggested' && !['pending', 'rejected'].includes(mr.status));
       return {
         ...p,
         pipelineId: matReq?.id || null,
         pipelineStatus: matReq?.status || 'suggested',
         quantityApproved: matReq?.quantityApproved || 0,
         quantityIssued: matReq?.quantityIssued || 0,
-        currentStock: matReq?.item?.currentStock || 0,
-        unitCost: matReq?.item?.unitCost || 0,
+        currentStock: matReq?.item?.currentStock || matchingRequests[0]?.item?.currentStock || 0,
+        unitCost: matReq?.item?.unitCost || matchingRequests[0]?.item?.unitCost || 0,
       };
     });
 
     const toolsWithStatus = suggestedTools.map((t: Record<string, unknown>) => {
-      const toolReq = wo.repairToolRequests.find(
-        (tr) => tr.toolId === t.toolId || tr.items.some((item) => item.toolId === t.toolId)
+      const matchingRequests = wo.repairToolRequests.filter(
+        (tr) => tr.toolId === t.toolId || tr.items.some((item) => item.toolId === t.toolId),
       );
+      const toolReq =
+        matchingRequests.find((tr) => tr.source === 'technician_from_planner_recommendation' && tr.status !== 'rejected')
+        ?? matchingRequests.find((tr) => tr.source === 'planner_suggested' && !['pending', 'rejected'].includes(tr.status));
       return {
         ...t,
         pipelineId: toolReq?.id || null,
@@ -288,7 +279,10 @@ export async function GET(
   }
 }
 
-// PUT /api/work-orders/[id]/suggested-items — Planner/supervisor management only
+// PUT /api/work-orders/[id]/suggested-items
+// Planner recommendations are editable planning hints. Assigned execution staff
+// decide what to use and explicitly submit the remaining recommendations into
+// the normal supervisor/store approval pipeline.
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -298,16 +292,13 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
-    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
 
     const { id } = await params;
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
-    const { action } = body;
+    const action = typeof body.action === 'string' ? body.action : '';
 
     const unavailableModules = new Set(await getUnavailableOperationalModules([
       'repairs',
@@ -336,7 +327,8 @@ export async function PUT(
         { status: 403 },
       );
     }
-    if (action === 'send_to_store' && !inventoryResourcesOperational && !toolResourcesOperational) {
+    if ((action === 'submit_recommendations' || action === 'send_to_store')
+      && !inventoryResourcesOperational && !toolResourcesOperational) {
       return NextResponse.json(
         { success: false, error: 'Inventory and Tools modules are unavailable' },
         { status: 403 },
@@ -347,13 +339,18 @@ export async function PUT(
       where: { id },
       select: {
         id: true,
+        woNumber: true,
+        title: true,
         plantId: true,
         suggestedParts: true,
         suggestedTools: true,
         isLocked: true,
         status: true,
+        assignedTo: true,
+        teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
+        teamMembers: { select: { userId: true } },
       },
     });
 
@@ -363,61 +360,247 @@ export async function PUT(
     if (!wo.plantId) {
       return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
     }
-    if (!canManageWorkOrder(session, wo)) {
-      return NextResponse.json({ success: false, error: 'Only the assigned supervisor/planner or maintenance management can change suggested resources' }, { status: 403 });
-    }
     if (wo.isLocked || ['verified', 'closed', 'cancelled'].includes(wo.status)) {
-      return NextResponse.json({ success: false, error: `Suggested resources cannot be changed while work order status is ${wo.status}` }, { status: 409 });
+      return NextResponse.json(
+        { success: false, error: `Recommended resources cannot be changed while work order status is ${wo.status}` },
+        { status: 409 },
+      );
     }
 
-    if (action === 'reject_item') {
+    const isExecutionActor =
+      wo.assignedTo === session.userId
+      || wo.teamLeaderId === session.userId
+      || wo.teamMembers.some((member) => member.userId === session.userId);
+    const canManageRecommendations =
+      (isAdmin(session) || hasPermission(session, 'work_orders.update'))
+      && canManageWorkOrder(session, wo);
+    const canAmendRecommendations = isExecutionActor || canManageRecommendations;
+
+    const parseSuggestions = (value: string | null | undefined) => {
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed as Array<Record<string, unknown>> : [];
+      } catch {
+        return [] as Array<Record<string, unknown>>;
+      }
+    };
+
+    const recommendationSources = ['planner_suggested', 'technician_from_planner_recommendation'];
+
+    if (action === 'reject_item' || action === 'remove_recommendation') {
+      if (!canAmendRecommendations) {
+        return NextResponse.json(
+          { success: false, error: 'Only assigned execution staff or accountable maintenance management can remove a recommendation' },
+          { status: 403 },
+        );
+      }
+
       const { itemType, itemId } = body;
       if (!['part', 'tool'].includes(itemType) || typeof itemId !== 'string' || !itemId) {
         return NextResponse.json({ success: false, error: 'Valid itemType and itemId are required' }, { status: 400 });
       }
 
+      const activeRequest = itemType === 'part'
+        ? await db.repairMaterialRequest.findFirst({
+            where: {
+              workOrderId: id,
+              itemId,
+              source: { in: recommendationSources },
+              status: { notIn: ['rejected', 'closed', 'fully_returned'] },
+            },
+            select: { id: true, status: true },
+            orderBy: { createdAt: 'desc' },
+          })
+        : await db.repairToolRequest.findFirst({
+            where: {
+              workOrderId: id,
+              toolId: itemId,
+              source: { in: recommendationSources },
+              status: { notIn: ['rejected', 'returned'] },
+            },
+            select: { id: true, status: true },
+            orderBy: { createdAt: 'desc' },
+          });
+
+      if (activeRequest && activeRequest.status !== 'pending') {
+        return NextResponse.json(
+          { success: false, error: `This recommendation is already in the ${activeRequest.status.replace(/_/g, ' ')} approval/issue stage and can no longer be removed here` },
+          { status: 409 },
+        );
+      }
+
+      const parts = inventoryResourcesOperational ? parseSuggestions(wo.suggestedParts) : [];
+      const tools = toolResourcesOperational ? parseSuggestions(wo.suggestedTools) : [];
+      const removed = itemType === 'part'
+        ? parts.find((part) => part.itemId === itemId)
+        : tools.find((tool) => tool.toolId === itemId);
+
       await db.$transaction(async (tx) => {
         if (itemType === 'part') {
-          const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
             where: { id },
-            data: { suggestedParts: JSON.stringify(parts.filter((p) => p.itemId !== itemId)) },
+            data: { suggestedParts: JSON.stringify(parts.filter((part) => part.itemId !== itemId)) },
           });
           await tx.repairMaterialRequest.updateMany({
-            where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
-            data: { status: 'rejected', notes: `Rejected by ${session.fullName}` },
+            where: {
+              workOrderId: id,
+              itemId,
+              source: { in: recommendationSources },
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              notes: `Recommendation withdrawn by ${session.fullName}`,
+            },
           });
-          // Legacy conversions may have only the planned WO material row.
-          // Removing it prevents the reconciler from resurrecting a rejected item.
           await tx.workOrderMaterial.deleteMany({
             where: { workOrderId: id, itemId, status: 'planned' },
           });
         } else {
-          const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
             where: { id },
-            data: { suggestedTools: JSON.stringify(tools.filter((t) => t.toolId !== itemId)) },
+            data: { suggestedTools: JSON.stringify(tools.filter((tool) => tool.toolId !== itemId)) },
           });
           await tx.repairToolRequest.updateMany({
-            where: { workOrderId: id, toolId: itemId, source: 'planner_suggested', status: 'pending' },
-            data: { status: 'rejected', rejectionReason: `Rejected by ${session.fullName}` },
+            where: {
+              workOrderId: id,
+              toolId: itemId,
+              source: { in: recommendationSources },
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              rejectionReason: `Recommendation withdrawn by ${session.fullName}`,
+            },
           });
         }
+
         await tx.auditLog.create({
           data: {
             userId: session.userId,
-            action: 'reject_suggested_item',
+            action: 'decline_planner_resource_recommendation',
             entityType: 'work_order',
             entityId: id,
-            newValues: JSON.stringify({ itemType, itemId, action: 'rejected' }),
+            oldValues: JSON.stringify(removed || { itemType, itemId }),
+            newValues: JSON.stringify({
+              itemType,
+              itemId,
+              decision: 'removed',
+              priorRequestId: activeRequest?.id || null,
+            }),
           },
         });
       });
 
-      return NextResponse.json({ success: true, message: 'Item rejected' });
+      return NextResponse.json({ success: true, message: 'Recommendation removed from this work order' });
+    }
+
+    if (action === 'update_quantity') {
+      if (!canAmendRecommendations) {
+        return NextResponse.json(
+          { success: false, error: 'Only assigned execution staff or accountable maintenance management can amend recommended quantities' },
+          { status: 403 },
+        );
+      }
+
+      const { itemType, itemId } = body;
+      const quantity = Number(body.quantity);
+      if (!['part', 'tool'].includes(itemType) || typeof itemId !== 'string' || !itemId || !Number.isFinite(quantity) || quantity <= 0) {
+        return NextResponse.json({ success: false, error: 'Valid itemType, itemId and positive quantity are required' }, { status: 400 });
+      }
+
+      const parts = parseSuggestions(wo.suggestedParts);
+      const tools = parseSuggestions(wo.suggestedTools);
+
+      await db.$transaction(async (tx) => {
+        if (itemType === 'part') {
+          await tx.workOrder.update({
+            where: { id },
+            data: {
+              suggestedParts: JSON.stringify(parts.map((part) =>
+                part.itemId === itemId ? { ...part, quantity, amendedById: session.userId, amendedAt: new Date().toISOString() } : part
+              )),
+            },
+          });
+          const plannedMaterials = await tx.workOrderMaterial.findMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+            select: { id: true, unitCost: true },
+          });
+          for (const material of plannedMaterials) {
+            const unitCost = material.unitCost ?? 0;
+            await tx.workOrderMaterial.update({
+              where: { id: material.id },
+              data: { quantity, totalCost: unitCost * quantity },
+            });
+          }
+
+          const pendingRequests = await tx.repairMaterialRequest.findMany({
+            where: {
+              workOrderId: id,
+              itemId,
+              source: { in: recommendationSources },
+              status: 'pending',
+            },
+            select: { id: true, unitCost: true },
+          });
+          for (const pendingRequest of pendingRequests) {
+            const unitCost = pendingRequest.unitCost ?? 0;
+            await tx.repairMaterialRequest.update({
+              where: { id: pendingRequest.id },
+              data: { quantityRequested: quantity, estimatedCost: unitCost * quantity },
+            });
+          }
+        } else {
+          await tx.workOrder.update({
+            where: { id },
+            data: {
+              suggestedTools: JSON.stringify(tools.map((tool) =>
+                tool.toolId === itemId ? { ...tool, quantity, amendedById: session.userId, amendedAt: new Date().toISOString() } : tool
+              )),
+            },
+          });
+          const pendingToolRequests = await tx.repairToolRequest.findMany({
+            where: {
+              workOrderId: id,
+              toolId: itemId,
+              source: { in: recommendationSources },
+              status: 'pending',
+            },
+            select: { id: true },
+          });
+          if (pendingToolRequests.length > 0) {
+            await tx.repairToolRequestItem.updateMany({
+              where: {
+                repairToolRequestId: { in: pendingToolRequests.map((row) => row.id) },
+                toolId: itemId,
+              },
+              data: { quantityRequested: Math.max(1, Math.round(quantity)) },
+            });
+          }
+        }
+
+        await tx.auditLog.create({
+          data: {
+            userId: session.userId,
+            action: 'amend_planner_resource_recommendation',
+            entityType: 'work_order',
+            entityId: id,
+            newValues: JSON.stringify({ itemType, itemId, quantity }),
+          },
+        });
+      });
+
+      return NextResponse.json({ success: true, message: 'Recommended quantity updated' });
     }
 
     if (action === 'add_item') {
+      if (!canAmendRecommendations) {
+        return NextResponse.json(
+          { success: false, error: 'Only assigned execution staff or accountable maintenance management can add a recommendation' },
+          { status: 403 },
+        );
+      }
+
       const { itemType, item } = body;
       if (!['part', 'tool'].includes(itemType) || !item || typeof item !== 'object') {
         return NextResponse.json({ success: false, error: 'Valid itemType and item are required' }, { status: 400 });
@@ -425,344 +608,340 @@ export async function PUT(
 
       if (itemType === 'part') {
         const itemId = typeof item.itemId === 'string' ? item.itemId : '';
-        if (!itemId) return NextResponse.json({ success: false, error: 'item.itemId is required' }, { status: 400 });
+        const quantity = Number(item.quantity ?? 1);
+        if (!itemId || !Number.isFinite(quantity) || quantity <= 0) {
+          return NextResponse.json({ success: false, error: 'A valid inventory item and quantity are required' }, { status: 400 });
+        }
         const inventoryItem = await db.inventoryItem.findUnique({
           where: { id: itemId },
           select: { id: true, name: true, itemCode: true, unitOfMeasure: true, unitCost: true, plantId: true },
         });
-        if (!inventoryItem) return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 400 });
-        if (inventoryItem.plantId !== wo.plantId) {
-          return NextResponse.json({ success: false, error: 'Inventory item belongs to a different plant' }, { status: 400 });
+        if (!inventoryItem || inventoryItem.plantId !== wo.plantId) {
+          return NextResponse.json({ success: false, error: 'Inventory item is unavailable for this plant' }, { status: 400 });
         }
-        const quantity = Number(item.quantity ?? 1);
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          return NextResponse.json({ success: false, error: 'Quantity must be greater than zero' }, { status: 400 });
-        }
-        const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-        const newPart = {
-          id: crypto.randomUUID(), itemId: inventoryItem.id, itemName: inventoryItem.name,
-          itemCode: inventoryItem.itemCode || '', quantity,
-          unit: inventoryItem.unitOfMeasure || 'each', notes: typeof item.notes === 'string' ? item.notes : '',
+
+        const parts = parseSuggestions(wo.suggestedParts).filter((part) => part.itemId !== itemId);
+        const recommendation = {
+          id: crypto.randomUUID(),
+          itemId: inventoryItem.id,
+          itemName: inventoryItem.name,
+          itemCode: inventoryItem.itemCode || '',
+          quantity,
+          unit: inventoryItem.unitOfMeasure || 'each',
+          notes: typeof item.notes === 'string' ? item.notes : '',
+          recommendedById: session.userId,
+          recommendedAt: new Date().toISOString(),
+          origin: isExecutionActor ? 'technician_added' : 'planning_added',
         };
-        parts.push(newPart);
+
         await db.$transaction(async (tx) => {
-          await tx.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(parts) } });
-          await tx.repairMaterialRequest.create({
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedParts: JSON.stringify([...parts, recommendation]) },
+          });
+          await tx.workOrderMaterial.deleteMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+          });
+          const unitCost = inventoryItem.unitCost ?? 0;
+          await tx.workOrderMaterial.create({
             data: {
-              workOrderId: id, itemId: inventoryItem.id, itemName: inventoryItem.name,
-              quantityRequested: quantity, unit: inventoryItem.unitOfMeasure || 'each',
-              unitCost: inventoryItem.unitCost ?? 0,
-              estimatedCost: (inventoryItem.unitCost ?? 0) * quantity,
-              reason: newPart.notes || `Added by ${session.fullName}`,
-              plantId: wo.plantId, source: 'planner_suggested', status: 'pending', requestedById: session.userId,
+              workOrderId: id,
+              itemId: inventoryItem.id,
+              itemName: inventoryItem.name,
+              quantity,
+              unitCost,
+              totalCost: unitCost * quantity,
+              status: 'planned',
+              requestedBy: session.userId,
             },
           });
           await tx.auditLog.create({
-            data: { userId: session.userId, action: 'add_suggested_item', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, itemId, quantity }) },
+            data: {
+              userId: session.userId,
+              action: 'add_resource_recommendation',
+              entityType: 'work_order',
+              entityId: id,
+              newValues: JSON.stringify({ itemType, recommendation }),
+            },
           });
         });
       } else {
         const toolId = typeof item.toolId === 'string' ? item.toolId : '';
-        if (!toolId) return NextResponse.json({ success: false, error: 'item.toolId is required' }, { status: 400 });
+        const quantity = Number(item.quantity ?? 1);
+        if (!toolId || !Number.isFinite(quantity) || quantity <= 0) {
+          return NextResponse.json({ success: false, error: 'A valid tool and quantity are required' }, { status: 400 });
+        }
         const tool = await db.tool.findUnique({
           where: { id: toolId },
           select: { id: true, name: true, toolCode: true, plantId: true },
         });
-        if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 400 });
-        if (tool.plantId && tool.plantId !== wo.plantId) {
-          return NextResponse.json({ success: false, error: 'Tool belongs to a different plant' }, { status: 400 });
+        if (!tool || (tool.plantId && tool.plantId !== wo.plantId)) {
+          return NextResponse.json({ success: false, error: 'Tool is unavailable for this plant' }, { status: 400 });
         }
-        const quantity = Number(item.quantity ?? 1);
-        if (!Number.isFinite(quantity) || quantity <= 0) {
-          return NextResponse.json({ success: false, error: 'Quantity must be greater than zero' }, { status: 400 });
-        }
-        const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
-        const newTool = {
-          id: crypto.randomUUID(), toolId: tool.id, toolName: tool.name,
-          toolCode: tool.toolCode || '', quantity, notes: typeof item.notes === 'string' ? item.notes : '',
+
+        const tools = parseSuggestions(wo.suggestedTools).filter((entry) => entry.toolId !== toolId);
+        const recommendation = {
+          id: crypto.randomUUID(),
+          toolId: tool.id,
+          toolName: tool.name,
+          toolCode: tool.toolCode || '',
+          quantity,
+          notes: typeof item.notes === 'string' ? item.notes : '',
+          recommendedById: session.userId,
+          recommendedAt: new Date().toISOString(),
+          origin: isExecutionActor ? 'technician_added' : 'planning_added',
         };
-        tools.push(newTool);
         await db.$transaction(async (tx) => {
-          await tx.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(tools) } });
-          await tx.repairToolRequest.create({
-            data: {
-              workOrderId: id, toolId: tool.id, toolName: tool.name,
-              reason: newTool.notes || `Added by ${session.fullName}`,
-              plantId: wo.plantId, source: 'planner_suggested', status: 'pending', urgency: 'normal', requestedById: session.userId,
-            },
+          await tx.workOrder.update({
+            where: { id },
+            data: { suggestedTools: JSON.stringify([...tools, recommendation]) },
           });
           await tx.auditLog.create({
-            data: { userId: session.userId, action: 'add_suggested_item', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, toolId, quantity }) },
+            data: {
+              userId: session.userId,
+              action: 'add_resource_recommendation',
+              entityType: 'work_order',
+              entityId: id,
+              newValues: JSON.stringify({ itemType, recommendation }),
+            },
           });
         });
       }
-      return NextResponse.json({ success: true, message: 'Item added' });
+
+      return NextResponse.json({ success: true, message: 'Resource added to the recommendation set' });
     }
 
-    if (action === 'update_quantity') {
-      const { itemType, itemId } = body;
-      const quantity = Number(body.quantity);
-      if (!['part', 'tool'].includes(itemType) || typeof itemId !== 'string' || !itemId || !Number.isFinite(quantity) || quantity <= 0) {
-        return NextResponse.json({ success: false, error: 'Valid itemType, itemId and positive quantity are required' }, { status: 400 });
+    if (action === 'submit_recommendations' || action === 'send_to_store') {
+      // Execution requests must be attributable to the actual worker. Managers
+      // may plan/amend recommendations, but they cannot submit requests under a
+      // technician's identity.
+      if (!isExecutionActor) {
+        return NextResponse.json(
+          { success: false, error: 'Only assigned execution staff can submit recommended resources for approval' },
+          { status: 403 },
+        );
       }
 
-      await db.$transaction(async (tx) => {
-        if (itemType === 'part') {
-          const parts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-          await tx.workOrder.update({
-            where: { id },
-            data: { suggestedParts: JSON.stringify(parts.map((p) => p.itemId === itemId ? { ...p, quantity } : p)) },
+      const parts = parseSuggestions(wo.suggestedParts);
+      const tools = parseSuggestions(wo.suggestedTools);
+      if (parts.length > 0 && !hasPermission(session, 'repair_material_requests.create')) {
+        return NextResponse.json({ success: false, error: 'Insufficient permission to request recommended materials' }, { status: 403 });
+      }
+      if (tools.length > 0 && !hasPermission(session, 'repair_tool_requests.create')) {
+        return NextResponse.json({ success: false, error: 'Insufficient permission to request recommended tools' }, { status: 403 });
+      }
+
+      const existingMaterialRequests = await db.repairMaterialRequest.findMany({
+        where: {
+          workOrderId: id,
+          OR: [
+            {
+              source: 'technician_from_planner_recommendation',
+              status: { not: 'rejected' },
+            },
+            {
+              // Preserve legacy planner-generated requests that were already
+              // approved/issued. Plain pending planner rows remain editable
+              // recommendations and must not suppress technician submission.
+              source: 'planner_suggested',
+              status: { notIn: ['pending', 'rejected'] },
+            },
+          ],
+        },
+        select: { itemId: true },
+      });
+      const existingToolRequests = await db.repairToolRequest.findMany({
+        where: {
+          workOrderId: id,
+          OR: [
+            {
+              source: 'technician_from_planner_recommendation',
+              status: { not: 'rejected' },
+            },
+            {
+              source: 'planner_suggested',
+              status: { notIn: ['pending', 'rejected'] },
+            },
+          ],
+        },
+        select: {
+          toolId: true,
+          items: { select: { toolId: true } },
+        },
+      });
+      const requestedPartIds = new Set(existingMaterialRequests.map((row) => row.itemId).filter(Boolean));
+      const requestedToolIds = new Set<string>();
+      for (const request of existingToolRequests) {
+        if (request.toolId) requestedToolIds.add(request.toolId);
+        for (const item of request.items) {
+          if (item.toolId) requestedToolIds.add(item.toolId);
+        }
+      }
+
+      const partsToRequest = parts.filter((part) => typeof part.itemId === 'string' && !requestedPartIds.has(part.itemId as string));
+      const toolsToRequest = tools.filter((tool) => typeof tool.toolId === 'string' && !requestedToolIds.has(tool.toolId as string));
+
+      if (partsToRequest.length === 0 && toolsToRequest.length === 0) {
+        return NextResponse.json({ success: true, data: { materialCount: 0, toolCount: 0 }, message: 'All recommendations have already been submitted' });
+      }
+
+      const created = await db.$transaction(async (tx) => {
+        let materialCount = 0;
+        let toolCount = 0;
+
+        for (const part of partsToRequest) {
+          const itemId = part.itemId as string;
+          const quantity = Number(part.quantity ?? 1);
+          const item = await tx.inventoryItem.findUnique({
+            where: { id: itemId },
+            select: { id: true, name: true, unitOfMeasure: true, unitCost: true, plantId: true },
           });
+          if (!item || item.plantId !== wo.plantId || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+          const unitCost = item.unitCost ?? 0;
           await tx.repairMaterialRequest.updateMany({
-            where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
-            data: { quantityRequested: quantity },
+            where: {
+              workOrderId: id,
+              itemId: item.id,
+              source: 'planner_suggested',
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              notes: `Superseded when ${session.fullName} explicitly submitted the planner recommendation`,
+            },
+          });
+          await tx.repairMaterialRequest.create({
+            data: {
+              workOrderId: id,
+              itemId: item.id,
+              itemName: item.name,
+              quantityRequested: quantity,
+              quantityApproved: 0,
+              quantityIssued: 0,
+              quantityReturned: 0,
+              unit: item.unitOfMeasure || 'each',
+              unitCost,
+              estimatedCost: unitCost * quantity,
+              urgency: 'normal',
+              reason: 'Technician accepted planner recommendation',
+              notes: typeof part.notes === 'string' ? part.notes : null,
+              plantId: wo.plantId,
+              source: 'technician_from_planner_recommendation',
+              status: 'pending',
+              requestedById: session.userId,
+            },
           });
           await tx.workOrderMaterial.updateMany({
-            where: { workOrderId: id, itemId, status: 'planned' },
-            data: { quantity },
+            where: { workOrderId: id, itemId: item.id, status: 'planned' },
+            data: { status: 'requested', requestedBy: session.userId, quantity },
           });
-        } else {
-          const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
-          await tx.workOrder.update({
-            where: { id },
-            data: { suggestedTools: JSON.stringify(tools.map((t) => t.toolId === itemId ? { ...t, quantity } : t)) },
-          });
+          materialCount += 1;
         }
-        await tx.auditLog.create({
-          data: { userId: session.userId, action: 'update_suggested_item_qty', entityType: 'work_order', entityId: id, newValues: JSON.stringify({ itemType, itemId, quantity }) },
-        });
-      });
 
-      return NextResponse.json({ success: true, message: 'Quantity updated' });
-    }
-
-    if (action === 'send_to_store') {
-      // Legacy/partial MR→WO conversions can contain a planned WorkOrderMaterial
-      // without the canonical planner_suggested RepairMaterialRequest. Repair
-      // that durable pipeline before notifying the store so a recovered item is
-      // not merely visible — it is actionable.
-      const plannedMaterials = inventoryResourcesOperational ? await db.workOrderMaterial.findMany({
-        where: { workOrderId: id, status: 'planned', itemId: { not: null } },
-        select: {
-          id: true,
-          itemId: true,
-          itemName: true,
-          quantity: true,
-          unitCost: true,
-          totalCost: true,
-          requestedBy: true,
-        },
-      }) : [];
-
-      const existingPlannerMaterialRequests = inventoryResourcesOperational ? await db.repairMaterialRequest.findMany({
-        where: { workOrderId: id, source: 'planner_suggested' },
-        select: { itemId: true },
-      }) : [];
-      const existingItemIds = new Set(
-        existingPlannerMaterialRequests
-          .map((request) => request.itemId)
-          .filter((itemId): itemId is string => Boolean(itemId)),
-      );
-
-      const missingMaterials = plannedMaterials.filter(
-        (material) => material.itemId && !existingItemIds.has(material.itemId),
-      );
-
-      if (missingMaterials.length > 0) {
-        const inventoryItems = await db.inventoryItem.findMany({
-          where: { id: { in: missingMaterials.map((material) => material.itemId as string) } },
-          select: {
-            id: true,
-            name: true,
-            unitOfMeasure: true,
-            unitCost: true,
-          },
-        });
-        const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
-
-        await db.$transaction(async (tx) => {
-          for (const material of missingMaterials) {
-            const itemId = material.itemId as string;
-            const inventoryItem = inventoryById.get(itemId);
-            const quantity = Number(material.quantity || 1);
-            const unitCost = Number(material.unitCost ?? inventoryItem?.unitCost ?? 0);
-            await tx.repairMaterialRequest.create({
-              data: {
-                workOrderId: id,
-                itemId,
-                itemName: material.itemName || inventoryItem?.name || 'Planned Material',
-                quantityRequested: quantity,
-                quantityApproved: 0,
-                quantityIssued: 0,
-                quantityReturned: 0,
-                unit: inventoryItem?.unitOfMeasure || 'each',
-                unitCost,
-                estimatedCost: Number(material.totalCost ?? (quantity * unitCost)),
-                urgency: 'normal',
-                reason: `Planned for work order ${id}`,
-                notes: 'Recovered from planned work-order material before store submission',
-                plantId: wo.plantId,
-                source: 'planner_suggested',
-                status: 'pending',
-                requestedById: material.requestedBy || session.userId,
-              },
-            });
-          }
-        });
-      }
-
-      // Do the same durable repair for planner-selected tools. A legacy/partial
-      // conversion may retain suggestedTools without a canonical RepairToolRequest,
-      // or the tool identity may exist only in a request item. Rebuild only truly
-      // missing planner rows before the store workflow counts/notifies them.
-      const suggestedToolSnapshot = toolResourcesOperational
-        ? (() => {
-            try {
-              const parsed = JSON.parse(wo.suggestedTools || '[]');
-              return Array.isArray(parsed) ? parsed as Array<Record<string, unknown>> : [];
-            } catch {
-              return [] as Array<Record<string, unknown>>;
-            }
-          })()
-        : [];
-
-      const existingPlannerToolRequests = toolResourcesOperational
-        ? await db.repairToolRequest.findMany({
-            where: { workOrderId: id, source: 'planner_suggested' },
+        for (const recommendation of toolsToRequest) {
+          const toolId = recommendation.toolId as string;
+          const quantity = Number(recommendation.quantity ?? 1);
+          const tool = await tx.tool.findUnique({
+            where: { id: toolId },
             select: {
-              toolId: true,
-              items: { select: { toolId: true } },
-            },
-          })
-        : [];
-
-      const existingToolIds = new Set<string>();
-      for (const request of existingPlannerToolRequests) {
-        if (request.toolId) existingToolIds.add(request.toolId);
-        for (const item of request.items) {
-          if (item.toolId) existingToolIds.add(item.toolId);
-        }
-      }
-
-      const missingSuggestedTools = suggestedToolSnapshot.filter((suggestion) => {
-        const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
-        return Boolean(toolId) && !existingToolIds.has(toolId);
-      });
-
-      if (missingSuggestedTools.length > 0) {
-        const missingToolIds = missingSuggestedTools
-          .map((suggestion) => suggestion.toolId)
-          .filter((toolId): toolId is string => typeof toolId === 'string' && Boolean(toolId));
-
-        const tools = await db.tool.findMany({
-          where: {
-            id: { in: missingToolIds },
-            OR: [
-              { plantId: wo.plantId },
-              { plantId: null },
-            ],
-          },
-          select: {
-            id: true,
-            name: true,
-            toolCode: true,
-            category: true,
-            purchaseCost: true,
-          },
-        });
-        const toolById = new Map(tools.map((tool) => [tool.id, tool]));
-
-        await db.$transaction(async (tx) => {
-          for (const suggestion of missingSuggestedTools) {
-            const toolId = suggestion.toolId as string;
-            const tool = toolById.get(toolId);
-            if (!tool) continue;
-
-            const rawQuantity = Number(suggestion.quantity ?? 1);
-            const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0
-              ? Math.max(1, Math.floor(rawQuantity))
-              : 1;
-
-            const toolRequest = await tx.repairToolRequest.create({
-              data: {
-                workOrderId: id,
-                toolId: tool.id,
-                toolName: tool.name,
-                reason: `Planned for work order ${id}`,
-                notes: 'Recovered from suggestedTools snapshot before store submission',
-                plantId: wo.plantId,
-                source: 'planner_suggested',
-                status: 'pending',
-                urgency: 'normal',
-                requestedById: wo.plannerId || session.userId,
-              },
-            });
-
-            await tx.repairToolRequestItem.create({
-              data: {
-                repairToolRequestId: toolRequest.id,
-                toolId: tool.id,
-                toolName: tool.name,
-                toolCode: tool.toolCode,
-                category: tool.category,
-                quantityRequested: quantity,
-                quantityIssued: 0,
-                unitCost: tool.purchaseCost ?? undefined,
-              },
-            });
-          }
-        });
-      }
-
-      const pendingMatReqs = inventoryResourcesOperational
-        ? await db.repairMaterialRequest.findMany({
-            where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-          })
-        : [];
-      const pendingToolReqs = toolResourcesOperational
-        ? await db.repairToolRequest.findMany({
-            where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-          })
-        : [];
-
-      const storekeepers = await db.user.findMany({
-        where: {
-          userRoles: { some: { role: { slug: { in: ['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin'] } } } },
-          plantAccess: { some: { plantId: wo.plantId } },
-        },
-        select: { id: true, fullName: true },
-      });
-
-      const totalCount = pendingMatReqs.length + pendingToolReqs.length;
-      if (totalCount === 0) {
-        return NextResponse.json({ success: true, message: 'No pending items to send' });
-      }
-
-      await db.$transaction(async (tx) => {
-        for (const sk of storekeepers) {
-          await tx.notification.create({
-            data: {
-              userId: sk.id,
-              type: 'material_request',
-              title: 'Material/Tool Request Ready for Review',
-              message: `${pendingMatReqs.length} material(s) and ${pendingToolReqs.length} tool(s) from WO need your review.`,
-              actionUrl: 'maintenance?tab=repairs-material-requests',
-              isRead: false,
+              id: true,
+              name: true,
+              toolCode: true,
+              category: true,
+              purchaseCost: true,
+              plantId: true,
             },
           });
+          if (!tool || (tool.plantId && tool.plantId !== wo.plantId) || !Number.isFinite(quantity) || quantity <= 0) continue;
+
+          await tx.repairToolRequest.updateMany({
+            where: {
+              workOrderId: id,
+              toolId: tool.id,
+              source: 'planner_suggested',
+              status: 'pending',
+            },
+            data: {
+              status: 'rejected',
+              rejectionReason: `Superseded when ${session.fullName} explicitly submitted the planner recommendation`,
+            },
+          });
+          const toolRequest = await tx.repairToolRequest.create({
+            data: {
+              workOrderId: id,
+              toolId: tool.id,
+              toolName: tool.name,
+              reason: 'Technician accepted planner recommendation',
+              notes: typeof recommendation.notes === 'string' ? recommendation.notes : null,
+              plantId: wo.plantId,
+              source: 'technician_from_planner_recommendation',
+              status: 'pending',
+              urgency: 'normal',
+              requestedById: session.userId,
+            },
+          });
+          await tx.repairToolRequestItem.create({
+            data: {
+              repairToolRequestId: toolRequest.id,
+              toolId: tool.id,
+              toolName: tool.name,
+              toolCode: tool.toolCode,
+              category: tool.category,
+              quantityRequested: Math.max(1, Math.round(quantity)),
+              quantityIssued: 0,
+              unitCost: tool.purchaseCost ?? undefined,
+            },
+          });
+          toolCount += 1;
         }
+
         await tx.auditLog.create({
           data: {
             userId: session.userId,
-            action: 'send_suggested_to_store',
+            action: 'submit_planner_resource_recommendations',
             entityType: 'work_order',
             entityId: id,
-            newValues: JSON.stringify({ materialCount: pendingMatReqs.length, toolCount: pendingToolReqs.length, notifiedStorekeepers: storekeepers.length }),
+            newValues: JSON.stringify({
+              materialCount,
+              toolCount,
+              requestedById: session.userId,
+            }),
           },
         });
+
+        return { materialCount, toolCount };
       });
 
-      return NextResponse.json({ success: true, message: `${totalCount} item(s) sent to store. ${storekeepers.length} storekeeper(s) notified.` });
+      const totalCount = created.materialCount + created.toolCount;
+      if (totalCount > 0 && wo.assignedSupervisorId && wo.assignedSupervisorId !== session.userId) {
+        await notifyUser(
+          wo.assignedSupervisorId,
+          'repair_resource_request',
+          'Recommended Resources Submitted',
+          `${session.fullName} submitted ${totalCount} planner-recommended resource(s) for WO ${wo.woNumber}`,
+          'work_order',
+          id,
+          `wo-detail?id=${id}`,
+        ).catch(() => {});
+      }
+      if (totalCount > 0 && wo.plannerId && wo.plannerId !== session.userId && wo.plannerId !== wo.assignedSupervisorId) {
+        await notifyUser(
+          wo.plannerId,
+          'repair_resource_request',
+          'Planner Recommendations Reviewed',
+          `${session.fullName} submitted ${totalCount} recommended resource(s) for WO ${wo.woNumber}`,
+          'work_order',
+          id,
+          `wo-detail?id=${id}`,
+        ).catch(() => {});
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: created,
+        message: `${totalCount} recommended resource(s) submitted for approval`,
+      });
     }
 
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });

@@ -139,6 +139,30 @@ describe('workOrderHandoverInitiation.initiateCanonicalHandover', () => {
     });
   });
 
+  it('rejects a non-technician receiver even when another role has start permission', async () => {
+    mockDb.user.findUnique.mockResolvedValue({
+      id: 'tech-in',
+      status: 'active',
+      userRoles: [{
+        role: {
+          slug: 'maintenance_supervisor',
+          rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+        },
+      }],
+      directPerms: [],
+    });
+
+    const result = await initiateCanonicalHandover('wo-1', supervisorSession, {
+      receivedById: 'tech-in',
+      reason: 'Shift change',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('maintenance technician');
+    expect(mockCloseAllActiveWorkSessions).not.toHaveBeenCalled();
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
+  });
+
   it('does not grant plant management direct execution-handover authority', async () => {
     const result = await initiateCanonicalHandover('wo-1', plantManagerSession, {
       receivedById: 'tech-in',

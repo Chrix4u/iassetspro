@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { executeTransition } from '@/lib/state-machine';
 import type { SessionContext, TransitionResult } from '@/services/workExecution.service';
 import type { Prisma } from '@prisma/client';
-import { handoverUserHasEffectivePermission } from '@/services/workOrderHandoverInitiation.service';
+import { handoverUserHasEffectivePermission, handoverUserIsMaintenanceTechnician } from '@/services/workOrderHandoverInitiation.service';
 
 export interface ResumeConfirmedHandoverOptions {
   reason?: string;
@@ -85,6 +85,9 @@ export async function resumeConfirmedHandover(
       });
       if (!receiver || receiver.status !== 'active') {
         throw new Error('Cannot resume work: designated handover receiver is not an active user');
+      }
+      if (!handoverUserIsMaintenanceTechnician(receiver)) {
+        throw new Error('Cannot resume work: designated handover receiver is no longer an active maintenance technician');
       }
       if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {
         throw new Error('Cannot resume work: designated handover receiver is no longer authorized to execute maintenance work');

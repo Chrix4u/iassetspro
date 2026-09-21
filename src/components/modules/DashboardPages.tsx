@@ -232,6 +232,16 @@ export function DashboardPage() {
   // Module widgets/cards must satisfy both licensing and the same permission
   // contract as their destination pages. Keep these declarations before any
   // chart/KPI data that consumes them to avoid temporal-dead-zone runtime errors.
+  const assetsEnabled = pageHasPermission('assets-machines', hasPermission, isAdmin())
+    && pageModuleIsEnabled('assets-machines', enabledModules);
+  const workOrdersEnabled = pageHasPermission('maintenance-work-orders', hasPermission, isAdmin())
+    && pageModuleIsEnabled('maintenance-work-orders', enabledModules);
+  const requestsEnabled = pageHasPermission('maintenance-requests', hasPermission, isAdmin())
+    && pageModuleIsEnabled('maintenance-requests', enabledModules);
+  const toolsWorkspaceEnabled = pageHasPermission('maintenance-tools', hasPermission, isAdmin())
+    && pageModuleIsEnabled('maintenance-tools', enabledModules);
+  const notificationsEnabled = pageHasPermission('notifications', hasPermission, isAdmin())
+    && pageModuleIsEnabled('notifications', enabledModules);
   const analyticsEnabled = pageHasPermission('analytics-kpi', hasPermission, isAdmin())
     && pageModuleIsEnabled('analytics-kpi', enabledModules);
   const safetyEnabled = pageHasPermission('safety-incidents', hasPermission, isAdmin())
@@ -399,7 +409,7 @@ export function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {myKPIs.unreadNotifications > 0 && (
+          {notificationsEnabled && myKPIs.unreadNotifications > 0 && (
             <Badge variant="destructive" className="text-[11px] font-mono gap-1.5">
               <Bell className="h-3 w-3" />
               {myKPIs.unreadNotifications} new
@@ -414,8 +424,8 @@ export function DashboardPage() {
 
       {/* ===== My Personal KPIs (Role-Based) ===== */}
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-        {/* Always visible: My Active WOs */}
-        <button onClick={() => navigate('maintenance-work-orders', { assignedTo: 'me' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+        {/* Work-order cards render only when the module is licensed/enabled and routable. */}
+        {workOrdersEnabled && <button onClick={() => navigate('maintenance-work-orders', { assignedTo: 'me' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
           <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
             <Wrench className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </div>
@@ -424,9 +434,8 @@ export function DashboardPage() {
             <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{isManager ? activeWOs : myKPIs.activeWorkOrders}</p>
           </div>
           <ChevronRight className="h-3.5 w-3.5 text-emerald-400/50 shrink-0" />
-        </button>
-        {/* Always visible: Pending Tasks */}
-        <button onClick={() => navigate('maintenance-requests', { status: 'pending,approved' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+        </button>}
+        {requestsEnabled && <button onClick={() => navigate('maintenance-requests', { status: 'pending,approved' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
           <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
             <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           </div>
@@ -435,9 +444,8 @@ export function DashboardPage() {
             <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{myKPIs.pendingTasks}</p>
           </div>
           <ChevronRight className="h-3.5 w-3.5 text-amber-400/50 shrink-0" />
-        </button>
-        {/* Always visible: Completed This Week */}
-        <button onClick={() => navigate('maintenance-work-orders', { status: 'completed,verified', assignedTo: 'me' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+        </button>}
+        {workOrdersEnabled && <button onClick={() => navigate('maintenance-work-orders', { status: 'completed,verified', assignedTo: 'me' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
           <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
             <CheckCircle2 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
           </div>
@@ -446,10 +454,11 @@ export function DashboardPage() {
             <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{myKPIs.completedThisWeek}</p>
           </div>
           <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
-        </button>
+        </button>}
 
-        {/* Technician: Tools Checked Out */}
-        {isTechnician && (
+        {/* Tool Registry is a privileged workspace; do not advertise it to a
+            technician who only has constrained repair/tool workflow access. */}
+        {isTechnician && toolsWorkspaceEnabled && (
           <button onClick={() => navigate('maintenance-tools')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-violet-100 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
             <div className="h-9 w-9 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center shrink-0">
               <Hammer className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -465,7 +474,7 @@ export function DashboardPage() {
         {/* Supervisor: Team Workload */}
         {isSupervisor && (
           <>
-            <button onClick={() => navigate('maintenance-requests', { status: 'pending,in_progress' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+            {requestsEnabled && <button onClick={() => navigate('maintenance-requests', { status: 'pending,in_progress' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
               <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center shrink-0">
                 <ClipboardCheck className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               </div>
@@ -474,8 +483,8 @@ export function DashboardPage() {
                 <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{supervisorKPIs.pendingApprovals}</p>
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-orange-400/50 shrink-0" />
-            </button>
-            <button onClick={() => navigate('maintenance-work-orders', { assignedTo: 'team' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-cyan-100 dark:border-cyan-900/40 bg-cyan-50 dark:bg-cyan-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+            </button>}
+            {workOrdersEnabled && <button onClick={() => navigate('maintenance-work-orders', { assignedTo: 'team' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-cyan-100 dark:border-cyan-900/40 bg-cyan-50 dark:bg-cyan-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
               <div className="h-9 w-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/50 flex items-center justify-center shrink-0">
                 <Users className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
               </div>
@@ -484,14 +493,14 @@ export function DashboardPage() {
                 <p className="text-xl font-bold text-cyan-600 dark:text-cyan-400">{supervisorKPIs.teamActiveWOs}</p>
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-cyan-400/50 shrink-0" />
-            </button>
+            </button>}
           </>
         )}
 
         {/* Planner: Planning Queue */}
         {isPlanner && (
           <>
-            <button onClick={() => navigate('planner-workbench')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+            {workOrdersEnabled && <button onClick={() => navigate('planner-workbench')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
               <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
                 <LayoutDashboard className="h-4 w-4 text-sky-600 dark:text-sky-400" />
               </div>
@@ -500,7 +509,7 @@ export function DashboardPage() {
                 <p className="text-xl font-bold text-sky-600 dark:text-sky-400">{plannerKPIs.planningQueue}</p>
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-sky-400/50 shrink-0" />
-            </button>
+            </button>}
             {pmEnabled && <button onClick={() => navigate('pm-schedules')} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
               <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
                 <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
@@ -511,7 +520,7 @@ export function DashboardPage() {
               </div>
               <ChevronRight className="h-3.5 w-3.5 text-teal-400/50 shrink-0" />
             </button>}
-            {plannerKPIs.pendingTeamRequests > 0 && (
+            {workOrdersEnabled && plannerKPIs.pendingTeamRequests > 0 && (
               <button
                 onClick={() => document.getElementById('pending-team-requests-section')?.scrollIntoView({ behavior: 'smooth' })}
                 className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-violet-200 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 transition-all hover:shadow-sm hover:border-violet-300 dark:hover:border-violet-800/50 cursor-pointer"
@@ -530,7 +539,7 @@ export function DashboardPage() {
         )}
 
         {/* Operator fallback */}
-        {isOperator && (
+        {isOperator && notificationsEnabled && (
           <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-pink-100 dark:border-pink-900/40 bg-pink-50 dark:bg-pink-950/30 transition-all hover:shadow-sm">
             <div className="h-9 w-9 rounded-lg bg-pink-100 dark:bg-pink-900/50 flex items-center justify-center shrink-0">
               <Bell className="h-4 w-4 text-pink-600 dark:text-pink-400" />
@@ -544,7 +553,7 @@ export function DashboardPage() {
       </div>
 
       {/* ===== Pending Team Member Requests Alert (Planner/Admin) ===== */}
-      {(isPlanner || isManager) && plannerKPIs.pendingTeamRequests > 0 && (
+      {workOrdersEnabled && (isPlanner || isManager) && plannerKPIs.pendingTeamRequests > 0 && (
         <div id="pending-team-requests-section" className="space-y-3">
           <button
             onClick={() => {
@@ -598,7 +607,7 @@ export function DashboardPage() {
       )}
 
       {/* ===== Pending Requests Alert (Supervisor/Admin) ===== */}
-      {(isSupervisor || isManager) && pendingReqs > 0 && (
+      {requestsEnabled && (isSupervisor || isManager) && pendingReqs > 0 && (
         <button
           onClick={() => navigate('maintenance-requests', { status: 'pending,approved' })}
           className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-800/50 transition-all duration-300 cursor-pointer group"
@@ -629,29 +638,31 @@ export function DashboardPage() {
       )}
 
       {/* ===== Cross-Module Overview Section ===== */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
+      {filteredCrossModuleData.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
+          </div>
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            {filteredCrossModuleData.map((mod) => (
+              <button
+                key={mod.label}
+                onClick={() => mod.page && navigate(mod.page, (mod as any).params)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm cursor-pointer text-left ${mod.page ? 'hover:scale-[1.02] active:scale-[0.98]' : ''}`}
+              >
+                <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{mod.label}</p>
+                  <p className={`text-lg font-bold ${mod.textColor}`}>{mod.value}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{mod.detail}</p>
+                </div>
+                {mod.page && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {filteredCrossModuleData.map((mod) => (
-            <button
-              key={mod.label}
-              onClick={() => mod.page && navigate(mod.page, (mod as any).params)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm cursor-pointer text-left ${mod.page ? 'hover:scale-[1.02] active:scale-[0.98]' : ''}`}
-            >
-              <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{mod.label}</p>
-                <p className={`text-lg font-bold ${mod.textColor}`}>{mod.value}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{mod.detail}</p>
-              </div>
-              {mod.page && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
       {(isManager || isPlanner || isSupervisor) && (() => {
@@ -802,36 +813,38 @@ export function DashboardPage() {
       })()}
 
       {/* ===== Weekly Trends Chart ===== */}
-      <Card className="border">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
-              <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+      {(workOrdersEnabled || requestsEnabled || productionEnabled) && (
+        <Card className="border">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">7-Day Activity Trends</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Activity created per day for enabled modules</CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-base font-semibold">7-Day Activity Trends</CardTitle>
-              <CardDescription className="text-xs mt-0.5">Work orders, requests &amp; production created per day</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <ChartContainer config={weeklyTrendConfig} className="h-[280px] w-full">
-            <BarChart data={weeklyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="workOrders" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="maintenanceRequests" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="productionOrders" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ChartContainer config={weeklyTrendConfig} className="h-[280px] w-full">
+              <BarChart data={weeklyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                {workOrdersEnabled && <Bar dataKey="workOrders" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+                {requestsEnabled && <Bar dataKey="maintenanceRequests" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+                {productionEnabled && <Bar dataKey="productionOrders" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />}
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ===== Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+      {workOrdersEnabled && <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* WO Status Bar Chart */}
         <Card className="border lg:col-span-2 h-full flex flex-col">
           <CardHeader className="pb-2">
@@ -898,12 +911,12 @@ export function DashboardPage() {
             </ChartContainer>
           </CardContent>
         </Card>
-      </div>
+      </div>}
 
       {/* ===== Second Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+      {(requestsEnabled || workOrdersEnabled) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* MR Status + Priority */}
-        <Card className="border h-full flex flex-col">
+        {requestsEnabled && <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
@@ -949,10 +962,10 @@ export function DashboardPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Operations Summary + Completion */}
-        <Card className="border h-full flex flex-col">
+        {(requestsEnabled || workOrdersEnabled) && <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
@@ -965,7 +978,7 @@ export function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0 space-y-5">
-            <div className="grid grid-cols-2 gap-3">
+            {requestsEnabled && <div className="grid grid-cols-2 gap-3">
               {[
                 { label: 'Pending Approvals', value: pendingApprovals, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-100 dark:border-orange-900/40', page: 'maintenance-requests' as PageName, params: { status: 'pending,in_progress' } },
                 { label: 'Total Requests', value: stats?.totalRequests || 0, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/30', border: 'border-sky-100 dark:border-sky-900/40', page: 'maintenance-requests' as PageName },
@@ -980,8 +993,8 @@ export function DashboardPage() {
                   <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                 </button>
               ))}
-            </div>
-            <div className="space-y-2">
+            </div>}
+            {workOrdersEnabled && <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-muted-foreground">Overall Completion</span>
                 <span className="text-sm font-bold text-primary">{completionRate}%</span>
@@ -996,16 +1009,16 @@ export function DashboardPage() {
                 <span>{completedWOs} completed</span>
                 <span>{totalWOs - completedWOs} not completed</span>
               </div>
-            </div>
+            </div>}
           </CardContent>
-        </Card>
-      </div>
+        </Card>}
+      </div>}
 
       {/* ===== Asset Health + Cost Breakdown Row (Manager/Admin) ===== */}
-      {(isManager || isPlanner) && (
+      {(isManager || isPlanner) && (assetsEnabled || financialReportsEnabled) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Asset Health Distribution */}
-          <Card className="border">
+          {assetsEnabled && <Card className="border">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
@@ -1043,10 +1056,10 @@ export function DashboardPage() {
                 <EmptyState icon={WrenchIcon} title="No assets" description="No active assets found." />
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Cost Breakdown */}
-          <Card className="border">
+          {financialReportsEnabled && <Card className="border">
             <CardHeader className="pb-2">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
@@ -1101,7 +1114,7 @@ export function DashboardPage() {
                 )}
               </div>
             </CardContent>
-          </Card>
+          </Card>}
         </div>
       )}
 
@@ -1133,8 +1146,8 @@ export function DashboardPage() {
       )}
 
       {/* ===== Recent Activity Panels ===== */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        {hasPermission('maintenance_requests.view') && (
+      {(requestsEnabled || workOrdersEnabled) && <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+        {requestsEnabled && (
           <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -1179,7 +1192,7 @@ export function DashboardPage() {
           </Card>
         )}
 
-        {hasPermission('work_orders.view') && (
+        {workOrdersEnabled && (
           <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
@@ -1223,7 +1236,7 @@ export function DashboardPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+      </div>}
 
       {/* ===== System Health Footer ===== */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

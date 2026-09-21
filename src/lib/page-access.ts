@@ -143,18 +143,18 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
 };
 
 
-export const PAGE_MODULES: Record<string, string> = {
+export const PAGE_MODULES: Record<string, string | string[]> = {
   'dashboard': 'core',
   'chat': 'core',
-  'notifications': 'core',
+  'notifications': 'notifications',
   'asset-categories': 'assets',
   'assets-machines': 'assets',
   'assets-hierarchy': 'assets',
-  'assets-bom': 'bom',
-  'assets-condition-monitoring': 'condition_monitoring',
-  'assets-digital-twin': 'digital_twin',
-  'digital-twin-viewer': 'digital_twin',
-  'system-diagrams': 'digital_twin',
+  'assets-bom': ['assets', 'bom'],
+  'assets-condition-monitoring': ['assets', 'condition_monitoring'],
+  'assets-digital-twin': ['assets', 'digital_twin'],
+  'digital-twin-viewer': ['assets', 'digital_twin'],
+  'system-diagrams': ['assets', 'digital_twin'],
   'assets-health': 'assets',
   'ai-hub': 'assets',
   'ai-config': 'assets',
@@ -165,28 +165,28 @@ export const PAGE_MODULES: Record<string, string> = {
   'mr-detail': 'maintenance_requests',
   'create-mr': 'maintenance_requests',
   'maintenance-dashboard': 'work_orders',
-  'maintenance-analytics': 'work_orders',
+  'maintenance-analytics': ['work_orders', 'analytics'],
   'maintenance-calibration': 'calibration',
   'maintenance-risk-assessment': 'risk_assessment',
   'maintenance-tools': 'tools',
-  'pm-schedules': 'pm_schedules',
-  'pm-templates': 'pm_schedules',
-  'pm-triggers': 'pm_schedules',
-  'pm-calendar': 'pm_schedules',
+  'pm-schedules': ['pm_schedules', 'assets'],
+  'pm-templates': ['pm_schedules', 'assets'],
+  'pm-triggers': ['pm_schedules', 'assets'],
+  'pm-calendar': ['pm_schedules', 'assets'],
   'planner-workbench': 'work_orders',
   'enterprise-reports': 'reports',
-  'repairs-material-requests': 'repairs',
-  'repairs-tool-requests': 'repairs',
-  'repairs-tool-transfers': 'repairs',
+  'repairs-material-requests': ['repairs', 'inventory'],
+  'repairs-tool-requests': ['repairs', 'tools'],
+  'repairs-tool-transfers': ['repairs', 'tools'],
   'repairs-downtime': 'repairs',
   'repairs-completion': 'repairs',
   'technician-timesheet': 'repairs',
-  'repairs-spare-part-returns': 'repairs',
-  'repairs-damaged-tools': 'repairs',
-  'repairs-analytics': 'repairs',
-  'repairs-reports': 'repairs',
-  'repairs-detail-report': 'repairs',
-  'wo-reports': 'work_orders',
+  'repairs-spare-part-returns': ['repairs', 'inventory'],
+  'repairs-damaged-tools': ['repairs', 'tools'],
+  'repairs-analytics': ['repairs', 'analytics'],
+  'repairs-reports': ['repairs', 'reports'],
+  'repairs-detail-report': ['repairs', 'reports'],
+  'wo-reports': ['work_orders', 'reports'],
   'inventory-items': 'inventory',
   'inventory-categories': 'inventory',
   'inventory-locations': 'inventory',
@@ -231,16 +231,16 @@ export const PAGE_MODULES: Record<string, string> = {
   'operations-time-logs': 'work_orders',
   'operations-checklists': 'work_orders',
   'operations-shift-handover': 'shift_management',
-  'reports-asset': 'reports',
-  'equipment-history': 'reports',
-  'machine-availability': 'reports',
-  'failure-analysis': 'failure_analysis',
-  'reports-maintenance': 'reports',
-  'reports-inventory': 'reports',
-  'reports-production': 'reports',
-  'reports-quality': 'reports',
-  'reports-safety': 'reports',
-  'reports-financial': 'reports',
+  'reports-asset': ['reports', 'assets'],
+  'equipment-history': ['reports', 'assets'],
+  'machine-availability': ['reports', 'assets'],
+  'failure-analysis': ['reports', 'failure_analysis', 'assets'],
+  'reports-maintenance': ['reports', 'work_orders', 'maintenance_requests'],
+  'reports-inventory': ['reports', 'inventory'],
+  'reports-production': ['reports', 'production'],
+  'reports-quality': ['reports', 'quality'],
+  'reports-safety': ['reports', 'safety'],
+  'reports-financial': ['reports', 'work_orders'],
   'reports-custom': 'reports',
   'settings-general': 'core',
   'settings-users': 'core',
@@ -248,7 +248,7 @@ export const PAGE_MODULES: Record<string, string> = {
   'settings-company': 'core',
   'settings-plants': 'core',
   'settings-departments': 'core',
-  'settings-notifications': 'core',
+  'settings-notifications': ['core', 'notifications'],
   'settings-integrations': 'core',
   'settings-backup': 'core',
   'settings-audit': 'core',
@@ -262,10 +262,15 @@ export const PAGE_MODULES: Record<string, string> = {
   'asset-detail': 'assets',
   'inventory': 'inventory',
   'analytics': 'analytics',
-  'settings-modules': 'modules',
+  // Module Management is control-plane/core administration. It must remain
+  // reachable so an admin can inspect/activate otherwise disabled modules.
+  'settings-modules': 'core',
 };
 
-export const CORE_MODULE_CODES = new Set(['core', 'assets', 'maintenance_requests', 'work_orders', 'inventory', 'modules']);
+// Only the true platform foundation bypasses the licensed/enabled registry.
+// Operational modules (assets, RWOP/requests, inventory, PM, production, etc.)
+// must be present in enabledModules before any page/component is routable.
+export const CORE_MODULE_CODES = new Set(['core']);
 
 export function pageHasPermission(
   page: string,
@@ -277,10 +282,24 @@ export function pageHasPermission(
   return !required || required.some(hasPermission);
 }
 
+function pageModuleCodes(page: string): string[] {
+  const configured = PAGE_MODULES[page];
+  if (!configured) return [];
+  return Array.isArray(configured) ? configured : [configured];
+}
+
+export function pageModuleStateResolved(page: string, enabledModules: Set<string> | null): boolean {
+  const codes = pageModuleCodes(page);
+  if (codes.length === 0 || codes.every((code) => CORE_MODULE_CODES.has(code))) return true;
+  return enabledModules !== null;
+}
+
 export function pageModuleIsEnabled(page: string, enabledModules: Set<string> | null): boolean {
-  const code = PAGE_MODULES[page];
-  if (!code) return true;
-  if (CORE_MODULE_CODES.has(code)) return true;
-  if (enabledModules === null) return false;
-  return enabledModules.has(code);
+  const codes = pageModuleCodes(page);
+  if (codes.length === 0) return true;
+  if (enabledModules === null && codes.some((code) => !CORE_MODULE_CODES.has(code))) return false;
+
+  return codes.every((code) =>
+    CORE_MODULE_CODES.has(code) || enabledModules?.has(code) === true
+  );
 }

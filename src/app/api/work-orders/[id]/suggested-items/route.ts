@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 // GET /api/work-orders/[id]/suggested-items — Fetch suggested parts & tools
 export async function GET(
@@ -18,6 +19,17 @@ export async function GET(
     const { id } = await params;
     const plantAuth = await authorizeWorkOrderPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
+
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'repairs',
+      'inventory',
+      'tools',
+    ]));
+    const repairsOperational = !unavailableModules.has('repairs');
+    const inventoryResourcesOperational =
+      repairsOperational && !unavailableModules.has('inventory');
+    const toolResourcesOperational =
+      repairsOperational && !unavailableModules.has('tools');
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -90,27 +102,27 @@ export async function GET(
       }
     };
 
-    let suggestedParts = parseSuggestionArray(wo.suggestedParts);
-    const storedSuggestedTools = parseSuggestionArray(wo.suggestedTools);
+    let suggestedParts = inventoryResourcesOperational ? parseSuggestionArray(wo.suggestedParts) : [];
+    const storedSuggestedTools = toolResourcesOperational ? parseSuggestionArray(wo.suggestedTools) : [];
 
     // Reconcile planner-selected materials from every durable source.
     // Older/partial MR→WO conversions could persist WorkOrderMaterial without
     // the suggestion JSON or canonical RepairMaterialRequest. Tools already
     // had a request-backed fallback, so materials need equivalent resilience.
     const materialItemIds = new Set<string>();
-    for (const suggestion of suggestedParts) {
+    if (inventoryResourcesOperational) for (const suggestion of suggestedParts) {
       if (typeof suggestion.itemId === 'string' && suggestion.itemId) {
         materialItemIds.add(suggestion.itemId);
       }
     }
-    for (const material of wo.materials) {
+    if (inventoryResourcesOperational) for (const material of wo.materials) {
       if (material.itemId) materialItemIds.add(material.itemId);
     }
-    for (const request of wo.repairMaterialRequests) {
+    if (inventoryResourcesOperational) for (const request of wo.repairMaterialRequests) {
       if (request.itemId) materialItemIds.add(request.itemId);
     }
 
-    const inventoryItems = materialItemIds.size > 0
+    const inventoryItems = inventoryResourcesOperational && materialItemIds.size > 0
       ? await db.inventoryItem.findMany({
           where: { id: { in: [...materialItemIds] } },
           select: {
@@ -123,7 +135,7 @@ export async function GET(
     const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
 
     const rejectedItemIds = new Set(
-      wo.repairMaterialRequests
+      (inventoryResourcesOperational ? wo.repairMaterialRequests : [])
         .filter((request) => request.status === 'rejected' && request.itemId)
         .map((request) => request.itemId as string),
     );
@@ -138,7 +150,7 @@ export async function GET(
     }
 
     // 2. Recover planner materials that exist only in WorkOrderMaterial.
-    for (const material of wo.materials) {
+    if (inventoryResourcesOperational) for (const material of wo.materials) {
       if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
       const item = inventoryById.get(material.itemId);
       const current = reconciledParts.get(material.itemId);
@@ -155,7 +167,7 @@ export async function GET(
     }
 
     // 3. Recover planner materials that exist only in RepairMaterialRequest.
-    for (const request of wo.repairMaterialRequests) {
+    if (inventoryResourcesOperational) for (const request of wo.repairMaterialRequests) {
       if (!request.itemId || request.status === 'rejected') continue;
       const item = inventoryById.get(request.itemId);
       const current = reconciledParts.get(request.itemId);
@@ -171,9 +183,11 @@ export async function GET(
       });
     }
 
-    suggestedParts = [...reconciledParts.values()];
+    suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : [];
 
-    const suggestedTools = storedSuggestedTools.length > 0
+    const suggestedTools = !toolResourcesOperational
+      ? []
+      : storedSuggestedTools.length > 0
       ? storedSuggestedTools
       : wo.repairToolRequests.map((tr) => ({
           id: tr.id,
@@ -240,6 +254,40 @@ export async function PUT(
 
     const body = await request.json();
     const { action } = body;
+
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'repairs',
+      'inventory',
+      'tools',
+    ]));
+    if (unavailableModules.has('repairs')) {
+      return NextResponse.json(
+        { success: false, error: 'Repairs module is unavailable' },
+        { status: 403 },
+      );
+    }
+    const inventoryResourcesOperational = !unavailableModules.has('inventory');
+    const toolResourcesOperational = !unavailableModules.has('tools');
+    const requestedItemType = typeof body.itemType === 'string' ? body.itemType : null;
+
+    if (requestedItemType === 'part' && !inventoryResourcesOperational) {
+      return NextResponse.json(
+        { success: false, error: 'Inventory module is unavailable' },
+        { status: 403 },
+      );
+    }
+    if (requestedItemType === 'tool' && !toolResourcesOperational) {
+      return NextResponse.json(
+        { success: false, error: 'Tools module is unavailable' },
+        { status: 403 },
+      );
+    }
+    if (action === 'send_to_store' && !inventoryResourcesOperational && !toolResourcesOperational) {
+      return NextResponse.json(
+        { success: false, error: 'Inventory and Tools modules are unavailable' },
+        { status: 403 },
+      );
+    }
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -439,7 +487,7 @@ export async function PUT(
       // without the canonical planner_suggested RepairMaterialRequest. Repair
       // that durable pipeline before notifying the store so a recovered item is
       // not merely visible — it is actionable.
-      const plannedMaterials = await db.workOrderMaterial.findMany({
+      const plannedMaterials = inventoryResourcesOperational ? await db.workOrderMaterial.findMany({
         where: { workOrderId: id, status: 'planned', itemId: { not: null } },
         select: {
           id: true,
@@ -450,12 +498,12 @@ export async function PUT(
           totalCost: true,
           requestedBy: true,
         },
-      });
+      }) : [];
 
-      const existingPlannerMaterialRequests = await db.repairMaterialRequest.findMany({
+      const existingPlannerMaterialRequests = inventoryResourcesOperational ? await db.repairMaterialRequest.findMany({
         where: { workOrderId: id, source: 'planner_suggested' },
         select: { itemId: true },
-      });
+      }) : [];
       const existingItemIds = new Set(
         existingPlannerMaterialRequests
           .map((request) => request.itemId)
@@ -509,12 +557,16 @@ export async function PUT(
         });
       }
 
-      const pendingMatReqs = await db.repairMaterialRequest.findMany({
-        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-      });
-      const pendingToolReqs = await db.repairToolRequest.findMany({
-        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
-      });
+      const pendingMatReqs = inventoryResourcesOperational
+        ? await db.repairMaterialRequest.findMany({
+            where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+          })
+        : [];
+      const pendingToolReqs = toolResourcesOperational
+        ? await db.repairToolRequest.findMany({
+            where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+          })
+        : [];
 
       const storekeepers = await db.user.findMany({
         where: {

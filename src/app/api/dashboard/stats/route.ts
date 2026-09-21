@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere, canAccessPlant } from '@/lib/plant-scope';
+import { buildOperationalModuleSet } from '@/lib/module-access';
 
 // Prevent caching — dashboard data changes frequently
 export const dynamic = 'force-dynamic';
@@ -60,31 +61,38 @@ export async function GET(request: NextRequest) {
       ? {}
       : { device: { ...plantFilter } };
 
-    // Resolve optional-module licensing/activation before exposing any
-    // cross-module dashboard data. Missing optional modules fail closed.
-    const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports'];
+    // Resolve every operational module used by the dashboard. Missing,
+    // unlicensed, disabled, inactive, or expired modules fail closed even for
+    // admins. Admin only bypasses user-level permissions, never licensing.
+    const dashboardModuleCodes = [
+      'assets',
+      'maintenance_requests',
+      'work_orders',
+      'repairs',
+      'tools',
+      'notifications',
+      'inventory',
+      'safety',
+      'production',
+      'iot_sensors',
+      'quality',
+      'pm_schedules',
+      'analytics',
+      'reports',
+    ];
     const moduleRows = await db.systemModule.findMany({
-      where: { code: { in: optionalCodes } },
+      where: { code: { in: dashboardModuleCodes } },
       include: { companyModules: true },
     });
-    const moduleOperational = (code: string) => {
-      const systemModule = moduleRows.find((row) => row.code === code);
-      if (!systemModule) return false;
-      if (systemModule.isCore) return true;
-      const companyModule = systemModule.companyModules.find((cm) => cm.companyId === '__default__')
-        ?? systemModule.companyModules.find((cm) => cm.companyId === null)
-        ?? systemModule.companyModules[0];
-      const now = new Date();
-      const systemLicenseValid = systemModule.isSystemLicensed === true
-        && (!systemModule.validFrom || systemModule.validFrom <= now)
-        && (!systemModule.validUntil || systemModule.validUntil >= now);
-      return systemLicenseValid
-        && Boolean(companyModule?.licensedAt)
-        && companyModule?.isEnabled === true
-        && companyModule?.isActive === true;
-    };
+    const operationalModules = buildOperationalModuleSet(moduleRows);
+    const moduleOperational = (code: string) => operationalModules.has(code.toLowerCase());
 
-    const canViewAssetKPIs = isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']);
+    const canViewWorkOrderKPIs = moduleOperational('work_orders')
+      && (isAdm || hasAnyPermission(session, ['work_orders.view', 'work_orders.view_own']));
+    const canViewRequestKPIs = moduleOperational('maintenance_requests')
+      && (isAdm || hasAnyPermission(session, ['maintenance_requests.view', 'maintenance_requests.view_own']));
+    const canViewAssetKPIs = moduleOperational('assets')
+      && (isAdm || hasAnyPermission(session, ['assets.view', 'assets.view_all']));
     const canViewSafetyKPIs = moduleOperational('safety')
       && (isAdm || hasPermission(session, 'safety_incidents.view'));
     const canViewProductionKPIs = moduleOperational('production')
@@ -93,26 +101,39 @@ export async function GET(request: NextRequest) {
       && (isAdm || hasPermission(session, 'iot_devices.view'));
     const canViewQualityKPIs = moduleOperational('quality')
       && (isAdm || hasPermission(session, 'quality_ncr.view'));
-    const canViewInventoryKPIs = isAdm || hasAnyPermission(session, [
-      'inventory.view_all',
-      'inventory.manage',
-      'inventory.create',
-      'inventory.update',
-      'inventory.stock_in',
-      'inventory.stock_out',
-      'inventory.reserve',
-      'inventory.export',
-    ]);
+    const canViewInventoryKPIs = moduleOperational('inventory')
+      && (isAdm || hasAnyPermission(session, [
+        'inventory.view_all',
+        'inventory.manage',
+        'inventory.create',
+        'inventory.update',
+        'inventory.stock_in',
+        'inventory.stock_out',
+        'inventory.reserve',
+        'inventory.export',
+      ]));
+    const canViewToolsKPIs = moduleOperational('tools')
+      && (isAdm || hasAnyPermission(session, ['tools.view', 'repair_tool_requests.view', 'repair_tool_requests.view_own']));
+    const canViewNotificationsKPIs = moduleOperational('notifications')
+      && (isAdm || hasPermission(session, 'notifications.view'));
     const canViewPmKPIs = moduleOperational('pm_schedules')
       && (isAdm || hasPermission(session, 'pm_schedules.view'));
     const canViewAnalyticsKPIs = moduleOperational('analytics')
+      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'analytics.view'));
     const canViewFinancialKPIs = moduleOperational('reports')
+      && canViewWorkOrderKPIs
       && (isAdm || hasPermission(session, 'reports.view'));
 
-    // Build base where clauses for role-based filtering
-    const mrWhere: Record<string, unknown> = { ...plantFilter };
-    const woWhere: Record<string, unknown> = { ...plantFilter };
+    // Build base where clauses for role-based filtering. Disabled/unlicensed
+    // modules receive an impossible scope so downstream queries fail closed
+    // even if a future card forgets to add its own display guard.
+    const mrWhere: Record<string, unknown> = canViewRequestKPIs
+      ? { ...plantFilter }
+      : { id: '__MODULE_DISABLED__' };
+    const woWhere: Record<string, unknown> = canViewWorkOrderKPIs
+      ? { ...plantFilter }
+      : { id: '__MODULE_DISABLED__' };
 
     // Track supervised departments for reuse (pending-count and dashboard pending queries)
     let supervisedDeptIds: string[] = [];
@@ -120,47 +141,57 @@ export async function GET(request: NextRequest) {
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
       if (session.roles.includes('maintenance_technician')) {
-        const teamWoIds = await db.workOrderTeamMember.findMany({
-          where: { userId: session.userId },
-          select: { workOrderId: true },
-        });
-        const teamIds = teamWoIds.map((row) => row.workOrderId);
-        if (teamIds.length > 0) {
-          (woWhere as Record<string, unknown>).OR = [
-            { assignedTo: session.userId },
-            { id: { in: teamIds } },
-          ];
-        } else {
-          (woWhere as Record<string, unknown>).assignedTo = session.userId;
+        if (canViewWorkOrderKPIs) {
+          const teamWoIds = await db.workOrderTeamMember.findMany({
+            where: { userId: session.userId },
+            select: { workOrderId: true },
+          });
+          const teamIds = teamWoIds.map((row) => row.workOrderId);
+          if (teamIds.length > 0) {
+            (woWhere as Record<string, unknown>).OR = [
+              { assignedTo: session.userId },
+              { id: { in: teamIds } },
+            ];
+          } else {
+            (woWhere as Record<string, unknown>).assignedTo = session.userId;
+          }
         }
-        (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        if (canViewRequestKPIs) {
+          (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        }
       } else if (session.roles.includes('production_operator')) {
-        (mrWhere as Record<string, unknown>).requestedBy = session.userId;
-        // Operators only see WOs created from their requests
-        const myMRIds = await db.maintenanceRequest.findMany({
-          where: { requestedBy: session.userId },
-          select: { id: true },
-        });
-        if (myMRIds.length > 0) {
-          (woWhere as Record<string, unknown>).maintenanceRequestId = { in: myMRIds.map(mr => mr.id) };
-        } else {
-          // No MRs, so no WOs to show
-          (woWhere as Record<string, unknown>).id = '__none__';
+        if (canViewRequestKPIs) {
+          (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        }
+        // Operators only see WOs created from requests when both modules are
+        // operational. Never query disabled request data to derive WO scope.
+        if (canViewWorkOrderKPIs && canViewRequestKPIs) {
+          const myMRIds = await db.maintenanceRequest.findMany({
+            where: { requestedBy: session.userId },
+            select: { id: true },
+          });
+          if (myMRIds.length > 0) {
+            (woWhere as Record<string, unknown>).maintenanceRequestId = { in: myMRIds.map(mr => mr.id) };
+          } else {
+            (woWhere as Record<string, unknown>).id = '__none__';
+          }
         }
       } else if (session.roles.includes('maintenance_supervisor')) {
-        // Supervisors see requests from their supervised departments AND explicitly assigned to them
-        const supervisedDepts = await db.department.findMany({
-          where: { supervisorId: session.userId },
-          select: { id: true },
-        });
-        supervisedDeptIds = supervisedDepts.map(d => d.id);
-        if (supervisedDeptIds.length > 0) {
-          (mrWhere as Record<string, unknown>).OR = [
-            { supervisorId: session.userId },
-            { departmentId: { in: supervisedDeptIds } },
-          ];
-        } else {
-          (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+        if (canViewRequestKPIs) {
+          // Supervisors see requests from their supervised departments AND explicitly assigned to them.
+          const supervisedDepts = await db.department.findMany({
+            where: { supervisorId: session.userId },
+            select: { id: true },
+          });
+          supervisedDeptIds = supervisedDepts.map(d => d.id);
+          if (supervisedDeptIds.length > 0) {
+            (mrWhere as Record<string, unknown>).OR = [
+              { supervisorId: session.userId },
+              { departmentId: { in: supervisedDeptIds } },
+            ];
+          } else {
+            (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+          }
         }
       }
       // Planners and admins see everything
@@ -172,7 +203,9 @@ export async function GET(request: NextRequest) {
     const isSupervisorLike = isAdm || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('plant_manager');
     const isPlannerRole = session.roles.includes('maintenance_planner');
 
-    if (isAdm || isSupervisorLike) {
+    if (!canViewRequestKPIs) {
+      pendingMrWhere = { id: '__MODULE_DISABLED__' };
+    } else if (isAdm || isSupervisorLike) {
       // Admins, supervisors, managers, plant managers — actionable requests in
       // the validated plant scope only.
       pendingMrWhere = { ...plantFilter, status: { in: ['pending', 'approved'] } };
@@ -454,18 +487,24 @@ export async function GET(request: NextRequest) {
         ? safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0)
         : Promise.resolve(0),
       // Weekly trends use the same role/plant scope as their destination lists.
-      safe(db.workOrder.findMany({
-        where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
-        select: { createdAt: true },
-      }), []),
-      safe(db.workOrder.findMany({
-        where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
-        select: { actualEnd: true },
-      }), []),
-      safe(db.maintenanceRequest.findMany({
-        where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
-        select: { createdAt: true },
-      }), []),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...woWhere, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...woWhere, actualEnd: { gte: sevenDaysAgo }, status: 'completed' },
+            select: { actualEnd: true },
+          }), [])
+        : Promise.resolve([]),
+      canViewRequestKPIs
+        ? safe(db.maintenanceRequest.findMany({
+            where: { ...mrWhere, createdAt: { gte: sevenDaysAgo } },
+            select: { createdAt: true },
+          }), [])
+        : Promise.resolve([]),
       canViewProductionKPIs
         ? safe(db.productionOrder.findMany({
             where: { ...plantFilter, createdAt: { gte: sevenDaysAgo } },
@@ -474,94 +513,118 @@ export async function GET(request: NextRequest) {
         : Promise.resolve([]),
       // ===== Enhanced KPIs =====
       // Completed WOs with actual hours for MTBF/MTTR
-      safe(db.workOrder.findMany({
-        where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
-        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
-        orderBy: { actualEnd: 'desc' },
-        take: 200,
-      }), emptyWoList),
+      canViewAnalyticsKPIs
+        ? safe(db.workOrder.findMany({
+            where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
+            select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
+            orderBy: { actualEnd: 'desc' },
+            take: 200,
+          }), emptyWoList)
+        : Promise.resolve(emptyWoList),
       // Preventive vs corrective count for planned ratio
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0),
+      canViewAnalyticsKPIs && canViewPmKPIs
+        ? safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0)
+        : Promise.resolve(0),
+      canViewAnalyticsKPIs
+        ? safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0)
+        : Promise.resolve(0),
       // PM schedules due (nextDueDate within 7 days) — plant filter routes through asset relation
-      safe(db.pmSchedule.count({
-        where: {
-          asset: { ...plantFilter },
-          isActive: true,
-          nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-        },
-      }), 0),
+      canViewPmKPIs
+        ? safe(db.pmSchedule.count({
+            where: {
+              asset: { ...plantFilter },
+              isActive: true,
+              nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // PM schedules overdue — plant filter routes through asset relation
-      safe(db.pmSchedule.count({
-        where: {
-          asset: { ...plantFilter },
-          isActive: true,
-          nextDueDate: { lt: new Date() },
-        },
-      }), 0),
+      canViewPmKPIs
+        ? safe(db.pmSchedule.count({
+            where: {
+              asset: { ...plantFilter },
+              isActive: true,
+              nextDueDate: { lt: new Date() },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // This month cost (exclude draft & cancelled — matches by-category filter)
-      safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled', 'draft'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }), emptyAggregate),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.aggregate({
+            where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled', 'draft'] } },
+            _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+            _count: true,
+          }), emptyAggregate)
+        : Promise.resolve(emptyAggregate),
       // Last month cost (exclude draft & cancelled — matches by-category filter)
-      safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled', 'draft'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }), emptyAggregate),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.aggregate({
+            where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled', 'draft'] } },
+            _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+            _count: true,
+          }), emptyAggregate)
+        : Promise.resolve(emptyAggregate),
       // Cost by WO type
-      safe(db.workOrder.groupBy({
-        by: ['type'],
-        _sum: { totalCost: true, laborCost: true, partsCost: true },
-        where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
-      }), []),
+      canViewFinancialKPIs
+        ? safe(db.workOrder.groupBy({
+            by: ['type'],
+            _sum: { totalCost: true, laborCost: true, partsCost: true },
+            where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
+          }), [])
+        : Promise.resolve([]),
       // My active WOs (assigned to me, not terminal)
-      safe(db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
-        },
-      }), 0),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.count({
+            where: {
+              ...plantFilter,
+              assignedTo: session.userId,
+              status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // My pending tasks (MRs I submitted that are pending/approved — matches nav filter)
-      safe(db.maintenanceRequest.count({
-        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'approved'] } },
-      }), 0),
+      canViewRequestKPIs
+        ? safe(db.maintenanceRequest.count({
+            where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'approved'] } },
+          }), 0)
+        : Promise.resolve(0),
       // My completed this week
-      safe(db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: 'completed',
-          updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-      }), 0),
+      canViewWorkOrderKPIs
+        ? safe(db.workOrder.count({
+            where: {
+              ...plantFilter,
+              assignedTo: session.userId,
+              status: 'completed',
+              updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+            },
+          }), 0)
+        : Promise.resolve(0),
       // Tools checked out by me
-      safe(db.tool.count({
-        where: { status: 'checked_out', assignedToId: session.userId },
-      }), 0),
+      canViewToolsKPIs
+        ? safe(db.tool.count({
+            where: { status: 'checked_out', assignedToId: session.userId },
+          }), 0)
+        : Promise.resolve(0),
       // Team pending approvals (for supervisors)
-      isAdm || session.roles.includes('maintenance_supervisor')
+      canViewRequestKPIs && (isAdm || session.roles.includes('maintenance_supervisor'))
         ? safe(db.maintenanceRequest.count({
             where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
           }), 0)
         : Promise.resolve(0),
       // Team active WOs (for supervisors — consistent with myActiveWOs definition)
-      isAdm || session.roles.includes('maintenance_supervisor')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_supervisor'))
         ? safe(db.workOrder.count({
             where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] } },
           }), 0)
         : Promise.resolve(0),
       // Planning queue (for planners)
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.workOrder.count({
             where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
           }), 0)
         : Promise.resolve(0),
       // Pending team member requests (for planner/admin — count WOs where current user is planner or assigner)
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.woTeamMemberRequest.count({
             where: {
               status: 'pending',
@@ -573,7 +636,7 @@ export async function GET(request: NextRequest) {
           }), 0)
         : Promise.resolve(0),
       // Pending team requests detail (WO number + trade) for dashboard cards
-      isAdm || session.roles.includes('maintenance_planner')
+      canViewWorkOrderKPIs && (isAdm || session.roles.includes('maintenance_planner'))
         ? safe(db.woTeamMemberRequest.findMany({
             where: {
               status: 'pending',
@@ -591,23 +654,25 @@ export async function GET(request: NextRequest) {
           }), [])
         : Promise.resolve([]),
       // Unread notification count
-      safe(db.notification.count({
-        where: { userId: session.userId, isRead: false },
-      }), 0),
+      canViewNotificationsKPIs
+        ? safe(db.notification.count({
+            where: { userId: session.userId, isRead: false },
+          }), 0)
+        : Promise.resolve(0),
       // WO type breakdown for donut chart (role-filtered to match status chart)
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'emergency' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'inspection' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'predictive' } }), 0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'emergency' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'inspection' } }), 0) : Promise.resolve(0),
+      canViewWorkOrderKPIs ? safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'predictive' } }), 0) : Promise.resolve(0),
       // Priority breakdown for MR (role-filtered to match status chart)
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: { in: ['high', 'urgent'] } } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'medium' } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'low' } }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: { in: ['high', 'urgent'] } } }), 0) : Promise.resolve(0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'medium' } }), 0) : Promise.resolve(0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'low' } }), 0) : Promise.resolve(0),
       // Role-based: pending + approved requests (actionable by current user, no plant filter)
-      safe(db.maintenanceRequest.count({ where: pendingMrWhere }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: pendingMrWhere }), 0) : Promise.resolve(0),
       // Role-based: new today (pending + approved created today, no plant filter)
-      safe(db.maintenanceRequest.count({ where: { ...pendingMrWhere, createdAt: { gte: todayStart } } }), 0),
+      canViewRequestKPIs ? safe(db.maintenanceRequest.count({ where: { ...pendingMrWhere, createdAt: { gte: todayStart } } }), 0) : Promise.resolve(0),
     ]);
 
     const mrStats: Record<string, number> = {};

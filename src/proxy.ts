@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionAsync } from '@/lib/auth';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 /**
  * Auth & Plant-Scoping Proxy (Next.js 16 convention)
@@ -23,6 +24,111 @@ const PUBLIC_PATHS = [
   '/api/health',
 ];
 const INTERNAL_SECRET = process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025';
+const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
+  // Repairs composite resource/report surfaces — order matters.
+  { prefix: '/api/repairs/material-requests', modules: ['repairs', 'inventory'] },
+  { prefix: '/api/repairs/spare-part-returns', modules: ['repairs', 'inventory'] },
+  { prefix: '/api/repairs/tool-requests', modules: ['repairs', 'tools'] },
+  { prefix: '/api/repairs/tool-transfers', modules: ['repairs', 'tools'] },
+  { prefix: '/api/repairs/damaged-tools', modules: ['repairs', 'tools'] },
+  { prefix: '/api/repairs/reports', modules: ['repairs', 'reports'] },
+  { prefix: '/api/repairs', modules: ['repairs'] },
+
+  // Composite reporting endpoints.
+  { prefix: '/api/reports/maintenance', modules: ['reports', 'work_orders', 'maintenance_requests'] },
+  { prefix: '/api/reports/machine-availability', modules: ['reports', 'assets'] },
+  { prefix: '/api/reports/failure-analysis', modules: ['reports', 'failure_analysis'] },
+  { prefix: '/api/reports/downtime', modules: ['reports', 'downtime'] },
+  { prefix: '/api/reports/labor-utilization', modules: ['reports', 'work_orders'] },
+  { prefix: '/api/reports/repeat-failures', modules: ['reports', 'work_orders'] },
+  { prefix: '/api/reports', modules: ['reports'] },
+
+  // Primary operational domains and their supporting APIs.
+  { prefix: '/api/assets', modules: ['assets'] },
+  { prefix: '/api/asset-categories', modules: ['assets'] },
+  { prefix: '/api/asset-models', modules: ['assets'] },
+  { prefix: '/api/component-registry', modules: ['assets'] },
+  { prefix: '/api/spatial-nodes', modules: ['assets'] },
+  { prefix: '/api/maintenance-requests', modules: ['maintenance_requests'] },
+  { prefix: '/api/work-orders', modules: ['work_orders'] },
+  { prefix: '/api/inventory', modules: ['inventory'] },
+  { prefix: '/api/tools', modules: ['tools'] },
+  { prefix: '/api/pm-schedules', modules: ['pm_schedules'] },
+  { prefix: '/api/pm-templates', modules: ['pm_schedules'] },
+  { prefix: '/api/pm-triggers', modules: ['pm_schedules'] },
+  { prefix: '/api/pm-analytics', modules: ['pm_schedules', 'analytics'] },
+  { prefix: '/api/analytics', modules: ['analytics'] },
+  { prefix: '/api/production-orders', modules: ['production'] },
+  { prefix: '/api/production-batches', modules: ['production'] },
+  { prefix: '/api/work-centers', modules: ['production'] },
+  { prefix: '/api/quality-inspections', modules: ['quality'] },
+  { prefix: '/api/quality-ncr', modules: ['quality'] },
+  { prefix: '/api/quality-audits', modules: ['quality'] },
+  { prefix: '/api/quality-control-plans', modules: ['quality'] },
+  { prefix: '/api/spc-processes', modules: ['quality'] },
+  { prefix: '/api/safety-incidents', modules: ['safety'] },
+  { prefix: '/api/safety-inspections', modules: ['safety'] },
+  { prefix: '/api/safety-training', modules: ['safety'] },
+  { prefix: '/api/safety-equipment', modules: ['safety'] },
+  { prefix: '/api/safety-permits', modules: ['safety'] },
+  { prefix: '/api/iot', modules: ['iot_sensors'] },
+  { prefix: '/api/connectivity', modules: ['iot_sensors'] },
+  { prefix: '/api/calibrations', modules: ['calibration'] },
+  { prefix: '/api/meter-readings', modules: ['meter_readings'] },
+  { prefix: '/api/training-courses', modules: ['training'] },
+  { prefix: '/api/risk-assessments', modules: ['risk_assessment'] },
+  { prefix: '/api/bill-of-materials', modules: ['bom'] },
+  { prefix: '/api/bom-revisions', modules: ['bom'] },
+  { prefix: '/api/failure-analysis', modules: ['failure_analysis'] },
+  { prefix: '/api/failure-records', modules: ['failure_analysis'] },
+  { prefix: '/api/digital-twins', modules: ['digital_twin'] },
+  { prefix: '/api/digital-twin-scenes', modules: ['digital_twin'] },
+  { prefix: '/api/system-diagrams', modules: ['digital_twin'] },
+  { prefix: '/api/predictive-models', modules: ['predictive'] },
+  { prefix: '/api/prediction-alerts', modules: ['predictive'] },
+  { prefix: '/api/shift-handovers', modules: ['shift_management'] },
+  { prefix: '/api/notifications', modules: ['notifications'] },
+  { prefix: '/api/documents', modules: ['documents'] },
+];
+
+function matchesApiPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(prefix + '/');
+}
+
+export function requiredModulesForApiPath(pathname: string): string[] {
+  // Nested Work Order resource endpoints expose cross-module data and actions.
+  // Check them before the generic /api/work-orders prefix.
+  if (/^\/api\/work-orders\/[^/]+\/materials(?:\/|$)/.test(pathname)) {
+    return ['work_orders', 'repairs', 'inventory'];
+  }
+  if (/^\/api\/work-orders\/[^/]+\/personal-tools(?:\/|$)/.test(pathname)) {
+    return ['work_orders', 'repairs', 'tools'];
+  }
+  if (/^\/api\/work-orders\/[^/]+\/components(?:\/|$)/.test(pathname)) {
+    return ['work_orders', 'assets'];
+  }
+
+  return API_MODULE_RULES.find((rule) => matchesApiPrefix(pathname, rule.prefix))?.modules ?? [];
+}
+
+async function moduleGateResponse(pathname: string): Promise<NextResponse | null> {
+  const requiredModules = requiredModulesForApiPath(pathname);
+  if (requiredModules.length === 0) return null;
+
+  const unavailable = await getUnavailableOperationalModules(requiredModules);
+  if (unavailable.length === 0) return null;
+
+  return withSecurityHeaders(
+    NextResponse.json(
+      {
+        success: false,
+        error: 'Required module is not licensed, enabled, and active',
+        unavailableModules: unavailable,
+      },
+      { status: 403 },
+    ),
+  );
+}
 
 // Security headers applied to all API responses
 const SECURITY_HEADERS: Record<string, string> = {
@@ -83,10 +189,12 @@ export default async function proxy(request: NextRequest) {
     return withSecurityHeaders(NextResponse.next());
   }
 
-  // Allow internal PM cron endpoint (authenticated via secret header)
+  // Allow internal PM cron endpoint only while PM itself is operational.
   if (pathname === '/api/pm-schedules/check-due') {
     const cronSecret = request.headers.get('x-pm-cron-secret');
     if (cronSecret === INTERNAL_SECRET) {
+      const blocked = await moduleGateResponse(pathname);
+      if (blocked) return blocked;
       return withSecurityHeaders(NextResponse.next());
     }
     // If no secret header, fall through to normal auth check
@@ -116,6 +224,9 @@ export default async function proxy(request: NextRequest) {
       )
     );
   }
+
+  const moduleBlocked = await moduleGateResponse(pathname);
+  if (moduleBlocked) return moduleBlocked;
 
   // Legacy detailed Repairs reporting previously required only authentication.
   // Enforce the same view/export policy as the canonical reporting surface.

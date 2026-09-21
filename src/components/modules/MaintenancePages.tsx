@@ -4429,8 +4429,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   const isStoreOrAdminLocal = () => {
-    const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
+    if (!user) return false;
+    if (isAdmin()) return true;
+    if (!hasPermission('repair_material_requests.update')) return false;
+
+    const slugs = (user.roles || [])
+      .map((role: any) => typeof role === 'string' ? role : role?.slug)
+      .filter(Boolean);
+
+    return slugs.includes('store_keeper')
+      || slugs.includes('inventory_manager')
+      || slugs.includes('tools_shop_attendant');
   };
 
   // Personal tools handlers

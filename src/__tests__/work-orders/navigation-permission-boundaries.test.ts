@@ -17,6 +17,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
   const repairsUatApi = read('e2e/repairs/helpers/api.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
+  const suggestedItemsApi = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
   const toolsApi = read('src/app/api/tools/route.ts');
@@ -151,6 +152,16 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
     expect(maintenance).toContain('{pmEnabled && <Card');
     expect(maintenance).toContain("...(pmEnabled ? [{ type: 'Preventive'");
+  });
+
+  it('shows legacy planner-selected materials after MR to WO conversion', () => {
+    expect(suggestedItemsApi).toContain("materials: {");
+    expect(suggestedItemsApi).toContain("where: { status: 'planned' }");
+    expect(suggestedItemsApi).toContain('for (const material of wo.materials)');
+    expect(suggestedItemsApi).toContain('const reconciledParts = new Map');
+    expect(suggestedItemsApi).toContain('suggestedParts = [...reconciledParts.values()]');
+    expect(suggestedItemsApi).toContain('request.quantityRequested || 1');
+    expect(suggestedItemsApi).toContain("pipelineStatus: matReq?.status || 'suggested'");
   });
 
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {

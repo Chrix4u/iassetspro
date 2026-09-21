@@ -56,5 +56,11 @@ describe('MR → WO planner material visibility', () => {
     expect(maintenanceUi).toContain('setSuggestedParts([]);');
     expect(maintenanceUi).toContain('if (!toolResourcesEnabled) {');
     expect(maintenanceUi).toContain('setSuggestedTools([]);');
+    expect(maintenanceUi).toContain(
+      'if (!materialResourcesEnabled && !toolResourcesEnabled)',
+    );
+    expect(maintenanceUi).toContain(
+      '}, [materialResourcesEnabled, toolResourcesEnabled]);',
+    );
   });
 });

@@ -4,6 +4,7 @@ import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/aut
 import { executeTransition } from '@/lib/state-machine';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canAssignWorkOrderForActor } from '@/services/workOrderAccess.service';
 import {
   buildDirectAssignmentPlan,
   type DirectAssignmentPlan,
@@ -102,6 +103,13 @@ export async function POST(
 
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (!canAssignWorkOrderForActor(session, wo)) {
+      return NextResponse.json(
+        { success: false, error: 'Only the accountable planner, assigned supervisor, or authorized maintenance management can assign this work order' },
+        { status: 403 },
+      );
     }
 
     if (!wo.plantId) {

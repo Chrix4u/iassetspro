@@ -53,6 +53,13 @@ describe('MR → WO planner material visibility', () => {
     expect(maintenanceUi).toContain('setSuggestedParts([...partMap.values()])');
   });
 
+  it('renders the hydrated planner material in the WO Suggested Materials card', () => {
+    expect(maintenanceUi).toContain('Spare Parts ({suggestedParts.length})');
+    expect(maintenanceUi).toContain('suggestedParts.map((part: any)');
+    expect(maintenanceUi).toContain('{part.itemName}');
+    expect(maintenanceUi).toContain('{part.quantity} {part.unit ||');
+  });
+
   it('does not erase durable material state when the auxiliary suggested-items response is empty', () => {
     expect(maintenanceUi).toContain('const incomingParts = Array.isArray(res.data.suggestedParts) ? res.data.suggestedParts : []');
     expect(maintenanceUi).toContain('} else if (incomingParts.length > 0) {');

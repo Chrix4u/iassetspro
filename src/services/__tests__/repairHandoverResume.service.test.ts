@@ -8,7 +8,7 @@ const { mockDb, mockExecuteTransition } = vi.hoisted(() => ({
     user: { findUnique: vi.fn() },
     userPlant: { findFirst: vi.fn() },
     workOrderTimeLog: { findFirst: vi.fn(), create: vi.fn() },
-    workOrderTeamMember: { findFirst: vi.fn(), create: vi.fn() },
+    workOrderTeamMember: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     auditLog: { create: vi.fn() },
   },
   mockExecuteTransition: vi.fn(),
@@ -74,6 +74,7 @@ function installDefaults() {
     role: 'assistant',
     accessLevel: 'full',
   });
+  mockDb.workOrderTeamMember.update.mockResolvedValue({ id: 'member-1' });
   mockDb.workOrder.update.mockResolvedValue({ id: 'wo-1' });
   mockDb.workOrderTimeLog.create.mockResolvedValue({ id: 'log-1' });
   mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });
@@ -118,6 +119,25 @@ describe('repairHandoverResume.resumeConfirmedHandover', () => {
         action: 'resume',
         startTime: expect.any(Date),
       }),
+    });
+  });
+
+  it('promotes a pending handover receiver from read-only custody to execution access', async () => {
+    mockDb.workOrderTeamMember.findFirst.mockResolvedValue({
+      id: 'member-1',
+      role: 'handover_receiver',
+      accessLevel: 'read_only',
+    });
+
+    const result = await resumeConfirmedHandover('wo-1', receiverSession);
+
+    expect(result.success).toBe(true);
+    expect(mockDb.workOrderTeamMember.update).toHaveBeenCalledWith({
+      where: { id: 'member-1' },
+      data: {
+        accessLevel: 'full',
+        role: 'assistant',
+      },
     });
   });
 

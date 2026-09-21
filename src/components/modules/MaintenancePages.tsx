@@ -3239,8 +3239,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Suggested Materials & Tools
   const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
   const [suggestedTools, setSuggestedTools] = useState<any[]>([]);
-  const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
-  const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
@@ -3340,7 +3338,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         action: 'submit_recommendations',
       });
       if (res.success) {
-        toast.success(res.message || res.data?.message || 'Recommended resources submitted for approval');
+        toast.success(res.data?.message || 'Recommended resources submitted for approval');
         fetchSuggestedItems();
         fetchWO();
       } else {
@@ -5767,127 +5765,197 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardContent>
           </Card>
 
-          {/* Suggested Materials & Tools — Planner's suggestions */}
+          {/* Planner Recommended Resources — execution staff may curate before requesting */}
           {(() => {
             const hasSuggestedItems = suggestedParts.length > 0 || suggestedTools.length > 0;
-            const pendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter((item: any) => item.pipelineStatus === 'suggested').length;
+            const pendingSuggestedCount = [...suggestedParts, ...suggestedTools]
+              .filter((item: any) => item.pipelineStatus === 'suggested').length;
+
             return hasSuggestedItems ? (
-          <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Lightbulb className="h-4 w-4 text-violet-600" />
-                  Suggested Materials & Tools
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Planner-suggested items for this work order
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                {pendingSuggestedCount > 0 && (
-                  <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
-                    onClick={handleSendToStore}
-                  >
-                    <Warehouse className="h-3.5 w-3.5" />
-                    Send to Store ({pendingSuggestedCount})
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {/* Suggested Parts */}
-              {suggestedParts.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                    <PackageSearch className="h-3 w-3" /> Spare Parts ({suggestedParts.length})
-                  </p>
-                  <div className="space-y-1.5">
-                    {suggestedParts.map((part: any) => (
-                      <div key={part.id || part.itemId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
-                        <div className="h-7 w-7 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
-                          <Package className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{part.itemName}</p>
-                          {part.itemCode && <p className="text-[10px] font-mono text-muted-foreground">{part.itemCode}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-muted-foreground">Qty:</span>
-                          <span className="text-sm font-semibold">{part.quantity} {part.unit || ''}</span>
-                          {part.pipelineStatus && part.pipelineStatus !== 'suggested' && (
-                            <Badge variant="outline" className={`text-[10px] ${
-                              part.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                              part.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              part.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
-                              'bg-gray-50 border-gray-200'
-                            }`}>{part.pipelineStatus.replace(/_/g, ' ')}</Badge>
-                          )}
-                          {!workActionDisabled && part.pipelineStatus === 'pending' && (
-                            <button onClick={() => handleRejectSuggestedItem('part', part.itemId)}
-                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
+                <CardHeader className="flex flex-row items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Lightbulb className="h-4 w-4 text-violet-600" />
+                      Planner Recommended Resources
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Recommendations only — assigned technicians may adjust quantities, remove items, or submit the remaining recommendations for approval.
+                    </CardDescription>
                   </div>
-                </div>
-              )}
+                  {!workActionDisabled && pendingSuggestedCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50 shrink-0"
+                      onClick={handleSubmitSuggestedRecommendations}
+                    >
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                      Request Recommended ({pendingSuggestedCount})
+                    </Button>
+                  )}
+                </CardHeader>
 
-              {/* Suggested Tools */}
-              {suggestedTools.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-                    <Hammer className="h-3 w-3" /> Tools ({suggestedTools.length})
-                  </p>
-                  <div className="space-y-1.5">
-                    {suggestedTools.map((tool: any) => (
-                      <div key={tool.id || tool.toolId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
-                        <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
-                          <Wrench className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{tool.toolName}</p>
-                          {tool.toolCode && <p className="text-[10px] font-mono text-muted-foreground">{tool.toolCode}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-muted-foreground">Qty:</span>
-                          <span className="text-sm font-semibold">{tool.quantity}</span>
-                          {tool.pipelineStatus && tool.pipelineStatus !== 'suggested' && (
-                            <Badge variant="outline" className={`text-[10px] ${
-                              tool.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                              tool.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              tool.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
-                              'bg-gray-50 border-gray-200'
-                            }`}>{tool.pipelineStatus.replace(/_/g, ' ')}</Badge>
-                          )}
-                          {!workActionDisabled && tool.pipelineStatus === 'pending' && (
-                            <button onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
-                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
+                <CardContent>
+                  {suggestedParts.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                        <PackageSearch className="h-3 w-3" /> Materials / Spare Parts ({suggestedParts.length})
+                      </p>
+                      <div className="space-y-1.5">
+                        {suggestedParts.map((part: any) => {
+                          const isRecommendation = part.pipelineStatus === 'suggested';
+                          const qty = Math.max(1, Number(part.quantity || 1));
+                          return (
+                            <div key={part.id || part.itemId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                              <div className="h-7 w-7 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+                                <Package className="h-3.5 w-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{part.itemName}</p>
+                                {part.itemCode && <p className="text-[10px] font-mono text-muted-foreground">{part.itemCode}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isRecommendation && !workActionDisabled ? (
+                                  <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
+                                    <button
+                                      type="button"
+                                      className="h-7 w-7 rounded text-sm hover:bg-muted disabled:opacity-40"
+                                      disabled={qty <= 1}
+                                      onClick={() => handleSuggestedQuantityChange('part', part.itemId, qty - 1)}
+                                      aria-label={`Reduce ${part.itemName} quantity`}
+                                    >−</button>
+                                    <span className="min-w-8 text-center text-sm font-semibold">{qty}</span>
+                                    <button
+                                      type="button"
+                                      className="h-7 w-7 rounded text-sm hover:bg-muted"
+                                      onClick={() => handleSuggestedQuantityChange('part', part.itemId, qty + 1)}
+                                      aria-label={`Increase ${part.itemName} quantity`}
+                                    >+</button>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm font-semibold">{qty} {part.unit || ''}</span>
+                                )}
+
+                                <Badge variant="outline" className={`text-[10px] ${
+                                  isRecommendation ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                  part.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                  part.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  part.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                                  'bg-gray-50 border-gray-200'
+                                }`}>
+                                  {isRecommendation ? 'recommended' : String(part.pipelineStatus || '').replace(/_/g, ' ')}
+                                </Badge>
+
+                                {!workActionDisabled && isRecommendation && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectSuggestedItem('part', part.itemId)}
+                                    className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50"
+                                    aria-label={`Remove ${part.itemName} recommendation`}
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    </div>
+                  )}
 
-              {/* Technician: Add new item button */}
-              {!workActionDisabled && (
-                <div className="mt-3 flex items-center gap-2">
-                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
-                    <Plus className="h-3 w-3" /> Add Part
-                  </Button>
-                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
-                    <Plus className="h-3 w-3" /> Add Tool
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  {suggestedTools.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                        <Hammer className="h-3 w-3" /> Tools ({suggestedTools.length})
+                      </p>
+                      <div className="space-y-1.5">
+                        {suggestedTools.map((tool: any) => {
+                          const isRecommendation = tool.pipelineStatus === 'suggested';
+                          const qty = Math.max(1, Number(tool.quantity || 1));
+                          return (
+                            <div key={tool.id || tool.toolId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                              <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+                                <Wrench className="h-3.5 w-3.5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{tool.toolName}</p>
+                                {tool.toolCode && <p className="text-[10px] font-mono text-muted-foreground">{tool.toolCode}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isRecommendation && !workActionDisabled ? (
+                                  <div className="flex items-center gap-1 rounded-md border bg-background p-0.5">
+                                    <button
+                                      type="button"
+                                      className="h-7 w-7 rounded text-sm hover:bg-muted disabled:opacity-40"
+                                      disabled={qty <= 1}
+                                      onClick={() => handleSuggestedQuantityChange('tool', tool.toolId, qty - 1)}
+                                      aria-label={`Reduce ${tool.toolName} quantity`}
+                                    >−</button>
+                                    <span className="min-w-8 text-center text-sm font-semibold">{qty}</span>
+                                    <button
+                                      type="button"
+                                      className="h-7 w-7 rounded text-sm hover:bg-muted"
+                                      onClick={() => handleSuggestedQuantityChange('tool', tool.toolId, qty + 1)}
+                                      aria-label={`Increase ${tool.toolName} quantity`}
+                                    >+</button>
+                                  </div>
+                                ) : (
+                                  <span className="text-sm font-semibold">{qty}</span>
+                                )}
+
+                                <Badge variant="outline" className={`text-[10px] ${
+                                  isRecommendation ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                  tool.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                  tool.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  tool.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                                  'bg-gray-50 border-gray-200'
+                                }`}>
+                                  {isRecommendation ? 'recommended' : String(tool.pipelineStatus || '').replace(/_/g, ' ')}
+                                </Badge>
+
+                                {!workActionDisabled && isRecommendation && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
+                                    className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50"
+                                    aria-label={`Remove ${tool.toolName} recommendation`}
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {!workActionDisabled && (
+                    <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+                      <span className="text-xs text-muted-foreground mr-1">Need something different?</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1 text-xs text-violet-600"
+                        onClick={() => setMaterialOpen(true)}
+                      >
+                        <Plus className="h-3 w-3" /> Request Extra Material
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1 text-xs text-orange-600"
+                        onClick={() => { resetToolReqForm(); setToolReqOpen(true); }}
+                      >
+                        <Plus className="h-3 w-3" /> Request Extra Tool
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             ) : null;
           })()}
 

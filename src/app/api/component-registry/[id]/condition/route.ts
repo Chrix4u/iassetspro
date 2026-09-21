@@ -13,7 +13,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'condition_monitoring.view') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -80,7 +80,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+    if (!hasPermission(session, 'condition_monitoring.manage') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

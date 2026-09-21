@@ -141,9 +141,103 @@ export async function GET(
     if (!wo.repairToolRequests) {
       (wo as Record<string, unknown>).repairToolRequests = [];
     }
-    if (!wo.repairMaterialRequests) {
-      (wo as Record<string, unknown>).repairMaterialRequests = [];
+
+    // Reconcile planner-selected materials for WO details. A valid MR→WO
+    // conversion persists both WorkOrderMaterial and RepairMaterialRequest, but
+    // legacy/partial records may contain only the planned material row or the
+    // suggestedParts JSON snapshot. Never make the material disappear from the
+    // WO details page merely because one projection row is missing.
+    const actualMaterialRequests = Array.isArray(wo.repairMaterialRequests)
+      ? [...wo.repairMaterialRequests]
+      : [];
+    const representedItemIds = new Set(
+      actualMaterialRequests
+        .map((request) => request.itemId)
+        .filter((itemId): itemId is string => Boolean(itemId)),
+    );
+
+    const projectedMaterialRequests: Array<Record<string, unknown>> = [];
+
+    for (const material of wo.materials || []) {
+      if (!material.itemId || representedItemIds.has(material.itemId)) continue;
+      if (material.status !== 'planned') continue;
+
+      representedItemIds.add(material.itemId);
+      projectedMaterialRequests.push({
+        id: `planned:${material.id}`,
+        workOrderId: wo.id,
+        itemId: material.itemId,
+        itemName: material.itemName || 'Planned material',
+        quantityRequested: material.quantity || 1,
+        quantityApproved: 0,
+        quantityIssued: 0,
+        quantityReturned: 0,
+        unit: 'each',
+        unitCost: material.unitCost || 0,
+        estimatedCost: material.totalCost || 0,
+        urgency: 'normal',
+        reason: 'Planner-selected material',
+        notes: 'Planned during maintenance-request conversion',
+        plantId: wo.plantId,
+        source: 'planner_suggested',
+        status: 'planned',
+        requestedById: material.requestedBy || null,
+        requestedBy: material.requester || wo.planner || null,
+        supervisorApprovedBy: null,
+        storekeeperApprovedBy: null,
+        issuedByUser: null,
+        item: null,
+        projectionOnly: true,
+        createdAt: material.createdAt,
+      });
     }
+
+    try {
+      const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+      for (const suggestion of Array.isArray(storedSuggestedParts) ? storedSuggestedParts : []) {
+        const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+        if (!itemId || representedItemIds.has(itemId)) continue;
+
+        representedItemIds.add(itemId);
+        const quantity = Number(suggestion.quantity ?? 1);
+        const unitCost = Number(suggestion.unitCost ?? 0);
+        projectedMaterialRequests.push({
+          id: `planned:snapshot:${itemId}`,
+          workOrderId: wo.id,
+          itemId,
+          itemName: typeof suggestion.itemName === 'string' ? suggestion.itemName : 'Planned material',
+          quantityRequested: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+          quantityApproved: 0,
+          quantityIssued: 0,
+          quantityReturned: 0,
+          unit: typeof suggestion.unit === 'string' && suggestion.unit ? suggestion.unit : 'each',
+          unitCost: Number.isFinite(unitCost) ? unitCost : 0,
+          estimatedCost: Number.isFinite(quantity) && Number.isFinite(unitCost) ? quantity * unitCost : 0,
+          urgency: 'normal',
+          reason: 'Planner-selected material',
+          notes: typeof suggestion.notes === 'string' ? suggestion.notes : '',
+          plantId: wo.plantId,
+          source: 'planner_suggested',
+          status: 'planned',
+          requestedById: null,
+          requestedBy: wo.planner || null,
+          supervisorApprovedBy: null,
+          storekeeperApprovedBy: null,
+          issuedByUser: null,
+          item: null,
+          projectionOnly: true,
+          createdAt: wo.createdAt,
+        });
+      }
+    } catch {
+      // Invalid legacy JSON must not hide canonical material requests.
+    }
+
+    (wo as Record<string, unknown>).repairMaterialRequests = [
+      ...actualMaterialRequests,
+      ...projectedMaterialRequests,
+    ];
+
     if (!wo.workOrderComponents) {
       (wo as Record<string, unknown>).workOrderComponents = [];
     }

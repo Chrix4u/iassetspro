@@ -80,7 +80,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const plantAuth = await authorizeMaterialRequestPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
+    const existing = await db.repairMaterialRequest.findUnique({
+      where: { id },
+      include: {
+        workOrder: { select: { assignedSupervisorId: true } },
+      },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
     // Once approval begins, quantity/cost metadata is part of the audit trail and
@@ -175,11 +180,17 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ success: false, error: 'Only pending requests can be cancelled' }, { status: 400 });
     }
 
-    // Ownership check: only requester or admin/supervisor/manager can cancel
-    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
-      if (existing.requestedById !== session.userId) {
-        return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
-      }
+    const ownsRequest = existing.requestedById === session.userId;
+    const canCancelAsManagement = canReviewResourceRequestAsSupervisor(
+      session,
+      existing.workOrder?.assignedSupervisorId,
+      'repair_material_requests.update',
+    );
+    if (!ownsRequest && !canCancelAsManagement) {
+      return NextResponse.json(
+        { success: false, error: 'Only the requester or accountable maintenance management can cancel this pending material request' },
+        { status: 403 },
+      );
     }
 
     const cancellation = await db.$transaction(async (tx) => {

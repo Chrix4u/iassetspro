@@ -9,6 +9,8 @@ describe('cross-module API redaction contracts', () => {
   const woList = read('src/app/api/work-orders/route.ts');
   const woDetail = read('src/app/api/work-orders/[id]/route.ts');
   const mrDetail = read('src/app/api/maintenance-requests/[id]/route.ts');
+  const conditionApi = read('src/app/api/component-registry/[id]/condition/route.ts');
+  const kpiApi = read('src/app/api/reporting/kpis/route.ts');
 
   it('redacts disabled modules from work-order list payloads', () => {
     expect(woList).toContain("getUnavailableOperationalModules([");
@@ -40,5 +42,20 @@ describe('cross-module API redaction contracts', () => {
     expect(mrDetail).toContain('redacted.assetId = null');
     expect(mrDetail).toContain('redacted.workOrder = null');
     expect(mrDetail).toContain('redacted.workOrderId = null');
+  });
+
+  it('uses Condition Monitoring RBAC instead of Digital Twin RBAC', () => {
+    expect(conditionApi).toContain("hasPermission(session, 'condition_monitoring.view')");
+    expect(conditionApi).toContain("hasPermission(session, 'condition_monitoring.manage')");
+    expect(conditionApi).not.toContain("hasPermission(session, 'digital_twin.view')");
+    expect(conditionApi).not.toContain("hasPermission(session, 'digital_twin.manage')");
+  });
+
+  it('gates KPI metrics by the modules their calculations actually read', () => {
+    expect(kpiApi).toContain("dashboard: ['kpi_dashboard', 'oee', 'work_orders', 'failure_analysis', 'pm_schedules']");
+    expect(kpiApi).toContain("oee: ['oee', 'work_orders']");
+    expect(kpiApi).toContain("reliability: ['failure_analysis', 'work_orders', 'pm_schedules']");
+    expect(kpiApi).toContain("backlog: ['work_orders']");
+    expect(kpiApi).toContain('getUnavailableOperationalModules(requiredModules)');
   });
 });

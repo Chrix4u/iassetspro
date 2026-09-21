@@ -4147,7 +4147,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setToolXferSubmitting(true);
     const res = await api.post('/api/repairs/tool-transfers', {
       toolId: toolXferToolId,
-      fromUserId: user?.id,
       toUserId: toolXferToUserId,
       reason: toolXferReason,
     });
@@ -5545,12 +5544,18 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <AsyncSearchableSelect
               value={toolXferToUserId}
               onValueChange={(val) => { setToolXferToUserId(val); }}
-              fetchOptions={async () => {
-                const res = await api.get('/api/workers?role=technician');
-                if (res.success && Array.isArray(res.data)) {
-                  return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName}${u.username ? ` (${u.username})` : ''}` }));
-                }
-                return [];
+              fetchOptions={async (query) => {
+                if (!toolXferToolId) return [];
+                const params = new URLSearchParams({ toolId: toolXferToolId });
+                if (query.trim()) params.set('search', query.trim());
+                const res = await api.get(`/api/repairs/tool-transfers/candidates?${params.toString()}`);
+                const candidates = res.success && Array.isArray(res.data?.candidates)
+                  ? res.data.candidates
+                  : [];
+                return candidates.map((u: any) => ({
+                  value: u.id,
+                  label: `${u.fullName}${u.staffId ? ` [${u.staffId}]` : u.username ? ` (${u.username})` : ''}`,
+                }));
               }}
               placeholder="Select technician..."
               searchPlaceholder="Search technicians..."

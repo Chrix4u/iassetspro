@@ -643,8 +643,11 @@ export async function PUT(
           where: { id: itemId },
           select: { id: true, name: true, itemCode: true, unitOfMeasure: true, unitCost: true, plantId: true },
         });
-        if (!inventoryItem || inventoryItem.plantId !== wo.plantId) {
-          return NextResponse.json({ success: false, error: 'Inventory item is unavailable for this plant' }, { status: 400 });
+        if (!inventoryItem) {
+          return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 404 });
+        }
+        if (inventoryItem.plantId !== wo.plantId) {
+          return NextResponse.json({ success: false, error: 'Inventory item belongs to a different plant' }, { status: 400 });
         }
 
         const parts = parseSuggestions(wo.suggestedParts).filter((part) => part.itemId !== itemId);
@@ -702,8 +705,11 @@ export async function PUT(
           where: { id: toolId },
           select: { id: true, name: true, toolCode: true, plantId: true },
         });
-        if (!tool || (tool.plantId && tool.plantId !== wo.plantId)) {
-          return NextResponse.json({ success: false, error: 'Tool is unavailable for this plant' }, { status: 400 });
+        if (!tool) {
+          return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
+        }
+        if (tool.plantId && tool.plantId !== wo.plantId) {
+          return NextResponse.json({ success: false, error: 'Tool belongs to a different plant' }, { status: 400 });
         }
 
         const tools = parseSuggestions(wo.suggestedTools).filter((entry) => entry.toolId !== toolId);

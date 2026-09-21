@@ -21,6 +21,9 @@ describe('worker and user directory plant/privacy boundaries', () => {
     expect(usersApi).toContain("where.status = 'active'");
     expect(usersApi).toContain('const plantScope = await getPlantScope(request, session)');
     expect(usersApi).toContain('plantScope.accessiblePlantIds');
+    expect(usersApi).toContain("technician: ['maintenance_technician']");
+    expect(usersApi).toContain("supervisor: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager']");
+    expect(usersApi).toContain("const targetRoleSlugs = roleSlugAliases[role] || [role]");
   });
 
   it('does not expose contact or authentication-secret fields in non-admin assignment lookup projection', () => {

@@ -3496,7 +3496,7 @@ export function RepairCompletionPage() {
   const [completion, setCompletion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ completionNotes: '', findings: '', rootCause: '', correctiveAction: '', totalLaborHours: '', totalMaterialCost: '', totalToolCost: '', totalDowntimeMinutes: '', closureNotes: '' });
+  const [form, setForm] = useState({ completionNotes: '', findings: '', rootCause: '', correctiveAction: '', closureNotes: '' });
   // Rework reason dialog
   const [reworkDialogOpen, setReworkDialogOpen] = useState(false);
   const [reworkReasonValue, setReworkReasonValue] = useState('');
@@ -3572,10 +3572,6 @@ export function RepairCompletionPage() {
       findings: form.findings || undefined,
       rootCause: form.rootCause || undefined,
       correctiveAction: form.correctiveAction || undefined,
-      totalLaborHours: form.totalLaborHours ? parseFloat(form.totalLaborHours) : undefined,
-      totalMaterialCost: form.totalMaterialCost ? parseFloat(form.totalMaterialCost) : undefined,
-      totalToolCost: form.totalToolCost ? parseFloat(form.totalToolCost) : undefined,
-      totalDowntimeMinutes: form.totalDowntimeMinutes ? parseFloat(form.totalDowntimeMinutes) : undefined,
       closureNotes: form.closureNotes || undefined,
       ...(action === 'supervisor_request_rework' ? { reworkReason: reworkReasonValue } : {}),
       ...(action === 'supervisor_approve' ? { supervisorReviewNotes: form.completionNotes } : {}),
@@ -3700,11 +3696,16 @@ export function RepairCompletionPage() {
                 <div><Label>Root Cause</Label><Textarea value={form.rootCause} onChange={(e) => setForm({ ...form, rootCause: e.target.value })} /></div>
               </div>
               <div><Label>Corrective Action</Label><Textarea value={form.correctiveAction} onChange={(e) => setForm({ ...form, correctiveAction: e.target.value })} /></div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div><Label>Labor Hours</Label><Input type="number" step="0.5" value={form.totalLaborHours} onChange={(e) => setForm({ ...form, totalLaborHours: e.target.value })} placeholder={String(completion.totalLaborHours || 0)} /></div>
-                <div><Label>Material Cost (₵)</Label><Input type="number" step="0.01" value={form.totalMaterialCost} onChange={(e) => setForm({ ...form, totalMaterialCost: e.target.value })} placeholder={String(completion.totalMaterialCost || 0)} /></div>
-                <div><Label>Tool Cost (₵)</Label><Input type="number" step="0.01" value={form.totalToolCost} onChange={(e) => setForm({ ...form, totalToolCost: e.target.value })} placeholder={String(completion.totalToolCost || 0)} /></div>
-                <div><Label>Downtime (min)</Label><Input type="number" value={form.totalDowntimeMinutes} onChange={(e) => setForm({ ...form, totalDowntimeMinutes: e.target.value })} placeholder={String(completion.totalDowntimeMinutes || 0)} /></div>
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Labor, material/tool costs and downtime are calculated automatically from approved time logs, custody/reconciliation records and downtime entries.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Labor Hours</p><p className="mt-1 font-semibold">{Number(completion.totalLaborHours || 0).toFixed(2)}</p></div>
+                  <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Material Cost</p><p className="mt-1 font-semibold">{formatCurrency(completion.totalMaterialCost || 0)}</p></div>
+                  <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Tool Cost</p><p className="mt-1 font-semibold">{formatCurrency(completion.totalToolCost || 0)}</p></div>
+                  <div className="rounded-md border bg-muted/30 p-3"><p className="text-xs text-muted-foreground">Downtime</p><p className="mt-1 font-semibold">{Number(completion.totalDowntimeMinutes || 0).toFixed(0)} min</p></div>
+                </div>
               </div>
 
               {/* Actions */}

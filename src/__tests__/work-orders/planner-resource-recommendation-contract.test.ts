@@ -62,6 +62,9 @@ describe('planner resource recommendation workflow contract', () => {
     expect(ui).toContain("canPerformWorkActions && !isWOFinalized && part.pipelineStatus === 'suggested'");
     expect(ui).toContain("canPerformWorkActions && !isWOFinalized && tool.pipelineStatus === 'suggested'");
     expect(ui).toContain('Submit Recommendations');
+    expect(ui).toContain('const materialPipelineRequests');
+    expect(ui).toContain('const toolPipelineRequests');
+    expect(ui).toContain("request.source === 'planner_suggested' && request.status === 'pending'");
     expect(ui).not.toContain('handleSendToStore');
   });
 });

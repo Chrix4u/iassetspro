@@ -317,17 +317,31 @@ function hasEffectiveTransitionPermission(
     case 'assigned':
       return hasAny('work_orders.assign_supervisor', 'work_orders.assign_technician');
     case 'in_progress':
-      return fromStatus === 'assigned'
-        ? hasAny('work_orders.start')
-        : hasAny('work_orders.update');
+      if (fromStatus === 'assigned') {
+        return hasAny('work_orders.start');
+      }
+      if (fromStatus === 'completed' || fromStatus === 'verified') {
+        return hasAny('work_orders.verify');
+      }
+      if (
+        fromStatus === 'pending_handover'
+        || fromStatus === 'waiting_parts'
+        || fromStatus === 'waiting_tools'
+        || fromStatus === 'waiting_shutdown'
+        || fromStatus === 'waiting_permit'
+      ) {
+        return hasAny('work_orders.start', 'work_orders.update');
+      }
+      return hasAny('work_orders.update');
     case 'completed':
       return hasAny('work_orders.complete');
     case 'verified':
       return hasAny('work_orders.verify');
     case 'closed':
-      return hasAny('work_orders.close', 'work_orders.update');
+      return hasAny('work_orders.close');
     case 'cancelled':
       return hasAny('work_orders.cancel');
+    case 'pending_handover':
     case 'waiting_parts':
     case 'waiting_tools':
     case 'waiting_shutdown':

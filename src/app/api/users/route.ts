@@ -138,6 +138,7 @@ export async function GET(request: NextRequest) {
             : {}),
         },
         orderBy: { fullName: 'asc' },
+        take: 100,
       });
 
       const safeLookupUsers = lookupUsers.map((user) => ({

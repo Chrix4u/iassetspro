@@ -171,7 +171,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const existing = await db.repairMaterialRequest.findUnique({
       where: { id },
       include: {
-        workOrder: { select: { assignedSupervisorId: true } },
+        workOrder: { select: { assignedSupervisorId: true, plannerId: true } },
       },
     });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
@@ -199,9 +199,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       });
       if (deleted.count !== 1) return { cancelled: false };
 
-      // A technician-submitted planner recommendation temporarily moves the
-      // WO material projection to requested. Cancelling restores the planner
-      // recommendation so it can be edited or submitted again.
+      // Technician-submitted planner recommendations temporarily move the WO
+      // material cost/projection row to requested. Cancellation returns the
+      // durable recommendation to planned so it can be edited/submitted again.
       if (
         existing.source === 'technician_from_planner_recommendation'
         && existing.itemId
@@ -213,7 +213,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             itemId: existing.itemId,
             status: 'requested',
           },
-          data: { status: 'planned' },
+          data: {
+            status: 'planned',
+            ...(existing.workOrder?.plannerId
+              ? { requestedBy: existing.workOrder.plannerId }
+              : {}),
+          },
         });
       }
 

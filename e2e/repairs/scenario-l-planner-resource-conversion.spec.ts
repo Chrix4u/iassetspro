@@ -19,6 +19,7 @@ import {
 test('UAT-12: planner-selected material and tool both appear on converted WO details', async ({ browser }) => {
   const context: BrowserContext = await browser.newContext();
   const plannerToken = await getToken('planner');
+  const techToken = await getToken('tech_single');
   const requesterToken = await getToken('requester');
   const supervisorToken = await getToken('supervisor');
   const storeToken = await getToken('storekeeper');
@@ -138,4 +139,101 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
 
   await page.close();
   await context.close();
+
+  // Assigned execution staff explicitly submit the planner recommendations.
+  const { status: submitStatus, data: submitResponse } = await apiCall(
+    techToken,
+    'PUT',
+    '/api/work-orders/' + wo.id + '/suggested-items',
+    { action: 'submit_recommendations' },
+  );
+  expect(submitStatus).toBe(200);
+  expect(submitResponse.success).toBe(true);
+  expect(submitResponse.data.materialCount).toBe(1);
+  expect(submitResponse.data.toolCount).toBe(1);
+
+  const { status: submittedDetailStatus, data: submittedDetailResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id,
+  );
+  expect(submittedDetailStatus).toBe(200);
+  expect(submittedDetailResponse.success).toBe(true);
+
+  const submittedMaterial = (submittedDetailResponse.data.repairMaterialRequests as Array<any>).find(
+    (item) =>
+      item.itemId === material.id
+      && item.source === 'technician_from_planner_recommendation'
+      && item.status === 'pending',
+  );
+  const submittedTool = (submittedDetailResponse.data.repairToolRequests as Array<any>).find(
+    (item) =>
+      (item.toolId === toolId || item.items?.some((entry: any) => entry.toolId === toolId))
+      && item.source === 'technician_from_planner_recommendation'
+      && item.status === 'pending',
+  );
+  expect(submittedMaterial).toBeTruthy();
+  expect(submittedTool).toBeTruthy();
+
+  // The requester can cancel only while pending. Material cancellation must
+  // restore the durable WO projection from requested back to planned.
+  const materialCancel = await apiCall(
+    techToken,
+    'DELETE',
+    '/api/repairs/material-requests/' + submittedMaterial.id,
+  );
+  expect(materialCancel.status).toBe(200);
+  expect(materialCancel.data.success).toBe(true);
+
+  const toolCancel = await apiCall(
+    techToken,
+    'DELETE',
+    '/api/repairs/tool-requests/' + submittedTool.id,
+  );
+  expect(toolCancel.status).toBe(200);
+  expect(toolCancel.data.success).toBe(true);
+
+  const { status: restoredDetailStatus, data: restoredDetailResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id,
+  );
+  expect(restoredDetailStatus).toBe(200);
+  expect(restoredDetailResponse.success).toBe(true);
+
+  const restoredMaterialProjection = (restoredDetailResponse.data.materials as Array<any>).find(
+    (item) => item.itemId === material.id,
+  );
+  expect(restoredMaterialProjection).toBeTruthy();
+  expect(restoredMaterialProjection.status).toBe('planned');
+
+  expect(
+    (restoredDetailResponse.data.repairMaterialRequests as Array<any>).some(
+      (item) => item.source === 'technician_from_planner_recommendation' && item.itemId === material.id,
+    ),
+  ).toBe(false);
+  expect(
+    (restoredDetailResponse.data.repairToolRequests as Array<any>).some(
+      (item) =>
+        item.source === 'technician_from_planner_recommendation'
+        && (item.toolId === toolId || item.items?.some((entry: any) => entry.toolId === toolId)),
+    ),
+  ).toBe(false);
+
+  const { status: restoredSuggestedStatus, data: restoredSuggestedResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/suggested-items',
+  );
+  expect(restoredSuggestedStatus).toBe(200);
+  expect(restoredSuggestedResponse.success).toBe(true);
+
+  const restoredPart = (restoredSuggestedResponse.data.suggestedParts as Array<any>).find(
+    (item) => item.itemId === material.id,
+  );
+  const restoredTool = (restoredSuggestedResponse.data.suggestedTools as Array<any>).find(
+    (item) => item.toolId === toolId,
+  );
+  expect(restoredPart?.pipelineStatus).toBe('suggested');
+  expect(restoredTool?.pipelineStatus).toBe('suggested');
 });

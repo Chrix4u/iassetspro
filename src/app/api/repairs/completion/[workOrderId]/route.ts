@@ -53,7 +53,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             status: true,
             isLocked: true,
             assetId: true,
-            assetId: true,
             lockReason: true,
             locker: { select: { id: true, fullName: true } },
             assignedTo: true,

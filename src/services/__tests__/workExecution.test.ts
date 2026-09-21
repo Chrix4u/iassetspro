@@ -172,9 +172,18 @@ describe('State Machine — Phase 2B waiting states + canonical path', () => {
     vi.clearAllMocks();
   });
 
-  const techSession = makeSession(['technician']);
-  const supervisorSession = makeSession(['supervisor']);
-  const plannerSession = makeSession(['planner']);
+  const techSession = makeSession(
+    ['technician'],
+    ['work_orders.start', 'work_orders.update'],
+  );
+  const supervisorSession = makeSession(
+    ['supervisor'],
+    ['work_orders.verify', 'work_orders.update'],
+  );
+  const plannerSession = makeSession(
+    ['planner'],
+    ['work_orders.close', 'work_orders.update'],
+  );
 
   // Tests 1-4: in_progress → waiting_* and pending_handover
   it('1. in_progress → waiting_tools transition allowed for technician', async () => {
@@ -346,7 +355,12 @@ describe('Completion Authority — multi-tech vs single-tech governance', () => 
     mockDb.statusTransition.findFirst.mockResolvedValue(
       makeTransitionRule('completed', 'in_progress', ['supervisor', 'admin'], true), // requiresReason
     );
-    const result = await checkTransition('work_order', 'completed', 'in_progress', makeSession(['supervisor']));
+    const result = await checkTransition(
+      'work_order',
+      'completed',
+      'in_progress',
+      makeSession(['supervisor'], ['work_orders.update']),
+    );
     expect(result.allowed).toBe(true);
     expect(result.transition?.requiresReason).toBe(true);
   });
@@ -355,7 +369,12 @@ describe('Completion Authority — multi-tech vs single-tech governance', () => 
     mockDb.statusTransition.findFirst.mockResolvedValue(
       makeTransitionRule('verified', 'in_progress', ['supervisor', 'admin'], true), // requiresReason
     );
-    const result = await checkTransition('work_order', 'verified', 'in_progress', makeSession(['supervisor']));
+    const result = await checkTransition(
+      'work_order',
+      'verified',
+      'in_progress',
+      makeSession(['supervisor'], ['work_orders.update']),
+    );
     expect(result.allowed).toBe(true);
     expect(result.transition?.requiresReason).toBe(true);
   });

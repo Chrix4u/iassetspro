@@ -3309,12 +3309,27 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     };
 
     if (materialResourcesEnabled) {
+      const materialRequests = Array.isArray(workOrder?.repairMaterialRequests)
+        ? workOrder.repairMaterialRequests
+        : [];
+      const rejectedPartIds = new Set(
+        materialRequests
+          .filter((request: any) => request?.status === 'rejected' && request?.itemId)
+          .map((request: any) => String(request.itemId)),
+      );
+
       const partMap = new Map<string, any>();
       for (const part of parseSnapshot(workOrder?.suggestedParts)) {
-        if (part?.itemId) partMap.set(String(part.itemId), part);
+        if (part?.itemId && !rejectedPartIds.has(String(part.itemId))) {
+          partMap.set(String(part.itemId), part);
+        }
       }
       for (const material of Array.isArray(workOrder?.materials) ? workOrder.materials : []) {
-        if (!material?.itemId || material.status !== 'planned') continue;
+        if (
+          !material?.itemId
+          || material.status !== 'planned'
+          || rejectedPartIds.has(String(material.itemId))
+        ) continue;
         const key = String(material.itemId);
         const current = partMap.get(key) || {};
         partMap.set(key, {
@@ -3329,7 +3344,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           ...current,
         });
       }
-      for (const request of Array.isArray(workOrder?.repairMaterialRequests) ? workOrder.repairMaterialRequests : []) {
+      for (const request of materialRequests) {
         if (!request?.itemId || request.source !== 'planner_suggested' || request.status === 'rejected') continue;
         const key = String(request.itemId);
         const current = partMap.get(key) || {};
@@ -3354,11 +3369,22 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
 
     if (toolResourcesEnabled) {
+      const toolRequests = Array.isArray(workOrder?.repairToolRequests)
+        ? workOrder.repairToolRequests
+        : [];
+      const rejectedToolIds = new Set(
+        toolRequests
+          .filter((request: any) => request?.status === 'rejected' && request?.toolId)
+          .map((request: any) => String(request.toolId)),
+      );
+
       const toolMap = new Map<string, any>();
       for (const tool of parseSnapshot(workOrder?.suggestedTools)) {
-        if (tool?.toolId) toolMap.set(String(tool.toolId), tool);
+        if (tool?.toolId && !rejectedToolIds.has(String(tool.toolId))) {
+          toolMap.set(String(tool.toolId), tool);
+        }
       }
-      for (const request of Array.isArray(workOrder?.repairToolRequests) ? workOrder.repairToolRequests : []) {
+      for (const request of toolRequests) {
         if (request?.source !== 'planner_suggested' || request.status === 'rejected') continue;
         const requestItems = Array.isArray(request.items) && request.items.length > 0
           ? request.items

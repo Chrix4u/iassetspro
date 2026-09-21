@@ -48,6 +48,10 @@ describe('reporting proxy security', () => {
       expect(requiredModulesForApiPath('/api/repairs/tool-transfers/transfer-1')).toEqual(['repairs', 'tools']);
       expect(requiredModulesForApiPath('/api/repairs/reports/detailed')).toEqual(['repairs', 'reports']);
       expect(requiredModulesForApiPath('/api/reports/maintenance/export')).toEqual(['reports', 'work_orders', 'maintenance_requests']);
+      expect(requiredModulesForApiPath('/api/reports/enterprise')).toEqual(['reports', 'work_orders', 'assets', 'inventory', 'repairs', 'downtime']);
+      expect(requiredModulesForApiPath('/api/ai/rca/generate')).toEqual(['rca_analysis', 'assets']);
+      expect(requiredModulesForApiPath('/api/ai/spares/forecast')).toEqual(['forecasting', 'inventory']);
+      expect(requiredModulesForApiPath('/api/component-registry/component-1/condition')).toEqual(['assets', 'condition_monitoring']);
       expect(requiredModulesForApiPath('/api/users')).toEqual([]);
     });
 

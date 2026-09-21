@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { IndustrialKpiService } from '@/services/industrialKpi.service';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 // GET /api/reporting/kpis?metric=dashboard|oee|reliability|backlog&plantId=...&days=...
 export async function GET(request: NextRequest) {
@@ -23,6 +24,27 @@ export async function GET(request: NextRequest) {
     const metric = searchParams.get('metric') || 'dashboard';
     const plantId = searchParams.get('plantId') || undefined;
     const days = parseInt(searchParams.get('days') || '30', 10);
+
+    const requiredModulesByMetric: Record<string, string[]> = {
+      dashboard: ['kpi_dashboard', 'oee', 'work_orders', 'failure_analysis', 'pm_schedules'],
+      oee: ['oee', 'work_orders'],
+      reliability: ['failure_analysis', 'work_orders', 'pm_schedules'],
+      backlog: ['work_orders'],
+    };
+    const requiredModules = requiredModulesByMetric[metric];
+    if (requiredModules) {
+      const unavailable = await getUnavailableOperationalModules(requiredModules);
+      if (unavailable.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Required module is not licensed, enabled, and active',
+            unavailableModules: unavailable,
+          },
+          { status: 403 },
+        );
+      }
+    }
 
     switch (metric) {
       case 'dashboard': {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { notifyUser } from '@/lib/notifications';
 import { convertMRToWorkOrder } from '@/services/repairPlanning.service';
 import type { ConvertMRToWOPayload } from '@/services/repairPlanning.service';
@@ -26,6 +27,31 @@ export async function POST(
     // Plant authorization
     const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
+
+    const mr = await db.maintenanceRequest.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        assignedPlannerId: true,
+        workOrderId: true,
+      },
+    });
+    if (!mr) {
+      return NextResponse.json({ success: false, error: 'Maintenance request not found' }, { status: 404 });
+    }
+    if (mr.status !== 'approved') {
+      return NextResponse.json(
+        { success: false, error: `Only approved maintenance requests can be converted to work orders. Current status: ${mr.status}` },
+        { status: 409 },
+      );
+    }
+    if (mr.assignedPlannerId && mr.assignedPlannerId !== session.userId && !isAdmin(session)) {
+      return NextResponse.json(
+        { success: false, error: 'Only the planner assigned to this maintenance request can convert it to a work order' },
+        { status: 403 },
+      );
+    }
 
     const body: ConvertMRToWOPayload = await request.json();
 

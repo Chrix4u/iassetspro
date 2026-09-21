@@ -1,0 +1,30 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = process.cwd();
+const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
+
+describe('MR conversion accountable-planner boundary', () => {
+  const route = read('src/app/api/maintenance-requests/[id]/convert/route.ts');
+  const service = read('src/services/repairPlanning.service.ts');
+  const ui = read('src/components/modules/MaintenancePages.tsx');
+
+  it('requires approved state and the exact assigned planner at API and service boundaries', () => {
+    expect(route).toContain("if (mr.status !== 'approved')");
+    expect(route).toContain('mr.assignedPlannerId && mr.assignedPlannerId !== session.userId && !isAdmin(session)');
+    expect(service).toContain("if (mr.status !== 'approved')");
+    expect(service).toContain('mr.assignedPlannerId && mr.assignedPlannerId !== session.userId && !isAdmin');
+    expect(ui).toContain("mr.status === 'approved'");
+    expect(ui).toContain('mr.assignedPlannerId === user?.id || isAdmin() || !mr.assignedPlannerId');
+  });
+
+  it('keeps permission and plant authorization ahead of planner ownership', () => {
+    const permissionIndex = route.indexOf('maintenance_requests.convert_to_wo');
+    const plantIndex = route.indexOf('const plantAuth = await authorizeMaintenanceRequestPlant');
+    const ownerIndex = route.indexOf('mr.assignedPlannerId && mr.assignedPlannerId !== session.userId');
+    expect(permissionIndex).toBeGreaterThan(-1);
+    expect(plantIndex).toBeGreaterThan(permissionIndex);
+    expect(ownerIndex).toBeGreaterThan(plantIndex);
+  });
+});

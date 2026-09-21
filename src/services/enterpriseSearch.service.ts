@@ -6,6 +6,7 @@
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { cache, CACHE_TTL } from '@/lib/cache';
+import type { MaintenanceRequestSearchMode } from '@/lib/search-access';
 
 const logger = createLogger('enterpriseSearch');
 
@@ -26,6 +27,11 @@ export interface SearchOptions {
   limit?: number;
   offset?: number;
   plantId?: string;
+  plantIds?: string[];
+  userId?: string;
+  workOrderOwnOnly?: boolean;
+  maintenanceRequestMode?: MaintenanceRequestSearchMode;
+  supervisedDepartmentIds?: string[];
   fuzzy?: boolean;
 }
 
@@ -41,7 +47,19 @@ export class EnterpriseSearchService {
    */
   static async search(options: SearchOptions): Promise<{ results: SearchResult[]; total: number; took: number }> {
     const start = Date.now();
-    const { query, types, limit = 20, offset = 0, plantId, fuzzy = true } = options;
+    const {
+      query,
+      types,
+      limit = 20,
+      offset = 0,
+      plantId,
+      plantIds,
+      userId,
+      workOrderOwnOnly = false,
+      maintenanceRequestMode = 'all',
+      supervisedDepartmentIds = [],
+      fuzzy = true,
+    } = options;
 
     const cacheKey = `search:global:${JSON.stringify(options)}`;
     
@@ -58,11 +76,26 @@ export class EnterpriseSearchService {
     const searchPromises = searchTypes.map(async (type) => {
       try {
         switch (type) {
-          case 'assets': return this.searchAssets(terms, plantId, limit);
-          case 'work_orders': return this.searchWorkOrders(terms, plantId, limit);
-          case 'maintenance_requests': return this.searchMaintenanceRequests(terms, plantId, limit);
+          case 'assets': return this.searchAssets(terms, plantId, plantIds, limit);
+          case 'work_orders': return this.searchWorkOrders(
+            terms,
+            plantId,
+            plantIds,
+            limit,
+            userId,
+            workOrderOwnOnly,
+          );
+          case 'maintenance_requests': return this.searchMaintenanceRequests(
+            terms,
+            plantId,
+            plantIds,
+            limit,
+            userId,
+            maintenanceRequestMode,
+            supervisedDepartmentIds,
+          );
           case 'components': return this.searchComponents(terms, limit);
-          case 'inventory': return this.searchInventory(terms, limit);
+          case 'inventory': return this.searchInventory(terms, plantIds, limit);
           case 'documents': return this.searchDocuments(terms, limit);
           default: return [];
         }
@@ -95,10 +128,19 @@ export class EnterpriseSearchService {
   /**
    * Search assets
    */
-  private static async searchAssets(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
+  private static async searchAssets(
+    terms: string[],
+    plantId?: string,
+    plantIds?: string[],
+    limit = 10,
+  ): Promise<SearchResult[]> {
     const where: Record<string, unknown> = {};
 
-    if (plantId) where.plantId = plantId;
+    if (plantIds !== undefined) {
+      where.plantId = plantIds.length > 0 ? { in: plantIds } : '__ACCESS_DENIED__';
+    } else if (plantId) {
+      where.plantId = plantId;
+    }
 
     if (terms.length > 0) {
       where.OR = terms.map(term => [
@@ -140,18 +182,45 @@ export class EnterpriseSearchService {
   /**
    * Search work orders
    */
-  private static async searchWorkOrders(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
+  private static async searchWorkOrders(
+    terms: string[],
+    plantId?: string,
+    plantIds?: string[],
+    limit = 10,
+    userId?: string,
+    ownOnly = false,
+  ): Promise<SearchResult[]> {
     const where: Record<string, unknown> = {};
+    const and: Record<string, unknown>[] = [];
 
-    if (plantId) where.plantId = plantId;
+    if (plantIds !== undefined) {
+      where.plantId = plantIds.length > 0 ? { in: plantIds } : '__ACCESS_DENIED__';
+    } else if (plantId) {
+      where.plantId = plantId;
+    }
 
     if (terms.length > 0) {
-      where.OR = terms.map(term => [
-        { title: { contains: term } },
-        { description: { contains: term } },
-        { woNumber: { contains: term } },
-      ]).flat();
+      and.push({
+        OR: terms.map(term => [
+          { title: { contains: term } },
+          { description: { contains: term } },
+          { woNumber: { contains: term } },
+        ]).flat(),
+      });
     }
+
+    if (ownOnly) {
+      if (!userId) return [];
+      and.push({
+        OR: [
+          { assignedTo: userId },
+          { teamLeaderId: userId },
+          { teamMembers: { some: { userId } } },
+        ],
+      });
+    }
+
+    if (and.length > 0) where.AND = and;
 
     try {
       const wos = await db.workOrder.findMany({
@@ -179,18 +248,59 @@ export class EnterpriseSearchService {
   /**
    * Search maintenance requests
    */
-  private static async searchMaintenanceRequests(terms: string[], plantId?: string, limit = 10): Promise<SearchResult[]> {
+  private static async searchMaintenanceRequests(
+    terms: string[],
+    plantId?: string,
+    plantIds?: string[],
+    limit = 10,
+    userId?: string,
+    mode: MaintenanceRequestSearchMode = 'all',
+    supervisedDepartmentIds: string[] = [],
+  ): Promise<SearchResult[]> {
     const where: Record<string, unknown> = {};
+    const and: Record<string, unknown>[] = [];
 
-    if (plantId) where.plantId = plantId;
+    if (plantIds !== undefined) {
+      where.plantId = plantIds.length > 0 ? { in: plantIds } : '__ACCESS_DENIED__';
+    } else if (plantId) {
+      where.plantId = plantId;
+    }
 
     if (terms.length > 0) {
-      where.OR = terms.map(term => [
-        { title: { contains: term } },
-        { description: { contains: term } },
-        { requestNumber: { contains: term } },
-      ]).flat();
+      and.push({
+        OR: terms.map(term => [
+          { title: { contains: term } },
+          { description: { contains: term } },
+          { requestNumber: { contains: term } },
+        ]).flat(),
+      });
     }
+
+    if (mode !== 'all') {
+      if (!userId) return [];
+
+      if (mode === 'own') {
+        and.push({ requestedBy: userId });
+      } else if (mode === 'supervisor') {
+        and.push(supervisedDepartmentIds.length > 0
+          ? {
+              OR: [
+                { supervisorId: userId },
+                { departmentId: { in: supervisedDepartmentIds } },
+              ],
+            }
+          : { supervisorId: userId });
+      } else if (mode === 'technician') {
+        and.push({
+          OR: [
+            { requestedBy: userId },
+            { workOrder: { assignedTo: userId } },
+          ],
+        });
+      }
+    }
+
+    if (and.length > 0) where.AND = and;
 
     try {
       const mrs = await db.maintenanceRequest.findMany({
@@ -243,17 +353,32 @@ export class EnterpriseSearchService {
   /**
    * Search inventory items
    */
-  private static async searchInventory(terms: string[], limit = 10): Promise<SearchResult[]> {
+  private static async searchInventory(
+    terms: string[],
+    plantIds?: string[],
+    limit = 10,
+  ): Promise<SearchResult[]> {
     try {
-      const items = await db.inventoryItem.findMany({
-        where: terms.length > 0 ? {
+      const where: Record<string, unknown> = {};
+      const and: Record<string, unknown>[] = [];
+
+      if (plantIds !== undefined) {
+        where.plantId = plantIds.length > 0 ? { in: plantIds } : '__ACCESS_DENIED__';
+      }
+      if (terms.length > 0) {
+        and.push({
           OR: terms.map(term => [
             { name: { contains: term } },
             { itemCode: { contains: term } },
             { description: { contains: term } },
             { category: { contains: term } },
           ]).flat(),
-        } : undefined,
+        });
+      }
+      if (and.length > 0) where.AND = and;
+
+      const items = await db.inventoryItem.findMany({
+        where: Object.keys(where).length > 0 ? where : undefined,
         take: limit,
         orderBy: { updatedAt: 'desc' },
         select: { id: true, name: true, description: true, itemCode: true, category: true, currentStock: true, unitOfMeasure: true },

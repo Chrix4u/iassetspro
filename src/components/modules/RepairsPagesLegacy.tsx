@@ -466,7 +466,7 @@ export function RepairMaterialRequestsPage() {
     if (pageParams?.workOrderId) {
       setWorkOrderIdFilter(pageParams.workOrderId);
     }
-  }, []);
+  }, [inventoryEnabled]);
 
   const activeFilters = useMemo(() => {
     let c = 0;
@@ -3748,6 +3748,13 @@ export function RepairCompletionPage() {
 
 export function RepairAnalyticsPage() {
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const analyticsEnabled = useModuleEnabled(MODULE_CODES.ANALYTICS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
+  const reportsEnabled = useModuleEnabled(MODULE_CODES.REPORTS);
+  const downtimeEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
+  const workOrdersEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
   const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reconReport, setReconReport] = useState<any>(null);
@@ -3767,14 +3774,30 @@ export function RepairAnalyticsPage() {
   const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('overview');
 
   useEffect(() => {
+    if (!repairsEnabled || !analyticsEnabled) {
+      setKpi(null);
+      setLoading(false);
+      return;
+    }
     (async () => {
       const res = await api.get('/api/repairs/kpi');
       if (res.success) setKpi(res.data);
       setLoading(false);
     })();
-  }, []);
+  }, [repairsEnabled, analyticsEnabled]);
+
+  useEffect(() => {
+    const tabAllowed =
+      activeAnalyticsTab === 'overview'
+      || (activeAnalyticsTab === 'backlog' && reportsEnabled && workOrdersEnabled)
+      || (activeAnalyticsTab === 'downtime-deep' && reportsEnabled && downtimeEnabled)
+      || (activeAnalyticsTab === 'repeat-failures' && reportsEnabled && workOrdersEnabled && assetsEnabled)
+      || (activeAnalyticsTab === 'reconciliation' && inventoryEnabled);
+    if (!tabAllowed) setActiveAnalyticsTab('overview');
+  }, [activeAnalyticsTab, reportsEnabled, workOrdersEnabled, downtimeEnabled, assetsEnabled, inventoryEnabled]);
 
   const fetchReconReport = useCallback(async (p: number = 1) => {
+    if (!inventoryEnabled) return;
     setReconLoading(true);
     const res = await api.get(`/api/repairs/material-requests/reconciliation-report?page=${p}&limit=10`);
     if (res.success) {
@@ -3787,6 +3810,7 @@ export function RepairAnalyticsPage() {
   }, []);
 
   const fetchEnterpriseReport = useCallback(async () => {
+    if (!reportsEnabled || !workOrdersEnabled) return;
     setEnterpriseLoading(true);
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
@@ -3795,9 +3819,10 @@ export function RepairAnalyticsPage() {
     if (res.success) setEnterpriseReport(res.data);
     else toast.error(res.error || 'Failed to load enterprise report');
     setEnterpriseLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, reportsEnabled, workOrdersEnabled]);
 
   const fetchDowntimeReport = useCallback(async () => {
+    if (!reportsEnabled || !downtimeEnabled) return;
     setDowntimeLoading(true);
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
@@ -3806,9 +3831,10 @@ export function RepairAnalyticsPage() {
     if (res.success) setDowntimeReport(res.data);
     else toast.error(res.error || 'Failed to load downtime report');
     setDowntimeLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, reportsEnabled, downtimeEnabled]);
 
   const fetchRepeatReport = useCallback(async () => {
+    if (!reportsEnabled || !workOrdersEnabled || !assetsEnabled) return;
     setRepeatLoading(true);
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
@@ -3817,9 +3843,10 @@ export function RepairAnalyticsPage() {
     if (res.success) setRepeatReport(res.data);
     else toast.error(res.error || 'Failed to load repeat failure report');
     setRepeatLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, reportsEnabled, workOrdersEnabled, assetsEnabled]);
 
   const downloadPDF = useCallback(async () => {
+    if (!reportsEnabled) return;
     try {
       setPdfLoading(true);
       const params = new URLSearchParams();
@@ -3846,9 +3873,9 @@ export function RepairAnalyticsPage() {
     } finally {
       setPdfLoading(false);
     }
-  }, [dateFrom, dateTo, activeAnalyticsTab]);
+  }, [dateFrom, dateTo, activeAnalyticsTab, reportsEnabled]);
 
-  if (!repairsEnabled) {
+  if (!repairsEnabled || !analyticsEnabled) {
     return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
@@ -3866,10 +3893,10 @@ export function RepairAnalyticsPage() {
           {(dateFrom || dateTo) && (
             <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }} className="h-9"><X className="h-3.5 w-3.5" /></Button>
           )}
-          <Button variant="outline" size="sm" onClick={downloadPDF} disabled={pdfLoading} className="gap-1.5">
+          {reportsEnabled && <Button variant="outline" size="sm" onClick={downloadPDF} disabled={pdfLoading} className="gap-1.5">
             {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
             Download PDF
-          </Button>
+          </Button>}
         </div>
       </div>
 
@@ -3879,15 +3906,15 @@ export function RepairAnalyticsPage() {
         <Tabs value={activeAnalyticsTab} onValueChange={setActiveAnalyticsTab}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="backlog" className="gap-1"><Clock className="h-3.5 w-3.5" /> Backlog</TabsTrigger>
-            <TabsTrigger value="downtime-deep" className="gap-1"><Timer className="h-3.5 w-3.5" /> Downtime</TabsTrigger>
-            <TabsTrigger value="repeat-failures" className="gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Repeat Failures</TabsTrigger>
-            <TabsTrigger value="reconciliation" className="gap-1"><ClipboardList className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
+            {reportsEnabled && workOrdersEnabled && <TabsTrigger value="backlog" className="gap-1"><Clock className="h-3.5 w-3.5" /> Backlog</TabsTrigger>}
+            {reportsEnabled && downtimeEnabled && <TabsTrigger value="downtime-deep" className="gap-1"><Timer className="h-3.5 w-3.5" /> Downtime</TabsTrigger>}
+            {reportsEnabled && workOrdersEnabled && assetsEnabled && <TabsTrigger value="repeat-failures" className="gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Repeat Failures</TabsTrigger>}
+            {inventoryEnabled && <TabsTrigger value="reconciliation" className="gap-1"><ClipboardList className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>}
           </TabsList>
 
           {/* ===== OVERVIEW TAB ===== */}
           <TabsContent value="overview" className="mt-4 space-y-6">
-          <Card>
+          {workOrdersEnabled && <Card>
             <CardHeader><CardTitle>Work Order Metrics</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -3898,10 +3925,10 @@ export function RepairAnalyticsPage() {
                 <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{formatDuration(kpi.workOrders?.avgLaborHours || 0)}</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
               </div>
             </CardContent>
-          </Card>
+          </Card>}
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card>
+          {(inventoryEnabled || toolsEnabled) && <div className="grid md:grid-cols-2 gap-6">
+            {inventoryEnabled && <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Material Requests</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
@@ -3911,9 +3938,9 @@ export function RepairAnalyticsPage() {
                   <div><p className="text-sm text-muted-foreground">Issued</p><p className="text-xl font-bold text-green-600">{kpi.materialRequests?.issued}</p></div>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
-            <Card>
+            {toolsEnabled && <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Wrench className="h-5 w-5" /> Tool Requests</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
@@ -3923,11 +3950,11 @@ export function RepairAnalyticsPage() {
                   <div><p className="text-sm text-muted-foreground">Transfers</p><p className="text-xl font-bold text-purple-600">{kpi.toolTransfers?.transferred}</p></div>
                 </div>
               </CardContent>
-            </Card>
-          </div>
+            </Card>}
+          </div>}
 
           <div className="grid md:grid-cols-2 gap-6">
-            <Card>
+            {downtimeEnabled && <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Timer className="h-5 w-5" /> Downtime Analysis</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
@@ -3935,7 +3962,7 @@ export function RepairAnalyticsPage() {
                   <div><p className="text-sm text-muted-foreground">Avg per WO</p><p className="text-xl font-bold">{kpi.downtime?.avgMinutesPerWo || 0} min</p></div>
                 </div>
               </CardContent>
-            </Card>
+            </Card>}
 
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><RotateCcw className="h-5 w-5" /> Rework Analysis</CardTitle></CardHeader>
@@ -3948,7 +3975,7 @@ export function RepairAnalyticsPage() {
             </Card>
           </div>
 
-          {kpi.recentCompletions && kpi.recentCompletions.length > 0 && (
+          {workOrdersEnabled && kpi.recentCompletions && kpi.recentCompletions.length > 0 && (
             <Card>
               <CardHeader><CardTitle>Recent Completions</CardTitle></CardHeader>
               <CardContent className="p-0">

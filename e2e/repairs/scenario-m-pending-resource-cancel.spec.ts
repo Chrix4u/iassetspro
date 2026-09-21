@@ -1,0 +1,165 @@
+/**
+ * Scenario M — Technician can cancel pending requests created from planner
+ * recommendations and return them to the editable recommendation state.
+ */
+import { test, expect, type BrowserContext } from '@playwright/test';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
+import {
+  getToken,
+  approveMR,
+  convertMR,
+  lookupUserByKey,
+  lookupAssetId,
+  lookupPlantId,
+  lookupToolId,
+  apiCall,
+} from './helpers/api';
+
+test('UAT-13: technician cancels pending recommended material/tool requests from WO details', async ({ browser }) => {
+  const context: BrowserContext = await browser.newContext();
+  const plannerToken = await getToken('planner');
+  const requesterToken = await getToken('requester');
+  const supervisorToken = await getToken('supervisor');
+  const storeToken = await getToken('storekeeper');
+  const technicianToken = await getToken('tech_single');
+
+  const techUserId = await lookupUserByKey(plannerToken, 'tech_single');
+  const supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
+  const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
+  const toolId = await lookupToolId(plannerToken, 'UAT-CAL-VALID');
+
+  const inventoryPath = '/api/inventory?search=' + encodeURIComponent('UAT-BRG-6205')
+    + '&plantId=' + encodeURIComponent(plantId);
+  const { status: inventoryStatus, data: inventoryResponse } = await apiCall(
+    storeToken,
+    'GET',
+    inventoryPath,
+  );
+  expect(inventoryStatus).toBe(200);
+  expect(inventoryResponse.success).toBe(true);
+
+  const inventoryItems = Array.isArray(inventoryResponse.data) ? inventoryResponse.data : [];
+  const material = inventoryItems.find((item: any) => item.itemCode === 'UAT-BRG-6205');
+  expect(material).toBeTruthy();
+
+  const { status: createStatus, data: createResponse } = await apiCall(
+    requesterToken,
+    'POST',
+    '/api/maintenance-requests',
+    {
+      title: 'UAT-Pending-Resource-Cancel',
+      description: 'Submitted planner recommendations must be cancellable while pending.',
+      assetId,
+      priority: 'medium',
+      plantId,
+      supervisorId: supervisorUserId,
+    },
+  );
+  expect(createStatus).toBe(201);
+  expect(createResponse.success).toBe(true);
+
+  const mrId = createResponse.data.id as string;
+  const approved = await approveMR(supervisorToken, mrId);
+  expect(approved.status).toBe('approved');
+
+  const wo = await convertMR(plannerToken, mrId, {
+    assignedTo: techUserId,
+    assignedSupervisorId: supervisorUserId,
+    assignmentType: 'direct',
+    tradeActivity: 'mechanical',
+    workOrderType: 'corrective',
+    priority: 'medium',
+    requiredParts: [{ itemId: material.id, quantity: 2 }],
+    requiredTools: [{ toolId, quantity: 1 }],
+  });
+  expect(wo.id).toBeTruthy();
+
+  const { status: submitStatus, data: submitResponse } = await apiCall(
+    technicianToken,
+    'PUT',
+    '/api/work-orders/' + wo.id + '/suggested-items',
+    { action: 'submit_recommendations' },
+  );
+  expect(submitStatus).toBe(200);
+  expect(submitResponse.success).toBe(true);
+  expect(Number(submitResponse.data.materialCount)).toBe(1);
+  expect(Number(submitResponse.data.toolCount)).toBe(1);
+
+  const { status: detailStatus, data: detailResponse } = await apiCall(
+    technicianToken,
+    'GET',
+    '/api/work-orders/' + wo.id,
+  );
+  expect(detailStatus).toBe(200);
+  expect(detailResponse.success).toBe(true);
+
+  const materialRequest = (detailResponse.data.repairMaterialRequests as Array<any>).find(
+    (row) =>
+      row.itemId === material.id
+      && row.source === 'technician_from_planner_recommendation'
+      && row.status === 'pending',
+  );
+  expect(materialRequest).toBeTruthy();
+
+  const toolRequest = (detailResponse.data.repairToolRequests as Array<any>).find(
+    (row) =>
+      row.toolId === toolId
+      && row.source === 'technician_from_planner_recommendation'
+      && row.status === 'pending',
+  );
+  expect(toolRequest).toBeTruthy();
+
+  // Browser-level regression: cancel from the actual WO Details interface.
+  await authenticateAs(context, 'tech_single');
+  const page = await context.newPage();
+  await navigateToWODetail(page, wo.id);
+
+  const cancelMaterial = page.getByTitle('Cancel pending material request').first();
+  await expect(cancelMaterial).toBeVisible({ timeout: 15_000 });
+  await cancelMaterial.click();
+  await expect(page.getByText('Cancel Material Request', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel Request' }).click();
+  await expect(page.getByText('Material request cancelled', { exact: true })).toBeVisible({ timeout: 10_000 });
+
+  const cancelTool = page.getByTitle('Cancel pending tool request').first();
+  await expect(cancelTool).toBeVisible({ timeout: 15_000 });
+  await cancelTool.click();
+  await expect(page.getByText('Cancel Tool Request', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel Request' }).click();
+  await expect(page.getByText('Tool request cancelled', { exact: true })).toBeVisible({ timeout: 10_000 });
+
+  const { status: suggestedStatus, data: suggestedResponse } = await apiCall(
+    technicianToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/suggested-items',
+  );
+  expect(suggestedStatus).toBe(200);
+  expect(suggestedResponse.success).toBe(true);
+
+  const suggestedPart = (suggestedResponse.data.suggestedParts as Array<any>).find(
+    (row) => row.itemId === material.id,
+  );
+  const suggestedTool = (suggestedResponse.data.suggestedTools as Array<any>).find(
+    (row) => row.toolId === toolId,
+  );
+  expect(suggestedPart).toBeTruthy();
+  expect(suggestedPart.pipelineStatus).toBe('suggested');
+  expect(suggestedTool).toBeTruthy();
+  expect(suggestedTool.pipelineStatus).toBe('suggested');
+
+  const { status: restoredStatus, data: restoredResponse } = await apiCall(
+    technicianToken,
+    'GET',
+    '/api/work-orders/' + wo.id,
+  );
+  expect(restoredStatus).toBe(200);
+  const restoredMaterial = (restoredResponse.data.materials as Array<any>).find(
+    (row) => row.itemId === material.id,
+  );
+  expect(restoredMaterial).toBeTruthy();
+  expect(restoredMaterial.status).toBe('planned');
+
+  await page.close();
+  await context.close();
+});

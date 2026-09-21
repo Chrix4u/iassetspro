@@ -46,6 +46,15 @@ describe('MR → WO planner material handoff', () => {
     expect(woDetailApi).toContain('...projectedMaterialRequests');
   });
 
+  it('hydrates resource UI from the durable WO payload before auxiliary enrichment', () => {
+    expect(maintenanceUi).toContain('const hydrateSuggestedResourcesFromWO = useCallback');
+    expect(maintenanceUi).toContain('hydrateSuggestedResourcesFromWO(res.data)');
+    expect(maintenanceUi).toContain('if (incomingParts.length > 0) setSuggestedParts(incomingParts)');
+    expect(maintenanceUi).toContain('if (incomingTools.length > 0) setSuggestedTools(incomingTools)');
+    expect(maintenanceUi).not.toContain('setSuggestedParts(res.data.suggestedParts || [])');
+    expect(maintenanceUi).not.toContain('setSuggestedTools(res.data.suggestedTools || [])');
+  });
+
   it('renders projected planner materials safely without fake request actions', () => {
     expect(maintenanceUi).toContain("mr.status === 'planned'");
     expect(maintenanceUi).toContain('mr.projectionOnly');

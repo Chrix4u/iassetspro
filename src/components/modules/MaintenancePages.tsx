@@ -1198,9 +1198,16 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     && Boolean(accountableSupervisorId)
     && accountableSupervisorId === user?.id;
 
-  const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
-  const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
-  const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
+  const canApprove = mr.status === 'pending'
+    && hasPermission('maintenance_requests.approve')
+    && (isAdminUser || isDeptSupervisor);
+  const canReject = mr.status === 'pending'
+    && hasPermission('maintenance_requests.reject')
+    && (isAdminUser || isDeptSupervisor);
+  const canAssignPlanner = mr.status === 'approved'
+    && hasPermission('maintenance_requests.assign_planner')
+    && (isAdminUser || isDeptSupervisor)
+    && !mr.assignedPlannerId;
   const canConvert = mr.status === 'approved' && !mr.workOrderId && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
   // Requester can edit/delete their own pending requests
   const isRequester = mr.requestedBy === user?.id;

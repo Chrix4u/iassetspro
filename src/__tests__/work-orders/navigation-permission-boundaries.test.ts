@@ -257,6 +257,13 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(app).toContain('if (!moduleResolved || !pageAllowed) return <LoadingSkeleton />;');
   });
 
+  it('hides MR workflow actions when their effective permission is revoked', () => {
+    expect(maintenance).toContain("hasPermission('maintenance_requests.approve')");
+    expect(maintenance).toContain("hasPermission('maintenance_requests.reject')");
+    expect(maintenance).toContain("hasPermission('maintenance_requests.assign_planner')");
+    expect(maintenance).toContain("hasPermission('maintenance_requests.convert_to_wo')");
+  });
+
   it('uses the authoritative department supervisor for MR action visibility and rejection', () => {
     expect(mrDetailApi).toContain('supervisorId: true');
     expect(maintenance).toContain('const accountableSupervisorId = mr.departmentId');

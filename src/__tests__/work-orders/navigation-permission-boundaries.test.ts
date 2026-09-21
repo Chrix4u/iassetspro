@@ -309,10 +309,14 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(completionApi).toContain('wo.plannerId === session.userId');
     expect(completionApi).toContain("hasRole(session, 'maintenance_supervisor')");
     expect(completionApi).toContain("hasRole(session, 'maintenance_planner')");
+    expect(completionApi).toContain("hasPermission(session, 'work_orders.verify')");
+    expect(completionApi).toContain("hasPermission(session, 'work_orders.close')");
     expect(completionApi).not.toContain('Only supervisors, managers, or planners can perform this action');
     expect(repairs).toContain('function canSubmitCompletion(completion: any, user: any)');
     expect(repairs).toContain('function canReviewCompletion(completion: any, user: any)');
     expect(repairs).toContain('function canCloseCompletion(completion: any, user: any)');
+    expect(repairs).toContain("hasPermission('work_orders.verify')");
+    expect(repairs).toContain("hasPermission('work_orders.close')");
     expect(repairs).toContain('completion.workOrder.assignedSupervisorId === userId');
     expect(repairs).toContain('completion.workOrder.plannerId === userId');
     expect(repairs).not.toContain("completion.supervisorStatus === 'pending_review' && (hasPermission('work_orders.update') || isAdmin())");

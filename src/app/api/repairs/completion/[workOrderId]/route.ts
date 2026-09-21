@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasRole } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser } from '@/lib/notifications';
 import { createAuditLog } from '@/lib/audit';
@@ -70,26 +70,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
-    // Workflow actions are tied to the accountable actor, not merely to a broad
-    // permission/role. Managers/admins retain an explicit operational override.
-    const workflowManagerOverride = isAdmin(session) || hasRole(session, 'maintenance_manager');
+    // Workflow actions require both accountable role/relationship and the
+    // effective capability. Admin is the explicit permissionless override.
     if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
-      const isAssignedSupervisor = hasRole(session, 'maintenance_supervisor')
+      const canVerify = isAdmin(session) || hasPermission(session, 'work_orders.verify');
+      const isAssignedSupervisor = canVerify
+        && hasRole(session, 'maintenance_supervisor')
         && wo.assignedSupervisorId === session.userId;
-      if (!workflowManagerOverride && !isAssignedSupervisor) {
+      const isManagerReviewOverride = canVerify
+        && (isAdmin(session) || hasRole(session, 'maintenance_manager'));
+      if (!isManagerReviewOverride && !isAssignedSupervisor) {
         return NextResponse.json({
           success: false,
-          error: 'Only the assigned maintenance supervisor or maintenance manager can review this completion',
+          error: 'Completion review requires work_orders.verify and accountable supervisor/manager authority',
         }, { status: 403 });
       }
     }
     if (action === 'planner_close') {
-      const isAssignedPlanner = hasRole(session, 'maintenance_planner')
+      const canClose = isAdmin(session) || hasPermission(session, 'work_orders.close');
+      const isAssignedPlanner = canClose
+        && hasRole(session, 'maintenance_planner')
         && wo.plannerId === session.userId;
-      if (!workflowManagerOverride && !isAssignedPlanner) {
+      const isManagerCloseOverride = canClose
+        && (isAdmin(session) || hasRole(session, 'maintenance_manager'));
+      if (!isManagerCloseOverride && !isAssignedPlanner) {
         return NextResponse.json({
           success: false,
-          error: 'Only the assigned maintenance planner or maintenance manager can close this work order',
+          error: 'Planner closure requires work_orders.close and accountable planner/manager authority',
         }, { status: 403 });
       }
     }

@@ -41,9 +41,11 @@ describe('RWOP resource request approval and completion gate contract', () => {
     const panels = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
     expect(materialRoute).toContain("existing.status !== 'pending'");
-    expect(materialRoute).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(materialRoute).toContain('await tx.repairMaterialRequest.deleteMany({');
+    expect(materialRoute).toContain("where: { id, status: 'pending' },");
     expect(toolRoute).toContain("toolReq.status !== 'pending'");
-    expect(toolRoute).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(toolRoute).toContain('await tx.repairToolRequest.deleteMany({');
+    expect(toolRoute).toContain("where: { id, status: 'pending' },");
     expect(assistanceRoute).toContain("teamRequest.status !== 'pending'");
     expect(technicianPage).toContain("const ownPending = request.status === 'pending'");
     expect(panels).toContain("request.status === 'pending'");

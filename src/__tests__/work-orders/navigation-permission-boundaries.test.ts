@@ -245,6 +245,15 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(suggestedItemsApi).toContain('request.quantityRequested || 1');
     expect(suggestedItemsApi).toContain('suggestedParts = [...reconciledParts.values()]');
     expect(suggestedItemsApi).toContain("pipelineStatus: matReq?.status || 'suggested'");
+
+    // WO details must not depend solely on the auxiliary suggested-items call.
+    // Seed planner resources from the canonical WO response, then let the
+    // auxiliary endpoint enrich rather than erase that baseline.
+    expect(maintenance).toContain('const hydrateSuggestedResourcesFromWO = useCallback');
+    expect(maintenance).toContain("request.source !== 'planner_suggested' || request.status === 'rejected'");
+    expect(maintenance).toContain('hydrateSuggestedResourcesFromWO(res.data)');
+    expect(maintenance).toContain('if (incomingParts.length > 0) setSuggestedParts(incomingParts)');
+    expect(maintenance).not.toContain('setSuggestedParts(res.data.suggestedParts || [])');
   });
 
   it('keeps technician inventory access request-scoped rather than exposing the workspace', () => {

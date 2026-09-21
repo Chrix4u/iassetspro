@@ -37,6 +37,15 @@ describe('legacy Repairs completion compatibility boundary', () => {
     expect(page).toContain('calculated automatically from approved time logs');
   });
 
+  it('allows first submission through a draft view without bypassing WO visibility', () => {
+    expect(route).toContain('canViewWorkOrder(session, workOrder)');
+    expect(route).toContain("id: `draft:${workOrderId}`");
+    expect(route).toContain("supervisorStatus: 'pending_review'");
+    expect(route).toContain("plannerStatus: 'pending_closure'");
+    expect(route).toContain("['completed', 'verified', 'closed'].includes(workOrder.status)");
+    expect(route).toContain('canonical completion snapshot is missing');
+  });
+
   it('returns the work-order asset context used by the legacy component selector', () => {
     expect(route).toContain('assetId: true');
     expect(page).toContain('completion?.workOrder?.assetId');

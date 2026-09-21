@@ -134,4 +134,18 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
 
   await page.close();
   await context.close();
+
+  // Technician-view regression: this role renders TechnicianWorkOrderV11Panels,
+  // which must also preserve the planner-selected tool after conversion.
+  const techContext: BrowserContext = await browser.newContext();
+  await authenticateAs(techContext, 'tech_single');
+  const techPage = await techContext.newPage();
+  await navigateToWODetail(techPage, wo.id);
+
+  await expect(
+    techPage.getByText(visibleTool.toolName, { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+
+  await techPage.close();
+  await techContext.close();
 });

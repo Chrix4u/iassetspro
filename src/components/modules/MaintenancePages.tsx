@@ -4348,6 +4348,33 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     } else toast.error(res.error || 'Failed');
   };
 
+  const handleCancelMaterialRequest = async (requestRow: any) => {
+    if (!confirm(`Cancel the pending material request for "${requestRow.itemName || 'this item'}"?`)) return;
+    const res = await api.delete(`/api/repairs/material-requests/${requestRow.id}`);
+    if (res.success) {
+      toast.success('Material request cancelled');
+      fetchWO();
+      fetchSuggestedItems();
+    } else {
+      toast.error(res.error || 'Failed to cancel material request');
+    }
+  };
+
+  const handleCancelToolRequest = async (requestRow: any) => {
+    const label = requestRow.toolName
+      || requestRow.items?.map((item: any) => item.toolName).filter(Boolean).join(', ')
+      || 'this tool request';
+    if (!confirm(`Cancel the pending tool request for "${label}"?`)) return;
+    const res = await api.delete(`/api/repairs/tool-requests/${requestRow.id}`);
+    if (res.success) {
+      toast.success('Tool request cancelled');
+      fetchWO();
+      fetchSuggestedItems();
+    } else {
+      toast.error(res.error || 'Failed to cancel tool request');
+    }
+  };
+
   const handleMatRequestPick = async (mrId: string) => {
     const res = await api.post('/api/repairs/material-requests/pick', { id: mrId });
     if (res.success) { toast.success('Items being picked'); fetchWO(); }
@@ -4568,6 +4595,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     !request.projectionOnly
     && !(request.source === 'planner_suggested' && request.status === 'pending')
   );
+
+  const canCancelPendingResourceRequest = (requestRow: any) => {
+    if (!user || isWOFinalized || requestRow?.status !== 'pending') return false;
+    if (requestRow.requestedById === user.id || requestRow.requestedBy?.id === user.id) return true;
+
+    const roleSlugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    return isAdmin()
+      || roleSlugs.some((slug: string) =>
+        ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug)
+      );
+  };
 
   // Disable ALL interactive buttons for completed/closed WOs
   const allActionsDisabled = isWOFinalized;
@@ -6248,6 +6286,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {canCancelPendingResourceRequest(mr) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => handleCancelMaterialRequest(mr)}
+                                  title="Cancel pending material request"
+                                >
+                                  <X className="h-3 w-3 mr-1" />Cancel
+                                </Button>
+                              )}
                               {!isWOFinalized && mr.status === 'pending' && isSupervisorOrAdminLocal() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
@@ -6318,13 +6367,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         )}
                       </div>
                     </div>
-                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                      tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                      tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                      tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
-                      tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
-                      tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
-                    }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <Badge variant="outline" className={`text-[10px] ${
+                        tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                        tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                        tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
+                      }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                      {canCancelPendingResourceRequest(tr) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                          onClick={() => handleCancelToolRequest(tr)}
+                          title="Cancel pending tool request"
+                        >
+                          <X className="h-3 w-3 mr-1" />Cancel
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   );
                 })}
@@ -6399,7 +6461,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
                             {isFinalStatus && <span className="text-[10px] text-muted-foreground">{tr.status === 'transferred' ? '🔄 Transferred out' : tr.status === 'returned' ? '↩️ Returned' : '✓ Done'}</span>}
                           </div>
-                          {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                            {canCancelPendingResourceRequest(tr) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                onClick={() => handleCancelToolRequest(tr)}
+                              >
+                                <X className="h-3 w-3 mr-1" />Cancel
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         {/* Per-item details */}
                         {toolItems.map((item: any, ii: number) => {

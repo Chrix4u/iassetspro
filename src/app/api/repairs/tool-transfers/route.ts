@@ -123,30 +123,47 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { toolId, fromUserId, toUserId, reason, notes } = body;
+    const { toolId, fromUserId: proposedFromUserId, toUserId, reason, notes } = body;
 
-    if (!toolId || !fromUserId || !toUserId || !reason) {
-      return NextResponse.json({ success: false, error: 'toolId, fromUserId, toUserId, and reason are required' }, { status: 400 });
+    if (!toolId || !toUserId || !reason) {
+      return NextResponse.json({ success: false, error: 'toolId, toUserId, and reason are required' }, { status: 400 });
     }
 
-    if (fromUserId === toUserId) {
-      return NextResponse.json({ success: false, error: 'Cannot transfer tool to the same person' }, { status: 400 });
+    const tool = await db.tool.findUnique({
+      where: { id: toolId },
+      select: {
+        id: true,
+        name: true,
+        plantId: true,
+        assignedToId: true,
+        isActive: true,
+      },
+    });
+    if (!tool || !tool.isActive) {
+      return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
+    }
+    if (!tool.plantId) {
+      return NextResponse.json({ success: false, error: 'Tool must belong to a plant before transfer' }, { status: 400 });
+    }
+    if (!tool.assignedToId) {
+      return NextResponse.json({ success: false, error: 'Tool is not currently assigned to a custodian' }, { status: 409 });
     }
 
-    const tool = await db.tool.findUnique({ where: { id: toolId } });
-    if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
-
-    if (!isAdmin(session) && fromUserId !== session.userId) {
+    const effectiveFromUserId = tool.assignedToId;
+    if (proposedFromUserId && proposedFromUserId !== effectiveFromUserId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Tool custody does not match the proposed transfer sender',
+      }, { status: 409 });
+    }
+    if (!isAdmin(session) && effectiveFromUserId !== session.userId) {
       return NextResponse.json({
         success: false,
         error: 'Only the current tool custodian may initiate a transfer from their custody',
       }, { status: 403 });
     }
-    if (tool.assignedToId !== fromUserId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Tool custody does not match the proposed transfer sender',
-      }, { status: 409 });
+    if (effectiveFromUserId === toUserId) {
+      return NextResponse.json({ success: false, error: 'Cannot transfer tool to the same person' }, { status: 400 });
     }
 
     const plantScope = await getPlantScope(request, session);
@@ -154,17 +171,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    const recipient = await db.user.findUnique({
+      where: { id: toUserId },
+      select: {
+        id: true,
+        status: true,
+        plantAccess: { where: { plantId: tool.plantId }, select: { id: true } },
+        userRoles: {
+          where: { role: { slug: 'maintenance_technician' } },
+          select: { id: true },
+        },
+      },
+    });
+    if (!recipient || recipient.status !== 'active') {
+      return NextResponse.json({ success: false, error: 'Receiving technician is not active' }, { status: 400 });
+    }
+    if (recipient.plantAccess.length === 0) {
+      return NextResponse.json({ success: false, error: 'Receiving technician does not have access to the tool plant' }, { status: 403 });
+    }
+    if (recipient.userRoles.length === 0) {
+      return NextResponse.json({ success: false, error: 'Receiving user must be a maintenance technician' }, { status: 400 });
+    }
+
     const transfer = await createToolTransferRequest({
       toolId,
-      fromUserId,
+      fromUserId: effectiveFromUserId,
       toUserId,
       reason,
       notes,
       requestedById: session.userId,
     });
 
-    // Notify store keepers
-    const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
+    // Notify only eligible store/tool attendants for the tool's plant.
+    const storeKeepers = await db.user.findMany({
+      where: {
+        status: 'active',
+        plantAccess: { some: { plantId: tool.plantId } },
+        userRoles: {
+          some: {
+            OR: [
+              { role: { slug: 'store_keeper' } },
+              { role: { slug: 'tools_shop_attendant' } },
+            ],
+          },
+        },
+      },
+      select: { id: true },
+    });
     for (const sk of storeKeepers) {
       await notifyUser(
         sk.id, 'tool_transfer_request',
@@ -175,7 +228,19 @@ export async function POST(request: NextRequest) {
     }
 
     await db.auditLog.create({
-      data: { userId: session.userId, action: 'create', entityType: 'tool_transfer_request', entityId: transfer.id, newValues: JSON.stringify({ toolId, fromUserId, toUserId, reason }) },
+      data: {
+        userId: session.userId,
+        action: 'create',
+        entityType: 'tool_transfer_request',
+        entityId: transfer.id,
+        newValues: JSON.stringify({
+          toolId,
+          fromUserId: effectiveFromUserId,
+          toUserId,
+          reason,
+          plantId: tool.plantId,
+        }),
+      },
     });
 
     return NextResponse.json({ success: true, data: transfer }, { status: 201 });

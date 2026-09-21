@@ -42,6 +42,19 @@ describe('worker and user directory plant/privacy boundaries', () => {
     expect(lookupSection).toContain('take: 100');
   });
 
+  it('rejects unknown worker role filters instead of broadening the directory', () => {
+    expect(workersApi).toContain("const allowedRoles = new Set(['all', 'technician', 'supervisor'])");
+    expect(workersApi).toContain("error: 'Invalid worker role filter'");
+    expect(workersApi).toContain('{ status: 400 }');
+  });
+
+  it('keeps operational assignment pickers off the unrestricted user-management directory', () => {
+    const maintenanceUi = read('src/components/modules/MaintenancePages.tsx');
+    expect(maintenanceUi).not.toContain("api.get('/api/users?limit=100')");
+    expect(maintenanceUi).toContain("api.get('/api/workers?role=all')");
+    expect(maintenanceUi).toContain("api.get('/api/workers?role=technician')");
+  });
+
   it('redacts password and password-reset secrets from administrative directory output', () => {
     expect(usersApi).toContain('passwordHash: _passwordHash');
     expect(usersApi).toContain('resetToken: _resetToken');

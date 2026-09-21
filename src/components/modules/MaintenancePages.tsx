@@ -971,7 +971,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
         api.get('/api/departments?limit=100'),
         inventoryRequest,
         toolsRequest,
-        api.get('/api/users?limit=100'),
+        api.get('/api/workers?role=all'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
       if (invRes.success && invRes.data) {
@@ -4635,7 +4635,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             value=""
             onValueChange={(val) => handleAction('assign', { assignedToId: val, assignedToName: val })}
             fetchOptions={async () => {
-              const res = await api.get('/api/users?limit=100');
+              const res = await api.get('/api/workers?role=technician');
               if (res.success && res.data) {
                 return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                   value: u.id,
@@ -6839,7 +6839,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     value={newMemberUserId}
                     onValueChange={setNewMemberUserId}
                     fetchOptions={async () => {
-                      const res = await api.get('/api/users?limit=100');
+                      const res = await api.get('/api/workers?role=all');
                       if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
                       return [];
                     }}
@@ -7704,7 +7704,7 @@ export function PmSchedulesPage() {
                 value={formAssignedToId}
                 onValueChange={setFormAssignedToId}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/users?limit=100');
+                  const res = await api.get('/api/workers?role=technician');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                       value: u.id,
@@ -8989,7 +8989,7 @@ export function MaintenanceToolsPage() {
           value={f.assignedToId || ''}
           onValueChange={v => setF((p: any) => ({ ...p, assignedToId: v }))}
           fetchOptions={async () => {
-            const res = await api.get('/api/users?limit=100');
+            const res = await api.get('/api/workers?role=all');
             if (res.success && res.data) {
               return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                 value: u.id,

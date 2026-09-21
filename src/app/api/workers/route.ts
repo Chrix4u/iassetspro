@@ -45,22 +45,28 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Filter by role
+    // Filter by role. Unknown values must fail closed instead of silently
+    // dropping the role predicate and broadening the worker directory.
+    const allowedRoles = new Set(['all', 'technician', 'supervisor']);
+    if (role && !allowedRoles.has(role)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid worker role filter' },
+        { status: 400 },
+      );
+    }
     if (role && role !== 'all') {
       const roleSlugMap: Record<string, string[]> = {
         technician: ['maintenance_technician'],
         supervisor: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'],
       };
-      const targetSlugs = roleSlugMap[role];
-      if (targetSlugs) {
-        where.userRoles = {
-          some: {
-            role: {
-              slug: { in: targetSlugs },
-            },
+      const targetSlugs = roleSlugMap[role]!;
+      where.userRoles = {
+        some: {
+          role: {
+            slug: { in: targetSlugs },
           },
-        };
-      }
+        },
+      };
     }
 
     // Worker discovery is operational data: regular users must never receive

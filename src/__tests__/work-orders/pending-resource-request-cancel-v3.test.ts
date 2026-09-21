@@ -25,7 +25,9 @@ describe('pending WO resource request cancellation', () => {
   it('restores a cancelled technician-submitted planner material recommendation', () => {
     expect(material).toContain("existing.source === 'technician_from_planner_recommendation'");
     expect(material).toContain("status: 'requested'");
-    expect(material).toContain("data: { status: 'planned' }");
+    expect(material).toContain("status: 'planned'");
+    expect(material).toContain("existing.workOrder?.plannerId");
+    expect(material).toContain("requestedBy: existing.workOrder.plannerId");
     expect(material).toContain('db.$transaction');
     expect(tool).toContain('db.$transaction');
   });

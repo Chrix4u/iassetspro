@@ -597,8 +597,12 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(migration).toContain("'planner_suggested'");
     expect(migration).toContain('NOT EXISTS');
 
-    expect(suggestedRoute).toContain('storedSuggestedParts.length > 0');
-    expect(suggestedRoute).toContain('wo.repairMaterialRequests.map');
+    expect(suggestedRoute).toContain("materials: {");
+    expect(suggestedRoute).toContain("where: { status: 'planned' }");
+    expect(suggestedRoute).toContain('const reconciledParts = new Map');
+    expect(suggestedRoute).toContain('for (const material of wo.materials)');
+    expect(suggestedRoute).toContain('for (const request of wo.repairMaterialRequests)');
+    expect(suggestedRoute).toContain('suggestedParts = [...reconciledParts.values()]');
     expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
     expect(suggestedRoute).toContain('wo.repairToolRequests.map');
   });

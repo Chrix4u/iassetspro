@@ -86,6 +86,14 @@ export function handoverUserHasEffectivePermission(
   return permissions.has(permissionSlug);
 }
 
+export function handoverUserIsMaintenanceTechnician(
+  user: { userRoles?: Array<{ role: { slug: string } }> },
+): boolean {
+  return (user.userRoles ?? []).some(
+    (userRole) => userRole.role.slug === 'maintenance_technician',
+  );
+}
+
 function parseStructuredArray(value: unknown, key: 'task' | 'issue'): string {
   if (!value) return JSON.stringify([]);
   return JSON.stringify(typeof value === 'string' ? [{ [key]: value }] : value);
@@ -288,6 +296,12 @@ export async function initiateCanonicalHandover(
       return {
         success: false as const,
         error: 'Designated handover receiver is not an active user',
+      };
+    }
+    if (!handoverUserIsMaintenanceTechnician(receiver)) {
+      return {
+        success: false as const,
+        error: 'Designated handover receiver must be an active maintenance technician',
       };
     }
     if (!handoverUserHasEffectivePermission(receiver, 'work_orders.start')) {

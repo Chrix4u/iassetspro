@@ -56,5 +56,9 @@ describe('pending WO resource request cancellation', () => {
     expect(ui).toContain('fetchSuggestedItems();');
     expect(ui).toContain('Cancel Material Request');
     expect(ui).toContain('Cancel Tool Request');
+
+    const technicianPanels = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(technicianPanels).toContain('title="Cancel pending material request"');
+    expect(technicianPanels).toContain('title="Cancel pending tool request"');
   });
 });

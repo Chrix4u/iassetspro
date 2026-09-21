@@ -635,14 +635,14 @@ export default function PlannerWorkbench() {
     <div className="page-content">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <LayoutDashboard className="h-6 w-6 text-emerald-600" />
             Planner Workbench
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Plan, schedule, and manage work orders from a single workspace</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
           <Button variant="outline" size="sm" onClick={() => setLeftPanelOpen(!leftPanelOpen)}>
             <ChevronLeft className={`h-4 w-4 transition-transform ${leftPanelOpen ? '' : 'rotate-180'}`} />
             <span className="hidden sm:inline ml-1">Queue</span>
@@ -685,7 +685,7 @@ export default function PlannerWorkbench() {
 
         {/* KANBAN TAB */}
         <TabsContent value="kanban">
-          <div className="flex gap-4 mt-4">
+          <div className="flex min-w-0 gap-4 mt-4">
             {/* LEFT: Planning Queue */}
             {leftPanelOpen && (
               <div className="w-72 shrink-0 hidden lg:block">
@@ -788,7 +788,7 @@ export default function PlannerWorkbench() {
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-5">
                   {KANBAN_COLUMNS.map(col => {
                     const items = localKanbanData[col.key] || [];
                     return (
@@ -822,7 +822,7 @@ export default function PlannerWorkbench() {
 
             {/* RIGHT: Capacity Planning */}
             {rightPanelOpen && (
-              <div className="w-72 shrink-0 hidden xl:block">
+              <div className="w-72 shrink-0 hidden min-[1800px]:block">
                 <Card className="border border-border/60 shadow-sm sticky top-0">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -899,7 +899,7 @@ export default function PlannerWorkbench() {
           {/* Existing Work Packages */}
           {workPackages.length > 0 && (
             <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold flex items-center gap-2"><Layers className="h-4 w-4 text-emerald-600" />Existing Work Packages</h3>
                 <Badge variant="outline" className="text-xs">{workPackages.length} packages</Badge>
               </div>
@@ -928,7 +928,7 @@ export default function PlannerWorkbench() {
                                 <UserCheck className="h-3 w-3" />{wp.assignee.fullName}
                               </p>
                             )}
-                            <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-3 mt-2 text-[10px] text-muted-foreground">
                               <span className="flex items-center gap-1"><ClipboardList className="h-3 w-3" />{wp._count?.workOrders || wp.workOrders?.length || 0} WOs</span>
                               <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(wp.totalEstimatedHours || 0)} est</span>
                               {wp.scheduledDate && (
@@ -979,13 +979,13 @@ export default function PlannerWorkbench() {
 
           <Card className="border border-border/60 shadow-sm mt-4">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base flex items-center gap-2"><Layers className="h-4 w-4 text-emerald-600" />Work Package Builder</CardTitle>
                   <CardDescription className="text-xs mt-1">Group multiple work orders into a single coordinated work package</CardDescription>
                 </div>
                 {selectedWOs.length > 0 && (
-                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm" onClick={() => setWorkPackageDialogOpen(true)}>
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white sm:w-auto" size="sm" onClick={() => setWorkPackageDialogOpen(true)}>
                     <Layers className="h-4 w-4 mr-1.5" />Create Package ({selectedWOs.length})
                   </Button>
                 )}
@@ -1068,7 +1068,7 @@ export default function PlannerWorkbench() {
             </CardHeader>
             <CardContent>
               {/* Summary */}
-              <div className="grid grid-cols-5 gap-3 mb-6">
+              <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-3 xl:grid-cols-5">
                 {backlogAging.map(bracket => (
                   <div key={bracket.label} className={`text-center p-3 rounded-lg ${bracket.color}`}>
                     <p className="text-2xl font-bold">{bracket.count}</p>
@@ -1126,12 +1126,12 @@ export default function PlannerWorkbench() {
         <TabsContent value="shutdown">
           <Card className="border border-border/60 shadow-sm mt-4">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base flex items-center gap-2"><CalendarClock className="h-4 w-4 text-red-600" />Shutdown Coordination</CardTitle>
                   <CardDescription className="text-xs">Planned shutdowns, turnarounds, and outages with associated work orders</CardDescription>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm" onClick={() => setCreateSTODialogOpen(true)}>
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white sm:w-auto" size="sm" onClick={() => setCreateSTODialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-1.5" />Plan Shutdown
                 </Button>
               </div>
@@ -1161,7 +1161,7 @@ export default function PlannerWorkbench() {
                     return (
                       <Card key={event.id} className={`border ${isCritical ? 'border-red-200 bg-red-50/20' : 'border-border/60'} hover:shadow-md transition-shadow`}>
                         <CardContent className="p-4">
-                          <div className="flex items-start gap-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
                             <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isCritical ? 'bg-red-100 text-red-600' : 'bg-sky-100 text-sky-600'}`}>
                               {isCritical ? <AlertCircle className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
                             </div>
@@ -1196,7 +1196,7 @@ export default function PlannerWorkbench() {
                                 <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{event.description}</p>
                               )}
                             </div>
-                            <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => handleViewSTO(event)}>
+                            <Button variant="outline" size="sm" className="h-8 w-full shrink-0 sm:w-auto" onClick={() => handleViewSTO(event)}>
                               <Eye className="h-3.5 w-3.5 mr-1" />View
                             </Button>
                           </div>

@@ -322,20 +322,16 @@ describe('Tool vs material distinction (documented)', () => {
     expect(payload.requiredTools![0].quantity).toBeUndefined();
   });
 
-  it('should document that parts create both compatibility and canonical planner-suggested records', () => {
-    // Parts selected by a planner during MR conversion must be visible on the
-    // WO detail page and enter the store approval pipeline.
+  it('should document that planner-selected parts remain recommendations until execution submits them', () => {
     const PLANNED_STATUS = 'planned';
-    const PLANNER_SUGGESTED_SOURCE = 'planner_suggested';
+    const RECOMMENDATION_SOURCE = 'planner_suggested';
     expect(PLANNED_STATUS).toBe('planned');
-    expect(PLANNER_SUGGESTED_SOURCE).toBe('planner_suggested');
+    expect(RECOMMENDATION_SOURCE).toBe('planner_suggested');
   });
 
-  it('should document that tools create RepairToolRequest (source: planner_suggested)', () => {
-    // This test documents the business rule:
-    // Tools → RepairToolRequest + RepairToolRequestItem with source 'planner_suggested'
-    const PLANNER_SUGGESTED_SOURCE = 'planner_suggested';
-    expect(PLANNER_SUGGESTED_SOURCE).toBe('planner_suggested');
+  it('should document that planner-selected tools remain recommendation snapshots', () => {
+    const RECOMMENDATION_SOURCE = 'planner_suggested';
+    expect(RECOMMENDATION_SOURCE).toBe('planner_suggested');
   });
 });
 
@@ -390,7 +386,7 @@ describe('convertMRToWorkOrder function contract', () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it('persists planner-selected materials into the canonical WO material pipeline during MR conversion', async () => {
+  it('persists planner resources as recommendations without auto-submitting approval requests', async () => {
     (mockDb.maintenanceRequest.findUnique as Mock).mockResolvedValue({
       id: 'mr-1',
       title: 'Pump bearing failure',
@@ -490,30 +486,11 @@ describe('convertMRToWorkOrder function contract', () => {
       }),
     });
 
-    expect(tx.repairMaterialRequest.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        workOrderId: 'wo-1',
-        itemId: 'part-1',
-        itemName: '6205 Bearing',
-        quantityRequested: 2,
-        unit: 'each',
-        unitCost: 125,
-        estimatedCost: 250,
-        source: 'planner_suggested',
-        status: 'pending',
-        requestedById: 'planner-1',
-        plantId: 'plant-1',
-      }),
-    });
-
-    expect(tx.repairToolRequest.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        workOrderId: 'wo-1',
-        toolId: 'tool-1',
-        source: 'planner_suggested',
-        status: 'pending',
-      }),
-    });
+    // Recommendations become approval requests only when assigned execution
+    // staff explicitly submit them from the work order.
+    expect(tx.repairMaterialRequest.create).not.toHaveBeenCalled();
+    expect(tx.repairToolRequest.create).not.toHaveBeenCalled();
+    expect(tx.repairToolRequestItem.create).not.toHaveBeenCalled();
 
     const snapshotCall = tx.workOrder.update.mock.calls.find(
       ([args]) => args?.data?.suggestedParts && args?.data?.suggestedTools,
@@ -528,6 +505,7 @@ describe('convertMRToWorkOrder function contract', () => {
         itemCode: 'BRG-6205',
         quantity: 2,
         unit: 'each',
+        recommendedById: 'planner-1',
       }),
     ]);
     expect(JSON.parse(snapshotData.suggestedTools)).toEqual([
@@ -536,6 +514,7 @@ describe('convertMRToWorkOrder function contract', () => {
         toolName: 'Bearing Puller',
         toolCode: 'TL-BP-01',
         quantity: 1,
+        recommendedById: 'planner-1',
       }),
     ]);
   });
@@ -581,13 +560,17 @@ describe('convertMRToWorkOrder function contract', () => {
 });
 
 describe('MR conversion material reconciliation source contract', () => {
-  it('backfills legacy converted WO materials and derives missing suggestion snapshots', () => {
+  it('keeps legacy planner rows visible while requiring execution submission for new requests', () => {
     const migration = fs.readFileSync(
       path.join(process.cwd(), 'prisma/migrations/20260920194000_backfill_mr_conversion_materials/migration.sql'),
       'utf8',
     );
     const suggestedRoute = fs.readFileSync(
       path.join(process.cwd(), 'src/app/api/work-orders/[id]/suggested-items/route.ts'),
+      'utf8',
+    );
+    const detailsUi = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
       'utf8',
     );
 
@@ -597,22 +580,25 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(migration).toContain("'planner_suggested'");
     expect(migration).toContain('NOT EXISTS');
 
-    expect(suggestedRoute).toContain("materials: {");
-    expect(suggestedRoute).toContain("where: { status: 'planned' }");
     expect(suggestedRoute).toContain('const reconciledParts = new Map');
     expect(suggestedRoute).toContain('for (const material of wo.materials)');
     expect(suggestedRoute).toContain('for (const request of wo.repairMaterialRequests)');
-    expect(suggestedRoute).toContain('suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : []');
-    expect(suggestedRoute).toContain('tx.workOrderMaterial.deleteMany');
-    expect(suggestedRoute).toContain('tx.workOrderMaterial.updateMany');
-    expect(suggestedRoute).toContain('const plannedMaterials = inventoryResourcesOperational ? await db.workOrderMaterial.findMany');
-    expect(suggestedRoute).toContain('const existingPlannerMaterialRequests = inventoryResourcesOperational ? await db.repairMaterialRequest.findMany');
-    expect(suggestedRoute).toContain('Recovered from planned work-order material before store submission');
-    expect(suggestedRoute).toContain('const reconciledTools = new Map');
-    expect(suggestedRoute).toContain('for (const request of wo.repairToolRequests)');
+    expect(suggestedRoute).toContain("source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] }");
+    expect(suggestedRoute).toContain("action === 'submit_recommendations'");
+    expect(suggestedRoute).toContain('Only assigned execution staff can submit recommended resources for approval');
+    expect(suggestedRoute).toContain("source: 'technician_from_planner_recommendation'");
+    expect(suggestedRoute).toContain("status: { notIn: ['pending', 'rejected'] }");
+    expect(suggestedRoute).toContain('Superseded when');
+    expect(suggestedRoute).toContain("if (request.status === 'rejected' && !current) continue");
+    expect(suggestedRoute).toContain('const requestedToolIds = new Set<string>()');
     expect(suggestedRoute).toContain('for (const item of request.items)');
-    expect(suggestedRoute).toContain('toolResourcesOperational');
-    expect(suggestedRoute).toContain('inventoryResourcesOperational');
+
+    expect(detailsUi).toContain('Planner Recommended Materials & Tools');
+    expect(detailsUi).toContain('handleSuggestedQuantityChange');
+    expect(detailsUi).toContain('handleSubmitSuggestedRecommendations');
+    expect(detailsUi).toContain("action: 'submit_recommendations'");
+    expect(detailsUi).toContain("action: 'remove_recommendation'");
+    expect(detailsUi).toContain('Submit Recommendations');
   });
 });
 

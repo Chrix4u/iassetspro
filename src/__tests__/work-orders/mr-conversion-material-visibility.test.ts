@@ -13,14 +13,16 @@ describe('MR → WO planner material visibility', () => {
   const suggestedItemsApi = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
   const technicianPanels = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
-  it('sends planner-selected materials during MR conversion', () => {
+  it('persists planner-selected materials as recommendations during MR conversion', () => {
     expect(maintenanceUi).toContain(
       'requiredParts: inventoryEnabled && convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined',
     );
     expect(planningService).toContain('await tx.workOrderMaterial.create({');
-    expect(planningService).toContain('await tx.repairMaterialRequest.create({');
-    expect(planningService).toContain("source: 'planner_suggested'");
     expect(planningService).toContain('suggestedParts: JSON.stringify(suggestedParts)');
+    expect(planningService).toContain('recommendedById: session.userId');
+    expect(planningService).not.toContain('repairMaterialRequest.create');
+    expect(planningService).not.toContain('repairToolRequest.create');
+    expect(planningService).not.toContain('repairToolRequestItem.create');
   });
 
   it('keeps server-side WO details resilient to partial legacy conversion records', () => {
@@ -66,15 +68,16 @@ describe('MR → WO planner material visibility', () => {
     expect(technicianPanels).toContain('const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests]');
   });
 
-  it('repairs missing planner tool requests before store submission', () => {
-    expect(suggestedItemsApi).toContain('const existingPlannerToolRequests = toolResourcesOperational');
-    expect(suggestedItemsApi).toContain('const existingToolIds = new Set<string>()');
+  it('creates approval requests only when assigned execution staff submit recommendations', () => {
+    expect(suggestedItemsApi).toContain("action === 'submit_recommendations'");
+    expect(suggestedItemsApi).toContain('Only assigned execution staff can submit recommended resources for approval');
+    expect(suggestedItemsApi).toContain("source: 'technician_from_planner_recommendation'");
+    expect(suggestedItemsApi).toContain('requestedById: session.userId');
+    expect(suggestedItemsApi).toContain('const requestedToolIds = new Set<string>()');
     expect(suggestedItemsApi).toContain('for (const item of request.items)');
-    expect(suggestedItemsApi).toContain('const missingSuggestedTools = suggestedToolSnapshot.filter');
     expect(suggestedItemsApi).toContain('await tx.repairToolRequest.create({');
     expect(suggestedItemsApi).toContain('await tx.repairToolRequestItem.create({');
-    expect(suggestedItemsApi).toContain('Recovered from suggestedTools snapshot before store submission');
-    expect(suggestedItemsApi).toContain("['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin']");
+    expect(suggestedItemsApi).toContain('await tx.repairMaterialRequest.create({');
   });
 
   it('hydrates planner materials from the main WO payload before auxiliary requests finish', () => {

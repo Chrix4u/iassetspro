@@ -523,6 +523,8 @@ export async function PUT(
       unit: string;
       unitCost: number;
       notes: string;
+      recommendedById?: string;
+      recommendedAt?: string;
     };
     const resolvedParts: PlannedPart[] | null = Array.isArray(body.requiredParts) ? [] : null;
     if (resolvedParts) {
@@ -557,6 +559,8 @@ export async function PUT(
           unit: invItem.unitOfMeasure || 'each',
           unitCost: invItem.unitCost ?? 0,
           notes: typeof rawPart === 'object' && typeof rawPart.notes === 'string' ? rawPart.notes : '',
+          recommendedById: session.userId,
+          recommendedAt: new Date().toISOString(),
         });
       }
     }
@@ -568,6 +572,8 @@ export async function PUT(
       toolCode: string;
       quantity: number;
       notes: string;
+      recommendedById?: string;
+      recommendedAt?: string;
     };
     const resolvedTools: PlannedTool[] | null = Array.isArray(body.requiredTools) ? [] : null;
     if (resolvedTools) {
@@ -600,6 +606,8 @@ export async function PUT(
           toolCode: toolRec.toolCode || '',
           quantity: requestedQuantity,
           notes: typeof rawTool === 'object' && typeof rawTool.notes === 'string' ? rawTool.notes : '',
+          recommendedById: session.userId,
+          recommendedAt: new Date().toISOString(),
         });
       }
     }
@@ -637,52 +645,68 @@ export async function PUT(
 
     if (resolvedParts) {
       await db.$transaction(async (tx) => {
-        await tx.repairMaterialRequest.deleteMany({
-          where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+        // Planner edits update recommendations only. Existing technician/store
+        // pipeline requests are never created, replaced, or deleted here.
+        // Retire only legacy #51 auto-generated planner/pending rows for items
+        // the planner explicitly removed so they cannot reconstruct themselves
+        // as recommendations on the next details fetch.
+        const desiredPartIds = resolvedParts.map((part) => part.itemId);
+        await tx.repairMaterialRequest.updateMany({
+          where: {
+            workOrderId: id,
+            source: 'planner_suggested',
+            status: 'pending',
+            ...(desiredPartIds.length > 0 ? { itemId: { notIn: desiredPartIds } } : {}),
+          },
+          data: {
+            status: 'rejected',
+            notes: 'Removed from planner recommendations before technician submission',
+          },
+        });
+
+        await tx.workOrderMaterial.deleteMany({
+          where: { workOrderId: id, status: 'planned' },
         });
         for (const part of resolvedParts) {
-          await tx.repairMaterialRequest.create({
+          await tx.workOrderMaterial.create({
             data: {
               workOrderId: id,
               itemId: part.itemId,
               itemName: part.itemName,
-              quantityRequested: part.quantity,
-              unit: part.unit,
+              quantity: part.quantity,
               unitCost: part.unitCost,
-              estimatedCost: part.unitCost * part.quantity,
-              reason: 'Planner suggested material (updated)',
-              plantId: existing.plantId,
-              source: 'planner_suggested',
-              status: 'pending',
-              requestedById: session.userId,
+              totalCost: part.unitCost * part.quantity,
+              status: 'planned',
+              requestedBy: session.userId,
             },
           });
         }
-        await tx.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(resolvedParts) } });
+        await tx.workOrder.update({
+          where: { id },
+          data: { suggestedParts: JSON.stringify(resolvedParts) },
+        });
       });
     }
 
     if (resolvedTools) {
+      const desiredToolIds = resolvedTools.map((tool) => tool.toolId);
       await db.$transaction(async (tx) => {
-        await tx.repairToolRequest.deleteMany({
-          where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+        await tx.repairToolRequest.updateMany({
+          where: {
+            workOrderId: id,
+            source: 'planner_suggested',
+            status: 'pending',
+            ...(desiredToolIds.length > 0 ? { toolId: { notIn: desiredToolIds } } : {}),
+          },
+          data: {
+            status: 'rejected',
+            rejectionReason: 'Removed from planner recommendations before technician submission',
+          },
         });
-        for (const tool of resolvedTools) {
-          await tx.repairToolRequest.create({
-            data: {
-              workOrderId: id,
-              toolId: tool.toolId,
-              toolName: tool.toolName,
-              reason: 'Planner suggested tool (updated)',
-              plantId: existing.plantId,
-              source: 'planner_suggested',
-              status: 'pending',
-              urgency: 'normal',
-              requestedById: session.userId,
-            },
-          });
-        }
-        await tx.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(resolvedTools) } });
+        await tx.workOrder.update({
+          where: { id },
+          data: { suggestedTools: JSON.stringify(resolvedTools) },
+        });
       });
     }
 

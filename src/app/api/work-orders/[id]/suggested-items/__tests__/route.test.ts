@@ -112,7 +112,7 @@ describe('GET /api/work-orders/[id]/suggested-items material reconciliation', ()
     ]);
   });
 
-  it('deduplicates the same material across snapshot, WO material, and planner request', async () => {
+  it('deduplicates the same material while keeping legacy planner-pending rows as recommendations', async () => {
     mockDb.workOrder.findUnique.mockResolvedValue({
       id: 'wo-1',
       suggestedParts: JSON.stringify([
@@ -168,8 +168,8 @@ describe('GET /api/work-orders/[id]/suggested-items material reconciliation', ()
     expect(json.data.suggestedParts).toHaveLength(1);
     expect(json.data.suggestedParts[0]).toEqual(expect.objectContaining({
       itemId: 'item-1',
-      pipelineId: 'rmr-1',
-      pipelineStatus: 'pending',
+      pipelineId: null,
+      pipelineStatus: 'suggested',
     }));
   });
 });

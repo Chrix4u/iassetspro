@@ -118,6 +118,10 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
     expect(assistance).toContain('Requested user does not have access to the work order plant');
     expect(suggested).toContain('Inventory item belongs to a different plant');
     expect(suggested).toContain('Tool belongs to a different plant');
-    expect(suggested).toContain("userRoles: { some: { role: { slug: { in: ['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin'] } } } }");
+    // Initial recommendation submission goes to the accountable WO supervisor;
+    // downstream store notifications happen only after supervisor approval.
+    expect(suggested).toContain('wo.assignedSupervisorId');
+    expect(suggested).toContain('await notifyUser(');
+    expect(suggested).not.toContain("userRoles: { some: { role: { slug: { in: ['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin'] } } } }");
   });
 });

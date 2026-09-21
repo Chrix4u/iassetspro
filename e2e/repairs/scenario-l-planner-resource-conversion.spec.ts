@@ -94,13 +94,15 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   );
   expect(visibleMaterial).toBeTruthy();
   expect(Number(visibleMaterial.quantityRequested)).toBe(2);
-  expect(['planned', 'pending']).toContain(visibleMaterial.status);
+  expect(visibleMaterial.status).toBe('planned');
+  expect(visibleMaterial.projectionOnly).toBe(true);
 
   const visibleTool = (detail.repairToolRequests as Array<any>).find(
     (item) => item.toolId === toolId && item.source === 'planner_suggested',
   );
   expect(visibleTool).toBeTruthy();
-  expect(visibleTool.status).toBe('pending');
+  expect(visibleTool.status).toBe('planned');
+  expect(visibleTool.projectionOnly).toBe(true);
 
   const { status: suggestedStatus, data: suggestedResponse } = await apiCall(
     plannerToken,
@@ -116,12 +118,14 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   expect(suggestedPart).toBeTruthy();
   expect(suggestedPart.itemName).toBe(material.name);
   expect(Number(suggestedPart.quantity)).toBe(2);
+  expect(suggestedPart.pipelineStatus).toBe('suggested');
 
   const suggestedTool = (suggestedResponse.data.suggestedTools as Array<any>).find(
     (item) => item.toolId === toolId,
   );
   expect(suggestedTool).toBeTruthy();
   expect(Number(suggestedTool.quantity)).toBe(1);
+  expect(suggestedTool.pipelineStatus).toBe('suggested');
 
   // Browser-level regression: API success is not enough. The planner must see
   // both resources on the actual WO details screen.

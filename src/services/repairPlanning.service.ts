@@ -355,9 +355,11 @@ export async function convertMRToWorkOrder(
         });
       }
 
-      // Planner-selected resources must be represented in both the canonical
-      // Repairs approval pipeline and the WO suggestion snapshot consumed by the
-      // details page. WorkOrderMaterial remains a compatibility/cost projection.
+      // Planner-selected resources are recommendations only. They must be
+      // visible on the WO for execution planning, but they do not enter the
+      // supervisor/store approval pipeline until an assigned execution actor
+      // explicitly requests them. WorkOrderMaterial remains a planned/cost
+      // projection for recommended spare parts.
       const suggestedParts: Array<{
         id: string;
         itemId: string;
@@ -366,6 +368,8 @@ export async function convertMRToWorkOrder(
         quantity: number;
         unit: string;
         notes: string;
+        recommendedById: string;
+        recommendedAt: string;
       }> = [];
       const suggestedTools: Array<{
         id: string;
@@ -374,6 +378,8 @@ export async function convertMRToWorkOrder(
         toolCode: string;
         quantity: number;
         notes: string;
+        recommendedById: string;
+        recommendedAt: string;
       }> = [];
 
       if (payload.requiredParts && Array.isArray(payload.requiredParts) && payload.requiredParts.length > 0) {
@@ -416,6 +422,8 @@ export async function convertMRToWorkOrder(
             quantity,
             unit,
             notes: '',
+            recommendedById: session.userId,
+            recommendedAt: now.toISOString(),
           });
 
           await tx.workOrderMaterial.create({
@@ -431,27 +439,6 @@ export async function convertMRToWorkOrder(
             },
           });
 
-          await tx.repairMaterialRequest.create({
-            data: {
-              workOrderId: workOrder.id,
-              itemId: part.id,
-              itemName: part.name,
-              quantityRequested: quantity,
-              quantityApproved: 0,
-              quantityIssued: 0,
-              quantityReturned: 0,
-              unit,
-              unitCost,
-              estimatedCost,
-              urgency: 'normal',
-              reason: `Planned for ${workOrder.woNumber}`,
-              notes: 'Suggested by planner during maintenance-request conversion',
-              plantId: workOrder.plantId || part.plantId,
-              source: 'planner_suggested',
-              status: 'pending',
-              requestedById: session.userId,
-            },
-          });
         }
       }
 
@@ -480,35 +467,10 @@ export async function convertMRToWorkOrder(
             toolCode: tool.toolCode || '',
             quantity,
             notes: '',
+            recommendedById: session.userId,
+            recommendedAt: now.toISOString(),
           });
 
-          const toolRequest = await tx.repairToolRequest.create({
-            data: {
-              workOrderId: workOrder.id,
-              toolId: tool.id,
-              toolName: tool.name,
-              reason: `Planned for ${workOrder.woNumber}`,
-              notes: 'Suggested by planner during maintenance-request conversion',
-              plantId: workOrder.plantId || undefined,
-              source: 'planner_suggested',
-              status: 'pending',
-              urgency: 'normal',
-              requestedById: session.userId,
-            },
-          });
-
-          await tx.repairToolRequestItem.create({
-            data: {
-              repairToolRequestId: toolRequest.id,
-              toolId: tool.id,
-              toolName: tool.name,
-              toolCode: tool.toolCode,
-              category: tool.category,
-              quantityRequested: quantity,
-              quantityIssued: 0,
-              unitCost: tool.purchaseCost ?? undefined,
-            },
-          });
         }
       }
 

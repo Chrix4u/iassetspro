@@ -44,6 +44,18 @@ describe('work-order team candidate boundaries', () => {
     expect(reviews).toContain('Selected technician does not have the requested trade/skill');
   });
 
+  it('hides team-management actions unless client authority matches the server boundary', () => {
+    expect(maintenance).toContain("const hasAssignmentPermission =");
+    expect(maintenance).toContain("hasPermission('work_orders.assign_supervisor')");
+    expect(maintenance).toContain("hasPermission('work_orders.assign_technician')");
+    expect(maintenance).toContain("roleSlugs.includes('maintenance_manager')");
+    expect(maintenance).toContain("roleSlugs.includes('plant_manager')");
+    expect(maintenance).toContain('wo.assignedSupervisorId === user.id');
+    expect(maintenance).toContain('wo.plannerId === user.id');
+    expect(maintenance).toContain('wo.assignedById === user.id');
+    expect(maintenance).toContain('const canReviewTeamRequests = canManageTeamDirectly');
+  });
+
   it('uses WO-scoped candidate lookup for direct add and request approval', () => {
     const addDialog = maintenance.match(
       /\{\/\* Add Team Member Dialog \*\/\}[\s\S]*?\{\/\* Request Team Member Dialog/

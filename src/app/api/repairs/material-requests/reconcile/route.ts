@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
-    if (!isResourceStoreActor(session)) {
+    if (!isResourceStoreActor(session, 'repair_material_requests.update')) {
       return NextResponse.json({
         success: false,
         error: 'Only admin, store keeper, inventory manager, or tools shop attendant can reconcile material requests',

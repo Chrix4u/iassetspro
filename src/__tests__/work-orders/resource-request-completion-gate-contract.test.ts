@@ -58,11 +58,14 @@ describe('RWOP resource request approval and completion gate contract', () => {
     for (const route of [materialRoute, toolRoute]) {
       expect(route).toContain('canReviewResourceRequestAsSupervisor');
       expect(route).toContain('workOrder.assignedSupervisorId');
-      expect(route).toContain('isResourceStoreActor(session)');
       expect(route).toContain('RESOURCE_STORE_ROLE_SLUGS');
       expect(route).toContain('plantAccess: { some: { plantId:');
     }
 
+    expect(materialRoute).toContain("isResourceStoreActor(session, 'repair_material_requests.update')");
+    expect(materialRoute).toContain("canReviewResourceRequestAsSupervisor(session, matReq.workOrder.assignedSupervisorId, 'repair_material_requests.update')");
+    expect(toolRoute).toContain("isResourceStoreActor(session, 'repair_tool_requests.update')");
+    expect(toolRoute).toContain("canReviewResourceRequestAsSupervisor(session, toolReq.workOrder.assignedSupervisorId, 'repair_tool_requests.update')");
     expect(materialRoute).toContain('matReq.plantId');
     expect(toolRoute).toContain('toolReq.plantId');
   });

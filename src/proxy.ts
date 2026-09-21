@@ -34,7 +34,12 @@ const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
   { prefix: '/api/repairs/reports', modules: ['repairs', 'reports'] },
   { prefix: '/api/repairs', modules: ['repairs'] },
 
+  // AI/composite operational intelligence endpoints.
+  { prefix: '/api/ai/rca', modules: ['rca_analysis', 'assets'] },
+  { prefix: '/api/ai/spares/forecast', modules: ['forecasting', 'inventory'] },
+
   // Composite reporting endpoints.
+  { prefix: '/api/reports/enterprise', modules: ['reports', 'work_orders', 'assets', 'inventory', 'repairs', 'downtime'] },
   { prefix: '/api/reports/maintenance', modules: ['reports', 'work_orders', 'maintenance_requests'] },
   { prefix: '/api/reports/machine-availability', modules: ['reports', 'assets'] },
   { prefix: '/api/reports/failure-analysis', modules: ['reports', 'failure_analysis'] },
@@ -96,6 +101,12 @@ function matchesApiPrefix(pathname: string, prefix: string): boolean {
 }
 
 export function requiredModulesForApiPath(pathname: string): string[] {
+  // Dynamic component condition routes sit below the generic component-registry
+  // prefix but expose the Condition Monitoring module specifically.
+  if (/^\/api\/component-registry\/[^/]+\/condition(?:\/|$)/.test(pathname)) {
+    return ['assets', 'condition_monitoring'];
+  }
+
   return API_MODULE_RULES.find((rule) => matchesApiPrefix(pathname, rule.prefix))?.modules ?? [];
 }
 

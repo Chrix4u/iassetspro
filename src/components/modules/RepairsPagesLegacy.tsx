@@ -3499,7 +3499,7 @@ export function RepairCompletionPage() {
     if (res.success) setCompletion(res.data);
     else setCompletion(null);
     setLoading(false);
-  }, [woId, assetsEnabled]);
+  }, [woId]);
 
   // Auto-fetch when woId changes (handles both manual selection and pageParams auto-load)
   useEffect(() => {
@@ -3538,7 +3538,7 @@ export function RepairCompletionPage() {
         setSelectedComponentIds(res.data.map((c: any) => c.componentRegistry?.id || c.componentRegistryId || c.id));
       }
     })();
-  }, [woId]);
+  }, [woId, assetsEnabled]);
 
   const handleSubmit = async (action: string) => {
     if (!woId) return;
@@ -3550,8 +3550,8 @@ export function RepairCompletionPage() {
       rootCause: form.rootCause || undefined,
       correctiveAction: form.correctiveAction || undefined,
       totalLaborHours: form.totalLaborHours ? parseFloat(form.totalLaborHours) : undefined,
-      totalMaterialCost: form.totalMaterialCost ? parseFloat(form.totalMaterialCost) : undefined,
-      totalToolCost: form.totalToolCost ? parseFloat(form.totalToolCost) : undefined,
+      totalMaterialCost: inventoryEnabled && form.totalMaterialCost ? parseFloat(form.totalMaterialCost) : undefined,
+      totalToolCost: toolsEnabled && form.totalToolCost ? parseFloat(form.totalToolCost) : undefined,
       totalDowntimeMinutes: form.totalDowntimeMinutes ? parseFloat(form.totalDowntimeMinutes) : undefined,
       closureNotes: form.closureNotes || undefined,
       ...(action === 'supervisor_request_rework' ? { reworkReason: reworkReasonValue } : {}),

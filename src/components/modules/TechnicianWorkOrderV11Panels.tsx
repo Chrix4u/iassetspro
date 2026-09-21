@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { downtimeReason, materialRequestReason, toolRequestReason } from '@/lib/technician-reason-defaults';
 
 export interface TechnicianWorkspaceCapabilities {
@@ -177,6 +178,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [toolRequest, setToolRequest] = useState({ toolId: '', toolName: '', toolCode: '', quantity: '1', urgency: 'normal', reason: '' });
   const [editingMaterialRequestId, setEditingMaterialRequestId] = useState<string | null>(null);
   const [editingToolRequestId, setEditingToolRequestId] = useState<string | null>(null);
+  const [cancelRequestTarget, setCancelRequestTarget] = useState<{
+    kind: 'material' | 'tool';
+    id: string;
+    label: string;
+  } | null>(null);
   const [teamTime, setTeamTime] = useState({ userId: '', startTime: toLocalInput(new Date(Date.now() - 60 * 60_000)), endTime: toLocalInput(), breakMinutes: '0', activityType: 'maintenance', notes: '' });
   const [personalTool, setPersonalTool] = useState({ toolName: '', toolCode: '', condition: 'good', notes: '' });
   const [downtimeForm, setDowntimeForm] = useState({
@@ -329,11 +335,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     if (ok) resetMaterialRequest();
   };
 
-  const cancelMaterialRequest = (requestId: string) => run(
-    `cancel-material-${requestId}`,
-    () => api.delete(`/api/repairs/material-requests/${requestId}`),
-    'Material request cancelled',
-  );
+  const requestMaterialCancellation = (request: any) => {
+    setCancelRequestTarget({
+      kind: 'material',
+      id: request.id,
+      label: request.item?.name || request.itemName || 'this material request',
+    });
+  };
 
   const resetToolRequest = () => {
     setEditingToolRequestId(null);
@@ -372,11 +380,30 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     if (ok) resetToolRequest();
   };
 
-  const cancelToolRequest = (requestId: string) => run(
-    `cancel-tool-${requestId}`,
-    () => api.delete(`/api/repairs/tool-requests/${requestId}`),
-    'Tool request cancelled',
-  );
+  const requestToolCancellation = (request: any) => {
+    const toolLabel = (request.items || [])
+      .map((item: any) => item.tool?.name || item.toolName)
+      .filter(Boolean)
+      .join(', ');
+    setCancelRequestTarget({
+      kind: 'tool',
+      id: request.id,
+      label: toolLabel || request.tool?.name || request.toolName || 'this tool request',
+    });
+  };
+
+  const confirmRequestCancellation = async () => {
+    if (!cancelRequestTarget || busy !== null) return;
+    const { kind, id } = cancelRequestTarget;
+    const ok = await run(
+      `cancel-${kind}-${id}`,
+      () => kind === 'material'
+        ? api.delete(`/api/repairs/material-requests/${id}`)
+        : api.delete(`/api/repairs/tool-requests/${id}`),
+      kind === 'material' ? 'Material request cancelled' : 'Tool request cancelled',
+    );
+    if (ok) setCancelRequestTarget(null);
+  };
 
   const addPersonalTool = async () => {
     if (personalTool.toolName.trim().length < 2) { toast.error('Enter the personal tool name'); return; }
@@ -529,6 +556,23 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
 
   return (
     <div className="space-y-5">
+      <ConfirmDialog
+        open={!!cancelRequestTarget}
+        onOpenChange={(open) => {
+          if (!open && busy === null) setCancelRequestTarget(null);
+        }}
+        title={cancelRequestTarget?.kind === 'material'
+          ? 'Cancel Material Request'
+          : 'Cancel Tool Request'}
+        description={cancelRequestTarget
+          ? `Cancel the pending ${cancelRequestTarget.kind} request for "${cancelRequestTarget.label}"? This can only be done while the request is still pending.`
+          : 'Cancel this pending resource request?'}
+        confirmLabel="Cancel Request"
+        variant="destructive"
+        loading={busy?.startsWith('cancel-') || false}
+        onConfirm={confirmRequestCancellation}
+      />
+
       {stickyHeaderTarget && createPortal(
         <nav
           aria-label="Sticky work order lifecycle navigation"
@@ -586,7 +630,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.item?.name || request.itemName || 'Material'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">Requested {request.quantityRequested ?? request.quantity ?? '-'} {request.unit || ''} · {pretty(request.urgency)}</p>
-                  {request.status === 'pending' && <div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingMaterialRequestId(request.id); setMaterial({ itemId: request.itemId || request.item?.id || '', itemName: request.item?.name || request.itemName || '', quantity: String(request.quantityRequested ?? request.quantity ?? 1), unit: request.unit || request.item?.unitOfMeasure || '', urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelMaterialRequest(request.id)} disabled={busy !== null} title="Cancel pending material request" aria-label="Cancel pending material request">Cancel</Button></div>}
+                  {request.status === 'pending' && <div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingMaterialRequestId(request.id); setMaterial({ itemId: request.itemId || request.item?.id || '', itemName: request.item?.name || request.itemName || '', quantity: String(request.quantityRequested ?? request.quantity ?? 1), unit: request.unit || request.item?.unitOfMeasure || '', urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestMaterialCancellation(request)} disabled={busy !== null} title="Cancel pending material request">Cancel</Button></div>}
                 </div>
               ))}
             </div>
@@ -637,7 +681,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requestNumber || request.toolName || 'Tool request'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>
-                  {request.status === 'pending' && !request.projectionOnly && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => cancelToolRequest(request.id)} disabled={busy !== null} title="Cancel pending tool request" aria-label="Cancel pending tool request">Cancel</Button></div>}
+                  {request.status === 'pending' && !request.projectionOnly && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestToolCancellation(request)} disabled={busy !== null} title="Cancel pending tool request">Cancel</Button></div>}
                 </div>
               ))}
             </div>

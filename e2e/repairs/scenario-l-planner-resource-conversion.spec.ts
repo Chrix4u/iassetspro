@@ -3,7 +3,8 @@
  * Regression for the production issue where a planner-selected spare part
  * disappeared from Work Order Details while the selected tool remained visible.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
 import {
   getToken,
   approveMR,
@@ -15,7 +16,8 @@ import {
   apiCall,
 } from './helpers/api';
 
-test('UAT-12: planner-selected material and tool both appear on converted WO details', async () => {
+test('UAT-12: planner-selected material and tool both appear on converted WO details', async ({ browser }) => {
+  const context: BrowserContext = await browser.newContext();
   const plannerToken = await getToken('planner');
   const requesterToken = await getToken('requester');
   const supervisorToken = await getToken('supervisor');
@@ -120,4 +122,16 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   );
   expect(suggestedTool).toBeTruthy();
   expect(Number(suggestedTool.quantity)).toBe(1);
+
+  // Browser-level regression: API success is not enough. The planner must see
+  // both resources on the actual WO details screen.
+  await authenticateAs(context, 'planner');
+  const page = await context.newPage();
+  await navigateToWODetail(page, wo.id);
+
+  await expect(page.getByText(material.name, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(visibleTool.toolName, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+
+  await page.close();
+  await context.close();
 });

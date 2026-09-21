@@ -142,57 +142,78 @@ async function main() {
   });
   const plants: Record<string, string> = { 'PLANT-A': plantA.id, 'PLANT-B': plantB.id };
 
-  // Repairs UAT intentionally licenses only the Repairs/RWOP optional module.
-  // PM Maintenance is not seeded here so fail-closed navigation proves that
-  // disabled/unlicensed PM content cannot leak into Repairs views.
-  const repairsModule = await db.systemModule.upsert({
-    where: { code: 'repairs' },
-    update: {
-      name: 'Repairs Maintenance',
-      description: 'Corrective repairs/RWOP execution, resource custody, completion and reporting workflows',
-      version: '2.0.0',
-      isCore: false,
-      isSystemLicensed: true,
-      validFrom: new Date('2024-01-01T00:00:00.000Z'),
-      validUntil: new Date('2099-12-31T23:59:59.999Z'),
-    },
-    create: {
+  // Repairs UAT licenses the operational domains exercised by the Repairs
+  // scenarios. PM Maintenance is deliberately NOT licensed here so the suite
+  // continues to prove that PM content cannot leak into Repairs when disabled.
+  const uatModules = [
+    {
       code: 'repairs',
       name: 'Repairs Maintenance',
       description: 'Corrective repairs/RWOP execution, resource custody, completion and reporting workflows',
-      version: '2.0.0',
-      isCore: false,
-      isSystemLicensed: true,
-      validFrom: new Date('2024-01-01T00:00:00.000Z'),
-      validUntil: new Date('2099-12-31T23:59:59.999Z'),
     },
-  });
-  const existingRepairsCompanyModule = await db.companyModule.findFirst({
-    where: { systemModuleId: repairsModule.id, companyId: null },
-    select: { id: true },
-  });
-  if (existingRepairsCompanyModule) {
-    await db.companyModule.update({
-      where: { id: existingRepairsCompanyModule.id },
-      data: {
-        isActive: true,
-        isEnabled: true,
-        licensedAt: new Date('2024-01-01T00:00:00.000Z'),
-        activatedAt: new Date('2024-01-01T00:00:00.000Z'),
+    { code: 'assets', name: 'Asset Management', description: 'Assets used by Repairs work orders and UAT fixtures' },
+    { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Request intake used by Repairs lifecycle UAT' },
+    { code: 'work_orders', name: 'Work Orders', description: 'Work-order lifecycle used by Repairs UAT' },
+    { code: 'inventory', name: 'Inventory & Spare Parts', description: 'Material lookup, issue, return, and reconciliation used by Repairs UAT' },
+    { code: 'tools', name: 'Tools & Calibration', description: 'Tool custody and transfer flows used by Repairs UAT' },
+    { code: 'reports', name: 'Reports', description: 'Repairs reporting surfaces exercised by UAT' },
+    { code: 'analytics', name: 'Analytics', description: 'Repairs analytics surfaces exercised by UAT' },
+    { code: 'calibration', name: 'Calibration Management', description: 'Tool calibration enforcement exercised by UAT' },
+  ] as const;
+
+  for (const moduleDef of uatModules) {
+    const systemModule = await db.systemModule.upsert({
+      where: { code: moduleDef.code },
+      update: {
+        name: moduleDef.name,
+        description: moduleDef.description,
+        version: '2.0.0',
+        isCore: false,
+        isSystemLicensed: true,
+        validFrom: new Date('2024-01-01T00:00:00.000Z'),
+        validUntil: new Date('2099-12-31T23:59:59.999Z'),
+      },
+      create: {
+        code: moduleDef.code,
+        name: moduleDef.name,
+        description: moduleDef.description,
+        version: '2.0.0',
+        isCore: false,
+        isSystemLicensed: true,
+        validFrom: new Date('2024-01-01T00:00:00.000Z'),
+        validUntil: new Date('2099-12-31T23:59:59.999Z'),
       },
     });
-  } else {
-    await db.companyModule.create({
-      data: {
-        systemModuleId: repairsModule.id,
-        companyId: null,
-        isActive: true,
-        isEnabled: true,
-        licensedAt: new Date('2024-01-01T00:00:00.000Z'),
-        activatedAt: new Date('2024-01-01T00:00:00.000Z'),
-      },
+
+    const existingCompanyModule = await db.companyModule.findFirst({
+      where: { systemModuleId: systemModule.id, companyId: null },
+      select: { id: true },
     });
+
+    if (existingCompanyModule) {
+      await db.companyModule.update({
+        where: { id: existingCompanyModule.id },
+        data: {
+          isActive: true,
+          isEnabled: true,
+          licensedAt: new Date('2024-01-01T00:00:00.000Z'),
+          activatedAt: new Date('2024-01-01T00:00:00.000Z'),
+        },
+      });
+    } else {
+      await db.companyModule.create({
+        data: {
+          systemModuleId: systemModule.id,
+          companyId: null,
+          isActive: true,
+          isEnabled: true,
+          licensedAt: new Date('2024-01-01T00:00:00.000Z'),
+          activatedAt: new Date('2024-01-01T00:00:00.000Z'),
+        },
+      });
+    }
   }
+
 
   const tradeMech = await db.trade.upsert({
     where: { name: 'Mechanical' }, update: {},

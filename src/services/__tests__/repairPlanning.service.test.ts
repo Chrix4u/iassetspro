@@ -608,6 +608,9 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(workOrderRoute).toContain("where: { workOrderId: id, status: 'planned' }");
     expect(workOrderRoute).toContain("data: { suggestedParts: JSON.stringify(resolvedParts) }");
     expect(workOrderRoute).toContain("data: { suggestedTools: JSON.stringify(resolvedTools) }");
+    expect(workOrderRoute).toContain("source: 'planner_suggested'");
+    expect(workOrderRoute).toContain("status: 'pending'");
+    expect(workOrderRoute).toContain('Removed from planner recommendations before technician submission');
     expect(workOrderRoute).not.toContain("reason: 'Planner suggested material (updated)'");
     expect(workOrderRoute).not.toContain("reason: 'Planner suggested tool (updated)'");
 

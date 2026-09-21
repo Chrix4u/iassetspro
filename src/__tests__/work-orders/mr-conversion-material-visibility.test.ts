@@ -14,7 +14,7 @@ describe('MR → WO planner material visibility', () => {
 
   it('sends planner-selected materials during MR conversion', () => {
     expect(maintenanceUi).toContain(
-      'requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined',
+      'requiredParts: inventoryEnabled && convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined',
     );
     expect(planningService).toContain('await tx.workOrderMaterial.create({');
     expect(planningService).toContain('await tx.repairMaterialRequest.create({');
@@ -35,7 +35,7 @@ describe('MR → WO planner material visibility', () => {
     expect(suggestedItemsApi).toContain('const reconciledParts = new Map');
     expect(suggestedItemsApi).toContain('for (const material of wo.materials)');
     expect(suggestedItemsApi).toContain('for (const request of wo.repairMaterialRequests)');
-    expect(suggestedItemsApi).toContain('suggestedParts = [...reconciledParts.values()]');
+    expect(suggestedItemsApi).toContain('suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : []');
   });
 
   it('hydrates planner materials from the main WO payload before auxiliary requests finish', () => {

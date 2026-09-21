@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import {
   closeRepairWorkOrder,
   type ClosureSessionContext,
@@ -22,7 +22,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.update', 'work_orders.close'])) {
+    if (!isAdmin(session) && !hasAnyPermission(session, ['work_orders.close'])) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions to close work order' },
         { status: 403 },

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionData } from '@/lib/auth';
 import {
   canManageWorkOrder,
+  canPerformWorkOrderTransition,
   canViewWorkOrder,
   hasWorkOrderViewOverride,
 } from '@/services/workOrderAccess.service';
@@ -74,4 +75,75 @@ describe('work-order relationship isolation policy', () => {
       assignedSupervisorId: 'sup-b',
     })).toBe(true);
   });
+
+  it('does not surface Start to an unrelated technician or assistant', () => {
+    const snapshot = {
+      status: 'assigned',
+      assignedTo: 'tech-a',
+      teamLeaderId: null,
+      assignedSupervisorId: 'sup-a',
+      plannerId: 'planner-a',
+      teamMembers: [{ userId: 'assistant-a', role: 'assistant' }],
+    };
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'tech-a', roles: ['maintenance_technician'], permissions: ['work_orders.start'] }),
+      snapshot,
+      'in_progress',
+    )).toBe(true);
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'tech-b', roles: ['maintenance_technician'], permissions: ['work_orders.start'] }),
+      snapshot,
+      'in_progress',
+    )).toBe(false);
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'assistant-a', roles: ['maintenance_technician'], permissions: ['work_orders.start'] }),
+      snapshot,
+      'in_progress',
+    )).toBe(false);
+  });
+
+  it('binds verification, closure and planning to the accountable actor', () => {
+    const completed = {
+      status: 'completed',
+      assignedSupervisorId: 'sup-a',
+      plannerId: 'planner-a',
+      assignedTo: 'tech-a',
+      teamMembers: [],
+    };
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'sup-a', roles: ['maintenance_supervisor'], permissions: ['work_orders.verify'] }),
+      completed,
+      'verified',
+    )).toBe(true);
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'sup-b', roles: ['maintenance_supervisor'], permissions: ['work_orders.verify'] }),
+      completed,
+      'verified',
+    )).toBe(false);
+
+    const verified = { ...completed, status: 'verified' };
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'planner-a', roles: ['maintenance_planner'], permissions: ['work_orders.close'] }),
+      verified,
+      'closed',
+    )).toBe(true);
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'planner-b', roles: ['maintenance_planner'], permissions: ['work_orders.close'] }),
+      verified,
+      'closed',
+    )).toBe(false);
+
+    const approved = { ...completed, status: 'approved' };
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'planner-a', roles: ['maintenance_planner'], permissions: ['work_orders.update'] }),
+      approved,
+      'planned',
+    )).toBe(true);
+    expect(canPerformWorkOrderTransition(
+      session({ userId: 'planner-b', roles: ['maintenance_planner'], permissions: ['work_orders.update'] }),
+      approved,
+      'planned',
+    )).toBe(false);
+  });
+
 });

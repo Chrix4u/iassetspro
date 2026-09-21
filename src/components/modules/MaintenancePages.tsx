@@ -3266,8 +3266,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Suggested Materials & Tools
   const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
   const [suggestedTools, setSuggestedTools] = useState<any[]>([]);
-  const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
-  const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
   const hydrateSuggestedResourcesFromWO = useCallback((workOrder: any) => {
     const parseSnapshot = (value: unknown): any[] => {
@@ -3404,7 +3402,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       setMaterialOpen(false);
       setMatReturnOpen(false);
       setSpareReturnOpen(false);
-      setSuggestedPartDialogOpen(false);
       setSuggestedParts([]);
       setEditInventoryItems([]);
     }
@@ -3413,7 +3410,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       setToolXferOpen(false);
       setViewAllToolsOpen(false);
       setPtOpen(false);
-      setSuggestedToolDialogOpen(false);
       setSuggestedTools([]);
       setPersonalTools([]);
       setEditToolsData([]);
@@ -3504,25 +3500,67 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id, materialResourcesEnabled, toolResourcesEnabled, mergeSuggestedResourceRows]);
 
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
-    if (!confirm(`Remove this suggested ${itemType}?`)) return;
+    if (!confirm(`Remove this recommended ${itemType === 'part' ? 'material' : 'tool'} from the work plan?`)) return;
     try {
-      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'reject_item', itemType, itemId });
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'remove_recommendation',
+        itemType,
+        itemId,
+      });
       if (res.success) {
+        toast.success('Recommendation removed');
         fetchSuggestedItems();
         fetchWO();
+      } else {
+        toast.error(res.error || 'Could not remove recommendation');
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not remove recommendation');
+    }
   };
 
-  const handleSendToStore = async () => {
+  const handleSuggestedQuantityChange = async (
+    itemType: 'part' | 'tool',
+    itemId: string,
+    quantity: number,
+  ) => {
+    if (!Number.isFinite(quantity) || quantity < 1) return;
     try {
-      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'send_to_store' });
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'update_quantity',
+        itemType,
+        itemId,
+        quantity,
+      });
       if (res.success) {
-        toast.success(res.data?.message || 'Items sent to store');
         fetchSuggestedItems();
         fetchWO();
+      } else {
+        toast.error(res.error || 'Could not update recommended quantity');
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not update recommended quantity');
+    }
+  };
+
+  const handleSubmitSuggestedRecommendations = async () => {
+    try {
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'submit_recommendations',
+      });
+      if (res.success) {
+        toast.success((res as any).message || res.data?.message || 'Recommended resources submitted for approval');
+        fetchSuggestedItems();
+        fetchWO();
+      } else {
+        toast.error(res.error || 'Could not submit recommended resources');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not submit recommended resources');
+    }
   };
 
   useEffect(() => {
@@ -5979,19 +6017,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
                   <Lightbulb className="h-4 w-4 text-violet-600" />
-                  Suggested Materials & Tools
+                  Planner Recommended Materials & Tools
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Planner-suggested items for this work order
+                  Review these planning recommendations. They enter the approval workflow only after assigned execution staff submit them.
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {pendingSuggestedCount > 0 && (
+                {canPerformWorkActions && !isWOFinalized && pendingSuggestedCount > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
-                    onClick={handleSendToStore}
+                    onClick={handleSubmitSuggestedRecommendations}
                   >
-                    <Warehouse className="h-3.5 w-3.5" />
-                    Send to Store ({pendingSuggestedCount})
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Submit Recommendations ({pendingSuggestedCount})
                   </Button>
                 )}
               </div>
@@ -6015,7 +6053,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs text-muted-foreground">Qty:</span>
-                          <span className="text-sm font-semibold">{part.quantity} {part.unit || ''}</span>
+                          {canPerformWorkActions && !isWOFinalized && part.pipelineStatus === 'suggested' ? (
+                            <Input
+                              key={`part-qty-${part.itemId}-${part.quantity}`}
+                              type="number"
+                              min={1}
+                              step={1}
+                              defaultValue={part.quantity || 1}
+                              className="h-8 w-20 text-sm"
+                              aria-label={`Recommended quantity for ${part.itemName || 'material'}`}
+                              onBlur={(event) => handleSuggestedQuantityChange('part', part.itemId, Number(event.target.value))}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') event.currentTarget.blur();
+                              }}
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold">{part.quantity} {part.unit || ''}</span>
+                          )}
                           {part.pipelineStatus && part.pipelineStatus !== 'suggested' && (
                             <Badge variant="outline" className={`text-[10px] ${
                               part.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
@@ -6024,9 +6078,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               'bg-gray-50 border-gray-200'
                             }`}>{part.pipelineStatus.replace(/_/g, ' ')}</Badge>
                           )}
-                          {!workActionDisabled && part.pipelineStatus === 'pending' && (
+                          {canPerformWorkActions && !isWOFinalized && part.pipelineStatus === 'suggested' && (
                             <button onClick={() => handleRejectSuggestedItem('part', part.itemId)}
-                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50"
+                              title="Remove recommendation"
+                            >
                               <X className="h-3.5 w-3.5" />
                             </button>
                           )}
@@ -6055,7 +6111,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs text-muted-foreground">Qty:</span>
-                          <span className="text-sm font-semibold">{tool.quantity}</span>
+                          {canPerformWorkActions && !isWOFinalized && tool.pipelineStatus === 'suggested' ? (
+                            <Input
+                              key={`tool-qty-${tool.toolId}-${tool.quantity}`}
+                              type="number"
+                              min={1}
+                              step={1}
+                              defaultValue={tool.quantity || 1}
+                              className="h-8 w-20 text-sm"
+                              aria-label={`Recommended quantity for ${tool.toolName || 'tool'}`}
+                              onBlur={(event) => handleSuggestedQuantityChange('tool', tool.toolId, Number(event.target.value))}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') event.currentTarget.blur();
+                              }}
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold">{tool.quantity}</span>
+                          )}
                           {tool.pipelineStatus && tool.pipelineStatus !== 'suggested' && (
                             <Badge variant="outline" className={`text-[10px] ${
                               tool.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
@@ -6064,9 +6136,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               'bg-gray-50 border-gray-200'
                             }`}>{tool.pipelineStatus.replace(/_/g, ' ')}</Badge>
                           )}
-                          {!workActionDisabled && tool.pipelineStatus === 'pending' && (
+                          {canPerformWorkActions && !isWOFinalized && tool.pipelineStatus === 'suggested' && (
                             <button onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
-                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50"
+                              title="Remove recommendation"
+                            >
                               <X className="h-3.5 w-3.5" />
                             </button>
                           )}
@@ -6077,17 +6151,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
               )}
 
-              {/* Technician: Add new item button */}
-              {!workActionDisabled && (
-                <div className="mt-3 flex items-center gap-2">
-                  {materialResourcesEnabled && <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
-                    <Plus className="h-3 w-3" /> Add Part
-                  </Button>}
-                  {toolResourcesEnabled && <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
-                    <Plus className="h-3 w-3" /> Add Tool
-                  </Button>}
-                </div>
-              )}
             </CardContent>
           </Card>
             ) : null;

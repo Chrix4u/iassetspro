@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,29 +45,49 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Filter by role
+    // Filter by role. Unknown values must fail closed instead of silently
+    // dropping the role predicate and broadening the worker directory.
+    const allowedRoles = new Set(['all', 'technician', 'supervisor']);
+    if (role && !allowedRoles.has(role)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid worker role filter' },
+        { status: 400 },
+      );
+    }
     if (role && role !== 'all') {
       const roleSlugMap: Record<string, string[]> = {
         technician: ['maintenance_technician'],
         supervisor: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'],
       };
-      const targetSlugs = roleSlugMap[role];
-      if (targetSlugs) {
-        where.userRoles = {
-          some: {
-            role: {
-              slug: { in: targetSlugs },
-            },
+      const targetSlugs = roleSlugMap[role]!;
+      where.userRoles = {
+        some: {
+          role: {
+            slug: { in: targetSlugs },
           },
-        };
-      }
+        },
+      };
     }
 
-    // Filter by plant access if plantId provided
+    // Worker discovery is operational data: regular users must never receive
+    // candidates outside their authorized plant set, even when the caller omits
+    // an explicit plantId. X-Plant-ID (when present) narrows the scope further.
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     if (plantId) {
+      if (!canAccessPlant(plantScope, plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      where.plantAccess = { some: { plantId } };
+    } else if (plantScope.isScoped && plantScope.plantId) {
+      where.plantAccess = { some: { plantId: plantScope.plantId } };
+    } else if (!plantScope.isSystemWide) {
       where.plantAccess = {
         some: {
-          plantId,
+          plantId: { in: plantScope.accessiblePlantIds },
         },
       };
     }

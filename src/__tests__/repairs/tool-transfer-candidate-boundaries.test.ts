@@ -46,12 +46,24 @@ describe('tool-transfer candidate and custody boundaries', () => {
   });
 
   it('uses custody-scoped candidate lookup instead of the broad worker directory', () => {
-    expect(maintenanceUi).toContain('/api/repairs/tool-transfers/candidates?');
-    expect(repairsUi).toContain('/api/repairs/tool-transfers/candidates?');
-    expect(maintenanceUi).not.toContain("api.get('/api/workers?role=technician')");
-    // A separate WO team-assignment flow still uses /api/workers; the transfer
-    // surfaces themselves must not.
-    expect(repairsUi).not.toContain("api.get('/api/workers?role=technician')");
+    const maintenanceTransferStart = maintenanceUi.indexOf('title="Transfer Tool"');
+    expect(maintenanceTransferStart).toBeGreaterThan(-1);
+    const maintenanceTransferSurface = maintenanceUi.slice(
+      maintenanceTransferStart,
+      maintenanceTransferStart + 8_000,
+    );
+
+    const repairsTransferStart = repairsUi.indexOf('export function RepairToolTransfersPage');
+    expect(repairsTransferStart).toBeGreaterThan(-1);
+    const repairsTransferSurface = repairsUi.slice(
+      repairsTransferStart,
+      repairsTransferStart + 45_000,
+    );
+
+    expect(maintenanceTransferSurface).toContain('/api/repairs/tool-transfers/candidates?');
+    expect(repairsTransferSurface).toContain('/api/repairs/tool-transfers/candidates?');
+    expect(maintenanceTransferSurface).not.toContain("api.get('/api/workers?role=technician')");
+    expect(repairsTransferSurface).not.toContain("api.get('/api/workers?role=technician')");
   });
 
   it('does not let the standalone transfer form select an arbitrary sender', () => {

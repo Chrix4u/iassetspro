@@ -385,7 +385,44 @@ export async function PUT(
       }
     };
 
-    const recommendationSources = ['planner_suggested', 'technician_from_planner_recommendation'];
+    const findBlockingExecutionRequest = async (itemType: 'part' | 'tool', itemId: string) => {
+      if (itemType === 'part') {
+        return db.repairMaterialRequest.findFirst({
+          where: {
+            workOrderId: id,
+            itemId,
+            OR: [
+              { source: 'technician_from_planner_recommendation', status: { not: 'rejected' } },
+              { source: 'planner_suggested', status: { notIn: ['pending', 'rejected'] } },
+            ],
+          },
+          select: { id: true, status: true },
+          orderBy: { createdAt: 'desc' },
+        });
+      }
+
+      return db.repairToolRequest.findFirst({
+        where: {
+          workOrderId: id,
+          AND: [
+            {
+              OR: [
+                { toolId: itemId },
+                { items: { some: { toolId: itemId } } },
+              ],
+            },
+            {
+              OR: [
+                { source: 'technician_from_planner_recommendation', status: { not: 'rejected' } },
+                { source: 'planner_suggested', status: { notIn: ['pending', 'rejected'] } },
+              ],
+            },
+          ],
+        },
+        select: { id: true, status: true },
+        orderBy: { createdAt: 'desc' },
+      });
+    };
 
     if (action === 'reject_item' || action === 'remove_recommendation') {
       if (!canAmendRecommendations) {
@@ -400,31 +437,10 @@ export async function PUT(
         return NextResponse.json({ success: false, error: 'Valid itemType and itemId are required' }, { status: 400 });
       }
 
-      const activeRequest = itemType === 'part'
-        ? await db.repairMaterialRequest.findFirst({
-            where: {
-              workOrderId: id,
-              itemId,
-              source: { in: recommendationSources },
-              status: { notIn: ['rejected', 'closed', 'fully_returned'] },
-            },
-            select: { id: true, status: true },
-            orderBy: { createdAt: 'desc' },
-          })
-        : await db.repairToolRequest.findFirst({
-            where: {
-              workOrderId: id,
-              toolId: itemId,
-              source: { in: recommendationSources },
-              status: { notIn: ['rejected', 'returned'] },
-            },
-            select: { id: true, status: true },
-            orderBy: { createdAt: 'desc' },
-          });
-
-      if (activeRequest && activeRequest.status !== 'pending') {
+      const activeRequest = await findBlockingExecutionRequest(itemType as 'part' | 'tool', itemId);
+      if (activeRequest) {
         return NextResponse.json(
-          { success: false, error: `This recommendation is already in the ${activeRequest.status.replace(/_/g, ' ')} approval/issue stage and can no longer be removed here` },
+          { success: false, error: `This recommendation has already been submitted into the ${activeRequest.status.replace(/_/g, ' ')} approval/issue stage and can no longer be removed here` },
           { status: 409 },
         );
       }
@@ -445,7 +461,7 @@ export async function PUT(
             where: {
               workOrderId: id,
               itemId,
-              source: { in: recommendationSources },
+              source: 'planner_suggested',
               status: 'pending',
             },
             data: {
@@ -465,7 +481,7 @@ export async function PUT(
             where: {
               workOrderId: id,
               toolId: itemId,
-              source: { in: recommendationSources },
+              source: 'planner_suggested',
               status: 'pending',
             },
             data: {
@@ -509,6 +525,14 @@ export async function PUT(
         return NextResponse.json({ success: false, error: 'Valid itemType, itemId and positive quantity are required' }, { status: 400 });
       }
 
+      const activeRequest = await findBlockingExecutionRequest(itemType as 'part' | 'tool', itemId);
+      if (activeRequest) {
+        return NextResponse.json(
+          { success: false, error: `This recommendation has already been submitted into the ${activeRequest.status.replace(/_/g, ' ')} approval/issue stage and can no longer be amended here` },
+          { status: 409 },
+        );
+      }
+
       const parts = parseSuggestions(wo.suggestedParts);
       const tools = parseSuggestions(wo.suggestedTools);
 
@@ -538,7 +562,7 @@ export async function PUT(
             where: {
               workOrderId: id,
               itemId,
-              source: { in: recommendationSources },
+              source: 'planner_suggested',
               status: 'pending',
             },
             select: { id: true, unitCost: true },
@@ -562,9 +586,12 @@ export async function PUT(
           const pendingToolRequests = await tx.repairToolRequest.findMany({
             where: {
               workOrderId: id,
-              toolId: itemId,
-              source: { in: recommendationSources },
+              source: 'planner_suggested',
               status: 'pending',
+              OR: [
+                { toolId: itemId },
+                { items: { some: { toolId: itemId } } },
+              ],
             },
             select: { id: true },
           });
@@ -594,9 +621,9 @@ export async function PUT(
     }
 
     if (action === 'add_item') {
-      if (!canAmendRecommendations) {
+      if (!canManageRecommendations) {
         return NextResponse.json(
-          { success: false, error: 'Only assigned execution staff or accountable maintenance management can add a recommendation' },
+          { success: false, error: 'Only accountable maintenance planning can add a new recommendation; execution staff should use the normal material/tool request flow for extras' },
           { status: 403 },
         );
       }

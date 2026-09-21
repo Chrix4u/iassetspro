@@ -122,6 +122,27 @@ describe('repairHandoverResume.resumeConfirmedHandover', () => {
     });
   });
 
+  it('refuses resume when the designated receiver is no longer a maintenance technician', async () => {
+    mockDb.user.findUnique.mockResolvedValue({
+      id: 'tech-in',
+      status: 'active',
+      userRoles: [{
+        role: {
+          slug: 'maintenance_supervisor',
+          rolePermissions: [{ permission: { slug: 'work_orders.start' } }],
+        },
+      }],
+      directPerms: [],
+    });
+
+    const result = await resumeConfirmedHandover('wo-1', receiverSession);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('maintenance technician');
+    expect(mockExecuteTransition).not.toHaveBeenCalled();
+    expect(mockDb.workOrderTimeLog.create).not.toHaveBeenCalled();
+  });
+
   it('promotes a pending handover receiver from read-only custody to execution access', async () => {
     mockDb.workOrderTeamMember.findFirst.mockResolvedValue({
       id: 'member-1',

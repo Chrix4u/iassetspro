@@ -26,6 +26,18 @@ export async function GET(
         suggestedParts: true,
         suggestedTools: true,
         plantId: true,
+        materials: {
+          where: { status: 'planned' },
+          select: {
+            id: true,
+            itemId: true,
+            itemName: true,
+            quantity: true,
+            unitCost: true,
+            status: true,
+          },
+          orderBy: { createdAt: 'asc' },
+        },
         assignedTo: true,
         teamLeaderId: true,
         assignedSupervisorId: true,
@@ -69,25 +81,97 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
-    const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
-    const storedSuggestedTools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
+    const parseSuggestionArray = (value: string | null | undefined): Array<Record<string, unknown>> => {
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
 
-    // Older MR→WO conversions created canonical planner requests without a JSON
-    // suggestion snapshot (and, historically, materials were missing from the
-    // canonical pipeline entirely). Derive a display snapshot from the
-    // authoritative planner_suggested requests whenever the JSON projection is
-    // absent so existing work orders remain visible after reconciliation.
-    const suggestedParts = storedSuggestedParts.length > 0
-      ? storedSuggestedParts
-      : wo.repairMaterialRequests.map((mr) => ({
-          id: mr.id,
-          itemId: mr.itemId,
-          itemName: mr.itemName,
-          itemCode: mr.item?.itemCode || '',
-          quantity: mr.quantityRequested,
-          unit: mr.unit || 'each',
-          notes: '',
-        }));
+    let suggestedParts = parseSuggestionArray(wo.suggestedParts);
+    const storedSuggestedTools = parseSuggestionArray(wo.suggestedTools);
+
+    // Reconcile planner-selected materials from every durable source.
+    // Older/partial MR→WO conversions could persist WorkOrderMaterial without
+    // the suggestion JSON or canonical RepairMaterialRequest. Tools already
+    // had a request-backed fallback, so materials need equivalent resilience.
+    const materialItemIds = new Set<string>();
+    for (const suggestion of suggestedParts) {
+      if (typeof suggestion.itemId === 'string' && suggestion.itemId) {
+        materialItemIds.add(suggestion.itemId);
+      }
+    }
+    for (const material of wo.materials) {
+      if (material.itemId) materialItemIds.add(material.itemId);
+    }
+    for (const request of wo.repairMaterialRequests) {
+      if (request.itemId) materialItemIds.add(request.itemId);
+    }
+
+    const inventoryItems = materialItemIds.size > 0
+      ? await db.inventoryItem.findMany({
+          where: { id: { in: [...materialItemIds] } },
+          select: {
+            id: true,
+            itemCode: true,
+            unitOfMeasure: true,
+          },
+        })
+      : [];
+    const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+    const rejectedItemIds = new Set(
+      wo.repairMaterialRequests
+        .filter((request) => request.status === 'rejected' && request.itemId)
+        .map((request) => request.itemId as string),
+    );
+
+    const reconciledParts = new Map<string, Record<string, unknown>>();
+
+    // 1. Preserve planner snapshot rows when present.
+    for (const suggestion of suggestedParts) {
+      const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+      if (!itemId || rejectedItemIds.has(itemId)) continue;
+      reconciledParts.set(itemId, suggestion);
+    }
+
+    // 2. Recover planner materials that exist only in WorkOrderMaterial.
+    for (const material of wo.materials) {
+      if (!material.itemId || rejectedItemIds.has(material.itemId)) continue;
+      const item = inventoryById.get(material.itemId);
+      const current = reconciledParts.get(material.itemId);
+      reconciledParts.set(material.itemId, {
+        id: current?.id || material.id,
+        itemId: material.itemId,
+        itemName: current?.itemName || material.itemName || 'Planned material',
+        itemCode: current?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || material.quantity || 1,
+        unit: current?.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    // 3. Recover planner materials that exist only in RepairMaterialRequest.
+    for (const request of wo.repairMaterialRequests) {
+      if (!request.itemId || request.status === 'rejected') continue;
+      const item = inventoryById.get(request.itemId);
+      const current = reconciledParts.get(request.itemId);
+      reconciledParts.set(request.itemId, {
+        id: current?.id || request.id,
+        itemId: request.itemId,
+        itemName: current?.itemName || request.itemName || 'Planned material',
+        itemCode: current?.itemCode || request.item?.itemCode || item?.itemCode || '',
+        quantity: current?.quantity || request.quantityRequested || 1,
+        unit: current?.unit || request.unit || item?.unitOfMeasure || 'each',
+        notes: current?.notes || '',
+        ...current,
+      });
+    }
+
+    suggestedParts = [...reconciledParts.values()];
 
     const suggestedTools = storedSuggestedTools.length > 0
       ? storedSuggestedTools
@@ -200,6 +284,11 @@ export async function PUT(
           await tx.repairMaterialRequest.updateMany({
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { status: 'rejected', notes: `Rejected by ${session.fullName}` },
+          });
+          // Legacy conversions may have only the planned WO material row.
+          // Removing it prevents the reconciler from resurrecting a rejected item.
+          await tx.workOrderMaterial.deleteMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
           });
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
@@ -326,6 +415,10 @@ export async function PUT(
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { quantityRequested: quantity },
           });
+          await tx.workOrderMaterial.updateMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+            data: { quantity },
+          });
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
@@ -342,6 +435,80 @@ export async function PUT(
     }
 
     if (action === 'send_to_store') {
+      // Legacy/partial MR→WO conversions can contain a planned WorkOrderMaterial
+      // without the canonical planner_suggested RepairMaterialRequest. Repair
+      // that durable pipeline before notifying the store so a recovered item is
+      // not merely visible — it is actionable.
+      const plannedMaterials = await db.workOrderMaterial.findMany({
+        where: { workOrderId: id, status: 'planned', itemId: { not: null } },
+        select: {
+          id: true,
+          itemId: true,
+          itemName: true,
+          quantity: true,
+          unitCost: true,
+          totalCost: true,
+          requestedBy: true,
+        },
+      });
+
+      const existingPlannerMaterialRequests = await db.repairMaterialRequest.findMany({
+        where: { workOrderId: id, source: 'planner_suggested' },
+        select: { itemId: true },
+      });
+      const existingItemIds = new Set(
+        existingPlannerMaterialRequests
+          .map((request) => request.itemId)
+          .filter((itemId): itemId is string => Boolean(itemId)),
+      );
+
+      const missingMaterials = plannedMaterials.filter(
+        (material) => material.itemId && !existingItemIds.has(material.itemId),
+      );
+
+      if (missingMaterials.length > 0) {
+        const inventoryItems = await db.inventoryItem.findMany({
+          where: { id: { in: missingMaterials.map((material) => material.itemId as string) } },
+          select: {
+            id: true,
+            name: true,
+            unitOfMeasure: true,
+            unitCost: true,
+          },
+        });
+        const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+        await db.$transaction(async (tx) => {
+          for (const material of missingMaterials) {
+            const itemId = material.itemId as string;
+            const inventoryItem = inventoryById.get(itemId);
+            const quantity = Number(material.quantity || 1);
+            const unitCost = Number(material.unitCost ?? inventoryItem?.unitCost ?? 0);
+            await tx.repairMaterialRequest.create({
+              data: {
+                workOrderId: id,
+                itemId,
+                itemName: material.itemName || inventoryItem?.name || 'Planned Material',
+                quantityRequested: quantity,
+                quantityApproved: 0,
+                quantityIssued: 0,
+                quantityReturned: 0,
+                unit: inventoryItem?.unitOfMeasure || 'each',
+                unitCost,
+                estimatedCost: Number(material.totalCost ?? (quantity * unitCost)),
+                urgency: 'normal',
+                reason: `Planned for work order ${id}`,
+                notes: 'Recovered from planned work-order material before store submission',
+                plantId: wo.plantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                requestedById: material.requestedBy || session.userId,
+              },
+            });
+          }
+        });
+      }
+
       const pendingMatReqs = await db.repairMaterialRequest.findMany({
         where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
       });

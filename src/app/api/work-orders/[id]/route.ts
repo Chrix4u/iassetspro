@@ -144,6 +144,103 @@ export async function GET(
     if (!wo.repairMaterialRequests) {
       (wo as Record<string, unknown>).repairMaterialRequests = [];
     }
+
+    // A planner-selected material can exist durably in more than one
+    // representation. The WO details response must never make it disappear
+    // merely because the canonical RepairMaterialRequest projection is missing
+    // on an older/partial conversion.
+    const actualMaterialRequests = Array.isArray(wo.repairMaterialRequests)
+      ? [...wo.repairMaterialRequests]
+      : [];
+    const representedItemIds = new Set(
+      actualMaterialRequests
+        .map((request) => request.itemId)
+        .filter((itemId): itemId is string => Boolean(itemId)),
+    );
+    const projectedMaterialRequests: Array<Record<string, unknown>> = [];
+
+    // 1) Recover planned WorkOrderMaterial rows.
+    for (const material of wo.materials || []) {
+      if (!material.itemId || representedItemIds.has(material.itemId) || material.status !== 'planned') continue;
+
+      representedItemIds.add(material.itemId);
+      projectedMaterialRequests.push({
+        id: `planned:${material.id}`,
+        workOrderId: wo.id,
+        itemId: material.itemId,
+        itemName: material.itemName || 'Planned material',
+        quantityRequested: material.quantity || 1,
+        quantityApproved: 0,
+        quantityIssued: 0,
+        quantityReturned: 0,
+        unit: 'each',
+        unitCost: material.unitCost || 0,
+        estimatedCost: material.totalCost || 0,
+        urgency: 'normal',
+        reason: 'Planner-selected material',
+        notes: 'Planned during maintenance-request conversion',
+        plantId: wo.plantId,
+        source: 'planner_suggested',
+        status: 'planned',
+        requestedById: material.requestedBy || null,
+        requestedBy: material.requester || wo.planner || null,
+        supervisorApprovedBy: null,
+        storekeeperApprovedBy: null,
+        issuedByUser: null,
+        item: null,
+        projectionOnly: true,
+        createdAt: material.createdAt,
+      });
+    }
+
+    // 2) Recover the JSON suggestion snapshot if neither canonical request nor
+    // planned material row represented the item.
+    try {
+      const storedSuggestedParts = JSON.parse(wo.suggestedParts || '[]') as Array<Record<string, unknown>>;
+      for (const suggestion of Array.isArray(storedSuggestedParts) ? storedSuggestedParts : []) {
+        const itemId = typeof suggestion.itemId === 'string' ? suggestion.itemId : '';
+        if (!itemId || representedItemIds.has(itemId)) continue;
+
+        representedItemIds.add(itemId);
+        const quantity = Number(suggestion.quantity ?? 1);
+        const unitCost = Number(suggestion.unitCost ?? 0);
+        projectedMaterialRequests.push({
+          id: `planned:snapshot:${itemId}`,
+          workOrderId: wo.id,
+          itemId,
+          itemName: typeof suggestion.itemName === 'string' ? suggestion.itemName : 'Planned material',
+          quantityRequested: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+          quantityApproved: 0,
+          quantityIssued: 0,
+          quantityReturned: 0,
+          unit: typeof suggestion.unit === 'string' && suggestion.unit ? suggestion.unit : 'each',
+          unitCost: Number.isFinite(unitCost) ? unitCost : 0,
+          estimatedCost: Number.isFinite(quantity) && Number.isFinite(unitCost) ? quantity * unitCost : 0,
+          urgency: 'normal',
+          reason: 'Planner-selected material',
+          notes: typeof suggestion.notes === 'string' ? suggestion.notes : '',
+          plantId: wo.plantId,
+          source: 'planner_suggested',
+          status: 'planned',
+          requestedById: null,
+          requestedBy: wo.planner || null,
+          supervisorApprovedBy: null,
+          storekeeperApprovedBy: null,
+          issuedByUser: null,
+          item: null,
+          projectionOnly: true,
+          createdAt: wo.createdAt,
+        });
+      }
+    } catch {
+      // Invalid legacy JSON must never hide canonical/planned material rows.
+    }
+
+    (wo as Record<string, unknown>).repairMaterialRequests = [
+      ...actualMaterialRequests,
+      ...projectedMaterialRequests,
+    ];
+
     if (!wo.workOrderComponents) {
       (wo as Record<string, unknown>).workOrderComponents = [];
     }

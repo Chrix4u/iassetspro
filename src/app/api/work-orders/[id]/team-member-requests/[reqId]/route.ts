@@ -139,15 +139,17 @@ export async function PUT(
         );
       }
 
-      if (teamRequest.requestedTrade) {
-        const isTechnician = assignee.userRoles.some((row) => row.role.slug === 'maintenance_technician');
-        if (!isTechnician) {
-          return NextResponse.json(
-            { success: false, error: 'Selected user is not an active maintenance technician.' },
-            { status: 422 },
-          );
-        }
+      const isTechnician = assignee.userRoles.some(
+        (row) => row.role.slug === 'maintenance_technician',
+      );
+      if (!isTechnician) {
+        return NextResponse.json(
+          { success: false, error: 'Selected user is not an active maintenance technician.' },
+          { status: 422 },
+        );
+      }
 
+      if (teamRequest.requestedTrade) {
         const requestedSkill = teamRequest.requestedTrade.trim().toLowerCase();
         const skillLabels = [
           assignee.primaryTrade,

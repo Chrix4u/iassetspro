@@ -49,11 +49,19 @@ describe('RWOP pending resource request cancellation contract', () => {
   it('cancels material and tool requests from WO details and refreshes recommendations', () => {
     expect(workOrderUi).toContain('handleCancelMaterialRequest');
     expect(workOrderUi).toContain('handleCancelToolRequest');
-    expect(workOrderUi).toContain('api.delete(`/api/repairs/material-requests/${requestRow.id}`)');
-    expect(workOrderUi).toContain('api.delete(`/api/repairs/tool-requests/${requestRow.id}`)');
-    expect(workOrderUi).toContain("toast.success('Material request cancelled')");
-    expect(workOrderUi).toContain("toast.success('Tool request cancelled')");
+    expect(workOrderUi).toContain('setResourceCancelTarget');
+    expect(workOrderUi).toContain('confirmPendingResourceCancel');
+    expect(workOrderUi).toContain("kind === 'material'");
+    expect(workOrderUi).toContain('/api/repairs/material-requests/');
+    expect(workOrderUi).toContain('/api/repairs/tool-requests/');
+    expect(workOrderUi).toContain("'Material request cancelled'");
+    expect(workOrderUi).toContain("'Tool request cancelled'");
     expect(workOrderUi).toContain('fetchSuggestedItems();');
+    expect(workOrderUi).toContain('title={resourceCancelTarget?.kind');
+    expect(workOrderUi).toContain('confirmLabel="Cancel Request"');
+    expect(workOrderUi).toContain('variant="destructive"');
+    expect(workOrderUi).not.toContain('confirm(`Cancel the pending material request');
+    expect(workOrderUi).not.toContain('confirm(`Cancel the pending tool request');
     expect(workOrderUi).toContain('Cancel pending material request');
     expect(workOrderUi).toContain('Cancel pending tool request');
   });

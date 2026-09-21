@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { mockDb, mockGetSession, mockAuthorizePlant, mockCanViewWorkOrder } = vi.hoisted(() => ({
+const {
+  mockDb,
+  mockGetSession,
+  mockAuthorizePlant,
+  mockCanViewWorkOrder,
+  mockGetUnavailableOperationalModules,
+} = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findUnique: vi.fn() },
     inventoryItem: { findMany: vi.fn() },
@@ -9,6 +15,7 @@ const { mockDb, mockGetSession, mockAuthorizePlant, mockCanViewWorkOrder } = vi.
   mockGetSession: vi.fn(),
   mockAuthorizePlant: vi.fn(),
   mockCanViewWorkOrder: vi.fn(),
+  mockGetUnavailableOperationalModules: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -23,6 +30,9 @@ vi.mock('@/lib/plant-auth-helpers', () => ({
 vi.mock('@/services/workOrderAccess.service', () => ({
   canManageWorkOrder: vi.fn(),
   canViewWorkOrder: mockCanViewWorkOrder,
+}));
+vi.mock('@/lib/module-access.server', () => ({
+  getUnavailableOperationalModules: mockGetUnavailableOperationalModules,
 }));
 
 import { GET } from '../route';
@@ -44,6 +54,7 @@ describe('GET /api/work-orders/[id]/suggested-items material reconciliation', ()
     mockGetSession.mockReturnValue(session);
     mockAuthorizePlant.mockResolvedValue({ ok: true });
     mockCanViewWorkOrder.mockReturnValue(true);
+    mockGetUnavailableOperationalModules.mockResolvedValue([]);
     mockDb.inventoryItem.findMany.mockResolvedValue([
       { id: 'item-1', itemCode: 'BRG-001', unitOfMeasure: 'each' },
     ]);

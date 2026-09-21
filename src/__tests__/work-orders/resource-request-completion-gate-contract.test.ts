@@ -73,13 +73,16 @@ describe('RWOP resource request approval and completion gate contract', () => {
   it('shows the requested trade to the planner, requires an assignee, and notifies the assigned technician through the normal notification/SMS pipeline', () => {
     const maintenance = read('src/components/modules/MaintenancePages.tsx');
     const assistanceRoute = read('src/app/api/work-orders/[id]/team-member-requests/[reqId]/route.ts');
+    const candidatesRoute = read('src/app/api/work-orders/[id]/team-candidates/route.ts');
     const toolCreateRoute = read('src/app/api/repairs/tool-requests/route.ts');
     const notifications = read('src/lib/notifications.ts');
 
     expect(maintenance).toContain('<strong>Trade needed:</strong> {req.requestedTrade}');
-    expect(maintenance).toContain('/api/workers?role=technician');
-    expect(maintenance).toContain('worker.skills');
+    expect(maintenance).toContain('/team-candidates?');
     expect(maintenance).toContain('Only active technicians in this plant with the requested trade/skill are listed.');
+    expect(candidatesRoute).toContain("role: { slug: 'maintenance_technician' }");
+    expect(candidatesRoute).toContain('user.userSkills.flatMap');
+    expect(candidatesRoute).toContain('return labels.includes(normalizedTrade)');
     expect(maintenance).toContain("'Assign & Approve'");
     expect(assistanceRoute).toContain('Please select a technician to assign for this trade request.');
     expect(assistanceRoute).toContain("row.role.slug === 'maintenance_technician'");

@@ -587,6 +587,9 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(suggestedRoute).toContain("action === 'submit_recommendations'");
     expect(suggestedRoute).toContain('Only assigned execution staff can submit recommended resources for approval');
     expect(suggestedRoute).toContain("source: 'technician_from_planner_recommendation'");
+    expect(suggestedRoute).toContain("status: { notIn: ['pending', 'rejected'] }");
+    expect(suggestedRoute).toContain('Superseded when');
+    expect(suggestedRoute).toContain("if (request.status === 'rejected' && !current) continue");
     expect(suggestedRoute).toContain("action: 'decline_planner_resource_recommendation'");
     expect(suggestedRoute).toContain("action: 'amend_planner_resource_recommendation'");
   });

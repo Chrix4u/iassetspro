@@ -79,7 +79,15 @@ export async function GET(
             status: true,
             toolId: true,
             tool: { select: { toolCode: true, status: true } },
-            items: { select: { toolId: true, quantityRequested: true } },
+            items: {
+              select: {
+                toolId: true,
+                toolName: true,
+                toolCode: true,
+                quantityRequested: true,
+                tool: { select: { id: true, name: true, toolCode: true, status: true } },
+              },
+            },
             source: true,
           },
         },
@@ -185,18 +193,64 @@ export async function GET(
 
     suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : [];
 
-    const suggestedTools = !toolResourcesOperational
-      ? []
-      : storedSuggestedTools.length > 0
-      ? storedSuggestedTools
-      : wo.repairToolRequests.map((tr) => ({
-          id: tr.id,
-          toolId: tr.toolId,
-          toolName: tr.toolName,
-          toolCode: tr.tool?.toolCode || '',
-          quantity: tr.items.find((item) => item.toolId === tr.toolId)?.quantityRequested || 1,
-          notes: '',
-        }));
+    // Reconcile planner-selected tools from every durable representation.
+    // A request may keep the tool only in RepairToolRequestItem, and older
+    // conversions may keep only the suggestedTools JSON snapshot.
+    const rejectedToolIds = new Set<string>();
+    if (toolResourcesOperational) {
+      for (const request of wo.repairToolRequests) {
+        if (request.status !== 'rejected') continue;
+        if (request.toolId) rejectedToolIds.add(request.toolId);
+        for (const item of request.items) {
+          if (item.toolId) rejectedToolIds.add(item.toolId);
+        }
+      }
+    }
+
+    const reconciledTools = new Map<string, Record<string, unknown>>();
+
+    if (toolResourcesOperational) {
+      for (const suggestion of storedSuggestedTools) {
+        const toolId = typeof suggestion.toolId === 'string' ? suggestion.toolId : '';
+        if (!toolId || rejectedToolIds.has(toolId)) continue;
+        reconciledTools.set(toolId, suggestion);
+      }
+
+      for (const request of wo.repairToolRequests) {
+        if (request.status === 'rejected') continue;
+        const requestItems = request.items.length > 0
+          ? request.items
+          : request.toolId
+            ? [{
+                toolId: request.toolId,
+                toolName: request.toolName,
+                toolCode: request.tool?.toolCode || '',
+                quantityRequested: 1,
+                tool: request.tool,
+              }]
+            : [];
+
+        for (const item of requestItems) {
+          const toolId = item.toolId || request.toolId;
+          if (!toolId || rejectedToolIds.has(toolId)) continue;
+
+          const current = reconciledTools.get(toolId) || {};
+          reconciledTools.set(toolId, {
+            id: current.id || `${request.id}:${toolId}`,
+            toolId,
+            toolName: current.toolName || item.tool?.name || item.toolName || request.toolName || 'Planned tool',
+            toolCode: current.toolCode || item.tool?.toolCode || item.toolCode || request.tool?.toolCode || '',
+            quantity: current.quantity || item.quantityRequested || 1,
+            notes: current.notes || '',
+            ...current,
+          });
+        }
+      }
+    }
+
+    const suggestedTools = toolResourcesOperational
+      ? [...reconciledTools.values()]
+      : [];
 
     const partsWithStatus = suggestedParts.map((p: Record<string, unknown>) => {
       const matReq = wo.repairMaterialRequests.find(
@@ -215,7 +269,7 @@ export async function GET(
 
     const toolsWithStatus = suggestedTools.map((t: Record<string, unknown>) => {
       const toolReq = wo.repairToolRequests.find(
-        (tr: { toolId: string | null }) => tr.toolId === t.toolId
+        (tr) => tr.toolId === t.toolId || tr.items.some((item) => item.toolId === t.toolId)
       );
       return {
         ...t,

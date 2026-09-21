@@ -11,6 +11,7 @@ describe('MR → WO planner material visibility', () => {
   const planningService = read('src/services/repairPlanning.service.ts');
   const woDetailApi = read('src/app/api/work-orders/[id]/route.ts');
   const suggestedItemsApi = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
+  const technicianPanels = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
   it('sends planner-selected materials during MR conversion', () => {
     expect(maintenanceUi).toContain(
@@ -36,6 +37,33 @@ describe('MR → WO planner material visibility', () => {
     expect(suggestedItemsApi).toContain('for (const material of wo.materials)');
     expect(suggestedItemsApi).toContain('for (const request of wo.repairMaterialRequests)');
     expect(suggestedItemsApi).toContain('suggestedParts = inventoryResourcesOperational ? [...reconciledParts.values()] : []');
+  });
+
+  it('keeps planner-selected tools visible when canonical tool requests are missing', () => {
+    expect(planningService).toContain('suggestedTools: JSON.stringify(suggestedTools)');
+    expect(woDetailApi).toContain('const actualToolRequests');
+    expect(woDetailApi).toContain('const projectedToolRequests');
+    expect(woDetailApi).toContain("JSON.parse(wo.suggestedTools || '[]')");
+    expect(woDetailApi).toContain("source: 'planner_suggested'");
+    expect(woDetailApi).toContain('...projectedToolRequests');
+  });
+
+  it('reconciles suggested tools from request headers and request items', () => {
+    expect(suggestedItemsApi).toContain('const reconciledTools = new Map');
+    expect(suggestedItemsApi).toContain('for (const item of request.items)');
+    expect(suggestedItemsApi).toContain('for (const request of wo.repairToolRequests)');
+    expect(suggestedItemsApi).toContain('tr.items.some((item) => item.toolId === t.toolId)');
+    expect(suggestedItemsApi).toContain('suggestedTools = toolResourcesOperational');
+  });
+
+  it('keeps technician WO resource lookups scoped and projects planner-tool snapshots', () => {
+    expect(technicianPanels).toContain("'/api/inventory?mode=lookup&limit=100'");
+    expect(technicianPanels).toContain("'/api/tools?mode=lookup&status=available&limit=100'");
+    expect(technicianPanels).not.toContain("api.get<InventoryOption[]>('/api/inventory')");
+    expect(technicianPanels).not.toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
+    expect(technicianPanels).toContain('const plannerToolSnapshot = (() => {');
+    expect(technicianPanels).toContain('const projectedPlannerToolRequests = plannerToolSnapshot');
+    expect(technicianPanels).toContain('const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests]');
   });
 
   it('hydrates planner materials from the main WO payload before auxiliary requests finish', () => {

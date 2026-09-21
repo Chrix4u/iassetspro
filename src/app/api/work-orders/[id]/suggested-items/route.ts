@@ -78,7 +78,7 @@ export async function GET(
             toolName: true,
             status: true,
             toolId: true,
-            tool: { select: { toolCode: true, status: true } },
+            tool: { select: { id: true, name: true, toolCode: true, status: true } },
             items: {
               select: {
                 toolId: true,

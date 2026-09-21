@@ -111,13 +111,15 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
     expect(removal).toContain('Use the canonical assignment workflow');
   });
 
-  it('validates assistance targets and suggested resources against the WO plant', () => {
+  it('validates assistance targets and recommended resources against plant and execution ownership', () => {
     const assistance = read('src/app/api/work-orders/[id]/team-member-requests/route.ts');
     const suggested = read('src/app/api/work-orders/[id]/suggested-items/route.ts');
 
     expect(assistance).toContain('Requested user does not have access to the work order plant');
-    expect(suggested).toContain('Inventory item belongs to a different plant');
-    expect(suggested).toContain('Tool belongs to a different plant');
-    expect(suggested).toContain("userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } }");
+    expect(suggested).toContain('Inventory item is unavailable for this plant');
+    expect(suggested).toContain('Tool is unavailable for this plant');
+    expect(suggested).toContain('Only assigned execution staff can submit recommended resources for approval');
+    expect(suggested).toContain("source: 'technician_from_planner_recommendation'");
+    expect(suggested).not.toContain("userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } }");
   });
 });

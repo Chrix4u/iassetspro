@@ -25,6 +25,10 @@ const repairsUi = fs.readFileSync(
   path.join(process.cwd(), 'src/components/modules/RepairsPagesLegacy.tsx'),
   'utf8',
 );
+const workOrderUi = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
+  'utf8',
+);
 
 describe('resource request approval accountability', () => {
   it('allows only the assigned maintenance supervisor at the normal supervisor stage', () => {
@@ -84,6 +88,20 @@ describe('resource request approval accountability', () => {
     expect(repairsUi).toContain("canApproveAsSupervisor(r, user, 'repair_tool_requests.update')");
     expect(repairsUi).toContain("canApproveAsStore(user, 'repair_material_requests.update')");
     expect(repairsUi).toContain("canApproveAsStore(user, 'repair_tool_requests.update')");
+  });
+
+  it('mirrors accountable supervisor/store authorization on WO Details', () => {
+    expect(workOrderUi).toContain('const canReviewMaterialRequestAsSupervisorLocal');
+    expect(workOrderUi).toContain("hasPermission('repair_material_requests.update')");
+    expect(workOrderUi).toContain("slugs.includes('maintenance_manager')");
+    expect(workOrderUi).toContain("slugs.includes('plant_manager')");
+    expect(workOrderUi).toContain("slugs.includes('maintenance_supervisor')");
+    expect(workOrderUi).toContain('wo?.assignedSupervisorId === user.id');
+    expect(workOrderUi).toContain('mr.status === \'pending\' && canReviewMaterialRequestAsSupervisorLocal()');
+    expect(workOrderUi).toContain('const isStoreOrAdminLocal');
+    expect(workOrderUi).toContain("slugs.includes('store_keeper')");
+    expect(workOrderUi).toContain("slugs.includes('inventory_manager')");
+    expect(workOrderUi).toContain("slugs.includes('tools_shop_attendant')");
   });
 
   it('keeps store-stage actors aligned with the authorized store roles', () => {

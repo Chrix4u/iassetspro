@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
@@ -93,7 +94,22 @@ export async function GET(
         })
       : null;
 
-    return NextResponse.json({ success: true, data: { ...mr, department } });
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'assets',
+      'work_orders',
+    ]));
+    const redacted: Record<string, unknown> = { ...mr, department };
+
+    if (unavailableModules.has('assets')) {
+      redacted.asset = null;
+      redacted.assetId = null;
+    }
+    if (unavailableModules.has('work_orders')) {
+      redacted.workOrder = null;
+      redacted.workOrderId = null;
+    }
+
+    return NextResponse.json({ success: true, data: redacted });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

@@ -17,6 +17,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const dashboardApi = read('src/app/api/dashboard/stats/route.ts');
   const repairsUatApi = read('e2e/repairs/helpers/api.ts');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
+  const stateMachine = read('src/lib/state-machine.ts');
   const repairs = read('src/components/modules/RepairsPagesLegacy.tsx');
   const inventoryApi = read('src/app/api/inventory/route.ts');
   const toolsApi = read('src/app/api/tools/route.ts');
@@ -155,6 +156,40 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(maintenance).toContain("a.page !== 'pm-calendar' || pmEnabled");
     expect(maintenance).toContain('{pmEnabled && <Card');
     expect(maintenance).toContain("...(pmEnabled ? [{ type: 'Preventive'");
+  });
+
+  it('filters work-order lifecycle transitions by effective permission as well as role', () => {
+    expect(stateMachine).toContain('function hasEffectiveTransitionPermission(');
+    expect(stateMachine).toContain("case 'assigned':");
+    expect(stateMachine).toContain("'work_orders.assign_supervisor', 'work_orders.assign_technician'");
+    expect(stateMachine).toContain("case 'completed':");
+    expect(stateMachine).toContain("return hasAny('work_orders.complete')");
+    expect(stateMachine).toContain("case 'verified':");
+    expect(stateMachine).toContain("return hasAny('work_orders.verify')");
+    expect(stateMachine).toContain("case 'cancelled':");
+    expect(stateMachine).toContain("return hasAny('work_orders.cancel')");
+    expect(stateMachine).toContain('hasEffectiveTransitionPermission(entityType, currentStatus, t.toStatus, session)');
+  });
+
+  it('matches direct team-management visibility to accountable assignment authority', () => {
+    expect(maintenance).toContain('const hasAssignmentPermission = admin');
+    expect(maintenance).toContain("hasPermission('work_orders.assign_supervisor')");
+    expect(maintenance).toContain("hasPermission('work_orders.assign_technician')");
+    expect(maintenance).toContain("['maintenance_manager', 'plant_manager'].includes(slug)");
+    expect(maintenance).toContain('wo.assignedSupervisorId === user.id');
+    expect(maintenance).toContain('wo.plannerId === user.id');
+    expect(maintenance).toContain('wo.assignedById === user.id');
+    expect(maintenance).toContain('() => canManageTeamDirectly');
+    expect(maintenance).not.toContain("if (hasPermission('work_orders.assign_supervisor')) return true");
+  });
+
+  it('hides unauthorized execution controls instead of rendering disabled actions', () => {
+    expect(maintenance).toContain('const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO');
+    expect(maintenance).toContain('{canPerformWorkActions && <Button size="sm" variant="ghost"');
+    expect(maintenance).toContain('{canPerformWorkActions && <Button size="sm" variant="outline"');
+    expect(maintenance).toContain('{toolResourcesEnabled && canPerformWorkActions && <button');
+    expect(maintenance).toContain('{materialResourcesEnabled && canPerformWorkActions && <button');
+    expect(maintenance).toContain("!isWOFinalized && canPerformWorkActions && (");
   });
 
   it('never lets a read-only team row disable the primary assignee resource controls', () => {

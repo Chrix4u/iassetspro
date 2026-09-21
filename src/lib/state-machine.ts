@@ -294,6 +294,50 @@ function hasAllowedRole(
   return allowedRoleSlugs.some((slug) => session.roles.includes(slug));
 }
 
+/**
+ * Role membership defines who may participate in a lifecycle transition, while
+ * effective permissions remain the authoritative capability switch. This keeps
+ * customized/revoked RBAC grants aligned with both the API and the UI.
+ */
+function hasEffectiveTransitionPermission(
+  entityType: EntityType,
+  fromStatus: string | null,
+  toStatus: string,
+  session: SessionLike,
+): boolean {
+  if (isAdmin(session)) return true;
+  if (entityType !== 'work_order') return true;
+
+  const hasAny = (...permissions: string[]) =>
+    permissions.some((permission) => session.permissions.includes(permission));
+
+  switch (toStatus) {
+    case 'draft':
+      return hasAny('work_orders.create', 'work_orders.update');
+    case 'assigned':
+      return hasAny('work_orders.assign_supervisor', 'work_orders.assign_technician');
+    case 'in_progress':
+      return fromStatus === 'assigned'
+        ? hasAny('work_orders.start')
+        : hasAny('work_orders.update');
+    case 'completed':
+      return hasAny('work_orders.complete');
+    case 'verified':
+      return hasAny('work_orders.verify');
+    case 'closed':
+      return hasAny('work_orders.close', 'work_orders.update');
+    case 'cancelled':
+      return hasAny('work_orders.cancel');
+    case 'waiting_parts':
+    case 'waiting_tools':
+    case 'waiting_shutdown':
+    case 'waiting_permit':
+      return hasAny('work_orders.start', 'work_orders.update');
+    default:
+      return hasAny('work_orders.update');
+  }
+}
+
 function transitionConflictMessage(
   entityType: EntityType,
   entityId: string,
@@ -358,6 +402,13 @@ export async function checkTransition(
     return {
       allowed: false,
       reason: `Your role (${session.roles.join(', ')}) does not allow this transition. Required roles: ${allowedRoleSlugs.join(', ')}.`,
+    };
+  }
+
+  if (!hasEffectiveTransitionPermission(entityType, fromStatus, toStatus, session)) {
+    return {
+      allowed: false,
+      reason: `Your effective permissions do not allow the transition from "${fromStatus ?? 'initial'}" to "${toStatus}".`,
     };
   }
 
@@ -546,6 +597,7 @@ export async function getAvailableTransitions(
     }))
     .filter((t) => {
       if (admin) return true;
-      return t.allowedRoleSlugs.some((slug) => session.roles.includes(slug));
+      if (!t.allowedRoleSlugs.some((slug) => session.roles.includes(slug))) return false;
+      return hasEffectiveTransitionPermission(entityType, currentStatus, t.toStatus, session);
     });
 }

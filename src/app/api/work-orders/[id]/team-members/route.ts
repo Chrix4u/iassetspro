@@ -84,6 +84,7 @@ export async function POST(
         fullName: true,
         username: true,
         status: true,
+        userRoles: { select: { role: { select: { slug: true } } } },
         plantAccess: { where: { plantId: woPlantId }, select: { id: true } },
       },
     });
@@ -92,6 +93,15 @@ export async function POST(
     }
     if (user.plantAccess.length === 0) {
       return NextResponse.json({ success: false, error: 'Selected user does not have access to the work order plant' }, { status: 400 });
+    }
+    const isMaintenanceTechnician = user.userRoles.some(
+      (row) => row.role.slug === 'maintenance_technician',
+    );
+    if (!isMaintenanceTechnician) {
+      return NextResponse.json(
+        { success: false, error: 'Selected user must be an active maintenance technician' },
+        { status: 422 },
+      );
     }
 
     if (wo.assignedTo === userId || wo.teamLeaderId === userId) {

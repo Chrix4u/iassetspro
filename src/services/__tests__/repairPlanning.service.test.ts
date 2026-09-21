@@ -608,10 +608,11 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(suggestedRoute).toContain('const plannedMaterials = inventoryResourcesOperational ? await db.workOrderMaterial.findMany');
     expect(suggestedRoute).toContain('const existingPlannerMaterialRequests = inventoryResourcesOperational ? await db.repairMaterialRequest.findMany');
     expect(suggestedRoute).toContain('Recovered from planned work-order material before store submission');
-    expect(suggestedRoute).toContain('storedSuggestedTools.length > 0');
+    expect(suggestedRoute).toContain('const reconciledTools = new Map');
+    expect(suggestedRoute).toContain('for (const request of wo.repairToolRequests)');
+    expect(suggestedRoute).toContain('for (const item of request.items)');
     expect(suggestedRoute).toContain('toolResourcesOperational');
     expect(suggestedRoute).toContain('inventoryResourcesOperational');
-    expect(suggestedRoute).toContain('wo.repairToolRequests.map');
   });
 });
 

@@ -118,6 +118,6 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
     expect(assistance).toContain('Requested user does not have access to the work order plant');
     expect(suggested).toContain('Inventory item belongs to a different plant');
     expect(suggested).toContain('Tool belongs to a different plant');
-    expect(suggested).toContain("userRoles: { some: { role: { slug: { in: ['storekeeper', 'admin'] } } } }");
+    expect(suggested).toContain("userRoles: { some: { role: { slug: { in: ['store_keeper', 'inventory_manager', 'tools_shop_attendant', 'admin'] } } } }");
   });
 });

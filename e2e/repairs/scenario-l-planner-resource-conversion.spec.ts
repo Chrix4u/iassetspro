@@ -143,6 +143,9 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   await navigateToWODetail(techPage, wo.id);
 
   await expect(
+    techPage.getByText(material.name, { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
     techPage.getByText(visibleTool.toolName, { exact: true }).first(),
   ).toBeVisible({ timeout: 15_000 });
 

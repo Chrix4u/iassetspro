@@ -162,7 +162,7 @@ export function MaintenanceRequestsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
+  const { hasPermission, user, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
   // Track autoOpen to avoid race condition between filter effect and fetch effect
@@ -3077,7 +3077,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const { hasPermission, user, isAdmin } = useAuthStore();
+  const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);

@@ -621,6 +621,9 @@ describe('MR conversion material reconciliation source contract', () => {
     expect(detailsUi).toContain("action: 'submit_recommendations'");
     expect(detailsUi).toContain('Request Extra Material');
     expect(detailsUi).toContain('Request Extra Tool');
+    expect(detailsUi).toContain('Materials Issued');
+    expect(detailsUi).toContain('request.quantityIssued || 0');
+    expect(detailsUi).not.toContain('<p className="text-lg font-bold">{wo.materials?.length || 0}</p>');
     expect(detailsUi).toContain("m.status === 'planned' && m.itemId");
   });
 });

@@ -345,10 +345,17 @@ export async function PUT(
               )),
             },
           });
-          await tx.workOrderMaterial.updateMany({
+          const plannedMaterials = await tx.workOrderMaterial.findMany({
             where: { workOrderId: id, itemId, status: 'planned' },
-            data: { quantity },
+            select: { id: true, unitCost: true },
           });
+          for (const material of plannedMaterials) {
+            const unitCost = material.unitCost ?? 0;
+            await tx.workOrderMaterial.update({
+              where: { id: material.id },
+              data: { quantity, totalCost: unitCost * quantity },
+            });
+          }
 
           const pendingRequests = await tx.repairMaterialRequest.findMany({
             where: {

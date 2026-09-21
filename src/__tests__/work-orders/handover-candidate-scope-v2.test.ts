@@ -45,6 +45,17 @@ describe('work-order handover candidate scope', () => {
     expect(capabilities).toContain("hasPermission(session, 'time_logs.create')");
   });
 
+  it('routes completed and verified rework through the canonical rework endpoint', () => {
+    const ui = read('src/components/modules/MaintenancePages.tsx');
+
+    expect(ui).toContain("const isRework = t.toStatus === 'in_progress'");
+    expect(ui).toContain("['completed', 'verified'].includes(wo.status)");
+    expect(ui).toContain('actionName = isRework');
+    expect(ui).toContain("case 'rework':");
+    expect(ui).toContain('/api/work-orders/${id}/rework');
+    expect(ui).toContain('label: isRework');
+    expect(ui).toContain("'Request Rework'");
+  });
   it('requires explicit handover execution permission at the route boundary', () => {
     const route = read('src/app/api/work-orders/[id]/handover/route.ts');
     expect(route).toContain("hasAnyPermission(session, ['work_orders.update', 'work_orders.start'])");

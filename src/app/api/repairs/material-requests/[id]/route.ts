@@ -171,7 +171,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const existing = await db.repairMaterialRequest.findUnique({
       where: { id },
       include: {
-        workOrder: { select: { assignedSupervisorId: true } },
+        workOrder: { select: { assignedSupervisorId: true, plannerId: true } },
       },
     });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
@@ -213,7 +213,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
             itemId: existing.itemId,
             status: 'requested',
           },
-          data: { status: 'planned' },
+          data: {
+            status: 'planned',
+            ...(existing.workOrder?.plannerId
+              ? { requestedBy: existing.workOrder.plannerId }
+              : {}),
+          },
         });
       }
 

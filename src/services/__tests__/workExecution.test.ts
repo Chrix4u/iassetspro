@@ -359,7 +359,7 @@ describe('Completion Authority — multi-tech vs single-tech governance', () => 
       'work_order',
       'completed',
       'in_progress',
-      makeSession(['supervisor'], ['work_orders.update']),
+      makeSession(['supervisor'], ['work_orders.verify']),
     );
     expect(result.allowed).toBe(true);
     expect(result.transition?.requiresReason).toBe(true);
@@ -373,7 +373,7 @@ describe('Completion Authority — multi-tech vs single-tech governance', () => 
       'work_order',
       'verified',
       'in_progress',
-      makeSession(['supervisor'], ['work_orders.update']),
+      makeSession(['supervisor'], ['work_orders.verify']),
     );
     expect(result.allowed).toBe(true);
     expect(result.transition?.requiresReason).toBe(true);

@@ -7,6 +7,7 @@ const {
   mockGetPlantScope,
   mockCanAccessPlantStrict,
   mockCanViewWorkOrder,
+  mockGetUnavailableOperationalModules,
 } = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findUnique: vi.fn() },
@@ -15,6 +16,7 @@ const {
   mockGetPlantScope: vi.fn(),
   mockCanAccessPlantStrict: vi.fn(),
   mockCanViewWorkOrder: vi.fn(),
+  mockGetUnavailableOperationalModules: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -33,6 +35,9 @@ vi.mock('@/lib/plant-auth-helpers', () => ({
 vi.mock('@/services/workOrderAccess.service', () => ({
   canManageWorkOrder: vi.fn(),
   canViewWorkOrder: mockCanViewWorkOrder,
+}));
+vi.mock('@/lib/module-access.server', () => ({
+  getUnavailableOperationalModules: mockGetUnavailableOperationalModules,
 }));
 
 import { GET } from '../route';
@@ -59,6 +64,7 @@ describe('GET /api/work-orders/[id] planner material projection', () => {
     });
     mockCanAccessPlantStrict.mockReturnValue(true);
     mockCanViewWorkOrder.mockReturnValue(true);
+    mockGetUnavailableOperationalModules.mockResolvedValue([]);
   });
 
   it('projects a planned WorkOrderMaterial into the WO material pipeline when the canonical request is absent', async () => {

@@ -57,23 +57,24 @@ describe('navigation, module, and action permission boundaries', () => {
     const [permissionSection, moduleAndRest] = pageAccess.split('export const PAGE_MODULES');
     const [moduleSection] = moduleAndRest.split('export const CORE_MODULE_CODES');
     const permissionPages = [...permissionSection.matchAll(/^\s*'([^']+)':\s*\[/gm)].map((m) => m[1]);
-    const modulePages = new Set([...moduleSection.matchAll(/^\s*'([^']+)':\s*'[^']+'/gm)].map((m) => m[1]));
+    const modulePages = new Set(
+      [...moduleSection.matchAll(/^\s*'([^']+)':\s*(?:'[^']+'|\[[^\]]+\])/gm)].map((m) => m[1]),
+    );
     expect(permissionPages.filter((page) => !modulePages.has(page))).toEqual([]);
   });
 
-  it('fails closed for optional disabled or unlicensed modules', () => {
-    expect(modulesApi).toContain('const systemLicenseValid');
-    expect(modulesApi).toContain('m.isSystemLicensed === true');
-    expect(modulesApi).toContain('m.validUntil >= now');
-    expect(modulesApi).toContain('const isLicensed');
+  it('fails closed for every disabled or unlicensed operational module', () => {
+    expect(modulesApi).toContain('isSystemModuleLicensed(m, now)');
+    expect(modulesApi).toContain('isControlPlaneCoreModule(m.code)');
     expect(navStore).toContain('m.isLicensed === true');
     expect(navStore).toContain('m.isEnabled === true');
     expect(navStore).toContain('m.isActive === true');
     expect(navStore).toContain('set({ enabledModules: new Set<string>() })');
-    expect(pageAccess).toContain('if (CORE_MODULE_CODES.has(code)) return true');
-    expect(pageAccess).toContain('if (enabledModules === null) return false');
-    expect(sidebar).toContain('if (CORE_MODULE_CODES.has(normalized)) return true');
-    expect(mobile).toContain('if (!CORE_MODULE_CODES.has(code)');
+    expect(pageAccess).toContain("CORE_MODULE_CODES = new Set(['core'])");
+    expect(pageAccess).toContain('codes.every((code) =>');
+    expect(pageAccess).toContain('enabledModules?.has(code) === true');
+    expect(sidebar).toContain('CORE_MODULE_CODES.has(normalized)');
+    expect(mobile).toContain('pageModuleIsEnabled(page, enabledModules)');
     expect(moduleHook).toContain('if (CORE_MODULE_CODES.has(normalized)) return true');
     expect(moduleHook).toContain('if (enabledModules === null) return false');
     expect(moduleHook).not.toContain('if (enabledModules === null) return true');
@@ -118,15 +119,18 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('redacts unauthorized or disabled cross-module dashboard data server-side', () => {
-    expect(dashboardApi).toContain("const optionalCodes = ['safety', 'production', 'iot_sensors', 'quality', 'pm_schedules', 'analytics', 'reports']");
-    expect(dashboardApi).toContain('const moduleOperational = (code: string)');
-    expect(dashboardApi).toContain('const canViewInventoryKPIs');
+    expect(dashboardApi).toContain('const dashboardModuleCodes = [');
+    expect(dashboardApi).toContain('buildOperationalModuleSet(moduleRows)');
+    expect(dashboardApi).toContain("moduleOperational('assets')");
+    expect(dashboardApi).toContain("moduleOperational('inventory')");
+    expect(dashboardApi).toContain("moduleOperational('maintenance_requests')");
+    expect(dashboardApi).toContain("moduleOperational('work_orders')");
     expect(dashboardApi).toContain("moduleOperational('pm_schedules')");
     expect(dashboardApi).toContain('assetHealth: canViewAssetKPIs ?');
     expect(dashboardApi).toContain('inventoryAlerts: canViewInventoryKPIs ?');
     expect(dashboardApi).toContain('pmScheduleAlerts: canViewPmKPIs ?');
     expect(dashboardApi).toContain('costAnalysis: canViewFinancialKPIs ?');
-    expect(dashboardApi).toContain('productionOrders: canViewProductionKPIs ? weeklyTrends.productionOrders');
+    expect(dashboardApi).toContain('canViewNotificationsKPIs');
   });
 
   it('initializes dashboard module guards before any KPI or chart reads them', () => {
@@ -182,13 +186,20 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(fullTech?.[1]).toContain("'repair_material_requests.create'");
   });
 
-  it('models Repairs as a licensed optional domain without implicitly enabling PM', () => {
+  it('models Repairs UAT with explicit licensed dependencies without implicitly enabling PM', () => {
     expect(fullSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
-    expect(uatSeed).toContain("where: { code: 'repairs' }");
-    expect(uatSeed).toContain("isSystemLicensed: true");
-    expect(uatSeed).toContain("isEnabled: true");
-    expect(uatSeed).toContain("isActive: true");
-    expect(uatSeed).not.toContain("where: { code: 'pm_schedules' }");
+    expect(uatSeed).toContain('const uatModules = [');
+    expect(uatSeed).toContain("code: 'repairs'");
+    expect(uatSeed).toContain("code: 'work_orders'");
+    expect(uatSeed).toContain("code: 'maintenance_requests'");
+    expect(uatSeed).toContain("code: 'assets'");
+    expect(uatSeed).toContain("code: 'inventory'");
+    expect(uatSeed).toContain("code: 'tools'");
+    expect(uatSeed).toContain("where: { code: moduleDef.code }");
+    expect(uatSeed).toContain('isSystemLicensed: true');
+    expect(uatSeed).toContain('isEnabled: true');
+    expect(uatSeed).toContain('isActive: true');
+    expect(uatSeed).not.toContain("code: 'pm_schedules'");
     expect(repairsModuleMigration).toContain("'repairs'");
     expect(repairsModuleMigration).toContain('INSERT INTO `system_modules`');
     expect(repairsModuleMigration).toContain('INSERT INTO `company_modules`');
@@ -230,9 +241,10 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('does not render or load a page before its permission and module checks pass', () => {
+    expect(app).toContain('const moduleResolved = pageModuleStateResolved(page, enabledModules)');
     expect(app).toContain('const pageAllowed = permissionAllowed && moduleAllowed');
-    expect(app).toContain('if (!pageAllowed) return;');
-    expect(app).toContain('if (!pageAllowed) return <LoadingSkeleton />;');
+    expect(app).toContain('if (!moduleResolved || !pageAllowed) return;');
+    expect(app).toContain('if (!moduleResolved || !pageAllowed) return <LoadingSkeleton />;');
   });
 
   it('uses the authoritative department supervisor for MR action visibility and rejection', () => {

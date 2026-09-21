@@ -130,7 +130,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const menuGroups = useMemo<NavGroup[]>(() => [
     { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'core' },
     { label: 'Chat', icon: MessageSquare, perm: 'chat.view', page: 'chat', moduleCode: 'core' },
-    { label: 'Notifications', icon: BellRing, perm: 'notifications.view', page: 'notifications', moduleCode: 'core' },
+    { label: 'Notifications', icon: BellRing, perm: 'notifications.view', page: 'notifications', moduleCode: 'notifications' },
     {
       label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'assets',
       children: [
@@ -187,7 +187,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs'],
+      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests', 'pm_schedules', 'repairs', 'reports'],
       children: [
         { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
         { page: 'enterprise-reports', label: 'Reports', icon: Gauge },
@@ -217,7 +217,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
+      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management', 'production', 'work_orders'],
       children: [
         { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
         { page: 'operations-training', label: 'Training', icon: GraduationCap },
@@ -295,7 +295,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Settings', icon: Cog, perm: 'system_settings.view', adminOnly: true, moduleCode: 'modules',
+      label: 'Settings', icon: Cog, perm: 'system_settings.view', adminOnly: true, moduleCode: 'core',
       children: [
         { page: 'settings-general', label: 'General', icon: Settings },
         { page: 'settings-users', label: 'Users', icon: Users },

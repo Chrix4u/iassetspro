@@ -43,7 +43,7 @@ interface SearchGroup {
 
 interface SearchResponse {
   query: string;
-  results: SearchGroup[];
+  groups: SearchGroup[];
   total: number;
 }
 
@@ -148,7 +148,7 @@ export default function GlobalSearch() {
     try {
       const res = await api.get<SearchResponse>(`/api/search?q=${encodeURIComponent(q.trim())}&limit=10`);
       if (res.success && res.data) {
-        setResults(res.data.results);
+        setResults(Array.isArray(res.data.groups) ? res.data.groups : []);
       } else {
         setResults([]);
       }
@@ -203,7 +203,7 @@ export default function GlobalSearch() {
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
-        placeholder="Search assets, work orders, inventory, users..."
+        placeholder="Search available records..."
         value={query}
         onValueChange={handleValueChange}
       />
@@ -212,9 +212,9 @@ export default function GlobalSearch() {
         {!loading && !hasSearched && (
           <div className="py-8 text-center text-muted-foreground">
             <SearchIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Type to search across the system</p>
+            <p className="text-sm">Type to search available records</p>
             <p className="text-xs mt-1 opacity-60">
-              Assets · Work Orders · Maintenance Requests · Inventory · Users
+              Results follow your module licenses, permissions, and plant access
             </p>
           </div>
         )}

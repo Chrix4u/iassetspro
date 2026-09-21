@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { mockGetSessionAsync } = vi.hoisted(() => ({
+const { mockGetSessionAsync, mockGetUnavailableOperationalModules } = vi.hoisted(() => ({
   mockGetSessionAsync: vi.fn(),
+  mockGetUnavailableOperationalModules: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
   getSessionAsync: mockGetSessionAsync,
 }));
 
-import proxy, { resolveEffectivePlantId } from '@/proxy';
+vi.mock('@/lib/module-access.server', () => ({
+  getUnavailableOperationalModules: mockGetUnavailableOperationalModules,
+}));
+
+import proxy, { requiredModulesForApiPath, resolveEffectivePlantId } from '@/proxy';
 
 function request(path: string, plantHeader?: string): NextRequest {
   const headers = new Headers({ authorization: 'Bearer valid-token' });
@@ -32,6 +37,58 @@ describe('reporting proxy security', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setSession(['reports.view']);
+    mockGetUnavailableOperationalModules.mockResolvedValue([]);
+  });
+
+  describe('module availability gate', () => {
+    it('maps primary and composite APIs to their required modules', () => {
+      expect(requiredModulesForApiPath('/api/work-orders/wo-1')).toEqual(['work_orders']);
+      expect(requiredModulesForApiPath('/api/inventory')).toEqual(['inventory']);
+      expect(requiredModulesForApiPath('/api/repairs/material-requests')).toEqual(['repairs', 'inventory']);
+      expect(requiredModulesForApiPath('/api/repairs/tool-transfers/transfer-1')).toEqual(['repairs', 'tools']);
+      expect(requiredModulesForApiPath('/api/repairs/reports/detailed')).toEqual(['repairs', 'reports']);
+      expect(requiredModulesForApiPath('/api/reports/maintenance/export')).toEqual(['reports', 'work_orders', 'maintenance_requests']);
+      expect(requiredModulesForApiPath('/api/users')).toEqual([]);
+    });
+
+    it('blocks authenticated requests before the route when a required module is unavailable', async () => {
+      mockGetUnavailableOperationalModules.mockResolvedValue(['work_orders']);
+
+      const response = await proxy(request('/api/work-orders/wo-1'));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body.unavailableModules).toEqual(['work_orders']);
+      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['work_orders']);
+    });
+
+    it('checks composite resource modules together', async () => {
+      mockGetUnavailableOperationalModules.mockResolvedValue(['inventory']);
+
+      const response = await proxy(request('/api/repairs/material-requests'));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body.unavailableModules).toEqual(['inventory']);
+      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['repairs', 'inventory']);
+    });
+
+    it('does not expose module state to unauthenticated protected requests', async () => {
+      const response = await proxy(new NextRequest('http://localhost/api/work-orders'));
+
+      expect(response.status).toBe(401);
+      expect(mockGetUnavailableOperationalModules).not.toHaveBeenCalled();
+    });
+
+    it('requires PM to be operational even for the internal cron secret', async () => {
+      mockGetUnavailableOperationalModules.mockResolvedValue(['pm_schedules']);
+      const headers = new Headers({ 'x-pm-cron-secret': process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025' });
+
+      const response = await proxy(new NextRequest('http://localhost/api/pm-schedules/check-due', { headers }));
+
+      expect(response.status).toBe(403);
+      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['pm_schedules']);
+    });
   });
 
   describe('maintenance reporting plant normalization', () => {

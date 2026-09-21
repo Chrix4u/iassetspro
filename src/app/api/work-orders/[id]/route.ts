@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 export async function GET(
   request: NextRequest,
@@ -136,6 +137,42 @@ export async function GET(
         { success: false, error: 'Access denied — you are not part of this work order workflow' },
         { status: 403 },
       );
+    }
+
+    // Embedded cross-module data follows the same licensing contract as its
+    // standalone workspace. Keep the WO visible, but redact unavailable domains.
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'repairs',
+      'inventory',
+      'tools',
+      'pm_schedules',
+      'assets',
+      'maintenance_requests',
+    ]));
+    const repairsOperational = !unavailableModules.has('repairs');
+    const inventoryResourcesOperational =
+      repairsOperational && !unavailableModules.has('inventory');
+    const toolResourcesOperational =
+      repairsOperational && !unavailableModules.has('tools');
+
+    if (!inventoryResourcesOperational) {
+      (wo as Record<string, unknown>).materials = [];
+      (wo as Record<string, unknown>).repairMaterialRequests = [];
+    }
+    if (!toolResourcesOperational) {
+      (wo as Record<string, unknown>).repairToolRequests = [];
+    }
+    if (unavailableModules.has('pm_schedules')) {
+      (wo as Record<string, unknown>).pmSchedule = null;
+    }
+    if (unavailableModules.has('assets')) {
+      (wo as Record<string, unknown>).workOrderComponents = [];
+      if (wo.maintenanceRequest) {
+        (wo.maintenanceRequest as Record<string, unknown>).asset = null;
+      }
+    }
+    if (unavailableModules.has('maintenance_requests')) {
+      (wo as Record<string, unknown>).maintenanceRequest = null;
     }
 
     if (!wo.repairToolRequests) {

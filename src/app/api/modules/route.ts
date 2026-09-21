@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { isControlPlaneCoreModule, isSystemModuleLicensed, pickEffectiveCompanyModule } from '@/lib/module-access';
 
 // Prevent any response caching — module states change dynamically
 export const dynamic = 'force-dynamic';
@@ -20,28 +21,6 @@ export const dynamic = 'force-dynamic';
  *  3. companyId = any other value (multi-tenant future-proofing)
  *  4. any record at all (last resort)
  */
-function pickCompanyModule(
-  companyModules: Array<{
-    id: string;
-    companyId: string | null;
-    isActive: boolean;
-    isEnabled: boolean;
-    activationLocked: boolean;
-    activatedAt: Date | null;
-    licensedAt: Date | null;
-    licensedBy: string | null;
-  }>,
-) {
-  if (!companyModules || companyModules.length === 0) return null;
-  if (companyModules.length === 1) return companyModules[0];
-
-  return (
-    companyModules.find((cm) => cm.companyId === '__default__') ??
-    companyModules.find((cm) => cm.companyId === null) ??
-    companyModules[0]
-  );
-}
-
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -59,7 +38,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Collect all licensedBy user IDs to batch-fetch
-    const picked = modules.map((m) => pickCompanyModule(m.companyModules as any));
+    const picked = modules.map((m) => pickEffectiveCompanyModule(m.companyModules));
     const licensedByUserIds = picked
       .map((cm) => cm?.licensedBy)
       .filter((id): id is string => !!id);
@@ -77,19 +56,16 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const data = modules.map((m, idx) => {
       const companyModule = picked[idx];
-      const systemLicenseValid = m.isCore || (
-        m.isSystemLicensed === true &&
-        (!m.validFrom || m.validFrom <= now) &&
-        (!m.validUntil || m.validUntil >= now)
-      );
-      const isLicensed = m.isCore || (systemLicenseValid && Boolean(companyModule?.licensedAt));
+      const isLicensed = isSystemModuleLicensed(m, now);
       return {
         id: m.id,
         code: m.code,
         name: m.name,
         description: m.description,
         version: m.version,
-        isCore: m.isCore,
+        // Normalize legacy DB rows: only actual platform/control-plane
+        // modules are non-disableable core from the application's perspective.
+        isCore: isControlPlaneCoreModule(m.code),
         isSystemLicensed: m.isSystemLicensed,
         isLicensed,
         licenseKey: isAdm ? m.licenseKey : null,

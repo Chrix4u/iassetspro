@@ -825,6 +825,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -959,13 +961,16 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     // Load dropdown data
     try {
       const requestPlantId = (mr as any).plantId ? String((mr as any).plantId) : '';
-      const inventoryRequest = requestPlantId
+      const inventoryRequest = inventoryEnabled && requestPlantId
         ? api.get(`/api/inventory?mode=lookup&limit=100&plantId=${encodeURIComponent(requestPlantId)}`)
+        : Promise.resolve({ success: true, data: [] as any[] });
+      const toolsRequest = toolsEnabled
+        ? api.get('/api/tools?mode=lookup&limit=100')
         : Promise.resolve({ success: true, data: [] as any[] });
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
         inventoryRequest,
-        api.get('/api/tools?mode=lookup&limit=100'),
+        toolsRequest,
         api.get('/api/users?limit=100'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
@@ -1019,8 +1024,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       safetyNotes: convertForm.safetyNotes || undefined,
       ppeRequired: convertForm.ppeRequired || undefined,
       notes: convertForm.notes || undefined,
-      requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined,
-      requiredTools: convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined,
+      requiredParts: inventoryEnabled && convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined,
+      requiredTools: toolsEnabled && convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined,
     };
     if (convertForm.assignType === 'technician') {
       if (convertForm.selectedWorkerIds.length > 0) {
@@ -1578,7 +1583,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 )}
 
                 {/* Required Spare Parts */}
-                <div className="space-y-2">
+                {inventoryEnabled && <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
                   <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
@@ -1604,10 +1609,10 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
 
                 {/* Required Tools */}
-                <div className="space-y-2">
+                {toolsEnabled && <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
                   <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
@@ -1633,7 +1638,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
               </div>
             </div>
 
@@ -1840,8 +1845,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
             )}
 
             {/* Parts & Tools in collapsible sections */}
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="parts" className="border rounded-xl px-1">
+            {(inventoryEnabled || toolsEnabled) && <Accordion type="multiple" className="space-y-2">
+              {inventoryEnabled && <AccordionItem value="parts" className="border rounded-xl px-1">
                 <AccordionTrigger className="text-xs font-medium py-3 px-2">
                   <span className="flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Spare Parts {convertForm.requiredParts.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{convertForm.requiredParts.length}</Badge>}</span>
                 </AccordionTrigger>
@@ -1872,8 +1877,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                     </SelectContent>
                   </Select>
                 </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="tools" className="border rounded-xl px-1">
+              </AccordionItem>}
+              {toolsEnabled && <AccordionItem value="tools" className="border rounded-xl px-1">
                 <AccordionTrigger className="text-xs font-medium py-3 px-2">
                   <span className="flex items-center gap-1.5"><Hammer className="h-3.5 w-3.5" />Tools {convertForm.requiredTools.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{convertForm.requiredTools.length}</Badge>}</span>
                 </AccordionTrigger>
@@ -1904,8 +1909,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                     </SelectContent>
                   </Select>
                 </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+              </AccordionItem>}
+            </Accordion>}
           </div>
         ) : stepKey === 'safety' ? (
           /* === MOBILE STEP 4: Safety Notes === */
@@ -2395,6 +2400,9 @@ export function WorkOrdersPage() {
 export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const { user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
 
   // ── Form State (mirrors convert form minus request info) ──
   const [form, setForm] = useState({
@@ -2458,7 +2466,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 
   // Load components when asset changes
   useEffect(() => {
-    if (form.assetId) {
+    if (assetsEnabled && form.assetId) {
       setComponentsLoading(true);
       api.get(`/api/component-registry?assetId=${form.assetId}`)
         .then((res: any) => {
@@ -2481,22 +2489,26 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     } else {
       setAvailableComponents([]);
     }
-  }, [form.assetId]);
+  }, [assetsEnabled, form.assetId]);
 
   // Load dropdown data when form opens
   useEffect(() => {
     if (departments.length === 0) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?mode=lookup&limit=100'),
-        api.get('/api/tools?mode=lookup&limit=100'),
+        inventoryEnabled
+          ? api.get('/api/inventory?mode=lookup&limit=100')
+          : Promise.resolve({ success: true, data: [] as any[] }),
+        toolsEnabled
+          ? api.get('/api/tools?mode=lookup&limit=100')
+          : Promise.resolve({ success: true, data: [] as any[] }),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setInventoryItems(invRes.data);
         if (toolsRes.success && Array.isArray(toolsRes.data)) setToolsData(toolsRes.data);
       }).catch(() => {/* dropdowns will be empty */});
     }
-  }, []);
+  }, [inventoryEnabled, toolsEnabled]);
 
   useEffect(() => {
     let active = true;
@@ -2577,7 +2589,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       description: form.description || undefined,
       type: form.type,
       priority: form.priority,
-      assetId: form.assetId || undefined,
+      assetId: assetsEnabled ? (form.assetId || undefined) : undefined,
       departmentId: form.departmentId || undefined,
       tradeActivity: form.tradeActivity,
       technicalDescription: form.technicalDescription || undefined,
@@ -2588,9 +2600,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       safetyNotes: form.safetyNotes || undefined,
       ppeRequired: form.ppeRequired || undefined,
       notes: form.notes || undefined,
-      requiredParts: form.requiredParts.length > 0 ? form.requiredParts : undefined,
-      requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
-      componentIds: form.componentIds.length > 0 ? form.componentIds : undefined,
+      requiredParts: inventoryEnabled && form.requiredParts.length > 0 ? form.requiredParts : undefined,
+      requiredTools: toolsEnabled && form.requiredTools.length > 0 ? form.requiredTools : undefined,
+      componentIds: assetsEnabled && form.componentIds.length > 0 ? form.componentIds : undefined,
     };
     if (form.assignType === 'technician') {
       if (form.selectedWorkerIds.length > 0) {
@@ -2674,14 +2686,14 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                 </Select>
               </div>
             </div>
-            <div className="space-y-1">
+            {assetsEnabled && <div className="space-y-1">
               <Label className="text-[10px]">Asset / Machine</Label>
               <AsyncSearchableSelect value={form.assetId} onValueChange={v => updateField('assetId', v)}
                 fetchOptions={async () => { const r = await api.get('/api/assets'); if (r.success && r.data) return (Array.isArray(r.data) ? r.data : []).map((a: any) => ({ value: a.id, label: `${a.name} [${a.assetTag}]`, badge: a.status })); return []; }}
                 placeholder="Select asset..." searchPlaceholder="Search assets..." />
-            </div>
+            </div>}
             {/* Mobile: Component selector */}
-            {form.assetId && (
+            {assetsEnabled && form.assetId && (
               <div className="space-y-1">
                 <Label className="text-[10px]">Components / Parts</Label>
                 {componentsLoading ? (
@@ -2760,7 +2772,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           <Textarea value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
+          {assetsEnabled && <div className="space-y-2">
             <Label>Asset / Machine</Label>
             <AsyncSearchableSelect
               value={form.assetId}
@@ -2779,7 +2791,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               placeholder="Select asset..."
               searchPlaceholder="Search assets by name or tag..."
             />
-          </div>
+          </div>}
           <div className="space-y-2">
             <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground">(auto-filled)</span>}</Label>
             {isDepartmentLocked ? (
@@ -2808,7 +2820,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
         </div>
 
         {/* Component/Part Selection */}
-        {form.assetId && (
+        {assetsEnabled && form.assetId && (
           <div className="space-y-2 mt-2">
             <Label className="text-xs">Components / Parts (optional)</Label>
             {componentsLoading ? (
@@ -2955,7 +2967,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           )}
 
           {/* Required Spare Parts */}
-          <div className="space-y-2">
+          {inventoryEnabled && <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
             <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
@@ -2981,10 +2993,10 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div>}
 
           {/* Required Tools */}
-          <div className="space-y-2">
+          {toolsEnabled && <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
             <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
@@ -3010,7 +3022,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div>}
         </div>
       </div>
 
@@ -3068,6 +3080,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const requestsEnabled = useModuleEnabled(MODULE_CODES.MAINTENANCE_REQUESTS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
+  const downtimeEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
+  const materialResourcesEnabled = repairsEnabled && inventoryEnabled;
+  const toolResourcesEnabled = repairsEnabled && toolsEnabled;
   const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(r.slug)) ?? false;
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
@@ -3242,6 +3262,37 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
   const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
+  // A live license/enablement change must remove stale cross-module UI
+  // immediately, even when a resource dialog was already open.
+  useEffect(() => {
+    if (!materialResourcesEnabled) {
+      setMaterialOpen(false);
+      setMatReturnOpen(false);
+      setSpareReturnOpen(false);
+      setSuggestedPartDialogOpen(false);
+      setSuggestedParts([]);
+      setEditInventoryItems([]);
+    }
+    if (!toolResourcesEnabled) {
+      setToolReqOpen(false);
+      setToolXferOpen(false);
+      setViewAllToolsOpen(false);
+      setPtOpen(false);
+      setSuggestedToolDialogOpen(false);
+      setSuggestedTools([]);
+      setPersonalTools([]);
+      setEditToolsData([]);
+    }
+    if (!repairsEnabled || !downtimeEnabled) {
+      setDowntimeOpen(false);
+    }
+  }, [
+    materialResourcesEnabled,
+    toolResourcesEnabled,
+    repairsEnabled,
+    downtimeEnabled,
+  ]);
+
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
     if (res.success && res.data) {
@@ -3270,23 +3321,32 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
+    if (!toolResourcesEnabled) {
+      setPersonalTools([]);
+      return;
+    }
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
-  }, [id]);
+  }, [id, toolResourcesEnabled]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {
+    if (!materialResourcesEnabled && !toolResourcesEnabled) {
+      setSuggestedParts([]);
+      setSuggestedTools([]);
+      return;
+    }
     try {
       const res = await api.get(`/api/work-orders/${id}/suggested-items`);
       if (res.success && res.data) {
-        setSuggestedParts(res.data.suggestedParts || []);
-        setSuggestedTools(res.data.suggestedTools || []);
+        setSuggestedParts(materialResourcesEnabled ? (res.data.suggestedParts || []) : []);
+        setSuggestedTools(toolResourcesEnabled ? (res.data.suggestedTools || []) : []);
       }
     } catch (err) {
       // Suggested items are optional; don't block the UI
       console.error('Failed to fetch suggested items:', err);
     }
-  }, [id]);
+  }, [id, materialResourcesEnabled, toolResourcesEnabled]);
 
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
     if (!confirm(`Remove this suggested ${itemType}?`)) return;
@@ -3332,10 +3392,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     api.get(`/api/work-orders/${id}/status-history`).then(res => {
       if (active && res.success && res.data) setStatusHistory(res.data);
     });
-    // Fetch personal tools
-    api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`).then(res => {
-      if (active && res.success && res.data) setPersonalTools(res.data);
-    });
+    // Fetch personal tools only when the Repairs + Tools domains are operational.
+    if (toolResourcesEnabled) {
+      fetchPersonalTools();
+    } else {
+      setPersonalTools([]);
+    }
     // Fetch task checklist
     api.get(`/api/work-orders/${id}/tasks`).then(res => {
       if (active) {
@@ -3355,7 +3417,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     // Fetch suggested items
     fetchSuggestedItems();
     return () => { active = false; };
-  }, [id, fetchSuggestedItems]);
+  }, [id, fetchPersonalTools, fetchSuggestedItems, toolResourcesEnabled]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -3640,8 +3702,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (editOpen) {
       Promise.all([
         api.get('/api/departments?limit=100'),
-        api.get('/api/inventory?mode=lookup&limit=100'),
-        api.get('/api/tools?mode=lookup&limit=100'),
+        inventoryEnabled
+          ? api.get('/api/inventory?mode=lookup&limit=100')
+          : Promise.resolve({ success: true, data: [] as any[] }),
+        toolsEnabled
+          ? api.get('/api/tools?mode=lookup&limit=100')
+          : Promise.resolve({ success: true, data: [] as any[] }),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
@@ -3663,7 +3729,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         }
       }).catch(() => {/* dropdowns will be empty */});
     }
-  }, [editOpen]);
+  }, [editOpen, inventoryEnabled, toolsEnabled]);
 
   const openEditWO = () => {
     if (!wo) return;
@@ -3726,7 +3792,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       description: editForm.description || undefined,
       type: editForm.type,
       priority: editForm.priority,
-      assetId: editForm.assetId || undefined,
+      assetId: assetsEnabled ? (editForm.assetId || undefined) : undefined,
       departmentId: editForm.departmentId || undefined,
       tradeActivity: editForm.tradeActivity,
       technicalDescription: editForm.technicalDescription || undefined,
@@ -3736,8 +3802,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       safetyNotes: editForm.safetyNotes || undefined,
       ppeRequired: editForm.ppeRequired || undefined,
       notes: editForm.notes || undefined,
-      requiredParts: editForm.requiredParts.length > 0 ? editForm.requiredParts : undefined,
-      requiredTools: editForm.requiredTools.length > 0 ? editForm.requiredTools : undefined,
+      requiredParts: inventoryEnabled && editForm.requiredParts.length > 0 ? editForm.requiredParts : undefined,
+      requiredTools: toolsEnabled && editForm.requiredTools.length > 0 ? editForm.requiredTools : undefined,
     };
 
     const desiredAssignmentType = editForm.assignType === 'technician' ? 'direct' : 'via_supervisor';
@@ -4473,10 +4539,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Request Number</p>
                     <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requestNumber}</p>
                   </div>
-                  <div>
+                  {assetsEnabled && <div>
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Machine / Asset</p>
                     <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.asset?.name || wo.assetName || '-'}</p>
-                  </div>
+                  </div>}
                   <div>
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Category</p>
                     <p className="text-sm font-semibold capitalize">{(wo as any).maintenanceRequest?.category || '-'}</p>
@@ -4514,7 +4580,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <Textarea value={editForm.description || ''} onChange={e => editUpdateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
+                {assetsEnabled && <div className="space-y-2">
                   <Label>Asset / Machine</Label>
                   <AsyncSearchableSelect
                     value={editForm.assetId || ''}
@@ -4533,7 +4599,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     placeholder="Select asset..."
                     searchPlaceholder="Search assets by name or tag..."
                   />
-                </div>
+                </div>}
                 <div className="space-y-2">
                   <Label>Department</Label>
                   <AsyncSearchableSelect
@@ -4657,7 +4723,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
 
                 {/* Required Spare Parts */}
-                <div className="space-y-2">
+                {inventoryEnabled && <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
                   <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {(editForm.requiredParts || []).length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
@@ -4679,10 +4745,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
 
                 {/* Required Tools */}
-                <div className="space-y-2">
+                {toolsEnabled && <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
                   <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {(editForm.requiredTools || []).length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
@@ -4704,7 +4770,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
               </div>
             </div>
 
@@ -4768,10 +4834,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Request #</p>
                 <p className="text-sm font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requestNumber}</p>
               </div>
-              <div>
+              {assetsEnabled && <div>
                 <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Machine</p>
                 <p className="text-sm font-bold text-blue-900 mt-0.5 truncate">{(wo as any).maintenanceRequest?.asset?.name || wo.assetName || '-'}</p>
-              </div>
+              </div>}
               <div>
                 <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Category</p>
                 <p className="text-sm font-bold text-blue-900 mt-0.5 capitalize">{(wo as any).maintenanceRequest?.category || '-'}</p>
@@ -4890,8 +4956,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 onValueChange={(value) => editUpdateField('responsibleSupervisorId', value)}
               />
             )}
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="parts" className="border rounded-xl px-1">
+            {(inventoryEnabled || toolsEnabled) && <Accordion type="multiple" className="space-y-2">
+              {inventoryEnabled && <AccordionItem value="parts" className="border rounded-xl px-1">
                 <AccordionTrigger className="text-xs font-medium py-3 px-2">
                   <span className="flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Spare Parts {(editForm.requiredParts || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredParts || []).length}</Badge>}</span>
                 </AccordionTrigger>
@@ -4918,8 +4984,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </SelectContent>
                   </Select>
                 </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="tools" className="border rounded-xl px-1">
+              </AccordionItem>}
+              {toolsEnabled && <AccordionItem value="tools" className="border rounded-xl px-1">
                 <AccordionTrigger className="text-xs font-medium py-3 px-2">
                   <span className="flex items-center gap-1.5"><Hammer className="h-3.5 w-3.5" />Tools {(editForm.requiredTools || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredTools || []).length}</Badge>}</span>
                 </AccordionTrigger>
@@ -4946,8 +5012,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </SelectContent>
                   </Select>
                 </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+              </AccordionItem>}
+            </Accordion>}
           </div>
         ) : stepKey === 'safety' ? (
           <div className="space-y-4">
@@ -5754,7 +5820,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               {/* Suggested Parts */}
-              {suggestedParts.length > 0 && (
+              {materialResourcesEnabled && suggestedParts.length > 0 && (
                 <div className="mb-4">
                   <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
                     <PackageSearch className="h-3 w-3" /> Spare Parts ({suggestedParts.length})
@@ -5794,7 +5860,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
 
               {/* Suggested Tools */}
-              {suggestedTools.length > 0 && (
+              {toolResourcesEnabled && suggestedTools.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
                     <Hammer className="h-3 w-3" /> Tools ({suggestedTools.length})
@@ -5836,12 +5902,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               {/* Technician: Add new item button */}
               {!workActionDisabled && (
                 <div className="mt-3 flex items-center gap-2">
-                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
+                  {materialResourcesEnabled && <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
                     <Plus className="h-3 w-3" /> Add Part
-                  </Button>
-                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
+                  </Button>}
+                  {toolResourcesEnabled && <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
                     <Plus className="h-3 w-3" /> Add Tool
-                  </Button>
+                  </Button>}
                 </div>
               )}
             </CardContent>
@@ -5850,7 +5916,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           })()}
 
           {/* Materials — with approval pipeline */}
-          <Card className="border-0 shadow-sm overflow-hidden">
+          {materialResourcesEnabled && <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -5964,10 +6030,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Tool Requests (from Repair module) */}
-          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          {toolResourcesEnabled && wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
@@ -6017,7 +6083,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           )}
 
           {/* Repairs Quick Access */}
-          <Card className="border-0 shadow-sm">
+          {repairsEnabled && <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
               <CardDescription className="text-xs">Quick actions for tools, transfers, downtime & returns</CardDescription>
@@ -6030,28 +6096,28 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                 ) : (
                 <>
-                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {toolResourcesEnabled && <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Request Tool</span>
-                </button>
-                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                </button>}
+                {toolResourcesEnabled && <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
                   <span className="text-xs font-medium">Transfer Tool</span>
-                </button>
-                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                </button>}
+                {downtimeEnabled && <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
-                </button>
-                <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                </button>}
+                {materialResourcesEnabled && <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
-                </button>
+                </button>}
                 </>
                 )}
-                <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
+                {toolResourcesEnabled && <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">View All Tools</span>
-                </button>
+                </button>}
                 {!isWOFinalized && (
                 <button onClick={() => setActionDialog('complete')} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
@@ -6060,7 +6126,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
               </div>
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
           <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
@@ -6188,7 +6254,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </ResponsiveDialog>
 
           {/* Personal Tools On-Site */}
-          <Card className="border-0 shadow-sm">
+          {toolResourcesEnabled && <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
               <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
@@ -6217,7 +6283,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
               )}
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Task Checklist — Guided step-by-step task execution during WO execution */}
           {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length > 0 && (() => {
@@ -6759,8 +6825,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-medium capitalize">{wo.type.replace('_', ' ')}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
-              <Separator />
+              {assetsEnabled && <><div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
+              <Separator /></>}
               <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
@@ -6780,7 +6846,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
 
           {/* Linked Components */}
-          {wo.workOrderComponents && wo.workOrderComponents.length > 0 && (
+          {assetsEnabled && wo.workOrderComponents && wo.workOrderComponents.length > 0 && (
             <Card className="border-0 shadow-sm">
               <CardHeader><CardTitle className="text-base">Linked Components</CardTitle></CardHeader>
               <CardContent className="space-y-2">
@@ -6818,7 +6884,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           )}
 
           {/* Materials by Component */}
-          {wo.materials && wo.materials.length > 0 && (
+          {materialResourcesEnabled && wo.materials && wo.materials.length > 0 && (
             <Card className="border-0 shadow-sm">
               <CardHeader><CardTitle className="text-base flex items-center gap-2"><PackageOpen className="h-4 w-4" />Materials & Parts</CardTitle></CardHeader>
               <CardContent className="space-y-2">
@@ -6851,7 +6917,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">{formatCurrency(wo.materialCost)}</span></div>
+              {materialResourcesEnabled && <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">{formatCurrency(wo.materialCost)}</span></div>}
               <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">{formatCurrency(wo.laborCost)}</span></div>
               <Separator />
               <div className="flex justify-between font-semibold"><span>Total</span><span>{formatCurrency(wo.totalCost)}</span></div>
@@ -6859,7 +6925,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
 
           {/* Source Request */}
-          {wo.request && (
+          {requestsEnabled && wo.request && (
             <Card className="border-teal-200 bg-teal-50/50">
               <CardContent className="p-4">
                 <p className="text-xs font-medium text-teal-700 uppercase tracking-wider mb-1">Source Request</p>

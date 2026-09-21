@@ -27,6 +27,8 @@ describe('navigation, module, and action permission boundaries', () => {
   const toolTransferApi = read('src/app/api/repairs/tool-transfers/route.ts');
   const toolTransferDetailApi = read('src/app/api/repairs/tool-transfers/[id]/route.ts');
   const completionApi = read('src/app/api/repairs/completion/[workOrderId]/route.ts');
+  const verificationService = read('src/services/workOrderVerification.service.ts');
+  const closureService = read('src/services/workOrderClosure.service.ts');
   const mrDetailApi = read('src/app/api/maintenance-requests/[id]/route.ts');
   const mrRejectApi = read('src/app/api/maintenance-requests/[id]/reject/route.ts');
   const permissionSeed = read('prisma/seed-permissions-only.ts');
@@ -314,12 +316,14 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('binds completion review and closure to the assigned accountable actors', () => {
-    expect(completionApi).toContain('wo.assignedSupervisorId === session.userId');
-    expect(completionApi).toContain('wo.plannerId === session.userId');
-    expect(completionApi).toContain("hasRole(session, 'maintenance_supervisor')");
-    expect(completionApi).toContain("hasRole(session, 'maintenance_planner')");
+    expect(completionApi).toContain('verifyRepairWorkOrder');
+    expect(completionApi).toContain('closeRepairWorkOrder');
     expect(completionApi).toContain("hasPermission(session, 'work_orders.verify')");
     expect(completionApi).toContain("hasPermission(session, 'work_orders.close')");
+    expect(verificationService).toContain('wo.assignedSupervisorId === session.userId');
+    expect(verificationService).toContain("['admin', 'maintenance_manager', 'plant_manager'].includes(role)");
+    expect(closureService).toContain('wo.plannerId === session.userId');
+    expect(closureService).toContain("['admin', 'maintenance_manager', 'plant_manager'].includes(role)");
     expect(completionApi).not.toContain('Only supervisors, managers, or planners can perform this action');
     expect(repairs).toContain('function canSubmitCompletion(completion: any, user: any)');
     expect(repairs).toContain('function canReviewCompletion(completion: any, user: any)');

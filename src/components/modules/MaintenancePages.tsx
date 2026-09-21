@@ -5854,7 +5854,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                {(wo.repairMaterialRequests && wo.repairMaterialRequests.some((request: any) => !request.projectionOnly)) && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
                 <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
@@ -5891,6 +5891,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               {mr.unit && <span>{mr.unit}</span>}
                             </div>
                             {/* Pipeline dots */}
+                            {mr.projectionOnly && (
+                              <p className="text-[10px] text-sky-700 mt-1">Planner-selected during MR conversion. Material request pipeline record is pending reconciliation.</p>
+                            )}
                             <div className="flex items-center gap-1 mt-2 overflow-x-auto">
                               {[
                                 { key: 'pending', label: 'Pending' },
@@ -5900,7 +5903,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 { key: 'issued', label: 'Issued' },
                                 { key: 'closed', label: 'Done' },
                               ].map((stage, idx) => {
-                                const statusOrder = ['pending', 'supervisor_approved', 'storekeeper_approved', 'picking', 'issued', 'closed', 'rejected'];
+                                const statusOrder = ['planned', 'pending', 'supervisor_approved', 'storekeeper_approved', 'picking', 'issued', 'closed', 'rejected'];
                                 const currentIdx = statusOrder.indexOf(mr.status);
                                 const stageIdx = statusOrder.indexOf(stage.key);
                                 const isCompleted = stageIdx < currentIdx;
@@ -5916,6 +5919,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 );
                               })}
                               <Badge variant="outline" className={`text-[9px] shrink-0 ml-1 ${
+                                mr.status === 'planned' ? 'bg-sky-50 text-sky-700 border-sky-200' :
                                 mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                 mr.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
                                 mr.status === 'supervisor_approved' ? 'bg-sky-50 text-sky-700 border-sky-200' :

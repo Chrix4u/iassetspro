@@ -401,7 +401,12 @@ function canSubmitCompletion(completion: any, user: any): boolean {
 function canReviewCompletion(completion: any, user: any): boolean {
   if (!completion?.workOrder || !user) return false;
   const { isAdmin, userId, roles } = getActorContext(user);
-  if (isAdmin || roles.includes('maintenance_manager')) return true;
+  if (isAdmin) return true;
+
+  const { hasPermission } = useAuthStore.getState();
+  if (!hasPermission('work_orders.verify')) return false;
+  if (roles.includes('maintenance_manager')) return true;
+
   return Boolean(userId)
     && roles.includes('maintenance_supervisor')
     && completion.workOrder.assignedSupervisorId === userId;
@@ -410,7 +415,12 @@ function canReviewCompletion(completion: any, user: any): boolean {
 function canCloseCompletion(completion: any, user: any): boolean {
   if (!completion?.workOrder || !user) return false;
   const { isAdmin, userId, roles } = getActorContext(user);
-  if (isAdmin || roles.includes('maintenance_manager')) return true;
+  if (isAdmin) return true;
+
+  const { hasPermission } = useAuthStore.getState();
+  if (!hasPermission('work_orders.close')) return false;
+  if (roles.includes('maintenance_manager')) return true;
+
   return Boolean(userId)
     && roles.includes('maintenance_planner')
     && completion.workOrder.plannerId === userId;

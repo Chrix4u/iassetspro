@@ -3576,15 +3576,27 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return false;
   }, [wo, user]);
 
-  // Permission: can directly add/remove team members (admin, planner, or the person who assigned)
+  // Permission: direct team changes must match the API: effective assignment
+  // capability AND accountable authority over this specific work order.
   const canManageTeamDirectly = useMemo(() => {
     if (!wo || !user) return false;
-    if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign_supervisor')) return true;
-    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
-    if (wo.plannerId === user.id) return true;
-    if (wo.assignedById === user.id) return true;
-    return false;
+    const admin = isAdmin();
+    const hasAssignmentPermission = admin
+      || hasPermission('work_orders.assign_supervisor')
+      || hasPermission('work_orders.assign_technician');
+    if (!hasAssignmentPermission) return false;
+
+    const roleSlugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    const hasManagementOverride = roleSlugs.some((slug: string) =>
+      ['maintenance_manager', 'plant_manager'].includes(slug)
+    );
+    const hasAccountableAuthority = admin
+      || hasManagementOverride
+      || wo.assignedSupervisorId === user.id
+      || wo.plannerId === user.id
+      || wo.assignedById === user.id;
+
+    return hasAccountableAuthority;
   }, [wo, user, isAdmin, hasPermission]);
 
   // Permission: can request team members (technician or team member, but not admin/planner — they add directly)
@@ -3596,16 +3608,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return isTeamMember || isAssignee;
   }, [wo, user, canManageTeamDirectly]);
 
-  // Permission: can approve/reject team member requests (assigner, admin, planner)
-  const canReviewTeamRequests = useMemo(() => {
-    if (!wo || !user) return false;
-    if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign_supervisor')) return true;
-    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
-    if (wo.plannerId === user.id) return true;
-    if (wo.assignedById === user.id) return true;
-    return false;
-  }, [wo, user, isAdmin, hasPermission]);
+  // Team-request review uses the exact same direct-assignment authority.
+  const canReviewTeamRequests = useMemo(
+    () => canManageTeamDirectly,
+    [canManageTeamDirectly],
+  );
 
   // Permission: can log time for other team members (only team leader or admin)
   const canLogForOthers = useMemo(() => {
@@ -4500,8 +4507,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     (wo.createdById === user?.id && hasPermission('work_orders.create'))
   );
 
-  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers or finalized WOs
-  const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
+  // Authorization controls visibility; lifecycle state controls disabling.
+  // Viewers/read-only actors should not see execution buttons they cannot use.
+  const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO;
+  const workActionDisabled = isWOFinalized || !canPerformWorkActions;
   // Disable ALL interactive buttons for completed/closed WOs
   const allActionsDisabled = isWOFinalized;
 
@@ -4534,7 +4543,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       {/* Actions Bar */}
       <div className="pb-4 flex items-center gap-2">
         {/* When permanently locked or user has no action permission, hide the entire Actions dropdown */}
-        {!isWOPermanentlyLocked && (canManageTeamDirectly || canTakeActions) && (
+        {!isWOPermanentlyLocked && !isReadOnly && (canEdit || transitionActions.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isReadOnly}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
@@ -5789,7 +5798,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     Busy on WO #{globalActiveSession?.workOrderNumber}
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>
+                {canPerformWorkActions && <Button size="sm" variant="ghost" className="gap-1.5" disabled={isWOFinalized} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>}
               </div>
             </CardHeader>
             <CardContent>
@@ -6085,7 +6094,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
+                {canPerformWorkActions && <Button size="sm" variant="outline" className="gap-1.5" disabled={isWOFinalized} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>}
               </div>
             </CardHeader>
             <CardContent>
@@ -6258,19 +6267,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                 ) : (
                 <>
-                {toolResourcesEnabled && <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {toolResourcesEnabled && canPerformWorkActions && <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Request Tool</span>
                 </button>}
-                {toolResourcesEnabled && <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {toolResourcesEnabled && canPerformWorkActions && <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
                   <span className="text-xs font-medium">Transfer Tool</span>
                 </button>}
-                {downtimeEnabled && <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {downtimeEnabled && canPerformWorkActions && <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>}
-                {materialResourcesEnabled && <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {materialResourcesEnabled && canPerformWorkActions && <button onClick={() => openMatReturn()} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>}
@@ -6280,8 +6289,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">View All Tools</span>
                 </button>}
-                {!isWOFinalized && (
-                <button onClick={() => setActionDialog('complete')} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {!isWOFinalized && canPerformWorkActions && (
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Complete WO</span>
                 </button>
@@ -6419,7 +6428,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {toolResourcesEnabled && <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+              {canPerformWorkActions && <Button size="sm" variant="outline" className="gap-1.5" disabled={isWOFinalized} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>}
             </CardHeader>
             <CardContent>
               {personalTools.length === 0 ? (

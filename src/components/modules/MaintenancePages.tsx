@@ -4596,15 +4596,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     && !(request.source === 'planner_suggested' && request.status === 'pending')
   );
 
-  const canCancelPendingResourceRequest = (requestRow: any) => {
+  const canCancelPendingResourceRequest = (
+    requestRow: any,
+    kind: 'material' | 'tool',
+  ) => {
     if (!user || isWOFinalized || requestRow?.status !== 'pending') return false;
     if (requestRow.requestedById === user.id || requestRow.requestedBy?.id === user.id) return true;
+    if (isAdmin()) return true;
 
-    const roleSlugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
-    return isAdmin()
-      || roleSlugs.some((slug: string) =>
-        ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(slug)
-      );
+    const requiredPermission = kind === 'material'
+      ? 'repair_material_requests.update'
+      : 'repair_tool_requests.update';
+    if (!hasPermission(requiredPermission)) return false;
+
+    const roleSlugs = (user.roles || [])
+      .map((role: any) => typeof role === 'string' ? role : role?.slug)
+      .filter(Boolean);
+    if (roleSlugs.includes('maintenance_manager') || roleSlugs.includes('plant_manager')) return true;
+
+    return roleSlugs.includes('maintenance_supervisor')
+      && wo?.assignedSupervisorId === user.id;
   };
 
   // Disable ALL interactive buttons for completed/closed WOs
@@ -6286,7 +6297,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                              {canCancelPendingResourceRequest(mr) && (
+                              {canCancelPendingResourceRequest(mr, 'material') && (
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -6375,7 +6386,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
                         tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
                       }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
-                      {canCancelPendingResourceRequest(tr) && (
+                      {canCancelPendingResourceRequest(tr, 'tool') && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -6463,7 +6474,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
-                            {canCancelPendingResourceRequest(tr) && (
+                            {canCancelPendingResourceRequest(tr, 'tool') && (
                               <Button
                                 size="sm"
                                 variant="ghost"

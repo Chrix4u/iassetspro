@@ -4412,8 +4412,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   const isSupervisorOrAdminLocal = () => {
-    const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+    if (!user) return false;
+    if (isAdmin()) return true;
+    if (!hasPermission('repair_material_requests.update')) return false;
+
+    const slugs = (user.roles || [])
+      .map((role: any) => typeof role === 'string' ? role : role?.slug)
+      .filter(Boolean);
+
+    if (slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) {
+      return true;
+    }
+
+    return slugs.includes('maintenance_supervisor')
+      && wo?.assignedSupervisorId === user.id;
   };
 
   const isStoreOrAdminLocal = () => {

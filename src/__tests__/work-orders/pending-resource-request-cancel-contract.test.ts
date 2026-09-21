@@ -14,11 +14,11 @@ describe('RWOP pending resource request cancellation contract', () => {
     expect(materialApi).toContain('export async function DELETE');
     expect(materialApi).toContain('authorizeMaterialRequestPlant');
     expect(materialApi).toContain("existing.status !== 'pending'");
-    expect(materialApi).toContain('existing.requestedById !== session.userId');
-    expect(materialApi).toContain("hasRole(session, 'maintenance_supervisor')");
-    expect(materialApi).toContain("hasRole(session, 'maintenance_manager')");
-    expect(materialApi).toContain("hasRole(session, 'plant_manager')");
-    expect(materialApi).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(materialApi).toContain('const ownsRequest = existing.requestedById === session.userId');
+    expect(materialApi).toContain('canReviewResourceRequestAsSupervisor(');
+    expect(materialApi).toContain("existing.workOrder?.assignedSupervisorId");
+    expect(materialApi).toContain("'repair_material_requests.update'");
+    expect(materialApi).toContain("where: { id, status: 'pending' }");
     expect(materialApi).toContain("entityType: 'repair_material_request'");
   });
 
@@ -26,10 +26,10 @@ describe('RWOP pending resource request cancellation contract', () => {
     expect(toolApi).toContain('export async function DELETE');
     expect(toolApi).toContain('authorizeToolRequestPlant');
     expect(toolApi).toContain("toolReq.status !== 'pending'");
-    expect(toolApi).toContain('toolReq.requestedById !== session.userId');
-    expect(toolApi).toContain("hasRole(session, 'maintenance_supervisor')");
-    expect(toolApi).toContain("hasRole(session, 'maintenance_manager')");
-    expect(toolApi).toContain("hasRole(session, 'plant_manager')");
+    expect(toolApi).toContain('const ownsRequest = toolReq.requestedById === session.userId');
+    expect(toolApi).toContain('canReviewResourceRequestAsSupervisor(');
+    expect(toolApi).toContain('toolReq.workOrder?.assignedSupervisorId');
+    expect(toolApi).toContain("'repair_tool_requests.update'");
     expect(toolApi).toContain("deleteMany({ where: { id, status: 'pending' } })");
     expect(toolApi).toContain("entityType: 'repair_tool_request'");
   });
@@ -39,7 +39,11 @@ describe('RWOP pending resource request cancellation contract', () => {
     expect(workOrderUi).toContain("requestRow?.status !== 'pending'");
     expect(workOrderUi).toContain('requestRow.requestedById === user.id');
     expect(workOrderUi).toContain('requestRow.requestedBy?.id === user.id');
-    expect(workOrderUi).toContain("'maintenance_supervisor', 'maintenance_manager', 'plant_manager'");
+    expect(workOrderUi).toContain("hasPermission(requiredPermission)");
+    expect(workOrderUi).toContain("roleSlugs.includes('maintenance_manager')");
+    expect(workOrderUi).toContain("roleSlugs.includes('plant_manager')");
+    expect(workOrderUi).toContain("roleSlugs.includes('maintenance_supervisor')");
+    expect(workOrderUi).toContain('wo?.assignedSupervisorId === user.id');
   });
 
   it('cancels material and tool requests from WO details and refreshes recommendations', () => {

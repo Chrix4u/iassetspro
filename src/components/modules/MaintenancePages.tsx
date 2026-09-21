@@ -4486,8 +4486,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <p className="text-lg font-bold">{formatDuration(wo.actualHours || 0)}</p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
-                <p className="text-xs text-muted-foreground">Materials Used</p>
-                <p className="text-lg font-bold">{wo.materials?.length || 0}</p>
+                <p className="text-xs text-muted-foreground">Materials Issued</p>
+                <p className="text-lg font-bold">
+                  {(wo.repairMaterialRequests || []).reduce(
+                    (sum: number, request: any) => sum + Number(request.quantityIssued || 0),
+                    0,
+                  )}
+                </p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Total Cost</p>

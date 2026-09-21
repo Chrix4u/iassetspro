@@ -4,7 +4,8 @@
  * Regression coverage for planner-selected spare parts/tools during MR conversion.
  * Both resources must be visible on the resulting WO detail data immediately.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
+import { authenticateAs, navigateToWODetail } from './helpers/auth';
 import {
   getToken,
   approveMR,
@@ -17,7 +18,10 @@ import {
   apiCall,
 } from './helpers/api';
 
-test('UAT-12: planner-selected material and tool appear on converted WO details', async () => {
+test('UAT-12: planner-selected material and tool appear on converted WO details', async ({ browser }) => {
+  const context: BrowserContext = await browser.newContext();
+
+  try {
   const plannerToken = await getToken('planner');
   const requesterToken = await getToken('requester');
   const supervisorToken = await getToken('supervisor');
@@ -113,4 +117,17 @@ test('UAT-12: planner-selected material and tool appear on converted WO details'
   expect(suggestedTool).toBeTruthy();
   expect(Number(suggestedTool.quantity)).toBe(1);
   expect(suggestedTool.pipelineStatus).toBe('pending');
+
+  await authenticateAs(context, 'planner');
+  const page = await context.newPage();
+  await navigateToWODetail(page, wo.id);
+
+  // The user-reported regression is visual: the tool rendered, but the planner
+  // material disappeared. Assert both resources on the actual WO detail page.
+  await expect(page.getByText(material.name, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/UAT-CAL-VALID/i).first()).toBeVisible({ timeout: 20_000 });
+  await page.close();
+  } finally {
+    await context.close();
+  }
 });

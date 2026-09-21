@@ -285,6 +285,11 @@ export async function PUT(
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { status: 'rejected', notes: `Rejected by ${session.fullName}` },
           });
+          // Legacy conversions may have only the planned WO material row.
+          // Removing it prevents the reconciler from resurrecting a rejected item.
+          await tx.workOrderMaterial.deleteMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+          });
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
@@ -410,6 +415,10 @@ export async function PUT(
             where: { workOrderId: id, itemId, source: 'planner_suggested', status: 'pending' },
             data: { quantityRequested: quantity },
           });
+          await tx.workOrderMaterial.updateMany({
+            where: { workOrderId: id, itemId, status: 'planned' },
+            data: { quantity },
+          });
         } else {
           const tools = JSON.parse(wo.suggestedTools || '[]') as Array<Record<string, unknown>>;
           await tx.workOrder.update({
@@ -426,6 +435,80 @@ export async function PUT(
     }
 
     if (action === 'send_to_store') {
+      // Legacy/partial MR→WO conversions can contain a planned WorkOrderMaterial
+      // without the canonical planner_suggested RepairMaterialRequest. Repair
+      // that durable pipeline before notifying the store so a recovered item is
+      // not merely visible — it is actionable.
+      const plannedMaterials = await db.workOrderMaterial.findMany({
+        where: { workOrderId: id, status: 'planned', itemId: { not: null } },
+        select: {
+          id: true,
+          itemId: true,
+          itemName: true,
+          quantity: true,
+          unitCost: true,
+          totalCost: true,
+          requestedBy: true,
+        },
+      });
+
+      const existingPlannerMaterialRequests = await db.repairMaterialRequest.findMany({
+        where: { workOrderId: id, source: 'planner_suggested' },
+        select: { itemId: true },
+      });
+      const existingItemIds = new Set(
+        existingPlannerMaterialRequests
+          .map((request) => request.itemId)
+          .filter((itemId): itemId is string => Boolean(itemId)),
+      );
+
+      const missingMaterials = plannedMaterials.filter(
+        (material) => material.itemId && !existingItemIds.has(material.itemId),
+      );
+
+      if (missingMaterials.length > 0) {
+        const inventoryItems = await db.inventoryItem.findMany({
+          where: { id: { in: missingMaterials.map((material) => material.itemId as string) } },
+          select: {
+            id: true,
+            name: true,
+            unitOfMeasure: true,
+            unitCost: true,
+          },
+        });
+        const inventoryById = new Map(inventoryItems.map((item) => [item.id, item]));
+
+        await db.$transaction(async (tx) => {
+          for (const material of missingMaterials) {
+            const itemId = material.itemId as string;
+            const inventoryItem = inventoryById.get(itemId);
+            const quantity = Number(material.quantity || 1);
+            const unitCost = Number(material.unitCost ?? inventoryItem?.unitCost ?? 0);
+            await tx.repairMaterialRequest.create({
+              data: {
+                workOrderId: id,
+                itemId,
+                itemName: material.itemName || inventoryItem?.name || 'Planned Material',
+                quantityRequested: quantity,
+                quantityApproved: 0,
+                quantityIssued: 0,
+                quantityReturned: 0,
+                unit: inventoryItem?.unitOfMeasure || 'each',
+                unitCost,
+                estimatedCost: Number(material.totalCost ?? (quantity * unitCost)),
+                urgency: 'normal',
+                reason: `Planned for work order ${id}`,
+                notes: 'Recovered from planned work-order material before store submission',
+                plantId: wo.plantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                requestedById: material.requestedBy || session.userId,
+              },
+            });
+          }
+        });
+      }
+
       const pendingMatReqs = await db.repairMaterialRequest.findMany({
         where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
       });

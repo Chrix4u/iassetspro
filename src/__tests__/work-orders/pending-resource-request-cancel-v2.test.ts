@@ -23,7 +23,9 @@ describe('RWOP pending resource request cancellation', () => {
   it('atomically restores a cancelled technician recommendation to planned', () => {
     expect(materialApi).toContain("existing.source === 'technician_from_planner_recommendation'");
     expect(materialApi).toContain("status: 'requested'");
-    expect(materialApi).toContain("data: { status: 'planned' }");
+    expect(materialApi).toContain("status: 'planned'");
+    expect(materialApi).toContain('existing.workOrder?.plannerId');
+    expect(materialApi).toContain('{ requestedBy: existing.workOrder.plannerId }');
     expect(materialApi).toContain('await db.$transaction(async (tx) =>');
     expect(materialApi).toContain("entityType: 'repair_material_request'");
   });

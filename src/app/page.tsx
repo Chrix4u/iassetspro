@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
+import { AUTH_SESSION_EXPIRED_EVENT } from '@/lib/api';
 import LoginPage from '@/components/LoginPage';
 import EAMApp from '@/components/EAMApp';
 
@@ -155,6 +156,17 @@ export default function Home() {
   // Restore session on mount — MUST run before the auth gate
   useEffect(() => {
     fetchMe();
+  }, [fetchMe]);
+
+  // Any protected API can discover that the bearer session is gone before
+  // /api/auth/me runs again. Reconcile the Zustand auth state immediately so
+  // the protected app shell unmounts instead of continuing to issue 401/403s.
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      void fetchMe();
+    };
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, [fetchMe]);
 
   // Global error handler for unhandled promise rejections & runtime errors

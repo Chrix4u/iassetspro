@@ -118,7 +118,7 @@ export function ResponsiveDialog({
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+          <div className="responsive-dialog-body flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
             {children}
           </div>
 
@@ -150,7 +150,7 @@ export function ResponsiveDialog({
           )}
         </DialogHeader>
 
-        <div className={cn(!footer && "pb-2")}>
+        <div className={cn("responsive-dialog-body", !footer && "pb-2")}>
           {children}
         </div>
 

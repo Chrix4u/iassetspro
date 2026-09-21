@@ -37,6 +37,14 @@ describe('pending WO resource request cancellation', () => {
     expect(ui).toContain("mr.status === 'pending' && isSupervisorOrAdminLocal()");
   });
 
+  it('hides store material actions when effective update permission is missing', () => {
+    expect(ui).toContain("hasPermission('repair_material_requests.update')");
+    expect(ui).toContain("slugs.includes('store_keeper')");
+    expect(ui).toContain("slugs.includes('inventory_manager')");
+    expect(ui).toContain("slugs.includes('tools_shop_attendant')");
+    expect(ui).toContain("mr.status === 'supervisor_approved' && isStoreOrAdminLocal()");
+  });
+
   it('shows cancellation only for authorized pending rows and refreshes recommendations', () => {
     expect(ui).toContain('resourceCancelTarget');
     expect(ui).toContain('canCancelPendingResourceRequest');

@@ -41,10 +41,19 @@ describe('work-order team candidate boundaries v2', () => {
   });
 
   it('uses only the WO-scoped candidate directory in team assignment dialogs', () => {
-    expect(ui).toContain('/team-candidates?');
-    expect(ui).not.toContain("api.get('/api/workers?role=all')");
-    expect(ui).not.toContain('/api/workers?role=technician&plantId=');
-    expect(ui).toContain('<SelectItem value="technician">Technician</SelectItem>');
-    expect(ui).toContain('<SelectItem value="team_leader">Team Leader</SelectItem>');
+    const addDialog = ui.match(
+      /\{\/\* Add Team Member Dialog \*\/\}[\s\S]*?\{\/\* Request Team Member Dialog/
+    )?.[0] || '';
+    const approveDialog = ui.match(
+      /\{\/\* Assign Technician Dialog[\s\S]*?\{\/\* Right Panel/
+    )?.[0] || '';
+
+    expect(addDialog).toContain('/team-candidates?');
+    expect(addDialog).not.toContain('/api/workers?role=all');
+    expect(addDialog).toContain('<SelectItem value="technician">Technician</SelectItem>');
+    expect(addDialog).toContain('<SelectItem value="team_leader">Team Leader</SelectItem>');
+
+    expect(approveDialog).toContain('/team-candidates?');
+    expect(approveDialog).not.toContain('/api/workers?role=technician');
   });
 });

@@ -4,6 +4,7 @@ const { db, tx } = vi.hoisted(() => {
   const tx = {
     $queryRaw: vi.fn(),
     tool: { findUnique: vi.fn(), updateMany: vi.fn() },
+    user: { findUnique: vi.fn() },
     toolTransferRequest: { findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     repairToolRequest: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
     repairToolRequestItem: { findMany: vi.fn(), updateMany: vi.fn() },
@@ -26,7 +27,7 @@ function transfer(overrides: Record<string, unknown> = {}) {
     id: 'xfer-1', toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', requestedById: 'tech-1',
     reason: 'Shift handover', status: 'awaiting_handover', transferredAt: null,
     fromUserAcceptedAt: new Date('2026-09-14T10:00:00Z'), toUserAcceptedAt: new Date('2026-09-14T10:01:00Z'),
-    toolConditionAtTransfer: 'good', tool: { id: 'tool-1', assignedToId: 'tech-1' },
+    toolConditionAtTransfer: 'good', tool: { id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' },
     ...overrides,
   };
 }
@@ -48,6 +49,11 @@ beforeEach(() => {
   tx.repairToolRequestItem.findMany.mockResolvedValue([{ quantityIssued: 1, quantityReturned: 0, quantityTransferred: 1 }]);
   tx.toolTransaction.create.mockResolvedValue({});
   tx.repairToolRequest.findMany.mockResolvedValue([sourceRequest()]);
+  tx.user.findUnique.mockResolvedValue({
+    status: 'active',
+    plantAccess: [{ id: 'user-plant-1' }],
+    userRoles: [{ id: 'tech-role-1' }],
+  });
 });
 
 describe('createToolTransferRequest', () => {

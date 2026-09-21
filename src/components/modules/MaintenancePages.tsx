@@ -3242,10 +3242,95 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
   const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
+  const hydrateSuggestedResourcesFromWO = useCallback((workOrder: any) => {
+    const parseSnapshot = (value: unknown) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value !== 'string') return [];
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const partMap = new Map<string, any>();
+    for (const part of parseSnapshot(workOrder?.suggestedParts)) {
+      if (part?.itemId) partMap.set(String(part.itemId), part);
+    }
+    for (const material of Array.isArray(workOrder?.materials) ? workOrder.materials : []) {
+      if (!material?.itemId || material.status !== 'planned') continue;
+      const key = String(material.itemId);
+      const current = partMap.get(key) || {};
+      partMap.set(key, {
+        id: current.id || material.id,
+        itemId: key,
+        itemName: current.itemName || material.itemName || 'Planned material',
+        itemCode: current.itemCode || '',
+        quantity: current.quantity || material.quantity || 1,
+        unit: current.unit || 'each',
+        notes: current.notes || '',
+        pipelineStatus: current.pipelineStatus || 'suggested',
+        ...current,
+      });
+    }
+    for (const request of Array.isArray(workOrder?.repairMaterialRequests) ? workOrder.repairMaterialRequests : []) {
+      if (!request?.itemId || request.source !== 'planner_suggested' || request.status === 'rejected') continue;
+      const key = String(request.itemId);
+      const current = partMap.get(key) || {};
+      partMap.set(key, {
+        id: current.id || request.id,
+        itemId: key,
+        itemName: current.itemName || request.itemName || request.item?.name || 'Planned material',
+        itemCode: current.itemCode || request.item?.itemCode || '',
+        quantity: current.quantity || request.quantityRequested || 1,
+        unit: current.unit || request.unit || 'each',
+        notes: current.notes || request.notes || '',
+        pipelineId: request.id,
+        pipelineStatus: request.status || 'pending',
+        quantityApproved: request.quantityApproved || 0,
+        quantityIssued: request.quantityIssued || 0,
+        ...current,
+      });
+    }
+    setSuggestedParts([...partMap.values()]);
+
+    const toolMap = new Map<string, any>();
+    for (const tool of parseSnapshot(workOrder?.suggestedTools)) {
+      if (tool?.toolId) toolMap.set(String(tool.toolId), tool);
+    }
+    for (const request of Array.isArray(workOrder?.repairToolRequests) ? workOrder.repairToolRequests : []) {
+      if (request?.source !== 'planner_suggested' || request.status === 'rejected') continue;
+      const requestItems = Array.isArray(request.items) && request.items.length > 0
+        ? request.items
+        : request.toolId
+          ? [{ toolId: request.toolId, toolName: request.toolName, toolCode: request.tool?.toolCode || '', quantityRequested: 1 }]
+          : [];
+      for (const item of requestItems) {
+        if (!item?.toolId) continue;
+        const key = String(item.toolId);
+        const current = toolMap.get(key) || {};
+        toolMap.set(key, {
+          id: current.id || `${request.id}:${key}`,
+          toolId: key,
+          toolName: current.toolName || item.toolName || request.toolName || 'Planned tool',
+          toolCode: current.toolCode || item.toolCode || request.tool?.toolCode || '',
+          quantity: current.quantity || item.quantityRequested || 1,
+          notes: current.notes || request.notes || '',
+          pipelineId: request.id,
+          pipelineStatus: request.status || 'pending',
+          ...current,
+        });
+      }
+    }
+    setSuggestedTools([...toolMap.values()]);
+  }, []);
+
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
     if (res.success && res.data) {
       setWo(res.data);
+      hydrateSuggestedResourcesFromWO(res.data);
       // Reset optimistic paused state only if server timeLogs confirm the state
       // (hasPausedSession memo will re-evaluate from wo.timeLogs)
       if (res.data.timeLogs && res.data.timeLogs.length > 0) {
@@ -3261,7 +3346,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       }
     }
     setLoading(false);
-  }, [id]);
+  }, [id, hydrateSuggestedResourcesFromWO]);
 
   // Fetch team member requests (separate call for permission-filtered results)
   const fetchTeamRequests = useCallback(async () => {
@@ -3279,8 +3364,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     try {
       const res = await api.get(`/api/work-orders/${id}/suggested-items`);
       if (res.success && res.data) {
-        setSuggestedParts(res.data.suggestedParts || []);
-        setSuggestedTools(res.data.suggestedTools || []);
+        const incomingParts = Array.isArray(res.data.suggestedParts) ? res.data.suggestedParts : [];
+        const incomingTools = Array.isArray(res.data.suggestedTools) ? res.data.suggestedTools : [];
+
+        // The main WO payload is the durable baseline. An empty auxiliary
+        // response must never erase a planner-selected material/tool that was
+        // already reconciled from canonical WO/request records.
+        if (incomingParts.length > 0) setSuggestedParts(incomingParts);
+        if (incomingTools.length > 0) setSuggestedTools(incomingTools);
       }
     } catch (err) {
       // Suggested items are optional; don't block the UI
@@ -3316,6 +3407,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       if (active) {
         if (res.success && res.data) {
           setWo(res.data);
+          hydrateSuggestedResourcesFromWO(res.data);
           // Team member requests from WO response
           if ((res.data as any).teamMemberRequests) {
             setTeamRequests((res.data as any).teamMemberRequests);
@@ -3355,7 +3447,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     // Fetch suggested items
     fetchSuggestedItems();
     return () => { active = false; };
-  }, [id, fetchSuggestedItems]);
+  }, [id, fetchSuggestedItems, hydrateSuggestedResourcesFromWO]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {

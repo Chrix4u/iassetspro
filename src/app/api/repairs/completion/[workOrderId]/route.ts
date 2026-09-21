@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { extractAuditContext } from '@/lib/audit-helpers';
+import { canViewWorkOrder } from '@/services/workOrderAccess.service';
 import {
   submitRepairCompletion,
   type CompletionSessionContext,
@@ -29,47 +30,108 @@ function optionalString(value: unknown): string | undefined {
 }
 
 // GET /api/repairs/completion/[workOrderId]
-export async function GET(request: NextRequest, { params }: { params: Promise<{ workOrderId: string }> }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ workOrderId: string }> },
+) {
   try {
     const session = getSession(request);
-    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
 
     const { workOrderId } = await params;
-
-    // Plant authorization
     const plantAuth = await authorizeWorkOrderPlant(request, session, workOrderId);
     if (!plantAuth.ok) return plantAuth.response;
+
+    const workOrder = await db.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: {
+        id: true,
+        woNumber: true,
+        title: true,
+        status: true,
+        isLocked: true,
+        assetId: true,
+        lockReason: true,
+        assignedTo: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamLeaderId: true,
+        assignedSupervisor: { select: { id: true, fullName: true } },
+        planner: { select: { id: true, fullName: true } },
+        assignee: { select: { id: true, fullName: true, avatar: true } },
+        teamMembers: { select: { userId: true, role: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+      },
+    });
+
+    if (!workOrder) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+    if (!canViewWorkOrder(session, workOrder)) {
+      return NextResponse.json(
+        { success: false, error: 'Access denied — you are not part of this work order workflow' },
+        { status: 403 },
+      );
+    }
 
     const completion = await db.repairCompletion.findUnique({
       where: { workOrderId },
       include: {
         supervisorApprovedBy: { select: { id: true, fullName: true } },
         plannerClosedBy: { select: { id: true, fullName: true } },
-        workOrder: {
-          select: {
-            id: true,
-            woNumber: true,
-            title: true,
-            status: true,
-            isLocked: true,
-            assetId: true,
-            lockReason: true,
-            locker: { select: { id: true, fullName: true } },
-            assignedTo: true,
-            assignedSupervisorId: true,
-            plannerId: true,
-            teamLeaderId: true,
-            assignedSupervisor: { select: { id: true, fullName: true } },
-            planner: { select: { id: true, fullName: true } },
-            assignee: { select: { id: true, fullName: true, avatar: true } },
-            teamMembers: { select: { userId: true, role: true } },
-          },
-        },
       },
     });
 
-    if (!completion) return NextResponse.json({ success: false, error: 'Completion record not found' }, { status: 404 });
-    return NextResponse.json({ success: true, data: completion });
+    if (completion) {
+      return NextResponse.json({
+        success: true,
+        data: { ...completion, workOrder },
+      });
+    }
+
+    if (['completed', 'verified', 'closed'].includes(workOrder.status)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Work order is ${workOrder.status} but its canonical completion snapshot is missing`,
+        },
+        { status: 409 },
+      );
+    }
+
+    // The compatibility page needs a view model before the first canonical
+    // RepairCompletion row exists so the assigned execution actor can submit it.
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: `draft:${workOrderId}`,
+        workOrderId,
+        completionNotes: null,
+        findings: null,
+        rootCause: null,
+        correctiveAction: null,
+        totalLaborHours: 0,
+        totalMaterialCost: 0,
+        totalToolCost: 0,
+        totalDowntimeMinutes: 0,
+        supervisorStatus: 'pending_review',
+        supervisorApprovedById: null,
+        supervisorApprovedAt: null,
+        supervisorReviewNotes: null,
+        plannerStatus: 'pending_closure',
+        plannerClosedById: null,
+        plannerClosedAt: null,
+        closureNotes: null,
+        reworkCount: 0,
+        reworkReason: null,
+        supervisorApprovedBy: null,
+        plannerClosedBy: null,
+        workOrder,
+        draft: true,
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load completion record';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

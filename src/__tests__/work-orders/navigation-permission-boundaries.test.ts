@@ -195,7 +195,8 @@ describe('navigation, module, and action permission boundaries', () => {
   it('never lets a read-only team row disable the primary assignee resource controls', () => {
     expect(maintenance).toContain('if (wo.assignedToId === user.id) return false');
     expect(maintenance).toContain("tm.accessLevel === 'read_only'");
-    expect(maintenance).toContain('const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO');
+    expect(maintenance).toContain('const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO');
+    expect(maintenance).toContain('const workActionDisabled = isWOFinalized || !canPerformWorkActions');
     expect(maintenance).toContain("api.get('/api/inventory?mode=lookup&limit=100')");
     expect(maintenance).toContain("api.get('/api/tools?mode=lookup&limit=100')");
     expect(maintenance).not.toContain("api.get('/api/tools?status=available&limit=100')");

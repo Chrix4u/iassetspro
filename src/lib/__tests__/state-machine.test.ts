@@ -37,6 +37,16 @@ import {
 const adminSession = { userId: 'admin-1', roles: ['admin'], permissions: [] };
 const plannerSession = { userId: 'planner-1', roles: ['planner'], permissions: [] };
 const operatorSession = { userId: 'op-1', roles: ['operator'], permissions: [] };
+const plannerAssignSession = {
+  userId: 'planner-1',
+  roles: ['planner'],
+  permissions: ['work_orders.assign_technician'],
+};
+const plannerNoAssignSession = {
+  userId: 'planner-1',
+  roles: ['planner'],
+  permissions: [],
+};
 
 function mockTransitionRule(overrides: Record<string, unknown> = {}) {
   return {
@@ -119,6 +129,37 @@ describe('checkTransition', () => {
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('does not allow this transition');
+  });
+
+  it('rejects a role-allowed work-order transition when the effective capability was revoked', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
+      mockTransitionRule({ allowedRoleSlugs: JSON.stringify(['planner']) }),
+    );
+
+    const result = await checkTransition(
+      'work_order',
+      'draft',
+      'assigned',
+      plannerNoAssignSession,
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('effective permissions');
+  });
+
+  it('allows a role-allowed work-order transition when the effective capability is present', async () => {
+    (mockDb.statusTransition.findFirst as Mock).mockResolvedValue(
+      mockTransitionRule({ allowedRoleSlugs: JSON.stringify(['planner']) }),
+    );
+
+    const result = await checkTransition(
+      'work_order',
+      'draft',
+      'assigned',
+      plannerAssignSession,
+    );
+
+    expect(result.allowed).toBe(true);
   });
 
   it('allows admin to bypass the transition role list', async () => {
@@ -308,6 +349,20 @@ describe('getAvailableTransitions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (mockDb.statusTransition.count as Mock).mockResolvedValue(1);
+  });
+
+  it('removes role-allowed transitions when the effective permission is absent', async () => {
+    (mockDb.statusTransition.findMany as Mock).mockResolvedValue([
+      mockTransitionRule({ allowedRoleSlugs: JSON.stringify(['planner']) }),
+    ]);
+
+    const transitions = await getAvailableTransitions(
+      'work_order',
+      'draft',
+      plannerNoAssignSession,
+    );
+
+    expect(transitions).toEqual([]);
   });
 
   it('returns the role-filtered transition contract', async () => {

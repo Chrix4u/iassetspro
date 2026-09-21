@@ -3289,25 +3289,67 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
-    if (!confirm(`Remove this suggested ${itemType}?`)) return;
+    if (!confirm(`Remove this recommended ${itemType === 'part' ? 'material' : 'tool'} from the work plan?`)) return;
     try {
-      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'reject_item', itemType, itemId });
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'remove_recommendation',
+        itemType,
+        itemId,
+      });
       if (res.success) {
+        toast.success('Recommendation removed');
         fetchSuggestedItems();
         fetchWO();
+      } else {
+        toast.error(res.error || 'Could not remove recommendation');
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not remove recommendation');
+    }
   };
 
-  const handleSendToStore = async () => {
+  const handleSuggestedQuantityChange = async (
+    itemType: 'part' | 'tool',
+    itemId: string,
+    quantity: number,
+  ) => {
+    if (!Number.isFinite(quantity) || quantity < 1) return;
     try {
-      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'send_to_store' });
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'update_quantity',
+        itemType,
+        itemId,
+        quantity,
+      });
       if (res.success) {
-        toast.success(res.data?.message || 'Items sent to store');
         fetchSuggestedItems();
         fetchWO();
+      } else {
+        toast.error(res.error || 'Could not update recommended quantity');
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not update recommended quantity');
+    }
+  };
+
+  const handleSubmitSuggestedRecommendations = async () => {
+    try {
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'submit_recommendations',
+      });
+      if (res.success) {
+        toast.success(res.message || res.data?.message || 'Recommended resources submitted for approval');
+        fetchSuggestedItems();
+        fetchWO();
+      } else {
+        toast.error(res.error || 'Could not submit recommended resources');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not submit recommended resources');
+    }
   };
 
   useEffect(() => {

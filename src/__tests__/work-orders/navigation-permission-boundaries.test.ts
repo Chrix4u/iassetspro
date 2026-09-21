@@ -83,6 +83,17 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(mobile).toContain('pageModuleIsEnabled(page, enabledModules)');
   });
 
+  it('requires every underlying module for composite pages', () => {
+    expect(pageAccess).toContain("'maintenance-analytics': ['work_orders', 'analytics']");
+    expect(pageAccess).toContain("'repairs-analytics': ['repairs', 'analytics']");
+    expect(pageAccess).toContain("'reports-maintenance': ['reports', 'work_orders', 'maintenance_requests']");
+    expect(pageAccess).toContain("'reports-inventory': ['reports', 'inventory']");
+    expect(pageAccess).toContain("'reports-production': ['reports', 'production']");
+    expect(pageAccess).toContain("'reports-quality': ['reports', 'quality']");
+    expect(pageAccess).toContain("'reports-safety': ['reports', 'safety']");
+    expect(pageAccess).toContain("'enterprise-reports': ['reports', 'work_orders', 'assets', 'inventory', 'repairs', 'downtime']");
+  });
+
   it('keeps dashboard own-work cards and data aligned with view_own scope', () => {
     expect(dashboard).toContain('pageHasPermission(card.page, hasPermission, isAdmin())');
     expect(dashboard).toContain('pageHasPermission(action.page, hasPermission, isAdmin())');

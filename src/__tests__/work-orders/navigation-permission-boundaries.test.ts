@@ -229,8 +229,9 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(toolDetailApi).toContain("if (action === 'return')");
     expect(toolDetailApi).toContain('toolReq.requestedById !== session.userId');
     expect(toolDetailApi).toContain('Only the technician/custodian who received this tool request may submit its return');
-    expect(toolTransferApi).toContain('fromUserId !== session.userId');
-    expect(toolTransferApi).toContain('tool.assignedToId !== fromUserId');
+    expect(toolTransferApi).toContain('const effectiveFromUserId = tool.assignedToId');
+    expect(toolTransferApi).toContain('effectiveFromUserId !== session.userId');
+    expect(toolTransferApi).toContain('proposedFromUserId && proposedFromUserId !== effectiveFromUserId');
     expect(repairs).toContain('function canActAsToolCustodian(request: any, user: any)');
     expect(repairs).toContain('function canTransferToolCustody(request: any, user: any)');
     expect(singleTechUat).toContain('expect(blockedReturn.status).toBe(403)');

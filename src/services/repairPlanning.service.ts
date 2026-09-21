@@ -354,6 +354,8 @@ export async function convertMRToWorkOrder(
         quantity: number;
         unit: string;
         notes: string;
+        recommendedById: string;
+        recommendedAt: string;
       }> = [];
       const suggestedTools: Array<{
         id: string;
@@ -362,6 +364,8 @@ export async function convertMRToWorkOrder(
         toolCode: string;
         quantity: number;
         notes: string;
+        recommendedById: string;
+        recommendedAt: string;
       }> = [];
 
       if (payload.requiredParts && Array.isArray(payload.requiredParts) && payload.requiredParts.length > 0) {

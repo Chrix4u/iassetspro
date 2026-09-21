@@ -205,13 +205,21 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(fullTech?.[1]).toContain("'repair_material_requests.create'");
   });
 
-  it('models Repairs as a licensed optional domain without implicitly enabling PM', () => {
+  it('licenses explicit Repairs UAT dependencies without implicitly enabling PM', () => {
     expect(fullSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
-    expect(uatSeed).toContain("where: { code: 'repairs' }");
+    expect(uatSeed).toContain("code: 'repairs'");
+    expect(uatSeed).toContain("code: 'assets'");
+    expect(uatSeed).toContain("code: 'maintenance_requests'");
+    expect(uatSeed).toContain("code: 'work_orders'");
+    expect(uatSeed).toContain("code: 'inventory'");
+    expect(uatSeed).toContain("code: 'tools'");
+    expect(uatSeed).toContain("code: 'reports'");
+    expect(uatSeed).toContain("code: 'analytics'");
+    expect(uatSeed).toContain("code: 'calibration'");
     expect(uatSeed).toContain("isSystemLicensed: true");
     expect(uatSeed).toContain("isEnabled: true");
     expect(uatSeed).toContain("isActive: true");
-    expect(uatSeed).not.toContain("where: { code: 'pm_schedules' }");
+    expect(uatSeed).not.toContain("code: 'pm_schedules'");
     expect(repairsModuleMigration).toContain("'repairs'");
     expect(repairsModuleMigration).toContain('INSERT INTO `system_modules`');
     expect(repairsModuleMigration).toContain('INSERT INTO `company_modules`');

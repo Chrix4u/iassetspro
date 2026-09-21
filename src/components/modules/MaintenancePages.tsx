@@ -4556,6 +4556,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Viewers/read-only actors should not see execution buttons they cannot use.
   const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO;
   const workActionDisabled = isWOFinalized || !canPerformWorkActions;
+
+  // Recommendation-only rows are rendered in the dedicated planner
+  // recommendation card. Do not duplicate legacy/projection rows into the
+  // live approval pipeline cards where they could look actionable.
+  const materialPipelineRequests = (wo.repairMaterialRequests || []).filter((request: any) =>
+    !request.projectionOnly
+    && !(request.source === 'planner_suggested' && request.status === 'pending')
+  );
+  const toolPipelineRequests = (wo.repairToolRequests || []).filter((request: any) =>
+    !request.projectionOnly
+    && !(request.source === 'planner_suggested' && request.status === 'pending')
+  );
+
   // Disable ALL interactive buttons for completed/closed WOs
   const allActionsDisabled = isWOFinalized;
 
@@ -6159,9 +6172,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Materials — with approval pipeline */}
           {materialResourcesEnabled && <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
+              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{materialPipelineRequests.length} requests</CardDescription></div>
               <div className="flex items-center gap-1.5 shrink-0">
-                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                {materialPipelineRequests.length > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
                 {canPerformWorkActions && <Button size="sm" variant="outline" className="gap-1.5" disabled={isWOFinalized} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>}
@@ -6169,7 +6182,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               {/* Repair Material Requests — full approval pipeline */}
-              {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 ? (
+              {materialPipelineRequests.length > 0 ? (
                 <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-muted/50 border overflow-hidden">
                     <div className="flex items-center gap-2 sm:gap-4 text-[10px] text-muted-foreground mb-1 min-w-0">
@@ -6182,7 +6195,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </div>
                   </div>
                   <div className="space-y-2 max-h-80 overflow-y-auto">
-                    {wo.repairMaterialRequests.map((mr: any) => (
+                    {materialPipelineRequests.map((mr: any) => (
                       <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && isSupervisorOrAdminLocal() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
                         <div className="flex items-start gap-3">
                           <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"><Package className="h-3.5 w-3.5" /></div>
@@ -6274,15 +6287,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>}
 
           {/* Tool Requests (from Repair module) */}
-          {toolResourcesEnabled && wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          {toolResourcesEnabled && toolPipelineRequests.length > 0 && (
           <Card className="border-0 shadow-sm overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
+              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{toolPipelineRequests.length} requests</CardDescription></div>
               <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {wo.repairToolRequests.slice(0, 10).map((tr: any) => {
+                {toolPipelineRequests.slice(0, 10).map((tr: any) => {
                   const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1 }] : []);
                   const toolSummary = toolItems.map((i: any) => i.toolName || i.name || 'Tool').filter(Boolean);
                   const totalRequested = toolItems.reduce((s: number, i: any) => s + (i.quantityRequested || 1), 0);
@@ -6315,8 +6328,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                   );
                 })}
-                {wo.repairToolRequests.length > 10 && (
-                  <p className="text-xs text-muted-foreground text-center">+{wo.repairToolRequests.length - 10} more tool requests</p>
+                {toolPipelineRequests.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center">+{toolPipelineRequests.length - 10} more tool requests</p>
                 )}
               </div>
             </CardContent>
@@ -6372,10 +6385,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
           <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
             <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-              {wo.repairToolRequests && wo.repairToolRequests.length > 0 ? (
+              {toolPipelineRequests.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{wo.repairToolRequests.length} Tool Request{wo.repairToolRequests.length > 1 ? 's' : ''}</p>
-                  {wo.repairToolRequests.map((tr: any) => {
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{toolPipelineRequests.length} Tool Request{toolPipelineRequests.length > 1 ? 's' : ''}</p>
+                  {toolPipelineRequests.map((tr: any) => {
                     const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1, quantityIssued: 0, quantityReturned: 0, quantityTransferred: 0 }] : []);
                     const isFinalStatus = ['returned', 'transferred', 'rejected'].includes(tr.status);
                     return (

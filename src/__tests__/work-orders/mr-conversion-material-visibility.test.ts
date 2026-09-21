@@ -51,6 +51,14 @@ describe('MR → WO planner material visibility', () => {
     );
   });
 
+  it('does not resurrect rejected planner resources from older snapshots', () => {
+    expect(maintenanceUi).toContain('const rejectedPartIds = new Set(');
+    expect(maintenanceUi).toContain('rejectedPartIds.has(String(part.itemId))');
+    expect(maintenanceUi).toContain('rejectedPartIds.has(String(material.itemId))');
+    expect(maintenanceUi).toContain('const rejectedToolIds = new Set(');
+    expect(maintenanceUi).toContain('rejectedToolIds.has(String(tool.toolId))');
+  });
+
   it('still clears resource UI immediately when its licensed module is unavailable', () => {
     expect(maintenanceUi).toContain('if (!materialResourcesEnabled) {');
     expect(maintenanceUi).toContain('setSuggestedParts([]);');

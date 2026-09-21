@@ -438,10 +438,33 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       );
     }
 
-    const deleted = await db.repairToolRequest.deleteMany({ where: { id, status: 'pending' } });
-    if (deleted.count !== 1) return NextResponse.json({ success: false, error: 'Tool request changed concurrently and can no longer be cancelled' }, { status: 409 });
-    await db.auditLog.create({ data: { userId: session.userId, action: 'delete', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName: toolReq.toolName, workOrderId: toolReq.workOrderId }) } });
-    return NextResponse.json({ success: true });
+    const cancellation = await db.$transaction(async (tx) => {
+      const deleted = await tx.repairToolRequest.deleteMany({
+        where: { id, status: 'pending' },
+      });
+      if (deleted.count !== 1) return { cancelled: false };
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'repair_tool_request',
+          entityId: id,
+          oldValues: JSON.stringify(toolReq),
+        },
+      });
+
+      return { cancelled: true };
+    });
+
+    if (!cancellation.cancelled) {
+      return NextResponse.json(
+        { success: false, error: 'Tool request changed concurrently and can no longer be cancelled' },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ success: true, message: 'Tool request cancelled' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete tool request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

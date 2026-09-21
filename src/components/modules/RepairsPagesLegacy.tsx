@@ -323,10 +323,15 @@ const TRANSFER_STAGES: PipelineStage[] = [
 // SHARED PERMISSION HELPERS
 // ============================================================================
 
-function canApproveAsSupervisor(request: any, user: any): boolean {
+function canApproveAsSupervisor(
+  request: any,
+  user: any,
+  requiredPermission?: string,
+): boolean {
   if (!user || !request?.workOrder) return false;
-  const { isAdmin, user: authUser } = useAuthStore.getState();
+  const { isAdmin, user: authUser, hasPermission } = useAuthStore.getState();
   if (isAdmin()) return true;
+  if (requiredPermission && !hasPermission(requiredPermission)) return false;
   const userId = authUser?.id || user?.id;
   const roles = (authUser?.roles || user?.roles || []).map((r: any) => r.slug).filter(Boolean);
   if (roles.includes('maintenance_manager') || roles.includes('plant_manager')) return true;
@@ -335,13 +340,15 @@ function canApproveAsSupervisor(request: any, user: any): boolean {
     && request.workOrder.assignedSupervisorId === userId;
 }
 
-function canApproveAsStore(user: any): boolean {
+function canApproveAsStore(user: any, requiredPermission?: string): boolean {
   if (!user) return false;
-  const { isAdmin, user: authUser } = useAuthStore.getState();
+  const { isAdmin, user: authUser, hasPermission } = useAuthStore.getState();
   // Keep physical store custody actions aligned with server authorization.
+  if (isAdmin()) return true;
+  if (requiredPermission && !hasPermission(requiredPermission)) return false;
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug));
+  return userRoles.some((slug: string) => storeRoles.includes(slug));
 }
 
 function canActAsToolCustodian(request: any, user: any): boolean {
@@ -792,24 +799,24 @@ export function RepairMaterialRequestsPage() {
                       <TableCell><OverduePulse isOverdue={r.isOverdue} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && canApproveAsSupervisor(r, user) && (
+                          {r.status === 'pending' && canApproveAsSupervisor(r, user, 'repair_material_requests.update') && (
                             <>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Approve</TooltipContent></Tooltip></TooltipProvider>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                             </>
                           )}
-                          {r.status === 'supervisor_approved' && canApproveAsStore(user) && (
+                          {r.status === 'supervisor_approved' && canApproveAsStore(user, 'repair_material_requests.update') && (
                             <>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-teal-600 hover:text-teal-700 hover:bg-teal-50" onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Store Approve</TooltipContent></Tooltip></TooltipProvider>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                             </>
                           )}
-                          {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
+                          {r.status === 'storekeeper_approved' && canApproveAsStore(user, 'repair_material_requests.update') && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={(e) => { e.stopPropagation(); handlePick(r.id); }} disabled={submitting}>
                               <PackageOpen className="h-3.5 w-3.5" /> Pick
                             </Button>
                           )}
-                          {r.status === 'picking' && canApproveAsStore(user) && (
+                          {r.status === 'picking' && canApproveAsStore(user, 'repair_material_requests.update') && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'issue', max: r.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }}>
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
@@ -819,7 +826,7 @@ export function RepairMaterialRequestsPage() {
                               <ClipboardList className="h-3.5 w-3.5" /> Record Usage / Return
                             </Button>
                           )}
-                          {['issued', 'partially_returned', 'fully_returned'].includes(r.status) && canApproveAsStore(user) && (
+                          {['issued', 'partially_returned', 'fully_returned'].includes(r.status) && canApproveAsStore(user, 'repair_material_requests.update') && (
                             <>
                               <Button size="sm" variant="outline" className="h-7 gap-1 border-violet-400 text-violet-700 hover:bg-violet-50" onClick={(e) => { e.stopPropagation(); openStoreReconcile(r); }}>
                                 <PackageCheck className="h-3.5 w-3.5" /> Verify & Reconcile
@@ -916,7 +923,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user)) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) || (detailItem.status === 'picking' && canApproveAsStore(user)) || (['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && (canApproveAsStore(user) || canDeclareMaterialUsage(detailItem, user)))) && (
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user, 'repair_material_requests.update')) || (detailItem.status === 'supervisor_approved' && canApproveAsStore(user, 'repair_material_requests.update')) || (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user, 'repair_material_requests.update')) || (detailItem.status === 'picking' && canApproveAsStore(user, 'repair_material_requests.update')) || (['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && (canApproveAsStore(user, 'repair_material_requests.update') || canDeclareMaterialUsage(detailItem, user)))) && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">
@@ -941,7 +948,7 @@ export function RepairMaterialRequestsPage() {
                         {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canDeclareMaterialUsage(detailItem, user) && (
                           <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700" onClick={() => openUsageDeclaration(detailItem)} disabled={submitting}><ClipboardList className="h-3.5 w-3.5" /> Record Usage / Return</Button>
                         )}
-                        {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canApproveAsStore(user) && (
+                        {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canApproveAsStore(user, 'repair_material_requests.update') && (
                           <>
                             <Button size="sm" variant="outline" className="gap-1 border-violet-400 text-violet-700" onClick={() => openStoreReconcile(detailItem)} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Verify Return & Reconcile</Button>
                             {(detailItem.quantityReturned ?? 0) < (detailItem.quantityIssued ?? 0) && (
@@ -1785,21 +1792,21 @@ export function RepairToolRequestsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {r.status === 'pending' && canApproveAsSupervisor(r, user) && (
+                              {r.status === 'pending' && canApproveAsSupervisor(r, user, 'repair_tool_requests.update') && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-4 w-4 mr-2 text-emerald-600" /> Approve</DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-4 w-4 mr-2 text-red-500" /> Reject</DropdownMenuItem>
                                 </>
                               )}
-                              {r.status === 'supervisor_approved' && canApproveAsStore(user) && (
+                              {r.status === 'supervisor_approved' && canApproveAsStore(user, 'repair_tool_requests.update') && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-4 w-4 mr-2 text-teal-600" /> Store Approve</DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-4 w-4 mr-2 text-red-500" /> Reject</DropdownMenuItem>
                                 </>
                               )}
-                              {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
+                              {r.status === 'storekeeper_approved' && canApproveAsStore(user, 'repair_tool_requests.update') && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
                               )}
                               {hasOutstandingItems(r) && canActAsToolCustodian(r, user) && (
@@ -1925,26 +1932,26 @@ export function RepairToolRequestsPage() {
                   )}
 
                   {/* ── Workflow Actions ── */}
-                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user)) ||
-                    (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
-                    (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
-                    (detailItem.status === 'pending_return' && canApproveAsStore(user)) ||
+                  {((detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user, 'repair_tool_requests.update')) ||
+                    (detailItem.status === 'supervisor_approved' && canApproveAsStore(user, 'repair_tool_requests.update')) ||
+                    (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user, 'repair_tool_requests.update')) ||
+                    (detailItem.status === 'pending_return' && canApproveAsStore(user, 'repair_tool_requests.update')) ||
                     (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && canActAsToolCustodian(detailItem, user))) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
-                      {detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user) && (<>
+                      {detailItem.status === 'pending' && canApproveAsSupervisor(detailItem, user, 'repair_tool_requests.update') && (<>
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
                         <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
                       </>)}
-                      {detailItem.status === 'supervisor_approved' && canApproveAsStore(user) && (<>
+                      {detailItem.status === 'supervisor_approved' && canApproveAsStore(user, 'repair_tool_requests.update') && (<>
                         <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'storekeeper_approve')} disabled={submitting}><Warehouse className="h-3.5 w-3.5" /> Store Approve</Button>
                         <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
                       </>)}
-                      {detailItem.status === 'storekeeper_approved' && canApproveAsStore(user) && (
+                      {detailItem.status === 'storekeeper_approved' && canApproveAsStore(user, 'repair_tool_requests.update') && (
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
                       )}
                       {/* ── Store Keeper Return Confirmation ── */}
-                      {detailItem.status === 'pending_return' && canApproveAsStore(user) && (
+                      {detailItem.status === 'pending_return' && canApproveAsStore(user, 'repair_tool_requests.update') && (
                         <div className="flex flex-wrap gap-2">
                           <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={async () => {
                             setSubmitting(true);

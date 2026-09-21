@@ -233,7 +233,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
 
-    const isStoreActor = isResourceStoreActor(session);
+    const isStoreActor = isResourceStoreActor(session, 'repair_material_requests.update');
     const isExecutionActor =
       matReq.workOrder.assignedTo === session.userId ||
       matReq.workOrder.teamLeaderId === session.userId ||
@@ -241,7 +241,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // ── Role-based access control for workflow actions ──
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
-      if (!canReviewResourceRequestAsSupervisor(session, matReq.workOrder.assignedSupervisorId)) {
+      if (!canReviewResourceRequestAsSupervisor(session, matReq.workOrder.assignedSupervisorId, 'repair_material_requests.update')) {
         return NextResponse.json({
           success: false,
           error: 'Only the assigned work-order supervisor may review this material request. Maintenance manager, plant manager, or admin may override for escalation.',

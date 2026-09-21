@@ -252,7 +252,9 @@ describe('navigation, module, and action permission boundaries', () => {
   });
 
   it('matches resource approval buttons to the accountable supervisor rule', () => {
-    expect(repairs).toContain('function canApproveAsSupervisor(request: any, user: any)');
+    expect(repairs).toContain('function canApproveAsSupervisor(');
+    expect(repairs).toContain('requiredPermission?: string');
+    expect(repairs).toContain('if (requiredPermission && !hasPermission(requiredPermission)) return false;');
     expect(repairs).toContain("roles.includes('maintenance_manager') || roles.includes('plant_manager')");
     expect(repairs).toContain("roles.includes('maintenance_supervisor')");
     expect(repairs).toContain('request.workOrder.assignedSupervisorId === userId');

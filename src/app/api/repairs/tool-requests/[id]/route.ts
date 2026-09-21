@@ -87,10 +87,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
 
-    const isStoreActor = isResourceStoreActor(session);
+    const isStoreActor = isResourceStoreActor(session, 'repair_tool_requests.update');
 
     if (action === 'supervisor_approve' || action === 'supervisor_reject') {
-      if (!canReviewResourceRequestAsSupervisor(session, toolReq.workOrder.assignedSupervisorId)) {
+      if (!canReviewResourceRequestAsSupervisor(session, toolReq.workOrder.assignedSupervisorId, 'repair_tool_requests.update')) {
         return NextResponse.json({
           success: false,
           error: 'Only the assigned work-order supervisor may review this tool request. Maintenance manager, plant manager, or admin may override for escalation.',

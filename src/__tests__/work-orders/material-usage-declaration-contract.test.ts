@@ -19,7 +19,7 @@ describe('RWOP material usage declaration accountability contract', () => {
     expect(route).toContain('declaredConsumedQty');
     expect(route).toContain('declaredWastedQty');
     expect(route).toContain('declaredReturnQty');
-    expect(reconcile).toContain('isResourceStoreActor(session)');
+    expect(reconcile).toContain("isResourceStoreActor(session, 'repair_material_requests.update')");
     expect(reconcile).toContain('Only admin, store keeper, inventory manager, or tools shop attendant can reconcile material requests');
     expect(reconcile).toContain('storeAdjustedDeclaration');
     expect(reconcile).toContain('Store figures differ from the technician declaration');

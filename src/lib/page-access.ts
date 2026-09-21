@@ -174,7 +174,7 @@ export const PAGE_MODULES: Record<string, string | string[]> = {
   'pm-triggers': ['pm_schedules', 'assets'],
   'pm-calendar': ['pm_schedules', 'assets'],
   'planner-workbench': 'work_orders',
-  'enterprise-reports': 'reports',
+  'enterprise-reports': ['reports', 'work_orders', 'assets', 'inventory', 'repairs', 'downtime'],
   'repairs-material-requests': ['repairs', 'inventory'],
   'repairs-tool-requests': ['repairs', 'tools'],
   'repairs-tool-transfers': ['repairs', 'tools'],

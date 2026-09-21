@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 import { Prisma } from '@prisma/client';
 
 // Helper: generate WO number WO-YYYYMM-NNNN (must be called inside a transaction)
@@ -148,9 +149,37 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    const unavailableModules = new Set(await getUnavailableOperationalModules([
+      'assets',
+      'maintenance_requests',
+      'pm_schedules',
+    ]));
+
+    const redactedWorkOrders = workOrders.map((workOrder) => {
+      const redacted: Record<string, unknown> = { ...workOrder };
+
+      if (unavailableModules.has('maintenance_requests')) {
+        redacted.maintenanceRequest = null;
+        redacted.maintenanceRequestId = null;
+      }
+      if (unavailableModules.has('pm_schedules')) {
+        redacted.pmSchedule = null;
+        redacted.pmScheduleId = null;
+      }
+      if (unavailableModules.has('assets')) {
+        redacted.assetId = null;
+        redacted._count = {
+          ...(typeof workOrder._count === 'object' && workOrder._count ? workOrder._count : {}),
+          workOrderComponents: 0,
+        };
+      }
+
+      return redacted;
+    });
+
     return NextResponse.json({
       success: true,
-      data: workOrders,
+      data: redactedWorkOrders,
       pagination: {
         page,
         limit,

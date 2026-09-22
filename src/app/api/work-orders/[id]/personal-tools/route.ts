@@ -27,8 +27,6 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -51,6 +49,23 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied — you are not part of this work order workflow' }, { status: 403 });
     }
 
+    const hasDirectWorkflowRelationship =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      wo.assignedSupervisorId === session.userId ||
+      wo.plannerId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId) ||
+      wo.maintenanceRequest?.requestedBy === session.userId;
+
+    // Exact WO relationship is narrower than broad plant browsing. Assigned
+    // workflow actors may read this WO's personal-tool snapshot even when they
+    // do not have a general UserPlant directory assignment. Management
+    // overrides still pass the normal plant boundary.
+    if (!hasDirectWorkflowRelationship) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
+    }
+
     return NextResponse.json({ success: true, data: parsePersonalTools(wo.personalTools) });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch personal tools';
@@ -70,8 +85,6 @@ export async function POST(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
     const toolName = typeof body.toolName === 'string' ? body.toolName.trim() : '';
@@ -112,6 +125,10 @@ export async function POST(
       canManageWorkOrder(session, wo);
     if (!isExecutionMember && !canManage) {
       return NextResponse.json({ success: false, error: 'Only assigned execution staff or accountable maintenance management can add personal tools.' }, { status: 403 });
+    }
+    if (!isExecutionMember) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
     }
 
     const existingTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;
@@ -162,8 +179,6 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
     const tools = body.tools;
@@ -202,6 +217,10 @@ export async function PUT(
       canManageWorkOrder(session, wo);
     if (!canManage && !isTeamLeader) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions. Requires team-leader or accountable maintenance-management authority.' }, { status: 403 });
+    }
+    if (!isTeamLeader) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
     }
 
     const previousTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;

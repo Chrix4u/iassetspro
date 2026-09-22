@@ -7,7 +7,8 @@
  */
 
 const CACHE_PREFIX = 'iassetspro-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v3`;
+const WORKER_BUILD_VERSION = new URL(self.location.href).searchParams.get('v') || 'legacy';
+const CACHE_NAME = `${CACHE_PREFIX}${WORKER_BUILD_VERSION}`;
 const APP_SHELL = ['/', '/logo.svg', '/manifest.webmanifest'];
 
 function extractNextStaticAssets(html) {

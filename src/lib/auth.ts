@@ -132,8 +132,9 @@ export async function createSession(userId: string): Promise<{ token: string; se
   return { token, session: sessionData };
 }
 
-// Get session from request (Bearer token in Authorization header)
-// Checks in-memory cache first, falls back to DB lookup
+// Cache-only session lookup for synchronous legacy callers.
+// Prefer getRequestSession() in async API handlers so persisted sessions can
+// self-heal after server restarts / cold instances.
 export function getSession(request: Request): SessionData | null {
   const authHeader = request.headers.get('authorization');
   const token = authHeader?.replace('Bearer ', '');
@@ -332,7 +333,7 @@ export interface CurrentUser {
  * Returns null if not authenticated.
  */
 export async function getCurrentUser(request: Request): Promise<CurrentUser | null> {
-  const session = getSession(request);
+  const session = await getRequestSession(request);
   if (!session) return null;
   return {
     id: session.userId,

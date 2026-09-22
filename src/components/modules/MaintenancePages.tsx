@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { api } from '@/lib/api';
+import { api, hasClientAuthToken } from '@/lib/api';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -3450,7 +3450,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
-    if (!isAuthenticated || !user?.id || !toolResourcesEnabled) {
+    if (!isAuthenticated || !user?.id || !toolResourcesEnabled || !hasClientAuthToken()) {
       setPersonalTools([]);
       return;
     }
@@ -5528,12 +5528,47 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
-                        const res = await api.get('/api/tools?mode=lookup&limit=100');
-                        if (res.success && Array.isArray(res.data)) {
-                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
-                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                        // Planner recommendations are durable WO data and must
+                        // remain selectable even when the live tool directory
+                        // is temporarily unavailable.
+                        const plannerRecommended = suggestedTools
+                          .filter((tool: any) => typeof tool?.toolId === 'string' && tool.toolId)
+                          .map((tool: any) => ({
+                            id: String(tool.toolId),
+                            name: String(tool.toolName || 'Planner recommended tool'),
+                            toolCode: String(tool.toolCode || ''),
+                            plannerRecommended: true,
+                          }));
+
+                        const merged = new Map<string, { id: string; name: string; toolCode: string; plannerRecommended?: boolean }>();
+                        for (const tool of plannerRecommended) merged.set(tool.id, tool);
+
+                        if (hasClientAuthToken()) {
+                          const res = await api.get('/api/tools?mode=lookup&status=available&limit=100');
+                          if (res.success && Array.isArray(res.data)) {
+                            for (const tool of res.data) {
+                              if (!tool?.id) continue;
+                              const current = merged.get(String(tool.id));
+                              merged.set(String(tool.id), {
+                                id: String(tool.id),
+                                name: String(tool.name || current?.name || ''),
+                                toolCode: String(tool.toolCode || current?.toolCode || ''),
+                                plannerRecommended: current?.plannerRecommended,
+                              });
+                            }
+                          }
                         }
-                        return [];
+
+                        const options = [...merged.values()];
+                        toolsLookupCache.current = options.map((tool) => ({
+                          id: tool.id,
+                          name: tool.name,
+                          toolCode: tool.toolCode,
+                        }));
+                        return options.map((tool) => ({
+                          value: tool.id,
+                          label: `${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''}${tool.plannerRecommended ? ' — Planner recommended' : ''}`,
+                        }));
                       }}
                       placeholder="Search tools..."
                       searchPlaceholder="Search by name or code..."

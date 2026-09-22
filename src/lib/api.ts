@@ -300,9 +300,14 @@ export function getAuthHeaders(): Record<string, string> {
 
 export async function apiFetch<T = any>(
   endpoint: string,
-  options: RequestInit & { timeout?: number } = {}
+  options: RequestInit & { timeout?: number; authRetryAttempt?: boolean } = {}
 ): Promise<ApiResponse<T>> {
-  const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
+  const {
+    timeout = DEFAULT_TIMEOUT_MS,
+    signal: externalSignal,
+    authRetryAttempt = false,
+    ...restOptions
+  } = options;
   const isFormData = restOptions.body instanceof FormData;
   const normalizedMethod = (restOptions.method || 'GET').toUpperCase();
   const cacheableRead = normalizedMethod === 'GET' && isOfflineSnapshotEndpoint(endpoint);
@@ -383,6 +388,27 @@ export async function apiFetch<T = any>(
       const error = typeof payload.error === 'string' && payload.error
         ? payload.error
         : `Request failed with status ${res.status}`;
+
+      // Protected GETs are safe to retry once. During rolling deployments or
+      // proxy/route worker handoff, a valid bearer session can very briefly be
+      // reported as missing even though the token is still present locally.
+      // Retry before destroying client auth state; mutations are never retried.
+      const hasPersistedToken =
+        typeof window !== 'undefined'
+        && Boolean(localStorage.getItem('eam_token'));
+      if (
+        !authRetryAttempt
+        && normalizedMethod === 'GET'
+        && hasPersistedToken
+        && isSessionAuthFailure(endpoint, res.status, error)
+      ) {
+        return apiFetch<T>(endpoint, {
+          ...restOptions,
+          timeout,
+          signal: externalSignal,
+          authRetryAttempt: true,
+        });
+      }
 
       // A dead/cleared bearer token must fail closed across the entire SPA.
       // Without this, already-mounted pages keep firing protected requests and

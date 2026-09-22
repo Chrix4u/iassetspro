@@ -5,6 +5,7 @@ import {
   canPerformWorkOrderTransition,
   canViewWorkOrder,
   hasWorkOrderViewOverride,
+  isWorkOrderExecutionMember,
 } from '@/services/workOrderAccess.service';
 
 function session(overrides: Partial<SessionData> = {}): SessionData {
@@ -100,6 +101,22 @@ describe('work-order relationship isolation policy', () => {
       snapshot,
       'in_progress',
     )).toBe(false);
+  });
+
+  it('keeps pending handover custody viewable but non-executable', () => {
+    const actor = session({ userId: 'receiver-a' });
+    const snapshot = {
+      assignedTo: 'tech-a',
+      teamLeaderId: null,
+      teamMembers: [{
+        userId: 'receiver-a',
+        role: 'handover_receiver',
+        accessLevel: 'read_only',
+      }],
+    };
+
+    expect(canViewWorkOrder(actor, snapshot)).toBe(true);
+    expect(isWorkOrderExecutionMember(actor, snapshot)).toBe(false);
   });
 
   it('binds verification, closure and planning to the accountable actor', () => {

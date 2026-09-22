@@ -168,34 +168,76 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const plantAuth = await authorizeMaterialRequestPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
-    const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
+    const existing = await db.repairMaterialRequest.findUnique({
+      where: { id },
+      include: {
+        workOrder: { select: { assignedSupervisorId: true, plannerId: true } },
+      },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
     if (existing.status !== 'pending') {
       return NextResponse.json({ success: false, error: 'Only pending requests can be cancelled' }, { status: 400 });
     }
 
-    // Ownership check: only requester or admin/supervisor/manager can cancel
-    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
-      if (existing.requestedById !== session.userId) {
-        return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
+    const ownsRequest = existing.requestedById === session.userId;
+    const canCancelAsManagement = canReviewResourceRequestAsSupervisor(
+      session,
+      existing.workOrder?.assignedSupervisorId,
+      'repair_material_requests.update',
+    );
+    if (!ownsRequest && !canCancelAsManagement) {
+      return NextResponse.json(
+        { success: false, error: 'Only the requester or accountable maintenance management can cancel this pending material request' },
+        { status: 403 },
+      );
+    }
+
+    const cancellation = await db.$transaction(async (tx) => {
+      const deleted = await tx.repairMaterialRequest.deleteMany({
+        where: { id, status: 'pending' },
+      });
+      if (deleted.count !== 1) return { cancelled: false };
+
+      if (
+        existing.source === 'technician_from_planner_recommendation'
+        && existing.itemId
+        && existing.workOrderId
+      ) {
+        await tx.workOrderMaterial.updateMany({
+          where: {
+            workOrderId: existing.workOrderId,
+            itemId: existing.itemId,
+            status: 'requested',
+          },
+          data: {
+            status: 'planned',
+            ...(existing.workOrder?.plannerId
+              ? { requestedBy: existing.workOrder.plannerId }
+              : {}),
+          },
+        });
       }
-    }
 
-    const deleted = await db.repairMaterialRequest.deleteMany({ where: { id, status: 'pending' } });
-    if (deleted.count !== 1) {
-      return NextResponse.json({ success: false, error: 'Material request changed concurrently and can no longer be cancelled' }, { status: 409 });
-    }
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'repair_material_request',
+          entityId: id,
+          oldValues: JSON.stringify(existing),
+        },
+      });
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'delete',
-        entityType: 'repair_material_request',
-        entityId: id,
-        oldValues: JSON.stringify(existing),
-      },
+      return { cancelled: true };
     });
+
+    if (!cancellation.cancelled) {
+      return NextResponse.json(
+        { success: false, error: 'Material request changed concurrently and can no longer be cancelled' },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({ success: true, message: 'Material request cancelled' });
   } catch (error: unknown) {

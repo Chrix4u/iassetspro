@@ -5459,7 +5459,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   setMatItemId(val);
                 }}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory?mode=lookup&limit=100');
+                  const res = await api.get(`/api/work-orders/${id}/inventory-candidates?limit=100`);
                   if (res.success && res.data) {
                     const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
                     return items.map((item: any) => ({

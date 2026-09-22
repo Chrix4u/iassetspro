@@ -30,6 +30,17 @@ describe('technician resource session self-heal', () => {
     }
   });
 
+  it('revalidates and retries once before clearing a valid bearer token', () => {
+    const api = read('src/lib/api.ts');
+
+    expect(api).toContain('_sessionRecoveryAttempted');
+    expect(api).toContain("endpoint.split('?')[0] !== '/api/auth/me'");
+    expect(api).toContain("'/api/auth/me'");
+    expect(api).toContain('if (probe.success)');
+    expect(api).toContain('_sessionRecoveryAttempted: true');
+    expect(api).toContain('notifySessionExpired(endpoint, res.status, error)');
+  });
+
   it('keeps technician lookup permissions on tools and inventory', () => {
     const tools = read('src/app/api/tools/route.ts');
     const inventory = read('src/app/api/inventory/route.ts');

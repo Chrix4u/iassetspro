@@ -45,6 +45,9 @@ describe('technician tool access authentication contract', () => {
     expect(route).toContain('plantId: wo.plantId');
     expect(route).toContain("status: 'available'");
     expect(route).toContain('recommendedTools');
+    expect(route).toContain("where: { source: 'planner_suggested', status: 'pending' }");
+    expect(route).toContain('const recommendationByToolId = new Map');
+    expect(route).toContain('Recovered from planner recommendation');
     expect(route).toContain("currentStatus: current?.status || 'unavailable'");
     expect(panel).toContain('/api/work-orders/${workOrderId}/tool-options');
     expect(panel).toContain('plannerRecommended: true');

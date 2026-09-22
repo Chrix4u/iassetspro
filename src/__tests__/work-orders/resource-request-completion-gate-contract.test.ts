@@ -41,14 +41,17 @@ describe('RWOP resource request approval and completion gate contract', () => {
     const panels = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
     expect(materialRoute).toContain("existing.status !== 'pending'");
-    expect(materialRoute).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(materialRoute).toContain("where: { id, status: 'pending' }");
+    expect(materialRoute).toContain('db.$transaction');
     expect(toolRoute).toContain("toolReq.status !== 'pending'");
-    expect(toolRoute).toContain("deleteMany({ where: { id, status: 'pending' } })");
+    expect(toolRoute).toContain("where: { id, status: 'pending' }");
+    expect(toolRoute).toContain('db.$transaction');
     expect(assistanceRoute).toContain("teamRequest.status !== 'pending'");
     expect(technicianPage).toContain("const ownPending = request.status === 'pending'");
     expect(panels).toContain("request.status === 'pending'");
-    expect(panels).toContain('cancelMaterialRequest(request.id)');
-    expect(panels).toContain('cancelToolRequest(request.id)');
+    expect(panels).toContain('requestMaterialCancellation(request)');
+    expect(panels).toContain('requestToolCancellation(request)');
+    expect(panels).toContain('confirmRequestCancellation');
   });
 
   it('binds resource approvals to the accountable supervisor and plant-scoped store roles', () => {

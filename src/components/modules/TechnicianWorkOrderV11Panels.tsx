@@ -199,7 +199,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)
+        ? api.get<ToolOption[]>(`/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as ToolOption[] }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {

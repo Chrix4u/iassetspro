@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
-import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
 function parsePersonalTools(value: string | null | undefined): unknown[] {
@@ -27,7 +27,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
@@ -70,7 +70,7 @@ export async function POST(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
@@ -162,7 +162,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();

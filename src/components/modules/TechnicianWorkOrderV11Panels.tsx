@@ -217,7 +217,18 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLabor(Array.isArray(timeRes.data.timeLogs) ? timeRes.data.timeLogs : []);
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
-    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) setPersonalTools(personalToolsRes.data);
+    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) {
+      setPersonalTools(personalToolsRes.data);
+    } else {
+      try {
+        const snapshot = Array.isArray(workOrder?.personalTools)
+          ? workOrder.personalTools
+          : JSON.parse(typeof workOrder?.personalTools === 'string' ? workOrder.personalTools : '[]');
+        setPersonalTools(Array.isArray(snapshot) ? snapshot : []);
+      } catch {
+        setPersonalTools([]);
+      }
+    }
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data

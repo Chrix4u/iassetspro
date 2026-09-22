@@ -9,6 +9,7 @@ const logger = createLogger('auth');
 // ============================================================================
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const AUTHZ_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // refresh role/direct-permission changes without forcing re-login
 
 // In-memory cache for fast token lookups (avoids DB query on every API call)
 const globalForSessions = globalThis as unknown as {
@@ -36,6 +37,75 @@ export interface SessionData {
 // Generate a simple auth token (UUID-based)
 export function generateToken(): string {
   return randomUUID();
+}
+
+type EffectiveAuthorization = {
+  roles: string[];
+  permissions: string[];
+};
+
+async function resolveEffectiveAuthorization(userId: string): Promise<EffectiveAuthorization | null> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      status: true,
+      userRoles: {
+        select: {
+          role: {
+            select: {
+              slug: true,
+              rolePermissions: {
+                select: { permission: { select: { slug: true } } },
+              },
+            },
+          },
+        },
+      },
+      directPerms: {
+        select: {
+          isGranted: true,
+          expiresAt: true,
+          permission: { select: { slug: true } },
+        },
+      },
+    },
+  });
+
+  if (!user || user.status !== 'active') return null;
+
+  const roleSlugs = new Set<string>();
+  const permissionSlugs = new Set<string>();
+
+  for (const userRole of user.userRoles || []) {
+    roleSlugs.add(userRole.role.slug);
+    for (const rolePermission of userRole.role.rolePermissions || []) {
+      permissionSlugs.add(rolePermission.permission.slug);
+    }
+  }
+
+  // Direct grants/denies are evaluated after role permissions so an explicit
+  // user-level override remains authoritative. Preserve the established
+  // expired-override semantics used by session creation.
+  const now = new Date();
+  for (const directPermission of user.directPerms || []) {
+    const slug = directPermission.permission.slug;
+    if (directPermission.expiresAt && new Date(directPermission.expiresAt) < now) {
+      permissionSlugs.delete(slug);
+      continue;
+    }
+    if (directPermission.isGranted) permissionSlugs.add(slug);
+    else permissionSlugs.delete(slug);
+  }
+
+  if (roleSlugs.has('admin')) {
+    const allPermissions = await db.permission.findMany({ select: { slug: true } });
+    for (const permission of allPermissions) permissionSlugs.add(permission.slug);
+  }
+
+  return {
+    roles: [...roleSlugs],
+    permissions: [...permissionSlugs],
+  };
 }
 
 // Create a session after successful login — persists to DB + caches in memory
@@ -200,14 +270,21 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
   // 1. Check in-memory cache
   const cached = sessionCache.get(token);
   if (cached) {
-    const age = Date.now() - cached.cachedAt;
-    if (age > SESSION_TTL_MS) {
+    const sessionAge = Date.now() - new Date(cached.data.createdAt).getTime();
+    if (sessionAge > SESSION_TTL_MS) {
       sessionCache.delete(token);
+      await db.session.deleteMany({ where: { token } }).catch(() => {});
       return null;
     }
-    // Update lastSeen in DB (fire-and-forget)
-    updateLastSeen(token).catch(() => {});
-    return cached.data;
+
+    const authzCacheAge = Date.now() - cached.cachedAt;
+    if (authzCacheAge <= AUTHZ_REFRESH_INTERVAL_MS) {
+      // Update lastSeen in DB (fire-and-forget)
+      updateLastSeen(token).catch(() => {});
+      return cached.data;
+    }
+    // Authorization cache is old enough to revalidate. Fall through to the DB
+    // session lookup and rebuild effective permissions from current RBAC.
   }
 
   // 2. Look up in database
@@ -233,73 +310,37 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
     return null;
   }
 
-  // Self-heal legacy/fallback sessions that were persisted with empty RBAC
-  // snapshots. This can happen when login and proxy run in different workers:
-  // the login worker had the real permissions in memory, while the DB row held
-  // empty arrays. Rebuild once from current user authorization and persist it.
-  if (roles.length === 0 && permissions.length === 0) {
-    try {
-      const userAuth = await db.user.findUnique({
-        where: { id: dbSession.userId },
-        include: {
-          userRoles: {
-            include: {
-              role: {
-                include: {
-                  rolePermissions: {
-                    include: { permission: true },
-                  },
-                },
-              },
-            },
-          },
-          directPerms: {
-            include: { permission: true },
-          },
-        },
-      });
-
-      if (userAuth) {
-        const rebuiltRoles = new Set<string>();
-        const rebuiltPermissions = new Set<string>();
-
-        for (const userRole of userAuth.userRoles || []) {
-          rebuiltRoles.add(userRole.role.slug);
-          for (const rolePermission of userRole.role.rolePermissions || []) {
-            rebuiltPermissions.add(rolePermission.permission.slug);
-          }
-        }
-
-        for (const directPermission of userAuth.directPerms || []) {
-          const slug = directPermission.permission.slug;
-          if (directPermission.expiresAt && new Date(directPermission.expiresAt) < new Date()) {
-            rebuiltPermissions.delete(slug);
-            continue;
-          }
-          if (directPermission.isGranted) rebuiltPermissions.add(slug);
-          else rebuiltPermissions.delete(slug);
-        }
-
-        if (rebuiltRoles.has('admin')) {
-          const allPermissions = await db.permission.findMany({ select: { slug: true } });
-          for (const permission of allPermissions) rebuiltPermissions.add(permission.slug);
-        }
-
-        roles = [...rebuiltRoles];
-        permissions = [...rebuiltPermissions];
-
-        await db.session.update({
-          where: { id: dbSession.id },
-          data: {
-            roles: JSON.stringify(roles),
-            permissions: JSON.stringify(permissions),
-          },
-        }).catch(() => {});
-      }
-    } catch {
-      // Keep the persisted snapshot if authorization repair fails. Downstream
-      // permission checks still fail closed.
+  // Rebuild the authorization snapshot from current role mappings/direct
+  // overrides whenever this token enters a cold worker or its short authz cache
+  // expires. This makes production RBAC changes take effect without forcing a
+  // new login while preserving the persisted snapshot as a fail-closed fallback
+  // when the authorization query itself is temporarily unavailable.
+  try {
+    const currentAuthorization = await resolveEffectiveAuthorization(dbSession.userId);
+    if (!currentAuthorization) {
+      sessionCache.delete(token);
+      await db.session.deleteMany({ where: { token } }).catch(() => {});
+      return null;
     }
+
+    roles = currentAuthorization.roles;
+    permissions = currentAuthorization.permissions;
+
+    const rolesJson = JSON.stringify(roles);
+    const permissionsJson = JSON.stringify(permissions);
+    if (rolesJson !== dbSession.roles || permissionsJson !== dbSession.permissions) {
+      await db.session.update({
+        where: { id: dbSession.id },
+        data: {
+          roles: rolesJson,
+          permissions: permissionsJson,
+        },
+      }).catch(() => {});
+    }
+  } catch {
+    // Keep the last persisted snapshot if authorization refresh fails.
+    // Downstream permission checks remain fail-closed for permissions that are
+    // absent from that snapshot.
   }
 
   // Look up fullName from User table (not stored in Session DB row)

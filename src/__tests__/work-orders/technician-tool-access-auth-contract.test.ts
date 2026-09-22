@@ -20,13 +20,15 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain("sessionCache.set(token, { data: forwardedSession");
   });
 
-  it('self-heals empty persisted RBAC snapshots for existing sessions', () => {
+  it('refreshes persisted RBAC snapshots for existing sessions', () => {
     const auth = read('src/lib/auth.ts');
 
-    expect(auth).toContain('if (roles.length === 0 && permissions.length === 0)');
+    expect(auth).toContain('AUTHZ_REFRESH_INTERVAL_MS');
+    expect(auth).toContain('resolveEffectiveAuthorization(dbSession.userId)');
     expect(auth).toContain('rolePermissions');
     expect(auth).toContain('directPerms');
-    expect(auth).toContain('permissions: JSON.stringify(permissions)');
+    expect(auth).toContain('permissions: permissionsJson');
+    expect(auth).not.toContain('if (roles.length === 0 && permissions.length === 0)');
   });
 
   it('retries a transient 401 GET once before clearing persisted auth', () => {

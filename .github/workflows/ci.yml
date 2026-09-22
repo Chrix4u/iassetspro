@@ -151,6 +151,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Build production application
+        env:
+          NEXT_PUBLIC_BUILD_VERSION: ${{ github.sha }}
         run: bun run build
 
       - name: Upload standalone build for CI consumers

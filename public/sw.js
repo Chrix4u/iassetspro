@@ -7,7 +7,7 @@
  */
 
 const CACHE_PREFIX = 'iassetspro-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const CACHE_NAME = `${CACHE_PREFIX}v3`;
 const APP_SHELL = ['/', '/logo.svg', '/manifest.webmanifest'];
 
 function extractNextStaticAssets(html) {

@@ -107,6 +107,9 @@ export function requiredModulesForApiPath(pathname: string): string[] {
   if (/^\/api\/work-orders\/[^/]+\/tool-candidates(?:\/|$)/.test(pathname)) {
     return ['work_orders', 'repairs', 'tools'];
   }
+  if (/^\/api\/work-orders\/[^/]+\/inventory-candidates(?:\/|$)/.test(pathname)) {
+    return ['work_orders', 'repairs', 'inventory'];
+  }
   if (/^\/api\/work-orders\/[^/]+\/components(?:\/|$)/.test(pathname)) {
     return ['work_orders', 'assets'];
   }

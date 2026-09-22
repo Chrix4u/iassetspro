@@ -190,16 +190,24 @@ export async function POST(request: NextRequest) {
       ? reason.trim()
       : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
     if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
     const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
     const isAssignee = wo.assignedTo === session.userId;
-    if (!woTeam && !isAssignee && !isAdmin(session)) {
+    const isTeamLeader = wo.teamLeaderId === session.userId;
+    const isExecutionMember = Boolean(woTeam) || isAssignee || isTeamLeader;
+
+    if (!isExecutionMember && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
+    }
+
+    // Assignment to this exact WO grants contextual resource-request access.
+    // Only non-execution/admin flows require broad plant-directory access.
+    if (!isExecutionMember) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     const warnings: string[] = [];

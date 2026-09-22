@@ -29,7 +29,7 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain('permissions: JSON.stringify(permissions)');
   });
 
-  it('retries a transient authenticated GET once before clearing persisted auth', () => {
+  it('retries a transient 401 GET once before clearing persisted auth', () => {
     const api = read('src/lib/api.ts');
 
     expect(api).toContain('authRetryAttempt?: boolean');
@@ -38,6 +38,7 @@ describe('technician tool access authentication contract', () => {
     expect(api).toContain("Boolean(localStorage.getItem('eam_token'))");
     expect(api).toContain('authRetryAttempt: true');
     expect(api).toContain('isSessionAuthFailure(endpoint, res.status, error)');
+    expect(api).toContain('return status === 401;');
   });
 
   it('keeps technician tool lookup constrained to execution permissions', () => {

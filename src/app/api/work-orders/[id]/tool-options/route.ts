@@ -131,7 +131,9 @@ export async function GET(
         : Promise.resolve([]),
     ]);
 
-    const recommendedById = new Map(recommendedRecords.map((tool) => [tool.id, tool]));
+    const recommendedById = new Map<string, (typeof recommendedRecords)[number]>(
+      recommendedRecords.map((tool) => [tool.id, tool] as const),
+    );
     const recommendedTools = recommendations
       .filter((item) => typeof item.toolId === 'string' && item.toolId)
       .map((item) => {

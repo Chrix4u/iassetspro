@@ -1101,7 +1101,7 @@ async function seed() {
     { code: 'capa', name: 'CAPA Management', description: 'Corrective and preventive actions tracking and verification', isCore: false, version: '1.0.0', licensed: false },
     { code: 'reports', name: 'Reports & Dashboards', description: 'Custom report builder, scheduled reports, and multi-format export', isCore: false, version: '2.0.0', licensed: true },
     { code: 'vendors', name: 'Vendor Management', description: 'Supplier management, vendor evaluation, and procurement workflows', isCore: false, version: '1.1.0', licensed: true },
-    { code: 'tools', name: 'Tool Management', description: 'Tool inventory, calibration tracking, assignment, and availability', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'tools', name: 'Tool Management', description: 'Tool inventory, calibration tracking, assignment, and availability', isCore: false, version: '1.0.0', licensed: true },
     { code: 'notifications', name: 'Notifications', description: 'In-app notifications, email alerts, and notification preferences', isCore: false, version: '1.5.0', licensed: true },
     { code: 'documents', name: 'Document Management', description: 'Document storage, versioning, approvals, and file organization', isCore: false, version: '1.2.0', licensed: true },
     { code: 'modules', name: 'Module Management', description: 'System module licensing, activation, and feature management', isCore: true, version: '2.0.0', licensed: true },

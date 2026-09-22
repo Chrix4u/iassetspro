@@ -22,6 +22,10 @@ describe('technician resource session self-heal', () => {
       'src/app/api/work-orders/[id]/route.ts',
       'src/app/api/work-orders/[id]/personal-tools/route.ts',
       'src/app/api/work-orders/[id]/suggested-items/route.ts',
+      'src/app/api/repairs/tool-requests/route.ts',
+      'src/app/api/repairs/tool-requests/[id]/route.ts',
+      'src/app/api/repairs/material-requests/route.ts',
+      'src/app/api/repairs/material-requests/[id]/route.ts',
     ];
 
     for (const route of routes) {

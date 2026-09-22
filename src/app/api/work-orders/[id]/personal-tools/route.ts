@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
-import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 function parsePersonalTools(value: string | null | undefined): unknown[] {
   if (!value) return [];
@@ -27,7 +27,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
@@ -39,7 +39,7 @@ export async function GET(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true, role: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
         maintenanceRequest: { select: { requestedBy: true } },
       },
     });
@@ -70,7 +70,7 @@ export async function POST(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
@@ -90,7 +90,7 @@ export async function POST(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true, role: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
     if (!wo) {
@@ -103,10 +103,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: `Work order has been reviewed. Changes are no longer allowed. Status: ${wo.status}` }, { status: 400 });
     }
 
-    const isExecutionMember =
-      wo.assignedTo === session.userId ||
-      wo.teamLeaderId === session.userId ||
-      wo.teamMembers.some((member) => member.userId === session.userId);
+    const isExecutionMember = isWorkOrderExecutionMember(session, wo);
     const canManage =
       (isAdmin(session) || hasAnyPermission(session, ['work_orders.update'])) &&
       canManageWorkOrder(session, wo);
@@ -162,7 +159,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
@@ -181,7 +178,7 @@ export async function PUT(
         assignedSupervisorId: true,
         plannerId: true,
         teamLeaderId: true,
-        teamMembers: { select: { userId: true, role: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
     if (!wo) {

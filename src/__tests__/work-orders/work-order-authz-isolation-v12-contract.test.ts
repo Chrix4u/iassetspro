@@ -100,7 +100,7 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
 
     expect(tasks).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
     expect(removal).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
-    expect(suggested).toContain('const plantAuth = await authorizeWorkOrderPlant(request, session, id);');
+    expect(suggested).toContain('const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);');
   });
 
   it('keeps primary assignee and team-leader ownership changes on the canonical assignment path', () => {

@@ -29,6 +29,17 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain('permissions: JSON.stringify(permissions)');
   });
 
+  it('retries a transient authenticated GET once before clearing persisted auth', () => {
+    const api = read('src/lib/api.ts');
+
+    expect(api).toContain('authRetryAttempt?: boolean');
+    expect(api).toContain('!authRetryAttempt');
+    expect(api).toContain("normalizedMethod === 'GET'");
+    expect(api).toContain("Boolean(localStorage.getItem('eam_token'))");
+    expect(api).toContain('authRetryAttempt: true');
+    expect(api).toContain('isSessionAuthFailure(endpoint, res.status, error)');
+  });
+
   it('keeps technician tool lookup constrained to execution permissions', () => {
     const tools = read('src/app/api/tools/route.ts');
     const seed = read('prisma/seed-permissions-only.ts');

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, canViewWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 import { notifyUser } from '@/lib/notifications';
 
@@ -18,7 +18,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const unavailableModules = new Set(await getUnavailableOperationalModules([
@@ -55,7 +55,7 @@ export async function GET(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
         maintenanceRequest: { select: { requestedBy: true } },
         repairMaterialRequests: {
           where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] } },
@@ -294,7 +294,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
@@ -350,7 +350,7 @@ export async function PUT(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
 
@@ -367,10 +367,7 @@ export async function PUT(
       );
     }
 
-    const isExecutionActor =
-      wo.assignedTo === session.userId
-      || wo.teamLeaderId === session.userId
-      || wo.teamMembers.some((member) => member.userId === session.userId);
+    const isExecutionActor = isWorkOrderExecutionMember(session, wo);
     const canManageRecommendations =
       (isAdmin(session) || hasPermission(session, 'work_orders.update'))
       && canManageWorkOrder(session, wo);

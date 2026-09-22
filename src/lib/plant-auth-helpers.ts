@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, type SessionData } from '@/lib/auth';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 import { getPlantScope, canAccessPlantStrict, type PlantScopeResult } from '@/lib/plant-scope';
 
 // ── Return types ──
@@ -53,6 +54,15 @@ export interface WorkOrderWithPlant {
   id: string;
   plantId: string | null;
 }
+
+export interface WorkOrderExecutionWithPlant extends WorkOrderWithPlant {
+  assignedTo: string | null;
+  teamLeaderId: string | null;
+  assignedSupervisorId: string | null;
+  plannerId: string | null;
+  teamMembers: Array<{ userId: string; role: string | null; accessLevel: string | null }>;
+}
+
 
 export interface MRWithPlant {
   id: string;
@@ -97,6 +107,74 @@ export async function authorizeWorkOrderPlant(
   }
 
   return { ok: true, entity: wo, plantScope };
+}
+
+/**
+ * Authorize an exact Work Order for its assigned execution actor.
+ *
+ * Normal plant scoping remains authoritative. The only fallback is a direct,
+ * server-stored execution relationship to this exact WO. This is intentionally
+ * narrower than granting UserPlant membership and exists to keep legacy/current
+ * assignments usable when a technician has no explicit UserPlant row.
+ */
+export async function authorizeWorkOrderExecutionAccess(
+  request: NextRequest,
+  session: SessionData,
+  workOrderId: string,
+): Promise<PlantAuthResult<WorkOrderExecutionWithPlant>> {
+  const wo = await db.workOrder.findUnique({
+    where: { id: workOrderId },
+    select: {
+      id: true,
+      plantId: true,
+      assignedTo: true,
+      teamLeaderId: true,
+      assignedSupervisorId: true,
+      plannerId: true,
+      teamMembers: { select: { userId: true, role: true, accessLevel: true } },
+    },
+  });
+  if (!wo) return fail(404, 'Work order not found');
+  if (!wo.plantId) return fail(403, 'Operational work order has no plant');
+
+  const scopeOrDeny = await resolveScope(request, session);
+  if (!scopeOrDeny.ok) {
+    if (isWorkOrderExecutionMember(session, wo)) {
+      return {
+        ok: true,
+        entity: wo,
+        plantScope: {
+          plantId: wo.plantId,
+          accessiblePlantIds: [wo.plantId],
+          isScoped: true,
+          isSystemWide: false,
+          accessLevel: 'read',
+        },
+      };
+    }
+    return scopeOrDeny;
+  }
+
+  const plantScope = scopeOrDeny.plantScope;
+  if (canAccessPlantStrict(plantScope, wo.plantId)) {
+    return { ok: true, entity: wo, plantScope };
+  }
+
+  if (isWorkOrderExecutionMember(session, wo)) {
+    return {
+      ok: true,
+      entity: wo,
+      plantScope: {
+        plantId: wo.plantId,
+        accessiblePlantIds: [wo.plantId],
+        isScoped: true,
+        isSystemWide: false,
+        accessLevel: 'read',
+      },
+    };
+  }
+
+  return fail(403, 'Access denied');
 }
 
 /**

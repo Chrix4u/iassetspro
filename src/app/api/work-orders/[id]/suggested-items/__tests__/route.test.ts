@@ -25,7 +25,7 @@ vi.mock('@/lib/auth', () => ({
   isAdmin: vi.fn(),
 }));
 vi.mock('@/lib/plant-auth-helpers', () => ({
-  authorizeWorkOrderPlant: mockAuthorizePlant,
+  authorizeWorkOrderExecutionAccess: mockAuthorizePlant,
 }));
 vi.mock('@/services/workOrderAccess.service', () => ({
   canManageWorkOrder: vi.fn(),

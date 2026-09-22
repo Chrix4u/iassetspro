@@ -127,6 +127,48 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   expect(Number(suggestedTool.quantity)).toBe(1);
   expect(suggestedTool.pipelineStatus).toBe('suggested');
 
+  // Assigned-technician regression: exact-WO resource APIs must remain usable
+  // without granting broad Tools/Inventory registry access.
+  const techToken = await getToken('tech_single');
+
+  const { status: personalToolsStatus, data: personalToolsResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/personal-tools',
+  );
+  expect(personalToolsStatus).toBe(200);
+  expect(personalToolsResponse.success).toBe(true);
+
+  const { status: toolCandidatesStatus, data: toolCandidatesResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/tool-candidates?status=available&limit=100',
+  );
+  expect(toolCandidatesStatus).toBe(200);
+  expect(toolCandidatesResponse.success).toBe(true);
+  expect(Array.isArray(toolCandidatesResponse.data)).toBe(true);
+
+  const { status: techSuggestedStatus, data: techSuggestedResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/suggested-items',
+  );
+  expect(techSuggestedStatus).toBe(200);
+  expect(techSuggestedResponse.success).toBe(true);
+  expect(
+    (techSuggestedResponse.data.suggestedTools as Array<any>).some(
+      (item) => item.toolId === toolId,
+    ),
+  ).toBe(true);
+
+  await authenticateAs(context, 'tech_single');
+  const technicianPage = await context.newPage();
+  await navigateToWODetail(technicianPage, wo.id);
+  await expect(
+    technicianPage.getByText(visibleTool.toolName, { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+  await technicianPage.close();
+
   // Browser-level regression: API success is not enough. The planner must see
   // both resources on the actual WO details screen.
   await authenticateAs(context, 'planner');

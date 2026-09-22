@@ -8,7 +8,11 @@ export interface WorkOrderAccessSnapshot {
   plannerId?: string | null;
   assignedBy?: string | null;
   handoverReceiverId?: string | null;
-  teamMembers?: Array<{ userId: string; role?: string | null }> | null;
+  teamMembers?: Array<{
+    userId: string;
+    role?: string | null;
+    accessLevel?: string | null;
+  }> | null;
   maintenanceRequest?: {
     requestedBy?: string | null;
     requester?: { id: string } | null;
@@ -35,6 +39,20 @@ export function hasWorkOrderViewOverride(session: SessionData): boolean {
 /**
  * Relationship-scoped read/capability access after plant authorization.
  */
+export function isWorkOrderExecutionMember(
+  session: SessionData,
+  workOrder: Pick<WorkOrderAccessSnapshot, 'assignedTo' | 'teamLeaderId' | 'teamMembers'>,
+): boolean {
+  const userId = session.userId;
+  return workOrder.assignedTo === userId
+    || workOrder.teamLeaderId === userId
+    || Boolean(workOrder.teamMembers?.some((member) =>
+      member.userId === userId
+      && member.role !== 'handover_receiver'
+      && member.accessLevel !== 'read_only'
+    ));
+}
+
 export function canViewWorkOrder(
   session: SessionData,
   workOrder: WorkOrderAccessSnapshot,
@@ -42,8 +60,7 @@ export function canViewWorkOrder(
   if (hasWorkOrderViewOverride(session)) return true;
 
   const userId = session.userId;
-  if (workOrder.assignedTo === userId) return true;
-  if (workOrder.teamLeaderId === userId) return true;
+  if (isWorkOrderExecutionMember(session, workOrder)) return true;
   if (workOrder.assignedSupervisorId === userId) return true;
   if (workOrder.plannerId === userId) return true;
   if (workOrder.teamMembers?.some((member) => member.userId === userId)) return true;

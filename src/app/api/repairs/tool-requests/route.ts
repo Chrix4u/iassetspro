@@ -190,16 +190,23 @@ export async function POST(request: NextRequest) {
       ? reason.trim()
       : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
     if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
     const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
     const isAssignee = wo.assignedTo === session.userId;
-    if (!woTeam && !isAssignee && !isAdmin(session)) {
+    const isExecutionMember = Boolean(woTeam) || isAssignee;
+
+    if (!isExecutionMember && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
+    }
+
+    // The exact execution-team relationship authorizes this WO-scoped request.
+    // Non-execution/admin flows still use normal plant scoping.
+    if (!isExecutionMember) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     const warnings: string[] = [];

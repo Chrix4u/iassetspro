@@ -28,6 +28,7 @@ describe('technician tool access authentication contract', () => {
     expect(apiClient).toContain("headers['X-EAM-Token'] = token");
     expect(proxy).toContain("request.headers.get('x-eam-token')");
     expect(proxy).toContain('const token = bearerToken || fallbackToken');
+    expect(proxy).toContain("requestHeaders.set('authorization', \`Bearer \${token}\`)");
   });
 
   it('uses a work-order-scoped tool selector for assigned technicians', () => {

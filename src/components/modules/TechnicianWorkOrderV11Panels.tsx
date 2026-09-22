@@ -470,7 +470,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool) {
+    if (selectedTool?.availabilityVerified) {
       const availableQuantity = Number(selectedTool.quantity ?? 1);
       if (quantity > availableQuantity) {
         toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;
@@ -814,7 +814,9 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     <Label>Tool required *</Label>
                     {selectedTool && (
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
-                        Available: {Number(selectedTool.quantity ?? 1)} · {selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
+                        {selectedTool.availabilityVerified
+                          ? `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`
+                          : `Planner recommendation · availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
                       </span>
                     )}
                   </div>
@@ -836,7 +838,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     }}
                   />
                 </div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder={toolRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, toolName: selectedTool?.name || toolRequest.toolName })} /></div>
                 <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || (!editingToolRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingToolRequestId ? 'Update Request' : 'Request Tool'}</Button>{editingToolRequestId && <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={resetToolRequest} disabled={busy !== null}>Cancel</Button>}</div>

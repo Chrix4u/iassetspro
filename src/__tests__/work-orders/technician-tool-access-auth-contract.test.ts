@@ -82,7 +82,7 @@ describe('technician tool access authentication contract', () => {
   it('keeps tool-request submission WO-scoped for assigned execution actors', () => {
     const requests = read('src/app/api/repairs/tool-requests/route.ts');
 
-    expect(requests).toContain('const canViewWorkOrderExecutionScope');
+    expect(requests).toContain('let canViewWorkOrderExecutionScope = false');
     expect(requests).toContain('if (!canViewWorkOrderExecutionScope)');
     expect(requests).toContain('const isExecutionActor = Boolean(woTeam) || isAssignee');
     expect(requests).toContain('if (!isExecutionActor && !isAdmin(session))');

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getRequestSession, isAdmin, hasRole } from '@/lib/auth';
 import { RESOURCE_STORE_ROLE_SLUGS, canReviewResourceRequestAsSupervisor, isResourceStoreActor } from '@/lib/resource-request-approval';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
@@ -11,7 +11,7 @@ import { atomicIssueTools, atomicConfirmToolReturn, submitToolReturn, ToolOperat
 // GET /api/repairs/tool-requests/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 // POST /api/repairs/tool-requests/[id] — workflow actions
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
@@ -302,7 +302,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 // PUT /api/repairs/tool-requests/[id]
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
@@ -408,7 +408,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 // DELETE /api/repairs/tool-requests/[id]
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;

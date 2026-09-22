@@ -4,7 +4,7 @@ import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { materialRequestReason } from '@/lib/technician-reason-defaults';
 import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
-import { canManageWorkOrder } from '@/services/workOrderAccess.service';
+import { canManageWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
 
@@ -31,17 +31,14 @@ export async function POST(
         teamLeaderId: true,
         assignedSupervisorId: true,
         plannerId: true,
-        teamMembers: { select: { userId: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
     if (!woAccess) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    const isExecutionActor =
-      woAccess.assignedTo === session.userId ||
-      woAccess.teamLeaderId === session.userId ||
-      woAccess.teamMembers.some((member) => member.userId === session.userId);
+    const isExecutionActor = isWorkOrderExecutionMember(session, woAccess);
     const canManage =
       hasAnyPermission(session, ['work_orders.update']) &&
       canManageWorkOrder(session, woAccess);

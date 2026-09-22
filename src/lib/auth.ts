@@ -233,6 +233,75 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
     return null;
   }
 
+  // Self-heal legacy/fallback sessions that were persisted with empty RBAC
+  // snapshots. This can happen when login and proxy run in different workers:
+  // the login worker had the real permissions in memory, while the DB row held
+  // empty arrays. Rebuild once from current user authorization and persist it.
+  if (roles.length === 0 && permissions.length === 0) {
+    try {
+      const userAuth = await db.user.findUnique({
+        where: { id: dbSession.userId },
+        include: {
+          userRoles: {
+            include: {
+              role: {
+                include: {
+                  rolePermissions: {
+                    include: { permission: true },
+                  },
+                },
+              },
+            },
+          },
+          directPerms: {
+            include: { permission: true },
+          },
+        },
+      });
+
+      if (userAuth) {
+        const rebuiltRoles = new Set<string>();
+        const rebuiltPermissions = new Set<string>();
+
+        for (const userRole of userAuth.userRoles || []) {
+          rebuiltRoles.add(userRole.role.slug);
+          for (const rolePermission of userRole.role.rolePermissions || []) {
+            rebuiltPermissions.add(rolePermission.permission.slug);
+          }
+        }
+
+        for (const directPermission of userAuth.directPerms || []) {
+          const slug = directPermission.permission.slug;
+          if (directPermission.expiresAt && new Date(directPermission.expiresAt) < new Date()) {
+            rebuiltPermissions.delete(slug);
+            continue;
+          }
+          if (directPermission.isGranted) rebuiltPermissions.add(slug);
+          else rebuiltPermissions.delete(slug);
+        }
+
+        if (rebuiltRoles.has('admin')) {
+          const allPermissions = await db.permission.findMany({ select: { slug: true } });
+          for (const permission of allPermissions) rebuiltPermissions.add(permission.slug);
+        }
+
+        roles = [...rebuiltRoles];
+        permissions = [...rebuiltPermissions];
+
+        await db.session.update({
+          where: { id: dbSession.id },
+          data: {
+            roles: JSON.stringify(roles),
+            permissions: JSON.stringify(permissions),
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Keep the persisted snapshot if authorization repair fails. Downstream
+      // permission checks still fail closed.
+    }
+  }
+
   // Look up fullName from User table (not stored in Session DB row)
   let fullName = '';
   try {

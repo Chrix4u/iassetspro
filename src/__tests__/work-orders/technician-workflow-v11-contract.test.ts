@@ -55,6 +55,8 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('const recommendedTools = Array.isArray((toolsRes.data as any).recommendedTools)');
     expect(panel).toContain('plannerRecommended: true');
     expect(panel).toContain("'Planner recommendation · '");
+    expect(panel).toContain('if (selectedTool && !selectedTool.plannerRecommended)');
+    expect(panel).toContain('Planner recommendation · ${pretty(selectedTool.status || \'unavailable\')}');
     expect(panel).toContain('selectedId={material.itemId}');
     expect(panel).toContain('itemId: selectedMaterial?.id || material.itemId');
     expect(panel).toContain("unit: selectedMaterial?.unitOfMeasure || material.unit || 'each'");

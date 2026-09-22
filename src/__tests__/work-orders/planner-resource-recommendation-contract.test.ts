@@ -23,9 +23,7 @@ describe('planner resource recommendation workflow contract', () => {
 
   it('requires the real assigned execution actor to submit recommendations', () => {
     expect(suggested).toContain('const isExecutionActor');
-    expect(suggested).toContain('wo.assignedTo === session.userId');
-    expect(suggested).toContain('wo.teamLeaderId === session.userId');
-    expect(suggested).toContain('wo.teamMembers.some((member) => member.userId === session.userId)');
+    expect(suggested).toContain('isWorkOrderExecutionMember(session, wo)');
     expect(suggested).toContain('Only assigned execution staff can submit recommended resources for approval');
     expect(suggested).toContain("action === 'submit_recommendations'");
   });

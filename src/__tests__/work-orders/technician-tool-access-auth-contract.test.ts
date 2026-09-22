@@ -54,7 +54,9 @@ describe('technician tool access authentication contract', () => {
     expect(panel).toContain('availabilityVerified: false');
     expect(panel).toContain('availabilityVerified: true');
     expect(panel).toContain('Planner recommended · availability will be verified on submit');
+    expect(panel).toContain('Planner recommended · availability verified on submit');
     expect(panel).toContain('if (selectedTool?.availabilityVerified)');
+    expect(panel).toContain('max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined}');
     expect(panel).toContain('setPersonalTools(personalToolFallbacks)');
   });
 

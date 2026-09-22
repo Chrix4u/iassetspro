@@ -45,8 +45,9 @@ describe('technician live RBAC refresh', () => {
       expect(migration).toContain(permission);
     }
 
-    expect(migration).toContain("WHERE r.slug = 'maintenance_technician'");
-    expect(migration).toContain('AND rp.id IS NULL');
+    const normalizedMigration = migration.replaceAll('`', '');
+    expect(normalizedMigration).toContain("WHERE r.slug = 'maintenance_technician'");
+    expect(normalizedMigration).toContain('AND rp.id IS NULL');
     expect(migration).not.toContain('DELETE FROM role_permissions');
     expect(migration).not.toContain('TRUNCATE');
   });

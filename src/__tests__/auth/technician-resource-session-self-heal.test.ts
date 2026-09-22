@@ -19,6 +19,7 @@ describe('technician resource session self-heal', () => {
     const routes = [
       'src/app/api/tools/route.ts',
       'src/app/api/inventory/route.ts',
+      'src/app/api/work-orders/[id]/route.ts',
       'src/app/api/work-orders/[id]/personal-tools/route.ts',
       'src/app/api/work-orders/[id]/suggested-items/route.ts',
     ];

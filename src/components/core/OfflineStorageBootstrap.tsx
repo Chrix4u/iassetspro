@@ -11,6 +11,15 @@ import {
 } from '@/lib/api';
 
 const logger = createLogger('offlineStorageBootstrap');
+const CLIENT_BUILD_VERSION = process.env.NEXT_PUBLIC_BUILD_VERSION || 'local';
+const BUILD_VERSION_CHECK_INTERVAL_MS = 60_000;
+
+function isComparableBuildVersion(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value !== 'unknown'
+    && value !== 'local';
+}
 
 export async function registerCoreServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (
@@ -48,8 +57,42 @@ export function OfflineReplayRuntime() {
 export function OfflineStorageBootstrap() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [cachedEndpoints, setCachedEndpoints] = useState<Record<string, string>>({});
+  const [serverBuildVersion, setServerBuildVersion] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
+    let disposed = false;
+
+    const checkBuildVersion = async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      try {
+        const response = await fetch('/api/health', {
+          method: 'GET',
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) return;
+        const payload = await response.json() as { buildVersion?: unknown };
+        const deployed = payload?.buildVersion;
+        if (!isComparableBuildVersion(deployed) || disposed) return;
+
+        setServerBuildVersion(deployed);
+        if (deployed !== CLIENT_BUILD_VERSION) {
+          setUpdateAvailable(true);
+        }
+      } catch {
+        // Version checks are advisory. Network/auth/business flows must not be
+        // disrupted if the public health probe is temporarily unavailable.
+      }
+    };
+
+    void checkBuildVersion();
+    const buildTimer = window.setInterval(() => void checkBuildVersion(), BUILD_VERSION_CHECK_INTERVAL_MS);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void checkBuildVersion();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     void OfflineQueueStorage.getBackend()
       .then((backend) => {
         logger.info('Offline storage initialized', { backend });
@@ -92,7 +135,12 @@ export function OfflineStorageBootstrap() {
     };
 
     window.addEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
-    return () => window.removeEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
+    return () => {
+      disposed = true;
+      window.clearInterval(buildTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
+    };
   }, []);
 
   const oldestCachedAt = useMemo(() => {
@@ -108,6 +156,31 @@ export function OfflineStorageBootstrap() {
   return (
     <>
       {isAuthenticated ? <OfflineReplayRuntime /> : null}
+      {updateAvailable ? (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="app-update-banner"
+          className="fixed left-1/2 top-4 z-[110] flex w-[min(94vw,46rem)] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-950 shadow-lg dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+        >
+          <div className="min-w-0">
+            <strong>A newer iAssetsPro version is available.</strong>{' '}
+            Refresh to load the latest workflow and authorization fixes.
+            {serverBuildVersion ? (
+              <span className="ml-1 text-xs opacity-70">
+                ({CLIENT_BUILD_VERSION.slice(0, 8)} → {serverBuildVersion.slice(0, 8)})
+              </span>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="shrink-0 rounded-md border border-sky-400 bg-white px-3 py-1.5 font-medium text-sky-800 hover:bg-sky-100 dark:bg-sky-900 dark:text-sky-100"
+            onClick={() => window.location.reload()}
+          >
+            Refresh now
+          </button>
+        </div>
+      ) : null}
       {staleSectionCount > 0 ? (
         <div
           role="status"

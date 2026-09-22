@@ -298,11 +298,22 @@ export function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+type ApiFetchOptions = RequestInit & {
+  timeout?: number;
+  /** Internal guard: only one auth self-heal retry is allowed per request. */
+  _sessionRecoveryAttempted?: boolean;
+};
+
 export async function apiFetch<T = any>(
   endpoint: string,
-  options: RequestInit & { timeout?: number } = {}
+  options: ApiFetchOptions = {}
 ): Promise<ApiResponse<T>> {
-  const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
+  const {
+    timeout = DEFAULT_TIMEOUT_MS,
+    signal: externalSignal,
+    _sessionRecoveryAttempted = false,
+    ...restOptions
+  } = options;
   const isFormData = restOptions.body instanceof FormData;
   const normalizedMethod = (restOptions.method || 'GET').toUpperCase();
   const cacheableRead = normalizedMethod === 'GET' && isOfflineSnapshotEndpoint(endpoint);
@@ -384,9 +395,40 @@ export async function apiFetch<T = any>(
         ? payload.error
         : `Request failed with status ${res.status}`;
 
-      // A dead/cleared bearer token must fail closed across the entire SPA.
-      // Without this, already-mounted pages keep firing protected requests and
-      // flood the console with repeated Authentication required responses.
+      const authFailure = isSessionAuthFailure(endpoint, res.status, error);
+      const hasBearerToken =
+        typeof window !== 'undefined' &&
+        Boolean(localStorage.getItem('eam_token'));
+
+      // A valid DB session can outlive a server process/cache restart. Before
+      // treating an auth-looking 401/403 as a real logout, revalidate the same
+      // bearer token through /api/auth/me (which uses the async DB-backed
+      // session resolver) and retry the original request once.
+      if (
+        authFailure &&
+        hasBearerToken &&
+        !_sessionRecoveryAttempted &&
+        endpoint.split('?')[0] !== '/api/auth/me'
+      ) {
+        const probe = await apiFetch<{ user: unknown; permissions: string[] }>(
+          '/api/auth/me',
+          {
+            method: 'GET',
+            timeout,
+            _sessionRecoveryAttempted: true,
+          },
+        );
+
+        if (probe.success) {
+          return apiFetch<T>(endpoint, {
+            ...restOptions,
+            timeout,
+            _sessionRecoveryAttempted: true,
+          });
+        }
+      }
+
+      // A genuinely dead/cleared bearer token must fail closed across the SPA.
       notifySessionExpired(endpoint, res.status, error);
 
       // Preserve every structured field returned by the domain endpoint. Older

@@ -45,6 +45,23 @@ export async function GET(
         plannerId: true,
         teamMembers: { select: { userId: true, role: true } },
         maintenanceRequest: { select: { requestedBy: true } },
+        repairToolRequests: {
+          where: { source: 'planner_suggested', status: 'pending' },
+          select: {
+            id: true,
+            toolId: true,
+            toolName: true,
+            items: {
+              select: {
+                toolId: true,
+                toolName: true,
+                toolCode: true,
+                quantityRequested: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -88,12 +105,40 @@ export async function GET(
       );
     }
 
-    const recommendations = parseSuggestedTools(wo.suggestedTools);
-    const recommendedIds = Array.from(new Set(
-      recommendations
-        .map((item) => typeof item.toolId === 'string' ? item.toolId : '')
-        .filter(Boolean),
-    ));
+    // Prefer the durable planner snapshot, but recover older conversions that
+    // only persisted a pending planner_suggested request/header/item row.
+    const recommendationByToolId = new Map<string, Record<string, unknown>>();
+    for (const item of parseSuggestedTools(wo.suggestedTools)) {
+      const toolId = typeof item.toolId === 'string' ? item.toolId : '';
+      if (toolId) recommendationByToolId.set(toolId, item);
+    }
+    for (const request of wo.repairToolRequests) {
+      const requestItems = request.items.length > 0
+        ? request.items
+        : request.toolId
+          ? [{
+              toolId: request.toolId,
+              toolName: request.toolName,
+              toolCode: null,
+              quantityRequested: 1,
+            }]
+          : [];
+
+      for (const item of requestItems) {
+        if (!item.toolId || recommendationByToolId.has(item.toolId)) continue;
+        recommendationByToolId.set(item.toolId, {
+          id: `legacy-planner:${request.id}:${item.toolId}`,
+          toolId: item.toolId,
+          toolName: item.toolName || request.toolName || 'Planner-recommended tool',
+          toolCode: item.toolCode || '',
+          quantity: item.quantityRequested || 1,
+          notes: 'Recovered from planner recommendation',
+        });
+      }
+    }
+
+    const recommendations = [...recommendationByToolId.values()];
+    const recommendedIds = [...recommendationByToolId.keys()];
 
     const [availableTools, recommendedRecords] = await Promise.all([
       db.tool.findMany({

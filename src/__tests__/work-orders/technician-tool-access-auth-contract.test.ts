@@ -20,6 +20,62 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain("sessionCache.set(token, { data: forwardedSession");
   });
 
+  it('uses a backup same-origin token header when Authorization is stripped upstream', () => {
+    const proxy = read('src/proxy.ts');
+    const apiClient = read('src/lib/api.ts');
+
+    expect(apiClient).toContain("headers['Authorization'] = `Bearer ${token}`");
+    expect(apiClient).toContain("headers['X-EAM-Token'] = token");
+    expect(proxy).toContain("request.headers.get('x-eam-token')");
+    expect(proxy).toContain('const token = bearerToken || fallbackToken');
+  });
+
+  it('uses a work-order-scoped tool selector for assigned technicians', () => {
+    const route = read('src/app/api/work-orders/[id]/tool-options/route.ts');
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    const proxy = read('src/proxy.ts');
+
+    expect(proxy).toContain('/tool-options');
+    expect(route).toContain('canViewWorkOrder(session, wo)');
+    expect(route).toContain('const isExecutionActor');
+    expect(route).toContain("hasPermission(session, 'repair_tool_requests.create')");
+    expect(route).toContain('if (!isExecutionActor) {');
+    expect(route).toContain('authorizeWorkOrderPlant(request, session, id)');
+    expect(route).toContain('plantId: wo.plantId');
+    expect(route).toContain("status: 'available'");
+    expect(route).toContain('recommendedTools');
+    expect(route).toContain("currentStatus: current?.status || 'unavailable'");
+    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-options');
+    expect(panel).toContain('plannerRecommended: true');
+    expect(panel).toContain("'Planner recommendation · '");
+    expect(panel).not.toContain("'/api/tools?mode=lookup&status=available&limit=100'");
+  });
+
+  it('allows exact WO execution actors to use contextual personal/tool-request access', () => {
+    const personalTools = read('src/app/api/work-orders/[id]/personal-tools/route.ts');
+    const toolRequests = read('src/app/api/repairs/tool-requests/route.ts');
+
+    expect(personalTools).toContain('const isExecutionMember');
+    expect(personalTools).toContain('if (!isExecutionMember) {');
+    expect(personalTools).toContain('authorizeWorkOrderPlant(request, session, id)');
+    expect(personalTools).toContain('const hasDirectWorkflowRelationship');
+
+    expect(toolRequests).toContain('const isExecutionMember = Boolean(woTeam) || isAssignee || isTeamLeader');
+    expect(toolRequests).toContain('if (!isExecutionMember) {');
+    expect(toolRequests).toContain('getPlantScope(request, session)');
+    expect(toolRequests).toContain('tool.plantId !== wo.plantId');
+  });
+
+  it('keeps planner-recommended tools visible even outside the available list', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('const recommendedTools = Array.isArray((toolsRes.data as any).recommendedTools)');
+    expect(panel).toContain("name: tool.toolName || 'Planner-recommended tool'");
+    expect(panel).toContain('mergedTools.set(tool.id');
+    expect(panel).toContain("tool.plannerRecommended ? '★ ' : ''");
+    expect(panel).toContain('if (selectedTool && !selectedTool.plannerRecommended)');
+  });
+
   it('self-heals empty persisted RBAC snapshots for existing sessions', () => {
     const auth = read('src/lib/auth.ts');
 

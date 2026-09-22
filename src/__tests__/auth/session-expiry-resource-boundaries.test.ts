@@ -33,6 +33,17 @@ describe('authenticated RWOP resource request boundaries', () => {
     expect(authStore).toContain('role: null');
   });
 
+  it('preserves a valid persisted session when /auth/me fails for a non-401 reason', () => {
+    const fetchMeStart = authStore.indexOf('fetchMe: async () => {');
+    const fetchMeEnd = authStore.indexOf('hasPermission:', fetchMeStart);
+    const fetchMe = authStore.slice(fetchMeStart, fetchMeEnd);
+
+    expect(fetchMe).toContain('else if (res.status === 401)');
+    expect(fetchMe).toContain('set({ isLoading: false });');
+    expect(fetchMe).toContain('Preserve the current authenticated snapshot during transient network');
+    expect(fetchMe).not.toContain('} catch {\n      clearAuthData();');
+  });
+
   it('unmounts the protected app shell when an API discovers session expiry', () => {
     expect(rootPage).toContain('AUTH_SESSION_EXPIRED_EVENT');
     expect(rootPage).toContain("window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired)");

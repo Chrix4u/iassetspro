@@ -30,7 +30,8 @@ export async function registerCoreServiceWorker(): Promise<ServiceWorkerRegistra
     return null;
   }
 
-  const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  const workerUrl = `/sw.js?v=${encodeURIComponent(CLIENT_BUILD_VERSION)}`;
+  const registration = await navigator.serviceWorker.register(workerUrl, { scope: '/' });
 
   // Do not rely on the browser's periodic service-worker update interval. Check
   // on each app bootstrap so a newly deployed shell/cache version is discovered

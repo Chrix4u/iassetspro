@@ -23,6 +23,16 @@ describe('technician stale-build refresh contract', () => {
     expect(health).toContain("'Cache-Control': 'no-store'");
   });
 
+  it('versions the service worker and Cache Storage by deployed build SHA', () => {
+    const bootstrap = read('src/components/core/OfflineStorageBootstrap.tsx');
+    const worker = read('public/sw.js');
+
+    expect(bootstrap).toContain('const workerUrl = `/sw.js?v=${encodeURIComponent(CLIENT_BUILD_VERSION)}`');
+    expect(bootstrap).toContain('navigator.serviceWorker.register(workerUrl');
+    expect(worker).toContain("new URL(self.location.href).searchParams.get('v')");
+    expect(worker).toContain('const CACHE_NAME = `${CACHE_PREFIX}${WORKER_BUILD_VERSION}`');
+  });
+
   it('detects a newer deployed build without auto-reloading unsaved technician work', () => {
     const bootstrap = read('src/components/core/OfflineStorageBootstrap.tsx');
 

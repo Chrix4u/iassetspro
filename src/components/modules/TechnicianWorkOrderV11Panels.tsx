@@ -394,7 +394,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool) {
+    if (selectedTool && !selectedTool.plannerRecommended) {
       const availableQuantity = Number(selectedTool.quantity ?? 1);
       if (quantity > availableQuantity) {
         toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;
@@ -738,7 +738,10 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     <Label>Tool required *</Label>
                     {selectedTool && (
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
-                        Available: {Number(selectedTool.quantity ?? 1)} · {selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
+                        {selectedTool.plannerRecommended
+                          ? `Planner recommendation · ${pretty(selectedTool.status || 'unavailable')} · Qty ${Number(selectedTool.quantity ?? 0)}`
+                          : `Available: ${Number(selectedTool.quantity ?? 1)}`}
+                        {' · '}{selectedTool.toolCode || 'No code'} · {pretty(selectedTool.condition)}{selectedTool.location ? ` · ${selectedTool.location}` : ''}
                       </span>
                     )}
                   </div>

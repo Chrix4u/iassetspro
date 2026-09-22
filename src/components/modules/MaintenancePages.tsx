@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { api } from '@/lib/api';
+import { api, hasClientAuthToken } from '@/lib/api';
 import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -3377,6 +3377,29 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
   }, [materialResourcesEnabled, toolResourcesEnabled]);
 
+  const hydratePersonalToolsFromWO = useCallback((workOrder: any) => {
+    if (!toolResourcesEnabled) {
+      setPersonalTools([]);
+      return;
+    }
+
+    const raw = workOrder?.personalTools;
+    if (Array.isArray(raw)) {
+      setPersonalTools(raw as PersonalTool[]);
+      return;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        setPersonalTools(Array.isArray(parsed) ? parsed as PersonalTool[] : []);
+        return;
+      } catch {
+        // Invalid legacy JSON must not break the work-order view.
+      }
+    }
+    setPersonalTools([]);
+  }, [toolResourcesEnabled]);
+
   const mergeSuggestedResourceRows = useCallback((
     currentRows: any[],
     incomingRows: any[],
@@ -3432,6 +3455,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (res.success && res.data) {
       setWo(res.data);
       hydrateSuggestedResourcesFromWO(res.data);
+      hydratePersonalToolsFromWO(res.data);
       // Reset optimistic paused state only if server timeLogs confirm the state
       // (hasPausedSession memo will re-evaluate from wo.timeLogs)
       if (res.data.timeLogs && res.data.timeLogs.length > 0) {
@@ -3447,22 +3471,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       }
     }
     setLoading(false);
-  }, [id, hydrateSuggestedResourcesFromWO]);
+  }, [id, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
 
   // Fetch team member requests (separate call for permission-filtered results)
   const fetchTeamRequests = useCallback(async () => {
     const res = await api.get(`/api/work-orders/${id}/team-member-requests`);
     if (res.success && res.data) setTeamRequests(res.data);
   }, [id]);
-
-  const fetchPersonalTools = useCallback(async () => {
-    if (!isAuthenticated || !user?.id || !toolResourcesEnabled) {
-      setPersonalTools([]);
-      return;
-    }
-    const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
-    if (res.success && res.data) setPersonalTools(res.data);
-  }, [id, isAuthenticated, toolResourcesEnabled, user?.id]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {
@@ -3573,6 +3588,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         if (res.success && res.data) {
           setWo(res.data);
           hydrateSuggestedResourcesFromWO(res.data);
+          hydratePersonalToolsFromWO(res.data);
           // Team member requests from WO response
           if ((res.data as any).teamMemberRequests) {
             setTeamRequests((res.data as any).teamMemberRequests);
@@ -3589,12 +3605,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     api.get(`/api/work-orders/${id}/status-history`).then(res => {
       if (active && res.success && res.data) setStatusHistory(res.data);
     });
-    // Fetch personal tools only when the Repairs + Tools domains are operational.
-    if (toolResourcesEnabled) {
-      fetchPersonalTools();
-    } else {
-      setPersonalTools([]);
-    }
     // Fetch task checklist
     api.get(`/api/work-orders/${id}/tasks`).then(res => {
       if (active) {
@@ -3614,7 +3624,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     // Fetch suggested items
     fetchSuggestedItems();
     return () => { active = false; };
-  }, [id, fetchPersonalTools, fetchSuggestedItems, toolResourcesEnabled, hydrateSuggestedResourcesFromWO]);
+  }, [id, fetchSuggestedItems, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -4432,7 +4442,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!ptForm.toolName) { toast.error('Tool name is required'); return; }
     setPtLoading(true);
     const res = await api.post(`/api/work-orders/${id}/personal-tools`, ptForm);
-    if (res.success) { toast.success('Tool added'); setPtOpen(false); setPtForm({ toolName: '', toolCode: '', condition: 'good', notes: '' }); fetchPersonalTools(); }
+    if (res.success) { toast.success('Tool added'); setPtOpen(false); setPtForm({ toolName: '', toolCode: '', condition: 'good', notes: '' }); fetchWO(); }
     else { toast.error(res.error || 'Failed to add tool'); }
     setPtLoading(false);
   };
@@ -4442,7 +4452,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!tool?.id) return;
     setPtLoading(true);
     const res = await api.delete(`/api/work-orders/${id}/personal-tools/${tool.id}`);
-    if (res.success) { toast.success('Tool removed'); fetchPersonalTools(); }
+    if (res.success) { toast.success('Tool removed'); fetchWO(); }
     else { toast.error(res.error || 'Failed to remove tool'); }
     setPtLoading(false);
   };
@@ -5587,12 +5597,48 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
-                        const res = await api.get(`/api/work-orders/${id}/tool-candidates?status=available&limit=100`);
-                        if (res.success && Array.isArray(res.data)) {
-                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
-                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                        const plannerRecommended = suggestedTools
+                          .filter((tool: any) =>
+                            typeof tool?.toolId === 'string'
+                            && tool.toolId
+                            && (!tool.pipelineStatus || ['suggested', 'planned'].includes(tool.pipelineStatus))
+                          )
+                          .map((tool: any) => ({
+                            id: String(tool.toolId),
+                            name: String(tool.toolName || 'Planner recommended tool'),
+                            toolCode: String(tool.toolCode || ''),
+                            plannerRecommended: true,
+                          }));
+
+                        const merged = new Map<string, { id: string; name: string; toolCode: string; plannerRecommended?: boolean }>();
+                        for (const tool of plannerRecommended) merged.set(tool.id, tool);
+
+                        if (hasClientAuthToken()) {
+                          const res = await api.get(`/api/work-orders/${id}/tool-candidates?status=available&limit=100`);
+                          if (res.success && Array.isArray(res.data)) {
+                            for (const tool of res.data) {
+                              if (!tool?.id) continue;
+                              const current = merged.get(String(tool.id));
+                              merged.set(String(tool.id), {
+                                id: String(tool.id),
+                                name: String(tool.name || current?.name || ''),
+                                toolCode: String(tool.toolCode || current?.toolCode || ''),
+                                plannerRecommended: current?.plannerRecommended,
+                              });
+                            }
+                          }
                         }
-                        return [];
+
+                        const options = [...merged.values()];
+                        toolsLookupCache.current = options.map((tool) => ({
+                          id: tool.id,
+                          name: tool.name,
+                          toolCode: tool.toolCode,
+                        }));
+                        return options.map((tool) => ({
+                          value: tool.id,
+                          label: `${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''}${tool.plannerRecommended ? ' — Planner recommended' : ''}`,
+                        }));
                       }}
                       placeholder="Search tools..."
                       searchPlaceholder="Search by name or code..."

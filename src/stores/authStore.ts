@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
-import { api } from '@/lib/api';
+import { api, AUTH_SESSION_EXPIRED_EVENT } from '@/lib/api';
 
 // --- localStorage keys ---
 const LS_TOKEN = 'eam_token';
@@ -140,4 +140,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { role } = get();
     return role === 'admin';
   },
-}));
+})); 
+
+const authExpiryGlobal = globalThis as typeof globalThis & {
+  __iassetsAuthExpiryListenerInstalled?: boolean;
+};
+
+if (typeof window !== 'undefined' && !authExpiryGlobal.__iassetsAuthExpiryListenerInstalled) {
+  authExpiryGlobal.__iassetsAuthExpiryListenerInstalled = true;
+  window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, () => {
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      permissions: [],
+      role: null,
+      isLoading: false,
+    });
+  });
+}

@@ -17,7 +17,13 @@ test.describe('CORE offline PWA platform', () => {
 
     expect(registration).not.toBeNull();
     expect(registration?.scope.endsWith('/')).toBe(true);
-    expect(registration?.scriptURL.endsWith('/sw.js')).toBe(true);
+
+    // The service worker is deliberately build-versioned so a production
+    // release cannot keep serving a stale technician shell. Validate the
+    // canonical worker pathname and the exact-release SHA query separately.
+    const serviceWorkerUrl = new URL(registration?.scriptURL || '');
+    expect(serviceWorkerUrl.pathname).toBe('/sw.js');
+    expect(serviceWorkerUrl.searchParams.get('v')).toMatch(/^[0-9a-f]{40}$/);
   });
 
   test('upgrades the shared offline database with queue and API snapshot stores', async ({ page }) => {

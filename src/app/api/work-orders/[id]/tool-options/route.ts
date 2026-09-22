@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission } from '@/lib/auth';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 
@@ -71,9 +71,11 @@ export async function GET(
       || wo.teamLeaderId === session.userId
       || wo.teamMembers.some((member) => member.userId === session.userId);
 
-    if (!isExecutionActor && !canManageWorkOrder(session, wo)) {
+    const canRequestTools =
+      isExecutionActor && hasPermission(session, 'repair_tool_requests.create');
+    if (!canRequestTools && !canManageWorkOrder(session, wo)) {
       return NextResponse.json(
-        { success: false, error: 'Only assigned execution staff or accountable maintenance management can load work-order tool options' },
+        { success: false, error: 'Tool options require assigned execution access with tool-request permission, or accountable maintenance-management authority' },
         { status: 403 },
       );
     }

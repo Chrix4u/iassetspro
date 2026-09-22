@@ -79,6 +79,17 @@ describe('technician tool access authentication contract', () => {
     expect(proxy).toContain('/tool-options');
   });
 
+  it('keeps tool-request submission WO-scoped for assigned execution actors', () => {
+    const requests = read('src/app/api/repairs/tool-requests/route.ts');
+
+    expect(requests).toContain('const canViewWorkOrderExecutionScope');
+    expect(requests).toContain('if (!canViewWorkOrderExecutionScope)');
+    expect(requests).toContain('const isExecutionActor = Boolean(woTeam) || isAssignee');
+    expect(requests).toContain('if (!isExecutionActor && !isAdmin(session))');
+    expect(requests).toContain('if (!isExecutionActor) {');
+    expect(requests).toContain("tool.plantId !== wo.plantId");
+  });
+
   it('keeps technician tool lookup constrained to execution permissions', () => {
     const tools = read('src/app/api/tools/route.ts');
     const seed = read('prisma/seed-permissions-only.ts');

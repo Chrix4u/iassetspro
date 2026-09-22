@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 import { notifyUser } from '@/lib/notifications';
@@ -18,7 +18,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const unavailableModules = new Set(await getUnavailableOperationalModules([
@@ -294,7 +294,7 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();

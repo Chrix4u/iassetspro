@@ -11,14 +11,18 @@ describe('authenticated RWOP resource request boundaries', () => {
   const rootPage = read('src/app/page.tsx');
   const maintenance = read('src/components/modules/MaintenancePages.tsx');
 
-  it('fails closed when any protected API reports an expired/missing bearer session', () => {
+  it('expires the SPA session only for HTTP 401 authentication failures', () => {
     expect(apiClient).toContain("AUTH_SESSION_EXPIRED_EVENT = 'iassetspro:auth-session-expired'");
     expect(apiClient).toContain('function notifySessionExpired');
     expect(apiClient).toContain('clearClientAuthStorage();');
-    expect(apiClient).toContain("normalized === 'authentication required'");
-    expect(apiClient).toContain("normalized === 'not authenticated'");
-    expect(apiClient).toContain("normalized === 'invalid or expired session'");
+    expect(apiClient).toContain('return status === 401;');
+    expect(apiClient).not.toContain("normalized === 'authentication required'");
     expect(apiClient).toContain('notifySessionExpired(endpoint, res.status, error);');
+  });
+
+  it('does not reinterpret an authorization 403 as a dead bearer session', () => {
+    expect(apiClient).toContain('A 403 means');
+    expect(apiClient).toContain('Never clear a valid persisted session');
   });
 
   it('never leaves Zustand authenticated after the persisted token disappears or restoration fails', () => {
@@ -36,9 +40,11 @@ describe('authenticated RWOP resource request boundaries', () => {
     expect(rootPage).toContain('if (!isAuthenticated || !user)');
   });
 
-  it('does not fetch WO personal tools before authenticated actor state exists', () => {
-    expect(maintenance).toContain('if (!isAuthenticated || !user?.id || !toolResourcesEnabled)');
-    expect(maintenance).toContain('/api/work-orders/${id}/personal-tools');
+  it('uses the authorized WO payload as the personal-tool read baseline', () => {
+    expect(maintenance).toContain('const hydratePersonalToolsFromWO');
+    expect(maintenance).toContain('const raw = workOrder?.personalTools');
+    expect(maintenance).not.toContain('fetchPersonalTools');
+    expect(maintenance).not.toContain('api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`)');
   });
 
   it('uses least-privilege inventory/tool lookups and forbids obsolete broad selector calls', () => {

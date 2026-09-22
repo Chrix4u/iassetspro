@@ -43,16 +43,14 @@ function clearClientAuthStorage(): void {
   }
 }
 
-function isSessionAuthFailure(endpoint: string, status: number, error?: string): boolean {
+function isSessionAuthFailure(endpoint: string, status: number, _error?: string): boolean {
   if (isPublicAuthEndpoint(endpoint)) return false;
-  if (status === 401) return true;
-  if (status !== 403) return false;
 
-  const normalized = (error || '').trim().toLowerCase();
-  return normalized === 'authentication required'
-    || normalized === 'not authenticated'
-    || normalized === 'invalid or expired session'
-    || normalized.includes('session expired');
+  // Authentication failures are expressed as 401 by src/proxy.ts. A 403 means
+  // the bearer was accepted but the actor is not authorized for that operation.
+  // Never clear a valid persisted session because one permission-scoped endpoint
+  // returned a legacy/misleading auth-like error string.
+  return status === 401;
 }
 
 function notifySessionExpired(endpoint: string, status: number, error?: string): void {

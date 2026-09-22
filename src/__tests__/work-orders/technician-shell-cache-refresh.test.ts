@@ -16,7 +16,9 @@ describe('technician shell cache refresh', () => {
     expect(bootstrap).toContain("navigator.serviceWorker.register('/sw.js', { scope: '/' })");
     expect(bootstrap).toContain('await registration.update()');
     expect(bootstrap).toContain("navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)");
-    expect(bootstrap).toContain('window.location.reload()');
+    expect(bootstrap).toContain('setUpdateAvailable(true)');
+    expect(bootstrap).toContain('data-testid="app-update-banner"');
+    expect(bootstrap).toContain('onClick={() => window.location.reload()}');
     expect(bootstrap).toContain("navigator.serviceWorker.getRegistration('/')");
     expect(bootstrap).toContain('5 * 60 * 1000');
   });

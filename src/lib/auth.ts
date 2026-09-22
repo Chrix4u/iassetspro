@@ -132,17 +132,29 @@ export async function createSession(userId: string): Promise<{ token: string; se
   return { token, session: sessionData };
 }
 
-// Get session from request (Bearer token in Authorization header)
-// Checks in-memory cache first, falls back to DB lookup
+function decodeForwardedHeader(value: string | null): string {
+  if (!value) return '';
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+// Get session from request (Bearer token in Authorization header).
+// Fast path: use the local in-memory cache.
+// Cold/isolate path: reconstruct the already-validated session from headers
+// written by src/proxy.ts. This is critical in production where the proxy and
+// route handler may execute in different workers and therefore cannot rely on
+// sharing the same in-memory sessionCache instance.
 export function getSession(request: Request): SessionData | null {
   const authHeader = request.headers.get('authorization');
   const token = authHeader?.replace('Bearer ', '');
   if (!token) return null;
 
-  // 1. Check in-memory cache first (fast path)
+  // 1. Check in-memory cache first (fast path).
   const cached = sessionCache.get(token);
   if (cached) {
-    // Verify not expired
     const age = Date.now() - cached.cachedAt;
     if (age > SESSION_TTL_MS) {
       sessionCache.delete(token);
@@ -151,10 +163,36 @@ export function getSession(request: Request): SessionData | null {
     return cached.data;
   }
 
-  // 2. Fallback: synchronous return null (DB lookup is async, handled by middleware)
-  // The middleware already validated the token, so route handlers can rely on getSession
-  // returning the cached data. If cache is cold, the middleware populates it.
-  return null;
+  // 2. Proxy-forwarded fallback. The proxy sets x-session-verified only after
+  // getSessionAsync(token) has validated the bearer token against the session DB.
+  if (request.headers.get('x-session-verified') !== '1') return null;
+
+  const userId = request.headers.get('x-session-user-id');
+  if (!userId) return null;
+
+  const roles = (request.headers.get('x-session-roles') || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const permissions = (request.headers.get('x-session-permissions') || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const createdAtRaw = request.headers.get('x-session-created-at');
+  const createdAt = createdAtRaw ? new Date(createdAtRaw) : new Date();
+  const normalizedCreatedAt = Number.isFinite(createdAt.getTime()) ? createdAt : new Date();
+
+  const forwardedSession: SessionData = {
+    userId,
+    username: decodeForwardedHeader(request.headers.get('x-session-username')),
+    fullName: decodeForwardedHeader(request.headers.get('x-session-full-name')),
+    roles,
+    permissions,
+    createdAt: normalizedCreatedAt,
+  };
+
+  sessionCache.set(token, { data: forwardedSession, cachedAt: Date.now() });
+  return forwardedSession;
 }
 
 // Get session from token directly (async, used by middleware)

@@ -13,6 +13,8 @@ describe('technician tool loading and client auth boundary', () => {
     expect(api).toContain('return status === 401;');
     expect(api).toContain('403 is an authorization or scope denial');
     expect(api).toContain('export function hasClientAuthToken');
+    expect(api).toContain('&& !hasClientAuthToken()');
+    expect(api).toContain("detail: { endpoint, status: 401, error }");
     expect(authStore).toContain('AUTH_SESSION_EXPIRED_EVENT');
     expect(authStore).toContain('window.addEventListener(AUTH_SESSION_EXPIRED_EVENT');
     expect(authStore).toContain('isAuthenticated: false');

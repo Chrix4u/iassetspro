@@ -11,6 +11,12 @@ describe('technician shell cache refresh', () => {
     expect(sw).toContain("name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME");
   });
 
+  it('checks for a new service worker on every app bootstrap', () => {
+    const bootstrap = read('src/components/core/OfflineStorageBootstrap.tsx');
+    expect(bootstrap).toContain("navigator.serviceWorker.register('/sw.js', { scope: '/' })");
+    expect(bootstrap).toContain('await registration.update()');
+  });
+
   it('never caches API responses', () => {
     const sw = read('public/sw.js');
     expect(sw).toContain("if (url.pathname.startsWith('/api/')) return");

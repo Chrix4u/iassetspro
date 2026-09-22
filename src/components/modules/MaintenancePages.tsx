@@ -4176,7 +4176,48 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   // ── Repair Resource Modal Handlers ──
-  const resetToolReqForm = () => { setToolReqItems([{ toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]); setToolReqReason(''); setToolReqUrgency('normal'); };
+  const resetToolReqForm = () => {
+    setToolReqItems([{ toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]);
+    setToolReqReason('');
+    setToolReqUrgency('normal');
+  };
+
+  const openToolRequestDialog = () => {
+    const plannerTools = suggestedTools
+      .filter((tool: any) =>
+        tool?.toolId
+        && (!tool.pipelineStatus || tool.pipelineStatus === 'suggested')
+      )
+      .map((tool: any) => ({
+        toolId: String(tool.toolId),
+        toolName: String(tool.toolName || tool.name || 'Planner recommended tool'),
+        toolCode: String(tool.toolCode || ''),
+        quantityRequested: Math.max(1, Number(tool.quantity || tool.quantityRequested || 1)),
+      }));
+
+    if (plannerTools.length > 0) {
+      const cachedById = new Map(toolsLookupCache.current.map((tool) => [tool.id, tool]));
+      for (const tool of plannerTools) {
+        cachedById.set(tool.toolId, {
+          id: tool.toolId,
+          name: tool.toolName,
+          toolCode: tool.toolCode,
+        });
+      }
+      toolsLookupCache.current = [...cachedById.values()];
+      setToolReqItems(plannerTools);
+      setToolReqReason(
+        `Planner recommended ${plannerTools.length === 1 ? 'tool' : 'tools'} for ${wo?.woNumber || 'this work order'}`
+      );
+    } else {
+      setToolReqItems([{ toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]);
+      setToolReqReason('');
+    }
+
+    setToolReqUrgency('normal');
+    setToolReqOpen(true);
+  };
+
   const addToolReqItem = () => setToolReqItems(prev => [...prev, { toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]);
   const removeToolReqItem = (idx: number) => { if (toolReqItems.length > 1) setToolReqItems(prev => prev.filter((_, i) => i !== idx)); };
   const updateToolReqItem = (idx: number, updates: Partial<{ toolId: string; toolName: string; toolCode: string; quantityRequested: number }>) => {
@@ -5530,11 +5571,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         const cached = toolsLookupCache.current.find(t => t.id === val);
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
-                      fetchOptions={async () => {
-                        const res = await api.get('/api/tools?mode=lookup&limit=100');
+                      fetchOptions={async (query = '') => {
+                        if (!isAuthenticated || !user?.id) return [];
+                        const params = new URLSearchParams({ limit: '100' });
+                        if (query.trim()) params.set('search', query.trim());
+                        const res = await api.get(`/api/work-orders/${id}/tool-options?${params.toString()}`);
                         if (res.success && Array.isArray(res.data)) {
-                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
-                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                          toolsLookupCache.current = res.data.map((t: any) => ({
+                            id: t.id,
+                            name: t.name || '',
+                            toolCode: t.toolCode || '',
+                          }));
+                          return res.data.map((t: any) => ({
+                            value: t.id,
+                            label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}${t.status && t.status !== 'available' ? ` — ${String(t.status).replace(/_/g, ' ')}` : ''}`,
+                          }));
                         }
                         return [];
                       }}
@@ -6371,7 +6422,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                 ) : (
                 <>
-                {toolResourcesEnabled && canPerformWorkActions && <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
+                {toolResourcesEnabled && canPerformWorkActions && <button onClick={openToolRequestDialog} disabled={isWOFinalized} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Request Tool</span>
                 </button>}

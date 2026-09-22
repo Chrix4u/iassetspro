@@ -53,6 +53,7 @@ type ToolOption = {
   quantity?: number | null;
   location?: string | null;
   availabilityVerified?: boolean;
+  plannerRecommended?: boolean;
 };
 
 type SearchableResourceOption = {
@@ -88,6 +89,7 @@ function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
       quantity: Number(suggestion.quantity ?? 1) || 1,
       location: suggestion.location || null,
       availabilityVerified: false,
+      plannerRecommended: true,
     });
   }
 
@@ -118,6 +120,7 @@ function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
         quantity: Number(item.quantityRequested ?? current?.quantity ?? 1) || 1,
         location: item.tool?.location || request.tool?.location || current?.location || null,
         availabilityVerified: current?.availabilityVerified ?? false,
+        plannerRecommended: true,
       });
     }
   }
@@ -308,8 +311,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)
-        : Promise.resolve({ success: true, data: [] as ToolOption[] }),
+        ? api.get<{ availableTools: ToolOption[]; recommendedTools: any[] }>(
+            `/api/work-orders/${workOrderId}/tool-options`,
+            workOrderPlantHeaders,
+          )
+        : Promise.resolve({
+            success: true,
+            data: { availableTools: [] as ToolOption[], recommendedTools: [] as any[] },
+          }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
       setDowntime(downRes.data);
@@ -333,14 +342,53 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     } else {
       setInventoryOptions([]);
     }
-    if (toolsRes.success && Array.isArray(toolsRes.data)) {
-      const liveAvailableTools = toolsRes.data
+    if (
+      toolsRes.success
+      && toolsRes.data
+      && Array.isArray((toolsRes.data as any).availableTools)
+    ) {
+      const liveAvailableTools = ((toolsRes.data as any).availableTools as ToolOption[])
         .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-        .map((tool) => ({ ...tool, availabilityVerified: true }));
-      setToolOptions(mergeToolOptions(plannerToolFallbacks, liveAvailableTools));
+        .map((tool) => ({
+          ...tool,
+          availabilityVerified: true,
+          plannerRecommended: false,
+        }));
+      const serverRecommendations = Array.isArray((toolsRes.data as any).recommendedTools)
+        ? ((toolsRes.data as any).recommendedTools as any[])
+            .filter((tool) => typeof tool?.toolId === 'string' && tool.toolId)
+            .map((tool): ToolOption => ({
+              id: tool.toolId,
+              name: tool.toolName || 'Planner-recommended tool',
+              toolCode: tool.toolCode || null,
+              status: tool.currentStatus || 'unavailable',
+              condition: tool.currentCondition || null,
+              quantity: Number(tool.currentQuantity ?? 0),
+              location: tool.location || null,
+              availabilityVerified: true,
+              plannerRecommended: true,
+            }))
+        : [];
+
+      const merged = new Map<string, ToolOption>();
+      for (const tool of plannerToolFallbacks) merged.set(tool.id, tool);
+      for (const tool of liveAvailableTools) {
+        merged.set(tool.id, { ...merged.get(tool.id), ...tool });
+      }
+      for (const tool of serverRecommendations) {
+        merged.set(tool.id, { ...merged.get(tool.id), ...tool, plannerRecommended: true });
+      }
+      setToolOptions(
+        [...merged.values()].sort((a, b) => {
+          if (Boolean(a.plannerRecommended) !== Boolean(b.plannerRecommended)) {
+            return a.plannerRecommended ? -1 : 1;
+          }
+          return (a.name || '').localeCompare(b.name || '');
+        }),
+      );
     } else {
-      // A planner recommendation is part of the WO contract, not dependent on
-      // the generic Tool Registry lookup. Keep it selectable as a fallback.
+      // Keep durable planner recommendations visible/selectable even if the
+      // WO-scoped live availability lookup is temporarily unavailable.
       setToolOptions(plannerToolFallbacks);
     }
     setResourcesLoading(false);
@@ -386,11 +434,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: tool.availabilityVerified
-        ? `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
-        : `Planner recommended · availability will be verified on submit${tool.toolCode ? ` · ${tool.toolCode}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
+      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: tool.plannerRecommended
+        ? tool.availabilityVerified
+          ? `Planner recommendation · ${pretty(tool.status || 'unavailable')} · Qty ${Number(tool.quantity ?? 0)}${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
+          : `Planner recommendation · availability will be verified on submit`
+        : `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
     })),
     [toolOptions],
   );
@@ -470,7 +520,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool?.availabilityVerified) {
+    if (selectedTool?.availabilityVerified && !selectedTool.plannerRecommended) {
       const availableQuantity = Number(selectedTool.quantity ?? 1);
       if (quantity > availableQuantity) {
         toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;
@@ -814,9 +864,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     <Label>Tool required *</Label>
                     {selectedTool && (
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
-                        {selectedTool.availabilityVerified
-                          ? `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`
-                          : `Planner recommended · availability verified on submit${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
+                        {selectedTool.plannerRecommended
+                          ? selectedTool.availabilityVerified
+                            ? `Planner recommendation · ${pretty(selectedTool.status || 'unavailable')} · Qty ${Number(selectedTool.quantity ?? 0)}${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`
+                            : `Planner recommendation · availability verified on submit${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`
+                          : `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`}
                       </span>
                     )}
                   </div>
@@ -838,7 +890,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     }}
                   />
                 </div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool?.availabilityVerified && !selectedTool.plannerRecommended ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder={toolRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, toolName: selectedTool?.name || toolRequest.toolName })} /></div>
                 <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId || (!editingToolRequestId && resourcesLoading)}><Plus className="h-4 w-4 mr-1" />{editingToolRequestId ? 'Update Request' : 'Request Tool'}</Button>{editingToolRequestId && <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={resetToolRequest} disabled={busy !== null}>Cancel</Button>}</div>

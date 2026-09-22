@@ -38,6 +38,24 @@ describe('technician resource auth resilience', () => {
     expect(panel).toContain('Planner recommendation · availability pending');
   });
 
+  it('does not refetch personal tools through a second auth boundary', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('setPersonalTools(personalToolFallbacks)');
+    expect(panel).not.toContain('api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`');
+    expect(panel).toContain('api.post(`/api/work-orders/${workOrderId}/personal-tools`');
+  });
+
+  it('preselects the first planner-recommended tool for a fresh request', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('const recommended = plannerToolFallbacks[0]');
+    expect(panel).toContain('toolId: recommended.id');
+    expect(panel).toContain('toolName: recommended.name');
+    expect(panel).toContain('toolCode: recommended.toolCode');
+    expect(panel).toContain('toolRequestReason({');
+  });
+
   it('uses exact-WO candidate endpoints rather than broad registries', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

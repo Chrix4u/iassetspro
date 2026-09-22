@@ -21,6 +21,15 @@ describe('authenticated RWOP resource request boundaries', () => {
     expect(apiClient).toContain('notifySessionExpired(endpoint, res.status, error);');
   });
 
+  it('retries an idempotent protected GET once before destroying a still-persisted session', () => {
+    expect(apiClient).toContain('authRetryAttempt = false');
+    expect(apiClient).toContain("normalizedMethod === 'GET'");
+    expect(apiClient).toContain("Boolean(localStorage.getItem('eam_token'))");
+    expect(apiClient).toContain('!authRetryAttempt');
+    expect(apiClient).toContain('authRetryAttempt: true');
+    expect(apiClient).toContain('isSessionAuthFailure(endpoint, res.status, error)');
+  });
+
   it('never leaves Zustand authenticated after the persisted token disappears or restoration fails', () => {
     expect(authStore).toContain('if (!token) {');
     expect(authStore).toContain('isAuthenticated: false');

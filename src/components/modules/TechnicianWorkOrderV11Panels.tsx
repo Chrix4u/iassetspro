@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -163,6 +164,7 @@ function SearchableResourceSelect({
 
 export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilities, onChanged }: Props) {
   const navigate = useNavigationStore((s) => s.navigate);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const [busy, setBusy] = useState<string | null>(null);
   const [downtime, setDowntime] = useState<any[]>([]);
   const [downtimeSummary, setDowntimeSummary] = useState<any>({ totalRecords: 0, ongoing: 0, totalMinutes: 0 });
@@ -334,6 +336,12 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     );
     if (ok) resetMaterialRequest();
   };
+
+  const ownsResourceRequest = (request: any) =>
+    Boolean(
+      currentUserId
+      && (request?.requestedById === currentUserId || request?.requestedBy?.id === currentUserId),
+    );
 
   const requestMaterialCancellation = (request: any) => {
     setCancelRequestTarget({
@@ -630,7 +638,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.item?.name || request.itemName || 'Material'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">Requested {request.quantityRequested ?? request.quantity ?? '-'} {request.unit || ''} · {pretty(request.urgency)}</p>
-                  {request.status === 'pending' && <div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingMaterialRequestId(request.id); setMaterial({ itemId: request.itemId || request.item?.id || '', itemName: request.item?.name || request.itemName || '', quantity: String(request.quantityRequested ?? request.quantity ?? 1), unit: request.unit || request.item?.unitOfMeasure || '', urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestMaterialCancellation(request)} disabled={busy !== null} title="Cancel pending material request">Cancel</Button></div>}
+                  {request.status === 'pending' && ownsResourceRequest(request) && <div className="mt-2 flex gap-2"><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditingMaterialRequestId(request.id); setMaterial({ itemId: request.itemId || request.item?.id || '', itemName: request.item?.name || request.itemName || '', quantity: String(request.quantityRequested ?? request.quantity ?? 1), unit: request.unit || request.item?.unitOfMeasure || '', urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button><Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestMaterialCancellation(request)} disabled={busy !== null} title="Cancel pending material request">Cancel</Button></div>}
                 </div>
               ))}
             </div>
@@ -681,7 +689,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requestNumber || request.toolName || 'Tool request'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>
-                  {request.status === 'pending' && !request.projectionOnly && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestToolCancellation(request)} disabled={busy !== null} title="Cancel pending tool request">Cancel</Button></div>}
+                  {request.status === 'pending' && !request.projectionOnly && ownsResourceRequest(request) && <div className="mt-2 flex gap-2">{(request.items || []).length <= 1 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { const item = (request.items || [])[0] || {}; setEditingToolRequestId(request.id); setToolRequest({ toolId: item.toolId || item.tool?.id || request.toolId || '', toolName: item.tool?.name || item.toolName || request.toolName || '', toolCode: item.tool?.toolCode || item.toolCode || '', quantity: String(item.quantityRequested ?? request.quantityRequested ?? 1), urgency: request.urgency || 'normal', reason: request.reason || '' }); }}>Edit</Button>}<Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-600" onClick={() => requestToolCancellation(request)} disabled={busy !== null} title="Cancel pending tool request">Cancel</Button></div>}
                 </div>
               ))}
             </div>

@@ -46,6 +46,16 @@ describe('technician resource auth resilience', () => {
     expect(panel).toContain('api.post(`/api/work-orders/${workOrderId}/personal-tools`');
   });
 
+  it('keeps personal-tool reads on the authorized WO payload and never the auxiliary GET endpoint', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    const maintenance = read('src/components/modules/MaintenancePages.tsx');
+
+    expect(panel).toContain('const personalToolFallbacks = useMemo');
+    expect(panel).toContain('workOrder?.personalTools');
+    expect(panel).not.toContain('api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`');
+    expect(maintenance).not.toContain('api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`)');
+  });
+
   it('preselects the first planner-recommended tool for a fresh request', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

@@ -51,6 +51,10 @@ describe('technician tool access authentication contract', () => {
     expect(panel).toContain("request?.source !== 'planner_suggested'");
     expect(panel).toContain('setToolOptions(plannerToolFallbacks)');
     expect(panel).toContain('mergeToolOptions(plannerToolFallbacks, liveAvailableTools)');
+    expect(panel).toContain('availabilityVerified: false');
+    expect(panel).toContain('availabilityVerified: true');
+    expect(panel).toContain('Planner recommended · availability will be verified on submit');
+    expect(panel).toContain('if (selectedTool?.availabilityVerified)');
     expect(panel).toContain('setPersonalTools(personalToolFallbacks)');
   });
 

@@ -51,7 +51,7 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).not.toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
     expect(panel).not.toContain("'/api/tools?mode=lookup&status=available&limit=100'");
     expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
-    expect(panel).toContain(".filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
+    expect(panel).toContain(".filter((tool: ToolOption) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)");
     expect(panel).toContain('selectedId={material.itemId}');
     expect(panel).toContain('itemId: selectedMaterial?.id || material.itemId');
     expect(panel).toContain("unit: selectedMaterial?.unitOfMeasure || material.unit || 'each'");

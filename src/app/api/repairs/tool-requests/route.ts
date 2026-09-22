@@ -73,19 +73,13 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-    applyPlantScope(where, plantScope);
+    const canViewAll = hasAnyPermission(
+      session,
+      ['repair_tool_requests.view', 'repair_tool_requests.view_all'],
+    ) || isAdmin(session);
 
-    if (workOrderId) where.workOrderId = workOrderId;
-    if (status) where.status = status;
-    if (requestedById) where.requestedById = requestedById;
-
-    const canViewAll = hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all']) || isAdmin(session);
     let canViewWorkOrderExecutionScope = false;
-    if (!canViewAll && workOrderId) {
+    if (workOrderId) {
       const executionMembership = await db.workOrder.findFirst({
         where: {
           id: workOrderId,
@@ -97,9 +91,27 @@ export async function GET(request: NextRequest) {
         },
         select: { id: true },
       });
-      canViewWorkOrderExecutionScope = !!executionMembership;
+      canViewWorkOrderExecutionScope = Boolean(executionMembership);
     }
-    if (!canViewAll && !canViewWorkOrderExecutionScope) where.requestedById = session.userId;
+
+    // A relationship-scoped query is hard-bound to one WO. Legacy assignments
+    // may predate UserPlant rows, so exact execution members can see only this
+    // WO's requests without gaining plant-wide Tool Requests visibility.
+    if (!canViewWorkOrderExecutionScope) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      applyPlantScope(where, plantScope);
+    }
+
+    if (workOrderId) where.workOrderId = workOrderId;
+    if (status) where.status = status;
+    if (requestedById) where.requestedById = requestedById;
+
+    if (!canViewAll && !canViewWorkOrderExecutionScope) {
+      where.requestedById = session.userId;
+    }
 
     if (stats) {
       const [total, pending, supervisorApproved, storekeeperApproved, issued, returned, rejected, overdueCount] = await Promise.all([
@@ -190,16 +202,31 @@ export async function POST(request: NextRequest) {
       ? reason.trim()
       : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
     }
-    if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
-    const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
+    const woTeam = await db.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: session.userId },
+      select: { id: true },
+    });
     const isAssignee = wo.assignedTo === session.userId;
-    if (!woTeam && !isAssignee && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
+    const isExecutionActor = Boolean(woTeam) || isAssignee;
+
+    if (!isExecutionActor && !isAdmin(session)) {
+      return NextResponse.json(
+        { success: false, error: 'You are not a member of this work order\'s execution team' },
+        { status: 403 },
+      );
+    }
+
+    // Exact execution assignment grants only this WO's resource-request scope.
+    // Non-execution callers retain strict plant authorization.
+    if (!isExecutionActor) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     const warnings: string[] = [];

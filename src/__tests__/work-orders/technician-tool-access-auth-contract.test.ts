@@ -48,6 +48,13 @@ describe('technician tool access authentication contract', () => {
     expect(panel).not.toContain("'/api/tools?mode=lookup&status=available&limit=100'");
   });
 
+  it('falls back to the work-order personal-tool snapshot if the auxiliary GET fails', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain("JSON.parse(typeof workOrder?.personalTools === 'string' ? workOrder.personalTools : '[]')");
+    expect(panel).toContain('setPersonalTools(Array.isArray(snapshot) ? snapshot : [])');
+  });
+
   it('keeps technician tool lookup constrained to execution permissions', () => {
     const tools = read('src/app/api/tools/route.ts');
     const seed = read('prisma/seed-permissions-only.ts');

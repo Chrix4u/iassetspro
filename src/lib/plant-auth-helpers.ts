@@ -58,6 +58,8 @@ export interface WorkOrderWithPlant {
 export interface WorkOrderExecutionWithPlant extends WorkOrderWithPlant {
   assignedTo: string | null;
   teamLeaderId: string | null;
+  assignedSupervisorId: string | null;
+  plannerId: string | null;
   teamMembers: Array<{ userId: string; role: string | null }>;
 }
 
@@ -127,6 +129,8 @@ export async function authorizeWorkOrderExecutionAccess(
       plantId: true,
       assignedTo: true,
       teamLeaderId: true,
+      assignedSupervisorId: true,
+      plannerId: true,
       teamMembers: { select: { userId: true, role: true } },
     },
   });

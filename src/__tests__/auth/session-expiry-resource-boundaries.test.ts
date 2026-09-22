@@ -40,9 +40,11 @@ describe('authenticated RWOP resource request boundaries', () => {
     expect(rootPage).toContain('if (!isAuthenticated || !user)');
   });
 
-  it('does not fetch WO personal tools before authenticated actor state exists', () => {
-    expect(maintenance).toContain('if (!isAuthenticated || !user?.id || !toolResourcesEnabled)');
-    expect(maintenance).toContain('/api/work-orders/${id}/personal-tools');
+  it('uses the authorized WO payload as the personal-tool read baseline', () => {
+    expect(maintenance).toContain('const hydratePersonalToolsFromWO');
+    expect(maintenance).toContain('const raw = workOrder?.personalTools');
+    expect(maintenance).not.toContain('fetchPersonalTools');
+    expect(maintenance).not.toContain('api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`)');
   });
 
   it('uses least-privilege inventory/tool lookups and forbids obsolete broad selector calls', () => {

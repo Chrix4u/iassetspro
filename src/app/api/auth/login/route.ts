@@ -89,34 +89,30 @@ export async function POST(request: NextRequest) {
       permissions = sessionResult.session.permissions;
     } catch (sessionErr: any) {
       console.error('[login] createSession failed, using lightweight session:', sessionErr?.message);
-      // Fallback: create a minimal session directly
+      // Fallback: create a minimal session directly. Build the effective
+      // authorization snapshot BEFORE persisting it so another proxy/route
+      // worker never reads an authenticated session with empty RBAC data.
       try {
         token = randomUUID();
-        // Try to persist session, but don't fail if sessions table is broken
-        try {
-          await db.session.create({
-            data: {
-              token,
-              userId: user.id,
-              roles: JSON.stringify([]),
-              permissions: JSON.stringify([]),
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            },
-          });
-        } catch (dbSessionErr: any) {
-          console.warn('[login] Could not persist session to DB (using in-memory only):', dbSessionErr?.message);
-        }
-        // Build permissions from the user data we already have
         const roleSlugs: string[] = [];
         const permSlugs = new Set<string>();
         for (const ur of (user.userRoles || [])) {
-          roleSlugs.push(ur.role?.slug || ur.roleId);
+          const roleSlug = ur.role?.slug || ur.roleId;
+          if (roleSlug) roleSlugs.push(roleSlug);
           for (const rp of (ur.role?.rolePermissions || [])) {
-            permSlugs.add(rp.permission?.slug || rp.permissionId);
+            const permissionSlug = rp.permission?.slug || rp.permissionId;
+            if (permissionSlug) permSlugs.add(permissionSlug);
           }
         }
         for (const up of (user.directPerms || [])) {
-          if (up.isGranted) permSlugs.add(up.permission?.slug || up.permissionId);
+          const permissionSlug = up.permission?.slug || up.permissionId;
+          if (!permissionSlug) continue;
+          if (up.expiresAt && new Date(up.expiresAt) < new Date()) {
+            permSlugs.delete(permissionSlug);
+            continue;
+          }
+          if (up.isGranted) permSlugs.add(permissionSlug);
+          else permSlugs.delete(permissionSlug);
         }
         permissions = [...permSlugs];
         roles = (user.userRoles || []).map((ur: any) => ({
@@ -127,14 +123,33 @@ export async function POST(request: NextRequest) {
           isSystem: ur.role?.isSystem || false,
           description: ur.role?.description || '',
         }));
-        // Cache session in memory so requireAuth() can find it
+
+        const createdAt = new Date();
+        // Try to persist session, but don't fail if sessions table is broken.
+        try {
+          await db.session.create({
+            data: {
+              token,
+              userId: user.id,
+              roles: JSON.stringify(roleSlugs),
+              permissions: JSON.stringify(permissions),
+              expiresAt: new Date(createdAt.getTime() + 24 * 60 * 60 * 1000),
+            },
+          });
+        } catch (dbSessionErr: any) {
+          console.warn('[login] Could not persist session to DB (using in-memory only):', dbSessionErr?.message);
+        }
+
+        // Cache the same snapshot locally. fullName is required by downstream
+        // audit/notification code and must not disappear in fallback sessions.
         sessionCache.set(token, {
           data: {
             userId: user.id,
             username: user.username,
+            fullName: user.fullName || user.username,
             roles: roleSlugs,
             permissions,
-            createdAt: new Date(),
+            createdAt,
           },
           cachedAt: Date.now(),
         });

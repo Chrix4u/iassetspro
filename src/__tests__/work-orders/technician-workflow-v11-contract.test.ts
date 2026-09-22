@@ -42,8 +42,10 @@ describe('technician workflow V1.1 completion contract', () => {
 
   it('prefetches available store materials, tools and units instead of free-text resource identities', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
-    expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100')");
-    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100')");
+    expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)");
+    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)");
+    expect(panel).toContain("{ headers: { 'X-Plant-ID': String(workOrder.plantId) } }");
+    expect(panel).toContain("api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`, workOrderPlantHeaders)");
     expect(panel).not.toContain("api.get<InventoryOption[]>('/api/inventory')");
     expect(panel).not.toContain("api.get<ToolOption[]>('/api/tools?status=available&limit=100')");
     expect(panel).toContain('.filter((item) => Number(item.currentStock ?? 0) > 0)');
@@ -55,6 +57,21 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('selectedId={toolRequest.toolId}');
     expect(panel).toContain('toolId: selectedTool?.id || toolRequest.toolId');
     expect(panel).toContain('quantityRequested: quantity');
+  });
+
+  it('separates planner recommendations from submitted resource requests', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('Planner Recommended Resources');
+    expect(panel).toContain('They are not approval requests until you submit them.');
+    expect(panel).toContain("action: 'submit_recommendations'");
+    expect(panel).toContain('submitPlannerRecommendations');
+    expect(panel).toContain('plannerMaterialRecommendations');
+    expect(panel).toContain('plannerToolRecommendations');
+    expect(panel).toContain('materialPipelineRequests');
+    expect(panel).toContain('toolPipelineRequests');
+    expect(panel).toContain('Planner recommendation');
+    expect(panel).toContain('Submit recommendations');
   });
 
   it('provides work-order-scoped downtime capture with authorization and audit', () => {

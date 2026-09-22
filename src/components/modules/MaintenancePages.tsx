@@ -3371,6 +3371,29 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
   }, [materialResourcesEnabled, toolResourcesEnabled]);
 
+  const hydratePersonalToolsFromWO = useCallback((workOrder: any) => {
+    if (!toolResourcesEnabled) {
+      setPersonalTools([]);
+      return;
+    }
+
+    const raw = workOrder?.personalTools;
+    if (Array.isArray(raw)) {
+      setPersonalTools(raw as PersonalTool[]);
+      return;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        setPersonalTools(Array.isArray(parsed) ? parsed as PersonalTool[] : []);
+        return;
+      } catch {
+        // Invalid legacy JSON should not break the WO view.
+      }
+    }
+    setPersonalTools([]);
+  }, [toolResourcesEnabled]);
+
   const mergeSuggestedResourceRows = useCallback((
     currentRows: any[],
     incomingRows: any[],
@@ -3426,6 +3449,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (res.success && res.data) {
       setWo(res.data);
       hydrateSuggestedResourcesFromWO(res.data);
+      hydratePersonalToolsFromWO(res.data);
       // Reset optimistic paused state only if server timeLogs confirm the state
       // (hasPausedSession memo will re-evaluate from wo.timeLogs)
       if (res.data.timeLogs && res.data.timeLogs.length > 0) {
@@ -3441,22 +3465,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       }
     }
     setLoading(false);
-  }, [id, hydrateSuggestedResourcesFromWO]);
+  }, [id, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
 
   // Fetch team member requests (separate call for permission-filtered results)
   const fetchTeamRequests = useCallback(async () => {
     const res = await api.get(`/api/work-orders/${id}/team-member-requests`);
     if (res.success && res.data) setTeamRequests(res.data);
   }, [id]);
-
-  const fetchPersonalTools = useCallback(async () => {
-    if (!isAuthenticated || !user?.id || !toolResourcesEnabled || !hasClientAuthToken()) {
-      setPersonalTools([]);
-      return;
-    }
-    const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
-    if (res.success && res.data) setPersonalTools(res.data);
-  }, [id, isAuthenticated, toolResourcesEnabled, user?.id]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {
@@ -3567,6 +3582,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         if (res.success && res.data) {
           setWo(res.data);
           hydrateSuggestedResourcesFromWO(res.data);
+          hydratePersonalToolsFromWO(res.data);
           // Team member requests from WO response
           if ((res.data as any).teamMemberRequests) {
             setTeamRequests((res.data as any).teamMemberRequests);
@@ -3583,12 +3599,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     api.get(`/api/work-orders/${id}/status-history`).then(res => {
       if (active && res.success && res.data) setStatusHistory(res.data);
     });
-    // Fetch personal tools only when the Repairs + Tools domains are operational.
-    if (toolResourcesEnabled) {
-      fetchPersonalTools();
-    } else {
-      setPersonalTools([]);
-    }
     // Fetch task checklist
     api.get(`/api/work-orders/${id}/tasks`).then(res => {
       if (active) {
@@ -3608,7 +3618,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     // Fetch suggested items
     fetchSuggestedItems();
     return () => { active = false; };
-  }, [id, fetchPersonalTools, fetchSuggestedItems, toolResourcesEnabled, hydrateSuggestedResourcesFromWO]);
+  }, [id, fetchSuggestedItems, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -4373,7 +4383,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!ptForm.toolName) { toast.error('Tool name is required'); return; }
     setPtLoading(true);
     const res = await api.post(`/api/work-orders/${id}/personal-tools`, ptForm);
-    if (res.success) { toast.success('Tool added'); setPtOpen(false); setPtForm({ toolName: '', toolCode: '', condition: 'good', notes: '' }); fetchPersonalTools(); }
+    if (res.success) { toast.success('Tool added'); setPtOpen(false); setPtForm({ toolName: '', toolCode: '', condition: 'good', notes: '' }); fetchWO(); }
     else { toast.error(res.error || 'Failed to add tool'); }
     setPtLoading(false);
   };
@@ -4383,7 +4393,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!tool?.id) return;
     setPtLoading(true);
     const res = await api.delete(`/api/work-orders/${id}/personal-tools/${tool.id}`);
-    if (res.success) { toast.success('Tool removed'); fetchPersonalTools(); }
+    if (res.success) { toast.success('Tool removed'); fetchWO(); }
     else { toast.error(res.error || 'Failed to remove tool'); }
     setPtLoading(false);
   };
@@ -5532,7 +5542,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         // remain selectable even when the live tool directory
                         // is temporarily unavailable.
                         const plannerRecommended = suggestedTools
-                          .filter((tool: any) => typeof tool?.toolId === 'string' && tool.toolId)
+                          .filter((tool: any) =>
+                            typeof tool?.toolId === 'string'
+                            && tool.toolId
+                            && (!tool.pipelineStatus || ['suggested', 'planned'].includes(tool.pipelineStatus))
+                          )
                           .map((tool: any) => ({
                             id: String(tool.toolId),
                             name: String(tool.toolName || 'Planner recommended tool'),

@@ -86,6 +86,10 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('Material/Tool Request &amp; Status sections below');
     expect(panel).toContain("kind: 'part'");
     expect(panel).toContain("kind: 'tool'");
+    expect(panel).toContain('isRejectedPlannerRecommendation');
+    expect(panel).toContain("request?.source === 'technician_from_planner_recommendation'");
+    expect(panel).toContain("String(request?.status || '').toLowerCase() === 'rejected'");
+    expect(panel).toContain('Rejected — review required');
   });
 
   it('provides work-order-scoped downtime capture with authorization and audit', () => {

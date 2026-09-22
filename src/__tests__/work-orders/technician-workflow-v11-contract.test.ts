@@ -75,6 +75,19 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('Submit recommendations');
   });
 
+  it('lets technicians decline planner recommendations before submission and explains where submitted items move', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    expect(panel).toContain("action: 'remove_recommendation'");
+    expect(panel).toContain('confirmPlannerRecommendationRemoval');
+    expect(panel).toContain('Remove Recommendation');
+    expect(panel).toContain('Keep Recommendation');
+    expect(panel).toContain('Submit remaining ({plannerRecommendationCount})');
+    expect(panel).toContain('Remove anything you do not need.');
+    expect(panel).toContain('Material/Tool Request &amp; Status sections below');
+    expect(panel).toContain("kind: 'part'");
+    expect(panel).toContain("kind: 'tool'");
+  });
+
   it('provides work-order-scoped downtime capture with authorization and audit', () => {
     const route = read('src/app/api/work-orders/[id]/downtime/route.ts');
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');

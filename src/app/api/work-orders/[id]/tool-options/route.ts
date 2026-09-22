@@ -32,8 +32,6 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -73,6 +71,16 @@ export async function GET(
 
     const canRequestTools =
       isExecutionActor && hasPermission(session, 'repair_tool_requests.create');
+
+    // Exact WO execution membership is already a narrower scope than general
+    // plant browsing. Do not require a separate UserPlant row for technicians
+    // assigned to this specific work order. Management/non-execution actors
+    // still require the normal plant authorization boundary.
+    if (!isExecutionActor) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
+    }
+
     if (!canRequestTools && !canManageWorkOrder(session, wo)) {
       return NextResponse.json(
         { success: false, error: 'Tool options require assigned execution access with tool-request permission, or accountable maintenance-management authority' },

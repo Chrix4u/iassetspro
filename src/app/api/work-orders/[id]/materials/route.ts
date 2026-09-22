@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { materialRequestReason } from '@/lib/technician-reason-defaults';
-import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder } from '@/services/workOrderAccess.service';
 
 const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
@@ -20,7 +20,7 @@ export async function POST(
 
     const { id } = await params;
 
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+    const plantAuth = await authorizeWorkOrderExecutionAccess(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
     const woAccess = await db.workOrder.findUnique({

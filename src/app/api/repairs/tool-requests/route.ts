@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
+import { getRequestSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { toolRequestReason } from '@/lib/technician-reason-defaults';
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   try {
     await ensureLegacyRequestNumbers();
 
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.view_own']) && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
@@ -172,7 +172,7 @@ async function generateRequestNumber(): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'repair_tool_requests.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });

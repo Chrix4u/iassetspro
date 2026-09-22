@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
+import { getRequestSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { materialRequestReason } from '@/lib/technician-reason-defaults';
@@ -11,7 +11,7 @@ const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own']) && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'repair_material_requests.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });

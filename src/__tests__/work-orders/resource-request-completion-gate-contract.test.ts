@@ -49,9 +49,10 @@ describe('RWOP resource request approval and completion gate contract', () => {
     expect(assistanceRoute).toContain("teamRequest.status !== 'pending'");
     expect(technicianPage).toContain("const ownPending = request.status === 'pending'");
     expect(panels).toContain("request.status === 'pending'");
-    expect(panels).toContain('requestMaterialCancellation(request)');
-    expect(panels).toContain('requestToolCancellation(request)');
+    expect(panels).toContain('cancelMaterialRequest(request)');
+    expect(panels).toContain('cancelToolRequest(request)');
     expect(panels).toContain('confirmRequestCancellation');
+    expect(panels).toContain('title="Cancel pending request?"');
   });
 
   it('binds resource approvals to the accountable supervisor and plant-scoped store roles', () => {

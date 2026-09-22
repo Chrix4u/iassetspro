@@ -288,6 +288,10 @@ export default async function proxy(request: NextRequest) {
   // Route handlers may run in a separate worker/process from the proxy, so they
   // must not depend on sharing the proxy's in-memory session cache.
   const requestHeaders = new Headers(request.headers);
+  // Normalize the validated token back into the canonical Authorization header
+  // so route-level getSession() works even when upstream stripped Authorization
+  // and the proxy authenticated via X-EAM-Token.
+  requestHeaders.set('authorization', `Bearer ${token}`);
   requestHeaders.set('x-session-verified', '1');
   requestHeaders.set('x-session-user-id', session.userId);
   requestHeaders.set('x-session-username', encodeURIComponent(session.username || ''));

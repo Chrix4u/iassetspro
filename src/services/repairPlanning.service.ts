@@ -248,6 +248,69 @@ export async function convertMRToWorkOrder(
         await tx.maintenanceRequest.update({ where: { id: mrId }, data: { workOrderId: null } });
       }
 
+      // Every execution assignment must be valid for the WO plant. Planner
+      // access alone is not enough: allowing a cross-plant technician here
+      // creates a WO they can see by relationship but cannot safely use for
+      // plant-scoped materials/tools later.
+      if (mr.plantId) {
+        const executionUserIds = new Set<string>();
+        if (payload.assignedTo) executionUserIds.add(payload.assignedTo);
+        if (payload.teamLeaderId && payload.assignmentType !== 'via_supervisor') {
+          executionUserIds.add(payload.teamLeaderId);
+        }
+        for (const member of payload.teamMembers || []) {
+          executionUserIds.add(member.userId);
+        }
+
+        if (executionUserIds.size > 0) {
+          const eligibleTechnicians = await tx.user.findMany({
+            where: {
+              id: { in: [...executionUserIds] },
+              status: 'active',
+              plantAccess: { some: { plantId: mr.plantId } },
+              userRoles: {
+                some: { role: { slug: 'maintenance_technician' } },
+              },
+            },
+            select: { id: true },
+          });
+          const eligibleIds = new Set(eligibleTechnicians.map((user) => user.id));
+          const invalidIds = [...executionUserIds].filter((userId) => !eligibleIds.has(userId));
+          if (invalidIds.length > 0) {
+            return {
+              success: false as const,
+              error: 'One or more assigned technicians are not active maintenance technicians with access to this maintenance request plant',
+            };
+          }
+        }
+
+        if (payload.assignedSupervisorId) {
+          const eligibleSupervisor = await tx.user.findFirst({
+            where: {
+              id: payload.assignedSupervisorId,
+              status: 'active',
+              plantAccess: { some: { plantId: mr.plantId } },
+              userRoles: {
+                some: {
+                  role: {
+                    slug: {
+                      in: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'],
+                    },
+                  },
+                },
+              },
+            },
+            select: { id: true },
+          });
+          if (!eligibleSupervisor) {
+            return {
+              success: false as const,
+              error: 'Assigned supervisor is not active or does not have access to this maintenance request plant',
+            };
+          }
+        }
+      }
+
       const hasAssignment = payload.assignedTo || (payload.teamMembers && payload.teamMembers.length > 0);
       const woStatus = hasAssignment ? 'assigned' : 'approved';
       const now = new Date();

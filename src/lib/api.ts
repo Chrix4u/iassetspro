@@ -43,16 +43,14 @@ function clearClientAuthStorage(): void {
   }
 }
 
-function isSessionAuthFailure(endpoint: string, status: number, error?: string): boolean {
+function isSessionAuthFailure(endpoint: string, status: number, _error?: string): boolean {
   if (isPublicAuthEndpoint(endpoint)) return false;
-  if (status === 401) return true;
-  if (status !== 403) return false;
 
-  const normalized = (error || '').trim().toLowerCase();
-  return normalized === 'authentication required'
-    || normalized === 'not authenticated'
-    || normalized === 'invalid or expired session'
-    || normalized.includes('session expired');
+  // 401 means the bearer session is absent/invalid/expired.
+  // 403 is an authorization or scope denial and MUST NOT erase an otherwise
+  // valid bearer token. Treating a 403 as expiry causes one denied resource
+  // call to cascade into unrelated "Authentication required" failures.
+  return status === 401;
 }
 
 function notifySessionExpired(endpoint: string, status: number, error?: string): void {
@@ -286,6 +284,15 @@ async function loadCachedRead<T>(endpoint: string): Promise<ApiResponse<T> | nul
     offlineCached: true,
     cachedAt: snapshot.cachedAt,
   };
+}
+
+export function hasClientAuthToken(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(localStorage.getItem('eam_token'));
+  } catch {
+    return false;
+  }
 }
 
 export function getAuthHeaders(): Record<string, string> {

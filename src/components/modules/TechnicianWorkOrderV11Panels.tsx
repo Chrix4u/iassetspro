@@ -698,6 +698,10 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     }));
   const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests];
 
+  const isRejectedPlannerRecommendation = (request: any) =>
+    request?.source === 'technician_from_planner_recommendation'
+    && String(request?.status || '').toLowerCase() === 'rejected';
+
   const isPlannerRecommendation = (request: any) =>
     Boolean(
       request?.projectionOnly
@@ -705,6 +709,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         request?.source === 'planner_suggested'
         && ['planned', 'pending', 'suggested'].includes(String(request?.status || '').toLowerCase())
       )
+      || isRejectedPlannerRecommendation(request)
     );
 
   const plannerMaterialRecommendations = materialRequests.filter(isPlannerRecommendation);
@@ -797,9 +802,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     <p className="text-xs text-muted-foreground">
                       Material · Qty {request.quantityRequested ?? request.quantity ?? 1} {request.unit || ''}
                     </p>
+                    {isRejectedPlannerRecommendation(request) && (
+                      <p className="mt-1 text-xs text-red-600">
+                        Rejected — review required{request.notes ? `: ${request.notes}` : ''}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Badge variant="outline">Planner recommendation</Badge>
+                    <Badge variant="outline" className={isRejectedPlannerRecommendation(request) ? 'border-red-200 bg-red-50 text-red-700' : ''}>
+                      {isRejectedPlannerRecommendation(request) ? 'Rejected — review required' : 'Planner recommendation'}
+                    </Badge>
                     <Button
                       type="button"
                       size="sm"
@@ -829,9 +841,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                         Tool · Qty {item.quantityRequested ?? request.quantityRequested ?? 1}
                         {(item.toolCode || item.tool?.toolCode) ? ` · ${item.toolCode || item.tool?.toolCode}` : ''}
                       </p>
+                      {isRejectedPlannerRecommendation(request) && (
+                        <p className="mt-1 text-xs text-red-600">
+                          Rejected — review required{(request.rejectionReason || request.notes) ? `: ${request.rejectionReason || request.notes}` : ''}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Badge variant="outline">Planner recommendation</Badge>
+                      <Badge variant="outline" className={isRejectedPlannerRecommendation(request) ? 'border-red-200 bg-red-50 text-red-700' : ''}>
+                        {isRejectedPlannerRecommendation(request) ? 'Rejected — review required' : 'Planner recommendation'}
+                      </Badge>
                       <Button
                         type="button"
                         size="sm"

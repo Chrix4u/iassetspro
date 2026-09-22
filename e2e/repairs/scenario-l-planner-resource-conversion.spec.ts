@@ -127,6 +127,39 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   expect(Number(suggestedTool.quantity)).toBe(1);
   expect(suggestedTool.pipelineStatus).toBe('suggested');
 
+  // Assigned technician must be able to load both the constrained tool lookup
+  // and WO personal-tools surface. This catches proxy/bearer regressions that
+  // previously left the technician resource panel empty.
+  const techToken = await getToken('tech_single');
+  const { status: techToolLookupStatus, data: techToolLookupResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/tools?mode=lookup&status=available&limit=100',
+  );
+  expect(techToolLookupStatus).toBe(200);
+  expect(techToolLookupResponse.success).toBe(true);
+  expect(
+    (techToolLookupResponse.data as Array<any>).some((tool) => tool.id === toolId),
+  ).toBe(true);
+
+  const { status: personalToolsStatus, data: personalToolsResponse } = await apiCall(
+    techToken,
+    'GET',
+    '/api/work-orders/' + wo.id + '/personal-tools',
+  );
+  expect(personalToolsStatus).toBe(200);
+  expect(personalToolsResponse.success).toBe(true);
+
+  // Browser-level technician regression: planner recommendation must remain
+  // visible on the assigned technician WO even if generic lookup state changes.
+  await authenticateAs(context, 'tech_single');
+  const technicianPage = await context.newPage();
+  await navigateToWODetail(technicianPage, wo.id);
+  await expect(
+    technicianPage.getByText(visibleTool.toolName, { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
+  await technicianPage.close();
+
   // Browser-level regression: API success is not enough. The planner must see
   // both resources on the actual WO details screen.
   await authenticateAs(context, 'planner');

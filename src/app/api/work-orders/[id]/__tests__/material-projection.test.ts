@@ -21,7 +21,7 @@ const {
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
 vi.mock('@/lib/auth', () => ({
-  getSession: mockGetSession,
+  getRequestSession: mockGetSession,
   isAdmin: vi.fn(),
   hasPermission: vi.fn(),
 }));

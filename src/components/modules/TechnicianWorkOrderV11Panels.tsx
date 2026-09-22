@@ -196,7 +196,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as any[] }),
       capabilities?.canRequestMaterials
-        ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
+        ? api.get<InventoryOption[]>(`/api/work-orders/${workOrderId}/inventory-candidates?limit=100`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
         ? api.get<ToolOption[]>(`/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100`, workOrderPlantHeaders)

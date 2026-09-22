@@ -26,6 +26,29 @@ describe('technician resource auth resilience', () => {
     expect(panel).toContain('void fetchMe()');
   });
 
+  it('guards the legacy WO detail personal-tool read with the persisted bearer', () => {
+    const maintenance = read('src/components/modules/MaintenancePages.tsx');
+
+    expect(maintenance).toContain('isAuthenticated, fetchMe');
+    expect(maintenance).toContain("window.localStorage.getItem('eam_token')");
+    expect(maintenance).toContain('if (!isAuthenticated || !user?.id || !toolResourcesEnabled || !tokenPresent)');
+    expect(maintenance).toContain('if (isAuthenticated && user?.id && !tokenPresent) void fetchMe()');
+  });
+
+  it('falls back to planner-recommended tools when live WO candidate lookup cannot authenticate', () => {
+    const maintenance = read('src/components/modules/MaintenancePages.tsx');
+    const anchor = maintenance.indexOf('toolsLookupCache.current');
+    expect(anchor).toBeGreaterThan(-1);
+    const slice = maintenance.slice(Math.max(0, anchor - 2500), anchor + 5500);
+
+    expect(slice).toContain('const plannerFallbacks = suggestedTools');
+    expect(slice).toContain("window.localStorage.getItem('eam_token')");
+    expect(slice).toContain('toolsLookupCache.current = plannerFallbacks');
+    expect(slice).toContain('return fallbackOptions');
+    expect(slice).toContain('Planner recommendation · availability pending');
+    expect(slice).toContain('/api/work-orders/${id}/tool-candidates?status=available&limit=100');
+  });
+
   it('keeps planner-selected tools visible if live candidate lookup cannot run', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

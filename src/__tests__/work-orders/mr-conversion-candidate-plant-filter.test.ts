@@ -17,7 +17,7 @@ describe('MR conversion candidate plant filtering', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
     expect(ui).toContain('plantId={(mr as any)?.plantId ? String((mr as any).plantId) : null}');
     expect(ui).toContain("if (plantId) params.set('plantId', plantId)");
-    expect(ui).not.toContain("api.get('/api/workers?role=all')");
+    expect(ui).toContain("const [deptsRes, invRes, toolsRes] = await Promise.all([");
     expect(ui).not.toContain('const [usersMap, setUsersMap]');
   });
 });

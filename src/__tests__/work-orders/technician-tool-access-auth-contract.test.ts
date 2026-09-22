@@ -40,7 +40,7 @@ describe('technician tool access authentication contract', () => {
     expect(panel.indexOf("window.localStorage.getItem('eam_token')"))
       .toBeLessThan(panel.indexOf("/api/work-orders/${workOrderId}/personal-tools"));
     expect(panel.indexOf("window.localStorage.getItem('eam_token')"))
-      .toBeLessThan(panel.indexOf("'/api/tools?mode=lookup&status=available&limit=100'"));
+      .toBeLessThan(panel.indexOf("/api/work-orders/${workOrderId}/tool-options"));
   });
 
   it('keeps planner-recommended tools selectable when live tool lookup fails', () => {
@@ -50,14 +50,33 @@ describe('technician tool access authentication contract', () => {
     expect(panel).toContain('parseStoredArray(workOrder?.suggestedTools)');
     expect(panel).toContain("request?.source !== 'planner_suggested'");
     expect(panel).toContain('setToolOptions(plannerToolFallbacks)');
-    expect(panel).toContain('mergeToolOptions(plannerToolFallbacks, liveAvailableTools)');
+    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-options');
+    expect(panel).toContain('serverRecommendations');
+    expect(panel).toContain('plannerRecommended: true');
     expect(panel).toContain('availabilityVerified: false');
     expect(panel).toContain('availabilityVerified: true');
-    expect(panel).toContain('Planner recommended · availability will be verified on submit');
-    expect(panel).toContain('Planner recommended · availability verified on submit');
-    expect(panel).toContain('if (selectedTool?.availabilityVerified)');
-    expect(panel).toContain('max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined}');
+    expect(panel).toContain('Planner recommendation · availability will be verified on submit');
+    expect(panel).toContain('Planner recommendation · availability verified on submit');
+    expect(panel).toContain('if (selectedTool?.availabilityVerified && !selectedTool.plannerRecommended)');
+    expect(panel).toContain('max={selectedTool?.availabilityVerified && !selectedTool.plannerRecommended ? Number(selectedTool.quantity ?? 1) : undefined}');
     expect(panel).toContain('setPersonalTools(personalToolFallbacks)');
+  });
+
+  it('uses an exact-work-order tool selector and relationship-scoped personal tools', () => {
+    const toolOptions = read('src/app/api/work-orders/[id]/tool-options/route.ts');
+    const personalTools = read('src/app/api/work-orders/[id]/personal-tools/route.ts');
+    const proxy = read('src/proxy.ts');
+
+    expect(toolOptions).toContain('canViewWorkOrder(session, wo)');
+    expect(toolOptions).toContain('const isExecutionActor');
+    expect(toolOptions).toContain("hasPermission(session, 'repair_tool_requests.create')");
+    expect(toolOptions).toContain("status: 'available'");
+    expect(toolOptions).toContain('recommendedTools');
+    expect(toolOptions).toContain('currentQuantity');
+    expect(toolOptions).toContain('authorizeWorkOrderPlant(request, session, id)');
+    expect(personalTools).toContain('const isExecutionMember');
+    expect(personalTools).toContain('if (!isExecutionMember)');
+    expect(proxy).toContain('/tool-options');
   });
 
   it('keeps technician tool lookup constrained to execution permissions', () => {

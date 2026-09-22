@@ -22,6 +22,16 @@ describe('technician WO resource access alignment', () => {
     expect(panels).toContain('for (const tool of plannerToolFallbacks) merged.set(tool.id, tool)');
   });
 
+  it('uses the same exact-WO execution access boundary for capabilities and resource endpoints', () => {
+    const capabilities = read('src/app/api/work-orders/[id]/capabilities/route.ts');
+    const personalTools = read('src/app/api/work-orders/[id]/personal-tools/route.ts');
+    const toolCandidates = read('src/app/api/work-orders/[id]/tool-candidates/route.ts');
+
+    expect(capabilities).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
+    expect(personalTools).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
+    expect(toolCandidates).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
+  });
+
   it('allows assigned team members through the execution helper but keeps pending handover receivers view-only', () => {
     const access = read('src/services/workOrderAccess.service.ts');
 

@@ -3081,7 +3081,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
+  const { hasPermission, user, isAdmin, isAuthenticated, fetchMe } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
@@ -3450,13 +3450,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
-    if (!isAuthenticated || !user?.id || !toolResourcesEnabled) {
+    const tokenPresent = typeof window !== 'undefined'
+      && Boolean(window.localStorage.getItem('eam_token'));
+    if (!isAuthenticated || !user?.id || !toolResourcesEnabled || !tokenPresent) {
       setPersonalTools([]);
+      // Keep the in-memory auth store synchronized with the persisted bearer.
+      // This prevents mounted WO views from firing protected reads after the
+      // bearer has been cleared/expired in another request.
+      if (isAuthenticated && user?.id && !tokenPresent) void fetchMe();
       return;
     }
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
-  }, [id, isAuthenticated, toolResourcesEnabled, user?.id]);
+  }, [id, isAuthenticated, toolResourcesEnabled, user?.id, fetchMe]);
 
   // Fetch suggested materials & tools
   const fetchSuggestedItems = useCallback(async () => {
@@ -5528,12 +5534,48 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
+                        const plannerFallbacks = suggestedTools
+                          .filter((tool: any) => tool?.toolId)
+                          .map((tool: any) => ({
+                            id: String(tool.toolId),
+                            name: tool.toolName || tool.name || 'Planner recommended tool',
+                            toolCode: tool.toolCode || '',
+                            plannerRecommended: true,
+                          }));
+                        const fallbackOptions = plannerFallbacks.map((tool: any) => ({
+                          value: tool.id,
+                          label: `★ ${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''} · Planner recommendation · availability pending`,
+                        }));
+
+                        const tokenPresent = typeof window !== 'undefined'
+                          && Boolean(window.localStorage.getItem('eam_token'));
+                        if (!tokenPresent) {
+                          if (isAuthenticated && user?.id) void fetchMe();
+                          toolsLookupCache.current = plannerFallbacks;
+                          return fallbackOptions;
+                        }
+
                         const res = await api.get(`/api/work-orders/${id}/tool-candidates?status=available&limit=100`);
                         if (res.success && Array.isArray(res.data)) {
-                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
-                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                          const merged = new Map<string, any>();
+                          for (const tool of plannerFallbacks) merged.set(tool.id, tool);
+                          for (const tool of res.data) {
+                            merged.set(String(tool.id), {
+                              id: String(tool.id),
+                              name: tool.name || '',
+                              toolCode: tool.toolCode || '',
+                              plannerRecommended: merged.has(String(tool.id)),
+                            });
+                          }
+                          toolsLookupCache.current = [...merged.values()];
+                          return [...merged.values()].map((tool: any) => ({
+                            value: tool.id,
+                            label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''}${tool.plannerRecommended ? ' · Planner recommendation' : ''}`,
+                          }));
                         }
-                        return [];
+
+                        toolsLookupCache.current = plannerFallbacks;
+                        return fallbackOptions;
                       }}
                       placeholder="Search tools..."
                       searchPlaceholder="Search by name or code..."

@@ -190,16 +190,32 @@ export async function POST(request: NextRequest) {
       ? reason.trim()
       : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    if (!wo.plantId) {
+      return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
     }
-    if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
-    const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
+    const woTeam = await db.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: session.userId },
+      select: { id: true },
+    });
     const isAssignee = wo.assignedTo === session.userId;
-    if (!woTeam && !isAssignee && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
+    const isExecutionActor = Boolean(woTeam) || isAssignee;
+
+    if (!isExecutionActor && !isAdmin(session)) {
+      return NextResponse.json(
+        { success: false, error: 'You are not a member of this work order\'s execution team' },
+        { status: 403 },
+      );
+    }
+
+    // Exact execution assignment grants access only to resources for this WO.
+    // Legacy assignments may predate UserPlant rows. Non-execution callers
+    // still require strict plant authorization.
+    if (!isExecutionActor) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     const warnings: string[] = [];

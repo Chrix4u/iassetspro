@@ -42,6 +42,7 @@ interface WorkerAssignmentSelectorProps {
   onTeamLeaderChange: (workerId: string) => void;
   assignType: 'technician' | 'supervisor';
   onAssignTypeChange: (type: 'technician' | 'supervisor') => void;
+  plantId?: string | null;
   label?: string;
 }
 
@@ -77,6 +78,7 @@ export function WorkerAssignmentSelector({
   onTeamLeaderChange,
   assignType,
   onAssignTypeChange,
+  plantId,
   label,
 }: WorkerAssignmentSelectorProps) {
   const isMobile = useIsMobile();
@@ -100,6 +102,7 @@ export function WorkerAssignmentSelector({
         params.set('search', debouncedSearch);
       }
       params.set('role', assignType);
+      if (plantId) params.set('plantId', plantId);
       const res = await api.get(`/api/workers?${params}`);
       if (res.success && res.data) {
         setWorkers(Array.isArray(res.data) ? res.data : []);
@@ -108,7 +111,7 @@ export function WorkerAssignmentSelector({
       setWorkers([]);
     }
     setLoading(false);
-  }, [debouncedSearch, assignType]);
+  }, [debouncedSearch, assignType, plantId]);
 
   useEffect(() => {
     fetchWorkers();

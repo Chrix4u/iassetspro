@@ -51,6 +51,7 @@ type ToolOption = {
   condition?: string | null;
   quantity?: number | null;
   location?: string | null;
+  plannerRecommended?: boolean;
 };
 
 type SearchableResourceOption = {
@@ -199,8 +200,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)
-        : Promise.resolve({ success: true, data: [] as ToolOption[] }),
+        ? api.get<{ availableTools: ToolOption[]; recommendedTools: any[] }>(
+            `/api/work-orders/${workOrderId}/tool-options`,
+            workOrderPlantHeaders,
+          )
+        : Promise.resolve({
+            success: true,
+            data: { availableTools: [] as ToolOption[], recommendedTools: [] as any[] },
+          }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
       setDowntime(downRes.data);
@@ -210,7 +217,18 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLabor(Array.isArray(timeRes.data.timeLogs) ? timeRes.data.timeLogs : []);
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
-    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) setPersonalTools(personalToolsRes.data);
+    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) {
+      setPersonalTools(personalToolsRes.data);
+    } else {
+      try {
+        const snapshot = Array.isArray(workOrder?.personalTools)
+          ? workOrder.personalTools
+          : JSON.parse(typeof workOrder?.personalTools === 'string' ? workOrder.personalTools : '[]');
+        setPersonalTools(Array.isArray(snapshot) ? snapshot : []);
+      } catch {
+        setPersonalTools([]);
+      }
+    }
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data
@@ -220,11 +238,45 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     } else {
       setInventoryOptions([]);
     }
-    if (toolsRes.success && Array.isArray(toolsRes.data)) {
+    if (
+      toolsRes.success
+      && toolsRes.data
+      && Array.isArray((toolsRes.data as any).availableTools)
+    ) {
+      const availableTools = ((toolsRes.data as any).availableTools as ToolOption[])
+        .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0);
+      const recommendedTools = Array.isArray((toolsRes.data as any).recommendedTools)
+        ? ((toolsRes.data as any).recommendedTools as any[])
+            .filter((tool) => typeof tool?.toolId === 'string' && tool.toolId)
+            .map((tool): ToolOption => ({
+              id: tool.toolId,
+              name: tool.toolName || 'Planner-recommended tool',
+              toolCode: tool.toolCode || null,
+              status: tool.currentStatus || 'unavailable',
+              condition: tool.currentCondition || null,
+              quantity: Number(tool.currentQuantity ?? 0),
+              location: tool.location || null,
+              plannerRecommended: true,
+            }))
+        : [];
+
+      const mergedTools = new Map<string, ToolOption>();
+      for (const tool of availableTools) mergedTools.set(tool.id, tool);
+      for (const tool of recommendedTools) {
+        mergedTools.set(tool.id, {
+          ...mergedTools.get(tool.id),
+          ...tool,
+          plannerRecommended: true,
+        });
+      }
+
       setToolOptions(
-        toolsRes.data
-          .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+        [...mergedTools.values()].sort((a, b) => {
+          if (Boolean(a.plannerRecommended) !== Boolean(b.plannerRecommended)) {
+            return a.plannerRecommended ? -1 : 1;
+          }
+          return (a.name || '').localeCompare(b.name || '');
+        }),
       );
     } else {
       setToolOptions([]);
@@ -267,9 +319,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
+      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: `${tool.plannerRecommended ? 'Planner recommendation · ' : ''}${
+        tool.status === 'available'
+          ? `${Number(tool.quantity ?? 1)} available`
+          : pretty(tool.status || 'unavailable')
+      }${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
     })),
     [toolOptions],
   );
@@ -349,7 +405,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool) {
+    if (selectedTool && !selectedTool.plannerRecommended) {
       const availableQuantity = Number(selectedTool.quantity ?? 1);
       if (quantity > availableQuantity) {
         toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;

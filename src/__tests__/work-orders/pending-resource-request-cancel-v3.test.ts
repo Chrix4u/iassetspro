@@ -22,6 +22,16 @@ describe('pending WO resource request cancellation', () => {
     expect(tool).toContain('Only the requester or accountable maintenance management can cancel this pending tool request');
   });
 
+  it('scopes pending-request edits to requester or accountable maintenance management', () => {
+    expect(material).toContain('canEditAsManagement');
+    expect(material).toContain("'repair_material_requests.update'");
+    expect(material).toContain('Only the requester or accountable maintenance management can edit this pending material request');
+
+    expect(tool).toContain('canEditAsManagement');
+    expect(tool).toContain("'repair_tool_requests.update'");
+    expect(tool).toContain('Only the requester or accountable maintenance management can edit this pending tool request');
+  });
+
   it('restores a cancelled technician-submitted planner material recommendation', () => {
     expect(material).toContain("existing.source === 'technician_from_planner_recommendation'");
     expect(material).toContain("status: 'requested'");

@@ -8,7 +8,11 @@ export interface WorkOrderAccessSnapshot {
   plannerId?: string | null;
   assignedBy?: string | null;
   handoverReceiverId?: string | null;
-  teamMembers?: Array<{ userId: string; role?: string | null }> | null;
+  teamMembers?: Array<{
+    userId: string;
+    role?: string | null;
+    accessLevel?: string | null;
+  }> | null;
   maintenanceRequest?: {
     requestedBy?: string | null;
     requester?: { id: string } | null;
@@ -42,7 +46,11 @@ export function isWorkOrderExecutionMember(
   const userId = session.userId;
   return workOrder.assignedTo === userId
     || workOrder.teamLeaderId === userId
-    || Boolean(workOrder.teamMembers?.some((member) => member.userId === userId));
+    || Boolean(workOrder.teamMembers?.some((member) =>
+      member.userId === userId
+      && member.role !== 'handover_receiver'
+      && member.accessLevel !== 'read_only'
+    ));
 }
 
 export function canViewWorkOrder(

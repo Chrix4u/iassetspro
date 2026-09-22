@@ -104,6 +104,9 @@ export function requiredModulesForApiPath(pathname: string): string[] {
   if (/^\/api\/work-orders\/[^/]+\/personal-tools(?:\/|$)/.test(pathname)) {
     return ['work_orders', 'repairs', 'tools'];
   }
+  if (/^\/api\/work-orders\/[^/]+\/tool-options(?:\/|$)/.test(pathname)) {
+    return ['work_orders', 'repairs', 'tools'];
+  }
   if (/^\/api\/work-orders\/[^/]+\/components(?:\/|$)/.test(pathname)) {
     return ['work_orders', 'assets'];
   }
@@ -200,9 +203,14 @@ export default async function proxy(request: NextRequest) {
     // If no secret header, fall through to normal auth check
   }
 
-  // Check for Bearer token
+  // Prefer the standard Bearer token. X-EAM-Token is a same-origin fallback
+  // for deployment stacks that intermittently strip Authorization.
   const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace('Bearer ', '');
+  const bearerToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice('Bearer '.length)
+    : null;
+  const fallbackToken = request.headers.get('x-eam-token');
+  const token = bearerToken || fallbackToken;
 
   if (!token) {
     return withSecurityHeaders(

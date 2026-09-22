@@ -60,7 +60,7 @@ export interface WorkOrderExecutionWithPlant extends WorkOrderWithPlant {
   teamLeaderId: string | null;
   assignedSupervisorId: string | null;
   plannerId: string | null;
-  teamMembers: Array<{ userId: string; role: string | null }>;
+  teamMembers: Array<{ userId: string; role: string | null; accessLevel: string | null }>;
 }
 
 
@@ -131,7 +131,7 @@ export async function authorizeWorkOrderExecutionAccess(
       teamLeaderId: true,
       assignedSupervisorId: true,
       plannerId: true,
-      teamMembers: { select: { userId: true, role: true } },
+      teamMembers: { select: { userId: true, role: true, accessLevel: true } },
     },
   });
   if (!wo) return fail(404, 'Work order not found');

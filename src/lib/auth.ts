@@ -8,7 +8,8 @@ const logger = createLogger('auth');
 // SESSION MANAGEMENT — DB-backed with in-memory LRU cache
 // ============================================================================
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours of inactivity
+const ABSOLUTE_SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000; // hard cap regardless of activity
 
 // In-memory cache for fast token lookups (avoids DB query on every API call)
 const globalForSessions = globalThis as unknown as {
@@ -142,12 +143,15 @@ export function getSession(request: Request): SessionData | null {
   // 1. Check in-memory cache first (fast path)
   const cached = sessionCache.get(token);
   if (cached) {
-    // Verify not expired
-    const age = Date.now() - cached.cachedAt;
-    if (age > SESSION_TTL_MS) {
+    const now = Date.now();
+    const absoluteAge = now - cached.data.createdAt.getTime();
+    if (absoluteAge > ABSOLUTE_SESSION_MAX_MS) {
       sessionCache.delete(token);
       return null;
     }
+    // Sliding idle session: proxy validation refreshes the cache timestamp on
+    // every active request, while the absolute seven-day cap still applies.
+    cached.cachedAt = now;
     return cached.data;
   }
 
@@ -162,13 +166,17 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
   // 1. Check in-memory cache
   const cached = sessionCache.get(token);
   if (cached) {
-    const age = Date.now() - cached.cachedAt;
-    if (age > SESSION_TTL_MS) {
+    const now = Date.now();
+    const absoluteAge = now - cached.data.createdAt.getTime();
+    if (absoluteAge > ABSOLUTE_SESSION_MAX_MS) {
       sessionCache.delete(token);
+      await db.session.deleteMany({ where: { token } }).catch(() => {});
       return null;
     }
-    // Update lastSeen in DB (fire-and-forget)
-    updateLastSeen(token).catch(() => {});
+    // Active sessions slide forward instead of expiring in the middle of a
+    // technician's shift. The DB expiry is extended below, capped at 7 days.
+    cached.cachedAt = now;
+    updateLastSeen(token, cached.data.createdAt).catch(() => {});
     return cached.data;
   }
 
@@ -226,7 +234,7 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
   }
 
   // Update lastSeen (fire-and-forget)
-  updateLastSeen(token).catch(() => {});
+  updateLastSeen(token, dbSession.createdAt).catch(() => {});
 
   return sessionData;
 }
@@ -256,12 +264,18 @@ async function cleanupExpiredSessions(): Promise<void> {
   }
 }
 
-// Update lastSeen timestamp (fire-and-forget)
-async function updateLastSeen(token: string): Promise<void> {
+// Update activity and slide the idle expiry forward (fire-and-forget).
+// Never extend beyond the absolute session cap.
+async function updateLastSeen(token: string, createdAt: Date): Promise<void> {
   try {
+    const now = new Date();
+    const absoluteExpiryMs = createdAt.getTime() + ABSOLUTE_SESSION_MAX_MS;
+    const idleExpiryMs = now.getTime() + SESSION_TTL_MS;
+    const expiresAt = new Date(Math.min(idleExpiryMs, absoluteExpiryMs));
+
     await db.session.update({
       where: { token },
-      data: { lastSeen: new Date() },
+      data: { lastSeen: now, expiresAt },
     });
   } catch {
     // Silently fail
@@ -375,9 +389,6 @@ export async function warmSessionCache(): Promise<void> {
 // TOKEN ROTATION ARCHITECTURE
 // Refresh token rotation, token family tracking, absolute expiry, binding
 // ============================================================================
-
-/** Max absolute session duration regardless of refresh (7 days). */
-const ABSOLUTE_SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** In-memory token family store for reuse detection. */
 const globalForTokenRotation = globalThis as unknown as {

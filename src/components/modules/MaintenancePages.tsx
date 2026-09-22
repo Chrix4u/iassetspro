@@ -4409,9 +4409,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
   };
 
-  const isSupervisorOrAdminLocal = () => {
-    const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+  const canReviewMaterialRequestAsAccountableSupervisor = () => {
+    if (!user || !wo) return false;
+    if (isAdmin()) return true;
+    if (!hasPermission('repair_material_requests.update')) return false;
+
+    const slugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    if (slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo.assignedSupervisorId)
+      && wo.assignedSupervisorId === user.id;
   };
 
   const isStoreOrAdminLocal = () => {
@@ -6282,7 +6290,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {materialPipelineRequests.map((mr: any) => (
-                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && isSupervisorOrAdminLocal() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
+                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && canReviewMaterialRequestAsAccountableSupervisor() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
                         <div className="flex items-start gap-3">
                           <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"><Package className="h-3.5 w-3.5" /></div>
                           <div className="flex-1 min-w-0">
@@ -6348,7 +6356,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   <Trash2 className="h-3 w-3 mr-1" />Cancel
                                 </Button>
                               )}
-                              {!isWOFinalized && mr.status === 'pending' && isSupervisorOrAdminLocal() && (
+                              {!isWOFinalized && mr.status === 'pending' && canReviewMaterialRequestAsAccountableSupervisor() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'supervisor_reject', { notes: 'Rejected by supervisor' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>

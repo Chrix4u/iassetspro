@@ -49,7 +49,6 @@ export function isWorkOrderExecutionMember(
     || Boolean(workOrder.teamMembers?.some((member) =>
       member.userId === userId
       && member.role !== 'handover_receiver'
-      && member.accessLevel !== 'read_only'
     ));
 }
 

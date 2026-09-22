@@ -134,13 +134,19 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   const { status: techToolLookupStatus, data: techToolLookupResponse } = await apiCall(
     techToken,
     'GET',
-    '/api/tools?mode=lookup&status=available&limit=100',
+    '/api/work-orders/' + wo.id + '/tool-options',
   );
   expect(techToolLookupStatus).toBe(200);
   expect(techToolLookupResponse.success).toBe(true);
   expect(
-    (techToolLookupResponse.data as Array<any>).some((tool) => tool.id === toolId),
+    (techToolLookupResponse.data.availableTools as Array<any>).some((tool) => tool.id === toolId),
   ).toBe(true);
+  const technicianRecommendedTool = (techToolLookupResponse.data.recommendedTools as Array<any>).find(
+    (tool) => tool.toolId === toolId,
+  );
+  expect(technicianRecommendedTool).toBeTruthy();
+  expect(technicianRecommendedTool.currentStatus).toBe('available');
+  expect(Number(technicianRecommendedTool.currentQuantity)).toBeGreaterThan(0);
 
   const { status: personalToolsStatus, data: personalToolsResponse } = await apiCall(
     techToken,

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   Activity, CheckCircle2, ClipboardList, Clock3, ExternalLink, Gauge, Loader2, Package, Plus,
-  TimerReset, Wrench, XCircle,
+  TimerReset, Trash2, Wrench, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -252,6 +252,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [cancelRequestTarget, setCancelRequestTarget] = useState<{
     kind: 'material' | 'tool';
     id: string;
+    label: string;
+  } | null>(null);
+  const [plannerRecommendationRemoveTarget, setPlannerRecommendationRemoveTarget] = useState<{
+    kind: 'part' | 'tool';
+    itemId: string;
     label: string;
   } | null>(null);
   const [teamTime, setTeamTime] = useState({ userId: '', startTime: toLocalInput(new Date(Date.now() - 60 * 60_000)), endTime: toLocalInput(), breakMinutes: '0', activityType: 'maintenance', notes: '' });
@@ -557,6 +562,21 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     'Planner recommendations submitted for approval',
   );
 
+  const confirmPlannerRecommendationRemoval = async () => {
+    if (!plannerRecommendationRemoveTarget || busy !== null) return;
+    const { kind, itemId } = plannerRecommendationRemoveTarget;
+    const ok = await run(
+      `remove-planner-${kind}-${itemId}`,
+      () => api.put(`/api/work-orders/${workOrderId}/suggested-items`, {
+        action: 'remove_recommendation',
+        itemType: kind,
+        itemId,
+      }),
+      'Planner recommendation removed',
+    );
+    if (ok) setPlannerRecommendationRemoveTarget(null);
+  };
+
   const addPersonalTool = async () => {
     if (personalTool.toolName.trim().length < 2) { toast.error('Enter the personal tool name'); return; }
     const ok = await run('personal-tool', () => api.post(`/api/work-orders/${workOrderId}/personal-tools`, {
@@ -753,6 +773,9 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                   <p className="mt-1 text-xs text-muted-foreground">
                     Review these recommendations before requesting them from stores. They are not approval requests until you submit them.
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Remove anything you do not need. Submitting sends all remaining recommendations into the normal approval workflow; submitted items then move to the Material/Tool Request &amp; Status sections below.
+                  </p>
                 </div>
                 {canSubmitPlannerRecommendations && (
                   <Button
@@ -761,7 +784,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     disabled={busy !== null}
                   >
                     {busy === 'planner-recommendations' ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                    Submit recommendations
+                    Submit remaining ({plannerRecommendationCount})
                   </Button>
                 )}
               </div>
@@ -775,7 +798,24 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       Material · Qty {request.quantityRequested ?? request.quantity ?? 1} {request.unit || ''}
                     </p>
                   </div>
-                  <Badge variant="outline">Planner recommendation</Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline">Planner recommendation</Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-red-600"
+                      disabled={busy !== null || !(request.itemId || request.item?.id)}
+                      onClick={() => setPlannerRecommendationRemoveTarget({
+                        kind: 'part',
+                        itemId: String(request.itemId || request.item?.id || ''),
+                        label: request.item?.name || request.itemName || 'this material',
+                      })}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
                 </div>
               ))}
               {plannerToolRecommendations.map((request: any) => {
@@ -790,7 +830,24 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                         {(item.toolCode || item.tool?.toolCode) ? ` · ${item.toolCode || item.tool?.toolCode}` : ''}
                       </p>
                     </div>
-                    <Badge variant="outline">Planner recommendation</Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline">Planner recommendation</Badge>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 gap-1 px-2 text-xs text-muted-foreground hover:text-red-600"
+                        disabled={busy !== null || !(request.toolId || item.toolId || item.tool?.id)}
+                        onClick={() => setPlannerRecommendationRemoveTarget({
+                          kind: 'tool',
+                          itemId: String(request.toolId || item.toolId || item.tool?.id || ''),
+                          label: item.tool?.name || item.toolName || request.tool?.name || request.toolName || 'this tool',
+                        })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -958,6 +1015,25 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(plannerRecommendationRemoveTarget)}
+        onOpenChange={(open) => {
+          if (!open && busy === null) setPlannerRecommendationRemoveTarget(null);
+        }}
+        title="Remove planner recommendation?"
+        description={plannerRecommendationRemoveTarget
+          ? `Remove ${plannerRecommendationRemoveTarget.label} from this work order's planner recommendations? It will not be sent for approval. You can still create a new material/tool request later if the job needs it.`
+          : 'Remove this planner recommendation?'}
+        confirmLabel="Remove Recommendation"
+        cancelLabel="Keep Recommendation"
+        variant="destructive"
+        loading={Boolean(
+          plannerRecommendationRemoveTarget
+          && busy === `remove-planner-${plannerRecommendationRemoveTarget.kind}-${plannerRecommendationRemoveTarget.itemId}`
+        )}
+        onConfirm={() => { void confirmPlannerRecommendationRemoval(); }}
+      />
 
       <ConfirmDialog
         open={Boolean(cancelRequestTarget)}

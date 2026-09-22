@@ -15,11 +15,11 @@ VALUES
   (CONCAT('perm_', REPLACE(UUID(), '-', '')), 'repair_material_requests.view_own', 'Repair Material Requests - View Own', 'repair_material_requests', 'view_own', 'View Own access for Repair Material Requests module', NOW(3), NOW(3)),
   (CONCAT('perm_', REPLACE(UUID(), '-', '')), 'repair_material_requests.create', 'Repair Material Requests - Create', 'repair_material_requests', 'create', 'Create access for Repair Material Requests module', NOW(3), NOW(3))
 ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  module = VALUES(module),
-  action = VALUES(action),
-  description = VALUES(description),
-  updatedAt = NOW(3);
+  `name` = VALUES(`name`),
+  `module` = VALUES(`module`),
+  `action` = VALUES(`action`),
+  `description` = VALUES(`description`),
+  `updatedAt` = NOW(3);
 
 INSERT INTO `role_permissions` (`id`, `roleId`, `permissionId`, `createdAt`)
 SELECT

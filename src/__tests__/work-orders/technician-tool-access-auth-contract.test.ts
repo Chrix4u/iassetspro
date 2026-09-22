@@ -50,6 +50,24 @@ describe('technician tool access authentication contract', () => {
     expect(panel).not.toContain("'/api/tools?mode=lookup&status=available&limit=100'");
   });
 
+  it('does not require broad plant-directory access for an exact assigned WO execution actor', () => {
+    const toolOptions = read('src/app/api/work-orders/[id]/tool-options/route.ts');
+    const personalTools = read('src/app/api/work-orders/[id]/personal-tools/route.ts');
+    const toolRequests = read('src/app/api/repairs/tool-requests/route.ts');
+
+    expect(toolOptions).toContain('const isExecutionActor');
+    expect(toolOptions).toContain('if (!isExecutionActor) {');
+    expect(toolOptions).toContain('authorizeWorkOrderPlant(request, session, id)');
+
+    expect(personalTools).toContain('const isExecutionMember');
+    expect(personalTools).toContain('if (!isExecutionMember) {');
+    expect(personalTools).toContain('authorizeWorkOrderPlant(request, session, id)');
+
+    expect(toolRequests).toContain('const isExecutionMember = Boolean(woTeam) || isAssignee');
+    expect(toolRequests).toContain('if (!isExecutionMember) {');
+    expect(toolRequests).toContain('getPlantScope(request, session)');
+  });
+
   it('falls back to the work-order personal-tool snapshot if the auxiliary GET fails', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

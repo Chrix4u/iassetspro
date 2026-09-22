@@ -12,6 +12,7 @@ describe('technician resource session self-heal', () => {
     expect(auth).toContain('export async function getRequestSession(request: Request)');
     expect(auth).toContain("request.headers.get('authorization')");
     expect(auth).toContain('return getSessionAsync(token)');
+    expect(auth).toContain('const session = await getRequestSession(request)');
   });
 
   it('uses the async resolver for technician resource endpoints', () => {

@@ -116,9 +116,11 @@ async function loadWorkOrderDefaults(): Promise<WorkOrderDefaults> {
 function ResponsibleSupervisorSelect({
   value,
   onValueChange,
+  plantId,
 }: {
   value: string;
   onValueChange: (value: string) => void;
+  plantId?: string | null;
 }) {
   return (
     <div className="space-y-2">
@@ -128,6 +130,7 @@ function ResponsibleSupervisorSelect({
         onValueChange={onValueChange}
         fetchOptions={async (query) => {
           const params = new URLSearchParams({ role: 'supervisor' });
+          if (plantId) params.set('plantId', plantId);
           if (query.trim()) params.set('search', query.trim());
           const res = await api.get(`/api/workers?${params.toString()}`);
           if (!res.success || !Array.isArray(res.data)) return [];
@@ -818,7 +821,6 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
   const [comment, setComment] = useState('');
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
@@ -967,11 +969,10 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       const toolsRequest = toolsEnabled
         ? api.get('/api/tools?mode=lookup&limit=100')
         : Promise.resolve({ success: true, data: [] as any[] });
-      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
+      const [deptsRes, invRes, toolsRes] = await Promise.all([
         api.get('/api/departments?limit=100'),
         inventoryRequest,
         toolsRequest,
-        api.get('/api/workers?role=all'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
       if (invRes.success && invRes.data) {
@@ -979,12 +980,6 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
         setInventoryItems(requestPlantId ? items.filter((item: any) => String(item.plantId) === requestPlantId) : []);
       }
       if (toolsRes.success && toolsRes.data) setToolsData(Array.isArray(toolsRes.data) ? toolsRes.data : []);
-      if (usersRes.success && usersRes.data) {
-        const users = Array.isArray(usersRes.data) ? usersRes.data : [];
-        const map: Record<string, string> = {};
-        users.forEach((u: any) => { map[u.id] = `${u.fullName} (${u.username})`; });
-        setUsersMap(map);
-      }
     } catch (_e) {
       // Silently handle - dropdowns will just be empty
     }
@@ -1580,12 +1575,14 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
                   assignType={convertForm.assignType}
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
+                  plantId={(mr as any)?.plantId ? String((mr as any).plantId) : null}
                   label="Resource Assignment"
                 />
                 {convertForm.assignType === 'technician' && (
                   <ResponsibleSupervisorSelect
                     value={convertForm.responsibleSupervisorId}
                     onValueChange={(value) => setConvertForm(f => ({ ...f, responsibleSupervisorId: value }))}
+                    plantId={(mr as any)?.plantId ? String((mr as any).plantId) : null}
                   />
                 )}
 

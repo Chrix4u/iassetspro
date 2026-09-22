@@ -43,7 +43,9 @@ describe('technician workflow V1.1 completion contract', () => {
   it('prefetches available store materials, tools and units instead of free-text resource identities', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
     expect(panel).toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)");
-    expect(panel).toContain("api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)");
+    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-options');
+    expect(panel).toContain('availableTools: ToolOption[]; recommendedTools: any[]');
+    expect(panel).not.toContain("api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)");
     expect(panel).toContain("{ headers: { 'X-Plant-ID': String(workOrder.plantId) } }");
     expect(panel).toContain("api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`, workOrderPlantHeaders)");
     expect(panel).not.toContain("api.get<InventoryOption[]>('/api/inventory')");

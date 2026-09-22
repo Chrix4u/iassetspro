@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { toolRequestReason } from '@/lib/technician-reason-defaults';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
@@ -190,15 +191,14 @@ export async function POST(request: NextRequest) {
       ? reason.trim()
       : toolRequestReason({ woNumber: wo.woNumber, title: wo.title, toolName: items[0]?.toolName });
 
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
+    const workOrderAccess = await authorizeWorkOrderExecutionAccess(request, session, workOrderId);
+    if (!workOrderAccess.ok) return workOrderAccess.response;
     if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
     const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
     const isAssignee = wo.assignedTo === session.userId;
-    if (!woTeam && !isAssignee && !isAdmin(session)) {
+    const isTeamLeader = wo.teamLeaderId === session.userId;
+    if (!woTeam && !isAssignee && !isTeamLeader && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
     }
 

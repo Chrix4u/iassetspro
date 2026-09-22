@@ -195,10 +195,18 @@ export async function POST(request: NextRequest) {
     if (!workOrderAccess.ok) return workOrderAccess.response;
     if (!wo.plantId) return NextResponse.json({ success: false, error: 'Operational work order must have a plant' }, { status: 400 });
 
-    const woTeam = await db.workOrderTeamMember.findFirst({ where: { workOrderId, userId: session.userId } });
+    const woTeam = await db.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: session.userId },
+      select: { role: true, accessLevel: true },
+    });
     const isAssignee = wo.assignedTo === session.userId;
     const isTeamLeader = wo.teamLeaderId === session.userId;
-    if (!woTeam && !isAssignee && !isTeamLeader && !isAdmin(session)) {
+    const isExecutionTeamMember = Boolean(
+      woTeam
+      && woTeam.role !== 'handover_receiver'
+      && woTeam.accessLevel !== 'read_only'
+    );
+    if (!isExecutionTeamMember && !isAssignee && !isTeamLeader && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'You are not a member of this work order\'s execution team' }, { status: 403 });
     }
 

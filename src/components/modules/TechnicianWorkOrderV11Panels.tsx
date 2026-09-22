@@ -128,19 +128,6 @@ function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
   return [...merged.values()];
 }
 
-function mergeToolOptions(
-  plannerOptions: ToolOption[],
-  liveOptions: ToolOption[],
-): ToolOption[] {
-  const merged = new Map<string, ToolOption>();
-  for (const tool of plannerOptions) merged.set(tool.id, tool);
-  for (const tool of liveOptions) {
-    const current = merged.get(tool.id);
-    merged.set(tool.id, { ...current, ...tool });
-  }
-  return [...merged.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-}
-
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
 function pretty(value?: string | null) {

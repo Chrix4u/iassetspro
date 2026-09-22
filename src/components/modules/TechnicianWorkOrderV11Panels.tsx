@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,6 +52,8 @@ type ToolOption = {
   condition?: string | null;
   quantity?: number | null;
   location?: string | null;
+  availabilityVerified?: boolean;
+  plannerRecommended?: boolean;
 };
 
 type SearchableResourceOption = {
@@ -59,6 +62,71 @@ type SearchableResourceOption = {
   detail?: string;
   searchText: string;
 };
+
+function parseStoredArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
+  const merged = new Map<string, ToolOption>();
+
+  for (const suggestion of parseStoredArray(workOrder?.suggestedTools)) {
+    const toolId = typeof suggestion?.toolId === 'string' ? suggestion.toolId : '';
+    if (!toolId) continue;
+    merged.set(toolId, {
+      id: toolId,
+      name: suggestion.toolName || 'Planner recommended tool',
+      toolCode: suggestion.toolCode || null,
+      status: 'suggested',
+      condition: suggestion.condition || null,
+      quantity: Number(suggestion.quantity ?? 1) || 1,
+      location: suggestion.location || null,
+      availabilityVerified: false,
+      plannerRecommended: true,
+    });
+  }
+
+  for (const request of Array.isArray(workOrder?.repairToolRequests) ? workOrder.repairToolRequests : []) {
+    if (request?.source !== 'planner_suggested' || request?.status === 'rejected') continue;
+    const items = Array.isArray(request.items) && request.items.length > 0
+      ? request.items
+      : request.toolId
+        ? [{
+            toolId: request.toolId,
+            toolName: request.toolName,
+            toolCode: request.tool?.toolCode,
+            quantityRequested: 1,
+            tool: request.tool,
+          }]
+        : [];
+
+    for (const item of items) {
+      const toolId = item?.toolId || item?.tool?.id;
+      if (!toolId) continue;
+      const current = merged.get(String(toolId));
+      merged.set(String(toolId), {
+        id: String(toolId),
+        name: item.toolName || item.tool?.name || request.toolName || current?.name || 'Planner recommended tool',
+        toolCode: item.toolCode || item.tool?.toolCode || request.tool?.toolCode || current?.toolCode || null,
+        status: current?.status || request.status || 'suggested',
+        condition: item.tool?.condition || request.tool?.condition || current?.condition || null,
+        quantity: Number(item.quantityRequested ?? current?.quantity ?? 1) || 1,
+        location: item.tool?.location || request.tool?.location || current?.location || null,
+        availabilityVerified: current?.availabilityVerified ?? false,
+        plannerRecommended: true,
+      });
+    }
+  }
+
+  return [...merged.values()];
+}
 
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
@@ -162,6 +230,9 @@ function SearchableResourceSelect({
 
 export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilities, onChanged }: Props) {
   const navigate = useNavigationStore((s) => s.navigate);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+  const fetchMe = useAuthStore((state) => state.fetchMe);
   const [busy, setBusy] = useState<string | null>(null);
   const [downtime, setDowntime] = useState<any[]>([]);
   const [downtimeSummary, setDowntimeSummary] = useState<any>({ totalRecords: 0, ongoing: 0, totalMinutes: 0 });
@@ -183,7 +254,30 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     reason: '', category: 'unplanned', impactLevel: 'medium', downtimeStart: toLocalInput(), downtimeEnd: '', productionLoss: '', notes: '',
   });
 
+  const plannerToolFallbacks = useMemo(
+    () => plannerToolOptionsFromWorkOrder(workOrder),
+    [workOrder?.suggestedTools, workOrder?.repairToolRequests],
+  );
+  const personalToolFallbacks = useMemo(
+    () => parseStoredArray(workOrder?.personalTools),
+    [workOrder?.personalTools],
+  );
+
   const loadPanels = useCallback(async () => {
+    // Preserve WO-embedded resources immediately. These are already protected by
+    // the successfully loaded WO relationship boundary and prevent a transient
+    // auxiliary auth failure from hiding planner recommendations/personal tools.
+    setPersonalTools(personalToolFallbacks);
+    setToolOptions(plannerToolFallbacks);
+
+    const tokenPresent = typeof window !== 'undefined'
+      && Boolean(window.localStorage.getItem('eam_token'));
+    if (!isAuthenticated || !user?.id || !tokenPresent) {
+      setResourcesLoading(false);
+      if (isAuthenticated && user?.id && !tokenPresent) void fetchMe();
+      return;
+    }
+
     const teamLogs = capabilities?.isTeamLeader ? '?includeTeamLogs=true' : '';
     const workOrderPlantHeaders = workOrder?.plantId
       ? { headers: { 'X-Plant-ID': String(workOrder.plantId) } }
@@ -210,7 +304,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLabor(Array.isArray(timeRes.data.timeLogs) ? timeRes.data.timeLogs : []);
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
-    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) setPersonalTools(personalToolsRes.data);
+    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) {
+      setPersonalTools(personalToolsRes.data);
+    } else {
+      setPersonalTools(personalToolFallbacks);
+    }
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data
@@ -221,13 +319,27 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setInventoryOptions([]);
     }
     if (toolsRes.success && Array.isArray(toolsRes.data)) {
+      const merged = new Map<string, ToolOption>();
+      for (const tool of plannerToolFallbacks) merged.set(tool.id, tool);
+      for (const tool of toolsRes.data
+        .filter((candidate) => candidate.status === 'available' && Number(candidate.quantity ?? 1) > 0)) {
+        merged.set(tool.id, {
+          ...merged.get(tool.id),
+          ...tool,
+          availabilityVerified: true,
+          plannerRecommended: merged.get(tool.id)?.plannerRecommended ?? false,
+        });
+      }
       setToolOptions(
-        toolsRes.data
-          .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+        [...merged.values()].sort((a, b) => {
+          if (Boolean(a.plannerRecommended) !== Boolean(b.plannerRecommended)) {
+            return a.plannerRecommended ? -1 : 1;
+          }
+          return (a.name || '').localeCompare(b.name || '');
+        }),
       );
     } else {
-      setToolOptions([]);
+      setToolOptions(plannerToolFallbacks);
     }
     setResourcesLoading(false);
   }, [
@@ -235,6 +347,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     capabilities?.canRequestMaterials,
     capabilities?.canRequestTools,
     capabilities?.isTeamLeader,
+    fetchMe,
+    isAuthenticated,
+    personalToolFallbacks,
+    plannerToolFallbacks,
+    user?.id,
     workOrder?.plantId,
     workOrderId,
   ]);
@@ -267,9 +384,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
+      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: tool.plannerRecommended
+        ? tool.availabilityVerified
+          ? `Planner recommendation · ${pretty(tool.status || 'available')} · Qty ${Number(tool.quantity ?? 0)}${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`
+          : 'Planner recommendation · live availability will be verified when the session is available'
+        : `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
     })),
     [toolOptions],
   );

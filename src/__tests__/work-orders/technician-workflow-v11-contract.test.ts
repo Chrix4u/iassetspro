@@ -57,6 +57,21 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('quantityRequested: quantity');
   });
 
+  it('separates planner recommendations from submitted resource requests', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('Planner Recommended Resources');
+    expect(panel).toContain('They are not approval requests until you submit them.');
+    expect(panel).toContain("action: 'submit_recommendations'");
+    expect(panel).toContain('submitPlannerRecommendations');
+    expect(panel).toContain('plannerMaterialRecommendations');
+    expect(panel).toContain('plannerToolRecommendations');
+    expect(panel).toContain('materialPipelineRequests');
+    expect(panel).toContain('toolPipelineRequests');
+    expect(panel).toContain('Planner recommendation');
+    expect(panel).toContain('Submit recommendations');
+  });
+
   it('provides work-order-scoped downtime capture with authorization and audit', () => {
     const route = read('src/app/api/work-orders/[id]/downtime/route.ts');
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');

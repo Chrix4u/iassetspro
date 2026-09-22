@@ -138,15 +138,24 @@ test('UAT-12: planner-selected material and tool both appear on converted WO det
   );
   expect(techToolLookupStatus).toBe(200);
   expect(techToolLookupResponse.success).toBe(true);
-  expect(
-    (techToolLookupResponse.data.availableTools as Array<any>).some((tool) => tool.id === toolId),
-  ).toBe(true);
   const technicianRecommendedTool = (techToolLookupResponse.data.recommendedTools as Array<any>).find(
     (tool) => tool.toolId === toolId,
   );
   expect(technicianRecommendedTool).toBeTruthy();
-  expect(technicianRecommendedTool.currentStatus).toBe('available');
-  expect(Number(technicianRecommendedTool.currentQuantity)).toBeGreaterThan(0);
+
+  // Scenario J may legitimately check out this shared calibration tool before
+  // Scenario L runs. The recommendation must remain visible regardless of its
+  // current live availability. Only a tool that is currently available should
+  // also be advertised in the live availableTools selector.
+  const technicianAvailableTool = (techToolLookupResponse.data.availableTools as Array<any>).find(
+    (tool) => tool.id === toolId,
+  );
+  if (technicianRecommendedTool.currentStatus === 'available') {
+    expect(technicianAvailableTool).toBeTruthy();
+    expect(Number(technicianRecommendedTool.currentQuantity)).toBeGreaterThan(0);
+  } else {
+    expect(technicianAvailableTool).toBeFalsy();
+  }
 
   const { status: personalToolsStatus, data: personalToolsResponse } = await apiCall(
     techToken,

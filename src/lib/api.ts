@@ -26,6 +26,7 @@ const PUBLIC_AUTH_ENDPOINTS = [
   '/api/auth/register',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/health',
 ] as const;
 
 function isPublicAuthEndpoint(endpoint: string): boolean {
@@ -313,6 +314,22 @@ export async function apiFetch<T = any>(
   const isFormData = restOptions.body instanceof FormData;
   const normalizedMethod = (restOptions.method || 'GET').toUpperCase();
   const cacheableRead = normalizedMethod === 'GET' && isOfflineSnapshotEndpoint(endpoint);
+
+  // Do not send protected requests without a bearer token. A stale mounted
+  // page can outlive localStorage (for example after another request expires
+  // the session); fail locally and synchronize the auth store immediately.
+  if (
+    typeof window !== 'undefined'
+    && !isPublicAuthEndpoint(endpoint)
+    && !hasClientAuthToken()
+  ) {
+    const error = 'Authentication required';
+    clearClientAuthStorage();
+    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+      detail: { endpoint, status: 401, error },
+    }));
+    return { success: false, status: 401, error };
+  }
 
   if (
     cacheableRead &&

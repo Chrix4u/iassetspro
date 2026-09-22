@@ -21,7 +21,13 @@ export async function registerCoreServiceWorker(): Promise<ServiceWorkerRegistra
     return null;
   }
 
-  return navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+
+  // Do not rely on the browser's periodic service-worker update interval. Check
+  // on each app bootstrap so a newly deployed shell/cache version is discovered
+  // promptly; the worker's skipWaiting/claim flow then evicts the prior cache.
+  await registration.update().catch(() => undefined);
+  return registration;
 }
 
 /**

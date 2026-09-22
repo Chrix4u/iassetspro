@@ -15,6 +15,9 @@ describe('technician tool loading and client auth boundary', () => {
     expect(api).toContain('export function hasClientAuthToken');
     expect(api).toContain('&& !hasClientAuthToken()');
     expect(api).toContain("detail: { endpoint, status: 401, error }");
+    expect(api.indexOf('// Online protected calls must carry a bearer token')).toBeGreaterThan(
+      api.indexOf('const offlineResponse = await queueOfflineMutationIfSupported'),
+    );
     expect(authStore).toContain('AUTH_SESSION_EXPIRED_EVENT');
     expect(authStore).toContain('window.addEventListener(AUTH_SESSION_EXPIRED_EVENT');
     expect(authStore).toContain('isAuthenticated: false');

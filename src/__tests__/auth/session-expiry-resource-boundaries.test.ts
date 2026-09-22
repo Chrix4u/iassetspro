@@ -37,7 +37,9 @@ describe('authenticated RWOP resource request boundaries', () => {
   });
 
   it('does not fetch WO personal tools before authenticated actor state exists', () => {
-    expect(maintenance).toContain('if (!isAuthenticated || !user?.id || !toolResourcesEnabled)');
+    expect(maintenance).toContain('if (!isAuthenticated || !user?.id || !toolResourcesEnabled || !tokenPresent)');
+    expect(maintenance).toContain("window.localStorage.getItem('eam_token')");
+    expect(maintenance).toContain('if (isAuthenticated && user?.id && !tokenPresent) void fetchMe()');
     expect(maintenance).toContain('/api/work-orders/${id}/personal-tools');
   });
 

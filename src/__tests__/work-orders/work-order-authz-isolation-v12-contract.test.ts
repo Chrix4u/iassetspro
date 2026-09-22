@@ -14,11 +14,11 @@ describe('RWOP V1.2 authorization/isolation contract', () => {
     expect(route).not.toContain("hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all')");
   });
 
-  it('keeps capabilities behind strict plant and relationship authorization', () => {
+  it('keeps capabilities behind exact-WO plant and relationship authorization', () => {
     const route = read('src/app/api/work-orders/[id]/capabilities/route.ts');
 
-    expect(route).toContain("getPlantScope, canAccessPlantStrict");
-    expect(route).toContain('!canAccessPlantStrict(plantScope, wo.plantId)');
+    expect(route).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
+    expect(route).toContain('if (!access.ok) return access.response');
     expect(route).toContain('if (!canViewWorkOrder(session, wo))');
     expect(route).toContain('maintenanceRequest:');
     expect(route).toContain('select: { requestedBy: true }');

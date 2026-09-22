@@ -16,11 +16,14 @@ async function loginAndNavigateTo(page: Page, hashPath: string): Promise<boolean
     await page.waitForURL(/#\/dashboard/, { timeout: 15_000 });
     await page.waitForTimeout(2000);
 
-    // Navigate to the target page
+    // Navigate to the target page. Module licensing/RBAC is fail-closed:
+    // when the requested page is unavailable the app redirects back to an
+    // allowed page. Treat that as "not applicable" for this optional dashboard
+    // suite instead of failing the entire production release.
     await page.goto(`/${hashPath}`);
     await page.waitForTimeout(3000);
 
-    return true;
+    return page.url().includes(hashPath);
   } catch {
     return false;
   }

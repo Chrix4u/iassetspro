@@ -38,6 +38,8 @@ describe('technician tool access authentication contract', () => {
     expect(route).toContain('authorizeWorkOrderPlant(request, session, id)');
     expect(route).toContain('canViewWorkOrder(session, wo)');
     expect(route).toContain('const isExecutionActor');
+    expect(route).toContain("hasPermission(session, 'repair_tool_requests.create')");
+    expect(route).toContain('const canRequestTools');
     expect(route).toContain('plantId: wo.plantId');
     expect(route).toContain("status: 'available'");
     expect(route).toContain('recommendedTools');

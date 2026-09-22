@@ -29,6 +29,22 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain('permissions: JSON.stringify(permissions)');
   });
 
+  it('uses a work-order-scoped tool selector for assigned technicians', () => {
+    const route = read('src/app/api/work-orders/[id]/tool-options/route.ts');
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+    const proxy = read('src/proxy.ts');
+
+    expect(proxy).toContain('/tool-options');
+    expect(route).toContain('authorizeWorkOrderPlant(request, session, id)');
+    expect(route).toContain('canViewWorkOrder(session, wo)');
+    expect(route).toContain('const isExecutionActor');
+    expect(route).toContain('plantId: wo.plantId');
+    expect(route).toContain("status: 'available'");
+    expect(route).toContain('recommendedTools');
+    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-options');
+    expect(panel).not.toContain("'/api/tools?mode=lookup&status=available&limit=100'");
+  });
+
   it('keeps technician tool lookup constrained to execution permissions', () => {
     const tools = read('src/app/api/tools/route.ts');
     const seed = read('prisma/seed-permissions-only.ts');

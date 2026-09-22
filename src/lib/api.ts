@@ -26,6 +26,7 @@ const PUBLIC_AUTH_ENDPOINTS = [
   '/api/auth/register',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/health',
 ] as const;
 
 function isPublicAuthEndpoint(endpoint: string): boolean {
@@ -288,6 +289,15 @@ async function loadCachedRead<T>(endpoint: string): Promise<ApiResponse<T> | nul
   };
 }
 
+export function hasClientAuthToken(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(localStorage.getItem('eam_token'));
+  } catch {
+    return false;
+  }
+}
+
 export function getAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem('eam_token');
@@ -328,6 +338,21 @@ export async function apiFetch<T = any>(
 
   const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);
   if (offlineResponse) return offlineResponse;
+
+  // Keep actor-bound offline work available, but never send an online
+  // protected request after the bearer token has disappeared from storage.
+  if (
+    typeof window !== 'undefined'
+    && !isPublicAuthEndpoint(endpoint)
+    && !hasClientAuthToken()
+  ) {
+    const error = 'Authentication required';
+    clearClientAuthStorage();
+    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+      detail: { endpoint, status: 401, error },
+    }));
+    return { success: false, status: 401, error };
+  }
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),

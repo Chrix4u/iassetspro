@@ -31,7 +31,7 @@ async function loginAndNavigateTo(page: Page, hashPath: string): Promise<boolean
 
 test.describe('System Observability', () => {
   test.beforeEach(async ({ page }) => {
-    const ready = await loginAndNavigateTo(page, '#/observability');
+    const ready = await loginAndNavigateTo(page, '#/observability-dashboard');
     if (!ready) {
       test.skip();
     }

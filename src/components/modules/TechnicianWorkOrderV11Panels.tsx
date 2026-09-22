@@ -185,18 +185,21 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
 
   const loadPanels = useCallback(async () => {
     const teamLogs = capabilities?.isTeamLeader ? '?includeTeamLogs=true' : '';
+    const workOrderPlantHeaders = workOrder?.plantId
+      ? { headers: { 'X-Plant-ID': String(workOrder.plantId) } }
+      : undefined;
     setResourcesLoading(true);
     const [downRes, timeRes, personalToolsRes, inventoryRes, toolsRes] = await Promise.all([
-      api.get<any[]>(`/api/work-orders/${workOrderId}/downtime`),
-      api.get<any>(`/api/work-orders/${workOrderId}/time-logs${teamLogs}`),
+      api.get<any[]>(`/api/work-orders/${workOrderId}/downtime`, workOrderPlantHeaders),
+      api.get<any>(`/api/work-orders/${workOrderId}/time-logs${teamLogs}`, workOrderPlantHeaders),
       (capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools)
-        ? api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`)
+        ? api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as any[] }),
       capabilities?.canRequestMaterials
-        ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100')
+        ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100')
+        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as ToolOption[] }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
@@ -232,6 +235,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     capabilities?.canRequestMaterials,
     capabilities?.canRequestTools,
     capabilities?.isTeamLeader,
+    workOrder?.plantId,
     workOrderId,
   ]);
 

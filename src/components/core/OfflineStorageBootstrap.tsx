@@ -60,6 +60,24 @@ export function OfflineStorageBootstrap() {
         });
       });
 
+    const hadServiceWorkerController =
+      'serviceWorker' in navigator && Boolean(navigator.serviceWorker.controller);
+    let reloadingForNewShell = false;
+
+    const handleControllerChange = () => {
+      // A first-ever service-worker install should not reload the login/app shell.
+      // When an already-controlled tab receives a newer worker, however, the JS
+      // currently executing in memory may still call obsolete API routes. Reload
+      // exactly once so the tab switches to the newly deployed application code.
+      if (!hadServiceWorkerController || reloadingForNewShell) return;
+      reloadingForNewShell = true;
+      window.location.reload();
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    }
+
     void registerCoreServiceWorker()
       .then((registration) => {
         if (registration) {
@@ -71,6 +89,16 @@ export function OfflineStorageBootstrap() {
           error: error instanceof Error ? error.message : String(error),
         });
       });
+
+    // Long-lived plant-floor tabs may stay open across multiple deployments.
+    // Ask the browser to check for a new worker periodically instead of waiting
+    // for its implementation-defined update interval.
+    const serviceWorkerUpdateTimer = window.setInterval(() => {
+      if (!('serviceWorker' in navigator)) return;
+      void navigator.serviceWorker.getRegistration('/')
+        .then((registration) => registration?.update())
+        .catch(() => undefined);
+    }, 5 * 60 * 1000);
 
     const handleCacheState = (event: Event) => {
       const detail = (event as CustomEvent<OfflineCacheStateEventDetail>).detail;
@@ -92,7 +120,13 @@ export function OfflineStorageBootstrap() {
     };
 
     window.addEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
-    return () => window.removeEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
+    return () => {
+      window.clearInterval(serviceWorkerUpdateTimer);
+      window.removeEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      }
+    };
   }, []);
 
   const oldestCachedAt = useMemo(() => {

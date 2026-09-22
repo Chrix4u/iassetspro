@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,6 +60,80 @@ type SearchableResourceOption = {
   detail?: string;
   searchText: string;
 };
+
+function parseStoredArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
+  const merged = new Map<string, ToolOption>();
+
+  for (const suggestion of parseStoredArray(workOrder?.suggestedTools)) {
+    const toolId = typeof suggestion?.toolId === 'string' ? suggestion.toolId : '';
+    if (!toolId) continue;
+    merged.set(toolId, {
+      id: toolId,
+      name: suggestion.toolName || 'Planner recommended tool',
+      toolCode: suggestion.toolCode || null,
+      status: 'available',
+      condition: suggestion.condition || null,
+      quantity: Number(suggestion.quantity ?? 1) || 1,
+      location: suggestion.location || null,
+    });
+  }
+
+  for (const request of Array.isArray(workOrder?.repairToolRequests) ? workOrder.repairToolRequests : []) {
+    if (request?.source !== 'planner_suggested' || request?.status === 'rejected') continue;
+    const items = Array.isArray(request.items) && request.items.length > 0
+      ? request.items
+      : request.toolId
+        ? [{
+            toolId: request.toolId,
+            toolName: request.toolName,
+            toolCode: request.tool?.toolCode,
+            quantityRequested: 1,
+            tool: request.tool,
+          }]
+        : [];
+
+    for (const item of items) {
+      const toolId = item?.toolId || item?.tool?.id;
+      if (!toolId) continue;
+      const current = merged.get(String(toolId));
+      merged.set(String(toolId), {
+        id: String(toolId),
+        name: item.toolName || item.tool?.name || request.toolName || current?.name || 'Planner recommended tool',
+        toolCode: item.toolCode || item.tool?.toolCode || request.tool?.toolCode || current?.toolCode || null,
+        status: current?.status || 'available',
+        condition: item.tool?.condition || request.tool?.condition || current?.condition || null,
+        quantity: Number(item.quantityRequested ?? current?.quantity ?? 1) || 1,
+        location: item.tool?.location || request.tool?.location || current?.location || null,
+      });
+    }
+  }
+
+  return [...merged.values()];
+}
+
+function mergeToolOptions(
+  plannerOptions: ToolOption[],
+  liveOptions: ToolOption[],
+): ToolOption[] {
+  const merged = new Map<string, ToolOption>();
+  for (const tool of plannerOptions) merged.set(tool.id, tool);
+  for (const tool of liveOptions) {
+    const current = merged.get(tool.id);
+    merged.set(tool.id, { ...current, ...tool });
+  }
+  return [...merged.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
 
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'on_hold', 'pending_handover']);
 
@@ -162,6 +237,9 @@ function SearchableResourceSelect({
 
 export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilities, onChanged }: Props) {
   const navigate = useNavigationStore((s) => s.navigate);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const fetchMe = useAuthStore((s) => s.fetchMe);
   const [busy, setBusy] = useState<string | null>(null);
   const [downtime, setDowntime] = useState<any[]>([]);
   const [downtimeSummary, setDowntimeSummary] = useState<any>({ totalRecords: 0, ongoing: 0, totalMinutes: 0 });
@@ -183,7 +261,35 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     reason: '', category: 'unplanned', impactLevel: 'medium', downtimeStart: toLocalInput(), downtimeEnd: '', productionLoss: '', notes: '',
   });
 
+  const plannerToolFallbacks = useMemo(
+    () => plannerToolOptionsFromWorkOrder(workOrder),
+    [workOrder?.suggestedTools, workOrder?.repairToolRequests],
+  );
+  const personalToolFallbacks = useMemo(
+    () => parseStoredArray(workOrder?.personalTools),
+    [workOrder?.personalTools],
+  );
+
   const loadPanels = useCallback(async () => {
+    // Keep planner-selected/personal tool data visible from the already-loaded
+    // work order even when an auxiliary lookup is temporarily unavailable.
+    setPersonalTools(personalToolFallbacks);
+    setToolOptions(plannerToolFallbacks);
+
+    // The protected app shell can briefly retain in-memory actor state while a
+    // session-expiry reconciliation clears localStorage. Never issue resource
+    // calls without the persisted bearer token: the proxy will correctly reject
+    // those requests as "Authentication required".
+    const tokenPresent = typeof window !== 'undefined'
+      && Boolean(window.localStorage.getItem('eam_token'));
+    if (!isAuthenticated || !user?.id || !tokenPresent) {
+      setResourcesLoading(false);
+      if (isAuthenticated && user?.id && !tokenPresent) {
+        void fetchMe();
+      }
+      return;
+    }
+
     const teamLogs = capabilities?.isTeamLeader ? '?includeTeamLogs=true' : '';
     const workOrderPlantHeaders = workOrder?.plantId
       ? { headers: { 'X-Plant-ID': String(workOrder.plantId) } }
@@ -210,7 +316,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLabor(Array.isArray(timeRes.data.timeLogs) ? timeRes.data.timeLogs : []);
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
-    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) setPersonalTools(personalToolsRes.data);
+    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) {
+      setPersonalTools(personalToolsRes.data);
+    } else {
+      setPersonalTools(personalToolFallbacks);
+    }
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data
@@ -221,13 +331,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setInventoryOptions([]);
     }
     if (toolsRes.success && Array.isArray(toolsRes.data)) {
-      setToolOptions(
-        toolsRes.data
-          .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-      );
+      const liveAvailableTools = toolsRes.data
+        .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0);
+      setToolOptions(mergeToolOptions(plannerToolFallbacks, liveAvailableTools));
     } else {
-      setToolOptions([]);
+      // A planner recommendation is part of the WO contract, not dependent on
+      // the generic Tool Registry lookup. Keep it selectable as a fallback.
+      setToolOptions(plannerToolFallbacks);
     }
     setResourcesLoading(false);
   }, [
@@ -235,6 +345,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     capabilities?.canRequestMaterials,
     capabilities?.canRequestTools,
     capabilities?.isTeamLeader,
+    fetchMe,
+    isAuthenticated,
+    personalToolFallbacks,
+    plannerToolFallbacks,
+    user?.id,
     workOrder?.plantId,
     workOrderId,
   ]);

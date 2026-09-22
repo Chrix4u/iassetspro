@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getRequestSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
@@ -395,7 +395,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }

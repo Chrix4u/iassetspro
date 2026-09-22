@@ -72,7 +72,7 @@ describe('technician workflow V1.1 completion contract', () => {
     expect(panel).toContain('materialPipelineRequests');
     expect(panel).toContain('toolPipelineRequests');
     expect(panel).toContain('Planner recommendation');
-    expect(panel).toContain('Submit recommendations');
+    expect(panel).toContain('Submit remaining ({plannerRecommendationCount})');
   });
 
   it('lets technicians decline planner recommendations before submission and explains where submitted items move', () => {

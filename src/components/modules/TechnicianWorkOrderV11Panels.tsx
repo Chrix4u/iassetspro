@@ -289,12 +289,9 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       ? { headers: { 'X-Plant-ID': String(workOrder.plantId) } }
       : undefined;
     setResourcesLoading(true);
-    const [downRes, timeRes, personalToolsRes, inventoryRes, toolsRes] = await Promise.all([
+    const [downRes, timeRes, inventoryRes, toolsRes] = await Promise.all([
       api.get<any[]>(`/api/work-orders/${workOrderId}/downtime`, workOrderPlantHeaders),
       api.get<any>(`/api/work-orders/${workOrderId}/time-logs${teamLogs}`, workOrderPlantHeaders),
-      (capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools)
-        ? api.get<any[]>(`/api/work-orders/${workOrderId}/personal-tools`, workOrderPlantHeaders)
-        : Promise.resolve({ success: true, data: [] as any[] }),
       capabilities?.canRequestMaterials
         ? api.get<InventoryOption[]>(`/api/work-orders/${workOrderId}/inventory-candidates?limit=100`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
@@ -310,11 +307,10 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setLabor(Array.isArray(timeRes.data.timeLogs) ? timeRes.data.timeLogs : []);
       setLaborSummary(timeRes.data.summary || { totalEntries: 0, totalHours: 0, personalHours: 0, teamHours: 0 });
     }
-    if (personalToolsRes.success && Array.isArray(personalToolsRes.data)) {
-      setPersonalTools(personalToolsRes.data);
-    } else {
-      setPersonalTools(personalToolFallbacks);
-    }
+    // personalTools is already embedded in the authorized WO payload. Keeping
+    // this local projection avoids an unnecessary second auth boundary and still
+    // refreshes whenever the parent WO reloads after a mutation.
+    setPersonalTools(personalToolFallbacks);
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data
@@ -378,6 +374,29 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     () => toolOptions.find((tool) => tool.id === toolRequest.toolId) || null,
     [toolOptions, toolRequest.toolId],
   );
+  useEffect(() => {
+    if (editingToolRequestId || toolRequest.toolId || plannerToolFallbacks.length === 0) return;
+    const recommended = plannerToolFallbacks[0];
+    setToolRequest((current) => ({
+      ...current,
+      toolId: recommended.id,
+      toolName: recommended.name,
+      toolCode: recommended.toolCode || '',
+      quantity: String(Math.max(1, Number(recommended.quantity ?? 1) || 1)),
+      reason: current.reason || toolRequestReason({
+        woNumber: workOrder?.woNumber,
+        title: workOrder?.title,
+        toolName: recommended.name,
+      }),
+    }));
+  }, [
+    editingToolRequestId,
+    plannerToolFallbacks,
+    toolRequest.toolId,
+    workOrder?.title,
+    workOrder?.woNumber,
+  ]);
+
   const materialSearchOptions = useMemo<SearchableResourceOption[]>(
     () => inventoryOptions.map((item) => ({
       id: item.id,
@@ -545,7 +564,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toolCode: personalTool.toolCode.trim() || undefined,
       condition: personalTool.condition,
       notes: personalTool.notes.trim() || undefined,
-    }), 'Personal tool recorded', false);
+    }), 'Personal tool recorded', true);
     if (ok) setPersonalTool({ toolName: '', toolCode: '', condition: 'good', notes: '' });
   };
 

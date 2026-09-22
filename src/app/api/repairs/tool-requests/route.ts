@@ -73,19 +73,13 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-    }
-    applyPlantScope(where, plantScope);
+    const canViewAll = hasAnyPermission(
+      session,
+      ['repair_tool_requests.view', 'repair_tool_requests.view_all'],
+    ) || isAdmin(session);
 
-    if (workOrderId) where.workOrderId = workOrderId;
-    if (status) where.status = status;
-    if (requestedById) where.requestedById = requestedById;
-
-    const canViewAll = hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all']) || isAdmin(session);
     let canViewWorkOrderExecutionScope = false;
-    if (!canViewAll && workOrderId) {
+    if (workOrderId) {
       const executionMembership = await db.workOrder.findFirst({
         where: {
           id: workOrderId,
@@ -97,9 +91,27 @@ export async function GET(request: NextRequest) {
         },
         select: { id: true },
       });
-      canViewWorkOrderExecutionScope = !!executionMembership;
+      canViewWorkOrderExecutionScope = Boolean(executionMembership);
     }
-    if (!canViewAll && !canViewWorkOrderExecutionScope) where.requestedById = session.userId;
+
+    // A relationship-scoped work-order query is already hard-bound to one WO.
+    // This lets legacy assigned technicians see that WO's requests even when a
+    // UserPlant row/header is missing, without granting plant-wide visibility.
+    if (!canViewWorkOrderExecutionScope) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      applyPlantScope(where, plantScope);
+    }
+
+    if (workOrderId) where.workOrderId = workOrderId;
+    if (status) where.status = status;
+    if (requestedById) where.requestedById = requestedById;
+
+    if (!canViewAll && !canViewWorkOrderExecutionScope) {
+      where.requestedById = session.userId;
+    }
 
     if (stats) {
       const [total, pending, supervisorApproved, storekeeperApproved, issued, returned, rejected, overdueCount] = await Promise.all([

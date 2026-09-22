@@ -51,6 +51,7 @@ type ToolOption = {
   condition?: string | null;
   quantity?: number | null;
   location?: string | null;
+  plannerRecommended?: boolean;
 };
 
 type SearchableResourceOption = {
@@ -231,10 +232,40 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       && toolsRes.data
       && Array.isArray((toolsRes.data as any).availableTools)
     ) {
+      const availableTools = ((toolsRes.data as any).availableTools as ToolOption[])
+        .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0);
+      const recommendedTools = Array.isArray((toolsRes.data as any).recommendedTools)
+        ? ((toolsRes.data as any).recommendedTools as any[])
+            .filter((tool) => typeof tool?.toolId === 'string' && tool.toolId)
+            .map((tool): ToolOption => ({
+              id: tool.toolId,
+              name: tool.toolName || 'Planner-recommended tool',
+              toolCode: tool.toolCode || null,
+              status: tool.currentStatus || 'unavailable',
+              condition: tool.currentCondition || null,
+              quantity: Number(tool.currentQuantity ?? 0),
+              location: tool.location || null,
+              plannerRecommended: true,
+            }))
+        : [];
+
+      const mergedTools = new Map<string, ToolOption>();
+      for (const tool of availableTools) mergedTools.set(tool.id, tool);
+      for (const tool of recommendedTools) {
+        mergedTools.set(tool.id, {
+          ...mergedTools.get(tool.id),
+          ...tool,
+          plannerRecommended: true,
+        });
+      }
+
       setToolOptions(
-        (toolsRes.data as any).availableTools
-          .filter((tool: ToolOption) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-          .sort((a: ToolOption, b: ToolOption) => (a.name || '').localeCompare(b.name || '')),
+        [...mergedTools.values()].sort((a, b) => {
+          if (Boolean(a.plannerRecommended) !== Boolean(b.plannerRecommended)) {
+            return a.plannerRecommended ? -1 : 1;
+          }
+          return (a.name || '').localeCompare(b.name || '');
+        }),
       );
     } else {
       setToolOptions([]);
@@ -277,9 +308,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
+      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: `${tool.plannerRecommended ? 'Planner recommendation · ' : ''}${
+        tool.status === 'available'
+          ? `${Number(tool.quantity ?? 1)} available`
+          : pretty(tool.status || 'unavailable')
+      }${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
     })),
     [toolOptions],
   );

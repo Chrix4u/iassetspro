@@ -7,14 +7,18 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), '
 describe('technician shell cache refresh', () => {
   it('bumps the app-shell cache after technician resource auth fixes', () => {
     const sw = read('public/sw.js');
-    expect(sw).toContain("const CACHE_NAME = `${CACHE_PREFIX}v2`");
+    expect(sw).toContain("const CACHE_NAME = `${CACHE_PREFIX}v3`");
     expect(sw).toContain("name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME");
   });
 
-  it('checks for a new service worker on every app bootstrap', () => {
+  it('checks for a new service worker on bootstrap and long-lived tabs', () => {
     const bootstrap = read('src/components/core/OfflineStorageBootstrap.tsx');
     expect(bootstrap).toContain("navigator.serviceWorker.register('/sw.js', { scope: '/' })");
     expect(bootstrap).toContain('await registration.update()');
+    expect(bootstrap).toContain("navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)");
+    expect(bootstrap).toContain('window.location.reload()');
+    expect(bootstrap).toContain("navigator.serviceWorker.getRegistration('/')");
+    expect(bootstrap).toContain('5 * 60 * 1000');
   });
 
   it('never caches API responses', () => {

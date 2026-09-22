@@ -199,8 +199,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<InventoryOption[]>('/api/inventory?mode=lookup&limit=100', workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>('/api/tools?mode=lookup&status=available&limit=100', workOrderPlantHeaders)
-        : Promise.resolve({ success: true, data: [] as ToolOption[] }),
+        ? api.get<{ availableTools: ToolOption[]; recommendedTools: any[] }>(
+            `/api/work-orders/${workOrderId}/tool-options`,
+            workOrderPlantHeaders,
+          )
+        : Promise.resolve({
+            success: true,
+            data: { availableTools: [] as ToolOption[], recommendedTools: [] as any[] },
+          }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
       setDowntime(downRes.data);
@@ -220,11 +226,15 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     } else {
       setInventoryOptions([]);
     }
-    if (toolsRes.success && Array.isArray(toolsRes.data)) {
+    if (
+      toolsRes.success
+      && toolsRes.data
+      && Array.isArray((toolsRes.data as any).availableTools)
+    ) {
       setToolOptions(
-        toolsRes.data
-          .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
-          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+        (toolsRes.data as any).availableTools
+          .filter((tool: ToolOption) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
+          .sort((a: ToolOption, b: ToolOption) => (a.name || '').localeCompare(b.name || '')),
       );
     } else {
       setToolOptions([]);

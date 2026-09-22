@@ -315,22 +315,6 @@ export async function apiFetch<T = any>(
   const normalizedMethod = (restOptions.method || 'GET').toUpperCase();
   const cacheableRead = normalizedMethod === 'GET' && isOfflineSnapshotEndpoint(endpoint);
 
-  // Do not send protected requests without a bearer token. A stale mounted
-  // page can outlive localStorage (for example after another request expires
-  // the session); fail locally and synchronize the auth store immediately.
-  if (
-    typeof window !== 'undefined'
-    && !isPublicAuthEndpoint(endpoint)
-    && !hasClientAuthToken()
-  ) {
-    const error = 'Authentication required';
-    clearClientAuthStorage();
-    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
-      detail: { endpoint, status: 401, error },
-    }));
-    return { success: false, status: 401, error };
-  }
-
   if (
     cacheableRead &&
     typeof navigator !== 'undefined' &&
@@ -347,6 +331,22 @@ export async function apiFetch<T = any>(
 
   const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);
   if (offlineResponse) return offlineResponse;
+
+  // Online protected calls must carry a bearer token. Keep this after the
+  // actor-bound offline read/queue paths so ECG/connectivity outages still
+  // preserve offline-first field work.
+  if (
+    typeof window !== 'undefined'
+    && !isPublicAuthEndpoint(endpoint)
+    && !hasClientAuthToken()
+  ) {
+    const error = 'Authentication required';
+    clearClientAuthStorage();
+    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+      detail: { endpoint, status: 401, error },
+    }));
+    return { success: false, status: 401, error };
+  }
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),

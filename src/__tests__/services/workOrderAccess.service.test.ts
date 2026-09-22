@@ -103,6 +103,26 @@ describe('work-order relationship isolation policy', () => {
     )).toBe(false);
   });
 
+  it('treats assigned read-only team rows as execution members for dedicated execution APIs', () => {
+    const actor = session({
+      userId: 'assistant-a',
+      roles: ['maintenance_technician'],
+      permissions: ['repair_tool_requests.create'],
+    });
+    const snapshot = {
+      assignedTo: 'tech-a',
+      teamLeaderId: 'tech-a',
+      teamMembers: [{
+        userId: 'assistant-a',
+        role: 'assistant',
+        accessLevel: 'read_only',
+      }],
+    };
+
+    expect(canViewWorkOrder(actor, snapshot)).toBe(true);
+    expect(isWorkOrderExecutionMember(actor, snapshot)).toBe(true);
+  });
+
   it('keeps pending handover custody viewable but non-executable', () => {
     const actor = session({ userId: 'receiver-a' });
     const snapshot = {

@@ -158,6 +158,24 @@ export function getSession(request: Request): SessionData | null {
 }
 
 // Get session from token directly (async, used by middleware)
+/**
+ * Resolve a session directly from an API request.
+ *
+ * Unlike getSession(), this self-heals after server restarts / cold instances by
+ * falling back to the persisted session table when the in-memory cache is empty.
+ * API route handlers should prefer this helper when they can await.
+ */
+export async function getRequestSession(request: Request): Promise<SessionData | null> {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader) return null;
+
+  const match = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+  const token = match?.[1]?.trim();
+  if (!token) return null;
+
+  return getSessionAsync(token);
+}
+
 export async function getSessionAsync(token: string): Promise<SessionData | null> {
   // 1. Check in-memory cache
   const cached = sessionCache.get(token);

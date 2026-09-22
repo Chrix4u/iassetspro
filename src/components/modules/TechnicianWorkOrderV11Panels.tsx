@@ -52,6 +52,7 @@ type ToolOption = {
   condition?: string | null;
   quantity?: number | null;
   location?: string | null;
+  availabilityVerified?: boolean;
 };
 
 type SearchableResourceOption = {
@@ -86,6 +87,7 @@ function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
       condition: suggestion.condition || null,
       quantity: Number(suggestion.quantity ?? 1) || 1,
       location: suggestion.location || null,
+      availabilityVerified: false,
     });
   }
 
@@ -115,6 +117,7 @@ function plannerToolOptionsFromWorkOrder(workOrder: any): ToolOption[] {
         condition: item.tool?.condition || request.tool?.condition || current?.condition || null,
         quantity: Number(item.quantityRequested ?? current?.quantity ?? 1) || 1,
         location: item.tool?.location || request.tool?.location || current?.location || null,
+        availabilityVerified: current?.availabilityVerified ?? false,
       });
     }
   }
@@ -332,7 +335,8 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     }
     if (toolsRes.success && Array.isArray(toolsRes.data)) {
       const liveAvailableTools = toolsRes.data
-        .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0);
+        .filter((tool) => tool.status === 'available' && Number(tool.quantity ?? 1) > 0)
+        .map((tool) => ({ ...tool, availabilityVerified: true }));
       setToolOptions(mergeToolOptions(plannerToolFallbacks, liveAvailableTools));
     } else {
       // A planner recommendation is part of the WO contract, not dependent on
@@ -383,7 +387,9 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     () => toolOptions.map((tool) => ({
       id: tool.id,
       label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
+      detail: tool.availabilityVerified
+        ? `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
+        : `Planner recommended · availability will be verified on submit${tool.toolCode ? ` · ${tool.toolCode}` : ''}`,
       searchText: `${tool.name} ${tool.toolCode || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
     })),
     [toolOptions],
@@ -464,7 +470,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool) {
+    if (selectedTool?.availabilityVerified) {
       const availableQuantity = Number(selectedTool.quantity ?? 1);
       if (quantity > availableQuantity) {
         toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;

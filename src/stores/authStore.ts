@@ -104,7 +104,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
         });
-      } else {
+      } else if (res.status === 401) {
+        // Only an authoritative authentication failure may destroy the
+        // persisted bearer. Transient 5xx/network/module failures must not turn
+        // an already-authenticated technician into a client-side anonymous user.
         clearAuthData();
         set({
           user: null,
@@ -113,16 +116,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           role: null,
           isLoading: false,
         });
+      } else {
+        // Keep the last known authenticated snapshot. The API wrapper already
+        // retries protected GETs once and true expiry emits AUTH_SESSION_EXPIRED_EVENT.
+        set({ isLoading: false });
       }
     } catch {
-      clearAuthData();
-      set({
-        user: null,
-        isAuthenticated: false,
-        permissions: [],
-        role: null,
-        isLoading: false,
-      });
+      // Preserve the current authenticated snapshot during transient network
+      // errors. A later successful refresh will reconcile user/RBAC state.
+      set({ isLoading: false });
     }
   },
 

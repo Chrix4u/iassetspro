@@ -29,6 +29,31 @@ describe('technician tool access authentication contract', () => {
     expect(auth).toContain('permissions: JSON.stringify(permissions)');
   });
 
+  it('does not fire V11 resource lookups without a persisted bearer session', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain("useAuthStore((s) => s.isAuthenticated)");
+    expect(panel).toContain("useAuthStore((s) => s.user)");
+    expect(panel).toContain("window.localStorage.getItem('eam_token')");
+    expect(panel).toContain('if (!isAuthenticated || !user?.id || !tokenPresent)');
+    expect(panel).toContain('void fetchMe();');
+    expect(panel.indexOf("window.localStorage.getItem('eam_token')"))
+      .toBeLessThan(panel.indexOf("/api/work-orders/${workOrderId}/personal-tools"));
+    expect(panel.indexOf("window.localStorage.getItem('eam_token')"))
+      .toBeLessThan(panel.indexOf("'/api/tools?mode=lookup&status=available&limit=100'"));
+  });
+
+  it('keeps planner-recommended tools selectable when live tool lookup fails', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain('function plannerToolOptionsFromWorkOrder');
+    expect(panel).toContain('parseStoredArray(workOrder?.suggestedTools)');
+    expect(panel).toContain("request?.source !== 'planner_suggested'");
+    expect(panel).toContain('setToolOptions(plannerToolFallbacks)');
+    expect(panel).toContain('mergeToolOptions(plannerToolFallbacks, liveAvailableTools)');
+    expect(panel).toContain('setPersonalTools(personalToolFallbacks)');
+  });
+
   it('keeps technician tool lookup constrained to execution permissions', () => {
     const tools = read('src/app/api/tools/route.ts');
     const seed = read('prisma/seed-permissions-only.ts');

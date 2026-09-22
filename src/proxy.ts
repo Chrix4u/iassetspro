@@ -276,11 +276,17 @@ export default async function proxy(request: NextRequest) {
     );
   }
 
-  // Token is valid — attach session info + plant context to request headers
+  // Token is valid — attach a verified session snapshot for the route worker.
+  // Route handlers may run in a separate worker/process from the proxy, so they
+  // must not depend on sharing the proxy's in-memory session cache.
   const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-session-verified', '1');
   requestHeaders.set('x-session-user-id', session.userId);
+  requestHeaders.set('x-session-username', encodeURIComponent(session.username || ''));
+  requestHeaders.set('x-session-full-name', encodeURIComponent(session.fullName || session.username || ''));
   requestHeaders.set('x-session-roles', session.roles.join(','));
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
+  requestHeaders.set('x-session-created-at', session.createdAt.toISOString());
   requestHeaders.set('x-user-plant-id', '');
 
   // Bind maintenance-report query plant selection into the normal X-Plant-ID

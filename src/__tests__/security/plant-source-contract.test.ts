@@ -61,6 +61,7 @@ describe('WO lifecycle routes plant auth coverage', () => {
       const src = readFileSync(path, 'utf8');
       const hasAuth =
         src.includes('authorizeWorkOrderPlant') ||
+        src.includes('authorizeWorkOrderExecutionAccess') ||
         src.includes('canAccessPlantStrict') ||
         src.includes('canAccessPlant');
       expect(hasAuth, `${route} missing plant auth`).toBe(true);
@@ -81,6 +82,7 @@ describe('WO subresource routes plant auth coverage', () => {
       const src = readFileSync(path, 'utf8');
       const hasAuth =
         src.includes('authorizeWorkOrderPlant') ||
+        src.includes('authorizeWorkOrderExecutionAccess') ||
         src.includes('canAccessPlantStrict') ||
         src.includes('canAccessPlant');
       expect(hasAuth, `${route} missing plant auth`).toBe(true);
@@ -156,6 +158,11 @@ describe('Plant auth helper module exists', () => {
   const src = readFileSync(path, 'utf8');
   it('exports authorizeWorkOrderPlant', () => {
     expect(src).toContain('export async function authorizeWorkOrderPlant');
+  });
+  it('exports bounded execution-aware WO authorization', () => {
+    expect(src).toContain('export async function authorizeWorkOrderExecutionAccess');
+    expect(src).toContain('isWorkOrderExecutionMember(session, wo)');
+    expect(src).toContain("accessiblePlantIds: [wo.plantId]");
   });
   it('exports authorizeMaintenanceRequestPlant', () => {
     expect(src).toContain('export async function authorizeMaintenanceRequestPlant');

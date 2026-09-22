@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
-  Activity, CheckCircle2, Clock3, ExternalLink, Gauge, Package, Plus,
+  Activity, CheckCircle2, ClipboardList, Clock3, ExternalLink, Gauge, Loader2, Package, Plus,
   TimerReset, Wrench, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';

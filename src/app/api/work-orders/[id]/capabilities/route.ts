@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { checkReadiness } from '@/services/workOrderReadiness.service';
 
@@ -16,6 +16,8 @@ export async function GET(
     }
 
     const { id } = await params;
+    const access = await authorizeWorkOrderExecutionAccess(request, session, id);
+    if (!access.ok) return access.response;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -45,11 +47,6 @@ export async function GET(
 
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
-    const plantScope = await getPlantScope(request, session);
-    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
-      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     if (!canViewWorkOrder(session, wo)) {

@@ -54,6 +54,7 @@ export async function GET() {
       uptime: process.uptime(),
       responseTimeMs: Date.now() - startTime,
       version: process.env.npm_package_version || '1.0.0',
+      buildVersion: process.env.NEXT_PUBLIC_BUILD_VERSION || 'unknown',
       checks,
       system: {
         memory: memoryMB,

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
+import { getRequestSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, getPlantFilterWhere } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = getSession(request);
+    const session = await getRequestSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }

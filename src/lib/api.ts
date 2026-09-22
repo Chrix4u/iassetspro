@@ -300,22 +300,6 @@ export function getAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem('eam_token');
   const plantId = localStorage.getItem('user_plant_id');
-  // Do not fire protected network requests after the persisted bearer has
-  // disappeared. This prevents a mounted technician workspace from cascading
-  // into multiple auth failures while the in-memory store is being reconciled.
-  if (
-    typeof window !== 'undefined'
-    && !isPublicAuthEndpoint(endpoint)
-    && !hasClientAuthToken()
-  ) {
-    const error = 'Authentication required';
-    clearClientAuthStorage();
-    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
-      detail: { endpoint, status: 401, error },
-    }));
-    return { success: false, status: 401, error };
-  }
-
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (plantId) headers['x-plant-id'] = plantId;
@@ -352,6 +336,22 @@ export async function apiFetch<T = any>(
 
   const offlineResponse = await queueOfflineMutationIfSupported<T>(endpoint, restOptions);
   if (offlineResponse) return offlineResponse;
+
+  // Do not fire protected network requests after the persisted bearer has
+  // disappeared. This prevents a mounted technician workspace from cascading
+  // into multiple auth failures while the in-memory store is being reconciled.
+  if (
+    typeof window !== 'undefined'
+    && !isPublicAuthEndpoint(endpoint)
+    && !hasClientAuthToken()
+  ) {
+    const error = 'Authentication required';
+    clearClientAuthStorage();
+    window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+      detail: { endpoint, status: 401, error },
+    }));
+    return { success: false, status: 401, error };
+  }
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),

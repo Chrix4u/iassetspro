@@ -378,6 +378,14 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     'Tool request cancelled',
   );
 
+  const submitPlannerRecommendations = () => run(
+    'planner-recommendations',
+    () => api.put(`/api/work-orders/${workOrderId}/suggested-items`, {
+      action: 'submit_recommendations',
+    }),
+    'Planner recommendations submitted for approval',
+  );
+
   const addPersonalTool = async () => {
     if (personalTool.toolName.trim().length < 2) { toast.error('Enter the personal tool name'); return; }
     const ok = await run('personal-tool', () => api.post(`/api/work-orders/${workOrderId}/personal-tools`, {
@@ -498,6 +506,26 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       projectionOnly: true,
     }));
   const toolRequests = [...canonicalToolRequests, ...projectedPlannerToolRequests];
+
+  const isPlannerRecommendation = (request: any) =>
+    Boolean(
+      request?.projectionOnly
+      || (
+        request?.source === 'planner_suggested'
+        && ['planned', 'pending', 'suggested'].includes(String(request?.status || '').toLowerCase())
+      )
+    );
+
+  const plannerMaterialRecommendations = materialRequests.filter(isPlannerRecommendation);
+  const plannerToolRecommendations = toolRequests.filter(isPlannerRecommendation);
+  const materialPipelineRequests = materialRequests.filter((request: any) => !isPlannerRecommendation(request));
+  const toolPipelineRequests = toolRequests.filter((request: any) => !isPlannerRecommendation(request));
+  const plannerRecommendationCount =
+    plannerMaterialRecommendations.length + plannerToolRecommendations.length;
+  const canSubmitPlannerRecommendations =
+    plannerRecommendationCount > 0
+    && Boolean(capabilities?.canRequestMaterials || capabilities?.canRequestTools);
+
   const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);
   const teamTimeCandidates = Array.from(new Map([
     ...(workOrder.assignee?.id ? [[workOrder.assignee.id, workOrder.assignee.fullName || 'Assigned technician']] : []),
@@ -542,6 +570,63 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       )}
 
       <section id="resources" className="scroll-mt-28 grid grid-cols-1 gap-5">
+        {plannerRecommendationCount > 0 && (
+          <Card className="min-w-0 border-dashed border-primary/30 bg-primary/[0.03]">
+            <CardHeader className="pb-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4" />
+                    Planner Recommended Resources
+                  </CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Review these recommendations before requesting them from stores. They are not approval requests until you submit them.
+                  </p>
+                </div>
+                {canSubmitPlannerRecommendations && (
+                  <Button
+                    size="sm"
+                    onClick={submitPlannerRecommendations}
+                    disabled={busy !== null}
+                  >
+                    {busy === 'planner-recommendations' ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                    Submit recommendations
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {plannerMaterialRecommendations.map((request: any) => (
+                <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background/70 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{request.item?.name || request.itemName || 'Material'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Material · Qty {request.quantityRequested ?? request.quantity ?? 1} {request.unit || ''}
+                    </p>
+                  </div>
+                  <Badge variant="outline">Planner recommendation</Badge>
+                </div>
+              ))}
+              {plannerToolRecommendations.map((request: any) => {
+                const items = Array.isArray(request.items) ? request.items : [];
+                const item = items[0] || {};
+                return (
+                  <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background/70 px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{item.tool?.name || item.toolName || request.tool?.name || request.toolName || 'Tool'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Tool · Qty {item.quantityRequested ?? request.quantityRequested ?? 1}
+                        {(item.toolCode || item.tool?.toolCode) ? ` · ${item.toolCode || item.tool?.toolCode}` : ''}
+                      </p>
+                    </div>
+                    <Badge variant="outline">Planner recommendation</Badge>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
         <Card className="min-w-0">
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4" />Materials — Request & Status</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -582,7 +667,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
               </div>
             )}
             <div className="space-y-2">
-              {materialRequests.length === 0 ? <p className="text-sm text-muted-foreground">No material requests yet.</p> : materialRequests.slice(0, 6).map((request: any) => (
+              {materialPipelineRequests.length === 0 ? <p className="text-sm text-muted-foreground">No submitted material requests yet.</p> : materialPipelineRequests.slice(0, 6).map((request: any) => (
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.item?.name || request.itemName || 'Material'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">Requested {request.quantityRequested ?? request.quantity ?? '-'} {request.unit || ''} · {pretty(request.urgency)}</p>
@@ -633,7 +718,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
               </div>
             )}
             <div className="space-y-2">
-              {toolRequests.length === 0 ? <p className="text-sm text-muted-foreground">No store tool requests yet.</p> : toolRequests.slice(0, 5).map((request: any) => (
+              {toolPipelineRequests.length === 0 ? <p className="text-sm text-muted-foreground">No submitted tool requests yet.</p> : toolPipelineRequests.slice(0, 5).map((request: any) => (
                 <div key={request.id} className="rounded-lg border p-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requestNumber || request.toolName || 'Tool request'}</span><Badge variant="outline">{pretty(request.status)}</Badge></div>
                   <p className="text-xs text-muted-foreground mt-1">{(request.items || []).map((item: any) => item.tool?.name || item.toolName).filter(Boolean).join(', ') || request.tool?.name || request.toolName || 'Tools'} · {pretty(request.urgency)}</p>

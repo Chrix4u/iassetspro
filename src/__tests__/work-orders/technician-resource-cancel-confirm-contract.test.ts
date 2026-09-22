@@ -22,6 +22,16 @@ describe('technician resource cancellation confirmation', () => {
     expect(panel).toContain("busy?.startsWith('cancel-')");
   });
 
+  it('hides Edit and Cancel for pending requests owned by another worker', () => {
+    const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
+
+    expect(panel).toContain("import { useAuthStore } from '@/stores/authStore'");
+    expect(panel).toContain('const currentUserId = useAuthStore');
+    expect(panel).toContain('const ownsResourceRequest = (request: any)');
+    expect(panel).toContain("request.status === 'pending' && ownsResourceRequest(request)");
+    expect(panel).toContain("request.status === 'pending' && !request.projectionOnly && ownsResourceRequest(request)");
+  });
+
   it('keeps the actual DELETE calls behind the confirmation handler', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 

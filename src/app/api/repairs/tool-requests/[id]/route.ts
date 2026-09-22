@@ -313,10 +313,27 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json();
     const { toolName, urgency, reason, notes, items } = body;
 
-    const toolReq = await db.repairToolRequest.findUnique({ where: { id }, include: { items: true } });
+    const toolReq = await db.repairToolRequest.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        workOrder: { select: { assignedSupervisorId: true } },
+      },
+    });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
     if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: 'Cannot edit: request is no longer pending' }, { status: 400 });
-    if (toolReq.requestedById !== session.userId && !isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) return NextResponse.json({ success: false, error: 'You can only edit your own requests' }, { status: 403 });
+    const ownsRequest = toolReq.requestedById === session.userId;
+    const canEditAsManagement = canReviewResourceRequestAsSupervisor(
+      session,
+      toolReq.workOrder?.assignedSupervisorId,
+      'repair_tool_requests.update',
+    );
+    if (!ownsRequest && !canEditAsManagement) {
+      return NextResponse.json(
+        { success: false, error: 'Only the requester or accountable maintenance management can edit this pending tool request' },
+        { status: 403 },
+      );
+    }
 
     const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
     const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : toolReq.urgency;

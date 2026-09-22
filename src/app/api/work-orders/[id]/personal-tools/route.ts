@@ -27,8 +27,6 @@ export async function GET(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const wo = await db.workOrder.findUnique({
       where: { id },
@@ -70,8 +68,6 @@ export async function POST(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
     const toolName = typeof body.toolName === 'string' ? body.toolName.trim() : '';
@@ -112,6 +108,10 @@ export async function POST(
       canManageWorkOrder(session, wo);
     if (!isExecutionMember && !canManage) {
       return NextResponse.json({ success: false, error: 'Only assigned execution staff or accountable maintenance management can add personal tools.' }, { status: 403 });
+    }
+    if (!isExecutionMember) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
     }
 
     const existingTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;
@@ -162,8 +162,6 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const plantAuth = await authorizeWorkOrderPlant(request, session, id);
-    if (!plantAuth.ok) return plantAuth.response;
 
     const body = await request.json();
     const tools = body.tools;
@@ -202,6 +200,10 @@ export async function PUT(
       canManageWorkOrder(session, wo);
     if (!canManage && !isTeamLeader) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions. Requires team-leader or accountable maintenance-management authority.' }, { status: 403 });
+    }
+    if (!isTeamLeader) {
+      const plantAuth = await authorizeWorkOrderPlant(request, session, id);
+      if (!plantAuth.ok) return plantAuth.response;
     }
 
     const previousTools = parsePersonalTools(wo.personalTools) as Array<Record<string, unknown>>;

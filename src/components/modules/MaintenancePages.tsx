@@ -3080,6 +3080,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
+  const [pendingRequestCancel, setPendingRequestCancel] = useState<{
+    type: 'material' | 'tool';
+    id: string;
+    label: string;
+  } | null>(null);
+  const [requestCancelLoading, setRequestCancelLoading] = useState(false);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin, isAuthenticated } = useAuthStore();
   const { navigate } = useNavigationStore();
@@ -4358,9 +4364,62 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     else toast.error(res.error || 'Failed to pick');
   };
 
-  const isSupervisorOrAdminLocal = () => {
-    const slugs = (user?.roles || []).map((r: any) => r.slug);
-    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+  const canCancelPendingResourceRequest = (
+    resourceRequest: any,
+    permission: 'repair_material_requests.update' | 'repair_tool_requests.update',
+  ) => {
+    if (!user || !wo || resourceRequest?.status !== 'pending') return false;
+    if (['completed', 'verified', 'closed', 'cancelled'].includes(wo.status) || wo.isLocked) return false;
+
+    const requesterId = resourceRequest.requestedById || resourceRequest.requestedBy?.id;
+    if (requesterId === user.id) return true;
+    if (isAdmin()) return true;
+    if (!hasPermission(permission)) return false;
+
+    const slugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    if (slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo.assignedSupervisorId)
+      && wo.assignedSupervisorId === user.id;
+  };
+
+  const handleCancelPendingResourceRequest = async () => {
+    if (!pendingRequestCancel) return;
+    setRequestCancelLoading(true);
+    try {
+      const endpoint = pendingRequestCancel.type === 'material'
+        ? `/api/repairs/material-requests/${pendingRequestCancel.id}`
+        : `/api/repairs/tool-requests/${pendingRequestCancel.id}`;
+      const res = await api.delete(endpoint);
+      if (!res.success) {
+        toast.error(res.error || 'Failed to cancel request');
+        return;
+      }
+
+      toast.success(
+        pendingRequestCancel.type === 'material'
+          ? 'Material request cancelled'
+          : 'Tool request cancelled',
+      );
+      setPendingRequestCancel(null);
+      await Promise.all([fetchWO(), fetchSuggestedItems()]);
+    } finally {
+      setRequestCancelLoading(false);
+    }
+  };
+
+  const canReviewMaterialRequestAsAccountableSupervisor = () => {
+    if (!user || !wo) return false;
+    if (isAdmin()) return true;
+    if (!hasPermission('repair_material_requests.update')) return false;
+
+    const slugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    if (slugs.includes('maintenance_manager') || slugs.includes('plant_manager')) return true;
+
+    return slugs.includes('maintenance_supervisor')
+      && Boolean(wo.assignedSupervisorId)
+      && wo.assignedSupervisorId === user.id;
   };
 
   const isStoreOrAdminLocal = () => {
@@ -5804,6 +5863,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         }}
       />
 
+      <ConfirmDialog
+        open={!!pendingRequestCancel}
+        onOpenChange={(open) => {
+          if (!open && !requestCancelLoading) setPendingRequestCancel(null);
+        }}
+        title={`Cancel ${pendingRequestCancel?.type === 'material' ? 'Material' : 'Tool'} Request`}
+        description={
+          pendingRequestCancel?.type === 'material'
+            ? `Cancel "${pendingRequestCancel?.label || 'this material request'}"? Only pending requests can be cancelled. If it came from a planner recommendation, it will return to the recommended state so it can be edited or resubmitted.`
+            : `Cancel "${pendingRequestCancel?.label || 'this tool request'}"? Only pending requests can be cancelled. If it came from a planner recommendation, the recommendation remains available to review and resubmit.`
+        }
+        confirmLabel="Yes, Cancel Request"
+        variant="destructive"
+        loading={requestCancelLoading}
+        onConfirm={handleCancelPendingResourceRequest}
+      />
+
       {/* Body — stacked vertically for sheet width */}
       <div className="pb-6 space-y-6">
           <Card className="border-0 shadow-sm">
@@ -6214,7 +6290,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </div>
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {materialPipelineRequests.map((mr: any) => (
-                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && isSupervisorOrAdminLocal() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
+                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && canReviewMaterialRequestAsAccountableSupervisor() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
                         <div className="flex items-start gap-3">
                           <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"><Package className="h-3.5 w-3.5" /></div>
                           <div className="flex-1 min-w-0">
@@ -6266,7 +6342,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                              {!isWOFinalized && mr.status === 'pending' && isSupervisorOrAdminLocal() && (
+                              {canCancelPendingResourceRequest(mr, 'repair_material_requests.update') && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-[10px] px-2 text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                                  onClick={() => setPendingRequestCancel({
+                                    type: 'material',
+                                    id: mr.id,
+                                    label: mr.itemName || 'material request',
+                                  })}
+                                >
+                                  <Trash2 className="h-3 w-3 mr-1" />Cancel
+                                </Button>
+                              )}
+                              {!isWOFinalized && mr.status === 'pending' && canReviewMaterialRequestAsAccountableSupervisor() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'supervisor_reject', { notes: 'Rejected by supervisor' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
@@ -6336,13 +6426,29 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         )}
                       </div>
                     </div>
-                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                      tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                      tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                      tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
-                      tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
-                      tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
-                    }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <Badge variant="outline" className={`text-[10px] ${
+                        tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                        tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                        tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
+                      }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                      {canCancelPendingResourceRequest(tr, 'repair_tool_requests.update') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[10px] px-2 text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={() => setPendingRequestCancel({
+                            type: 'tool',
+                            id: tr.id,
+                            label: toolSummary.join(', ') || tr.toolName || 'tool request',
+                          })}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />Cancel
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   );
                 })}

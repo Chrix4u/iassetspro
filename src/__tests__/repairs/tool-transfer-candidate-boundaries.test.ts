@@ -84,4 +84,12 @@ describe('tool-transfer candidate and custody boundaries', () => {
     )?.[0] || '';
     expect(maintenancePost).not.toContain('fromUserId');
   });
+
+  it('captures return notes in both tool-return surfaces and sends them to the store-confirmed return API', () => {
+    expect(repairsUi).toContain('<Label className="text-xs">Return Notes</Label>');
+    expect(repairsUi).toContain("notes: f.notes?.trim() || undefined");
+    expect(repairsUi).toContain("notes: item.notes?.trim() || undefined");
+    expect(repairsUi).toContain("conditionAtReturn: r.condition, notes: r.notes");
+    expect(repairsUi).toContain("pendingReturnNotes");
+  });
 });

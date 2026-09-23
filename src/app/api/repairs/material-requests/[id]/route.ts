@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasRole, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { RESOURCE_STORE_ROLE_SLUGS, canReviewResourceRequestAsSupervisor, isResourceStoreActor } from '@/lib/resource-request-approval';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeMaterialRequestPlant } from '@/lib/plant-auth-helpers';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 import {
   MaterialCustodyConflictError,
   MaterialCustodyNotFoundError,
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           select: {
             id: true, woNumber: true, title: true, status: true, plantId: true,
             assignedTo: true, teamLeaderId: true,
-            teamMembers: { select: { userId: true, role: true } },
+            teamMembers: { select: { userId: true, role: true, accessLevel: true } },
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
           },
@@ -53,6 +54,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, matReq.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const hasResourceView = hasAnyPermission(session, [
+      'repair_material_requests.view',
+      'repair_material_requests.view_all',
+      'repair_material_requests.view_own',
+    ]) || isAdmin(session);
+    if (!hasResourceView) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const canViewAll = hasAnyPermission(session, [
+      'repair_material_requests.view',
+      'repair_material_requests.view_all',
+    ]) || isAdmin(session);
+    const canViewOwnScope = hasPermission(session, 'repair_material_requests.view_own') && (
+      matReq.requestedById === session.userId
+      || isWorkOrderExecutionMember(session, matReq.workOrder)
+    );
+    if (!canViewAll && !canViewOwnScope) {
+      return NextResponse.json({ success: false, error: 'Access denied — this material request is outside your work-order scope' }, { status: 403 });
     }
 
     // Compute overdue flag: pending requests older than 24 hours

@@ -30,7 +30,7 @@ async function ensureLegacyRequestNumbers() {
       if (!r.requestNumber) continue;
       const parts = r.requestNumber.split('-');
       if (parts.length >= 3) {
-        const prefix = `${parts[0]}-${parts[1]}`;
+        const prefix = `${parts[0]}-${parts[1]}-`;
         if (!usedByPrefix.has(prefix)) usedByPrefix.set(prefix, new Set());
         usedByPrefix.get(prefix)!.add(parseInt(parts[2], 10));
       }
@@ -39,7 +39,7 @@ async function ensureLegacyRequestNumbers() {
     const counterByPrefix = new Map<string, number>();
     for (const row of legacy) {
       const ym = `${row.createdAt.getFullYear()}${String(row.createdAt.getMonth() + 1).padStart(2, '0')}`;
-      const prefix = `TR-${ym}`;
+      const prefix = `TR-${ym}-`;
       let counter = counterByPrefix.get(prefix) || 1;
       const used = usedByPrefix.get(prefix);
       while (used && used.has(counter)) counter++;

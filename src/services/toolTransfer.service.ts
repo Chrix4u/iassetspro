@@ -195,6 +195,46 @@ async function completeToolTransferTx(tx: Tx, transferId: string, now: Date) {
     }
   }
 
+  // Carry the same physical custody into a new issued request owned by the
+  // receiving technician. This preserves the RWOP return workflow after a
+  // transfer: receiver submits quantity/condition/notes, then store confirms.
+  const receivedCondition = transfer.toolConditionAtTransfer || transfer.tool.condition || 'good';
+  await tx.repairToolRequest.create({
+    data: {
+      workOrderId: origin.request.workOrderId,
+      toolId: transfer.toolId,
+      toolName: transfer.tool.name,
+      reason: 'Tool custody received via approved technician transfer',
+      notes: transfer.notes || `Transfer custody from ${transfer.fromUserId} via ${transfer.id}`,
+      plantId: transfer.plantId || transfer.tool.plantId,
+      source: 'technician_transfer_custody',
+      status: 'issued',
+      urgency: 'normal',
+      toolConditionAtIssue: receivedCondition,
+      requestedById: transfer.toUserId,
+      storekeeperApprovedById: transfer.storekeeperApprovedById,
+      storekeeperApprovedAt: transfer.storekeeperApprovedAt,
+      issuedAt: now,
+      items: {
+        create: [{
+          toolId: transfer.toolId,
+          toolName: transfer.tool.name,
+          toolCode: transfer.tool.toolCode,
+          category: transfer.tool.category,
+          quantityRequested: 1,
+          quantityApproved: 1,
+          quantityIssued: 1,
+          quantityReturned: 0,
+          quantityTransferred: 0,
+          unitCost: transfer.tool.currentValue ?? transfer.tool.purchaseCost ?? undefined,
+          availabilityStatus: 'available',
+          conditionAtIssue: receivedCondition,
+          issueNotes: `Custody received via transfer ${transfer.id}`,
+        }],
+      },
+    },
+  });
+
   await tx.toolTransaction.create({
     data: {
       toolId: transfer.toolId,

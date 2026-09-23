@@ -172,4 +172,71 @@ describe('GET /api/work-orders/[id]/suggested-items material reconciliation', ()
       pipelineStatus: 'suggested',
     }));
   });
+
+  it('returns rejected technician-submitted planner tools for review while keeping withdrawn planner rows hidden', async () => {
+    mockDb.workOrder.findUnique.mockResolvedValue({
+      id: 'wo-1',
+      suggestedParts: '[]',
+      suggestedTools: '[]',
+      plantId: 'plant-1',
+      materials: [],
+      assignedTo: 'tech-1',
+      teamLeaderId: null,
+      assignedSupervisorId: 'sup-1',
+      plannerId: 'planner-1',
+      teamMembers: [],
+      maintenanceRequest: { requestedBy: 'requester-1' },
+      repairMaterialRequests: [],
+      repairToolRequests: [
+        {
+          id: 'tr-rejected-tech',
+          toolName: 'Torque Wrench',
+          status: 'rejected',
+          toolId: 'tool-1',
+          tool: { id: 'tool-1', name: 'Torque Wrench', toolCode: 'TW-001', status: 'available' },
+          items: [
+            {
+              toolId: 'tool-1',
+              toolName: 'Torque Wrench',
+              toolCode: 'TW-001',
+              quantityRequested: 1,
+              tool: { id: 'tool-1', name: 'Torque Wrench', toolCode: 'TW-001', status: 'available' },
+            },
+          ],
+          source: 'technician_from_planner_recommendation',
+        },
+        {
+          id: 'tr-rejected-planner',
+          toolName: 'Removed Planner Tool',
+          status: 'rejected',
+          toolId: 'tool-2',
+          tool: { id: 'tool-2', name: 'Removed Planner Tool', toolCode: 'RPT-002', status: 'available' },
+          items: [
+            {
+              toolId: 'tool-2',
+              toolName: 'Removed Planner Tool',
+              toolCode: 'RPT-002',
+              quantityRequested: 1,
+              tool: { id: 'tool-2', name: 'Removed Planner Tool', toolCode: 'RPT-002', status: 'available' },
+            },
+          ],
+          source: 'planner_suggested',
+        },
+      ],
+    });
+
+    const response = await GET(request(), { params: Promise.resolve({ id: 'wo-1' }) });
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.data.suggestedTools).toEqual([
+      expect.objectContaining({
+        toolId: 'tool-1',
+        toolName: 'Torque Wrench',
+        pipelineId: 'tr-rejected-tech',
+        pipelineStatus: 'rejected',
+      }),
+    ]);
+  });
+
 });

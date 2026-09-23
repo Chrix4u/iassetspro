@@ -32,12 +32,14 @@ describe('RWOP material usage declaration accountability contract', () => {
     expect(route).not.toContain("case 'declare_usage': {\n        const qtyToReturn");
   });
 
-  it('lets the WO execution team see the complete scoped custody picture', () => {
+  it('lets the canonical WO execution team see the complete scoped custody picture', () => {
     for (const source of [materialListRoute, toolListRoute]) {
       expect(source).toContain('canViewWorkOrderExecutionScope');
-      expect(source).toContain('{ assignedTo: session.userId }');
-      expect(source).toContain('{ teamLeaderId: session.userId }');
-      expect(source).toContain('{ teamMembers: { some: { userId: session.userId } } }');
+      expect(source).toContain('isWorkOrderExecutionMember(session, executionMembership)');
+      expect(source).toContain('assignedTo: true');
+      expect(source).toContain('teamLeaderId: true');
+      expect(source).toContain('teamMembers: { select: { userId: true, role: true, accessLevel: true } }');
+      expect(source).toContain('where.requestedById = session.userId');
     }
   });
 

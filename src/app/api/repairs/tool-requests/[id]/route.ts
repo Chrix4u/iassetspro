@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasRole, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { RESOURCE_STORE_ROLE_SLUGS, canReviewResourceRequestAsSupervisor, isResourceStoreActor } from '@/lib/resource-request-approval';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { authorizeToolRequestPlant } from '@/lib/plant-auth-helpers';
 import { atomicIssueTools, atomicConfirmToolReturn, submitToolReturn, ToolOperationConflictError } from '@/services/toolOperations.service';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 
 // GET /api/repairs/tool-requests/[id]
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         storekeeperApprovedBy: { select: { id: true, fullName: true } },
         issuedByUser: { select: { id: true, fullName: true } },
         returnedByUser: { select: { id: true, fullName: true } },
-        workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
+        workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedTo: true, teamLeaderId: true, assignedSupervisorId: true, plannerId: true, teamMembers: { select: { userId: true, role: true, accessLevel: true } }, assignedSupervisor: { select: { id: true, fullName: true } } } },
         tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, location: true, condition: true, quantity: true } },
         items: {
           include: {
@@ -38,6 +39,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlant(plantScope, toolReq.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const hasResourceView = hasAnyPermission(session, [
+      'repair_tool_requests.view',
+      'repair_tool_requests.view_all',
+      'repair_tool_requests.view_own',
+    ]) || isAdmin(session);
+    if (!hasResourceView) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const canViewAll = hasAnyPermission(session, [
+      'repair_tool_requests.view',
+      'repair_tool_requests.view_all',
+    ]) || isAdmin(session);
+    const canViewOwnScope = hasPermission(session, 'repair_tool_requests.view_own') && (
+      toolReq.requestedById === session.userId
+      || isWorkOrderExecutionMember(session, toolReq.workOrder)
+    );
+    if (!canViewAll && !canViewOwnScope) {
+      return NextResponse.json({ success: false, error: 'Access denied — this tool request is outside your work-order scope' }, { status: 403 });
     }
 
     const overdueThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);

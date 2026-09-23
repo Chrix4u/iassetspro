@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole, hasAnyPermission } from '@/lib/auth';
+import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { canViewWorkOrder, hasWorkOrderManagementOverride } from '@/services/workOrderAccess.service';
 

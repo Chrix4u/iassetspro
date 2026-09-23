@@ -52,6 +52,18 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    const canViewAllDamageReports =
+      isAdmin(session)
+      || hasRole(session, 'maintenance_supervisor')
+      || hasRole(session, 'maintenance_manager')
+      || hasRole(session, 'plant_manager')
+      || hasRole(session, 'store_keeper')
+      || hasRole(session, 'tools_shop_attendant')
+      || hasRole(session, 'inventory_manager');
+    if (!canViewAllDamageReports && report.reportedById !== session.userId) {
+      return NextResponse.json({ success: false, error: 'Access denied — this damaged tool report is outside your scope' }, { status: 403 });
+    }
+
     const asset = report.workOrder?.assetId
       ? await db.asset.findUnique({
           where: { id: report.workOrder.assetId },
@@ -101,6 +113,18 @@ export async function PUT(
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, existing.workOrder?.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const canEditDamageReport =
+      isAdmin(session)
+      || hasRole(session, 'maintenance_supervisor')
+      || hasRole(session, 'maintenance_manager')
+      || hasRole(session, 'plant_manager')
+      || hasRole(session, 'store_keeper')
+      || hasRole(session, 'tools_shop_attendant')
+      || hasRole(session, 'inventory_manager');
+    if (!canEditDamageReport && existing.reportedById !== session.userId) {
+      return NextResponse.json({ success: false, error: 'You can only update your own damaged tool reports' }, { status: 403 });
     }
 
     const terminalStatuses = ['repaired', 'written_off', 'replaced'];
@@ -180,7 +204,7 @@ export async function POST(
       where: { id },
       include: {
         tool: true,
-        workOrder: { select: { id: true, woNumber: true, title: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, plantId: true } },
         reportedBy: { select: { id: true, fullName: true } },
         technician: { select: { id: true, fullName: true } },
       },
@@ -188,6 +212,11 @@ export async function POST(
 
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Damaged tool report not found' }, { status: 404 });
+    }
+
+    const actionPlantScope = await getPlantScope(request, session);
+    if (actionPlantScope.denyAccess || !canAccessPlantStrict(actionPlantScope, existing.workOrder?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const now = new Date();

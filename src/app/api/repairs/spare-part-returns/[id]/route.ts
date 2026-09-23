@@ -48,6 +48,18 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    const canViewAllReturns =
+      isAdmin(session)
+      || hasRole(session, 'maintenance_supervisor')
+      || hasRole(session, 'maintenance_manager')
+      || hasRole(session, 'plant_manager')
+      || hasRole(session, 'store_keeper')
+      || hasRole(session, 'tools_shop_attendant')
+      || hasRole(session, 'inventory_manager');
+    if (!canViewAllReturns && sparePartReturn.requestedById !== session.userId) {
+      return NextResponse.json({ success: false, error: 'Access denied — this spare part return is outside your scope' }, { status: 403 });
+    }
+
     const asset = sparePartReturn.workOrder?.assetId
       ? await db.asset.findUnique({
           where: { id: sparePartReturn.workOrder.assetId },
@@ -92,9 +104,15 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.sparePartReturn.findUnique({ where: { id } });
+    const existing = await db.sparePartReturn.findUnique({ where: { id }, include: { workOrder: { select: { plantId: true } } } });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    const recordPlantId = existing.plantId || existing.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, recordPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const terminalStatuses = ['returned_to_store', 'disposed', 'rejected'];

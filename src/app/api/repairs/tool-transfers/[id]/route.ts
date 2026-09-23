@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasRole, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { acceptToolTransfer, completeToolTransfer, ToolTransferConflictError, ToolTransferNotFoundError } from '@/services/toolTransfer.service';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
@@ -31,6 +31,28 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const recordPlantId = transfer.plantId || transfer.tool?.plantId;
     if (plantScope.denyAccess || !canAccessPlant(plantScope, recordPlantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const hasTransferView = hasAnyPermission(session, [
+      'repair_tool_transfers.view',
+      'repair_tool_transfers.view_all',
+      'repair_tool_transfers.view_own',
+    ]) || isAdmin(session);
+    if (!hasTransferView) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const canViewAll = hasAnyPermission(session, [
+      'repair_tool_transfers.view',
+      'repair_tool_transfers.view_all',
+    ]) || isAdmin(session);
+    const canViewOwn = hasPermission(session, 'repair_tool_transfers.view_own') && (
+      transfer.fromUserId === session.userId
+      || transfer.toUserId === session.userId
+      || transfer.requestedById === session.userId
+    );
+    if (!canViewAll && !canViewOwn) {
+      return NextResponse.json({ success: false, error: 'Access denied — this transfer is outside your custody scope' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: transfer });

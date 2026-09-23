@@ -73,7 +73,7 @@ export async function GET(
           },
         },
         repairToolRequests: {
-          where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] }, status: { not: 'rejected' } },
+          where: { source: { in: ['planner_suggested', 'technician_from_planner_recommendation'] } },
           select: {
             id: true,
             toolName: true,
@@ -202,7 +202,10 @@ export async function GET(
       }
 
       for (const request of wo.repairToolRequests) {
-        if (request.status === 'rejected') continue;
+        // A supervisor/store rejection of a technician-submitted planner recommendation
+        // must return to the technician for review. A rejected legacy planner_suggested
+        // row, however, represents a withdrawn/superseded recommendation and must stay hidden.
+        if (request.status === 'rejected' && request.source === 'planner_suggested') continue;
         const requestItems = request.items.length > 0
           ? request.items
           : request.toolId
@@ -261,7 +264,8 @@ export async function GET(
       );
       const toolReq =
         matchingRequests.find((tr) => tr.source === 'technician_from_planner_recommendation' && tr.status !== 'rejected')
-        ?? matchingRequests.find((tr) => tr.source === 'planner_suggested' && !['pending', 'rejected'].includes(tr.status));
+        ?? matchingRequests.find((tr) => tr.source === 'planner_suggested' && !['pending', 'rejected'].includes(tr.status))
+        ?? matchingRequests.find((tr) => tr.source === 'technician_from_planner_recommendation' && tr.status === 'rejected');
       return {
         ...t,
         pipelineId: toolReq?.id || null,

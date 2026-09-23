@@ -36,7 +36,8 @@ describe('responsive layout contract', () => {
     expect(workOrderPanels).toContain('flex min-h-5 items-center justify-between gap-2')
     expect(workOrderPanels).toContain('Stock: {Number(selectedMaterial.currentStock ?? 0)}')
     expect(workOrderPanels).toContain('selectedTool.availabilityVerified')
-    expect(workOrderPanels).toContain('Planner recommendation · availability pending')
+    expect(workOrderPanels).toContain('Availability pending')
+    expect(workOrderPanels).not.toContain('Planner recommendation · availability pending')
   })
 
   it('prevents shared tab controls from widening responsive pages', () => {

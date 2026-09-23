@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/repairs/material-requests/reconciliation-report
@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'work_orders.dashboard') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

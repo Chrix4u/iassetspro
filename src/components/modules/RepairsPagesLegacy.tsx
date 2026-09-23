@@ -1508,6 +1508,7 @@ export function RepairToolRequestsPage() {
       quantityAlreadyReturned: (i.quantityReturned || 0) + (i.quantityTransferred || 0),
       quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
       conditionAtReturn: i.conditionAtIssue || 'good',
+      notes: '',
     })).filter(f => f.quantityReturned > 0);
     setReturnItemsForm(form);
     setReturnItemsOpen(true);
@@ -1519,6 +1520,7 @@ export function RepairToolRequestsPage() {
       itemId: f.itemId,
       quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued - f.quantityAlreadyReturned)),
       conditionAtReturn: f.conditionAtReturn,
+      notes: f.notes?.trim() || undefined,
     }));
     setSubmitting(true);
     const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, {
@@ -2183,6 +2185,19 @@ export function RepairToolRequestsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div>
+                <Label className="text-xs">Return Notes</Label>
+                <Input
+                  value={item.notes || ''}
+                  onChange={e => {
+                    const newForm = [...returnItemsForm];
+                    newForm[idx] = { ...newForm[idx], notes: e.target.value };
+                    setReturnItemsForm(newForm);
+                  }}
+                  placeholder="Condition details, damage, missing parts, or handover notes"
+                  className="h-8"
+                />
               </div>
             </div>
           ))}
@@ -3124,6 +3139,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         qtyConsumed,
         qtyWasted,
         condition: 'good' as string,
+        notes: '',
       };
     }));
     setReturnOpen(true);
@@ -3172,11 +3188,11 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     let errors: string[] = [];
 
     // Process tool returns grouped by requestId
-    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string }[]>();
+    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string; notes?: string }[]>();
     for (const item of activeItems) {
       if (item.type !== 'tool') continue;
       const arr = toolReturnMap.get(item.requestId) || [];
-      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition });
+      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition, notes: item.notes?.trim() || undefined });
       toolReturnMap.set(item.requestId, arr);
     }
 
@@ -3200,7 +3216,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         const detail = detailRes.data;
         const payload: Record<string, any> = { action: 'return' };
         if (detail.items && detail.items.length > 0) {
-          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition }));
+          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition, notes: r.notes }));
         } else {
           payload.toolConditionAtReturn = returns[0]?.condition || 'good';
         }
@@ -3377,6 +3393,15 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Return Notes</Label>
+                  <Input
+                    value={item.notes || ''}
+                    onChange={e => updateReturnItem(item.id, { notes: e.target.value })}
+                    placeholder="Condition details, damage, missing parts, or handover notes"
+                    className="h-8"
+                  />
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

@@ -98,5 +98,9 @@ describe('tool-transfer candidate and custody boundaries', () => {
     expect(toolRequestsApi).toContain('const prefix = `TR-${ym}-`;');
     expect(toolRequestsApi).toContain('const prefix = `${parts[0]}-${parts[1]}-`;');
     expect(toolRequestsApi).toContain('String(counter).padStart(4, \'0\')');
+    expect(toolRequestsApi).not.toContain('let backfillDone = false');
+    expect(toolRequestsApi.indexOf("if (!session) return NextResponse.json")).toBeLessThan(
+      toolRequestsApi.indexOf('await ensureLegacyRequestNumbers();'),
+    );
   });
 });

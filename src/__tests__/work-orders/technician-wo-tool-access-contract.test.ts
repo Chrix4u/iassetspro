@@ -82,5 +82,6 @@ describe('technician exact-WO tool access contract', () => {
     expect(v11).not.toContain('Planner recommendation · availability pending');
     expect(v11).not.toContain('Planner recommendation · live availability will be verified');
     expect(v11).not.toContain("tool.plannerRecommended ? '★ ' : ''");
+    expect(ui).not.toContain("${tool.plannerRecommended ? ' — Planner recommended' : ''}");
   });
 });

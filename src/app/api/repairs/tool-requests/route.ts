@@ -8,11 +8,7 @@ import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
-let backfillDone = false;
-
 async function ensureLegacyRequestNumbers() {
-  if (backfillDone) return;
-  backfillDone = true;
   try {
     const legacy = await db.repairToolRequest.findMany({
       where: { requestNumber: null },
@@ -51,19 +47,21 @@ async function ensureLegacyRequestNumbers() {
     }
   } catch (err) {
     console.warn('[backfill] Failed:', err instanceof Error ? err.message : err);
-    backfillDone = false;
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureLegacyRequestNumbers();
-
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.view_own']) && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
+
+    // Receiver-custody requests can be created at any time after a technician-to-technician
+    // transfer. Reconcile missing request numbers on each authorized read rather than once
+    // per server process, so newly-created custody rows cannot remain unnumbered until restart.
+    await ensureLegacyRequestNumbers();
 
     const { searchParams } = new URL(request.url);
     const workOrderId = searchParams.get('workOrderId');

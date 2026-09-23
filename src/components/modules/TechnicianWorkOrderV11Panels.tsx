@@ -242,6 +242,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const [personalTools, setPersonalTools] = useState<any[]>([]);
   const [inventoryOptions, setInventoryOptions] = useState<InventoryOption[]>([]);
   const [toolOptions, setToolOptions] = useState<ToolOption[]>([]);
+  const [toolCandidatesError, setToolCandidatesError] = useState<string | null>(null);
   const [resourcesLoading, setResourcesLoading] = useState(true);
   const [stickyHeaderTarget, setStickyHeaderTarget] = useState<HTMLElement | null>(null);
 
@@ -280,6 +281,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     // auxiliary auth failure from hiding planner recommendations/personal tools.
     setPersonalTools(personalToolFallbacks);
     setToolOptions(plannerToolFallbacks);
+    setToolCandidatesError(null);
 
     const tokenPresent = typeof window !== 'undefined'
       && Boolean(window.localStorage.getItem('eam_token'));
@@ -326,6 +328,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setInventoryOptions([]);
     }
     if (toolsRes.success && Array.isArray(toolsRes.data)) {
+      setToolCandidatesError(null);
       const merged = new Map<string, ToolOption>();
       for (const tool of plannerToolFallbacks) merged.set(tool.id, tool);
       for (const tool of toolsRes.data
@@ -347,6 +350,12 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       );
     } else {
       setToolOptions(plannerToolFallbacks);
+      if (capabilities?.canRequestTools) {
+        setToolCandidatesError(
+          (toolsRes as any)?.error
+          || 'Available tool catalogue could not be loaded for this work order.',
+        );
+      }
     }
     setResourcesLoading(false);
   }, [
@@ -414,13 +423,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: tool.plannerRecommended
-        ? tool.availabilityVerified
-          ? `Planner recommendation · ${pretty(tool.status || 'available')} · Qty ${Number(tool.quantity ?? 0)}${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`
-          : 'Planner recommendation · live availability will be verified when the session is available'
-        : `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
+      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: tool.availabilityVerified
+        ? `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
+        : `Availability pending${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
     })),
     [toolOptions],
   );
@@ -905,6 +912,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       }));
                     }}
                   />
+                  {toolCandidatesError && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      {toolCandidatesError} Planner recommendations remain selectable, but additional store tools may be missing until the live catalogue loads.
+                    </p>
+                  )}
+                  {!resourcesLoading && !toolCandidatesError && toolOptions.length > 1 && plannerToolFallbacks.length > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Planner-recommended tools are shown first. Search or select any other available tool for this work order.
+                    </p>
+                  )}
                 </div>
                 <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" max={selectedMaterial ? Number(selectedMaterial.currentStock ?? 0) : undefined} value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
                 <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0 bg-muted/40" value={material.unit} readOnly placeholder="From inventory" /></div>
@@ -938,7 +955,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
                         {selectedTool.availabilityVerified
                           ? `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`
-                          : `Planner recommendation · availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
+                          : `Availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
                       </span>
                     )}
                   </div>

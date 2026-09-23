@@ -56,18 +56,28 @@ export async function GET(
     const tools = await db.tool.findMany({
       where: {
         isActive: true,
-        plantId: wo.plantId,
         ...(status ? { status } : {}),
-        ...(search
-          ? {
-              OR: [
-                { name: { contains: search } },
-                { toolCode: { contains: search } },
-                { serialNumber: { contains: search } },
-                { category: { contains: search } },
-              ],
-            }
-          : {}),
+        AND: [
+          {
+            // WO-scoped technicians may use tools owned by this plant plus
+            // legacy/shared tools that have not been assigned to a plant yet.
+            // A tool explicitly assigned to another plant stays excluded.
+            OR: [
+              { plantId: wo.plantId },
+              { plantId: null },
+            ],
+          },
+          ...(search
+            ? [{
+                OR: [
+                  { name: { contains: search } },
+                  { toolCode: { contains: search } },
+                  { serialNumber: { contains: search } },
+                  { category: { contains: search } },
+                ],
+              }]
+            : []),
+        ],
       },
       select: {
         id: true,
@@ -77,6 +87,7 @@ export async function GET(
         status: true,
         condition: true,
         quantity: true,
+        location: true,
         assignedToId: true,
         plantId: true,
       },

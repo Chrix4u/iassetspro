@@ -5637,7 +5637,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         }));
                         return options.map((tool) => ({
                           value: tool.id,
-                          label: `${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''}${tool.plannerRecommended ? ' — Planner recommended' : ''}`,
+                          label: `${tool.name}${tool.toolCode ? ` (${tool.toolCode})` : ''}`,
                         }));
                       }}
                       placeholder="Search tools..."

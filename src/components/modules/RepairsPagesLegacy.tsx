@@ -3050,7 +3050,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
   // Return modal
   const [returnOpen, setReturnOpen] = useState(false);
-  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; qtyConsumed: number; qtyWasted: number; condition: string })[]>([]);
+  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; qtyConsumed: number; qtyWasted: number; condition: string; notes: string })[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Transfer modal

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
-import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { getSession, isAdmin, hasRole, hasAnyPermission } from '@/lib/auth';
+import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
+import { canViewWorkOrder, hasWorkOrderViewOverride } from '@/services/workOrderAccess.service';
 
 // GET /api/repairs/downtime
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['downtime.view', 'work_orders.view', 'work_orders.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const workOrderId = searchParams.get('workOrderId');
@@ -41,20 +45,21 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Scope downtime to user's own WOs unless they have management role
-    const hasViewAll = isAdmin(session) || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager');
-    if (!hasViewAll) {
-      // Only show downtime for WOs assigned to this user or where they are a team member
-      const userWorkOrders = await db.workOrder.findMany({
-        where: { OR: [{ assignedTo: session.userId }, { teamMembers: { some: { userId: session.userId } } }] },
-        select: { id: true },
-      });
-      const woIds = userWorkOrders.map(wo => wo.id);
-      if (woIds.length > 0) {
-        where.workOrderId = { in: woIds };
-      } else {
-        where.workOrderId = { in: [] }; // No WOs = no downtime visible
-      }
+    // Keep downtime visibility aligned with canonical work-order relationship scope.
+    // Basic work_orders.view is not a global grant; only explicit view-all/admin/
+    // management override may bypass relationship scoping.
+    if (!hasWorkOrderViewOverride(session)) {
+      const relationshipScope = {
+        OR: [
+          { assignedTo: session.userId },
+          { teamLeaderId: session.userId },
+          { assignedSupervisorId: session.userId },
+          { plannerId: session.userId },
+          { teamMembers: { some: { userId: session.userId } } },
+          { maintenanceRequest: { requestedBy: session.userId } },
+        ],
+      };
+      where.workOrder = relationshipScope;
     }
 
     const [records, total] = await Promise.all([
@@ -97,8 +102,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'workOrderId and reason are required' }, { status: 400 });
     }
 
-    const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
+    const wo = await db.workOrder.findUnique({
+      where: { id: workOrderId },
+      include: {
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
+        maintenanceRequest: { select: { requestedBy: true } },
+      },
+    });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!canViewWorkOrder(session, wo)) {
+      return NextResponse.json({ success: false, error: 'Access denied — this work order is outside your workflow scope' }, { status: 403 });
+    }
 
     // Resolve asset info: prefer body values, fall back to WO's asset
     const resolvedAssetId = assetId || wo.assetId || null;

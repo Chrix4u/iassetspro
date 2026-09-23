@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { canViewWorkOrder, hasWorkOrderManagementOverride } from '@/services/workOrderAccess.service';
 
 // GET /api/repairs/downtime/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const record = await db.workOrderDowntime.findUnique({
       where: { id },
-      include: { workOrder: { select: { id: true, woNumber: true, title: true, status: true, plantId: true } } },
+      include: { workOrder: { select: { id: true, woNumber: true, title: true, status: true, plantId: true, assignedTo: true, teamLeaderId: true, assignedSupervisorId: true, plannerId: true, teamMembers: { select: { userId: true, role: true, accessLevel: true } }, maintenanceRequest: { select: { requestedBy: true } } } } },
     });
     if (!record) return NextResponse.json({ success: false, error: 'Downtime record not found' }, { status: 404 });
 
@@ -21,6 +22,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const recordPlantId = record.plantId || record.workOrder?.plantId;
     if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, recordPlantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!hasAnyPermission(session, ['downtime.view', 'work_orders.view', 'work_orders.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+    if (!canViewWorkOrder(session, record.workOrder)) {
+      return NextResponse.json({ success: false, error: 'Access denied — this downtime record is outside your work-order scope' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: record });
@@ -40,14 +47,27 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json();
     const { downtimeEnd, reason, category, impactLevel, productionLoss, notes } = body;
 
-    const existing = await db.workOrderDowntime.findUnique({ where: { id } });
+    const existing = await db.workOrderDowntime.findUnique({
+      where: { id },
+      include: {
+        workOrder: { select: { plantId: true, assignedSupervisorId: true } },
+      },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
-    // Ownership check: only the creator (or admin/supervisor/manager) can edit downtime records
-    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
-      if (existing.createdById !== session.userId) {
-        return NextResponse.json({ success: false, error: 'You can only edit your own downtime records' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    const recordPlantId = existing.plantId || existing.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, recordPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Creator may maintain their own record. Otherwise only system/maintenance
+    // management or the accountable WO supervisor may edit it.
+    const canManageRecord =
+      hasWorkOrderManagementOverride(session)
+      || existing.workOrder?.assignedSupervisorId === session.userId;
+    if (existing.createdById !== session.userId && !canManageRecord) {
+      return NextResponse.json({ success: false, error: 'You can only edit your own downtime records or records you supervise' }, { status: 403 });
     }
 
     const data: Record<string, unknown> = {};
@@ -83,14 +103,25 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const { id } = await params;
-    const existing = await db.workOrderDowntime.findUnique({ where: { id } });
+    const existing = await db.workOrderDowntime.findUnique({
+      where: { id },
+      include: {
+        workOrder: { select: { plantId: true, assignedSupervisorId: true } },
+      },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
-    // Ownership check: only the creator (or admin/supervisor/manager) can delete downtime records
-    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
-      if (existing.createdById !== session.userId) {
-        return NextResponse.json({ success: false, error: 'You can only delete your own downtime records' }, { status: 403 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    const recordPlantId = existing.plantId || existing.workOrder?.plantId;
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, recordPlantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const canManageRecord =
+      hasWorkOrderManagementOverride(session)
+      || existing.workOrder?.assignedSupervisorId === session.userId;
+    if (existing.createdById !== session.userId && !canManageRecord) {
+      return NextResponse.json({ success: false, error: 'You can only delete your own downtime records or records you supervise' }, { status: 403 });
     }
 
     await db.workOrderDowntime.delete({ where: { id } });

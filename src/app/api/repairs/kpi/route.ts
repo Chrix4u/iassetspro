@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 
 // GET /api/repairs/kpi
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
-    const canViewKpi = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager') || hasRole(session, 'maintenance_supervisor');
+    const canViewKpi = isAdmin(session) || hasPermission(session, 'work_orders.dashboard');
     if (!canViewKpi) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }

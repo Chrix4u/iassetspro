@@ -486,8 +486,8 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => {
-                          const firstChild = group.children![0];
-                          navigate(firstChild.page);
+                          const firstVisibleChild = group.children!.find(childVisible);
+                          if (firstVisibleChild) navigate(firstVisibleChild.page);
                         }}
                         className={`w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm transition-all relative ${
                           active

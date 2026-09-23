@@ -423,13 +423,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const toolSearchOptions = useMemo<SearchableResourceOption[]>(
     () => toolOptions.map((tool) => ({
       id: tool.id,
-      label: `${tool.plannerRecommended ? '★ ' : ''}${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
-      detail: tool.plannerRecommended
-        ? tool.availabilityVerified
-          ? `Planner recommendation · ${pretty(tool.status || 'available')} · Qty ${Number(tool.quantity ?? 0)}${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`
-          : 'Planner recommendation · live availability will be verified when the session is available'
-        : `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`,
-      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''} ${tool.plannerRecommended ? 'planner recommendation' : ''}`.toLowerCase(),
+      label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
+      detail: tool.availabilityVerified
+        ? `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
+        : `Availability pending${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`,
+      searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
     })),
     [toolOptions],
   );
@@ -957,7 +955,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
                         {selectedTool.availabilityVerified
                           ? `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`
-                          : `Planner recommendation · availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
+                          : `Availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
                       </span>
                     )}
                   </div>

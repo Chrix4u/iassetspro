@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
-    const canViewReports = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager') || hasRole(session, 'maintenance_supervisor');
+    const canViewReports = isAdmin(session) || hasPermission(session, 'reports.view');
     if (!canViewReports) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions to view reports' }, { status: 403 });
     }
@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
     const department = searchParams.get('department') || undefined;
     const assignee = searchParams.get('assignee') || undefined;
     const format = searchParams.get('format');
+    if (format === 'pdf' && !hasPermission(session, 'reports.export') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.export required' }, { status: 403 });
+    }
 
     const dateFilter: Record<string, unknown> = {};
     if (from) dateFilter.gte = from;

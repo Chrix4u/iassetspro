@@ -3374,35 +3374,37 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                 <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeReturnItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
               </div>
               {item.type === 'tool' ? (
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="w-full sm:w-28">
-                    <Label className="text-xs">Qty to Return</Label>
-                    <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
-                      onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
-                      className="h-8" />
+                <>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="w-full sm:w-28">
+                      <Label className="text-xs">Qty to Return</Label>
+                      <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
+                        onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                        className="h-8" />
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs">Condition</Label>
+                      <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
+                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="good">Good — ready for reissue</SelectItem>
+                          <SelectItem value="fair">Fair — minor wear</SelectItem>
+                          <SelectItem value="poor">Poor — needs service</SelectItem>
+                          <SelectItem value="damaged">Damaged — needs repair</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <Label className="text-xs">Condition</Label>
-                    <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="good">Good — ready for reissue</SelectItem>
-                        <SelectItem value="fair">Fair — minor wear</SelectItem>
-                        <SelectItem value="poor">Poor — needs service</SelectItem>
-                        <SelectItem value="damaged">Damaged — needs repair</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div>
+                    <Label className="text-xs">Return Notes</Label>
+                    <Input
+                      value={item.notes || ''}
+                      onChange={e => updateReturnItem(item.id, { notes: e.target.value })}
+                      placeholder="Condition details, damage, missing parts, or handover notes"
+                      className="h-8"
+                    />
                   </div>
-                </div>
-                <div>
-                  <Label className="text-xs">Return Notes</Label>
-                  <Input
-                    value={item.notes || ''}
-                    onChange={e => updateReturnItem(item.id, { notes: e.target.value })}
-                    placeholder="Condition details, damage, missing parts, or handover notes"
-                    className="h-8"
-                  />
-                </div>
+                </>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>

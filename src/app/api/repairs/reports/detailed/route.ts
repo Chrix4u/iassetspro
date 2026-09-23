@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
 import * as XLSX from 'xlsx';
 
@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'reports.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.view required' }, { status: 403 });
     }
 
     const plantScope = await getPlantScope(request, session);
@@ -25,6 +28,9 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const requestedPlantId = searchParams.get('plantId');
     const format = searchParams.get('format') || 'json';
+    if (format === 'xlsx' && !hasPermission(session, 'reports.export') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.export required' }, { status: 403 });
+    }
 
     // Pagination params (used for JSON format; XLSX always fetches full filtered set)
     const pageParam = searchParams.get('page');

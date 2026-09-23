@@ -666,6 +666,36 @@ export function TechnicianWorkOrderPage() {
               )}
             </CardContent>
           </Card>
+
+          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
+
+          {caps?.canSubmitCompletion && (
+            <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">Stop the live timer first. The server verifies tools, materials, handovers, assistance requests, and completion evidence before accepting completion.</p>
+                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}
+                {completionBlockers.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                    <p className="font-semibold">Resolve these items before submitting:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionBlockers.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {completionWarnings.length > 0 && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <p className="font-medium text-foreground">Readiness warnings</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionWarnings.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim() || completionBlocked}>Submit for Supervisor Review</Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -766,36 +796,6 @@ export function TechnicianWorkOrderPage() {
                 <Input value={handoverReason} onChange={(e) => setHandoverReason(e.target.value)} placeholder={buildHandoverReason({ woNumber: wo?.woNumber, title: wo?.title, fromShift: handoverFromShift, toShift: handoverToShift })} />
                 <Textarea value={handoverNotes} onChange={(e) => setHandoverNotes(e.target.value)} placeholder="Pending issues, equipment condition, safety information..." rows={3} />
                 <Button variant="outline" className="w-full" onClick={submitHandover} disabled={busy !== null || !handoverReceiverId}>Submit Shift Handover</Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
-
-          {caps?.canSubmitCompletion && (
-            <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
-              <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">Stop the live timer first. The server verifies tools, materials, handovers, assistance requests, and completion evidence before accepting completion.</p>
-                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}
-                {completionBlockers.length > 0 && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-                    <p className="font-semibold">Resolve these items before submitting:</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5">
-                      {completionBlockers.map((item) => <li key={item.code}>{item.message}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {completionWarnings.length > 0 && (
-                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground">Readiness warnings</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5">
-                      {completionWarnings.map((item) => <li key={item.code}>{item.message}</li>)}
-                    </ul>
-                  </div>
-                )}
-                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim() || completionBlocked}>Submit for Supervisor Review</Button>
               </CardContent>
             </Card>
           )}

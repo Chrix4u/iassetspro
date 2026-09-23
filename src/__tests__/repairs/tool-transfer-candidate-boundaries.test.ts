@@ -11,6 +11,7 @@ describe('tool-transfer candidate and custody boundaries', () => {
   const transferService = read('src/services/toolTransfer.service.ts');
   const repairsUi = read('src/components/modules/RepairsPagesLegacy.tsx');
   const maintenanceUi = read('src/components/modules/MaintenancePages.tsx');
+  const toolRequestsApi = read('src/app/api/repairs/tool-requests/route.ts');
 
   it('returns only active same-plant maintenance technicians for the current custodian', () => {
     expect(candidatesApi).toContain("hasPermission(session, 'repair_tool_transfers.create')");
@@ -83,5 +84,23 @@ describe('tool-transfer candidate and custody boundaries', () => {
       /api\.post\('\/api\/repairs\/tool-transfers',[\s\S]{0,350}?\}\);/
     )?.[0] || '';
     expect(maintenancePost).not.toContain('fromUserId');
+  });
+
+  it('captures return notes in both tool-return surfaces and sends them to the store-confirmed return API', () => {
+    expect(repairsUi).toContain('<Label className="text-xs">Return Notes</Label>');
+    expect(repairsUi).toContain("notes: f.notes?.trim() || undefined");
+    expect(repairsUi).toContain("notes: item.notes?.trim() || undefined");
+    expect(repairsUi).toContain("conditionAtReturn: r.condition, notes: r.notes");
+    expect(repairsUi).toContain("pendingReturnNotes");
+  });
+
+  it('keeps generated/backfilled tool request numbers in TR-YYYYMM-NNNN format', () => {
+    expect(toolRequestsApi).toContain('const prefix = `TR-${ym}-`;');
+    expect(toolRequestsApi).toContain('const prefix = `${parts[0]}-${parts[1]}-`;');
+    expect(toolRequestsApi).toContain('String(counter).padStart(4, \'0\')');
+    expect(toolRequestsApi).not.toContain('let backfillDone = false');
+    expect(toolRequestsApi.indexOf("if (!session) return NextResponse.json")).toBeLessThan(
+      toolRequestsApi.indexOf('await ensureLegacyRequestNumbers();'),
+    );
   });
 });

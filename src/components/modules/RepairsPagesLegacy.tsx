@@ -1508,6 +1508,7 @@ export function RepairToolRequestsPage() {
       quantityAlreadyReturned: (i.quantityReturned || 0) + (i.quantityTransferred || 0),
       quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
       conditionAtReturn: i.conditionAtIssue || 'good',
+      notes: '',
     })).filter(f => f.quantityReturned > 0);
     setReturnItemsForm(form);
     setReturnItemsOpen(true);
@@ -1519,6 +1520,7 @@ export function RepairToolRequestsPage() {
       itemId: f.itemId,
       quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued - f.quantityAlreadyReturned)),
       conditionAtReturn: f.conditionAtReturn,
+      notes: f.notes?.trim() || undefined,
     }));
     setSubmitting(true);
     const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, {
@@ -2183,6 +2185,19 @@ export function RepairToolRequestsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div>
+                <Label className="text-xs">Return Notes</Label>
+                <Input
+                  value={item.notes || ''}
+                  onChange={e => {
+                    const newForm = [...returnItemsForm];
+                    newForm[idx] = { ...newForm[idx], notes: e.target.value };
+                    setReturnItemsForm(newForm);
+                  }}
+                  placeholder="Condition details, damage, missing parts, or handover notes"
+                  className="h-8"
+                />
               </div>
             </div>
           ))}
@@ -3035,7 +3050,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
   // Return modal
   const [returnOpen, setReturnOpen] = useState(false);
-  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; qtyConsumed: number; qtyWasted: number; condition: string })[]>([]);
+  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; qtyConsumed: number; qtyWasted: number; condition: string; notes: string })[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Transfer modal
@@ -3124,6 +3139,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         qtyConsumed,
         qtyWasted,
         condition: 'good' as string,
+        notes: '',
       };
     }));
     setReturnOpen(true);
@@ -3172,11 +3188,11 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     let errors: string[] = [];
 
     // Process tool returns grouped by requestId
-    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string }[]>();
+    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string; notes?: string }[]>();
     for (const item of activeItems) {
       if (item.type !== 'tool') continue;
       const arr = toolReturnMap.get(item.requestId) || [];
-      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition });
+      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition, notes: item.notes?.trim() || undefined });
       toolReturnMap.set(item.requestId, arr);
     }
 
@@ -3200,7 +3216,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         const detail = detailRes.data;
         const payload: Record<string, any> = { action: 'return' };
         if (detail.items && detail.items.length > 0) {
-          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition }));
+          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition, notes: r.notes }));
         } else {
           payload.toolConditionAtReturn = returns[0]?.condition || 'good';
         }
@@ -3358,26 +3374,37 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                 <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeReturnItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
               </div>
               {item.type === 'tool' ? (
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="w-full sm:w-28">
-                    <Label className="text-xs">Qty to Return</Label>
-                    <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
-                      onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
-                      className="h-8" />
+                <>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="w-full sm:w-28">
+                      <Label className="text-xs">Qty to Return</Label>
+                      <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
+                        onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                        className="h-8" />
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs">Condition</Label>
+                      <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
+                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="good">Good — ready for reissue</SelectItem>
+                          <SelectItem value="fair">Fair — minor wear</SelectItem>
+                          <SelectItem value="poor">Poor — needs service</SelectItem>
+                          <SelectItem value="damaged">Damaged — needs repair</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <Label className="text-xs">Condition</Label>
-                    <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="good">Good — ready for reissue</SelectItem>
-                        <SelectItem value="fair">Fair — minor wear</SelectItem>
-                        <SelectItem value="poor">Poor — needs service</SelectItem>
-                        <SelectItem value="damaged">Damaged — needs repair</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div>
+                    <Label className="text-xs">Return Notes</Label>
+                    <Input
+                      value={item.notes || ''}
+                      onChange={e => updateReturnItem(item.id, { notes: e.target.value })}
+                      placeholder="Condition details, damage, missing parts, or handover notes"
+                      className="h-8"
+                    />
                   </div>
-                </div>
+                </>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>

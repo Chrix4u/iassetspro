@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth
 import { getPlantScope, applyPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { materialRequestReason } from '@/lib/technician-reason-defaults';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 4, high: 3, normal: 2, low: 1 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
@@ -41,18 +42,17 @@ export async function GET(request: NextRequest) {
     const canViewAll = hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all']) || isAdmin(session);
     let canViewWorkOrderExecutionScope = false;
     if (!canViewAll && workOrderId) {
-      const executionMembership = await db.workOrder.findFirst({
-        where: {
-          id: workOrderId,
-          OR: [
-            { assignedTo: session.userId },
-            { teamLeaderId: session.userId },
-            { teamMembers: { some: { userId: session.userId } } },
-          ],
+      const executionMembership = await db.workOrder.findUnique({
+        where: { id: workOrderId },
+        select: {
+          assignedTo: true,
+          teamLeaderId: true,
+          teamMembers: { select: { userId: true, role: true, accessLevel: true } },
         },
-        select: { id: true },
       });
-      canViewWorkOrderExecutionScope = !!executionMembership;
+      canViewWorkOrderExecutionScope = executionMembership
+        ? isWorkOrderExecutionMember(session, executionMembership)
+        : false;
     }
     if (!canViewAll && !canViewWorkOrderExecutionScope) where.requestedById = session.userId;
 

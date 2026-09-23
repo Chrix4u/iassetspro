@@ -6,7 +6,7 @@ const { db, tx } = vi.hoisted(() => {
     tool: { findUnique: vi.fn(), updateMany: vi.fn() },
     user: { findUnique: vi.fn() },
     toolTransferRequest: { findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
-    repairToolRequest: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+    repairToolRequest: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     repairToolRequestItem: { findMany: vi.fn(), updateMany: vi.fn() },
     toolTransaction: { create: vi.fn() },
   };
@@ -27,7 +27,9 @@ function transfer(overrides: Record<string, unknown> = {}) {
     id: 'xfer-1', toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', requestedById: 'tech-1',
     reason: 'Shift handover', status: 'awaiting_handover', transferredAt: null,
     fromUserAcceptedAt: new Date('2026-09-14T10:00:00Z'), toUserAcceptedAt: new Date('2026-09-14T10:01:00Z'),
-    toolConditionAtTransfer: 'good', tool: { id: 'tool-1', assignedToId: 'tech-1', plantId: 'plant-1' },
+    toolConditionAtTransfer: 'good', storekeeperApprovedById: 'store-1', storekeeperApprovedAt: new Date('2026-09-14T09:55:00Z'),
+    notes: 'Shift custody', plantId: 'plant-1',
+    tool: { id: 'tool-1', name: 'Torque Wrench', toolCode: 'TW-001', category: 'hand_tool', condition: 'good', currentValue: 125, purchaseCost: 150, assignedToId: 'tech-1', plantId: 'plant-1' },
     ...overrides,
   };
 }
@@ -46,6 +48,7 @@ beforeEach(() => {
   tx.toolTransferRequest.updateMany.mockResolvedValue({ count: 1 });
   tx.repairToolRequestItem.updateMany.mockResolvedValue({ count: 1 });
   tx.repairToolRequest.updateMany.mockResolvedValue({ count: 1 });
+  tx.repairToolRequest.create.mockResolvedValue({ id: 'receiver-custody-1', status: 'issued' });
   tx.repairToolRequestItem.findMany.mockResolvedValue([{ quantityIssued: 1, quantityReturned: 0, quantityTransferred: 1 }]);
   tx.toolTransaction.create.mockResolvedValue({});
   tx.repairToolRequest.findMany.mockResolvedValue([sourceRequest()]);
@@ -81,6 +84,7 @@ describe('createToolTransferRequest', () => {
       toolId: 'tool-1', fromUserId: 'tech-1', toUserId: 'tech-2', reason: 'handover', requestedById: 'tech-1',
     });
     expect(tx.repairToolRequestItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.repairToolRequest.create).not.toHaveBeenCalled();
     expect(tx.toolTransaction.create).not.toHaveBeenCalled();
   });
 });
@@ -98,6 +102,26 @@ describe('completeToolTransfer', () => {
       data: { assignedToId: 'tech-2', status: 'checked_out' },
     });
     expect(tx.repairToolRequestItem.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.repairToolRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workOrderId: 'wo-1',
+        toolId: 'tool-1',
+        toolName: 'Torque Wrench',
+        source: 'technician_transfer_custody',
+        status: 'issued',
+        requestedById: 'tech-2',
+        storekeeperApprovedById: 'store-1',
+        items: {
+          create: [expect.objectContaining({
+            toolId: 'tool-1',
+            quantityIssued: 1,
+            quantityReturned: 0,
+            quantityTransferred: 0,
+            conditionAtIssue: 'good',
+          })],
+        },
+      }),
+    });
     expect(tx.toolTransaction.create).toHaveBeenCalledTimes(1);
   });
 
@@ -128,6 +152,15 @@ describe('completeToolTransfer', () => {
       data: { status: 'transferred', returnedAt: expect.any(Date) },
     });
     expect(tx.repairToolRequestItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.repairToolRequest.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workOrderId: 'wo-legacy',
+        toolId: 'tool-1',
+        requestedById: 'tech-2',
+        status: 'issued',
+        source: 'technician_transfer_custody',
+      }),
+    });
   });
 
   it('is idempotent after transfer already completed', async () => {

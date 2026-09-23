@@ -34,6 +34,8 @@ describe('RWOP resource request detail access contract', () => {
   it('keeps detail visibility aligned with list visibility instead of plant access alone', () => {
     for (const source of [toolList, materialList]) {
       expect(source).toContain('canViewWorkOrderExecutionScope');
+      expect(source).toContain('isWorkOrderExecutionMember(session, executionMembership)');
+      expect(source).toContain('accessLevel: true');
       expect(source).toContain('where.requestedById = session.userId');
     }
 

@@ -29,7 +29,9 @@ describe('technician exact-WO tool access contract', () => {
     expect(tools).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(tools).toContain('isWorkOrderExecutionMember(session, wo)');
     expect(tools).toContain("hasPermission(session, 'repair_tool_requests.create')");
-    expect(tools).toContain('plantId: wo.plantId');
+    expect(tools).toContain('{ plantId: wo.plantId }');
+    expect(tools).toContain('{ plantId: null }');
+    expect(tools).toContain('A tool explicitly assigned to another plant stays excluded.');
     expect(tools).toContain('isActive: true');
 
     expect(inventory).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
@@ -53,7 +55,7 @@ describe('technician exact-WO tool access contract', () => {
     expect(personal).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(suggested).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(toolRequests).toContain('authorizeWorkOrderExecutionAccess(request, session, workOrderId)');
-    expect(toolRequests).toContain("if (tool.plantId !== wo.plantId)");
+    expect(toolRequests).toContain("if (tool.plantId && tool.plantId !== wo.plantId)");
     expect(materialRequests).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(materialRequests).toContain("invItem.plantId !== wo.plantId");
   });
@@ -73,5 +75,8 @@ describe('technician exact-WO tool access contract', () => {
     expect(v11).toContain('/api/work-orders/${workOrderId}/inventory-candidates?limit=100');
     expect(v11).not.toContain('/api/tools?mode=lookup&status=available&limit=100');
     expect(v11).not.toContain('/api/inventory?mode=lookup&limit=100');
+    expect(v11).toContain('toolCandidatesError');
+    expect(v11).toContain('additional store tools may be missing until the live catalogue loads');
+    expect(v11).toContain('Search or select any other available tool for this work order.');
   });
 });

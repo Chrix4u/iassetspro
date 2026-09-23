@@ -46,7 +46,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'repairs-completion': ['work_orders.view', 'work_orders.view_own'],
   'repairs-spare-part-returns': ['spare_part_returns.view', 'spare_part_returns.view_all', 'spare_part_returns.view_own'],
   'repairs-damaged-tools': ['damaged_tool_reports.view', 'damaged_tool_reports.view_all'],
-  'repairs-analytics': ['work_orders.view', 'work_orders.view_own'],
+  'repairs-analytics': ['work_orders.dashboard'],
   'repairs-reports': ['reports.view', 'work_orders.view'],
   'repairs-detail-report': ['reports.view', 'work_orders.view'],
   'wo-reports': ['reports.view', 'work_orders.view', 'work_orders.view_own'],

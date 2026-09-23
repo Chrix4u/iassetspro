@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Play, Pause, CheckCircle2, XCircle, Clock3, Wrench, Package,
@@ -150,7 +150,8 @@ export function TechnicianWorkOrderPage() {
   const [measurementOptions, setMeasurementOptions] = useState<any[]>([]);
   const [measurements, setMeasurements] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const evidenceFilesRef = useRef<File[]>([]);
   const [evidenceDescription, setEvidenceDescription] = useState('');
   const [evidenceInputKey, setEvidenceInputKey] = useState(0);
   const [assistanceTrade, setAssistanceTrade] = useState('');
@@ -324,19 +325,79 @@ export function TechnicianWorkOrderPage() {
   };
 
   const uploadEvidence = async () => {
-    if (!id || !evidenceFile) { toast.error('Choose a photo or file first'); return; }
-    const maxBytes = 50 * 1024 * 1024;
-    if (evidenceFile.size > maxBytes) { toast.error('Evidence file must be 50 MB or smaller'); return; }
-    const form = new FormData();
-    form.append('file', evidenceFile);
-    form.append('category', 'technician_evidence');
-    if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());
-    const ok = await perform('evidence', () => api.post(`/api/work-orders/${id}/attachments`, form, { timeout: 60_000 }), 'Evidence uploaded');
-    if (ok) {
-      setEvidenceFile(null);
-      setEvidenceDescription('');
-      setEvidenceInputKey((value) => value + 1);
+    if (!id) return;
+
+    // Keep a synchronous ref to the browser's FileList so the first upload
+    // click always sees the files selected in the native picker, even before a
+    // React state render has completed.
+    const selectedFiles = evidenceFilesRef.current.length > 0
+      ? [...evidenceFilesRef.current]
+      : [...evidenceFiles];
+
+    if (selectedFiles.length === 0) {
+      toast.error('Choose one or more photos or files first');
+      return;
     }
+
+    const maxBytes = 50 * 1024 * 1024;
+    const oversized = selectedFiles.filter((file) => file.size > maxBytes);
+    if (oversized.length > 0) {
+      toast.error(`${oversized.map((file) => file.name).join(', ')} must be 50 MB or smaller per file`);
+      return;
+    }
+
+    setBusy('evidence');
+    const failed: File[] = [];
+    let uploadedCount = 0;
+
+    try {
+      for (const file of selectedFiles) {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('category', 'technician_evidence');
+        if (evidenceDescription.trim()) form.append('description', evidenceDescription.trim());
+
+        const res = await api.post(
+          `/api/work-orders/${id}/attachments`,
+          form,
+          { timeout: 60_000 },
+        );
+
+        if (res.success) {
+          uploadedCount += 1;
+        } else {
+          failed.push(file);
+          toast.error(`${file.name}: ${errorText(res)}`);
+        }
+      }
+
+      if (uploadedCount > 0) {
+        toast.success(
+          uploadedCount === 1
+            ? 'Evidence file uploaded'
+            : `${uploadedCount} evidence files uploaded`,
+        );
+        await load();
+      }
+
+      evidenceFilesRef.current = failed;
+      setEvidenceFiles(failed);
+      setEvidenceInputKey((value) => value + 1);
+
+      if (failed.length === 0) {
+        setEvidenceDescription('');
+      } else if (uploadedCount > 0) {
+        toast.warning(`${failed.length} file${failed.length === 1 ? '' : 's'} could not be uploaded and remain queued for retry`);
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeQueuedEvidenceFile = (index: number) => {
+    const next = evidenceFilesRef.current.filter((_, currentIndex) => currentIndex !== index);
+    evidenceFilesRef.current = next;
+    setEvidenceFiles(next);
   };
 
   const openAttachment = async (attachmentId: string) => {
@@ -627,9 +688,51 @@ export function TechnicianWorkOrderPage() {
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><Camera className="h-4 w-4" />Photos & Evidence <Badge variant="outline">{attachments.length}</Badge></CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid gap-2">
-                <Input key={evidenceInputKey} type="file" accept="image/*,application/pdf,text/plain,text/csv" onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)} />
-                <Input value={evidenceDescription} onChange={(e) => setEvidenceDescription(e.target.value)} placeholder="Evidence description (optional)" />
-                <Button variant="outline" className="w-fit" onClick={uploadEvidence} disabled={busy !== null || !evidenceFile}><Upload className="h-4 w-4 mr-1" />Upload Evidence</Button>
+                <Input
+                  key={evidenceInputKey}
+                  type="file"
+                  multiple
+                  accept="image/*,application/pdf,text/plain,text/csv"
+                  onChange={(e) => {
+                    const selected = Array.from(e.currentTarget.files || []);
+                    evidenceFilesRef.current = selected;
+                    setEvidenceFiles(selected);
+                  }}
+                />
+                {evidenceFiles.length > 0 && (
+                  <div className="rounded-lg border bg-muted/20 p-2">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                      <span className="font-medium">{evidenceFiles.length} file{evidenceFiles.length === 1 ? '' : 's'} selected</span>
+                      <span className="text-muted-foreground">50 MB max per file</span>
+                    </div>
+                    <div className="space-y-1">
+                      {evidenceFiles.map((file, index) => (
+                        <div key={`${file.name}-${file.size}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-xs">
+                          <span className="min-w-0 truncate">{file.name}</span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-red-600"
+                              aria-label={`Remove ${file.name} from upload queue`}
+                              onClick={() => removeQueuedEvidenceFile(index)}
+                              disabled={busy !== null}
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Input value={evidenceDescription} onChange={(e) => setEvidenceDescription(e.target.value)} placeholder="Evidence description for selected files (optional)" />
+                <Button variant="outline" className="w-fit" onClick={uploadEvidence} disabled={busy !== null || evidenceFiles.length === 0}>
+                  {busy === 'evidence' ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+                  {evidenceFiles.length > 1 ? `Upload ${evidenceFiles.length} Files` : 'Upload Evidence'}
+                </Button>
               </div>
               {attachments.length === 0 ? <p className="text-xs text-muted-foreground">No photos or evidence have been attached yet.</p> : (
                 <div className="space-y-2">
@@ -666,6 +769,36 @@ export function TechnicianWorkOrderPage() {
               )}
             </CardContent>
           </Card>
+
+          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
+
+          {caps?.canSubmitCompletion && (
+            <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">Stop the live timer first. The server verifies tools, materials, handovers, assistance requests, and completion evidence before accepting completion.</p>
+                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}
+                {completionBlockers.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                    <p className="font-semibold">Resolve these items before submitting:</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionBlockers.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {completionWarnings.length > 0 && (
+                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    <p className="font-medium text-foreground">Readiness warnings</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {completionWarnings.map((item) => <li key={item.code}>{item.message}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim() || completionBlocked}>Submit for Supervisor Review</Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -766,36 +899,6 @@ export function TechnicianWorkOrderPage() {
                 <Input value={handoverReason} onChange={(e) => setHandoverReason(e.target.value)} placeholder={buildHandoverReason({ woNumber: wo?.woNumber, title: wo?.title, fromShift: handoverFromShift, toShift: handoverToShift })} />
                 <Textarea value={handoverNotes} onChange={(e) => setHandoverNotes(e.target.value)} placeholder="Pending issues, equipment condition, safety information..." rows={3} />
                 <Button variant="outline" className="w-full" onClick={submitHandover} disabled={busy !== null || !handoverReceiverId}>Submit Shift Handover</Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <div id="completion" className="scroll-mt-28" aria-hidden="true" />
-
-          {caps?.canSubmitCompletion && (
-            <Card className="border-emerald-200 bg-emerald-50/30 dark:bg-emerald-950/10">
-              <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" />Complete & Submit</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">Stop the live timer first. The server verifies tools, materials, handovers, assistance requests, and completion evidence before accepting completion.</p>
-                {liveLog && <Button variant="outline" className="w-full" onClick={() => id && perform('stop-before-complete', () => api.post(`/api/work-orders/${id}/pause-session`, { reason: 'Work completed - preparing completion report' }), 'Timer stopped. You can now submit the completion report.')} disabled={busy !== null}><Pause className="h-4 w-4 mr-1" />Stop Timer Before Submit</Button>}
-                {completionBlockers.length > 0 && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-                    <p className="font-semibold">Resolve these items before submitting:</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5">
-                      {completionBlockers.map((item) => <li key={item.code}>{item.message}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {completionWarnings.length > 0 && (
-                  <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground">Readiness warnings</p>
-                    <ul className="mt-1 list-disc space-y-1 pl-5">
-                      {completionWarnings.map((item) => <li key={item.code}>{item.message}</li>)}
-                    </ul>
-                  </div>
-                )}
-                <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="Final completion summary *" rows={4} />
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={submitCompletion} disabled={busy !== null || !completionNotes.trim() || completionBlocked}>Submit for Supervisor Review</Button>
               </CardContent>
             </Card>
           )}

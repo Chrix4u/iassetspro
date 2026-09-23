@@ -1,0 +1,64 @@
+/* Shared responsive foundations loaded after globals.css and page-layout.css. */
+
+/* Compact filters: two useful columns on phones, with the primary filter full width.
+   Very narrow phones fall back to a single column to avoid cramped controls. */
+@media (max-width: 639px) {
+  .filter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 0.5rem;
+  }
+
+  .filter-row > * {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+
+  .filter-row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filter-row > .filter-row-checkbox {
+    grid-column: 1 / -1;
+    width: auto !important;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 419px) {
+  .filter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-row > :first-child,
+  .filter-row > .filter-row-checkbox {
+    grid-column: 1;
+  }
+}
+
+/* Dense ResponsiveDialog forms reflow instead of forcing horizontal overflow.
+   Normal phones use two compact columns; narrow phones use one. */
+@media (max-width: 767px) {
+  .responsive-dialog-body .grid.grid-cols-3,
+  .responsive-dialog-body .grid.grid-cols-4,
+  .responsive-dialog-body .grid.grid-cols-5,
+  .responsive-dialog-body .grid.grid-cols-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .responsive-dialog-body .grid > * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 479px) {
+  .responsive-dialog-body .grid.grid-cols-3,
+  .responsive-dialog-body .grid.grid-cols-4,
+  .responsive-dialog-body .grid.grid-cols-5,
+  .responsive-dialog-body .grid.grid-cols-6 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

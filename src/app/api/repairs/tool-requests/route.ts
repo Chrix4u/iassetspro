@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
       if (toolId) {
         const tool = await db.tool.findUnique({ where: { id: toolId } });
         if (!tool) return NextResponse.json({ success: false, error: `Tool not found: ${toolName}` }, { status: 404 });
-        if (tool.plantId !== wo.plantId) return NextResponse.json({ success: false, error: `Tool ${tool.toolCode} belongs to a different plant` }, { status: 400 });
+        if (tool.plantId && tool.plantId !== wo.plantId) return NextResponse.json({ success: false, error: `Tool ${tool.toolCode} belongs to a different plant` }, { status: 400 });
         toolCode = tool.toolCode;
         category = tool.category;
         unitCost = tool.currentValue ?? tool.purchaseCost ?? null;

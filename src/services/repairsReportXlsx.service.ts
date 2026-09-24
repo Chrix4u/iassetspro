@@ -952,8 +952,8 @@ export async function exportOperationsSummaryReport(
       { label: 'Work Orders', value: workOrders.length },
       { label: 'Emergency WOs', value: workOrders.filter((wo) => wo.type === 'emergency').length },
       { label: 'Downtime Hours', value: totalDowntimeHours.toFixed(2) },
-      { label: 'Production Loss', value: \`GHS \${totalLoss.toFixed(2)}\` },
-      { label: 'Maintenance Cost', value: \`GHS \${totalCost.toFixed(2)}\` },
+      { label: 'Production Loss', value: `GHS ${totalLoss.toFixed(2)}` },
+      { label: 'Maintenance Cost', value: `GHS ${totalCost.toFixed(2)}` },
     ],
   });
 
@@ -1066,7 +1066,7 @@ export async function exportAssetRepairHistoryReport(
 
   for (const wo of workOrders) {
     const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
-    const key = wo.assetId || \`name:\${wo.assetName || 'unassigned'}\`;
+    const key = wo.assetId || `name:${wo.assetName || 'unassigned'}`;
     const current = summaryMap.get(key) || {
       assetName: asset?.name || wo.assetName || 'Unassigned',
       assetTag: asset?.assetTag || '',
@@ -1108,7 +1108,7 @@ export async function exportAssetRepairHistoryReport(
       { label: 'Assets Repaired', value: assetSummary.length },
       { label: 'Repair Work Orders', value: workOrders.length },
       { label: 'Repeat-Repair Assets', value: assetSummary.filter((row) => row.repairCount > 1).length },
-      { label: 'Total Repair Cost', value: \`GHS \${workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0).toFixed(2)}\` },
+      { label: 'Total Repair Cost', value: `GHS ${workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0).toFixed(2)}` },
     ],
   });
 
@@ -1226,9 +1226,9 @@ export async function exportDepartmentCostReport(
     kpis: [
       { label: 'Departments', value: rows.length },
       { label: 'Repair WOs', value: workOrders.length },
-      { label: 'Maintenance Cost', value: \`GHS \${rows.reduce((sum, row) => sum + row.maintenanceCost, 0).toFixed(2)}\` },
-      { label: 'Production Loss', value: \`GHS \${rows.reduce((sum, row) => sum + row.productionLoss, 0).toFixed(2)}\` },
-      { label: 'Economic Impact', value: \`GHS \${rows.reduce((sum, row) => sum + row.economicImpact, 0).toFixed(2)}\` },
+      { label: 'Maintenance Cost', value: `GHS ${rows.reduce((sum, row) => sum + row.maintenanceCost, 0).toFixed(2)}` },
+      { label: 'Production Loss', value: `GHS ${rows.reduce((sum, row) => sum + row.productionLoss, 0).toFixed(2)}` },
+      { label: 'Economic Impact', value: `GHS ${rows.reduce((sum, row) => sum + row.economicImpact, 0).toFixed(2)}` },
     ],
   });
 

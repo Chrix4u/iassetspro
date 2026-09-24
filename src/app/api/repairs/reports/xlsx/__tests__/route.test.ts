@@ -152,7 +152,7 @@ describe('POST /api/repairs/reports/xlsx', () => {
   ])('accepts the new focused report type %s and preserves authoritative plant scope', async (reportType) => {
     mockGenerateRepairsReport.mockResolvedValue({
       buffer: Buffer.from('xlsx-bytes'),
-      filename: \`\${reportType}.xlsx\`,
+      filename: `${reportType}.xlsx`,
     });
 
     const response = await POST(request({

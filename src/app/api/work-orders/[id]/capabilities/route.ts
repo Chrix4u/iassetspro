@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
-import { canManageWorkOrder, canPerformWorkOrderTransition, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canManageWorkOrder, canPerformWorkOrderTransition, canViewWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 import { checkReadiness } from '@/services/workOrderReadiness.service';
 
 export async function GET(
@@ -40,6 +40,7 @@ export async function GET(
           select: {
             userId: true,
             role: true,
+            accessLevel: true,
           },
         },
       },
@@ -58,6 +59,7 @@ export async function GET(
     const isTeamLeaderFromField = wo.teamLeaderId === userId;
     const isTeamLeaderFromMembers = wo.teamMembers?.some(m => m.userId === userId && m.role === 'team_leader') ?? false;
     const isTeamMember = wo.teamMembers?.some(m => m.userId === userId) ?? false;
+    const isExecutionMember = isWorkOrderExecutionMember(session, wo);
     const isSupervisor = wo.assignedSupervisorId === userId;
     const isPlanner = wo.plannerId === userId;
 
@@ -158,23 +160,23 @@ export async function GET(
       canResume,
       resumeOpensExecutionSession,
       canLogOwnTime: canCreateTimeLog
-        && (isAssignee || isTeamMember || isTeamLeader)
+        && isExecutionMember
         && activeExecutionStatuses.includes(wo.status),
       canLogTeamTime: canCreateTimeLog
         && isTeamLeader
         && hasMultipleTeamMembers
         && activeExecutionStatuses.includes(wo.status),
       canRequestTools: canCreateToolRequest
-        && (isAssignee || isTeamMember || isTeamLeader)
+        && isExecutionMember
         && activeExecutionStatuses.includes(wo.status),
       canRequestMaterials: canCreateMaterialRequest
-        && (isAssignee || isTeamMember || isTeamLeader)
+        && isExecutionMember
         && activeExecutionStatuses.includes(wo.status),
       canLogDowntime: activeExecutionStatuses.includes(wo.status) && (
-        isAssignee || isTeamMember || isTeamLeader || canManageDowntime
+        isExecutionMember || canManageDowntime
       ),
       canRequestAssistance: canCreateAssistanceRequest
-        && (isAssignee || isTeamMember || isTeamLeader)
+        && isExecutionMember
         && (
           activeExecutionStatuses.includes(wo.status) ||
           (wo.status === 'assigned' && assignmentAccepted)
@@ -190,6 +192,7 @@ export async function GET(
       hasActiveExecutionSession: hasOwnLiveSession,
       isTeamLeader,
       isTeamMember,
+      isExecutionMember,
       isSupervisor,
       isPlanner,
       isAdmin: isAdminUser,

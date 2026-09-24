@@ -119,4 +119,39 @@ describe('GET /api/work-orders/[id]/capabilities start lifecycle', () => {
     expect(json.data.canStart).toBe(false);
     expect(json.data.hasActiveExecutionSession).toBe(true);
   });
+
+  it('does not advertise execution actions to a handover-only team member', async () => {
+    mockGetSession.mockReturnValue({
+      userId: 'tech-1',
+      roles: ['maintenance_technician'],
+      permissions: [
+        'work_orders.update',
+        'time_logs.create',
+        'repair_tool_requests.create',
+        'repair_material_requests.create',
+        'assistance_requests.create',
+      ],
+    });
+    mockHasPermission.mockReturnValue(true);
+    mockDb.workOrder.findUnique.mockResolvedValue({
+      ...workOrder('in_progress'),
+      assignedTo: 'tech-2',
+      teamLeaderId: 'tech-2',
+      teamMembers: [
+        { userId: 'tech-1', role: 'handover_receiver', accessLevel: 'execution' },
+      ],
+    });
+
+    const response = await GET(request(), { params: Promise.resolve({ id: 'wo-1' }) });
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.data.isTeamMember).toBe(true);
+    expect(json.data.isExecutionMember).toBe(false);
+    expect(json.data.canLogOwnTime).toBe(false);
+    expect(json.data.canRequestTools).toBe(false);
+    expect(json.data.canRequestMaterials).toBe(false);
+    expect(json.data.canLogDowntime).toBe(false);
+    expect(json.data.canRequestAssistance).toBe(false);
+  });
 });

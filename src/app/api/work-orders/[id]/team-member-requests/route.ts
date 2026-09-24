@@ -4,7 +4,7 @@ import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { assistanceRequestReason } from '@/lib/technician-reason-defaults';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
-import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canManageWorkOrder, canViewWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 /**
  * GET /api/work-orders/[id]/team-member-requests
@@ -131,7 +131,7 @@ export async function POST(
         plannerId: true,
         isLocked: true,
         assigner: { select: { id: true, fullName: true } },
-        teamMembers: { select: { userId: true, accessLevel: true } },
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
       },
     });
     if (!wo) {
@@ -144,13 +144,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    const isWritableTeamMember = wo.teamMembers.some(
-      tm => tm.userId === session.userId && tm.accessLevel !== 'read_only',
-    );
-    const isExecutionActor =
-      wo.assignedTo === session.userId ||
-      wo.teamLeaderId === session.userId ||
-      isWritableTeamMember;
+    const isExecutionActor = isWorkOrderExecutionMember(session, wo);
     const canManageTeam =
       (isAdmin(session) || hasAnyPermission(session, ['work_orders.assign_supervisor', 'work_orders.assign_technician'])) &&
       (canManageWorkOrder(session, wo) || wo.assignedBy === session.userId);

@@ -56,6 +56,13 @@ export async function GET(request: NextRequest) {
         timeLogs: true,
         workOrderDowntimes: true,
         repairCompletion: true,
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+        repairMaterialRequests: true,
+        repairToolRequests: true,
+        teamMemberRequests: true,
+        sparePartReturns: true,
+        damagedToolReports: true,
+        shiftHandovers: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -431,6 +438,323 @@ export async function GET(request: NextRequest) {
         };
       });
 
+    // ========== BACKLOG & AGING ==========
+    const terminalStatuses = new Set(['completed', 'verified', 'closed', 'cancelled']);
+    const openWorkOrders = workOrders.filter(wo => !terminalStatuses.has(wo.status));
+    const MS_PER_HOUR = 1000 * 60 * 60;
+    const MS_PER_DAY = MS_PER_HOUR * 24;
+    const round2 = (value: number) => Math.round(value * 100) / 100;
+    const hoursBetween = (from: Date | string | null | undefined, toDate: Date | string | null | undefined) => {
+      if (!from || !toDate) return null;
+      const diff = (new Date(toDate).getTime() - new Date(from).getTime()) / MS_PER_HOUR;
+      return Number.isFinite(diff) && diff >= 0 ? diff : null;
+    };
+    const daysOpen = (createdAt: Date) => Math.max(0, (now.getTime() - createdAt.getTime()) / MS_PER_DAY);
+    const openAges = openWorkOrders.map(wo => daysOpen(wo.createdAt));
+    const backlogBuckets = [
+      { bucket: '0-1 days', min: 0, max: 2 },
+      { bucket: '2-3 days', min: 2, max: 4 },
+      { bucket: '4-7 days', min: 4, max: 8 },
+      { bucket: '8-14 days', min: 8, max: 15 },
+      { bucket: '15-30 days', min: 15, max: 31 },
+      { bucket: '31+ days', min: 31, max: Number.POSITIVE_INFINITY },
+    ].map(range => ({
+      bucket: range.bucket,
+      count: openAges.filter(age => age >= range.min && age < range.max).length,
+    }));
+    const backlogAging = {
+      totalOpen: openWorkOrders.length,
+      overdueOpen: openWorkOrders.filter(wo => wo.plannedEnd && wo.plannedEnd < now).length,
+      avgOpenAgeDays: openAges.length ? round2(openAges.reduce((sum, value) => sum + value, 0) / openAges.length) : 0,
+      oldestOpenDays: openAges.length ? round2(Math.max(...openAges)) : 0,
+      buckets: backlogBuckets,
+    };
+
+    // ========== RESPONSE, SLA & CLOSURE LATENCY ==========
+    const responseHours = workOrders
+      .map(wo => hoursBetween(wo.createdAt, wo.actualStart))
+      .filter((value): value is number => value !== null);
+    const closureLagHours = workOrders
+      .map(wo => hoursBetween(wo.actualEnd, wo.repairCompletion?.plannerClosedAt))
+      .filter((value): value is number => value !== null);
+    const emergencyResponseHours = workOrders
+      .filter(wo => wo.type === 'emergency')
+      .map(wo => hoursBetween(wo.createdAt, wo.actualStart))
+      .filter((value): value is number => value !== null);
+    const responseAndSla = {
+      avgResponseHours: responseHours.length ? round2(responseHours.reduce((a, b) => a + b, 0) / responseHours.length) : 0,
+      avgEmergencyResponseHours: emergencyResponseHours.length ? round2(emergencyResponseHours.reduce((a, b) => a + b, 0) / emergencyResponseHours.length) : 0,
+      avgPlannerClosureLagHours: closureLagHours.length ? round2(closureLagHours.reduce((a, b) => a + b, 0) / closureLagHours.length) : 0,
+      slaComplianceRate,
+      slaBreachedWOs,
+      overdueOpen: backlogAging.overdueOpen,
+    };
+
+    // ========== MONTHLY OPERATIONAL TREND ==========
+    const monthlyTrendMap: Record<string, {
+      opened: number;
+      completed: number;
+      closed: number;
+      emergency: number;
+      totalCost: number;
+      downtimeMinutes: number;
+      productionLoss: number;
+    }> = {};
+    for (const wo of workOrders) {
+      const key = wo.createdAt.toISOString().slice(0, 7);
+      if (!monthlyTrendMap[key]) {
+        monthlyTrendMap[key] = { opened: 0, completed: 0, closed: 0, emergency: 0, totalCost: 0, downtimeMinutes: 0, productionLoss: 0 };
+      }
+      const row = monthlyTrendMap[key];
+      row.opened += 1;
+      if (['completed', 'verified', 'closed'].includes(wo.status)) row.completed += 1;
+      if (wo.status === 'closed') row.closed += 1;
+      if (wo.type === 'emergency') row.emergency += 1;
+      row.totalCost += wo.totalCost || 0;
+      for (const downtime of wo.workOrderDowntimes || []) {
+        row.downtimeMinutes += downtime.durationMinutes || 0;
+        row.productionLoss += downtime.productionLoss || 0;
+      }
+    }
+    const monthlyOperationalTrends = Object.entries(monthlyTrendMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, row]) => ({
+        month,
+        ...row,
+        totalCost: round2(row.totalCost),
+        downtimeMinutes: round2(row.downtimeMinutes),
+        productionLoss: round2(row.productionLoss),
+      }));
+
+    // ========== ASSET RELIABILITY / REPEAT FAILURES ==========
+    const failureOrders = workOrders.filter(wo => ['corrective', 'emergency'].includes(wo.type));
+    const reliabilityMap = new Map<string, {
+      assetId: string;
+      assetName: string;
+      failures: typeof failureOrders;
+    }>();
+    for (const wo of failureOrders) {
+      const key = wo.assetId || 'unassigned';
+      const existing = reliabilityMap.get(key) || { assetId: wo.assetId || '', assetName: wo.assetName || 'Unassigned', failures: [] };
+      existing.failures.push(wo);
+      reliabilityMap.set(key, existing);
+    }
+    const assetReliability = Array.from(reliabilityMap.values()).map(group => {
+      const sorted = [...group.failures].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      const intervals: number[] = [];
+      for (let index = 1; index < sorted.length; index++) {
+        intervals.push((sorted[index].createdAt.getTime() - sorted[index - 1].createdAt.getTime()) / MS_PER_DAY);
+      }
+      const repairHours = sorted.map(wo => {
+        const exact = hoursBetween(wo.actualStart, wo.actualEnd);
+        return exact ?? wo.actualHours ?? wo.repairCompletion?.totalLaborHours ?? 0;
+      });
+      const downtimeMinutes = sorted.reduce(
+        (sum, wo) => sum + (wo.workOrderDowntimes || []).reduce((inner, dt) => inner + (dt.durationMinutes || 0), 0),
+        0,
+      );
+      const productionLoss = sorted.reduce(
+        (sum, wo) => sum + (wo.workOrderDowntimes || []).reduce((inner, dt) => inner + (dt.productionLoss || 0), 0),
+        0,
+      );
+      const totalCost = sorted.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
+      const asset = group.assetId ? assetMap.get(group.assetId) : null;
+      return {
+        assetId: group.assetId,
+        assetName: group.assetName,
+        assetTag: asset?.assetTag || null,
+        criticality: asset?.criticality || null,
+        failureCount: sorted.length,
+        repeatFailure: sorted.length > 1,
+        mtbfDays: intervals.length ? round2(intervals.reduce((a, b) => a + b, 0) / intervals.length) : null,
+        mttrHours: repairHours.length ? round2(repairHours.reduce((a, b) => a + b, 0) / repairHours.length) : 0,
+        downtimeMinutes: round2(downtimeMinutes),
+        productionLoss: round2(productionLoss),
+        totalCost: round2(totalCost),
+        lastFailureAt: sorted.at(-1)?.createdAt.toISOString() || null,
+      };
+    }).sort((a, b) => b.failureCount - a.failureCount || b.downtimeMinutes - a.downtimeMinutes);
+
+    // ========== COST / ECONOMIC IMPACT ==========
+    const totalLaborCost = workOrders.reduce((sum, wo) => sum + (wo.laborCost || 0), 0);
+    const totalMaterialCost = workOrders.reduce((sum, wo) => sum + (wo.partsCost || wo.repairCompletion?.totalMaterialCost || 0), 0);
+    const totalToolUsageCost = workOrders.reduce((sum, wo) => sum + (wo.repairCompletion?.totalToolCost || 0), 0);
+    const downtimeProductionLoss = allDowntimes.reduce((sum, dt) => sum + (dt.productionLoss || 0), 0);
+    const sparePartRefurbishmentCost = workOrders.reduce(
+      (sum, wo) => sum + (wo.sparePartReturns || []).reduce((inner, ret) => inner + (ret.actualRefurbCost || 0), 0),
+      0,
+    );
+    const damagedToolRepairCost = workOrders.reduce(
+      (sum, wo) => sum + (wo.damagedToolReports || []).reduce((inner, report) => inner + (report.actualRepairCost || 0), 0),
+      0,
+    );
+    const costAnalysis = {
+      recordedMaintenanceCost: round2(totalCost),
+      laborCost: round2(totalLaborCost),
+      materialCost: round2(totalMaterialCost),
+      toolUsageCost: round2(totalToolUsageCost),
+      damagedToolRepairCost: round2(damagedToolRepairCost),
+      sparePartRefurbishmentCost: round2(sparePartRefurbishmentCost),
+      downtimeProductionLoss: round2(downtimeProductionLoss),
+      trackedEconomicImpact: round2(totalCost + damagedToolRepairCost + sparePartRefurbishmentCost + downtimeProductionLoss),
+      avgRecordedCostPerWo: totalWOs ? round2(totalCost / totalWOs) : 0,
+    };
+
+    // ========== RESOURCE, ASSISTANCE & HANDOVER FLOW ==========
+    const materialRequests = workOrders.flatMap(wo => wo.repairMaterialRequests || []);
+    const toolRequests = workOrders.flatMap(wo => wo.repairToolRequests || []);
+    const assistanceRequests = workOrders.flatMap(wo => wo.teamMemberRequests || []);
+    const handovers = workOrders.flatMap(wo => wo.shiftHandovers || []);
+    const materialIssueHours = materialRequests
+      .map(row => hoursBetween(row.createdAt, row.issuedAt))
+      .filter((value): value is number => value !== null);
+    const toolIssueHours = toolRequests
+      .map(row => hoursBetween(row.createdAt, row.issuedAt))
+      .filter((value): value is number => value !== null);
+    const assistanceReviewHours = assistanceRequests
+      .map(row => hoursBetween(row.createdAt, row.reviewedAt))
+      .filter((value): value is number => value !== null);
+    const pendingMaterialStatuses = new Set(['pending', 'supervisor_approved', 'storekeeper_approved', 'store_approved', 'picking']);
+    const pendingToolStatuses = new Set(['pending', 'supervisor_approved', 'storekeeper_approved']);
+    const materialWasteCost = materialRequests.reduce((sum, row) => sum + ((row.wastedQty || 0) * (row.unitCost || 0)), 0);
+    const materialReturnValue = materialRequests.reduce((sum, row) => sum + ((row.quantityReturned || row.declaredReturnQty || 0) * (row.unitCost || 0)), 0);
+    const resourceFlow = {
+      materials: {
+        totalRequests: materialRequests.length,
+        pendingRequests: materialRequests.filter(row => pendingMaterialStatuses.has(row.status)).length,
+        issuedRequests: materialRequests.filter(row => (row.quantityIssued || 0) > 0).length,
+        pendingReconciliation: materialRequests.filter(row => (row.quantityIssued || 0) > 0 && row.consumedQty === null).length,
+        avgIssueHours: materialIssueHours.length ? round2(materialIssueHours.reduce((a, b) => a + b, 0) / materialIssueHours.length) : 0,
+        wasteCost: round2(materialWasteCost),
+        returnValue: round2(materialReturnValue),
+      },
+      tools: {
+        totalRequests: toolRequests.length,
+        pendingRequests: toolRequests.filter(row => pendingToolStatuses.has(row.status)).length,
+        issuedRequests: toolRequests.filter(row => Boolean(row.issuedAt)).length,
+        outstandingCustody: toolRequests.filter(row => Boolean(row.issuedAt) && !row.returnConfirmedAt && row.status !== 'returned').length,
+        returnedRequests: toolRequests.filter(row => Boolean(row.returnConfirmedAt) || row.status === 'returned').length,
+        avgIssueHours: toolIssueHours.length ? round2(toolIssueHours.reduce((a, b) => a + b, 0) / toolIssueHours.length) : 0,
+      },
+      assistance: {
+        totalRequests: assistanceRequests.length,
+        pending: assistanceRequests.filter(row => row.status === 'pending').length,
+        approved: assistanceRequests.filter(row => row.status === 'approved').length,
+        rejected: assistanceRequests.filter(row => row.status === 'rejected').length,
+        cancelled: assistanceRequests.filter(row => row.status === 'cancelled').length,
+        avgReviewHours: assistanceReviewHours.length ? round2(assistanceReviewHours.reduce((a, b) => a + b, 0) / assistanceReviewHours.length) : 0,
+      },
+      handovers: {
+        total: handovers.length,
+        pending: handovers.filter(row => row.status === 'pending').length,
+        confirmed: handovers.filter(row => row.status === 'confirmed').length,
+      },
+    };
+
+    // ========== RETURNS & DAMAGED TOOLS ==========
+    const sparePartReturns = workOrders.flatMap(wo => wo.sparePartReturns || []);
+    const damagedToolReports = workOrders.flatMap(wo => wo.damagedToolReports || []);
+    const returnsAndDamage = {
+      spareParts: {
+        totalReturns: sparePartReturns.length,
+        pending: sparePartReturns.filter(row => ['pending', 'inspected', 'refurbishing', 'refurbished'].includes(row.status)).length,
+        returnedToStore: sparePartReturns.filter(row => row.status === 'returned_to_store').length,
+        disposed: sparePartReturns.filter(row => row.status === 'disposed').length,
+        refurbishmentNeeded: sparePartReturns.filter(row => row.refurbishmentNeeded).length,
+        refurbishmentCost: round2(sparePartReturns.reduce((sum, row) => sum + (row.actualRefurbCost || 0), 0)),
+      },
+      damagedTools: {
+        totalReports: damagedToolReports.length,
+        openReports: damagedToolReports.filter(row => !['repaired', 'written_off', 'replaced'].includes(row.status)).length,
+        repaired: damagedToolReports.filter(row => row.status === 'repaired').length,
+        writtenOff: damagedToolReports.filter(row => row.status === 'written_off').length,
+        criticalDamage: damagedToolReports.filter(row => row.damageSeverity === 'critical').length,
+        repairCost: round2(damagedToolReports.reduce((sum, row) => sum + (row.actualRepairCost || 0), 0)),
+      },
+    };
+
+    // ========== CLOSURE QUALITY / RCA COMPLIANCE ==========
+    const completionEligible = workOrders.filter(wo => ['completed', 'verified', 'closed'].includes(wo.status));
+    const closureRows = completionEligible.map(wo => {
+      const completion = wo.repairCompletion;
+      const requiresRca = ['corrective', 'emergency', 'predictive'].includes(wo.type);
+      const rcaComplete = !requiresRca || Boolean(
+        completion?.rootCause?.trim() &&
+        completion?.correctiveAction?.trim()
+      );
+      const supervisorApproved = completion?.supervisorStatus === 'approved' && Boolean(completion.supervisorApprovedAt);
+      const plannerClosed = wo.status !== 'closed' || (completion?.plannerStatus === 'closed' && Boolean(completion.plannerClosedAt));
+      return {
+        workOrderId: wo.id,
+        woNumber: wo.woNumber,
+        status: wo.status,
+        requiresRca,
+        rcaComplete,
+        supervisorApproved,
+        plannerClosed,
+        reworkCount: completion?.reworkCount || 0,
+        compliant: rcaComplete && supervisorApproved && plannerClosed,
+      };
+    });
+    const closureCompliance = {
+      eligibleWOs: closureRows.length,
+      compliantWOs: closureRows.filter(row => row.compliant).length,
+      complianceRate: closureRows.length ? round2((closureRows.filter(row => row.compliant).length / closureRows.length) * 100) : 100,
+      missingRca: closureRows.filter(row => row.requiresRca && !row.rcaComplete).length,
+      awaitingSupervisorApproval: closureRows.filter(row => !row.supervisorApproved).length,
+      awaitingPlannerClosure: closureRows.filter(row => row.status === 'closed' && !row.plannerClosed).length,
+      reworkWOs: closureRows.filter(row => row.reworkCount > 0).length,
+      totalReworkInstances: closureRows.reduce((sum, row) => sum + row.reworkCount, 0),
+    };
+
+    // ========== MANAGEMENT EXCEPTION WATCHLIST ==========
+    const exceptionWatchlist = openWorkOrders.map(wo => {
+      const pendingMaterials = (wo.repairMaterialRequests || []).filter(row => pendingMaterialStatuses.has(row.status)).length;
+      const outstandingTools = (wo.repairToolRequests || []).filter(row => Boolean(row.issuedAt) && !row.returnConfirmedAt && row.status !== 'returned').length;
+      const pendingAssistance = (wo.teamMemberRequests || []).filter(row => row.status === 'pending').length;
+      const pendingHandovers = (wo.shiftHandovers || []).filter(row => row.status === 'pending').length;
+      const downtimeMinutes = (wo.workOrderDowntimes || []).reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
+      const reasons: string[] = [];
+      if (wo.plannedEnd && wo.plannedEnd < now) reasons.push('Overdue');
+      if (['critical', 'emergency'].includes(wo.priority)) reasons.push('Critical priority');
+      if (wo.type === 'emergency') reasons.push('Emergency repair');
+      if (pendingMaterials > 0) reasons.push(`${pendingMaterials} material request(s) pending`);
+      if (outstandingTools > 0) reasons.push(`${outstandingTools} tool(s) in custody`);
+      if (pendingAssistance > 0) reasons.push(`${pendingAssistance} assistance request(s) pending`);
+      if (pendingHandovers > 0) reasons.push(`${pendingHandovers} handover(s) pending`);
+      if (downtimeMinutes >= 240) reasons.push('High downtime');
+      const age = round2(daysOpen(wo.createdAt));
+      const riskLevel = reasons.includes('Overdue') && (wo.priority === 'critical' || wo.type === 'emergency')
+        ? 'critical'
+        : reasons.length >= 3 || age >= 15
+          ? 'high'
+          : reasons.length >= 1
+            ? 'medium'
+            : 'low';
+      return {
+        id: wo.id,
+        woNumber: wo.woNumber,
+        title: wo.title,
+        assetName: wo.assetName || 'Unassigned',
+        priority: wo.priority,
+        status: wo.status,
+        ageDays: age,
+        plannedEnd: wo.plannedEnd?.toISOString() || null,
+        pendingMaterials,
+        outstandingTools,
+        pendingAssistance,
+        pendingHandovers,
+        downtimeMinutes: round2(downtimeMinutes),
+        riskLevel,
+        reasons,
+      };
+    }).filter(row => row.reasons.length > 0)
+      .sort((a, b) => {
+        const rank: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 };
+        return (rank[b.riskLevel] - rank[a.riskLevel]) || (b.ageDays - a.ageDays);
+      })
+      .slice(0, 100);
+
     // ========== RECENT WORK ORDERS ==========
     const recentWorkOrders = workOrders.slice(0, 200).map(wo => ({
       id: wo.id,
@@ -492,6 +816,15 @@ export async function GET(request: NextRequest) {
           avgSupervisorReviewTimeHours: avgSupervisorReviewHours,
           avgClosureTimeHours: avgClosureTimeHours,
         },
+        backlogAging,
+        responseAndSla,
+        monthlyOperationalTrends,
+        assetReliability,
+        costAnalysis,
+        resourceFlow,
+        returnsAndDamage,
+        closureCompliance,
+        exceptionWatchlist,
         topAssets,
         workOrdersByAsset,
         recentWorkOrders,

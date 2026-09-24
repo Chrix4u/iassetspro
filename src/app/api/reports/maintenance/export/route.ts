@@ -55,6 +55,29 @@ type ReportData = {
     byCategory?: Array<Record<string, unknown>>;
     byImpactLevel?: Array<Record<string, unknown>>;
   };
+  backlogAging?: {
+    totalOpen?: number;
+    overdueOpen?: number;
+    avgOpenAgeDays?: number;
+    oldestOpenDays?: number;
+    buckets?: Array<Record<string, unknown>>;
+  };
+  responseAndSla?: Record<string, unknown>;
+  monthlyOperationalTrends?: Array<Record<string, unknown>>;
+  assetReliability?: Array<Record<string, unknown>>;
+  costAnalysis?: Record<string, unknown>;
+  resourceFlow?: {
+    materials?: Record<string, unknown>;
+    tools?: Record<string, unknown>;
+    assistance?: Record<string, unknown>;
+    handovers?: Record<string, unknown>;
+  };
+  returnsAndDamage?: {
+    spareParts?: Record<string, unknown>;
+    damagedTools?: Record<string, unknown>;
+  };
+  closureCompliance?: Record<string, unknown>;
+  exceptionWatchlist?: Array<Record<string, unknown> & { reasons?: unknown }>;
 };
 
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
@@ -141,6 +164,15 @@ function appendObjectSheet(workbook: XLSX.WorkBook, rows: Array<Record<string, u
   XLSX.utils.book_append_sheet(workbook, sheet, name.slice(0, 31));
 }
 
+function appendMetricSheet(workbook: XLSX.WorkBook, metrics: Record<string, unknown> | undefined, name: string) {
+  if (!metrics) return;
+  const rows = Object.entries(metrics)
+    .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) || value === null)
+    .map(([metric, value]) => ({ Metric: metric, Value: value ?? '' }));
+  if (!rows.length) return;
+  appendObjectSheet(workbook, rows, name);
+}
+
 function buildWorkbook(data: ReportData): Uint8Array {
   const workbook = XLSX.utils.book_new();
   const summaryEntries = Object.entries(data.summary || {}).map(([metric, value]) => ({
@@ -163,6 +195,26 @@ function buildWorkbook(data: ReportData): Uint8Array {
   appendObjectSheet(workbook, data.materialConsumption || [], 'Materials');
   appendObjectSheet(workbook, data.downtimeAnalysis?.byCategory || [], 'Downtime Category');
   appendObjectSheet(workbook, data.downtimeAnalysis?.byImpactLevel || [], 'Downtime Impact');
+  appendObjectSheet(workbook, data.backlogAging?.buckets || [], 'Backlog Aging');
+  appendMetricSheet(workbook, data.responseAndSla, 'Response SLA');
+  appendObjectSheet(workbook, data.monthlyOperationalTrends || [], 'Monthly Trends');
+  appendObjectSheet(workbook, data.assetReliability || [], 'Asset Reliability');
+  appendMetricSheet(workbook, data.costAnalysis, 'Cost Analysis');
+  appendMetricSheet(workbook, data.resourceFlow?.materials, 'Material Flow');
+  appendMetricSheet(workbook, data.resourceFlow?.tools, 'Tool Flow');
+  appendMetricSheet(workbook, data.resourceFlow?.assistance, 'Assistance');
+  appendMetricSheet(workbook, data.resourceFlow?.handovers, 'Handovers');
+  appendMetricSheet(workbook, data.returnsAndDamage?.spareParts, 'Spare Returns');
+  appendMetricSheet(workbook, data.returnsAndDamage?.damagedTools, 'Damaged Tools');
+  appendMetricSheet(workbook, data.closureCompliance, 'Closure Compliance');
+  appendObjectSheet(
+    workbook,
+    (data.exceptionWatchlist || []).map(row => ({
+      ...row,
+      reasons: Array.isArray(row.reasons) ? row.reasons.join('; ') : row.reasons,
+    })),
+    'Exception Watchlist',
+  );
 
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   return new Uint8Array(buffer);
@@ -213,7 +265,41 @@ async function buildPdf(
           { label: 'Open Work Orders', value: summaryValue(data, 'openWOs') },
           { label: 'SLA Compliance', value: `${summaryValue(data, 'slaComplianceRate')}%` },
           { label: 'Total Cost (GHS)', value: summaryValue(data, 'totalCost') },
+          { label: 'Overdue Open WOs', value: data.backlogAging?.overdueOpen ?? 0 },
+          { label: 'Avg Open Age (days)', value: data.backlogAging?.avgOpenAgeDays ?? 0 },
+          { label: 'Closure Compliance', value: `${String(data.closureCompliance?.complianceRate ?? 0)}%` },
         ],
+      },
+      {
+        title: 'Asset Reliability / Repeat Failures',
+        type: 'table',
+        data: {
+          headers: ['Asset', 'Failures', 'Repeat', 'MTBF Days', 'MTTR Hours', 'Downtime Min', 'Cost'],
+          rows: (data.assetReliability || []).slice(0, 15).map(row => [
+            String(row.assetName ?? ''),
+            Number(row.failureCount ?? 0),
+            row.repeatFailure ? 'Yes' : 'No',
+            row.mtbfDays ?? '',
+            row.mttrHours ?? 0,
+            row.downtimeMinutes ?? 0,
+            row.totalCost ?? 0,
+          ]),
+        },
+      },
+      {
+        title: 'Management Exceptions',
+        type: 'table',
+        data: {
+          headers: ['WO', 'Title', 'Priority', 'Age Days', 'Risk', 'Reasons'],
+          rows: (data.exceptionWatchlist || []).slice(0, 20).map(row => [
+            String(row.woNumber ?? ''),
+            String(row.title ?? ''),
+            String(row.priority ?? ''),
+            Number(row.ageDays ?? 0),
+            String(row.riskLevel ?? ''),
+            Array.isArray(row.reasons) ? row.reasons.join('; ') : String(row.reasons ?? ''),
+          ]),
+        },
       },
       {
         title: 'Work Order Detail',

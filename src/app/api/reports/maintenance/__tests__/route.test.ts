@@ -151,4 +151,54 @@ describe('GET /api/reports/maintenance', () => {
       }),
     }));
   });
+
+  it('returns the comprehensive RWOP management report sections from the same scoped dataset', async () => {
+    const response = await GET(request('moduleFilter=repairs'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.data).toEqual(expect.objectContaining({
+      backlogAging: expect.objectContaining({
+        totalOpen: 0,
+        overdueOpen: 0,
+        buckets: expect.any(Array),
+      }),
+      responseAndSla: expect.objectContaining({
+        avgResponseHours: 0,
+        slaComplianceRate: expect.any(Number),
+      }),
+      monthlyOperationalTrends: expect.any(Array),
+      assetReliability: expect.any(Array),
+      costAnalysis: expect.objectContaining({
+        recordedMaintenanceCost: 0,
+        trackedEconomicImpact: 0,
+      }),
+      resourceFlow: expect.objectContaining({
+        materials: expect.any(Object),
+        tools: expect.any(Object),
+        assistance: expect.any(Object),
+        handovers: expect.any(Object),
+      }),
+      returnsAndDamage: expect.objectContaining({
+        spareParts: expect.any(Object),
+        damagedTools: expect.any(Object),
+      }),
+      closureCompliance: expect.objectContaining({
+        complianceRate: expect.any(Number),
+      }),
+      exceptionWatchlist: expect.any(Array),
+    }));
+
+    expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        statusHistory: expect.any(Object),
+        repairMaterialRequests: true,
+        repairToolRequests: true,
+        teamMemberRequests: true,
+        sparePartReturns: true,
+        damagedToolReports: true,
+        shiftHandovers: true,
+      }),
+    }));
+  });
 });

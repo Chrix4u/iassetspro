@@ -85,6 +85,128 @@ type ReportData = {
   woByType?: Array<{ type: string; count: number }>;
   woByStatus?: Array<{ status: string; count: number }>;
   recentWorkOrders?: WorkOrderRow[];
+  backlogAging?: {
+    totalOpen: number;
+    overdueOpen: number;
+    avgOpenAgeDays: number;
+    oldestOpenDays: number;
+    buckets: Array<{ bucket: string; count: number }>;
+  };
+  responseAndSla?: {
+    avgResponseHours: number;
+    avgEmergencyResponseHours: number;
+    avgPlannerClosureLagHours: number;
+    slaComplianceRate: number;
+    slaBreachedWOs: number;
+    overdueOpen: number;
+  };
+  monthlyOperationalTrends?: Array<{
+    month: string;
+    opened: number;
+    completed: number;
+    closed: number;
+    emergency: number;
+    totalCost: number;
+    downtimeMinutes: number;
+    productionLoss: number;
+  }>;
+  assetReliability?: Array<{
+    assetId: string;
+    assetName: string;
+    assetTag?: string | null;
+    criticality?: string | null;
+    failureCount: number;
+    repeatFailure: boolean;
+    mtbfDays?: number | null;
+    mttrHours: number;
+    downtimeMinutes: number;
+    productionLoss: number;
+    totalCost: number;
+    lastFailureAt?: string | null;
+  }>;
+  costAnalysis?: {
+    recordedMaintenanceCost: number;
+    laborCost: number;
+    materialCost: number;
+    toolUsageCost: number;
+    damagedToolRepairCost: number;
+    sparePartRefurbishmentCost: number;
+    downtimeProductionLoss: number;
+    trackedEconomicImpact: number;
+    avgRecordedCostPerWo: number;
+  };
+  resourceFlow?: {
+    materials: {
+      totalRequests: number;
+      pendingRequests: number;
+      issuedRequests: number;
+      pendingReconciliation: number;
+      avgIssueHours: number;
+      wasteCost: number;
+      returnValue: number;
+    };
+    tools: {
+      totalRequests: number;
+      pendingRequests: number;
+      issuedRequests: number;
+      outstandingCustody: number;
+      returnedRequests: number;
+      avgIssueHours: number;
+    };
+    assistance: {
+      totalRequests: number;
+      pending: number;
+      approved: number;
+      rejected: number;
+      cancelled: number;
+      avgReviewHours: number;
+    };
+    handovers: { total: number; pending: number; confirmed: number };
+  };
+  returnsAndDamage?: {
+    spareParts: {
+      totalReturns: number;
+      pending: number;
+      returnedToStore: number;
+      disposed: number;
+      refurbishmentNeeded: number;
+      refurbishmentCost: number;
+    };
+    damagedTools: {
+      totalReports: number;
+      openReports: number;
+      repaired: number;
+      writtenOff: number;
+      criticalDamage: number;
+      repairCost: number;
+    };
+  };
+  closureCompliance?: {
+    eligibleWOs: number;
+    compliantWOs: number;
+    complianceRate: number;
+    missingRca: number;
+    awaitingSupervisorApproval: number;
+    awaitingPlannerClosure: number;
+    reworkWOs: number;
+    totalReworkInstances: number;
+  };
+  exceptionWatchlist?: Array<{
+    id: string;
+    woNumber?: string | null;
+    title?: string | null;
+    assetName: string;
+    priority: string;
+    status: string;
+    ageDays: number;
+    pendingMaterials: number;
+    outstandingTools: number;
+    pendingAssistance: number;
+    pendingHandovers: number;
+    downtimeMinutes: number;
+    riskLevel: string;
+    reasons: string[];
+  }>;
 };
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
@@ -526,6 +648,273 @@ export default function RWOPReportingPage() {
               </CardContent>
             </Card>
           </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Backlog, Aging & Response</CardTitle>
+                <CardDescription>Open-work aging, response speed and closure/SLA pressure</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Open</p><p className="text-xl font-bold">{report.backlogAging?.totalOpen ?? 0}</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Overdue</p><p className="text-xl font-bold text-red-600">{report.backlogAging?.overdueOpen ?? 0}</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Avg Open Age</p><p className="text-xl font-bold">{report.backlogAging?.avgOpenAgeDays ?? 0}d</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Oldest Open</p><p className="text-xl font-bold">{report.backlogAging?.oldestOpenDays ?? 0}d</p></div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Aging Buckets</p>
+                    <div className="space-y-2">
+                      {(report.backlogAging?.buckets || []).map(bucket => (
+                        <div key={bucket.bucket} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                          <span>{bucket.bucket}</span><strong>{bucket.count}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Response & SLA</p>
+                    {[
+                      ['Avg response', `${report.responseAndSla?.avgResponseHours ?? 0}h`],
+                      ['Emergency response', `${report.responseAndSla?.avgEmergencyResponseHours ?? 0}h`],
+                      ['Planner closure lag', `${report.responseAndSla?.avgPlannerClosureLagHours ?? 0}h`],
+                      ['SLA compliance', `${report.responseAndSla?.slaComplianceRate ?? 0}%`],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                        <span>{label}</span><strong>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Cost & Economic Impact</CardTitle>
+                <CardDescription>Recorded maintenance cost plus directly tracked operational impact</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ['Recorded maintenance', report.costAnalysis?.recordedMaintenanceCost ?? 0],
+                    ['Labor', report.costAnalysis?.laborCost ?? 0],
+                    ['Materials', report.costAnalysis?.materialCost ?? 0],
+                    ['Tool usage', report.costAnalysis?.toolUsageCost ?? 0],
+                    ['Damaged-tool repair', report.costAnalysis?.damagedToolRepairCost ?? 0],
+                    ['Spare refurbishment', report.costAnalysis?.sparePartRefurbishmentCost ?? 0],
+                    ['Production loss', report.costAnalysis?.downtimeProductionLoss ?? 0],
+                    ['Tracked economic impact', report.costAnalysis?.trackedEconomicImpact ?? 0],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="rounded-lg border p-3">
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                      <p className="mt-1 text-base font-bold">{formatCurrency(Number(value || 0))}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Monthly Repairs Trend</CardTitle>
+              <CardDescription>Opened vs completed workload with emergency volume by month</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(report.monthlyOperationalTrends || []).length ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={report.monthlyOperationalTrends} margin={{ top: 8, right: 8, bottom: 8, left: -12 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <RechartsTooltip />
+                    <Bar dataKey="opened" name="Opened" fill="#64748b" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="completed" name="Completed" fill="#059669" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="emergency" name="Emergency" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <EmptyState icon={BarChart3} title="No monthly trend data" />}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Asset Reliability & Repeat Failures</CardTitle>
+              <CardDescription>Corrective/emergency failure frequency, MTBF interval, MTTR, downtime and repair cost</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[520px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>Asset</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Failures</TableHead>
+                      <TableHead>Repeat</TableHead><TableHead className="text-right">MTBF Days</TableHead><TableHead className="text-right">MTTR Hours</TableHead>
+                      <TableHead className="text-right">Downtime</TableHead><TableHead className="text-right">Cost</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(report.assetReliability || []).slice(0, 30).map(asset => (
+                      <TableRow key={asset.assetId || asset.assetName}>
+                        <TableCell><div className="font-medium">{asset.assetName}</div>{asset.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{asset.assetTag}</div>}</TableCell>
+                        <TableCell className="text-xs">{prettify(asset.criticality)}</TableCell>
+                        <TableCell className="text-right font-mono">{asset.failureCount}</TableCell>
+                        <TableCell>{asset.repeatFailure ? <Badge variant="destructive">Repeat</Badge> : <Badge variant="outline">Single</Badge>}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{asset.mtbfDays ?? '—'}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{asset.mttrHours}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{Math.round(asset.downtimeMinutes)}m</TableCell>
+                        <TableCell className="text-right text-sm">{formatCurrency(asset.totalCost)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                title: 'Materials',
+                rows: [
+                  ['Requests', report.resourceFlow?.materials.totalRequests ?? 0],
+                  ['Pending', report.resourceFlow?.materials.pendingRequests ?? 0],
+                  ['Pending reconciliation', report.resourceFlow?.materials.pendingReconciliation ?? 0],
+                  ['Avg issue', `${report.resourceFlow?.materials.avgIssueHours ?? 0}h`],
+                  ['Waste cost', formatCurrency(report.resourceFlow?.materials.wasteCost ?? 0)],
+                  ['Return value', formatCurrency(report.resourceFlow?.materials.returnValue ?? 0)],
+                ],
+              },
+              {
+                title: 'Tools / Custody',
+                rows: [
+                  ['Requests', report.resourceFlow?.tools.totalRequests ?? 0],
+                  ['Pending', report.resourceFlow?.tools.pendingRequests ?? 0],
+                  ['Issued', report.resourceFlow?.tools.issuedRequests ?? 0],
+                  ['Outstanding custody', report.resourceFlow?.tools.outstandingCustody ?? 0],
+                  ['Returned', report.resourceFlow?.tools.returnedRequests ?? 0],
+                  ['Avg issue', `${report.resourceFlow?.tools.avgIssueHours ?? 0}h`],
+                ],
+              },
+              {
+                title: 'Assistance',
+                rows: [
+                  ['Requests', report.resourceFlow?.assistance.totalRequests ?? 0],
+                  ['Pending', report.resourceFlow?.assistance.pending ?? 0],
+                  ['Approved', report.resourceFlow?.assistance.approved ?? 0],
+                  ['Rejected', report.resourceFlow?.assistance.rejected ?? 0],
+                  ['Cancelled', report.resourceFlow?.assistance.cancelled ?? 0],
+                  ['Avg review', `${report.resourceFlow?.assistance.avgReviewHours ?? 0}h`],
+                ],
+              },
+              {
+                title: 'Shift Handovers',
+                rows: [
+                  ['Total', report.resourceFlow?.handovers.total ?? 0],
+                  ['Pending', report.resourceFlow?.handovers.pending ?? 0],
+                  ['Confirmed', report.resourceFlow?.handovers.confirmed ?? 0],
+                ],
+              },
+            ].map(section => (
+              <Card key={section.title} className="border-border/60 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{section.title}</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {section.rows.map(([label, value]) => (
+                    <div key={String(label)} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{label}</span><strong>{value}</strong>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Closure & RCA Compliance</CardTitle>
+                <CardDescription>Completion quality, approvals and rework readiness</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Compliance</p><p className="text-xl font-bold">{report.closureCompliance?.complianceRate ?? 0}%</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Missing RCA</p><p className="text-xl font-bold text-amber-600">{report.closureCompliance?.missingRca ?? 0}</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework WOs</p><p className="text-xl font-bold">{report.closureCompliance?.reworkWOs ?? 0}</p></div>
+                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework Instances</p><p className="text-xl font-bold">{report.closureCompliance?.totalReworkInstances ?? 0}</p></div>
+                </div>
+                <div className="text-sm">
+                  <div className="flex justify-between border-b py-2"><span>Eligible completed/closed WOs</span><strong>{report.closureCompliance?.eligibleWOs ?? 0}</strong></div>
+                  <div className="flex justify-between border-b py-2"><span>Compliant WOs</span><strong>{report.closureCompliance?.compliantWOs ?? 0}</strong></div>
+                  <div className="flex justify-between border-b py-2"><span>Awaiting supervisor approval</span><strong>{report.closureCompliance?.awaitingSupervisorApproval ?? 0}</strong></div>
+                  <div className="flex justify-between py-2"><span>Planner closure exceptions</span><strong>{report.closureCompliance?.awaitingPlannerClosure ?? 0}</strong></div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Returns & Damaged Tools</CardTitle>
+                <CardDescription>Rotating spare recovery, refurbishment and tool-damage exposure</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-lg border p-3 text-sm">
+                  <p className="mb-2 font-semibold">Spare Part Returns</p>
+                  <div className="flex justify-between py-1"><span>Total</span><strong>{report.returnsAndDamage?.spareParts.totalReturns ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Pending</span><strong>{report.returnsAndDamage?.spareParts.pending ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Returned to store</span><strong>{report.returnsAndDamage?.spareParts.returnedToStore ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Disposed</span><strong>{report.returnsAndDamage?.spareParts.disposed ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Refurbishment cost</span><strong>{formatCurrency(report.returnsAndDamage?.spareParts.refurbishmentCost ?? 0)}</strong></div>
+                </div>
+                <div className="rounded-lg border p-3 text-sm">
+                  <p className="mb-2 font-semibold">Damaged Tools</p>
+                  <div className="flex justify-between py-1"><span>Reports</span><strong>{report.returnsAndDamage?.damagedTools.totalReports ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Open</span><strong>{report.returnsAndDamage?.damagedTools.openReports ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Critical damage</span><strong>{report.returnsAndDamage?.damagedTools.criticalDamage ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Written off</span><strong>{report.returnsAndDamage?.damagedTools.writtenOff ?? 0}</strong></div>
+                  <div className="flex justify-between py-1"><span>Repair cost</span><strong>{formatCurrency(report.returnsAndDamage?.damagedTools.repairCost ?? 0)}</strong></div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base">Management Exception Watchlist</CardTitle>
+                  <CardDescription>Open repairs needing management attention because of age, priority, downtime or unresolved resources</CardDescription>
+                </div>
+                <Badge variant={(report.exceptionWatchlist || []).some(item => item.riskLevel === 'critical') ? 'destructive' : 'outline'}>
+                  {(report.exceptionWatchlist || []).length} exception(s)
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[520px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>WO</TableHead><TableHead>Title / Asset</TableHead><TableHead>Risk</TableHead><TableHead>Age</TableHead><TableHead>Why flagged</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(report.exceptionWatchlist || []).length === 0 ? (
+                      <TableRow><TableCell colSpan={5}><EmptyState icon={CheckCircle2} title="No management exceptions in this report period" /></TableCell></TableRow>
+                    ) : (report.exceptionWatchlist || []).map(item => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
+                        <TableCell><div className="font-medium">{item.title || 'Untitled work order'}</div><div className="text-xs text-muted-foreground">{item.assetName}</div></TableCell>
+                        <TableCell><Badge variant={item.riskLevel === 'critical' ? 'destructive' : 'outline'}>{prettify(item.riskLevel)}</Badge></TableCell>
+                        <TableCell className="font-mono text-xs">{item.ageDays}d</TableCell>
+                        <TableCell className="max-w-[520px] text-xs">{item.reasons.join(' · ')}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">

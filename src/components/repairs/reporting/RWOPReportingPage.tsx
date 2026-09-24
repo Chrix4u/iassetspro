@@ -576,7 +576,8 @@ export default function RWOPReportingPage() {
             departmentId: source.departmentId === 'all' ? undefined : source.departmentId,
           },
         };
-        response = await api.postRaw('/api/repairs/reports/xlsx', {
+        response = await api.getRaw('/api/repairs/reports/xlsx', {
+          method: 'POST',
           headers: {
             ...plantHeader(source.plantId),
             'Content-Type': 'application/json',

@@ -138,13 +138,14 @@ test.describe('Repairs Reports & Analytics', () => {
     await expect(page.getByRole('button', { name: 'CSV' })).toBeEnabled();
 
     await page.getByRole('tab', { name: /Report Library/i }).click();
-    await expect(page.getByText('Repairs Report Library')).toBeVisible();
-    await expect(page.getByText('Daily / Weekly Repairs Operations')).toBeVisible();
-    await expect(page.getByText('Asset Repair History')).toBeVisible();
-    await expect(page.getByText('Department / Cost-Center Cost')).toBeVisible();
-    await expect(page.getByText('Technician Timesheet / Labor')).toBeVisible();
-    await expect(page.getByText('Downtime & Production Loss')).toBeVisible();
-    await expect(page.getByText('Failure / RCA Analysis')).toBeVisible();
+    const reportLibrary = page.locator('[data-slot="tabs-content"][data-state="active"]');
+    await expect(reportLibrary.getByText('Repairs Report Library')).toBeVisible();
+    await expect(reportLibrary.getByText('Daily / Weekly Repairs Operations', { exact: true })).toBeVisible();
+    await expect(reportLibrary.getByText('Asset Repair History', { exact: true })).toBeVisible();
+    await expect(reportLibrary.getByText('Department / Cost-Center Cost', { exact: true })).toBeVisible();
+    await expect(reportLibrary.getByText('Technician Timesheet / Labor', { exact: true })).toBeVisible();
+    await expect(reportLibrary.getByText('Downtime & Production Loss', { exact: true })).toBeVisible();
+    await expect(reportLibrary.getByText('Failure / RCA Analysis', { exact: true })).toBeVisible();
   });
 
   test('enforces report RBAC and plant scope for data and PDF export', async () => {

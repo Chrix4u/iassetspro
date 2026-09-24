@@ -15,6 +15,12 @@ import {
   Printer,
   RefreshCw,
   ShieldCheck,
+  ClipboardList,
+  Boxes,
+  UserRoundCheck,
+  TrendingDown,
+  Coins,
+  History,
   Wrench,
 } from 'lucide-react';
 import {
@@ -211,6 +217,47 @@ type ReportData = {
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+type OperationalXlsxReportType =
+  | 'work-order'
+  | 'maintenance-request'
+  | 'labor'
+  | 'downtime'
+  | 'material'
+  | 'tool'
+  | 'failure-analysis'
+  | 'cost'
+  | 'backlog-aging'
+  | 'sla';
+
+type OperationalPdfReportType =
+  | 'lifecycle'
+  | 'execution'
+  | 'materials'
+  | 'tools'
+  | 'downtime'
+  | 'technician_performance';
+
+type OperationalReportDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  xlsxType: OperationalXlsxReportType;
+  pdfType?: OperationalPdfReportType;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
+  { id: 'work-orders', title: 'Work Orders', description: 'Detailed repairs work orders with status, asset, labor, cost and timeline.', xlsxType: 'work-order', pdfType: 'execution', icon: ClipboardList },
+  { id: 'maintenance-requests', title: 'Maintenance Requests', description: 'Request intake, approvals, planner conversion and WO linkage.', xlsxType: 'maintenance-request', pdfType: 'lifecycle', icon: FileText },
+  { id: 'labor', title: 'Technician Labor & Time', description: 'Technician time logs, activity, breaks, team logs and labor hours.', xlsxType: 'labor', pdfType: 'technician_performance', icon: UserRoundCheck },
+  { id: 'downtime', title: 'Downtime & Production Loss', description: 'Downtime events, duration, impact level and production-loss exposure.', xlsxType: 'downtime', pdfType: 'downtime', icon: TrendingDown },
+  { id: 'materials', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
+  { id: 'tools', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
+  { id: 'failure-analysis', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
+  { id: 'cost', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
+  { id: 'backlog-aging', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
+  { id: 'sla', title: 'SLA Compliance', description: 'Response/closure compliance against priority-based service targets.', xlsxType: 'sla', icon: ShieldCheck },
+];
 
 type ReportFilters = {
   startDate: string;
@@ -295,6 +342,7 @@ export default function RWOPReportingPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
+  const [operationalDownloading, setOperationalDownloading] = useState<string | null>(null);
   const initialLoadStarted = useRef(false);
 
   const canView = isAdmin()
@@ -435,6 +483,132 @@ export default function RWOPReportingPage() {
     }
   };
 
+
+  const applyQuickPeriod = (period: 'today' | 'week' | 'month') => {
+    const end = new Date();
+    const start = new Date(end);
+
+    if (period === 'week') {
+      const day = start.getDay();
+      const daysSinceMonday = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - daysSinceMonday);
+    } else if (period === 'month') {
+      start.setDate(1);
+    }
+
+    const next = {
+      ...filters,
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      moduleFilter: 'repairs' as ModuleFilter,
+    };
+    setFilters(next);
+    void loadReport(next);
+  };
+
+  const downloadOperationalXlsx = async (definition: OperationalReportDefinition) => {
+    if (!canExport) {
+      toast.error('reports.export permission is required');
+      return;
+    }
+
+    setOperationalDownloading(`${definition.id}:xlsx`);
+    try {
+      const response = await api.getRaw('/api/repairs/reports/xlsx', {
+        method: 'POST',
+        headers: {
+          ...plantHeader(filters.plantId),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reportType: definition.xlsxType,
+          filters: {
+            dateFrom: filters.startDate || undefined,
+            dateTo: filters.endDate || undefined,
+            plantId: filters.plantId === 'all' ? undefined : filters.plantId,
+            departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
+          },
+        }),
+        timeout: 60_000,
+      });
+
+      if (!response.ok) {
+        let message = `Excel export failed (${response.status})`;
+        try {
+          const body = await response.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep HTTP fallback.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const disposition = response.headers.get('content-disposition') || '';
+      const serverName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = serverName || `${definition.xlsxType}-report.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${definition.title} Excel report exported`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Excel export failed');
+    } finally {
+      setOperationalDownloading(null);
+    }
+  };
+
+  const downloadOperationalPdf = async (definition: OperationalReportDefinition) => {
+    if (!canExport || !definition.pdfType) return;
+
+    setOperationalDownloading(`${definition.id}:pdf`);
+    try {
+      const params = new URLSearchParams({
+        type: definition.pdfType,
+        format: 'pdf',
+      });
+      if (filters.startDate) params.set('from', filters.startDate);
+      if (filters.endDate) params.set('to', filters.endDate);
+      if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
+      if (filters.departmentId !== 'all') params.set('department', filters.departmentId);
+
+      const response = await api.getRaw(`/api/repairs/reports?${params.toString()}`, {
+        headers: plantHeader(filters.plantId),
+        timeout: 60_000,
+      });
+
+      if (!response.ok) {
+        let message = `PDF export failed (${response.status})`;
+        try {
+          const body = await response.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep HTTP fallback.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `repair-${definition.pdfType}-report.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${definition.title} PDF report exported`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'PDF export failed');
+    } finally {
+      setOperationalDownloading(null);
+    }
+  };
+
   if ((authLoading || !isAuthenticated) && !report) {
     return <div className="page-content"><LoadingSkeleton /></div>;
   }
@@ -569,10 +743,73 @@ export default function RWOPReportingPage() {
             </Button>
           </div>
 
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Quick periods:</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('today')}>Today</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('week')}>This Week</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('month')}>This Month</Button>
+          </div>
+
           {filtersDirty && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
               Filters have changed. Select Generate to refresh the report. Export buttons continue to use the currently displayed report filters.
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/60 shadow-sm print:hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Repairs Report Library</CardTitle>
+          <CardDescription>
+            Operational reports use the currently selected date, plant and department filters. Excel exports contain the full filtered dataset.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {OPERATIONAL_REPORTS.map(definition => {
+              const Icon = definition.icon;
+              const xlsxBusy = operationalDownloading === `${definition.id}:xlsx`;
+              const pdfBusy = operationalDownloading === `${definition.id}:pdf`;
+              return (
+                <div key={definition.id} className="rounded-lg border border-border/60 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-md border bg-muted/40 p-2"><Icon className="h-4 w-4" /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">{definition.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{definition.description}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canExport || operationalDownloading !== null}
+                      onClick={() => void downloadOperationalXlsx(definition)}
+                    >
+                      {xlsxBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />}
+                      Excel
+                    </Button>
+                    {definition.pdfType && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canExport || operationalDownloading !== null}
+                        onClick={() => void downloadOperationalPdf(definition)}
+                      >
+                        {pdfBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
+                        PDF
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {!canExport && (
+            <p className="mt-3 text-xs text-muted-foreground">You can view reporting analytics, but report file downloads require reports.export permission.</p>
           )}
         </CardContent>
       </Card>

@@ -144,7 +144,10 @@ test.describe('Repairs Reports & Analytics', () => {
     await expect(page.getByText('Main Conveyor')).toBeVisible();
     await expect(page.getByText('Tracked economic impact')).toBeVisible();
 
-    await expect(page.getByText('Repairs Report Library')).toBeVisible();
+    const reportLibrary = page
+      .getByText('Repairs Report Library', { exact: true })
+      .locator('xpath=ancestor::*[@data-slot="card"][1]');
+    await expect(reportLibrary).toBeVisible();
     for (const title of [
       'Work Orders',
       'Maintenance Requests',
@@ -157,13 +160,15 @@ test.describe('Repairs Reports & Analytics', () => {
       'Backlog & Aging',
       'SLA Compliance',
     ]) {
-      await expect(page.getByText(title, { exact: true })).toBeVisible();
+      await expect(reportLibrary.getByText(title, { exact: true })).toBeVisible();
     }
     await expect(page.getByRole('button', { name: 'Today' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'This Week' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'This Month' })).toBeVisible();
 
-    const workOrderReportCard = page.getByText('Work Orders', { exact: true }).locator('..').locator('..').locator('..');
+    const workOrderReportCard = reportLibrary
+      .getByText('Work Orders', { exact: true })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
     await workOrderReportCard.getByRole('button', { name: 'Excel' }).click();
     await expect.poll(() => operationalExportBody).not.toBeNull();
     expect(operationalExportBody).toMatchObject({

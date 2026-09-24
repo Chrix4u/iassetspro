@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import * as XLSX from 'xlsx';
 
 const {
   mockDb,
@@ -135,6 +136,9 @@ describe('GET /api/reports/maintenance/export', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(bytes.length).toBeGreaterThan(100);
     expect(String.fromCharCode(bytes[0], bytes[1])).toBe('PK');
+    const workbook = XLSX.read(bytes, { type: 'array' });
+    expect(workbook.SheetNames).toContain('Summary');
+    expect(workbook.SheetNames).toContain('Work Orders');
   });
 
   it('returns a server-generated PDF using the same scoped report dataset', async () => {
@@ -153,6 +157,8 @@ describe('GET /api/reports/maintenance/export', () => {
       generatedBy: 'Report Exporter',
       sections: expect.arrayContaining([
         expect.objectContaining({ title: 'Management Summary' }),
+        expect.objectContaining({ title: 'Asset Reliability / Repeat Failures' }),
+        expect.objectContaining({ title: 'Management Exceptions' }),
         expect.objectContaining({ title: 'Work Order Detail' }),
       ]),
     }));

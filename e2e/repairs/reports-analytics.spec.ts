@@ -136,6 +136,15 @@ test.describe('Repairs Reports & Analytics', () => {
     await expect(page.getByRole('button', { name: 'PDF' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Excel' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'CSV' })).toBeEnabled();
+
+    await page.getByRole('tab', { name: /Report Library/i }).click();
+    await expect(page.getByText('Repairs Report Library')).toBeVisible();
+    await expect(page.getByText('Daily / Weekly Repairs Operations')).toBeVisible();
+    await expect(page.getByText('Asset Repair History')).toBeVisible();
+    await expect(page.getByText('Department / Cost-Center Cost')).toBeVisible();
+    await expect(page.getByText('Technician Timesheet / Labor')).toBeVisible();
+    await expect(page.getByText('Downtime & Production Loss')).toBeVisible();
+    await expect(page.getByText('Failure / RCA Analysis')).toBeVisible();
   });
 
   test('enforces report RBAC and plant scope for data and PDF export', async () => {

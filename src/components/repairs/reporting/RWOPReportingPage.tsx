@@ -9,6 +9,11 @@ import {
   Clock,
   Download,
   FileSpreadsheet,
+  FileChartColumnIncreasing,
+  History,
+  PackageSearch,
+  UsersRound,
+  WalletCards,
   FileText,
   Filter,
   Loader2,
@@ -38,6 +43,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { DateRangePicker } from '@/components/ui/datetime-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDate } from '@/components/shared/helpers';
 
 type Plant = {
@@ -211,6 +217,28 @@ type ReportData = {
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+type LibraryReportType =
+  | 'work-order'
+  | 'maintenance-request'
+  | 'labor'
+  | 'downtime'
+  | 'material'
+  | 'tool'
+  | 'failure-analysis'
+  | 'cost'
+  | 'backlog-aging'
+  | 'sla'
+  | 'operations-summary'
+  | 'asset-repair-history'
+  | 'department-cost';
+
+type ReportLibraryItem = {
+  type: LibraryReportType;
+  title: string;
+  description: string;
+  category: 'Operations' | 'Reliability' | 'Resources' | 'Finance';
+  pdfType?: 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
+};
 
 type ReportFilters = {
   startDate: string;
@@ -221,6 +249,93 @@ type ReportFilters = {
 };
 
 const STATUS_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#14b8a6'];
+const REPORT_LIBRARY: ReportLibraryItem[] = [
+  {
+    type: 'operations-summary',
+    title: 'Daily / Weekly Repairs Operations',
+    description: 'Daily and weekly workload, emergency jobs, labor hours, downtime, production loss and maintenance cost.',
+    category: 'Operations',
+  },
+  {
+    type: 'work-order',
+    title: 'Work Order Register',
+    description: 'Complete repairs work-order register with assignment, timeline, hours and cost fields.',
+    category: 'Operations',
+    pdfType: 'execution',
+  },
+  {
+    type: 'maintenance-request',
+    title: 'Maintenance Request Lifecycle',
+    description: 'Request intake, approvals, planner assignment, WO conversion and lifecycle tracking.',
+    category: 'Operations',
+    pdfType: 'lifecycle',
+  },
+  {
+    type: 'labor',
+    title: 'Technician Timesheet / Labor',
+    description: 'Technician time logs, activities, breaks, team logs and total labor hours.',
+    category: 'Operations',
+    pdfType: 'technician_performance',
+  },
+  {
+    type: 'downtime',
+    title: 'Downtime & Production Loss',
+    description: 'Downtime events, duration, impact level, reasons and production-loss exposure.',
+    category: 'Operations',
+    pdfType: 'downtime',
+  },
+  {
+    type: 'asset-repair-history',
+    title: 'Asset Repair History',
+    description: 'Full asset-by-asset repair history with RCA, rework, labor, downtime and repair cost.',
+    category: 'Reliability',
+  },
+  {
+    type: 'failure-analysis',
+    title: 'Failure / RCA Analysis',
+    description: 'Failure modes, severity, root causes, corrective/preventive actions and Pareto analysis.',
+    category: 'Reliability',
+  },
+  {
+    type: 'backlog-aging',
+    title: 'Backlog & Aging',
+    description: 'Open WOs grouped by age with overdue, unassigned and critical-priority exposure.',
+    category: 'Reliability',
+  },
+  {
+    type: 'sla',
+    title: 'SLA Compliance',
+    description: 'Priority-based SLA performance, breach variance and compliance by priority.',
+    category: 'Reliability',
+  },
+  {
+    type: 'material',
+    title: 'Material Usage / Reconciliation',
+    description: 'Material requests, approvals, issue quantities, returns, costs and usage tracking.',
+    category: 'Resources',
+    pdfType: 'materials',
+  },
+  {
+    type: 'tool',
+    title: 'Tool Usage / Custody',
+    description: 'Tool requests, custody, issue/return condition, rejection and damaged-tool exposure.',
+    category: 'Resources',
+    pdfType: 'tools',
+  },
+  {
+    type: 'cost',
+    title: 'Repairs Cost Analysis',
+    description: 'Labor, parts, contractor, tool and total repair costs with cost-by-type analysis.',
+    category: 'Finance',
+  },
+  {
+    type: 'department-cost',
+    title: 'Department / Cost-Center Cost',
+    description: 'Repair expenditure and production-loss economic impact grouped by department/cost center.',
+    category: 'Finance',
+  },
+];
+
 const TYPE_COLORS: Record<string, string> = {
   corrective: '#f59e0b',
   emergency: '#ef4444',
@@ -295,6 +410,7 @@ export default function RWOPReportingPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
+  const [libraryDownloading, setLibraryDownloading] = useState<string | null>(null);
   const initialLoadStarted = useRef(false);
 
   const canView = isAdmin()
@@ -432,6 +548,84 @@ export default function RWOPReportingPage() {
       toast.error(error instanceof Error ? error.message : 'Export failed');
     } finally {
       setDownloading(null);
+    }
+  };
+
+  const downloadLibraryReport = async (item: ReportLibraryItem, format: 'xlsx' | 'pdf') => {
+    if (!canExport) {
+      toast.error('You need reports.export permission to download reports');
+      return;
+    }
+    const source = appliedFilters || filters;
+    if (source.startDate && source.endDate && source.startDate > source.endDate) {
+      toast.error('Start date cannot be after end date');
+      return;
+    }
+
+    const key = `${item.type}:${format}`;
+    setLibraryDownloading(key);
+    try {
+      let response: Response;
+      if (format === 'xlsx') {
+        const body: Record<string, unknown> = {
+          reportType: item.type,
+          filters: {
+            dateFrom: source.startDate || undefined,
+            dateTo: source.endDate || undefined,
+            plantId: source.plantId === 'all' ? undefined : source.plantId,
+            departmentId: source.departmentId === 'all' ? undefined : source.departmentId,
+          },
+        };
+        response = await api.postRaw('/api/repairs/reports/xlsx', {
+          headers: {
+            ...plantHeader(source.plantId),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          timeout: 60_000,
+        });
+      } else {
+        if (!item.pdfType) throw new Error('PDF is not available for this report');
+        const params = new URLSearchParams();
+        params.set('type', item.pdfType);
+        params.set('format', 'pdf');
+        if (source.startDate) params.set('from', source.startDate);
+        if (source.endDate) params.set('to', source.endDate);
+        if (source.plantId !== 'all') params.set('plantId', source.plantId);
+        if (source.departmentId !== 'all') params.set('department', source.departmentId);
+        response = await api.getRaw(`/api/repairs/reports?${params.toString()}`, {
+          headers: plantHeader(source.plantId),
+          timeout: 60_000,
+        });
+      }
+
+      if (!response.ok) {
+        let message = `Report export failed (${response.status})`;
+        try {
+          const payload = await response.json();
+          if (payload?.error) message = payload.error;
+        } catch {
+          // Use HTTP status fallback for binary/non-JSON errors.
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const disposition = response.headers.get('content-disposition') || '';
+      const serverName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = serverName || `${item.type}-report.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${item.title} exported`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Report export failed');
+    } finally {
+      setLibraryDownloading(null);
     }
   };
 
@@ -577,6 +771,79 @@ export default function RWOPReportingPage() {
         </CardContent>
       </Card>
 
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="print:hidden">
+          <TabsTrigger value="overview"><BarChart3 className="h-4 w-4" />Management Overview</TabsTrigger>
+          <TabsTrigger value="library"><FileChartColumnIncreasing className="h-4 w-4" />Report Library</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="library" className="space-y-5">
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Repairs Report Library</CardTitle>
+              <CardDescription>
+                Generate focused operational, reliability, resource and financial reports using the currently selected date, plant and department filters.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {REPORT_LIBRARY.map(item => {
+                  const icon = item.category === 'Operations'
+                    ? UsersRound
+                    : item.category === 'Reliability'
+                      ? History
+                      : item.category === 'Resources'
+                        ? PackageSearch
+                        : WalletCards;
+                  const Icon = icon;
+                  const xlsxBusy = libraryDownloading === `${item.type}:xlsx`;
+                  const pdfBusy = libraryDownloading === `${item.type}:pdf`;
+                  return (
+                    <Card key={item.type} className="flex h-full flex-col border-border/60">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="rounded-lg border bg-muted/40 p-2"><Icon className="h-4 w-4" /></div>
+                          <Badge variant="outline">{item.category}</Badge>
+                        </div>
+                        <CardTitle className="pt-2 text-sm">{item.title}</CardTitle>
+                        <CardDescription className="min-h-[42px] text-xs">{item.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="mt-auto flex flex-wrap gap-2 pt-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canExport || libraryDownloading !== null}
+                          onClick={() => void downloadLibraryReport(item, 'xlsx')}
+                        >
+                          {xlsxBusy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}
+                          Excel
+                        </Button>
+                        {item.pdfType && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!canExport || libraryDownloading !== null}
+                            onClick={() => void downloadLibraryReport(item, 'pdf')}
+                          >
+                            {pdfBusy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
+                            PDF
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              {filtersDirty && (
+                <p className="mt-4 text-xs text-amber-700 dark:text-amber-300">
+                  Report Library downloads use the currently displayed report filters. Select Generate first if you want the changed filter values applied consistently.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="overview" className="space-y-6">
       {loading && !report ? (
         <LoadingSkeleton />
       ) : !report ? (
@@ -979,6 +1246,9 @@ export default function RWOPReportingPage() {
           </Card>
         </>
       )}
+
+        </TabsContent>
+      </Tabs>
 
       <style>{`
         @media print {

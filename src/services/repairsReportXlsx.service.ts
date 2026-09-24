@@ -846,6 +846,413 @@ export async function exportSLAReport(
   };
 }
 
+
+const OPERATIONS_COLUMNS: ReportColumn[] = [
+  { key: 'date', header: 'Date', format: 'date', width: 14 },
+  { key: 'opened', header: 'Opened WOs', format: 'number', width: 14 },
+  { key: 'completed', header: 'Completed WOs', format: 'number', width: 16 },
+  { key: 'closed', header: 'Closed WOs', format: 'number', width: 14 },
+  { key: 'emergency', header: 'Emergency WOs', format: 'number', width: 16 },
+  { key: 'laborHours', header: 'Labor Hours', format: 'number', width: 14 },
+  { key: 'downtimeHours', header: 'Downtime Hours', format: 'number', width: 16 },
+  { key: 'productionLoss', header: 'Production Loss', format: 'currency', width: 18 },
+  { key: 'maintenanceCost', header: 'Maintenance Cost', format: 'currency', width: 18 },
+];
+
+function weekStartKey(value: Date): string {
+  const date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() - day + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+export async function exportOperationsSummaryReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where = buildBaseWhere(filters);
+  if (!filters.type) {
+    where.type = { in: ['corrective', 'emergency'] };
+  }
+
+  const workOrders = await db.workOrder.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      timeLogs: { select: { duration: true } },
+      workOrderDowntimes: { select: { durationMinutes: true, productionLoss: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 10000,
+  });
+
+  type OpsRow = {
+    date: string;
+    opened: number;
+    completed: number;
+    closed: number;
+    emergency: number;
+    laborHours: number;
+    downtimeHours: number;
+    productionLoss: number;
+    maintenanceCost: number;
+  };
+
+  const daily = new Map<string, OpsRow>();
+  const weekly = new Map<string, OpsRow>();
+
+  const addTo = (target: Map<string, OpsRow>, key: string, wo: (typeof workOrders)[number]) => {
+    const row = target.get(key) || {
+      date: key,
+      opened: 0,
+      completed: 0,
+      closed: 0,
+      emergency: 0,
+      laborHours: 0,
+      downtimeHours: 0,
+      productionLoss: 0,
+      maintenanceCost: 0,
+    };
+    row.opened += 1;
+    if (['completed', 'verified', 'closed'].includes(wo.status)) row.completed += 1;
+    if (wo.status === 'closed') row.closed += 1;
+    if (wo.type === 'emergency') row.emergency += 1;
+    row.laborHours += wo.timeLogs.reduce((sum, log) => sum + (log.duration || 0), 0);
+    row.downtimeHours += wo.workOrderDowntimes.reduce((sum, dt) => sum + (dt.durationMinutes || 0), 0) / 60;
+    row.productionLoss += wo.workOrderDowntimes.reduce((sum, dt) => sum + (dt.productionLoss || 0), 0);
+    row.maintenanceCost += wo.totalCost || 0;
+    target.set(key, row);
+  };
+
+  for (const wo of workOrders) {
+    addTo(daily, wo.createdAt.toISOString().slice(0, 10), wo);
+    addTo(weekly, weekStartKey(wo.createdAt), wo);
+  }
+
+  const normalize = (rows: OpsRow[]) => rows.map((row) => ({
+    ...row,
+    laborHours: Number(row.laborHours.toFixed(2)),
+    downtimeHours: Number(row.downtimeHours.toFixed(2)),
+    productionLoss: Number(row.productionLoss.toFixed(2)),
+    maintenanceCost: Number(row.maintenanceCost.toFixed(2)),
+  }));
+
+  const dailyRows = normalize([...daily.values()].sort((a, b) => a.date.localeCompare(b.date)));
+  const weeklyRows = normalize([...weekly.values()].sort((a, b) => a.date.localeCompare(b.date)));
+  const totalDowntimeHours = dailyRows.reduce((sum, row) => sum + row.downtimeHours, 0);
+  const totalLoss = dailyRows.reduce((sum, row) => sum + row.productionLoss, 0);
+  const totalCost = dailyRows.reduce((sum, row) => sum + row.maintenanceCost, 0);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Daily / Weekly Repairs Operations Report',
+    description: 'Operational repairs activity, labor, downtime, production loss and maintenance cost by day and week',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName,
+    kpis: [
+      { label: 'Work Orders', value: workOrders.length },
+      { label: 'Emergency WOs', value: workOrders.filter((wo) => wo.type === 'emergency').length },
+      { label: 'Downtime Hours', value: totalDowntimeHours.toFixed(2) },
+      { label: 'Production Loss', value: \`GHS \${totalLoss.toFixed(2)}\` },
+      { label: 'Maintenance Cost', value: \`GHS \${totalCost.toFixed(2)}\` },
+    ],
+  });
+
+  addDataSheet(wb, 'Daily Operations', OPERATIONS_COLUMNS, dailyRows);
+  addDataSheet(
+    wb,
+    'Weekly Operations',
+    [{ ...OPERATIONS_COLUMNS[0], header: 'Week Starting' }, ...OPERATIONS_COLUMNS.slice(1)],
+    weeklyRows,
+  );
+  addAnalyticsSheet(wb, 'Status Breakdown', buildStatusBreakdown(workOrders, 'status'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('repairs-daily-weekly-operations'),
+  };
+}
+
+const ASSET_HISTORY_COLUMNS: ReportColumn[] = [
+  { key: 'assetName', header: 'Asset', width: 26 },
+  { key: 'assetTag', header: 'Asset Tag', width: 18 },
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'title', header: 'Repair', width: 32 },
+  { key: 'type', header: 'Type', width: 14 },
+  { key: 'priority', header: 'Priority', width: 12 },
+  { key: 'status', header: 'Status', width: 18 },
+  { key: 'failureDescription', header: 'Failure Description', width: 36 },
+  { key: 'rootCause', header: 'Root Cause', width: 32 },
+  { key: 'correctiveAction', header: 'Corrective Action', width: 36 },
+  { key: 'laborHours', header: 'Labor Hours', format: 'number', width: 14 },
+  { key: 'downtimeMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+  { key: 'laborCost', header: 'Labor Cost', format: 'currency', width: 14 },
+  { key: 'partsCost', header: 'Parts Cost', format: 'currency', width: 14 },
+  { key: 'totalCost', header: 'Total Cost', format: 'currency', width: 14 },
+  { key: 'startedAt', header: 'Started', format: 'datetime', width: 20 },
+  { key: 'completedAt', header: 'Completed', format: 'datetime', width: 20 },
+];
+
+export async function exportAssetRepairHistoryReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where = buildBaseWhere(filters);
+  if (!filters.type) {
+    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+  }
+
+  const workOrders = await db.workOrder.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      repairCompletion: {
+        select: {
+          rootCause: true,
+          correctiveAction: true,
+          totalLaborHours: true,
+          totalDowntimeMinutes: true,
+          reworkCount: true,
+        },
+      },
+      workOrderDowntimes: { select: { durationMinutes: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10000,
+  });
+
+  const assetIds = [...new Set(workOrders.map((wo) => wo.assetId).filter((id): id is string => Boolean(id)))];
+  const assets = assetIds.length
+    ? await db.asset.findMany({
+        where: { id: { in: assetIds } },
+        select: { id: true, name: true, assetTag: true, criticality: true },
+      })
+    : [];
+  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
+  const rows = workOrders.map((wo) => {
+    const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
+    return {
+      assetName: asset?.name || wo.assetName || 'Unassigned',
+      assetTag: asset?.assetTag || '',
+      woNumber: wo.woNumber,
+      title: wo.title,
+      type: wo.type,
+      priority: wo.priority,
+      status: wo.status,
+      failureDescription: wo.failureDescription || '',
+      rootCause: wo.repairCompletion?.rootCause || '',
+      correctiveAction: wo.repairCompletion?.correctiveAction || '',
+      laborHours: wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0,
+      downtimeMinutes: wo.repairCompletion?.totalDowntimeMinutes
+        ?? wo.workOrderDowntimes.reduce((sum, dt) => sum + (dt.durationMinutes || 0), 0),
+      laborCost: wo.laborCost || 0,
+      partsCost: wo.partsCost || 0,
+      totalCost: wo.totalCost || 0,
+      startedAt: wo.actualStart?.toISOString() || '',
+      completedAt: wo.actualEnd?.toISOString() || '',
+    };
+  });
+
+  const summaryMap = new Map<string, {
+    assetName: string;
+    assetTag: string;
+    criticality: string;
+    repairCount: number;
+    reworkCount: number;
+    laborHours: number;
+    downtimeMinutes: number;
+    totalCost: number;
+    lastRepair: string;
+  }>();
+
+  for (const wo of workOrders) {
+    const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
+    const key = wo.assetId || \`name:\${wo.assetName || 'unassigned'}\`;
+    const current = summaryMap.get(key) || {
+      assetName: asset?.name || wo.assetName || 'Unassigned',
+      assetTag: asset?.assetTag || '',
+      criticality: asset?.criticality || '',
+      repairCount: 0,
+      reworkCount: 0,
+      laborHours: 0,
+      downtimeMinutes: 0,
+      totalCost: 0,
+      lastRepair: '',
+    };
+    current.repairCount += 1;
+    current.reworkCount += wo.repairCompletion?.reworkCount || 0;
+    current.laborHours += wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
+    current.downtimeMinutes += wo.repairCompletion?.totalDowntimeMinutes
+      ?? wo.workOrderDowntimes.reduce((sum, dt) => sum + (dt.durationMinutes || 0), 0);
+    current.totalCost += wo.totalCost || 0;
+    const repairDate = (wo.actualEnd || wo.createdAt).toISOString();
+    if (!current.lastRepair || repairDate > current.lastRepair) current.lastRepair = repairDate;
+    summaryMap.set(key, current);
+  }
+
+  const assetSummary = [...summaryMap.values()]
+    .map((row) => ({
+      ...row,
+      laborHours: Number(row.laborHours.toFixed(2)),
+      downtimeMinutes: Number(row.downtimeMinutes.toFixed(2)),
+      totalCost: Number(row.totalCost.toFixed(2)),
+    }))
+    .sort((a, b) => b.repairCount - a.repairCount || b.totalCost - a.totalCost);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Asset Repair History Report',
+    description: 'Complete corrective/emergency/predictive repair history by asset, including RCA, downtime, rework and cost',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName,
+    kpis: [
+      { label: 'Assets Repaired', value: assetSummary.length },
+      { label: 'Repair Work Orders', value: workOrders.length },
+      { label: 'Repeat-Repair Assets', value: assetSummary.filter((row) => row.repairCount > 1).length },
+      { label: 'Total Repair Cost', value: \`GHS \${workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0).toFixed(2)}\` },
+    ],
+  });
+
+  addDataSheet(wb, 'Repair History', ASSET_HISTORY_COLUMNS, rows);
+  addDataSheet(wb, 'Asset Summary', [
+    { key: 'assetName', header: 'Asset', width: 26 },
+    { key: 'assetTag', header: 'Asset Tag', width: 18 },
+    { key: 'criticality', header: 'Criticality', width: 14 },
+    { key: 'repairCount', header: 'Repair Count', format: 'number', width: 14 },
+    { key: 'reworkCount', header: 'Rework Count', format: 'number', width: 14 },
+    { key: 'laborHours', header: 'Labor Hours', format: 'number', width: 14 },
+    { key: 'downtimeMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+    { key: 'totalCost', header: 'Total Repair Cost', format: 'currency', width: 18 },
+    { key: 'lastRepair', header: 'Last Repair', format: 'datetime', width: 20 },
+  ], assetSummary);
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('asset-repair-history'),
+  };
+}
+
+export async function exportDepartmentCostReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where = buildBaseWhere(filters);
+  where.status = { in: ['completed', 'verified', 'closed'] };
+  if (!filters.type) {
+    where.type = { in: ['corrective', 'emergency'] };
+  }
+
+  const workOrders = await db.workOrder.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      repairCompletion: { select: { totalToolCost: true, totalLaborHours: true } },
+      workOrderDowntimes: { select: { productionLoss: true } },
+    },
+    orderBy: { actualEnd: 'desc' },
+    take: 10000,
+  });
+
+  const departmentIds = [...new Set(workOrders.map((wo) => wo.departmentId).filter((id): id is string => Boolean(id)))];
+  const departments = departmentIds.length
+    ? await db.department.findMany({
+        where: { id: { in: departmentIds } },
+        select: { id: true, name: true, code: true },
+      })
+    : [];
+  const departmentMap = new Map(departments.map((department) => [department.id, department]));
+
+  const grouped = new Map<string, {
+    department: string;
+    code: string;
+    workOrders: number;
+    laborHours: number;
+    laborCost: number;
+    partsCost: number;
+    contractorCost: number;
+    toolCost: number;
+    maintenanceCost: number;
+    productionLoss: number;
+    economicImpact: number;
+  }>();
+
+  for (const wo of workOrders) {
+    const department = wo.departmentId ? departmentMap.get(wo.departmentId) : undefined;
+    const key = wo.departmentId || 'unassigned';
+    const row = grouped.get(key) || {
+      department: department?.name || 'Unassigned',
+      code: department?.code || '',
+      workOrders: 0,
+      laborHours: 0,
+      laborCost: 0,
+      partsCost: 0,
+      contractorCost: 0,
+      toolCost: 0,
+      maintenanceCost: 0,
+      productionLoss: 0,
+      economicImpact: 0,
+    };
+    row.workOrders += 1;
+    row.laborHours += wo.repairCompletion?.totalLaborHours ?? wo.actualHours ?? 0;
+    row.laborCost += wo.laborCost || 0;
+    row.partsCost += wo.partsCost || 0;
+    row.contractorCost += wo.contractorCost || 0;
+    row.toolCost += wo.repairCompletion?.totalToolCost || 0;
+    row.maintenanceCost += wo.totalCost || 0;
+    row.productionLoss += wo.workOrderDowntimes.reduce((sum, dt) => sum + (dt.productionLoss || 0), 0);
+    row.economicImpact = row.maintenanceCost + row.productionLoss;
+    grouped.set(key, row);
+  }
+
+  const rows = [...grouped.values()]
+    .map((row) => ({
+      ...row,
+      laborHours: Number(row.laborHours.toFixed(2)),
+      laborCost: Number(row.laborCost.toFixed(2)),
+      partsCost: Number(row.partsCost.toFixed(2)),
+      contractorCost: Number(row.contractorCost.toFixed(2)),
+      toolCost: Number(row.toolCost.toFixed(2)),
+      maintenanceCost: Number(row.maintenanceCost.toFixed(2)),
+      productionLoss: Number(row.productionLoss.toFixed(2)),
+      economicImpact: Number(row.economicImpact.toFixed(2)),
+      avgCostPerWo: row.workOrders ? Number((row.maintenanceCost / row.workOrders).toFixed(2)) : 0,
+    }))
+    .sort((a, b) => b.economicImpact - a.economicImpact);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Repairs Cost by Department / Cost Center',
+    description: 'Repairs expenditure and production-loss exposure grouped by department/cost center',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName,
+    kpis: [
+      { label: 'Departments', value: rows.length },
+      { label: 'Repair WOs', value: workOrders.length },
+      { label: 'Maintenance Cost', value: \`GHS \${rows.reduce((sum, row) => sum + row.maintenanceCost, 0).toFixed(2)}\` },
+      { label: 'Production Loss', value: \`GHS \${rows.reduce((sum, row) => sum + row.productionLoss, 0).toFixed(2)}\` },
+      { label: 'Economic Impact', value: \`GHS \${rows.reduce((sum, row) => sum + row.economicImpact, 0).toFixed(2)}\` },
+    ],
+  });
+
+  addDataSheet(wb, 'Department Costs', [
+    { key: 'department', header: 'Department / Cost Center', width: 28 },
+    { key: 'code', header: 'Code', width: 12 },
+    { key: 'workOrders', header: 'Repair WOs', format: 'number', width: 12 },
+    { key: 'laborHours', header: 'Labor Hours', format: 'number', width: 14 },
+    { key: 'laborCost', header: 'Labor Cost', format: 'currency', width: 14 },
+    { key: 'partsCost', header: 'Parts Cost', format: 'currency', width: 14 },
+    { key: 'contractorCost', header: 'Contractor Cost', format: 'currency', width: 16 },
+    { key: 'toolCost', header: 'Tool Cost', format: 'currency', width: 14 },
+    { key: 'maintenanceCost', header: 'Maintenance Cost', format: 'currency', width: 18 },
+    { key: 'productionLoss', header: 'Production Loss', format: 'currency', width: 18 },
+    { key: 'economicImpact', header: 'Economic Impact', format: 'currency', width: 18 },
+    { key: 'avgCostPerWo', header: 'Avg Cost / WO', format: 'currency', width: 16 },
+  ], rows);
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('repairs-cost-by-department'),
+  };
+}
+
 function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
@@ -1074,6 +1481,9 @@ export const SUPPORTED_REPORT_TYPES = [
   'cost',
   'backlog-aging',
   'sla',
+  'operations-summary',
+  'asset-repair-history',
+  'department-cost',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];
@@ -1104,6 +1514,12 @@ export async function generateReport(
       return exportBacklogAgingReport(filters, session);
     case 'sla':
       return exportSLAReport(filters, session);
+    case 'operations-summary':
+      return exportOperationsSummaryReport(filters, session);
+    case 'asset-repair-history':
+      return exportAssetRepairHistoryReport(filters, session);
+    case 'department-cost':
+      return exportDepartmentCostReport(filters, session);
     default:
       logger.error('Unsupported repairs report type', { reportType });
       throw new Error(`Unsupported report type: ${reportType}`);

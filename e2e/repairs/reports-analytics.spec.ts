@@ -175,7 +175,7 @@ test.describe('Repairs Reports & Analytics', () => {
     });
 
     await expect(page.getByRole('button', { name: 'PDF' }).first()).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Excel' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Excel' }).first()).toBeEnabled();
     await expect(page.getByRole('button', { name: 'CSV' })).toBeEnabled();
   });
 

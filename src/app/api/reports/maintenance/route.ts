@@ -231,15 +231,31 @@ export async function GET(request: NextRequest) {
     })).sort((a, b) => b.completedCount - a.completedCount);
 
     // ========== MATERIAL CONSUMPTION ==========
-    const matMap: Record<string, { itemName: string; totalQuantity: number; totalCost: number; woCount: Set<string> }> = {};
+    const matMap: Record<string, {
+      itemName: string;
+      totalQuantity: number;
+      totalCost: number;
+      woCount: Set<string>;
+      assets: Set<string>;
+    }> = {};
     workOrders.forEach(wo => {
+      const assetDetails = getAssetDetails(wo);
       wo.materials.forEach(mat => {
         if (!mat.itemName) return;
         const key = mat.itemName;
-        if (!matMap[key]) matMap[key] = { itemName: key, totalQuantity: 0, totalCost: 0, woCount: new Set() };
+        if (!matMap[key]) matMap[key] = {
+          itemName: key,
+          totalQuantity: 0,
+          totalCost: 0,
+          woCount: new Set(),
+          assets: new Set(),
+        };
         matMap[key].totalQuantity += (mat.quantity || 0);
         matMap[key].totalCost += (mat.totalCost || (mat.unitCost != null && mat.quantity ? mat.unitCost * mat.quantity : 0));
         matMap[key].woCount.add(wo.id);
+        if (assetDetails.assetName && assetDetails.assetName !== 'Unassigned') {
+          matMap[key].assets.add(assetDetails.assetName);
+        }
       });
     });
     const materialConsumption = Object.values(matMap)
@@ -249,6 +265,7 @@ export async function GET(request: NextRequest) {
         totalQuantity: Math.round(m.totalQuantity * 100) / 100,
         totalCost: Math.round(m.totalCost * 100) / 100,
         woCount: m.woCount.size,
+        assets: [...m.assets].sort(),
       }))
       .sort((a, b) => b.totalCost - a.totalCost)
       .slice(0, 20);
@@ -314,9 +331,10 @@ export async function GET(request: NextRequest) {
     // ========== TOP ASSETS ==========
     const assetGroupMap: Record<string, { assetId: string; assetName: string; woCount: number; downtimeMinutes: number; totalCost: number }> = {};
     workOrders.forEach(wo => {
-      const key = wo.assetId || 'unassigned';
-      const name = wo.assetName || 'Unassigned';
-      if (!assetGroupMap[key]) assetGroupMap[key] = { assetId: wo.assetId || '', assetName: name, woCount: 0, downtimeMinutes: 0, totalCost: 0 };
+      const assetDetails = getAssetDetails(wo);
+      const key = assetDetails.assetId || `unassigned:${assetDetails.assetName}`;
+      const name = assetDetails.assetName;
+      if (!assetGroupMap[key]) assetGroupMap[key] = { assetId: assetDetails.assetId || '', assetName: name, woCount: 0, downtimeMinutes: 0, totalCost: 0 };
       assetGroupMap[key].woCount += 1;
       assetGroupMap[key].totalCost += (wo.totalCost || 0);
       (wo.workOrderDowntimes || []).forEach(dt => {
@@ -374,11 +392,12 @@ export async function GET(request: NextRequest) {
     }> = {};
 
     workOrders.forEach(wo => {
-      const key = wo.assetId || 'unassigned';
-      const name = wo.assetName || 'Unassigned';
+      const assetDetails = getAssetDetails(wo);
+      const key = assetDetails.assetId || `unassigned:${assetDetails.assetName}`;
+      const name = assetDetails.assetName;
       if (!assetWoMap[key]) {
         assetWoMap[key] = {
-          assetId: wo.assetId || '',
+          assetId: assetDetails.assetId || '',
           assetName: name,
           workOrders: [],
           woCount: 0,

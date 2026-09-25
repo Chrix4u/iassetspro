@@ -25,7 +25,13 @@ function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.plantId) where.plantId = filters.plantId;
   if (filters.status) where.status = filters.status;
   if (filters.priority) where.priority = filters.priority;
-  if (filters.type) where.type = filters.type;
+  if (filters.type) {
+    where.type = filters.type;
+  } else if (filters.maintenanceScope === 'repairs') {
+    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+  } else if (filters.maintenanceScope === 'pm') {
+    where.type = 'preventive';
+  }
   if (filters.tradeActivity) where.tradeActivity = filters.tradeActivity;
   if (filters.departmentId) where.departmentId = filters.departmentId;
   if (filters.assetId) where.assetId = filters.assetId;

@@ -281,6 +281,12 @@ function dateKey(value: Date | string | null | undefined): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
 }
 
+function dateWithinFilters(key: string, filters: ReportFilters): boolean {
+  if (filters.dateFrom && key < filters.dateFrom) return false;
+  if (filters.dateTo && key > filters.dateTo) return false;
+  return true;
+}
+
 function scopeWithoutDates(filters: ReportFilters): Record<string, unknown> {
   return buildBaseWhere({ ...filters, dateFrom: undefined, dateTo: undefined });
 }
@@ -320,7 +326,7 @@ async function exportOperationsSummaryReport(
   const downtimeWhere: Record<string, unknown> = {};
   if (filters.plantId) downtimeWhere.plantId = filters.plantId;
   if (range) downtimeWhere.downtimeStart = range;
-  if (filters.departmentId || filters.type || filters.priority || filters.assigneeId || filters.assetId) {
+  if (Object.keys(scope).length > 0) {
     downtimeWhere.workOrder = scope;
   }
   const downtimes = await db.workOrderDowntime.findMany({
@@ -377,14 +383,18 @@ async function exportOperationsSummaryReport(
 
   for (const wo of workOrders) {
     const openedKey = dateKey(wo.createdAt);
-    if (openedKey) {
+    if (openedKey && dateWithinFilters(openedKey, filters)) {
       const row = ensure(openedKey);
       row.opened += 1;
       if (wo.type === 'emergency') row.emergencyOpened += 1;
     }
 
     const completedKey = dateKey(wo.actualEnd);
-    if (completedKey && ['completed', 'verified', 'closed'].includes(wo.status)) {
+    if (
+      completedKey
+      && dateWithinFilters(completedKey, filters)
+      && ['completed', 'verified', 'closed'].includes(wo.status)
+    ) {
       const row = ensure(completedKey);
       row.completed += 1;
       if (wo.status === 'closed') row.closed += 1;

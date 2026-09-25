@@ -27,7 +27,22 @@ vi.mock('@/lib/plant-scope', () => ({
   canAccessPlant: mockCanAccessPlant,
 }));
 vi.mock('@/services/repairsReportXlsx.service', () => ({
-  SUPPORTED_REPORT_TYPES: ['work-order', 'maintenance-request'],
+  SUPPORTED_REPORT_TYPES: [
+    'work-order',
+    'maintenance-request',
+    'labor',
+    'downtime',
+    'material',
+    'tool',
+    'failure-analysis',
+    'cost',
+    'backlog-aging',
+    'sla',
+    'daily-operations',
+    'asset-history',
+    'department-cost',
+    'shift-handover',
+  ],
 }));
 vi.mock('@/services/repairsReportXlsxSafe.service', () => ({
   generateRepairsReport: mockGenerateRepairsReport,
@@ -121,6 +136,31 @@ describe('POST /api/repairs/reports/xlsx', () => {
     expect(response.status).toBe(400);
     expect(json.error).toContain('Select one of your accessible plants');
     expect(mockGenerateRepairsReport).not.toHaveBeenCalled();
+  });
+
+  it('accepts the expanded operational Repairs report types', async () => {
+    for (const reportType of ['daily-operations', 'asset-history', 'department-cost', 'shift-handover']) {
+      mockGenerateRepairsReport.mockResolvedValueOnce({
+        buffer: Buffer.from('xlsx-bytes'),
+        filename: reportType + '.xlsx',
+      });
+
+      const response = await POST(request({
+        reportType,
+        filters: { dateFrom: '2026-09-01', dateTo: '2026-09-30' },
+      }, 'plant-a'));
+
+      expect(response.status).toBe(200);
+      expect(mockGenerateRepairsReport).toHaveBeenLastCalledWith(
+        reportType,
+        expect.objectContaining({
+          plantId: 'plant-a',
+          dateFrom: '2026-09-01',
+          dateTo: '2026-09-30',
+        }),
+        session,
+      );
+    }
   });
 
   it('passes the server-authoritative active plant to the generator and disables caching', async () => {

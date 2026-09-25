@@ -1151,6 +1151,7 @@ export const SUPPORTED_REPORT_TYPES = [
   'assistance',
   'shift-handover',
   'closure-audit',
+  'breakdown-performance',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];

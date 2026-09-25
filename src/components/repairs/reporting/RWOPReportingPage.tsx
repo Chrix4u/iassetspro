@@ -709,16 +709,29 @@ export default function RWOPReportingPage() {
     });
   };
 
-  const applyQuickPeriod = (period: 'today' | 'week' | 'month') => {
+  const applyQuickPeriod = (
+    period: 'today' | 'last7' | 'week' | 'last30' | 'month' | 'last90' | 'quarter' | 'ytd' | 'year'
+  ) => {
     const end = new Date();
     const start = new Date(end);
 
-    if (period === 'week') {
+    if (period === 'last7') {
+      start.setDate(start.getDate() - 6);
+    } else if (period === 'week') {
       const day = start.getDay();
       const daysSinceMonday = day === 0 ? 6 : day - 1;
       start.setDate(start.getDate() - daysSinceMonday);
+    } else if (period === 'last30') {
+      start.setDate(start.getDate() - 29);
     } else if (period === 'month') {
       start.setDate(1);
+    } else if (period === 'last90') {
+      start.setDate(start.getDate() - 89);
+    } else if (period === 'quarter') {
+      const quarterStartMonth = Math.floor(start.getMonth() / 3) * 3;
+      start.setMonth(quarterStartMonth, 1);
+    } else if (period === 'ytd' || period === 'year') {
+      start.setMonth(0, 1);
     }
 
     const next = {
@@ -986,8 +999,15 @@ export default function RWOPReportingPage() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">Quick periods:</span>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('today')}>Today</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last7')}>Last 7 Days</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('week')}>This Week</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last30')}>Last 30 Days</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('month')}>This Month</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last90')}>Last 90 Days</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('quarter')}>This Quarter</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('ytd')}>Year to Date</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('year')}>This Year</Button>
+            <span className="text-[11px] text-muted-foreground">Or choose any custom From/To dates above.</span>
           </div>
 
           <div className="mt-3 flex flex-wrap items-end gap-2">

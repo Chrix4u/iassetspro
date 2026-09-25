@@ -9,6 +9,7 @@ test.describe('Repairs Reports & Analytics', () => {
     await expect(page.getByText('UAT Planner', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 
     let operationalExportBody: Record<string, unknown> | null = null;
+    let detailedExportUrl: string | null = null;
     await page.route('**/api/repairs/reports/xlsx', async (route) => {
       operationalExportBody = route.request().postDataJSON() as Record<string, unknown>;
       await route.fulfill({
@@ -16,6 +17,16 @@ test.describe('Repairs Reports & Analytics', () => {
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         headers: { 'content-disposition': 'attachment; filename="work-order-report.xlsx"' },
         body: 'mock-xlsx',
+      });
+    });
+
+    await page.route('**/api/repairs/reports/detailed?**', async (route) => {
+      detailedExportUrl = route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers: { 'content-disposition': 'attachment; filename="machine-component-repair-detail.xlsx"' },
+        body: 'mock-detailed-xlsx',
       });
     });
 
@@ -148,6 +159,14 @@ test.describe('Repairs Reports & Analytics', () => {
       .getByText('Repairs Report Library', { exact: true })
       .locator('xpath=ancestor::*[@data-slot="card"][1]');
     await expect(reportLibrary).toBeVisible();
+    for (const category of [
+      'Operations & Performance',
+      'Resources & Stores',
+      'Reliability & Assets',
+      'Cost & Compliance',
+    ]) {
+      await expect(reportLibrary.getByText(category, { exact: true })).toBeVisible();
+    }
     for (const title of [
       'Work Orders',
       'Maintenance Requests',
@@ -161,7 +180,13 @@ test.describe('Repairs Reports & Analytics', () => {
       'SLA Compliance',
       'Daily / Weekly Operations',
       'Asset Repair History',
+      'Machine & Component Repair Detail',
       'Department / Cost-Center Cost',
+      'Material Reconciliation Audit',
+      'Tool Custody & Returns',
+      'Assistance Request Turnaround',
+      'Shift Handover Audit',
+      'Closure / RCA Compliance Audit',
     ]) {
       await expect(reportLibrary.getByText(title, { exact: true })).toBeVisible();
     }
@@ -182,6 +207,18 @@ test.describe('Repairs Reports & Analytics', () => {
         maintenanceScope: 'repairs',
       }),
     });
+
+    const detailedReportCard = reportLibrary
+      .getByText('Machine & Component Repair Detail', { exact: true })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+    await detailedReportCard.getByRole('button', { name: 'Excel' }).click();
+    await expect.poll(() => detailedExportUrl).not.toBeNull();
+    if (!detailedExportUrl) throw new Error('Detailed report export URL was not captured');
+    const detailedUrl = new URL(detailedExportUrl);
+    expect(detailedUrl.pathname).toBe('/api/repairs/reports/detailed');
+    expect(detailedUrl.searchParams.get('format')).toBe('xlsx');
+    expect(detailedUrl.searchParams.get('dateFrom')).toBeTruthy();
+    expect(detailedUrl.searchParams.get('dateTo')).toBeTruthy();
 
     await expect(page.getByRole('button', { name: 'PDF' }).first()).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Excel' }).first()).toBeEnabled();

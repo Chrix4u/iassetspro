@@ -955,10 +955,30 @@ function buildDowntimeWhere(filters: ReportFilters): Record<string, unknown> {
   return where;
 }
 
+function buildResourceWorkOrderWhere(filters: ReportFilters): Record<string, unknown> {
+  const woWhere: Record<string, unknown> = {};
+  if (filters.plantId) woWhere.plantId = filters.plantId;
+  if (filters.priority) woWhere.priority = filters.priority;
+  if (filters.departmentId) woWhere.departmentId = filters.departmentId;
+  if (filters.assetId) woWhere.assetId = filters.assetId;
+  if (filters.assigneeId) woWhere.assignedTo = filters.assigneeId;
+  if (filters.type) {
+    woWhere.type = filters.type;
+  } else if (filters.maintenanceScope === 'repairs') {
+    woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
+  } else if (filters.maintenanceScope === 'pm') {
+    woWhere.type = 'preventive';
+  }
+  return woWhere;
+}
+
 function buildMaterialWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
   if (filters.status) where.status = filters.status;
+
+  const woWhere = buildResourceWorkOrderWhere(filters);
+  if (Object.keys(woWhere).length > 0) where.workOrder = woWhere;
 
   if (filters.dateFrom || filters.dateTo) {
     const df: Record<string, unknown> = {};
@@ -973,6 +993,9 @@ function buildToolWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
   if (filters.status) where.status = filters.status;
+
+  const woWhere = buildResourceWorkOrderWhere(filters);
+  if (Object.keys(woWhere).length > 0) where.workOrder = woWhere;
 
   if (filters.dateFrom || filters.dateTo) {
     const df: Record<string, unknown> = {};
@@ -997,6 +1020,12 @@ function buildFailureWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.plantId) {
     where.asset = { plantId: filters.plantId };
   }
+
+  const woWhere = buildResourceWorkOrderWhere(filters);
+  if (Object.keys(woWhere).length > 0) {
+    where.workOrder = woWhere;
+  }
+
   return where;
 }
 
@@ -1117,6 +1146,11 @@ export const SUPPORTED_REPORT_TYPES = [
   'operations-summary',
   'asset-history',
   'department-cost',
+  'material-reconciliation',
+  'tool-custody',
+  'assistance',
+  'shift-handover',
+  'closure-audit',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];

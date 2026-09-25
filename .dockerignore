@@ -15,15 +15,19 @@ dist
 # Prisma prebuilt client (generated fresh in build stage)
 prisma/prebuilt
 
-# Environment files (injected at runtime, not baked into image)
-.env
-.env.local
-.env.production
-.env.production.local
-.env.development
-.env.development.local
-.env.test
-.env.test.local
+# Environment and package-registry credential files must never enter build
+# context. Match both repository-root and nested variants so new environment
+# names (for example .env.staging) are fail-safe by default.
+.env*
+**/.env*
+.npmrc
+**/.npmrc
+.yarnrc*
+**/.yarnrc*
+.netrc
+**/.netrc
+.ssh/
+**/.ssh/
 
 # Version control
 .git

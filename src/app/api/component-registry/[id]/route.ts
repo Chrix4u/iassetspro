@@ -127,14 +127,40 @@ export async function PUT(
       }
     }
 
-    // Validate parentId if changing
+    // Validate parentId if changing. Keep the hierarchy inside one asset
+    // and reject cycles such as A -> B -> C -> A.
     if (updateData.parentId && updateData.parentId !== existing.parentId) {
       if (updateData.parentId === existing.id) {
         return NextResponse.json({ success: false, error: 'Component cannot be its own parent' }, { status: 400 });
       }
-      const parent = await db.componentRegistry.findUnique({ where: { id: updateData.parentId as string } });
+      const parentId = updateData.parentId as string;
+      const parent = await db.componentRegistry.findUnique({ where: { id: parentId } });
       if (!parent) {
         return NextResponse.json({ success: false, error: 'Parent component not found' }, { status: 404 });
+      }
+
+      const targetAssetId = updateData.assetId !== undefined
+        ? (updateData.assetId as string | null)
+        : existing.assetId;
+      if (targetAssetId && parent.assetId !== targetAssetId) {
+        return NextResponse.json(
+          { success: false, error: 'Parent component belongs to a different asset' },
+          { status: 400 },
+        );
+      }
+
+      let cursor: typeof parent | null = parent;
+      const seen = new Set<string>();
+      for (let depth = 0; cursor && depth < 64; depth++) {
+        if (cursor.id === existing.id) {
+          return NextResponse.json(
+            { success: false, error: 'Parent selection would create a component hierarchy cycle' },
+            { status: 400 },
+          );
+        }
+        if (!cursor.parentId || seen.has(cursor.parentId)) break;
+        seen.add(cursor.id);
+        cursor = await db.componentRegistry.findUnique({ where: { id: cursor.parentId } });
       }
     }
 

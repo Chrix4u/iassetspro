@@ -48,6 +48,7 @@ export interface ConvertMRToWOPayload {
   notes?: string;
   requiredParts?: Array<{ itemId: string; quantity?: number }>;
   requiredTools?: Array<{ toolId: string; quantity?: number }>;
+  componentIds?: string[];
 }
 
 /** Notification payload returned to the caller for post-tx dispatch. */
@@ -206,6 +207,10 @@ export async function convertMRToWorkOrder(
     }
   }
 
+  if (payload.componentIds && !Array.isArray(payload.componentIds)) {
+    return { success: false, error: 'componentIds must be an array' };
+  }
+
   try {
     const result = await db.$transaction(async (tx) => {
       if (mr.workOrderId) {
@@ -311,6 +316,27 @@ export async function convertMRToWorkOrder(
         }
       }
 
+      const uniqueComponentIds = Array.from(new Set((payload.componentIds || []).filter(Boolean)));
+      if (uniqueComponentIds.length > 0) {
+        if (!mr.assetId) {
+          return { success: false as const, error: 'Cannot link components because the maintenance request has no registered asset' };
+        }
+        const components = await tx.componentRegistry.findMany({
+          where: { id: { in: uniqueComponentIds } },
+          select: { id: true, assetId: true, componentCode: true, name: true },
+        });
+        if (components.length !== uniqueComponentIds.length) {
+          return { success: false as const, error: 'One or more selected components could not be found' };
+        }
+        const wrongAsset = components.find((component) => component.assetId !== mr.assetId);
+        if (wrongAsset) {
+          return {
+            success: false as const,
+            error: `Component ${wrongAsset.componentCode || wrongAsset.name} does not belong to the maintenance request asset`,
+          };
+        }
+      }
+
       const hasAssignment = payload.assignedTo || (payload.teamMembers && payload.teamMembers.length > 0);
       const woStatus = hasAssignment ? 'assigned' : 'approved';
       const now = new Date();
@@ -386,6 +412,17 @@ export async function convertMRToWorkOrder(
           error: `This request has already been converted to ${woRef}`,
           conflictWoNumber: conflictWO?.woNumber,
         };
+      }
+
+      if (uniqueComponentIds.length > 0) {
+        await tx.workOrderComponent.createMany({
+          data: uniqueComponentIds.map((componentRegistryId) => ({
+            workOrderId: workOrder.id,
+            componentRegistryId,
+            notes: 'Selected during maintenance-request conversion',
+          })),
+          skipDuplicates: true,
+        });
       }
 
       if (payload.teamMembers && payload.teamMembers.length > 0) {
@@ -588,6 +625,7 @@ export async function convertMRToWorkOrder(
             assignedTo: payload.assignedTo || null,
             teamLeaderId: payload.teamLeaderId || null,
             teamMembersCount: payload.teamMembers?.length || 0,
+            componentIds: uniqueComponentIds,
             assignmentType: payload.assignmentType || null,
           }),
         },

@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -50,6 +51,7 @@ interface ConvertForm {
   teamLeaderId: string;
   requiredParts: Array<{ itemId: string; quantity: number }>;
   requiredTools: Array<{ toolId: string; quantity: number }>;
+  componentIds: string[];
   safetyNotes: string;
   ppeRequired: string;
   notes: string;
@@ -67,6 +69,8 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
   const [dropdownLoading, setDropdownLoading] = useState(false);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [toolsData, setToolsData] = useState<any[]>([]);
+  const [availableComponents, setAvailableComponents] = useState<any[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
 
   const loadDropdowns = async () => {
     setDropdownLoading(true);
@@ -100,11 +104,21 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
         teamLeaderId: '',
         requiredParts: [],
         requiredTools: [],
+        componentIds: [],
         safetyNotes: '',
         ppeRequired: '',
         notes: '',
       });
       loadDropdowns();
+      if (mr.assetId) {
+        setComponentsLoading(true);
+        api.get(`/api/component-registry?assetId=${mr.assetId}&limit=100`)
+          .then((res) => setAvailableComponents(res.success && Array.isArray(res.data) ? res.data : []))
+          .catch(() => setAvailableComponents([]))
+          .finally(() => setComponentsLoading(false));
+      } else {
+        setAvailableComponents([]);
+      }
     }
   }, [open, mr]);
 
@@ -145,6 +159,31 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
     setForm(f => ({ ...f, requiredTools: f.requiredTools.map(t => t.toolId === toolId ? { ...t, quantity: qty } : t) }));
   };
 
+  const componentLabel = (component: any) => {
+    const byId = new Map(availableComponents.map((item: any) => [item.id, item]));
+    let depth = 0;
+    let cursor = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    const prefix = depth > 0 ? `${'— '.repeat(depth)}` : '';
+    return `${prefix}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+  };
+
+  const toggleComponent = (componentId: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      componentIds: checked
+        ? Array.from(new Set([...current.componentIds, componentId]))
+        : current.componentIds.filter((id) => id !== componentId),
+    }));
+  };
+
   // Submit
   const handleConvert = useCallback(async () => {
     if (!mr) return;
@@ -164,6 +203,7 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
       notes: form.notes || undefined,
       requiredParts: form.requiredParts.length > 0 ? form.requiredParts : undefined,
       requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
+      componentIds: form.componentIds.length > 0 ? form.componentIds : undefined,
     };
     if (form.selectedWorkerIds.length > 0) {
       payload.teamMembers = form.selectedWorkerIds.map(workerId => ({
@@ -296,6 +336,35 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
             rows={3}
           />
         </div>
+        {mr.assetId && (
+          <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+            <Label className="text-xs">Affected Assembly / Component</Label>
+            {componentsLoading ? (
+              <div className="text-xs text-muted-foreground py-2">Loading machine components...</div>
+            ) : availableComponents.length === 0 ? (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No components are registered for this machine. The work order will remain linked to the parent machine only.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto rounded-md border bg-white/70 p-2">
+                {availableComponents
+                  .slice()
+                  .sort((a: any, b: any) => componentLabel(a).localeCompare(componentLabel(b)))
+                  .map((component: any) => (
+                    <label key={component.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60 cursor-pointer">
+                      <Checkbox
+                        checked={form.componentIds.includes(component.id)}
+                        onCheckedChange={(checked) => toggleComponent(component.id, checked === true)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium truncate">{componentLabel(component)}</span>
+                        <span className="block text-[10px] text-muted-foreground capitalize">{String(component.componentType || 'component').replace(/_/g, ' ')} · {component.criticality || 'medium'} criticality</span>
+                      </span>
+                    </label>
+                  ))}
+              </div>
+            )}
+            <p className="text-[10px] text-muted-foreground">Select the exact assembly/component affected. Reports still roll the work order up to the parent machine.</p>
+          </div>
+        )}
         <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-xs">Scheduled Date</Label>
           <DateTimePicker value={form.scheduledDate || undefined} onChange={v => setForm(f => ({ ...f, scheduledDate: v || '' }))} />
@@ -554,6 +623,31 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
               <DateTimePicker value={form.scheduledDate || undefined} onChange={v => setForm(f => ({ ...f, scheduledDate: v || '' }))} />
             </div>
           </div>
+          {mr.assetId && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Affected Assembly / Component</Label>
+              {componentsLoading ? (
+                <div className="text-xs text-muted-foreground">Loading...</div>
+              ) : availableComponents.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No components registered for this machine.</div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto rounded-xl border p-2 space-y-1">
+                  {availableComponents
+                    .slice()
+                    .sort((a: any, b: any) => componentLabel(a).localeCompare(componentLabel(b)))
+                    .map((component: any) => (
+                      <label key={component.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/50">
+                        <Checkbox
+                          checked={form.componentIds.includes(component.id)}
+                          onCheckedChange={(checked) => toggleComponent(component.id, checked === true)}
+                        />
+                        <span className="text-xs truncate">{componentLabel(component)}</span>
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Delivery Date</Label>
             <DatePicker value={form.deliveryDate || undefined} onChange={v => setForm(f => ({ ...f, deliveryDate: v || '' }))} />
@@ -764,6 +858,7 @@ function defaultForm(): ConvertForm {
     teamLeaderId: '',
     requiredParts: [],
     requiredTools: [],
+    componentIds: [],
     safetyNotes: '',
     ppeRequired: '',
     notes: '',

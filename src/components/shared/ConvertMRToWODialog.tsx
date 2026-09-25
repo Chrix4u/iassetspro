@@ -71,6 +71,8 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
   const [toolsData, setToolsData] = useState<any[]>([]);
   const [availableComponents, setAvailableComponents] = useState<any[]>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
+  const [componentPartSuggestions, setComponentPartSuggestions] = useState<any[]>([]);
+  const [componentPartsLoading, setComponentPartsLoading] = useState(false);
 
   const loadDropdowns = async () => {
     setDropdownLoading(true);
@@ -121,6 +123,59 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
       }
     }
   }, [open, mr]);
+
+  useEffect(() => {
+    if (!open || form.componentIds.length === 0) {
+      setComponentPartSuggestions([]);
+      setComponentPartsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setComponentPartsLoading(true);
+    Promise.all(
+      form.componentIds.map((componentId) =>
+        api.get(`/api/component-registry/${componentId}/spare-parts`)
+          .then((res) => ({ componentId, rows: res.success && Array.isArray(res.data) ? res.data : [] }))
+          .catch(() => ({ componentId, rows: [] })),
+      ),
+    ).then((groups) => {
+      if (!active) return;
+      const componentById = new Map(availableComponents.map((component: any) => [component.id, component]));
+      const merged = new Map<string, any>();
+      for (const group of groups) {
+        const component = componentById.get(group.componentId);
+        for (const row of group.rows) {
+          const inventoryItem = row.inventoryItem;
+          if (!inventoryItem?.id) continue;
+          const existing = merged.get(inventoryItem.id);
+          const quantityRequired = Number(row.quantityRequired || 1);
+          if (existing) {
+            existing.quantityRequired += quantityRequired;
+            existing.componentNames = Array.from(new Set([...existing.componentNames, component?.name || 'Component']));
+          } else {
+            merged.set(inventoryItem.id, {
+              itemId: inventoryItem.id,
+              itemCode: inventoryItem.itemCode || row.sparePartCode || '',
+              itemName: inventoryItem.name || row.sparePartName || 'Spare part',
+              currentStock: inventoryItem.currentStock ?? 0,
+              unitOfMeasure: inventoryItem.unitOfMeasure || 'EA',
+              location: inventoryItem.location || '',
+              quantityRequired,
+              criticality: row.criticality || 'medium',
+              componentNames: [component?.name || 'Component'],
+            });
+          }
+        }
+      }
+      setComponentPartSuggestions([...merged.values()]);
+      setComponentPartsLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [open, form.componentIds, availableComponents]);
 
   // Helpers
   const handleEstHoursChange = (val: string) => {
@@ -409,6 +464,52 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
               ) : null;
             })}
           </div>
+          {form.componentIds.length > 0 && (
+            <div className="rounded-md border border-dashed bg-white/70 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium">Linked Store Parts for Selected Components</p>
+                  <p className="text-[10px] text-muted-foreground">These are recommendations from the machine/component registry. Add only the parts expected for this repair.</p>
+                </div>
+                {componentPartsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              {!componentPartsLoading && componentPartSuggestions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No inventory spare parts are linked to the selected component(s).</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {componentPartSuggestions.map((suggestion) => {
+                    const alreadyAdded = form.requiredParts.some((part) => part.itemId === suggestion.itemId);
+                    return (
+                      <div key={suggestion.itemId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{suggestion.itemCode ? `${suggestion.itemCode} · ` : ''}{suggestion.itemName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {suggestion.componentNames.join(', ')} · Required {suggestion.quantityRequired} · Stock {suggestion.currentStock} {suggestion.unitOfMeasure}{suggestion.location ? ` · ${suggestion.location}` : ''}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant={alreadyAdded ? 'secondary' : 'outline'}
+                          size="sm"
+                          disabled={alreadyAdded}
+                          onClick={() => {
+                            setForm((current) => ({
+                              ...current,
+                              requiredParts: current.requiredParts.some((part) => part.itemId === suggestion.itemId)
+                                ? current.requiredParts
+                                : [...current.requiredParts, { itemId: suggestion.itemId, quantity: Math.max(1, suggestion.quantityRequired) }],
+                            }));
+                          }}
+                        >
+                          {alreadyAdded ? 'Added' : 'Add Part'}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <Select onValueChange={v => addPart(v)}>
             <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
             <SelectContent>

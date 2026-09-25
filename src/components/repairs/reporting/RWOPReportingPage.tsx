@@ -108,6 +108,33 @@ type ReportData = {
     slaBreachedWOs: number;
     overdueOpen: number;
   };
+  breakdownPerformance?: {
+    breakdownCount: number;
+    avgResponseMinutes: number;
+    avgRepairMinutes: number;
+    avgRestorationMinutes: number;
+    recordedDowntimeMinutes: number;
+    missingStartCount: number;
+    missingCompletionCount: number;
+    weekly: Array<{
+      week: string;
+      breakdowns: number;
+      avgResponseMinutes: number;
+      avgRepairMinutes: number;
+      avgRestorationMinutes: number;
+      recordedDowntimeMinutes: number;
+    }>;
+    byAsset: Array<{
+      assetId: string;
+      assetName: string;
+      assetTag?: string | null;
+      breakdowns: number;
+      avgResponseMinutes: number;
+      avgRepairMinutes: number;
+      avgRestorationMinutes: number;
+      recordedDowntimeMinutes: number;
+    }>;
+  };
   monthlyOperationalTrends?: Array<{
     month: string;
     opened: number;
@@ -1062,6 +1089,85 @@ export default function RWOPReportingPage() {
             <Card className="border-border/60"><CardContent className="p-4"><p className="text-xs text-muted-foreground">SLA Compliance</p><p className="mt-1 text-2xl font-bold">{summary?.slaComplianceRate ?? 0}%</p></CardContent></Card>
             <Card className="border-border/60"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Maintenance Cost</p><p className="mt-1 text-lg font-bold">{formatCurrency(summary?.totalCost ?? 0)}</p></CardContent></Card>
           </div>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Breakdown Performance & Response</CardTitle>
+                  <CardDescription>GTP-style breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
+                </div>
+                <Badge variant="outline">{report.breakdownPerformance?.breakdownCount ?? 0} breakdown(s)</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  ['Breakdowns', report.breakdownPerformance?.breakdownCount ?? 0],
+                  ['Avg Response', `${report.breakdownPerformance?.avgResponseMinutes ?? 0} min`],
+                  ['Avg Repair / MTTR', `${report.breakdownPerformance?.avgRepairMinutes ?? 0} min`],
+                  ['Avg Restore', `${report.breakdownPerformance?.avgRestorationMinutes ?? 0} min`],
+                  ['Recorded Downtime', `${Math.round(report.breakdownPerformance?.recordedDowntimeMinutes ?? 0)} min`],
+                  ['Missing Start / End', `${report.breakdownPerformance?.missingStartCount ?? 0} / ${report.breakdownPerformance?.missingCompletionCount ?? 0}`],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border p-3">
+                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="mt-1 text-lg font-bold">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Weekly Breakdown Count</p>
+                  {(report.breakdownPerformance?.weekly || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={report.breakdownPerformance?.weekly || []} margin={{ top: 8, right: 8, bottom: 18, left: -12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={55} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                        <RechartsTooltip />
+                        <Bar dataKey="breakdowns" name="Breakdowns" fill="#dc2626" radius={[5, 5, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState icon={TrendingDown} title="No breakdown data" />}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Top Machines by Breakdown Count</p>
+                  <div className="max-h-[275px] overflow-auto rounded-md border">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background">
+                        <TableRow>
+                          <TableHead>Machine</TableHead>
+                          <TableHead className="text-right">Breakdowns</TableHead>
+                          <TableHead className="text-right">Downtime</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(report.breakdownPerformance?.byAsset || []).slice(0, 12).map(asset => (
+                          <TableRow key={asset.assetId || asset.assetName}>
+                            <TableCell>
+                              <div className="font-medium">{asset.assetName}</div>
+                              {asset.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{asset.assetTag}</div>}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{asset.breakdowns}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{Math.round(asset.recordedDowntimeMinutes)}m</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+
+              {(report.breakdownPerformance?.missingStartCount || report.breakdownPerformance?.missingCompletionCount) ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                  Data quality: {report.breakdownPerformance?.missingStartCount ?? 0} breakdown(s) have no recorded work-start time and {report.breakdownPerformance?.missingCompletionCount ?? 0} have no complete start/end repair interval. These records remain counted but are excluded from the affected averages.
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 print:grid-cols-2">
             <Card className="border-border/60 shadow-sm">

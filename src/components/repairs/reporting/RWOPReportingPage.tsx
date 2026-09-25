@@ -1125,7 +1125,7 @@ export default function RWOPReportingPage() {
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                 <div>
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Weekly Breakdown Count</p>
                   {(report.breakdownPerformance?.weekly || []).length > 0 ? (
@@ -1142,7 +1142,24 @@ export default function RWOPReportingPage() {
                 </div>
 
                 <div>
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">Top Machines by Breakdown Count</p>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Weekly Response vs Repair Time</p>
+                  {(report.breakdownPerformance?.weekly || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={report.breakdownPerformance?.weekly || []} margin={{ top: 8, right: 8, bottom: 18, left: -12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={55} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <RechartsTooltip formatter={(value) => [`${Number(value).toFixed(1)} min`, '']} />
+                        <Bar dataKey="avgResponseMinutes" name="Avg Response" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="avgRepairMinutes" name="Avg Repair / MTTR" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState icon={Clock} title="No response or repair data" />}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Top Machines by Breakdown Count</p>
                   <div className="max-h-[275px] overflow-auto rounded-md border">
                     <Table>
                       <TableHeader className="sticky top-0 bg-background">

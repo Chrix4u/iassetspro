@@ -766,7 +766,7 @@ export function TimesheetPage() {
                     {weekDates.map((date, i) => (
                       <TableHead key={i} className="min-w-[100px] text-center">
                         <div className="flex flex-col items-center gap-0.5">
-                          <span className="text-xs font-medium">{WEEK_NAMES[i]}</span>
+                          <span className="text-xs font-medium">{DAY_NAMES[i]}</span>
                           <span className="text-[10px] text-muted-foreground">{format(date, 'MMM d')}</span>
                         </div>
                       </TableHead>
@@ -896,7 +896,7 @@ export function TimesheetPage() {
               return (
                 <div key={i} className="flex items-center gap-3">
                   <div className="w-16 text-xs text-muted-foreground flex-shrink-0">
-                    {WEEK_NAMES[i]} {format(date, 'd')}
+                    {DAY_NAMES[i]} {format(date, 'd')}
                   </div>
                   <div className="flex-1 h-6 bg-muted/50 rounded-full overflow-hidden relative">
                     <div

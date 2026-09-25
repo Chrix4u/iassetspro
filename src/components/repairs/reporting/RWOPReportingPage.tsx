@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -22,6 +23,7 @@ import {
   Coins,
   History,
   Wrench,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Bar,
@@ -1194,12 +1196,12 @@ export default function RWOPReportingPage() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
-                      <TableHead>WO</TableHead><TableHead>Title / Asset</TableHead><TableHead>Risk</TableHead><TableHead>Age</TableHead><TableHead>Why flagged</TableHead>
+                      <TableHead>WO</TableHead><TableHead>Title / Asset</TableHead><TableHead>Risk</TableHead><TableHead>Age</TableHead><TableHead>Why flagged</TableHead><TableHead className="text-right print:hidden">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(report.exceptionWatchlist || []).length === 0 ? (
-                      <TableRow><TableCell colSpan={5}><EmptyState icon={CheckCircle2} title="No management exceptions in this report period" /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title="No management exceptions in this report period" /></TableCell></TableRow>
                     ) : (report.exceptionWatchlist || []).map(item => (
                       <TableRow key={item.id}>
                         <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
@@ -1207,6 +1209,13 @@ export default function RWOPReportingPage() {
                         <TableCell><Badge variant={item.riskLevel === 'critical' ? 'destructive' : 'outline'}>{prettify(item.riskLevel)}</Badge></TableCell>
                         <TableCell className="font-mono text-xs">{item.ageDays}d</TableCell>
                         <TableCell className="max-w-[520px] text-xs">{item.reasons.join(' · ')}</TableCell>
+                        <TableCell className="text-right print:hidden">
+                          <Button asChild variant="outline" size="sm">
+                            <Link href={`/work-orders/${item.id}`} aria-label={`Open work order ${item.woNumber || item.id}`}>
+                              Open <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1247,12 +1256,13 @@ export default function RWOPReportingPage() {
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">Cost</TableHead>
                       <TableHead className="hidden xl:table-cell">Created</TableHead>
+                      <TableHead className="text-right print:hidden">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {workOrders.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={10}><EmptyState icon={Wrench} title="No work orders match these filters" /></TableCell>
+                        <TableCell colSpan={11}><EmptyState icon={Wrench} title="No work orders match these filters" /></TableCell>
                       </TableRow>
                     ) : workOrders.map(wo => (
                       <TableRow key={wo.id}>
@@ -1269,6 +1279,13 @@ export default function RWOPReportingPage() {
                         <TableCell className="text-right font-mono text-xs">{wo.actualHours ?? wo.estimatedHours ?? '—'}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{formatCurrency(wo.totalCost ?? 0)}</TableCell>
                         <TableCell className="hidden xl:table-cell text-xs text-muted-foreground">{wo.createdAt ? formatDate(wo.createdAt) : '—'}</TableCell>
+                        <TableCell className="text-right print:hidden">
+                          <Button asChild variant="ghost" size="sm">
+                            <Link href={`/work-orders/${wo.id}`} aria-label={`Open work order ${wo.woNumber || wo.id}`}>
+                              Open <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

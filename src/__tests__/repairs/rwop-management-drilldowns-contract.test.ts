@@ -27,6 +27,14 @@ describe('RWOP management reporting drill-down contract', () => {
     expect(page).toContain('Management Exception Watchlist');
   });
 
+  it('provides closure and RCA exception drill-downs', () => {
+    expect(page).toContain('closureExceptionWatchlist');
+    expect(page).toContain("type ClosureFilter = 'all' | 'missing-rca' | 'supervisor' | 'planner' | 'rework'");
+    expect(page).toContain('Closure / RCA Exception Queue');
+    expect(page).toContain("setClosureFilter('missing-rca')");
+    expect(page).toContain("setClosureFilter('rework')");
+  });
+
   it('keeps direct work-order drill-down actions in exception and detail tables', () => {
     expect(page).toContain('href={`/work-orders/${item.id}`}');
     expect(page).toContain('href={`/work-orders/${wo.id}`}');

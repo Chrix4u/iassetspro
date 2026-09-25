@@ -330,7 +330,7 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'downtime', category: 'Reliability & Assets', title: 'Downtime & Production Loss', description: 'Downtime events, duration, impact level and production-loss exposure.', xlsxType: 'downtime', pdfType: 'downtime', icon: TrendingDown },
   { id: 'materials', category: 'Resources & Stores', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
   { id: 'tools', category: 'Resources & Stores', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
-  { id: 'breakdown-performance', category: 'Operations & Performance', title: 'Breakdown Performance & Response', description: 'GTP-style breakdown count, weekly trend, machine frequency, response time, repair time/MTTR and downtime in one management workbook.', xlsxType: 'breakdown-performance', icon: TrendingDown },
+  { id: 'breakdown-performance', category: 'Operations & Performance', title: 'Breakdown Performance & Response', description: 'breakdown count, weekly trend, machine frequency, response time, repair time/MTTR and downtime in one management workbook.', xlsxType: 'breakdown-performance', icon: TrendingDown },
   { id: 'failure-analysis', category: 'Reliability & Assets', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
   { id: 'cost', category: 'Cost & Compliance', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
   { id: 'backlog-aging', category: 'Operations & Performance', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
@@ -1095,7 +1095,7 @@ export default function RWOPReportingPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Breakdown Performance & Response</CardTitle>
-                  <CardDescription>GTP-style breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
+                  <CardDescription>breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
                 </div>
                 <Badge variant="outline">{report.breakdownPerformance?.breakdownCount ?? 0} breakdown(s)</Badge>
               </div>

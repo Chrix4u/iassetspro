@@ -8,6 +8,32 @@ export interface ExportPDFOptions {
   summary?: { label: string; value: string }[];
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function isNumericLike(value: unknown): boolean {
+  const text = String(value ?? '').trim();
+  if (!text || text === '-' || text === '—') return false;
+  const normalized = text
+    .replace(/[,%]/g, '')
+    .replace(/^(GHS|USD|EUR|GBP)\s*/i, '')
+    .replace(/^[₵$€£]\s*/, '');
+  return normalized !== '' && Number.isFinite(Number(normalized));
+}
+
+function inferNumericColumns(headers: string[], rows: string[][]): boolean[] {
+  return headers.map((_, index) => {
+    const values = rows.map((row) => row[index]).filter((value) => String(value ?? '').trim() !== '');
+    return values.length > 0 && values.every(isNumericLike);
+  });
+}
+
 export function exportPDF(options: ExportPDFOptions) {
   const {
     title,
@@ -15,99 +41,176 @@ export function exportPDF(options: ExportPDFOptions) {
     headers,
     rows,
     filename = 'report',
-    orientation = 'landscape',
     summary,
   } = options;
 
+  // Narrow reports read better in portrait. Wide analytical tables switch to
+  // landscape unless the caller explicitly selects an orientation.
+  const orientation = options.orientation ?? (headers.length > 6 ? 'landscape' : 'portrait');
+  const numericColumns = inferNumericColumns(headers, rows);
+
   const summaryHtml = summary && summary.length > 0 ? `
-    <div class="summary">
+    <section class="summary-grid" aria-label="Report summary">
       ${summary.map(item => `
-        <div class="summary-item">
-          <span class="summary-label">${item.label}</span>
-          <span class="summary-value">${item.value}</span>
+        <div class="summary-card">
+          <span class="summary-label">${escapeHtml(item.label)}</span>
+          <span class="summary-value">${escapeHtml(item.value)}</span>
         </div>
       `).join('')}
-    </div>
+    </section>
   ` : '';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <style>
-    @page { size: ${orientation}; margin: 15mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; color: #333; line-height: 1.5; }
-    h1 { font-size: 20px; font-weight: 700; color: #111827; margin-bottom: 2px; }
-    .subtitle { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
-    .date { font-size: 10px; color: #9ca3af; margin-bottom: 16px; }
-    .summary {
-      background: #f0fdf4;
-      border: 1px solid #bbf7d0;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 16px;
-    }
-    .summary-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 3px 0;
-      font-size: 11px;
-    }
-    .summary-label { color: #374151; }
-    .summary-value { font-weight: 700; color: #059669; }
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      background: #059669;
-      color: #ffffff;
-      padding: 8px 12px;
-      text-align: left;
+    @page { size: A4 ${orientation}; margin: 12mm; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      white-space: nowrap;
+      color: #1f2937;
+      line-height: 1.35;
+      background: #fff;
+    }
+    .report-header {
+      border-bottom: 2px solid #059669;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0 0 3px;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: #111827;
+    }
+    .subtitle { font-size: 10px; color: #4b5563; margin-bottom: 3px; }
+    .date { font-size: 8.5px; color: #9ca3af; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin: 0 0 12px;
+    }
+    .summary-card {
+      min-height: 48px;
+      border: 1px solid #d1fae5;
+      border-radius: 6px;
+      background: #f0fdf4;
+      padding: 8px 9px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .summary-label {
+      display: block;
+      color: #6b7280;
+      font-size: 8px;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+    .summary-value {
+      display: block;
+      color: #065f46;
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .table-wrap { width: 100%; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border-spacing: 0;
+      font-size: 9px;
+    }
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    thead th {
+      background: #065f46;
+      color: #fff;
+      border: 1px solid #047857;
+      padding: 5px 6px;
+      text-align: left;
+      vertical-align: middle;
+      font-size: 8px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     tbody td {
-      padding: 7px 12px;
-      border-bottom: 1px solid #e5e7eb;
-      font-size: 10px;
+      border: 1px solid #e5e7eb;
+      padding: 5px 6px;
+      vertical-align: top;
       color: #374151;
+      line-height: 1.25;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     tbody tr:nth-child(even) { background: #f9fafb; }
-    tbody tr:hover { background: #f0fdf4; }
-    .footer {
-      margin-top: 24px;
-      font-size: 9px;
+    th.numeric, td.numeric {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .empty {
+      padding: 16px;
+      border: 1px dashed #d1d5db;
+      border-radius: 6px;
       color: #9ca3af;
+      font-style: italic;
+      text-align: center;
+    }
+    .footer {
+      margin-top: 12px;
       border-top: 1px solid #e5e7eb;
-      padding-top: 8px;
+      padding-top: 6px;
       display: flex;
       justify-content: space-between;
+      gap: 12px;
+      font-size: 7.5px;
+      color: #9ca3af;
+      break-inside: avoid;
+      page-break-inside: avoid;
     }
     .footer-brand { font-weight: 600; color: #6b7280; }
+    @media print {
+      .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ''}
-  <div class="date">Generated: ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+  <header class="report-header">
+    <h1>${escapeHtml(title)}</h1>
+    ${subtitle ? `<div class="subtitle">${escapeHtml(subtitle)}</div>` : ''}
+    <div class="date">Generated: ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+  </header>
   ${summaryHtml}
   ${rows.length > 0 ? `
-  <table>
-    <thead>
-      <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-    </thead>
-    <tbody>
-      ${rows.map(r => `<tr>${r.map(c => `<td>${c ?? ''}</td>`).join('')}</tr>`).join('')}
-    </tbody>
-  </table>
-  ` : '<p style="color:#9ca3af; font-style:italic;">No data available for the selected filters.</p>'}
-  <div class="footer">
-    <span class="footer-brand">iAssetsPro EAM — Asset Management</span>
-    <span>Generated automatically</span>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>${headers.map((header, index) => `<th class="${numericColumns[index] ? 'numeric' : ''}">${escapeHtml(header)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(row => `<tr>${headers.map((_, index) => `<td class="${numericColumns[index] ? 'numeric' : ''}">${escapeHtml(row[index] ?? '')}</td>`).join('')}</tr>`).join('')}
+      </tbody>
+    </table>
   </div>
+  ` : '<div class="empty">No data available for the selected filters.</div>'}
+  <footer class="footer">
+    <span class="footer-brand">iAssetsPro EAM — Asset Management</span>
+    <span>${escapeHtml(filename)}</span>
+  </footer>
 </body>
 </html>`;
 
@@ -117,8 +220,9 @@ export function exportPDF(options: ExportPDFOptions) {
   if (printWindow) {
     printWindow.onload = () => {
       printWindow.print();
-      // Clean up after a short delay to ensure print dialog has loaded
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
+  } else {
+    URL.revokeObjectURL(url);
   }
 }

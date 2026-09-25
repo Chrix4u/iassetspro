@@ -230,7 +230,12 @@ type OperationalXlsxReportType =
   | 'sla'
   | 'operations-summary'
   | 'asset-history'
-  | 'department-cost';
+  | 'department-cost'
+  | 'material-reconciliation'
+  | 'tool-custody'
+  | 'assistance'
+  | 'shift-handover'
+  | 'closure-audit';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -240,29 +245,51 @@ type OperationalPdfReportType =
   | 'downtime'
   | 'technician_performance';
 
+type OperationalReportCategory =
+  | 'Operations & Performance'
+  | 'Resources & Stores'
+  | 'Reliability & Assets'
+  | 'Cost & Compliance';
+
 type OperationalReportDefinition = {
   id: string;
+  category: OperationalReportCategory;
   title: string;
   description: string;
-  xlsxType: OperationalXlsxReportType;
+  xlsxType?: OperationalXlsxReportType;
+  customXlsxEndpoint?: 'machine-component-detail';
   pdfType?: OperationalPdfReportType;
   icon: React.ComponentType<{ className?: string }>;
 };
 
+
+const REPORT_CATEGORIES: OperationalReportCategory[] = [
+  'Operations & Performance',
+  'Resources & Stores',
+  'Reliability & Assets',
+  'Cost & Compliance',
+];
+
 const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
-  { id: 'work-orders', title: 'Work Orders', description: 'Detailed repairs work orders with status, asset, labor, cost and timeline.', xlsxType: 'work-order', pdfType: 'execution', icon: ClipboardList },
-  { id: 'maintenance-requests', title: 'Maintenance Requests', description: 'Request intake, approvals, planner conversion and WO linkage.', xlsxType: 'maintenance-request', pdfType: 'lifecycle', icon: FileText },
-  { id: 'labor', title: 'Technician Labor & Time', description: 'Technician time logs, activity, breaks, team logs and labor hours.', xlsxType: 'labor', pdfType: 'technician_performance', icon: UserRoundCheck },
-  { id: 'downtime', title: 'Downtime & Production Loss', description: 'Downtime events, duration, impact level and production-loss exposure.', xlsxType: 'downtime', pdfType: 'downtime', icon: TrendingDown },
-  { id: 'materials', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
-  { id: 'tools', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
-  { id: 'failure-analysis', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
-  { id: 'cost', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
-  { id: 'backlog-aging', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
-  { id: 'sla', title: 'SLA Compliance', description: 'Response/closure compliance against priority-based service targets.', xlsxType: 'sla', icon: ShieldCheck },
-  { id: 'operations-summary', title: 'Daily / Weekly Operations', description: 'Daily maintenance pulse covering opened/completed WOs, emergencies, labor, downtime, production loss and cost.', xlsxType: 'operations-summary', icon: Clock },
-  { id: 'asset-history', title: 'Asset Repair History', description: 'Full repair and failure history by asset with RCA, technician, downtime, materials and cost.', xlsxType: 'asset-history', icon: History },
-  { id: 'department-cost', title: 'Department / Cost-Center Cost', description: 'Maintenance spend by department/cost center with labor, parts, contractor, tools and average WO cost.', xlsxType: 'department-cost', icon: Coins },
+  { id: 'work-orders', category: 'Operations & Performance', title: 'Work Orders', description: 'Detailed repairs work orders with status, asset, labor, cost and timeline.', xlsxType: 'work-order', pdfType: 'execution', icon: ClipboardList },
+  { id: 'maintenance-requests', category: 'Operations & Performance', title: 'Maintenance Requests', description: 'Request intake, approvals, planner conversion and WO linkage.', xlsxType: 'maintenance-request', pdfType: 'lifecycle', icon: FileText },
+  { id: 'labor', category: 'Operations & Performance', title: 'Technician Labor & Time', description: 'Technician time logs, activity, breaks, team logs and labor hours.', xlsxType: 'labor', pdfType: 'technician_performance', icon: UserRoundCheck },
+  { id: 'downtime', category: 'Reliability & Assets', title: 'Downtime & Production Loss', description: 'Downtime events, duration, impact level and production-loss exposure.', xlsxType: 'downtime', pdfType: 'downtime', icon: TrendingDown },
+  { id: 'materials', category: 'Resources & Stores', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
+  { id: 'tools', category: 'Resources & Stores', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
+  { id: 'failure-analysis', category: 'Reliability & Assets', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
+  { id: 'cost', category: 'Cost & Compliance', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
+  { id: 'backlog-aging', category: 'Operations & Performance', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
+  { id: 'sla', category: 'Operations & Performance', title: 'SLA Compliance', description: 'Response/closure compliance against priority-based service targets.', xlsxType: 'sla', icon: ShieldCheck },
+  { id: 'operations-summary', category: 'Operations & Performance', title: 'Daily / Weekly Operations', description: 'Daily maintenance pulse covering opened/completed WOs, emergencies, labor, downtime, production loss and cost.', xlsxType: 'operations-summary', icon: Clock },
+  { id: 'asset-history', category: 'Reliability & Assets', title: 'Asset Repair History', description: 'Full repair and failure history by asset with RCA, technician, downtime, materials and cost.', xlsxType: 'asset-history', icon: History },
+  { id: 'machine-component-detail', category: 'Reliability & Assets', title: 'Machine & Component Repair Detail', description: 'Completed repairs by machine and component/part with failure mode, RCA, materials, labor, downtime and cost.', customXlsxEndpoint: 'machine-component-detail', icon: ClipboardList },
+  { id: 'department-cost', category: 'Cost & Compliance', title: 'Department / Cost-Center Cost', description: 'Maintenance spend by department/cost center with labor, parts, contractor, tools and average WO cost.', xlsxType: 'department-cost', icon: Coins },
+  { id: 'material-reconciliation', category: 'Resources & Stores', title: 'Material Reconciliation Audit', description: 'Issued versus consumed, wasted and returned quantities with cost and variance exceptions.', xlsxType: 'material-reconciliation', icon: Boxes },
+  { id: 'tool-custody', category: 'Resources & Stores', title: 'Tool Custody & Returns', description: 'Issued tool custody, technician returns, store confirmation, duration and condition exceptions.', xlsxType: 'tool-custody', icon: Wrench },
+  { id: 'assistance', category: 'Resources & Stores', title: 'Assistance Request Turnaround', description: 'Technician assistance requests, approval outcomes and review turnaround time.', xlsxType: 'assistance', icon: UserRoundCheck },
+  { id: 'shift-handover', category: 'Resources & Stores', title: 'Shift Handover Audit', description: 'Repair handovers with pending issues, safety notes, receiver confirmation and shift continuity.', xlsxType: 'shift-handover', icon: History },
+  { id: 'closure-audit', category: 'Cost & Compliance', title: 'Closure / RCA Compliance Audit', description: 'RCA completeness, supervisor review, planner closure, rework and compliance exceptions.', xlsxType: 'closure-audit', icon: ShieldCheck },
 ];
 
 type ReportFilters = {
@@ -520,24 +547,38 @@ export default function RWOPReportingPage() {
 
     setOperationalDownloading(`${definition.id}:xlsx`);
     try {
-      const response = await api.getRaw('/api/repairs/reports/xlsx', {
-        method: 'POST',
-        headers: {
-          ...plantHeader(filters.plantId),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reportType: definition.xlsxType,
-          filters: {
-            dateFrom: filters.startDate || undefined,
-            dateTo: filters.endDate || undefined,
-            plantId: filters.plantId === 'all' ? undefined : filters.plantId,
-            departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
-            maintenanceScope: 'repairs',
+      let response: Response;
+      if (definition.customXlsxEndpoint === 'machine-component-detail') {
+        const params = new URLSearchParams({ format: 'xlsx' });
+        if (filters.startDate) params.set('dateFrom', filters.startDate);
+        if (filters.endDate) params.set('dateTo', filters.endDate);
+        if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
+        if (filters.departmentId !== 'all') params.set('departmentId', filters.departmentId);
+        response = await api.getRaw(`/api/repairs/reports/detailed?${params.toString()}`, {
+          headers: plantHeader(filters.plantId),
+          timeout: 60_000,
+        });
+      } else {
+        if (!definition.xlsxType) throw new Error('Excel report type is not configured');
+        response = await api.getRaw('/api/repairs/reports/xlsx', {
+          method: 'POST',
+          headers: {
+            ...plantHeader(filters.plantId),
+            'Content-Type': 'application/json',
           },
-        }),
-        timeout: 60_000,
-      });
+          body: JSON.stringify({
+            reportType: definition.xlsxType,
+            filters: {
+              dateFrom: filters.startDate || undefined,
+              dateTo: filters.endDate || undefined,
+              plantId: filters.plantId === 'all' ? undefined : filters.plantId,
+              departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
+              maintenanceScope: 'repairs',
+            },
+          }),
+          timeout: 60_000,
+        });
+      }
 
       if (!response.ok) {
         let message = `Excel export failed (${response.status})`;
@@ -556,7 +597,7 @@ export default function RWOPReportingPage() {
       const serverName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = serverName || `${definition.xlsxType}-report.xlsx`;
+      anchor.download = serverName || `${definition.xlsxType || 'machine-component-repair-detail'}-report.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -773,45 +814,59 @@ export default function RWOPReportingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {OPERATIONAL_REPORTS.map(definition => {
-              const Icon = definition.icon;
-              const xlsxBusy = operationalDownloading === `${definition.id}:xlsx`;
-              const pdfBusy = operationalDownloading === `${definition.id}:pdf`;
+          <div className="space-y-6">
+            {REPORT_CATEGORIES.map(category => {
+              const categoryReports = OPERATIONAL_REPORTS.filter(definition => definition.category === category);
               return (
-                <div key={definition.id} className="rounded-lg border border-border/60 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-md border bg-muted/40 p-2"><Icon className="h-4 w-4" /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold">{definition.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{definition.description}</p>
-                    </div>
+                <section key={category} className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold">{category}</h3>
+                    <div className="h-px flex-1 bg-border/60" />
+                    <Badge variant="outline" className="text-[10px]">{categoryReports.length} reports</Badge>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!canExport || operationalDownloading !== null}
-                      onClick={() => void downloadOperationalXlsx(definition)}
-                    >
-                      {xlsxBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />}
-                      Excel
-                    </Button>
-                    {definition.pdfType && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={!canExport || operationalDownloading !== null}
-                        onClick={() => void downloadOperationalPdf(definition)}
-                      >
-                        {pdfBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
-                        PDF
-                      </Button>
-                    )}
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {categoryReports.map(definition => {
+                      const Icon = definition.icon;
+                      const xlsxBusy = operationalDownloading === `${definition.id}:xlsx`;
+                      const pdfBusy = operationalDownloading === `${definition.id}:pdf`;
+                      return (
+                        <div key={definition.id} className="flex min-h-[170px] flex-col rounded-lg border border-border/60 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-md border bg-muted/40 p-2"><Icon className="h-4 w-4" /></div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-semibold">{definition.title}</p>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">{definition.description}</p>
+                            </div>
+                          </div>
+                          <div className="mt-auto flex flex-wrap gap-2 pt-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={!canExport || operationalDownloading !== null}
+                              onClick={() => void downloadOperationalXlsx(definition)}
+                            >
+                              {xlsxBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />}
+                              Excel
+                            </Button>
+                            {definition.pdfType && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={!canExport || operationalDownloading !== null}
+                                onClick={() => void downloadOperationalPdf(definition)}
+                              >
+                                {pdfBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
+                                PDF
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                </section>
               );
             })}
           </div>

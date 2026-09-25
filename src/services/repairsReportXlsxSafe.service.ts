@@ -1444,18 +1444,68 @@ function average(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
-async function exportBreakdownPerformanceReport(
-  filters: ReportFilters,
-  session: SessionData,
-): Promise<ReportResult> {
+type BreakdownDetailRow = {
+  woNumber: string;
+  reportedAt: string;
+  startedAt: string;
+  completedAt: string;
+  week: string;
+  assetName: string;
+  assetTag: string;
+  priority: string;
+  trade: string;
+  status: string;
+  responseMinutes: number | '';
+  repairMinutes: number | '';
+  restorationMinutes: number | '';
+  recordedDowntimeMinutes: number;
+  productionLoss: number;
+  totalCost: number;
+};
+
+type BreakdownPreparedData = {
+  detailRows: BreakdownDetailRow[];
+  weeklyRows: Array<{
+    week: string;
+    breakdowns: number;
+    avgResponseMinutes: number;
+    avgRepairMinutes: number;
+    restorationMinutes: number;
+    recordedDowntimeMinutes: number;
+  }>;
+  assetRows: Array<{
+    assetName: string;
+    assetTag: string;
+    breakdowns: number;
+    avgResponseMinutes: number;
+    avgRepairMinutes: number;
+    restorationMinutes: number;
+    recordedDowntimeMinutes: number;
+    totalCost: number;
+    mtbfDays: number | '';
+    repeatFailure: string;
+    lastBreakdown: string;
+  }>;
+  tradeRows: Array<{
+    trade: string;
+    breakdowns: number;
+    avgResponseMinutes: number;
+    avgRepairMinutes: number;
+    recordedDowntimeMinutes: number;
+  }>;
+  responseValues: number[];
+  repairValues: number[];
+  restorationValues: number[];
+  totalRecordedDowntime: number;
+};
+
+async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<BreakdownPreparedData> {
   const where = buildBaseWhere({ ...filters, maintenanceScope: 'repairs' });
   where.type = { in: ['corrective', 'emergency'] };
 
   const workOrders = await db.workOrder.findMany({
     where: Object.keys(where).length > 0 ? where : undefined,
-    include: {
-      workOrderDowntimes: true,
-    },
+    include: { workOrderDowntimes: true },
     orderBy: { createdAt: 'asc' },
     take: 10000,
   });
@@ -1469,7 +1519,7 @@ async function exportBreakdownPerformanceReport(
     : [];
   const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
 
-  const detailRows = workOrders.map((wo) => {
+  const detailRows: BreakdownDetailRow[] = workOrders.map((wo) => {
     const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
     const responseMinutes = minutesBetweenDates(wo.createdAt, wo.actualStart);
     const repairMinutes = minutesBetweenDates(wo.actualStart, wo.actualEnd);
@@ -1482,6 +1532,8 @@ async function exportBreakdownPerformanceReport(
     return {
       woNumber: wo.woNumber,
       reportedAt: wo.createdAt.toISOString(),
+      startedAt: wo.actualStart?.toISOString() || '',
+      completedAt: wo.actualEnd?.toISOString() || '',
       week: isoWeekKey(wo.createdAt),
       assetName: asset?.name || wo.assetName || 'Unassigned',
       assetTag: asset?.assetTag || '',
@@ -1504,6 +1556,7 @@ async function exportBreakdownPerformanceReport(
     restorationMinutes: number;
     recordedDowntimeMinutes: number;
     totalCost: number;
+    failureTimes: number[];
     lastBreakdown?: string;
     assetTag?: string;
   };
@@ -1521,9 +1574,11 @@ async function exportBreakdownPerformanceReport(
         restorationMinutes: 0,
         recordedDowntimeMinutes: 0,
         totalCost: 0,
+        failureTimes: [],
         assetTag,
       };
       current.breakdowns += 1;
+      current.failureTimes.push(new Date(row.reportedAt).getTime());
       if (typeof row.responseMinutes === 'number') current.response.push(row.responseMinutes);
       if (typeof row.repairMinutes === 'number') current.repair.push(row.repairMinutes);
       if (typeof row.restorationMinutes === 'number') current.restorationMinutes += row.restorationMinutes;
@@ -1551,17 +1606,23 @@ async function exportBreakdownPerformanceReport(
     }));
 
   const assetRows = [...byAsset.entries()]
-    .map(([assetName, row]) => ({
-      assetName,
-      assetTag: row.assetTag || '',
-      breakdowns: row.breakdowns,
-      avgResponseMinutes: Number(average(row.response).toFixed(2)),
-      avgRepairMinutes: Number(average(row.repair).toFixed(2)),
-      restorationMinutes: Number(row.restorationMinutes.toFixed(2)),
-      recordedDowntimeMinutes: Number(row.recordedDowntimeMinutes.toFixed(2)),
-      totalCost: Number(row.totalCost.toFixed(2)),
-      lastBreakdown: row.lastBreakdown || '',
-    }))
+    .map(([assetName, row]) => {
+      const ordered = [...row.failureTimes].sort((a, b) => a - b);
+      const intervals = ordered.slice(1).map((time, index) => (time - ordered[index]) / 86400000);
+      return {
+        assetName,
+        assetTag: row.assetTag || '',
+        breakdowns: row.breakdowns,
+        avgResponseMinutes: Number(average(row.response).toFixed(2)),
+        avgRepairMinutes: Number(average(row.repair).toFixed(2)),
+        restorationMinutes: Number(row.restorationMinutes.toFixed(2)),
+        recordedDowntimeMinutes: Number(row.recordedDowntimeMinutes.toFixed(2)),
+        totalCost: Number(row.totalCost.toFixed(2)),
+        mtbfDays: intervals.length ? Number(average(intervals).toFixed(2)) : '',
+        repeatFailure: row.breakdowns > 1 ? 'Yes' : 'No',
+        lastBreakdown: row.lastBreakdown || '',
+      };
+    })
     .sort((a, b) => b.breakdowns - a.breakdowns || b.recordedDowntimeMinutes - a.recordedDowntimeMinutes);
 
   const tradeRows = [...byTrade.entries()]
@@ -1579,32 +1640,218 @@ async function exportBreakdownPerformanceReport(
   const restorationValues = detailRows.flatMap((row) => typeof row.restorationMinutes === 'number' ? [row.restorationMinutes] : []);
   const totalRecordedDowntime = detailRows.reduce((sum, row) => sum + row.recordedDowntimeMinutes, 0);
 
+  return { detailRows, weeklyRows, assetRows, tradeRows, responseValues, repairValues, restorationValues, totalRecordedDowntime };
+}
+
+const BREAKDOWN_FREQUENCY_ASSET_COLUMNS: ReportColumn[] = [
+  { key: 'rank', header: 'Rank', format: 'number', width: 10 },
+  { key: 'assetName', header: 'Machine / Asset', width: 30 },
+  { key: 'assetTag', header: 'Asset Tag', width: 16 },
+  { key: 'breakdowns', header: 'No. of Breakdowns', format: 'number', width: 18 },
+  { key: 'sharePercent', header: 'Share %', format: 'number', width: 12 },
+  { key: 'cumulativePercent', header: 'Cumulative %', format: 'number', width: 14 },
+  { key: 'lastBreakdown', header: 'Last Breakdown', format: 'datetime', width: 20 },
+];
+
+const RESPONSE_DETAIL_COLUMNS: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 20 },
+  { key: 'assetName', header: 'Machine / Asset', width: 28 },
+  { key: 'assetTag', header: 'Asset Tag', width: 16 },
+  { key: 'priority', header: 'Priority', width: 12 },
+  { key: 'trade', header: 'Trade', width: 20 },
+  { key: 'reportedAt', header: 'Reported', format: 'datetime', width: 20 },
+  { key: 'startedAt', header: 'Work Started', format: 'datetime', width: 20 },
+  { key: 'responseMinutes', header: 'Response Time (min)', format: 'number', width: 18 },
+  { key: 'status', header: 'Status', width: 16 },
+];
+
+const REPAIR_TIME_DETAIL_COLUMNS: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 20 },
+  { key: 'assetName', header: 'Machine / Asset', width: 28 },
+  { key: 'assetTag', header: 'Asset Tag', width: 16 },
+  { key: 'trade', header: 'Trade', width: 20 },
+  { key: 'startedAt', header: 'Work Started', format: 'datetime', width: 20 },
+  { key: 'completedAt', header: 'Work Completed', format: 'datetime', width: 20 },
+  { key: 'repairMinutes', header: 'Repair Time / MTTR (min)', format: 'number', width: 22 },
+  { key: 'recordedDowntimeMinutes', header: 'Recorded Downtime (min)', format: 'number', width: 22 },
+  { key: 'totalCost', header: 'Total Cost', format: 'currency', width: 15 },
+];
+
+const RELIABILITY_COLUMNS: ReportColumn[] = [
+  { key: 'rank', header: 'Rank', format: 'number', width: 10 },
+  { key: 'assetName', header: 'Machine / Asset', width: 30 },
+  { key: 'assetTag', header: 'Asset Tag', width: 16 },
+  { key: 'breakdowns', header: 'Breakdowns', format: 'number', width: 14 },
+  { key: 'repeatFailure', header: 'Repeat Failure', width: 15 },
+  { key: 'mtbfDays', header: 'MTBF (days)', format: 'number', width: 14 },
+  { key: 'avgRepairMinutes', header: 'Avg MTTR (min)', format: 'number', width: 16 },
+  { key: 'avgResponseMinutes', header: 'Avg Response (min)', format: 'number', width: 18 },
+  { key: 'recordedDowntimeMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+  { key: 'totalCost', header: 'Repair Cost', format: 'currency', width: 15 },
+  { key: 'lastBreakdown', header: 'Last Breakdown', format: 'datetime', width: 20 },
+];
+
+async function exportBreakdownPerformanceReport(filters: ReportFilters, session: SessionData): Promise<ReportResult> {
+  const data = await prepareBreakdownPerformanceData(filters);
   const wb = createStandardWorkbook({
     reportName: 'Breakdown Performance & Response',
-    description: 'breakdown frequency, response time and downtime analysis with separated response, repair and restoration intervals',
+    description: 'Breakdown frequency, response time and downtime analysis with separated response, repair and restoration intervals',
     plantId: filters.plantId,
     filters: flattenFilters(filters),
     generatedBy: session.fullName || session.userId,
     kpis: [
-      { label: 'Number of Breakdowns', value: detailRows.length },
-      { label: 'Assets with Breakdowns', value: assetRows.length },
-      { label: 'Avg Response Time (min)', value: average(responseValues).toFixed(2) },
-      { label: 'Avg Repair Time / MTTR (min)', value: average(repairValues).toFixed(2) },
-      { label: 'Avg Reported→Restored (min)', value: average(restorationValues).toFixed(2) },
-      { label: 'Recorded Downtime (hrs)', value: (totalRecordedDowntime / 60).toFixed(2) },
-      { label: 'Total Repair Cost', value: detailRows.reduce((sum, row) => sum + row.totalCost, 0).toFixed(2) },
+      { label: 'Number of Breakdowns', value: data.detailRows.length },
+      { label: 'Assets with Breakdowns', value: data.assetRows.length },
+      { label: 'Avg Response Time (min)', value: average(data.responseValues).toFixed(2) },
+      { label: 'Avg Repair Time / MTTR (min)', value: average(data.repairValues).toFixed(2) },
+      { label: 'Avg Reported→Restored (min)', value: average(data.restorationValues).toFixed(2) },
+      { label: 'Recorded Downtime (hrs)', value: (data.totalRecordedDowntime / 60).toFixed(2) },
+      { label: 'Total Repair Cost', value: data.detailRows.reduce((sum, row) => sum + row.totalCost, 0).toFixed(2) },
     ],
   });
+  addDataSheet(wb, 'Breakdown Detail', BREAKDOWN_DETAIL_COLUMNS, data.detailRows);
+  addDataSheet(wb, 'Weekly Trend', BREAKDOWN_WEEK_COLUMNS, data.weeklyRows);
+  addDataSheet(wb, 'By Machine', BREAKDOWN_ASSET_COLUMNS, data.assetRows);
+  addDataSheet(wb, 'By Trade', BREAKDOWN_TRADE_COLUMNS, data.tradeRows);
+  return { buffer: generateXlsxBuffer(wb), filename: buildFilename('breakdown-performance-response-report') };
+}
 
-  addDataSheet(wb, 'Breakdown Detail', BREAKDOWN_DETAIL_COLUMNS, detailRows);
-  addDataSheet(wb, 'Weekly Trend', BREAKDOWN_WEEK_COLUMNS, weeklyRows);
-  addDataSheet(wb, 'By Machine', BREAKDOWN_ASSET_COLUMNS, assetRows);
-  addDataSheet(wb, 'By Trade', BREAKDOWN_TRADE_COLUMNS, tradeRows);
+async function exportBreakdownFrequencyReport(filters: ReportFilters, session: SessionData): Promise<ReportResult> {
+  const data = await prepareBreakdownPerformanceData(filters);
+  const total = data.detailRows.length || 1;
+  let cumulative = 0;
+  const ranked = data.assetRows.map((row, index) => {
+    const share = (row.breakdowns / total) * 100;
+    cumulative += share;
+    return {
+      rank: index + 1,
+      assetName: row.assetName,
+      assetTag: row.assetTag,
+      breakdowns: row.breakdowns,
+      sharePercent: Number(share.toFixed(2)),
+      cumulativePercent: Number(Math.min(100, cumulative).toFixed(2)),
+      lastBreakdown: row.lastBreakdown,
+    };
+  });
 
-  return {
-    buffer: generateXlsxBuffer(wb),
-    filename: buildFilename('breakdown-performance-response-report'),
-  };
+  const wb = createStandardWorkbook({
+    reportName: 'Breakdown Frequency Report',
+    description: 'Breakdown count by machine, week and maintenance trade with Pareto ranking',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Total Breakdowns', value: data.detailRows.length },
+      { label: 'Affected Assets', value: data.assetRows.length },
+      { label: 'Repeat-Failure Assets', value: data.assetRows.filter(row => row.breakdowns > 1).length },
+      { label: 'Highest Asset Count', value: ranked[0]?.breakdowns || 0 },
+    ],
+  });
+  addDataSheet(wb, 'Machine Pareto', BREAKDOWN_FREQUENCY_ASSET_COLUMNS, ranked);
+  addDataSheet(wb, 'Weekly Frequency', BREAKDOWN_WEEK_COLUMNS.slice(0, 2), data.weeklyRows);
+  addDataSheet(wb, 'Trade Frequency', BREAKDOWN_TRADE_COLUMNS.slice(0, 2), data.tradeRows);
+  addDataSheet(wb, 'Breakdown Detail', BREAKDOWN_DETAIL_COLUMNS, data.detailRows);
+  return { buffer: generateXlsxBuffer(wb), filename: buildFilename('breakdown-frequency-report') };
+}
+
+async function exportResponseTimePerformanceReport(filters: ReportFilters, session: SessionData): Promise<ReportResult> {
+  const data = await prepareBreakdownPerformanceData(filters);
+  const valid = data.detailRows.filter(row => typeof row.responseMinutes === 'number');
+  const missing = data.detailRows.length - valid.length;
+  const byAsset = data.assetRows
+    .filter(row => row.avgResponseMinutes > 0)
+    .sort((a, b) => b.avgResponseMinutes - a.avgResponseMinutes);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Response Time Performance',
+    description: 'Time from work-order reporting to actual maintenance work start',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Breakdowns Evaluated', value: valid.length },
+      { label: 'Avg Response (min)', value: average(data.responseValues).toFixed(2) },
+      { label: 'Fastest Response (min)', value: valid.length ? Math.min(...data.responseValues).toFixed(2) : '0' },
+      { label: 'Slowest Response (min)', value: valid.length ? Math.max(...data.responseValues).toFixed(2) : '0' },
+      { label: 'Missing Start Time', value: missing },
+    ],
+  });
+  addDataSheet(wb, 'Response Detail', RESPONSE_DETAIL_COLUMNS, data.detailRows);
+  addDataSheet(wb, 'Weekly Response', BREAKDOWN_WEEK_COLUMNS.slice(0, 3), data.weeklyRows);
+  addDataSheet(wb, 'Response by Machine', [
+    { key: 'assetName', header: 'Machine / Asset', width: 30 },
+    { key: 'assetTag', header: 'Asset Tag', width: 16 },
+    { key: 'breakdowns', header: 'Breakdowns', format: 'number', width: 14 },
+    { key: 'avgResponseMinutes', header: 'Avg Response (min)', format: 'number', width: 18 },
+  ], byAsset);
+  addDataSheet(wb, 'Response by Trade', [
+    { key: 'trade', header: 'Trade', width: 22 },
+    { key: 'breakdowns', header: 'Breakdowns', format: 'number', width: 14 },
+    { key: 'avgResponseMinutes', header: 'Avg Response (min)', format: 'number', width: 18 },
+  ], data.tradeRows);
+  return { buffer: generateXlsxBuffer(wb), filename: buildFilename('response-time-performance-report') };
+}
+
+async function exportRepairTimeMttrReport(filters: ReportFilters, session: SessionData): Promise<ReportResult> {
+  const data = await prepareBreakdownPerformanceData(filters);
+  const valid = data.detailRows.filter(row => typeof row.repairMinutes === 'number');
+  const missing = data.detailRows.length - valid.length;
+  const byAsset = data.assetRows
+    .filter(row => row.avgRepairMinutes > 0)
+    .sort((a, b) => b.avgRepairMinutes - a.avgRepairMinutes);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Repair Time / MTTR Report',
+    description: 'Repair duration from actual work start to work completion, with machine and trade comparisons',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Completed Repair Intervals', value: valid.length },
+      { label: 'Average MTTR (min)', value: average(data.repairValues).toFixed(2) },
+      { label: 'Fastest Repair (min)', value: valid.length ? Math.min(...data.repairValues).toFixed(2) : '0' },
+      { label: 'Longest Repair (min)', value: valid.length ? Math.max(...data.repairValues).toFixed(2) : '0' },
+      { label: 'Missing Repair Interval', value: missing },
+    ],
+  });
+  addDataSheet(wb, 'Repair Time Detail', REPAIR_TIME_DETAIL_COLUMNS, data.detailRows);
+  addDataSheet(wb, 'MTTR by Machine', [
+    { key: 'assetName', header: 'Machine / Asset', width: 30 },
+    { key: 'assetTag', header: 'Asset Tag', width: 16 },
+    { key: 'breakdowns', header: 'Breakdowns', format: 'number', width: 14 },
+    { key: 'avgRepairMinutes', header: 'Avg MTTR (min)', format: 'number', width: 16 },
+    { key: 'recordedDowntimeMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+  ], byAsset);
+  addDataSheet(wb, 'MTTR by Trade', [
+    { key: 'trade', header: 'Trade', width: 22 },
+    { key: 'breakdowns', header: 'Breakdowns', format: 'number', width: 14 },
+    { key: 'avgRepairMinutes', header: 'Avg MTTR (min)', format: 'number', width: 16 },
+  ], data.tradeRows);
+  return { buffer: generateXlsxBuffer(wb), filename: buildFilename('repair-time-mttr-report') };
+}
+
+async function exportReliabilityBadActorsReport(filters: ReportFilters, session: SessionData): Promise<ReportResult> {
+  const data = await prepareBreakdownPerformanceData(filters);
+  const ranked = data.assetRows.map((row, index) => ({ rank: index + 1, ...row }));
+  const repeatAssets = ranked.filter(row => row.repeatFailure === 'Yes');
+
+  const wb = createStandardWorkbook({
+    reportName: 'Reliability & Repeat Failure Report',
+    description: 'Bad-actor ranking using breakdown frequency, MTBF, MTTR, downtime and repair cost',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Assets with Breakdowns', value: ranked.length },
+      { label: 'Repeat-Failure Assets', value: repeatAssets.length },
+      { label: 'Single-Failure Assets', value: ranked.length - repeatAssets.length },
+      { label: 'Total Breakdown Downtime (hrs)', value: (data.totalRecordedDowntime / 60).toFixed(2) },
+    ],
+  });
+  addDataSheet(wb, 'Bad Actors', RELIABILITY_COLUMNS, ranked);
+  addDataSheet(wb, 'Repeat Failures', RELIABILITY_COLUMNS, repeatAssets);
+  addDataSheet(wb, 'Breakdown Detail', BREAKDOWN_DETAIL_COLUMNS, data.detailRows);
+  return { buffer: generateXlsxBuffer(wb), filename: buildFilename('reliability-repeat-failure-report') };
 }
 
 /**
@@ -1631,5 +1878,9 @@ export async function generateRepairsReport(
   if (reportType === 'shift-handover') return exportShiftHandoverReport(filters, session);
   if (reportType === 'closure-audit') return exportClosureAuditReport(filters, session);
   if (reportType === 'breakdown-performance') return exportBreakdownPerformanceReport(filters, session);
+  if (reportType === 'breakdown-frequency') return exportBreakdownFrequencyReport(filters, session);
+  if (reportType === 'response-time-performance') return exportResponseTimePerformanceReport(filters, session);
+  if (reportType === 'repair-time-mttr') return exportRepairTimeMttrReport(filters, session);
+  if (reportType === 'reliability-bad-actors') return exportReliabilityBadActorsReport(filters, session);
   return generateLegacyReport(reportType, filters, session);
 }

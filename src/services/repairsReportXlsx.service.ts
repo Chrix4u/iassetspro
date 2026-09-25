@@ -1117,6 +1117,11 @@ export const SUPPORTED_REPORT_TYPES = [
   'operations-summary',
   'asset-history',
   'department-cost',
+  'material-reconciliation',
+  'tool-custody',
+  'assistance',
+  'shift-handover',
+  'closure-audit',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];

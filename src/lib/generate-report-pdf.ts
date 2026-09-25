@@ -83,12 +83,11 @@ const FONT_SIZES = {
 
 const MARGIN = 40;
 const CARD_GAP = 10;
-const CARDS_PER_ROW = 3;
+const CARDS_PER_ROW = 4;
 const TABLE_ROW_HEIGHT = 22;
 const TABLE_HEADER_HEIGHT = 24;
-const TABLE_MAX_ROWS_PER_PAGE = 25;
 const FOOTER_RESERVE = 30;
-const CARD_HEIGHT = 65;
+const CARD_HEIGHT = 58;
 const PAGE_WIDTH = 595.28; // A4
 const CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN;
 const HEADER_BAR_HEIGHT = 50;
@@ -294,11 +293,12 @@ function addPageNumbersAndFooter(doc: PDFDoc, params: ReportPDFParams): void {
 function renderSummaryCards(doc: PDFDoc, cards: SummaryCard[]): void {
   if (!Array.isArray(cards) || cards.length === 0) return;
 
-  const cardWidth = (CONTENT_WIDTH - (CARDS_PER_ROW - 1) * CARD_GAP) / CARDS_PER_ROW;
+  const cardsPerRow = Math.min(CARDS_PER_ROW, Math.max(1, cards.length));
+  const cardWidth = (CONTENT_WIDTH - (cardsPerRow - 1) * CARD_GAP) / cardsPerRow;
 
   for (let i = 0; i < cards.length; i++) {
-    const col = i % CARDS_PER_ROW;
-    const isLastInRow = col === CARDS_PER_ROW - 1 || i === cards.length - 1;
+    const col = i % cardsPerRow;
+    const isLastInRow = col === cardsPerRow - 1 || i === cards.length - 1;
 
     // If starting a new row, ensure enough space
     if (col === 0) {
@@ -392,6 +392,7 @@ function renderTable(doc: PDFDoc, data: TableData): void {
       doc.fillColor(COLORS.tableHeaderText);
       doc.text(safeString(data.headers[c]), xPos + 6, y + (TABLE_HEADER_HEIGHT - FONT_SIZES.tableHeader) / 2, {
         width: colWidth - 12,
+        align: alignments[c] || 'left',
         lineBreak: true,
       });
     }
@@ -436,28 +437,17 @@ function renderTable(doc: PDFDoc, data: TableData): void {
     doc.y = y + TABLE_ROW_HEIGHT;
   };
 
-  // -- Render the full table with pagination --
-  ensureSpace(doc, TABLE_HEADER_HEIGHT + TABLE_ROW_HEIGHT * Math.min(rows.length, TABLE_MAX_ROWS_PER_PAGE) + 10);
-
+  // -- Render the full table with content-aware pagination --
+  // Start on the current page whenever the header + at least one row fits.
+  ensureSpace(doc, TABLE_HEADER_HEIGHT + TABLE_ROW_HEIGHT + 10);
   drawTableHeader();
 
-  let rowsOnPage = 0;
   for (let r = 0; r < rows.length; r++) {
-    if (rowsOnPage >= TABLE_MAX_ROWS_PER_PAGE) {
-      doc.addPage();
-      drawTableHeader();
-      rowsOnPage = 0;
-    }
-
-    // Safety check: if a single row can't fit (unlikely), force new page
     if (doc.y + TABLE_ROW_HEIGHT > doc.page.height - doc.page.margins.bottom - FOOTER_RESERVE) {
       doc.addPage();
       drawTableHeader();
-      rowsOnPage = 0;
     }
-
     drawRow(rows[r], r);
-    rowsOnPage++;
   }
 
   doc.moveDown(0.5);
@@ -585,6 +575,7 @@ export async function generateReportPDF(params: ReportPDFParams): Promise<Buffer
     try {
       const doc = createDoc({
         size: 'A4',
+        layout: 'portrait',
         margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
         bufferPages: true,
         info: {

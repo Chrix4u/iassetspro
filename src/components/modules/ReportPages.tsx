@@ -303,7 +303,7 @@ function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Recor
                 </Button>
               </div>
             </div>
-            <Table>
+            <Table className="table-fixed min-w-[1080px]">
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead className="text-xs">WO #</TableHead>
@@ -530,8 +530,8 @@ export function ReportsMaintenancePage() {
     if (!reportData) return;
     exportCSV(
       `material-consumption-${startDate}-to-${endDate}`,
-      ['Item Name', 'Total Qty', 'Total Cost', 'WO Count'],
-      (reportData.materialConsumption || []).map((m: any) => [m.itemName, String(m.totalQuantity), String(m.totalCost), String(m.woCount)]),
+      ['Item Name', 'Assets / Machines', 'Total Qty', 'Total Cost', 'WO Count'],
+      (reportData.materialConsumption || []).map((m: any) => [m.itemName, (m.assets || []).join('; ') || 'Unassigned', String(m.totalQuantity), String(m.totalCost), String(m.woCount)]),
     );
   };
   const handleMaterialsPDF = () => {
@@ -545,8 +545,8 @@ export function ReportsMaintenancePage() {
         { label: 'Total Items', value: String((reportData.materialConsumption || []).length) },
         { label: 'Total Cost', value: formatCurrency(s?.totalCost) },
       ],
-      headers: ['Item Name', 'Total Qty', 'Total Cost', 'WO Count'],
-      rows: (reportData.materialConsumption || []).map((m: any) => [m.itemName, String(m.totalQuantity), formatCurrency(m.totalCost), String(m.woCount)]),
+      headers: ['Item Name', 'Assets / Machines', 'Total Qty', 'Total Cost', 'WO Count'],
+      rows: (reportData.materialConsumption || []).map((m: any) => [m.itemName, (m.assets || []).join(', ') || 'Unassigned', String(m.totalQuantity), formatCurrency(m.totalCost), String(m.woCount)]),
     });
   };
 
@@ -719,15 +719,15 @@ export function ReportsMaintenancePage() {
               <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
-                    <Table>
+                    <Table className="table-fixed min-w-[920px]">
                       <TableHeader className="sticky top-0 bg-background z-10">
                         <TableRow>
-                          <TableHead>Asset / Machine</TableHead>
-                          <TableHead className="text-right">WO Count</TableHead>
-                          <TableHead className="text-right">Completion</TableHead>
-                          <TableHead className="text-right">Downtime</TableHead>
-                          <TableHead className="text-right">Total Hours</TableHead>
-                          <TableHead className="text-right">Total Cost</TableHead>
+                          <TableHead className="w-[34%]">Asset / Machine</TableHead>
+                          <TableHead className="w-[12%] text-right">WO Count</TableHead>
+                          <TableHead className="w-[12%] text-right">Completion</TableHead>
+                          <TableHead className="w-[14%] text-right">Downtime</TableHead>
+                          <TableHead className="w-[14%] text-right">Total Hours</TableHead>
+                          <TableHead className="w-[14%] text-right">Total Cost</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -973,21 +973,23 @@ export function ReportsMaintenancePage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Item Name</TableHead>
-                          <TableHead className="text-right">Total Qty</TableHead>
-                          <TableHead className="text-right">Total Cost</TableHead>
-                          <TableHead className="text-right">WO Count</TableHead>
+                          <TableHead className="w-[26%]">Item Name</TableHead>
+                          <TableHead className="w-[38%]">Assets / Machines</TableHead>
+                          <TableHead className="w-[12%] text-right">Total Qty</TableHead>
+                          <TableHead className="w-[14%] text-right">Total Cost</TableHead>
+                          <TableHead className="w-[10%] text-right">WO Count</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {(reportData.materialConsumption || []).length === 0 ? (
-                          <TableRow><TableCell colSpan={4}><EmptyState icon={Package} title="No material data" description="Material usage will appear here once work orders use materials." /></TableCell></TableRow>
+                          <TableRow><TableCell colSpan={5}><EmptyState icon={Package} title="No material data" description="Material usage will appear here once work orders use materials." /></TableCell></TableRow>
                         ) : reportData.materialConsumption.map((mat: any, i: number) => (
                           <TableRow key={i} className="hover:bg-muted/30">
-                            <TableCell className="font-medium">{mat.itemName}</TableCell>
-                            <TableCell className="text-right">{mat.totalQuantity}</TableCell>
-                            <TableCell className="text-right font-medium">{formatCurrency(mat.totalCost)}</TableCell>
-                            <TableCell className="text-right">{mat.woCount}</TableCell>
+                            <TableCell className="font-medium align-top">{mat.itemName}</TableCell>
+                            <TableCell className="align-top text-sm text-muted-foreground">{(mat.assets || []).length ? (mat.assets || []).join(", ") : "Unassigned"}</TableCell>
+                            <TableCell className="text-right align-top tabular-nums">{mat.totalQuantity}</TableCell>
+                            <TableCell className="text-right align-top font-medium tabular-nums">{formatCurrency(mat.totalCost)}</TableCell>
+                            <TableCell className="text-right align-top tabular-nums">{mat.woCount}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

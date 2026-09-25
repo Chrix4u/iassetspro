@@ -703,10 +703,17 @@ export async function GET(request: NextRequest) {
       );
       const supervisorApproved = completion?.supervisorStatus === 'approved' && Boolean(completion.supervisorApprovedAt);
       const plannerClosed = wo.status !== 'closed' || (completion?.plannerStatus === 'closed' && Boolean(completion.plannerClosedAt));
+      const asset = getAssetDetails(wo);
       return {
         workOrderId: wo.id,
         woNumber: wo.woNumber,
+        title: wo.title,
+        assetName: asset.assetName,
+        assetTag: asset.assetTag,
+        type: wo.type,
+        priority: wo.priority,
         status: wo.status,
+        completedAt: wo.actualEnd?.toISOString() || completion?.createdAt?.toISOString() || null,
         requiresRca,
         rcaComplete,
         supervisorApproved,
@@ -725,6 +732,38 @@ export async function GET(request: NextRequest) {
       reworkWOs: closureRows.filter(row => row.reworkCount > 0).length,
       totalReworkInstances: closureRows.reduce((sum, row) => sum + row.reworkCount, 0),
     };
+
+    const closureExceptionWatchlist = closureRows
+      .filter(row =>
+        (row.requiresRca && !row.rcaComplete)
+        || !row.supervisorApproved
+        || (row.status === 'closed' && !row.plannerClosed)
+        || row.reworkCount > 0
+      )
+      .map(row => ({
+        id: row.workOrderId,
+        woNumber: row.woNumber,
+        title: row.title,
+        assetName: row.assetName,
+        assetTag: row.assetTag,
+        type: row.type,
+        priority: row.priority,
+        status: row.status,
+        completedAt: row.completedAt,
+        missingRca: row.requiresRca && !row.rcaComplete,
+        awaitingSupervisorApproval: !row.supervisorApproved,
+        awaitingPlannerClosure: row.status === 'closed' && !row.plannerClosed,
+        reworkCount: row.reworkCount,
+      }))
+      .sort((a, b) => {
+        const exceptionCount = (row: typeof a) =>
+          Number(row.missingRca)
+          + Number(row.awaitingSupervisorApproval)
+          + Number(row.awaitingPlannerClosure)
+          + Number(row.reworkCount > 0);
+        return exceptionCount(b) - exceptionCount(a);
+      })
+      .slice(0, 100);
 
     // ========== MANAGEMENT EXCEPTION WATCHLIST ==========
     const exceptionWatchlist = openWorkOrders.map(wo => {
@@ -843,6 +882,7 @@ export async function GET(request: NextRequest) {
         resourceFlow,
         returnsAndDamage,
         closureCompliance,
+        closureExceptionWatchlist,
         exceptionWatchlist,
         topAssets,
         workOrdersByAsset,

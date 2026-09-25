@@ -11,6 +11,7 @@ const checkDueCron = fs.readFileSync('src/app/api/pm-schedules/check-due-cron/ro
 const detailedReport = fs.readFileSync('src/app/api/repairs/reports/detailed/route.ts', 'utf8');
 const componentCreateApi = fs.readFileSync('src/app/api/component-registry/route.ts', 'utf8');
 const componentUpdateApi = fs.readFileSync('src/app/api/component-registry/[id]/route.ts', 'utf8');
+const componentSpareApi = fs.readFileSync('src/app/api/component-registry/[id]/spare-parts/route.ts', 'utf8');
 
 describe('machine component hierarchy maintenance workflow contract', () => {
   it('supports recursive assemblies/components and store spare-part linkage', () => {
@@ -23,6 +24,9 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(assetPage).toContain('Link Store Part');
     expect(assetPage).toContain('Print Label');
     expect(assetPage).toContain('Use the component code on work orders, inspections, PM schedules and spare-part records.');
+    expect(assetPage).toContain('handleUnlinkSparePart');
+    expect(componentSpareApi).toContain('already linked to the component');
+    expect(componentSpareApi).toContain('export async function DELETE');
   });
 
   it('lets work orders target exact components while preserving the machine', () => {

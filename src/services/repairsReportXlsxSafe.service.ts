@@ -1581,7 +1581,7 @@ async function exportBreakdownPerformanceReport(
 
   const wb = createStandardWorkbook({
     reportName: 'Breakdown Performance & Response',
-    description: 'GTP-compatible breakdown frequency, response time and downtime analysis with separated response, repair and restoration intervals',
+    description: 'breakdown frequency, response time and downtime analysis with separated response, repair and restoration intervals',
     plantId: filters.plantId,
     filters: flattenFilters(filters),
     generatedBy: session.fullName || session.userId,

@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
       return {
         assetId: wo.assetId || null,
-        assetName: wo.assetName || asset?.name || 'Unassigned',
+        assetName: asset?.name || (wo.assetName && wo.assetName !== 'Unassigned' ? wo.assetName : null) || 'Unassigned',
         assetTag: asset?.assetTag || null,
         manufacturer: asset?.manufacturer || null,
         model: asset?.model || null,

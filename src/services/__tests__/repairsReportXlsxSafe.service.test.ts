@@ -353,6 +353,21 @@ describe('repairsReportXlsxSafe operational report pack', () => {
         issuedByUser: { fullName: 'Storekeeper One' },
         returnedByUser: null,
         returnConfirmedByUser: null,
+        items: [
+          {
+            toolCode: 'TW-01',
+            toolName: 'Torque Wrench',
+            quantityRequested: 2,
+            quantityIssued: 2,
+            quantityReturned: 0,
+            quantityTransferred: 0,
+            pendingReturnQty: 1,
+            conditionAtIssue: 'good',
+            conditionAtReturn: null,
+            pendingReturnCondition: 'fair',
+            pendingReturnNotes: 'One unit ready for store confirmation',
+          },
+        ],
       },
     ]);
 
@@ -367,9 +382,14 @@ describe('repairsReportXlsxSafe operational report pack', () => {
     expect(sheet?.[3]?.[0]).toMatchObject({
       requestNumber: 'TR-202609-0001',
       woNumber: 'WO-TOOL-1',
+      toolCode: 'TW-01',
       toolName: 'Torque Wrench',
-      custodyStatus: 'In Custody',
+      quantityRequested: 2,
+      quantityIssued: 2,
+      pendingReturnQty: 1,
+      custodyStatus: 'Awaiting Store Confirmation',
       conditionAtIssue: 'good',
+      conditionAtReturn: 'fair',
     });
   });
 

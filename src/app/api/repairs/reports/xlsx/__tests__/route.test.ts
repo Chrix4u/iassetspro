@@ -27,7 +27,18 @@ vi.mock('@/lib/plant-scope', () => ({
   canAccessPlant: mockCanAccessPlant,
 }));
 vi.mock('@/services/repairsReportXlsx.service', () => ({
-  SUPPORTED_REPORT_TYPES: ['work-order', 'maintenance-request', 'operations-summary', 'asset-history', 'department-cost'],
+  SUPPORTED_REPORT_TYPES: [
+    'work-order',
+    'maintenance-request',
+    'operations-summary',
+    'asset-history',
+    'department-cost',
+    'material-reconciliation',
+    'tool-custody',
+    'assistance',
+    'shift-handover',
+    'closure-audit',
+  ],
 }));
 vi.mock('@/services/repairsReportXlsxSafe.service', () => ({
   generateRepairsReport: mockGenerateRepairsReport,

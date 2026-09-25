@@ -234,7 +234,9 @@ type OperationalXlsxReportType =
   | 'daily-operations'
   | 'asset-history'
   | 'department-cost'
-  | 'shift-handover';
+  | 'shift-handover'
+  | 'material-reconciliation'
+  | 'component-detail';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -254,6 +256,8 @@ type OperationalReportDefinition = {
 };
 
 const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
+  { id: 'component-detail', title: 'Machine / Component Repair Detail', description: 'Machine and component-level completed repair history with failure, RCA, materials, downtime and cost detail.', xlsxType: 'component-detail', icon: Wrench },
+  { id: 'material-reconciliation', title: 'Material Reconciliation', description: 'Issued, consumed, wasted and returned repair materials with reconciliation completion and cost control.', xlsxType: 'material-reconciliation', icon: Boxes },
   { id: 'daily-operations', title: 'Daily / Weekly Operations', description: 'Supervisor/planner operations report covering active work, priorities, resource blockers, handovers, downtime and cost.', xlsxType: 'daily-operations', icon: CalendarDays },
   { id: 'asset-history', title: 'Asset Repair History', description: 'Complete repair, failure, RCA, downtime, rework and cost history by asset.', xlsxType: 'asset-history', icon: History },
   { id: 'department-cost', title: 'Department / Cost Center Costs', description: 'Repair workload, downtime, production loss and maintenance cost allocation by department.', xlsxType: 'department-cost', icon: Building2 },

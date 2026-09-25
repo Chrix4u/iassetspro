@@ -159,6 +159,9 @@ test.describe('Repairs Reports & Analytics', () => {
       'Repair Cost Analysis',
       'Backlog & Aging',
       'SLA Compliance',
+      'Daily / Weekly Operations',
+      'Asset Repair History',
+      'Department / Cost-Center Cost',
     ]) {
       await expect(reportLibrary.getByText(title, { exact: true })).toBeVisible();
     }
@@ -176,6 +179,7 @@ test.describe('Repairs Reports & Analytics', () => {
       filters: expect.objectContaining({
         dateFrom: expect.any(String),
         dateTo: expect.any(String),
+        maintenanceScope: 'repairs',
       }),
     });
 

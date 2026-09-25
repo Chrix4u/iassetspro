@@ -21,6 +21,8 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(assetPage).toContain('Parent Assembly / Component');
     expect(assetPage).toContain('Component Spare Parts & Store Linkage');
     expect(assetPage).toContain('Link Store Part');
+    expect(assetPage).toContain('Print Label');
+    expect(assetPage).toContain('Use the component code on work orders, inspections, PM schedules and spare-part records.');
   });
 
   it('lets work orders target exact components while preserving the machine', () => {

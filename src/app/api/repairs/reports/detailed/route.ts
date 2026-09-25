@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const type = searchParams.get('type');
     const requestedPlantId = searchParams.get('plantId');
+    const departmentId = searchParams.get('departmentId');
     const format = searchParams.get('format') || 'json';
     if (format === 'xlsx' && !hasPermission(session, 'reports.export') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.export required' }, { status: 403 });
@@ -50,6 +51,9 @@ export async function GET(request: NextRequest) {
       where.status = status;
     } else {
       where.status = { in: ['completed', 'verified', 'closed'] };
+    }
+    if (departmentId) {
+      where.departmentId = departmentId;
     }
 
     // Apply plant scope before any report query. An explicit X-Plant-ID wins over

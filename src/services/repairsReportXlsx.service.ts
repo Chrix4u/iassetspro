@@ -36,6 +36,7 @@ export interface ReportFilters {
   departmentId?: string;
   assetId?: string;
   assigneeId?: string;
+  maintenanceScope?: 'repairs' | 'pm' | 'all';
 }
 
 export interface ReportResult {
@@ -851,7 +852,13 @@ function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.plantId) where.plantId = filters.plantId;
   if (filters.status) where.status = filters.status;
   if (filters.priority) where.priority = filters.priority;
-  if (filters.type) where.type = filters.type;
+  if (filters.type) {
+    where.type = filters.type;
+  } else if (filters.maintenanceScope === 'repairs') {
+    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+  } else if (filters.maintenanceScope === 'pm') {
+    where.type = 'preventive';
+  }
   if (filters.tradeActivity) where.tradeActivity = filters.tradeActivity;
   if (filters.departmentId) where.departmentId = filters.departmentId;
   if (filters.assetId) where.assetId = filters.assetId;
@@ -895,7 +902,13 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
     const woWhere: Record<string, unknown> = {};
     if (filters.plantId) woWhere.plantId = filters.plantId;
     if (filters.status) woWhere.status = filters.status;
-    if (filters.type) woWhere.type = filters.type;
+    if (filters.type) {
+      woWhere.type = filters.type;
+    } else if (filters.maintenanceScope === 'repairs') {
+      woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
+    } else if (filters.maintenanceScope === 'pm') {
+      woWhere.type = 'preventive';
+    }
     if (filters.assigneeId) woWhere.assignedTo = filters.assigneeId;
     where.workOrder = woWhere;
   }
@@ -905,6 +918,11 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
 function buildDowntimeWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
+  if (filters.maintenanceScope === 'repairs') {
+    where.workOrder = { type: { in: ['corrective', 'emergency', 'predictive'] } };
+  } else if (filters.maintenanceScope === 'pm') {
+    where.workOrder = { type: 'preventive' };
+  }
 
   if (filters.dateFrom || filters.dateTo) {
     const df: Record<string, unknown> = {};

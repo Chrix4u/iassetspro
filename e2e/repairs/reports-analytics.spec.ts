@@ -162,6 +162,11 @@ test.describe('Repairs Reports & Analytics', () => {
       'Daily / Weekly Operations',
       'Asset Repair History',
       'Department / Cost-Center Cost',
+      'Material Reconciliation Audit',
+      'Tool Custody & Returns',
+      'Assistance Request Turnaround',
+      'Shift Handover Audit',
+      'Closure / RCA Compliance Audit',
     ]) {
       await expect(reportLibrary.getByText(title, { exact: true })).toBeVisible();
     }

@@ -1310,6 +1310,280 @@ export async function exportShiftHandoverReport(
   };
 }
 
+
+export async function exportMaterialReconciliationReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where: Record<string, unknown> = {};
+  if (filters.plantId) where.plantId = filters.plantId;
+  where.status = { in: ['issued', 'picking', 'closed', 'partially_returned', 'fully_returned'] };
+  if (filters.dateFrom || filters.dateTo) {
+    const issuedAt: Record<string, unknown> = {};
+    if (filters.dateFrom) issuedAt.gte = new Date(filters.dateFrom + 'T00:00:00');
+    if (filters.dateTo) issuedAt.lte = new Date(filters.dateTo + 'T23:59:59');
+    where.issuedAt = issuedAt;
+  }
+
+  const records = await db.repairMaterialRequest.findMany({
+    where,
+    include: {
+      workOrder: { select: { woNumber: true, title: true, departmentId: true } },
+      item: { select: { itemCode: true, name: true, unitOfMeasure: true } },
+      requestedBy: { select: { fullName: true } },
+      issuedByUser: { select: { fullName: true } },
+    },
+    orderBy: { issuedAt: 'desc' },
+    take: 10000,
+  });
+
+  const rows = records.map((record) => {
+    const issued = record.quantityIssued || record.quantityApproved || 0;
+    const consumed = record.consumedQty ?? 0;
+    const wasted = record.wastedQty ?? 0;
+    const returned = Math.max(0, issued - consumed - wasted);
+    const unitCost = record.unitCost || 0;
+    return {
+      requestNumber: record.id,
+      woNumber: record.workOrder?.woNumber || '',
+      woTitle: record.workOrder?.title || '',
+      itemCode: record.item?.itemCode || '',
+      itemName: record.itemName,
+      unit: record.unit || record.item?.unitOfMeasure || '',
+      status: record.status,
+      issuedQty: issued,
+      consumedQty: consumed,
+      wastedQty: wasted,
+      returnedQty: returned,
+      reconciliationComplete: record.consumedQty !== null ? 'Yes' : 'No',
+      reconciliationRate: issued > 0 ? Number(((consumed / issued) * 100).toFixed(2)) : 0,
+      wasteRate: issued > 0 ? Number(((wasted / issued) * 100).toFixed(2)) : 0,
+      unitCost,
+      issuedCost: Number((issued * unitCost).toFixed(2)),
+      consumedCost: Number((consumed * unitCost).toFixed(2)),
+      wastedCost: Number((wasted * unitCost).toFixed(2)),
+      returnValue: Number((returned * unitCost).toFixed(2)),
+      requestedBy: record.requestedBy?.fullName || '',
+      issuedBy: record.issuedByUser?.fullName || '',
+      issuedAt: record.issuedAt?.toISOString() || '',
+    };
+  });
+
+  const columns: ReportColumn[] = [
+    { key: 'woNumber', header: 'WO Number', width: 22 },
+    { key: 'woTitle', header: 'Work Order', width: 30 },
+    { key: 'itemCode', header: 'Item Code', width: 16 },
+    { key: 'itemName', header: 'Item Name', width: 26 },
+    { key: 'unit', header: 'Unit', width: 10 },
+    { key: 'status', header: 'Status', width: 18 },
+    { key: 'issuedQty', header: 'Issued Qty', format: 'number', width: 14 },
+    { key: 'consumedQty', header: 'Consumed Qty', format: 'number', width: 14 },
+    { key: 'wastedQty', header: 'Wasted Qty', format: 'number', width: 14 },
+    { key: 'returnedQty', header: 'Returned Qty', format: 'number', width: 14 },
+    { key: 'reconciliationComplete', header: 'Reconciled', width: 12 },
+    { key: 'reconciliationRate', header: 'Consumed %', format: 'number', width: 14 },
+    { key: 'wasteRate', header: 'Waste %', format: 'number', width: 12 },
+    { key: 'unitCost', header: 'Unit Cost', format: 'currency', width: 14 },
+    { key: 'issuedCost', header: 'Issued Cost', format: 'currency', width: 14 },
+    { key: 'consumedCost', header: 'Consumed Cost', format: 'currency', width: 16 },
+    { key: 'wastedCost', header: 'Waste Cost', format: 'currency', width: 14 },
+    { key: 'returnValue', header: 'Return Value', format: 'currency', width: 14 },
+    { key: 'requestedBy', header: 'Requested By', width: 22 },
+    { key: 'issuedBy', header: 'Issued By', width: 22 },
+    { key: 'issuedAt', header: 'Issued At', format: 'datetime', width: 20 },
+  ];
+
+  const totalIssued = rows.reduce((sum, row) => sum + row.issuedQty, 0);
+  const totalConsumed = rows.reduce((sum, row) => sum + row.consumedQty, 0);
+  const totalWasted = rows.reduce((sum, row) => sum + row.wastedQty, 0);
+  const totalReturnValue = rows.reduce((sum, row) => sum + row.returnValue, 0);
+  const reconciled = rows.filter((row) => row.reconciliationComplete === 'Yes').length;
+
+  const wb = createStandardWorkbook({
+    reportName: 'Material Reconciliation Report',
+    description: 'Issued, consumed, wasted and returned repair materials with reconciliation and cost controls',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName,
+    kpis: [
+      { label: 'Records', value: rows.length },
+      { label: 'Reconciled', value: reconciled },
+      { label: 'Pending Reconciliation', value: rows.length - reconciled },
+      { label: 'Consumed %', value: totalIssued > 0 ? ((totalConsumed / totalIssued) * 100).toFixed(1) + '%' : '0%' },
+      { label: 'Waste %', value: totalIssued > 0 ? ((totalWasted / totalIssued) * 100).toFixed(1) + '%' : '0%' },
+      { label: 'Return Value', value: 'GHS ' + totalReturnValue.toFixed(2) },
+    ],
+  });
+
+  addDataSheet(wb, 'Reconciliation', columns, rows);
+  addAnalyticsSheet(wb, 'Item Breakdown', buildStatusBreakdown(
+    rows.map((row) => ({ status: row.itemName })),
+    'status',
+  ));
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('material-reconciliation-report'),
+  };
+}
+
+export async function exportComponentRepairDetailReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where = buildBaseWhere(filters);
+  (where as Record<string, unknown>).type = filters.type || { in: ['corrective', 'emergency', 'predictive'] };
+  if (!filters.status) {
+    (where as Record<string, unknown>).status = { in: ['completed', 'verified', 'closed'] };
+  }
+
+  const workOrders = await db.workOrder.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      assignee: { select: { fullName: true } },
+      workOrderComponents: {
+        include: {
+          componentRegistry: true,
+        },
+      },
+      repairCompletion: {
+        select: {
+          findings: true,
+          rootCause: true,
+          correctiveAction: true,
+          totalLaborHours: true,
+          totalDowntimeMinutes: true,
+          completionNotes: true,
+        },
+      },
+      repairMaterialRequests: true,
+      failureRecords: { select: { failureMode: true, failureCode: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10000,
+  });
+
+  const assetIds = [...new Set(workOrders.map((wo) => wo.assetId).filter((id): id is string => Boolean(id)))];
+  const assets = assetIds.length
+    ? await db.asset.findMany({
+        where: { id: { in: assetIds } },
+        select: { id: true, name: true, assetTag: true, serialNumber: true },
+      })
+    : [];
+  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
+  const rows: Array<Record<string, unknown>> = [];
+  for (const wo of workOrders) {
+    const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
+    const completion = wo.repairCompletion;
+    const components = wo.workOrderComponents;
+
+    const pushRow = (
+      componentName: string,
+      componentCode: string,
+      componentType: string,
+      componentCriticality: string,
+      componentId?: string,
+      notes?: string | null,
+    ) => {
+      const materials = componentId
+        ? wo.repairMaterialRequests.filter((material) => material.componentRegistryId === componentId)
+        : wo.repairMaterialRequests;
+
+      rows.push({
+        woNumber: wo.woNumber,
+        machineName: asset?.name || wo.assetName || 'N/A',
+        machineTag: asset?.assetTag || '',
+        serialNumber: asset?.serialNumber || '',
+        componentName,
+        componentCode,
+        componentType,
+        componentCriticality,
+        woType: wo.type,
+        priority: wo.priority,
+        status: wo.status,
+        assignedTo: wo.assignee?.fullName || '',
+        failureDescription: wo.failureDescription || '',
+        failureMode: wo.failureRecords.map((failure) => failure.failureMode).filter(Boolean).join(', '),
+        rootCause: completion?.rootCause || '',
+        correctiveAction: completion?.correctiveAction || '',
+        findings: completion?.findings || '',
+        materialsUsed: materials.map((material) => material.itemName + ' x ' + (material.quantityIssued || 0)).join('; '),
+        materialCost: wo.partsCost || 0,
+        laborHours: completion?.totalLaborHours ?? wo.actualHours ?? 0,
+        downtimeMinutes: completion?.totalDowntimeMinutes ?? 0,
+        totalCost: wo.totalCost || 0,
+        startedAt: wo.actualStart?.toISOString() || '',
+        completedAt: wo.actualEnd?.toISOString() || '',
+        completionNotes: notes || completion?.completionNotes || '',
+      });
+    };
+
+    if (!components.length) {
+      pushRow('(No component specified)', '', '', '', undefined, completion?.completionNotes);
+    } else {
+      for (const entry of components) {
+        pushRow(
+          entry.componentRegistry.name,
+          entry.componentRegistry.componentCode,
+          entry.componentRegistry.componentType,
+          entry.componentRegistry.criticality,
+          entry.componentRegistry.id,
+          entry.notes,
+        );
+      }
+    }
+  }
+
+  const columns: ReportColumn[] = [
+    { key: 'woNumber', header: 'WO Number', width: 22 },
+    { key: 'machineName', header: 'Machine', width: 26 },
+    { key: 'machineTag', header: 'Machine Tag', width: 16 },
+    { key: 'serialNumber', header: 'Serial Number', width: 20 },
+    { key: 'componentName', header: 'Component / Part', width: 28 },
+    { key: 'componentCode', header: 'Component Code', width: 18 },
+    { key: 'componentType', header: 'Component Type', width: 18 },
+    { key: 'componentCriticality', header: 'Criticality', width: 14 },
+    { key: 'woType', header: 'WO Type', width: 14 },
+    { key: 'priority', header: 'Priority', width: 12 },
+    { key: 'status', header: 'Status', width: 16 },
+    { key: 'assignedTo', header: 'Assigned To', width: 22 },
+    { key: 'failureDescription', header: 'Failure Description', width: 36 },
+    { key: 'failureMode', header: 'Failure Mode', width: 24 },
+    { key: 'rootCause', header: 'Root Cause', width: 36 },
+    { key: 'correctiveAction', header: 'Corrective Action', width: 36 },
+    { key: 'findings', header: 'Findings', width: 36 },
+    { key: 'materialsUsed', header: 'Materials Used', width: 40 },
+    { key: 'materialCost', header: 'Material Cost', format: 'currency', width: 15 },
+    { key: 'laborHours', header: 'Labor Hours', format: 'number', width: 14 },
+    { key: 'downtimeMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+    { key: 'totalCost', header: 'Total Cost', format: 'currency', width: 14 },
+    { key: 'startedAt', header: 'Started', format: 'datetime', width: 20 },
+    { key: 'completedAt', header: 'Completed', format: 'datetime', width: 20 },
+    { key: 'completionNotes', header: 'Completion Notes', width: 40 },
+  ];
+
+  const wb = createStandardWorkbook({
+    reportName: 'Machine / Component Repair Detail Report',
+    description: 'Machine and component-level repair history including failures, RCA, materials, downtime and cost',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName,
+    kpis: [
+      { label: 'Work Orders', value: workOrders.length },
+      { label: 'Report Rows', value: rows.length },
+      { label: 'With Components', value: workOrders.filter((wo) => wo.workOrderComponents.length > 0).length },
+      { label: 'Without Components', value: workOrders.filter((wo) => wo.workOrderComponents.length === 0).length },
+      { label: 'Total Repair Cost', value: 'GHS ' + workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0).toFixed(2) },
+    ],
+  });
+
+  addDataSheet(wb, 'Repair Details', columns, rows);
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('machine-component-repair-detail'),
+  };
+}
+
 function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
@@ -1542,6 +1816,8 @@ export const SUPPORTED_REPORT_TYPES = [
   'asset-history',
   'department-cost',
   'shift-handover',
+  'material-reconciliation',
+  'component-detail',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];
@@ -1580,6 +1856,10 @@ export async function generateReport(
       return exportDepartmentCostReport(filters, session);
     case 'shift-handover':
       return exportShiftHandoverReport(filters, session);
+    case 'material-reconciliation':
+      return exportMaterialReconciliationReport(filters, session);
+    case 'component-detail':
+      return exportComponentRepairDetailReport(filters, session);
     default:
       logger.error('Unsupported repairs report type', { reportType });
       throw new Error(`Unsupported report type: ${reportType}`);

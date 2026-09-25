@@ -285,6 +285,23 @@ export function AssetDetailPage({ id }: { id: string }) {
     }
   };
 
+  const handleUnlinkSparePart = async (sparePartId: string) => {
+    if (!selectedComponentId) return;
+    setSaving(true);
+    try {
+      const res = await api.delete(`/api/component-registry/${selectedComponentId}/spare-parts?sparePartId=${encodeURIComponent(sparePartId)}`);
+      if (!res.success) {
+        toast.error(res.error || 'Failed to remove spare-part link');
+        return;
+      }
+      toast.success('Store part unlinked from component');
+      loadComponentSpareParts(selectedComponentId);
+      reloadComponents();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCreateTwin = async () => {
     if (!twinForm.name.trim()) {
       toast.error('Twin name is required');
@@ -687,10 +704,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                         </div>
                         <div className="overflow-x-auto rounded-md border">
                           <Table>
-                            <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Required</TableHead><TableHead>Stock</TableHead><TableHead>Location</TableHead><TableHead>Criticality</TableHead></TableRow></TableHeader>
+                            <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Required</TableHead><TableHead>Stock</TableHead><TableHead>Location</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                             <TableBody>
                               {componentSpareParts.length === 0 ? (
-                                <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">No store parts linked to this component yet.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">No store parts linked to this component yet.</TableCell></TableRow>
                               ) : componentSpareParts.map((part: any) => (
                                 <TableRow key={part.id}>
                                   <TableCell><div className="font-medium">{part.sparePartName}</div><div className="text-xs text-muted-foreground">{part.sparePartCode || part.inventoryItem?.itemCode || '—'}</div></TableCell>
@@ -698,6 +715,11 @@ export function AssetDetailPage({ id }: { id: string }) {
                                   <TableCell>{part.inventoryItem?.currentStock ?? 'Not stocked'}</TableCell>
                                   <TableCell>{part.inventoryItem?.location || '—'}</TableCell>
                                   <TableCell><Badge variant="outline" className="capitalize">{part.criticality}</Badge></TableCell>
+                                  <TableCell className="text-right">
+                                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={() => handleUnlinkSparePart(part.id)} disabled={saving}>
+                                      Remove
+                                    </Button>
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>

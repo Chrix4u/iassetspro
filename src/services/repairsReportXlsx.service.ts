@@ -1020,6 +1020,12 @@ function buildFailureWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.plantId) {
     where.asset = { plantId: filters.plantId };
   }
+
+  const woWhere = buildResourceWorkOrderWhere(filters);
+  if (Object.keys(woWhere).length > 0) {
+    where.workOrder = woWhere;
+  }
+
   return where;
 }
 

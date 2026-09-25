@@ -784,9 +784,9 @@ function buildRepairPdfParams(
     case 'materials': {
       sections.push(
         { title: 'Material Summary', type: 'summary-cards', data: [
-          { label: 'Total Material Cost', value: `$${data.summary.totalMaterialCost.toLocaleString()}` },
+          { label: 'Total Material Cost', value: `GHS ${data.summary.totalMaterialCost.toLocaleString()}` },
           { label: 'WOs with Materials', value: data.summary.workOrdersWithMaterials },
-          { label: 'Avg Cost/WO', value: `$${data.summary.avgCostPerWo.toLocaleString()}` },
+          { label: 'Avg Cost/WO', value: `GHS ${data.summary.avgCostPerWo.toLocaleString()}` },
         ]},
         { title: 'Material Cost by Work Order', type: 'table', data: {
           headers: ['WO #', 'Title', 'Items', 'Cost'],
@@ -794,7 +794,7 @@ function buildRepairPdfParams(
             entry.woNumber || '—',
             entry.title || '—',
             String(entry.materialCount),
-            `$${entry.totalMaterialCost.toLocaleString()}`,
+            `GHS ${entry.totalMaterialCost.toLocaleString()}`,
           ]),
         }},
         { title: 'Spare Part Returns', type: 'key-value', data: [
@@ -802,7 +802,7 @@ function buildRepairPdfParams(
           { key: 'Returned to Store', value: String(data.sparePartReturns.returnedToStore) },
           { key: 'Disposed', value: String(data.sparePartReturns.disposed) },
           { key: 'Return Rate', value: `${data.sparePartReturns.returnRate}%` },
-          { key: 'Total Refurb Cost', value: `$${data.sparePartReturns.totalRefurbCost.toLocaleString()}` },
+          { key: 'Total Refurb Cost', value: `GHS ${data.sparePartReturns.totalRefurbCost.toLocaleString()}` },
         ]},
       );
       break;
@@ -814,7 +814,7 @@ function buildRepairPdfParams(
           { label: 'Total Events', value: data.summary.totalEvents },
           { label: 'Total Hours', value: `${data.summary.totalDowntimeHours}h` },
           { label: 'Avg Duration', value: `${data.summary.avgDurationHours}h` },
-          { label: 'Production Loss', value: `$${data.summary.totalProductionLoss.toLocaleString()}` },
+          { label: 'Production Loss', value: `GHS ${data.summary.totalProductionLoss.toLocaleString()}` },
         ]},
         { title: 'Top 10 Assets by Downtime', type: 'table', data: {
           headers: ['Asset', 'Events', 'Hours', 'Loss'],
@@ -822,7 +822,7 @@ function buildRepairPdfParams(
             entry.assetName || '—',
             String(entry.count),
             String(entry.totalHours),
-            `$${(entry.totalLoss || 0).toLocaleString()}`,
+            `GHS ${(entry.totalLoss || 0).toLocaleString()}`,
           ]),
         }},
         { title: 'Downtime by Category', type: 'table', data: {
@@ -841,7 +841,7 @@ function buildRepairPdfParams(
       sections.push(
         { title: 'Tool Summary', type: 'summary-cards', data: [
           { label: 'Damage Reports', value: data.summary.totalDamageReports },
-          { label: 'Repair Cost', value: `$${data.summary.totalRepairCost.toLocaleString()}` },
+          { label: 'Repair Cost', value: `GHS ${data.summary.totalRepairCost.toLocaleString()}` },
           { label: 'Repaired', value: data.summary.repaired },
           { label: 'Written Off', value: data.summary.writtenOff },
           { label: 'Transfers', value: data.summary.totalTransfers },
@@ -853,7 +853,7 @@ function buildRepairPdfParams(
             entry.toolCode,
             entry.category,
             String(entry.damageCount),
-            `$${entry.totalCost.toLocaleString()}`,
+            `GHS ${entry.totalCost.toLocaleString()}`,
           ]),
         }},
         { title: 'By Damage Type', type: 'table', data: {
@@ -861,7 +861,7 @@ function buildRepairPdfParams(
           rows: Object.entries(data.byDamageType as Record<string, any>).map(([damageType, value]) => [
             damageType,
             String(value.count),
-            `$${value.cost.toLocaleString()}`,
+            `GHS ${value.cost.toLocaleString()}`,
           ]),
         }},
       );

@@ -898,10 +898,22 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
     if (filters.dateTo) df.lte = new Date(filters.dateTo + 'T23:59:59');
     where.timestamp = df;
   }
-  if (filters.plantId || filters.status || filters.type || filters.assigneeId) {
+  if (
+    filters.plantId
+    || filters.status
+    || filters.type
+    || filters.assigneeId
+    || filters.departmentId
+    || filters.assetId
+    || filters.priority
+    || filters.maintenanceScope
+  ) {
     const woWhere: Record<string, unknown> = {};
     if (filters.plantId) woWhere.plantId = filters.plantId;
     if (filters.status) woWhere.status = filters.status;
+    if (filters.priority) woWhere.priority = filters.priority;
+    if (filters.departmentId) woWhere.departmentId = filters.departmentId;
+    if (filters.assetId) woWhere.assetId = filters.assetId;
     if (filters.type) {
       woWhere.type = filters.type;
     } else if (filters.maintenanceScope === 'repairs') {
@@ -918,11 +930,21 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
 function buildDowntimeWhere(filters: ReportFilters): Record<string, unknown> {
   const where: Record<string, unknown> = {};
   if (filters.plantId) where.plantId = filters.plantId;
-  if (filters.maintenanceScope === 'repairs') {
-    where.workOrder = { type: { in: ['corrective', 'emergency', 'predictive'] } };
+
+  const woWhere: Record<string, unknown> = {};
+  if (filters.status) woWhere.status = filters.status;
+  if (filters.priority) woWhere.priority = filters.priority;
+  if (filters.departmentId) woWhere.departmentId = filters.departmentId;
+  if (filters.assetId) woWhere.assetId = filters.assetId;
+  if (filters.assigneeId) woWhere.assignedTo = filters.assigneeId;
+  if (filters.type) {
+    woWhere.type = filters.type;
+  } else if (filters.maintenanceScope === 'repairs') {
+    woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
   } else if (filters.maintenanceScope === 'pm') {
-    where.workOrder = { type: 'preventive' };
+    woWhere.type = 'preventive';
   }
+  if (Object.keys(woWhere).length > 0) where.workOrder = woWhere;
 
   if (filters.dateFrom || filters.dateTo) {
     const df: Record<string, unknown> = {};

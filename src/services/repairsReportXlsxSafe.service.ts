@@ -953,7 +953,13 @@ async function exportMaterialReconciliationReport(
 const TOOL_CUSTODY_COLUMNS: ReportColumn[] = [
   { key: 'requestNumber', header: 'Request #', width: 22 },
   { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'toolCode', header: 'Tool Code', width: 16 },
   { key: 'toolName', header: 'Tool', width: 26 },
+  { key: 'quantityRequested', header: 'Qty Requested', format: 'number', width: 15 },
+  { key: 'quantityIssued', header: 'Qty Issued', format: 'number', width: 13 },
+  { key: 'quantityReturned', header: 'Qty Returned', format: 'number', width: 14 },
+  { key: 'quantityTransferred', header: 'Qty Transferred', format: 'number', width: 16 },
+  { key: 'pendingReturnQty', header: 'Pending Return', format: 'number', width: 15 },
   { key: 'requestedBy', header: 'Requested By', width: 20 },
   { key: 'status', header: 'Request Status', width: 18 },
   { key: 'custodyStatus', header: 'Custody Status', width: 24 },
@@ -989,12 +995,13 @@ async function exportToolCustodyReport(
       issuedByUser: { select: { fullName: true } },
       returnedByUser: { select: { fullName: true } },
       returnConfirmedByUser: { select: { fullName: true } },
+      items: true,
     },
     orderBy: { createdAt: 'desc' },
   });
 
   const now = new Date();
-  const rows = requests.map((request) => {
+  const rows = requests.flatMap((request) => {
     const custodyEnd = request.returnConfirmedAt || request.returnedAt || now;
     const custodyHours = request.issuedAt
       ? hoursBetweenReports(request.issuedAt, custodyEnd) || 0
@@ -1003,19 +1010,41 @@ async function exportToolCustodyReport(
       ? 'Not Issued'
       : request.returnConfirmedAt
         ? 'Returned / Confirmed'
-        : request.returnedAt
+        : request.returnedAt || request.items.some((item) => (item.pendingReturnQty || 0) > 0)
           ? 'Awaiting Store Confirmation'
           : 'In Custody';
 
-    return {
+    const lineItems = request.items.length > 0
+      ? request.items
+      : [{
+          toolCode: null,
+          toolName: request.toolName,
+          quantityRequested: 1,
+          quantityIssued: request.issuedAt ? 1 : 0,
+          quantityReturned: request.returnConfirmedAt ? 1 : 0,
+          quantityTransferred: 0,
+          pendingReturnQty: request.returnedAt && !request.returnConfirmedAt ? 1 : 0,
+          conditionAtIssue: request.toolConditionAtIssue,
+          conditionAtReturn: request.toolConditionAtReturn,
+          pendingReturnCondition: null,
+          pendingReturnNotes: null,
+        }];
+
+    return lineItems.map((item) => ({
       requestNumber: request.requestNumber || '',
       woNumber: request.workOrder?.woNumber || '',
-      toolName: request.toolName,
+      toolCode: item.toolCode || '',
+      toolName: item.toolName || request.toolName,
+      quantityRequested: item.quantityRequested || 0,
+      quantityIssued: item.quantityIssued || 0,
+      quantityReturned: item.quantityReturned || 0,
+      quantityTransferred: item.quantityTransferred || 0,
+      pendingReturnQty: item.pendingReturnQty || 0,
       requestedBy: request.requestedBy?.fullName || '',
       status: request.status,
       custodyStatus,
-      conditionAtIssue: request.toolConditionAtIssue || '',
-      conditionAtReturn: request.toolConditionAtReturn || '',
+      conditionAtIssue: item.conditionAtIssue || request.toolConditionAtIssue || '',
+      conditionAtReturn: item.conditionAtReturn || item.pendingReturnCondition || request.toolConditionAtReturn || '',
       issuedBy: request.issuedByUser?.fullName || '',
       issuedAt: request.issuedAt?.toISOString() || '',
       returnedBy: request.returnedByUser?.fullName || '',
@@ -1024,8 +1053,8 @@ async function exportToolCustodyReport(
       returnConfirmedAt: request.returnConfirmedAt?.toISOString() || '',
       custodyHours: Number(custodyHours.toFixed(2)),
       reason: request.reason || '',
-      notes: request.notes || '',
-    };
+      notes: [request.notes, item.pendingReturnNotes].filter(Boolean).join(' · '),
+    }));
   });
 
   const outstanding = rows.filter((row) => row.custodyStatus === 'In Custody').length;
@@ -1039,7 +1068,7 @@ async function exportToolCustodyReport(
     filters: flattenFilters(filters),
     generatedBy: session.fullName || session.userId,
     kpis: [
-      { label: 'Tool Requests', value: rows.length },
+      { label: 'Tool Request Lines', value: rows.length },
       { label: 'Outstanding Custody', value: outstanding },
       { label: 'Awaiting Store Confirmation', value: awaitingConfirmation },
       { label: 'Returned / Confirmed', value: rows.filter((row) => row.custodyStatus === 'Returned / Confirmed').length },

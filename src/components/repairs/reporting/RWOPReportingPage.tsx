@@ -256,7 +256,8 @@ type OperationalReportDefinition = {
   category: OperationalReportCategory;
   title: string;
   description: string;
-  xlsxType: OperationalXlsxReportType;
+  xlsxType?: OperationalXlsxReportType;
+  customXlsxEndpoint?: 'machine-component-detail';
   pdfType?: OperationalPdfReportType;
   icon: React.ComponentType<{ className?: string }>;
 };
@@ -282,6 +283,7 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'sla', category: 'Operations & Performance', title: 'SLA Compliance', description: 'Response/closure compliance against priority-based service targets.', xlsxType: 'sla', icon: ShieldCheck },
   { id: 'operations-summary', category: 'Operations & Performance', title: 'Daily / Weekly Operations', description: 'Daily maintenance pulse covering opened/completed WOs, emergencies, labor, downtime, production loss and cost.', xlsxType: 'operations-summary', icon: Clock },
   { id: 'asset-history', category: 'Reliability & Assets', title: 'Asset Repair History', description: 'Full repair and failure history by asset with RCA, technician, downtime, materials and cost.', xlsxType: 'asset-history', icon: History },
+  { id: 'machine-component-detail', category: 'Reliability & Assets', title: 'Machine & Component Repair Detail', description: 'Completed repairs by machine and component/part with failure mode, RCA, materials, labor, downtime and cost.', customXlsxEndpoint: 'machine-component-detail', icon: ClipboardList },
   { id: 'department-cost', category: 'Cost & Compliance', title: 'Department / Cost-Center Cost', description: 'Maintenance spend by department/cost center with labor, parts, contractor, tools and average WO cost.', xlsxType: 'department-cost', icon: Coins },
   { id: 'material-reconciliation', category: 'Resources & Stores', title: 'Material Reconciliation Audit', description: 'Issued versus consumed, wasted and returned quantities with cost and variance exceptions.', xlsxType: 'material-reconciliation', icon: Boxes },
   { id: 'tool-custody', category: 'Resources & Stores', title: 'Tool Custody & Returns', description: 'Issued tool custody, technician returns, store confirmation, duration and condition exceptions.', xlsxType: 'tool-custody', icon: Wrench },
@@ -545,24 +547,38 @@ export default function RWOPReportingPage() {
 
     setOperationalDownloading(`${definition.id}:xlsx`);
     try {
-      const response = await api.getRaw('/api/repairs/reports/xlsx', {
-        method: 'POST',
-        headers: {
-          ...plantHeader(filters.plantId),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          reportType: definition.xlsxType,
-          filters: {
-            dateFrom: filters.startDate || undefined,
-            dateTo: filters.endDate || undefined,
-            plantId: filters.plantId === 'all' ? undefined : filters.plantId,
-            departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
-            maintenanceScope: 'repairs',
+      let response: Response;
+      if (definition.customXlsxEndpoint === 'machine-component-detail') {
+        const params = new URLSearchParams({ format: 'xlsx' });
+        if (filters.startDate) params.set('dateFrom', filters.startDate);
+        if (filters.endDate) params.set('dateTo', filters.endDate);
+        if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
+        if (filters.departmentId !== 'all') params.set('departmentId', filters.departmentId);
+        response = await api.getRaw(`/api/repairs/reports/detailed?${params.toString()}`, {
+          headers: plantHeader(filters.plantId),
+          timeout: 60_000,
+        });
+      } else {
+        if (!definition.xlsxType) throw new Error('Excel report type is not configured');
+        response = await api.getRaw('/api/repairs/reports/xlsx', {
+          method: 'POST',
+          headers: {
+            ...plantHeader(filters.plantId),
+            'Content-Type': 'application/json',
           },
-        }),
-        timeout: 60_000,
-      });
+          body: JSON.stringify({
+            reportType: definition.xlsxType,
+            filters: {
+              dateFrom: filters.startDate || undefined,
+              dateTo: filters.endDate || undefined,
+              plantId: filters.plantId === 'all' ? undefined : filters.plantId,
+              departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
+              maintenanceScope: 'repairs',
+            },
+          }),
+          timeout: 60_000,
+        });
+      }
 
       if (!response.ok) {
         let message = `Excel export failed (${response.status})`;
@@ -581,7 +597,7 @@ export default function RWOPReportingPage() {
       const serverName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = serverName || `${definition.xlsxType}-report.xlsx`;
+      anchor.download = serverName || `${definition.xlsxType || 'machine-component-repair-detail'}-report.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

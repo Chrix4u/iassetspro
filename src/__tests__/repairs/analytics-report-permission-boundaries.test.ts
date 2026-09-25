@@ -28,6 +28,13 @@ describe('RWOP analytics and report permission boundaries', () => {
     expect(reports).not.toContain("hasRole(session, 'maintenance_manager')");
   });
 
+  it('uses Ghana cedi labels for specialized Repairs PDF cost metrics', () => {
+    expect(reports).toContain('GHS ${data.summary.totalMaterialCost.toLocaleString()}');
+    expect(reports).toContain('GHS ${data.summary.totalProductionLoss.toLocaleString()}');
+    expect(reports).toContain('GHS ${data.summary.totalRepairCost.toLocaleString()}');
+    expect(reports).not.toContain('`${data.summary.totalMaterialCost.toLocaleString()}`');
+  });
+
   it('requires reports.export for PDF generation on the standard Repairs report route', () => {
     expect(reports).toContain("format === 'pdf'");
     expect(reports).toContain("hasPermission(session, 'reports.export')");

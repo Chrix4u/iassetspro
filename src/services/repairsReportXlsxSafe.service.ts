@@ -809,6 +809,542 @@ async function exportDepartmentCostReport(
   };
 }
 
+
+function hoursBetweenReports(
+  from: Date | string | null | undefined,
+  to: Date | string | null | undefined,
+): number | null {
+  if (!from || !to) return null;
+  const value = (new Date(to).getTime() - new Date(from).getTime()) / (1000 * 60 * 60);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function reportWorkOrderScope(filters: ReportFilters): Record<string, unknown> {
+  return scopeWithoutDates({ ...filters, maintenanceScope: filters.maintenanceScope || 'repairs' });
+}
+
+const MATERIAL_RECONCILIATION_COLUMNS: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'itemCode', header: 'Item Code', width: 16 },
+  { key: 'itemName', header: 'Item', width: 26 },
+  { key: 'unit', header: 'Unit', width: 10 },
+  { key: 'issuedQty', header: 'Issued', format: 'number', width: 12 },
+  { key: 'declaredConsumedQty', header: 'Declared Used', format: 'number', width: 15 },
+  { key: 'declaredWastedQty', header: 'Declared Waste', format: 'number', width: 15 },
+  { key: 'declaredReturnQty', header: 'Declared Return', format: 'number', width: 16 },
+  { key: 'consumedQty', header: 'Verified Used', format: 'number', width: 14 },
+  { key: 'wastedQty', header: 'Verified Waste', format: 'number', width: 15 },
+  { key: 'reconciledReturnQty', header: 'Verified Return', format: 'number', width: 16 },
+  { key: 'recordedReturnQty', header: 'Store Return', format: 'number', width: 14 },
+  { key: 'balanceDelta', header: 'Balance Delta', format: 'number', width: 14 },
+  { key: 'reconciliationStatus', header: 'Reconciliation', width: 18 },
+  { key: 'unitCost', header: 'Unit Cost', format: 'currency', width: 14 },
+  { key: 'issuedCost', header: 'Issued Cost', format: 'currency', width: 14 },
+  { key: 'consumedCost', header: 'Consumed Cost', format: 'currency', width: 16 },
+  { key: 'wastedCost', header: 'Waste Cost', format: 'currency', width: 14 },
+  { key: 'returnValue', header: 'Return Value', format: 'currency', width: 14 },
+  { key: 'requestedBy', header: 'Requested By', width: 20 },
+  { key: 'issuedBy', header: 'Issued By', width: 20 },
+  { key: 'issuedAt', header: 'Issued At', format: 'datetime', width: 20 },
+];
+
+async function exportMaterialReconciliationReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const scope = reportWorkOrderScope(filters);
+  const range = dateRangeFilter(filters);
+  const where: Record<string, unknown> = {
+    status: { in: ['issued', 'picking', 'closed', 'partially_returned', 'fully_returned', 'returned'] },
+  };
+  if (filters.plantId) where.plantId = filters.plantId;
+  if (range) where.issuedAt = range;
+  if (Object.keys(scope).length > 0) where.workOrder = scope;
+
+  const records = await db.repairMaterialRequest.findMany({
+    where,
+    include: {
+      workOrder: { select: { woNumber: true, title: true } },
+      item: { select: { itemCode: true, name: true } },
+      requestedBy: { select: { fullName: true } },
+      issuedByUser: { select: { fullName: true } },
+    },
+    orderBy: { issuedAt: 'desc' },
+  });
+
+  const rows = records.map((record) => {
+    const issuedQty = record.quantityIssued || record.quantityApproved || 0;
+    const consumedQty = record.consumedQty ?? 0;
+    const wastedQty = record.wastedQty ?? 0;
+    const reconciledReturnQty = Math.max(0, issuedQty - consumedQty - wastedQty);
+    const recordedReturnQty = record.quantityReturned || 0;
+    const balanceDelta = Number((reconciledReturnQty - recordedReturnQty).toFixed(4));
+    const unitCost = record.unitCost || 0;
+    const isReconciled = record.consumedQty !== null;
+    const reconciliationStatus = !isReconciled
+      ? 'Pending'
+      : Math.abs(balanceDelta) > 0.0001
+        ? 'Variance'
+        : 'Reconciled';
+
+    return {
+      woNumber: record.workOrder?.woNumber || '',
+      itemCode: record.item?.itemCode || '',
+      itemName: record.itemName,
+      unit: record.unit,
+      issuedQty,
+      declaredConsumedQty: record.declaredConsumedQty ?? 0,
+      declaredWastedQty: record.declaredWastedQty ?? 0,
+      declaredReturnQty: record.declaredReturnQty ?? 0,
+      consumedQty,
+      wastedQty,
+      reconciledReturnQty,
+      recordedReturnQty,
+      balanceDelta,
+      reconciliationStatus,
+      unitCost,
+      issuedCost: Number((issuedQty * unitCost).toFixed(2)),
+      consumedCost: Number((consumedQty * unitCost).toFixed(2)),
+      wastedCost: Number((wastedQty * unitCost).toFixed(2)),
+      returnValue: Number((reconciledReturnQty * unitCost).toFixed(2)),
+      requestedBy: record.requestedBy?.fullName || '',
+      issuedBy: record.issuedByUser?.fullName || '',
+      issuedAt: record.issuedAt?.toISOString() || '',
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, row) => ({
+      issuedCost: acc.issuedCost + row.issuedCost,
+      consumedCost: acc.consumedCost + row.consumedCost,
+      wastedCost: acc.wastedCost + row.wastedCost,
+      returnValue: acc.returnValue + row.returnValue,
+      pending: acc.pending + (row.reconciliationStatus === 'Pending' ? 1 : 0),
+      variance: acc.variance + (row.reconciliationStatus === 'Variance' ? 1 : 0),
+    }),
+    { issuedCost: 0, consumedCost: 0, wastedCost: 0, returnValue: 0, pending: 0, variance: 0 },
+  );
+
+  const wb = createStandardWorkbook({
+    reportName: 'Material Reconciliation Audit',
+    description: 'Issued material reconciliation with verified consumption, waste, returns, cost and variance exceptions',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Issued Records', value: rows.length },
+      { label: 'Pending Reconciliation', value: totals.pending },
+      { label: 'Variance Exceptions', value: totals.variance },
+      { label: 'Issued Cost', value: totals.issuedCost.toFixed(2) },
+      { label: 'Waste Cost', value: totals.wastedCost.toFixed(2) },
+      { label: 'Return Value', value: totals.returnValue.toFixed(2) },
+    ],
+  });
+
+  addDataSheet(wb, 'Reconciliation', MATERIAL_RECONCILIATION_COLUMNS, rows);
+  addAnalyticsSheet(wb, 'Status Summary', buildBreakdown(rows, 'reconciliationStatus'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('material-reconciliation-audit'),
+  };
+}
+
+const TOOL_CUSTODY_COLUMNS: ReportColumn[] = [
+  { key: 'requestNumber', header: 'Request #', width: 22 },
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'toolName', header: 'Tool', width: 26 },
+  { key: 'requestedBy', header: 'Requested By', width: 20 },
+  { key: 'status', header: 'Request Status', width: 18 },
+  { key: 'custodyStatus', header: 'Custody Status', width: 24 },
+  { key: 'conditionAtIssue', header: 'Condition at Issue', width: 18 },
+  { key: 'conditionAtReturn', header: 'Condition at Return', width: 20 },
+  { key: 'issuedBy', header: 'Issued By', width: 20 },
+  { key: 'issuedAt', header: 'Issued At', format: 'datetime', width: 20 },
+  { key: 'returnedBy', header: 'Returned By', width: 20 },
+  { key: 'returnedAt', header: 'Returned At', format: 'datetime', width: 20 },
+  { key: 'confirmedBy', header: 'Return Confirmed By', width: 22 },
+  { key: 'returnConfirmedAt', header: 'Return Confirmed At', format: 'datetime', width: 22 },
+  { key: 'custodyHours', header: 'Custody Hours', format: 'number', width: 14 },
+  { key: 'reason', header: 'Reason', width: 30 },
+  { key: 'notes', header: 'Notes', width: 30 },
+];
+
+async function exportToolCustodyReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const scope = reportWorkOrderScope(filters);
+  const range = dateRangeFilter(filters);
+  const where: Record<string, unknown> = {};
+  if (filters.plantId) where.plantId = filters.plantId;
+  if (range) where.createdAt = range;
+  if (Object.keys(scope).length > 0) where.workOrder = scope;
+
+  const requests = await db.repairToolRequest.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      workOrder: { select: { woNumber: true, title: true } },
+      requestedBy: { select: { fullName: true } },
+      issuedByUser: { select: { fullName: true } },
+      returnedByUser: { select: { fullName: true } },
+      returnConfirmedByUser: { select: { fullName: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const now = new Date();
+  const rows = requests.map((request) => {
+    const custodyEnd = request.returnConfirmedAt || request.returnedAt || now;
+    const custodyHours = request.issuedAt
+      ? hoursBetweenReports(request.issuedAt, custodyEnd) || 0
+      : 0;
+    const custodyStatus = !request.issuedAt
+      ? 'Not Issued'
+      : request.returnConfirmedAt
+        ? 'Returned / Confirmed'
+        : request.returnedAt
+          ? 'Awaiting Store Confirmation'
+          : 'In Custody';
+
+    return {
+      requestNumber: request.requestNumber || '',
+      woNumber: request.workOrder?.woNumber || '',
+      toolName: request.toolName,
+      requestedBy: request.requestedBy?.fullName || '',
+      status: request.status,
+      custodyStatus,
+      conditionAtIssue: request.toolConditionAtIssue || '',
+      conditionAtReturn: request.toolConditionAtReturn || '',
+      issuedBy: request.issuedByUser?.fullName || '',
+      issuedAt: request.issuedAt?.toISOString() || '',
+      returnedBy: request.returnedByUser?.fullName || '',
+      returnedAt: request.returnedAt?.toISOString() || '',
+      confirmedBy: request.returnConfirmedByUser?.fullName || '',
+      returnConfirmedAt: request.returnConfirmedAt?.toISOString() || '',
+      custodyHours: Number(custodyHours.toFixed(2)),
+      reason: request.reason || '',
+      notes: request.notes || '',
+    };
+  });
+
+  const outstanding = rows.filter((row) => row.custodyStatus === 'In Custody').length;
+  const awaitingConfirmation = rows.filter((row) => row.custodyStatus === 'Awaiting Store Confirmation').length;
+  const poorReturns = rows.filter((row) => ['poor', 'damaged'].includes(String(row.conditionAtReturn).toLowerCase())).length;
+
+  const wb = createStandardWorkbook({
+    reportName: 'Tool Custody & Return Audit',
+    description: 'Issued tool custody, returns, store confirmation and condition exceptions',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Tool Requests', value: rows.length },
+      { label: 'Outstanding Custody', value: outstanding },
+      { label: 'Awaiting Store Confirmation', value: awaitingConfirmation },
+      { label: 'Returned / Confirmed', value: rows.filter((row) => row.custodyStatus === 'Returned / Confirmed').length },
+      { label: 'Poor / Damaged Returns', value: poorReturns },
+    ],
+  });
+
+  addDataSheet(wb, 'Tool Custody', TOOL_CUSTODY_COLUMNS, rows);
+  addAnalyticsSheet(wb, 'Custody Status', buildBreakdown(rows, 'custodyStatus'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('tool-custody-return-audit'),
+  };
+}
+
+const ASSISTANCE_COLUMNS: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'requestedBy', header: 'Requested By', width: 20 },
+  { key: 'requestedTrade', header: 'Trade / Skill', width: 20 },
+  { key: 'requestedUser', header: 'Assigned Assistant', width: 22 },
+  { key: 'role', header: 'Role', width: 16 },
+  { key: 'status', header: 'Status', width: 14 },
+  { key: 'reviewedBy', header: 'Reviewed By', width: 20 },
+  { key: 'reviewHours', header: 'Review Hours', format: 'number', width: 14 },
+  { key: 'reason', header: 'Reason', width: 32 },
+  { key: 'reviewNotes', header: 'Review Notes', width: 30 },
+  { key: 'createdAt', header: 'Requested At', format: 'datetime', width: 20 },
+  { key: 'reviewedAt', header: 'Reviewed At', format: 'datetime', width: 20 },
+];
+
+async function exportAssistanceReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const scope = reportWorkOrderScope(filters);
+  const range = dateRangeFilter(filters);
+  const where: Record<string, unknown> = {};
+  if (range) where.createdAt = range;
+  if (Object.keys(scope).length > 0) where.workOrder = scope;
+
+  const requests = await db.woTeamMemberRequest.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      workOrder: { select: { woNumber: true, title: true } },
+      requestedByUser: { select: { fullName: true } },
+      requestedUser: { select: { fullName: true } },
+      reviewedByUser: { select: { fullName: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const rows = requests.map((request) => ({
+    woNumber: request.workOrder?.woNumber || '',
+    requestedBy: request.requestedByUser?.fullName || '',
+    requestedTrade: request.requestedTrade || '',
+    requestedUser: request.requestedUser?.fullName || '',
+    role: request.role,
+    status: request.status,
+    reviewedBy: request.reviewedByUser?.fullName || '',
+    reviewHours: Number((hoursBetweenReports(request.createdAt, request.reviewedAt) || 0).toFixed(2)),
+    reason: request.reason || '',
+    reviewNotes: request.reviewNotes || '',
+    createdAt: request.createdAt.toISOString(),
+    reviewedAt: request.reviewedAt?.toISOString() || '',
+  }));
+
+  const reviewedRows = rows.filter((row) => row.reviewedAt);
+  const avgReviewHours = reviewedRows.length > 0
+    ? reviewedRows.reduce((sum, row) => sum + row.reviewHours, 0) / reviewedRows.length
+    : 0;
+
+  const wb = createStandardWorkbook({
+    reportName: 'Assistance Request Turnaround',
+    description: 'Technician assistance requests, review outcomes and approval turnaround',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Requests', value: rows.length },
+      { label: 'Pending', value: rows.filter((row) => row.status === 'pending').length },
+      { label: 'Approved', value: rows.filter((row) => row.status === 'approved').length },
+      { label: 'Rejected', value: rows.filter((row) => row.status === 'rejected').length },
+      { label: 'Cancelled', value: rows.filter((row) => row.status === 'cancelled').length },
+      { label: 'Avg Review Hours', value: avgReviewHours.toFixed(2) },
+    ],
+  });
+
+  addDataSheet(wb, 'Assistance Requests', ASSISTANCE_COLUMNS, rows);
+  addAnalyticsSheet(wb, 'Status Summary', buildBreakdown(rows, 'status'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('assistance-turnaround-report'),
+  };
+}
+
+function readableJsonText(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => typeof item === 'string' ? item : JSON.stringify(item)).join('; ');
+    }
+    if (parsed && typeof parsed === 'object') return JSON.stringify(parsed);
+    return String(parsed ?? '');
+  } catch {
+    return value;
+  }
+}
+
+const HANDOVER_COLUMNS: ReportColumn[] = [
+  { key: 'shiftDate', header: 'Shift Date', format: 'date', width: 14 },
+  { key: 'shiftType', header: 'Shift', width: 14 },
+  { key: 'fromShift', header: 'From Shift', width: 14 },
+  { key: 'toShift', header: 'To Shift', width: 14 },
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'status', header: 'Status', width: 14 },
+  { key: 'handedOverBy', header: 'Handed Over By', width: 22 },
+  { key: 'receivedBy', header: 'Received By', width: 22 },
+  { key: 'ageHours', header: 'Turnaround Hours', format: 'number', width: 18 },
+  { key: 'tasksSummary', header: 'Tasks Summary', width: 40 },
+  { key: 'pendingIssues', header: 'Pending Issues', width: 40 },
+  { key: 'safetyNotes', header: 'Safety Notes', width: 35 },
+  { key: 'equipmentStatus', header: 'Equipment Status', width: 35 },
+  { key: 'notes', header: 'Notes', width: 30 },
+];
+
+async function exportShiftHandoverReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const scope = reportWorkOrderScope(filters);
+  const range = dateRangeFilter(filters);
+  const where: Record<string, unknown> = {
+    workOrder: scope,
+  };
+  if (range) where.shiftDate = range;
+
+  const handovers = await db.shiftHandover.findMany({
+    where,
+    include: {
+      handedOverBy: { select: { fullName: true } },
+      receivedBy: { select: { fullName: true } },
+      workOrder: { select: { woNumber: true, title: true } },
+    },
+    orderBy: { shiftDate: 'desc' },
+  });
+
+  const rows = handovers.map((handover) => ({
+    shiftDate: handover.shiftDate.toISOString().split('T')[0],
+    shiftType: handover.shiftType,
+    fromShift: handover.fromShift || '',
+    toShift: handover.toShift || '',
+    woNumber: handover.workOrder?.woNumber || '',
+    status: handover.status,
+    handedOverBy: handover.handedOverBy?.fullName || '',
+    receivedBy: handover.receivedBy?.fullName || '',
+    ageHours: Number((hoursBetweenReports(handover.createdAt, handover.updatedAt) || 0).toFixed(2)),
+    tasksSummary: readableJsonText(handover.tasksSummary),
+    pendingIssues: readableJsonText(handover.pendingIssues),
+    safetyNotes: handover.safetyNotes || '',
+    equipmentStatus: readableJsonText(handover.equipmentStatus),
+    notes: handover.notes || '',
+  }));
+
+  const wb = createStandardWorkbook({
+    reportName: 'Shift Handover Audit',
+    description: 'Repairs shift handovers, pending issues, safety notes and confirmation status',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Handovers', value: rows.length },
+      { label: 'Pending', value: rows.filter((row) => row.status === 'pending').length },
+      { label: 'Confirmed', value: rows.filter((row) => row.status === 'confirmed').length },
+      { label: 'With Pending Issues', value: rows.filter((row) => Boolean(row.pendingIssues)).length },
+      { label: 'With Safety Notes', value: rows.filter((row) => Boolean(row.safetyNotes)).length },
+    ],
+  });
+
+  addDataSheet(wb, 'Shift Handovers', HANDOVER_COLUMNS, rows);
+  addAnalyticsSheet(wb, 'Status Summary', buildBreakdown(rows, 'status'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('shift-handover-audit'),
+  };
+}
+
+const CLOSURE_AUDIT_COLUMNS: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 22 },
+  { key: 'title', header: 'Title', width: 30 },
+  { key: 'assetName', header: 'Asset', width: 24 },
+  { key: 'type', header: 'Type', width: 14 },
+  { key: 'priority', header: 'Priority', width: 12 },
+  { key: 'status', header: 'WO Status', width: 16 },
+  { key: 'technician', header: 'Technician', width: 22 },
+  { key: 'rcaRequired', header: 'RCA Required', width: 14 },
+  { key: 'rcaComplete', header: 'RCA Complete', width: 14 },
+  { key: 'supervisorStatus', header: 'Supervisor Review', width: 18 },
+  { key: 'plannerStatus', header: 'Planner Closure', width: 18 },
+  { key: 'reworkCount', header: 'Rework Count', format: 'number', width: 14 },
+  { key: 'fullyCompliant', header: 'Fully Compliant', width: 16 },
+  { key: 'rootCause', header: 'Root Cause', width: 35 },
+  { key: 'correctiveAction', header: 'Corrective Action', width: 35 },
+  { key: 'findings', header: 'Findings', width: 35 },
+  { key: 'supervisorApprovedBy', header: 'Supervisor Approved By', width: 24 },
+  { key: 'supervisorApprovedAt', header: 'Supervisor Approved At', format: 'datetime', width: 22 },
+  { key: 'plannerClosedBy', header: 'Planner Closed By', width: 22 },
+  { key: 'plannerClosedAt', header: 'Planner Closed At', format: 'datetime', width: 20 },
+];
+
+async function exportClosureAuditReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where = buildBaseWhere({ ...filters, maintenanceScope: filters.maintenanceScope || 'repairs' });
+  where.status = { in: ['completed', 'verified', 'closed'] };
+
+  const workOrders = await db.workOrder.findMany({
+    where,
+    include: {
+      assignee: { select: { fullName: true } },
+      repairCompletion: {
+        include: {
+          supervisorApprovedBy: { select: { fullName: true } },
+          plannerClosedBy: { select: { fullName: true } },
+        },
+      },
+    },
+    orderBy: { actualEnd: 'desc' },
+  });
+
+  const rows = workOrders.map((wo) => {
+    const completion = wo.repairCompletion;
+    const rcaRequired = ['corrective', 'emergency', 'predictive'].includes(wo.type);
+    const rcaComplete = !rcaRequired || Boolean(
+      completion?.rootCause?.trim() && completion?.correctiveAction?.trim(),
+    );
+    const supervisorApproved = completion?.supervisorStatus === 'approved'
+      && Boolean(completion.supervisorApprovedAt);
+    const plannerClosed = completion?.plannerStatus === 'closed'
+      && Boolean(completion.plannerClosedAt);
+    const fullyCompliant = wo.status === 'closed'
+      && rcaComplete
+      && supervisorApproved
+      && plannerClosed;
+
+    return {
+      woNumber: wo.woNumber,
+      title: wo.title,
+      assetName: wo.assetName || '',
+      type: wo.type,
+      priority: wo.priority,
+      status: wo.status,
+      technician: wo.assignee?.fullName || '',
+      rcaRequired: rcaRequired ? 'Yes' : 'No',
+      rcaComplete: rcaComplete ? 'Yes' : 'No',
+      supervisorStatus: completion?.supervisorStatus || 'Missing Completion',
+      plannerStatus: completion?.plannerStatus || 'Missing Completion',
+      reworkCount: completion?.reworkCount || 0,
+      fullyCompliant: fullyCompliant ? 'Yes' : 'No',
+      rootCause: completion?.rootCause || '',
+      correctiveAction: completion?.correctiveAction || '',
+      findings: completion?.findings || '',
+      supervisorApprovedBy: completion?.supervisorApprovedBy?.fullName || '',
+      supervisorApprovedAt: completion?.supervisorApprovedAt?.toISOString() || '',
+      plannerClosedBy: completion?.plannerClosedBy?.fullName || '',
+      plannerClosedAt: completion?.plannerClosedAt?.toISOString() || '',
+    };
+  });
+
+  const compliant = rows.filter((row) => row.fullyCompliant === 'Yes').length;
+  const missingRca = rows.filter((row) => row.rcaRequired === 'Yes' && row.rcaComplete === 'No').length;
+  const pendingSupervisor = rows.filter((row) => row.supervisorStatus !== 'approved').length;
+  const pendingClosure = rows.filter((row) => row.plannerStatus !== 'closed').length;
+  const reworkWos = rows.filter((row) => row.reworkCount > 0).length;
+
+  const wb = createStandardWorkbook({
+    reportName: 'Closure / RCA Compliance Audit',
+    description: 'Completion records, RCA quality, supervisor approval, planner closure and rework exceptions',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Completed / Verified / Closed WOs', value: rows.length },
+      { label: 'Fully Compliant', value: compliant },
+      { label: 'Compliance Rate', value: rows.length > 0 ? ((compliant / rows.length) * 100).toFixed(1) + '%' : '100%' },
+      { label: 'Missing RCA', value: missingRca },
+      { label: 'Pending Supervisor Review', value: pendingSupervisor },
+      { label: 'Pending Planner Closure', value: pendingClosure },
+      { label: 'Rework WOs', value: reworkWos },
+    ],
+  });
+
+  addDataSheet(wb, 'Closure Audit', CLOSURE_AUDIT_COLUMNS, rows);
+  addAnalyticsSheet(wb, 'Compliance Status', buildBreakdown(rows, 'fullyCompliant'));
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('closure-rca-compliance-audit'),
+  };
+}
+
 /**
  * Schema-safe Repairs report dispatcher.
  *
@@ -827,5 +1363,10 @@ export async function generateRepairsReport(
   if (reportType === 'operations-summary') return exportOperationsSummaryReport(filters, session);
   if (reportType === 'asset-history') return exportAssetRepairHistoryReport(filters, session);
   if (reportType === 'department-cost') return exportDepartmentCostReport(filters, session);
+  if (reportType === 'material-reconciliation') return exportMaterialReconciliationReport(filters, session);
+  if (reportType === 'tool-custody') return exportToolCustodyReport(filters, session);
+  if (reportType === 'assistance') return exportAssistanceReport(filters, session);
+  if (reportType === 'shift-handover') return exportShiftHandoverReport(filters, session);
+  if (reportType === 'closure-audit') return exportClosureAuditReport(filters, session);
   return generateLegacyReport(reportType, filters, session);
 }

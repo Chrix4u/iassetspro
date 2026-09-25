@@ -812,9 +812,10 @@ async function exportDepartmentCostReport(
 /**
  * Schema-safe Repairs report dispatcher.
  *
- * The Work Order and Maintenance Request exporters are overridden here because
- * the legacy exporter still references stale Prisma relation names. The other
- * eight exporters remain delegated to the existing implementation.
+ * Work Order and Maintenance Request remain schema-safe overrides for legacy
+ * relation drift. The operational summary, asset history and department-cost
+ * reports are implemented here against the active Prisma schema; the remaining
+ * established report types delegate to the existing implementation.
  */
 export async function generateRepairsReport(
   reportType: ReportType,

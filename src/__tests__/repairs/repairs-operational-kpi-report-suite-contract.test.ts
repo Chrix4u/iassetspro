@@ -34,7 +34,8 @@ describe('repairs operational KPI report suite contract', () => {
 
   it('calculates MTBF only from observed intervals between failures', () => {
     expect(safe).toContain('const intervals = ordered.slice(1)');
-    expect(safe).toContain("mtbfDays: intervals.length ? Number(average(intervals).toFixed(2)) : ''");
+    expect(safe).toContain("const mtbfDays: number | '' = intervals.length ? Number(average(intervals).toFixed(2)) : ''");
+    expect(safe).toContain('mtbfDays,');
   });
 
   it('expands downtime into weekly, machine, category and impact analysis', () => {

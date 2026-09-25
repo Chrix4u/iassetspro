@@ -148,6 +148,14 @@ test.describe('Repairs Reports & Analytics', () => {
       .getByText('Repairs Report Library', { exact: true })
       .locator('xpath=ancestor::*[@data-slot="card"][1]');
     await expect(reportLibrary).toBeVisible();
+    for (const category of [
+      'Operations & Performance',
+      'Resources & Stores',
+      'Reliability & Assets',
+      'Cost & Compliance',
+    ]) {
+      await expect(reportLibrary.getByText(category, { exact: true })).toBeVisible();
+    }
     for (const title of [
       'Work Orders',
       'Maintenance Requests',

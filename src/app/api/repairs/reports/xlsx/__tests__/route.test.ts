@@ -178,4 +178,31 @@ describe('POST /api/repairs/reports/xlsx', () => {
     );
   });
 
+
+  it('accepts audit/control report types under the same plant and export authorization boundary', async () => {
+    mockGenerateRepairsReport.mockResolvedValue({
+      buffer: Buffer.from('xlsx-bytes'),
+      filename: 'closure-rca-compliance-audit.xlsx',
+    });
+
+    const response = await POST(request({
+      reportType: 'closure-audit',
+      filters: {
+        dateFrom: '2026-09-01',
+        dateTo: '2026-09-30',
+        maintenanceScope: 'repairs',
+      },
+    }, 'plant-a'));
+
+    expect(response.status).toBe(200);
+    expect(mockGenerateRepairsReport).toHaveBeenCalledWith(
+      'closure-audit',
+      expect.objectContaining({
+        plantId: 'plant-a',
+        maintenanceScope: 'repairs',
+      }),
+      session,
+    );
+  });
+
 });

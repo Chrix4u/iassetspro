@@ -464,7 +464,9 @@ describe('repairsReportXlsxSafe operational report pack', () => {
       handedOverBy: 'Technician One',
       pendingIssues: 'Replacement bearing pending',
       safetyNotes: 'LOTO remains active',
-      ageHours: 0.25,
+      elapsedToLastUpdateHours: 0.25,
+      createdAt: '2026-09-10T21:45:00.000Z',
+      updatedAt: '2026-09-10T22:00:00.000Z',
     });
   });
 

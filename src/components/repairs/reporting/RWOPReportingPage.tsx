@@ -199,6 +199,21 @@ type ReportData = {
     reworkWOs: number;
     totalReworkInstances: number;
   };
+  closureExceptionWatchlist?: Array<{
+    id: string;
+    woNumber?: string | null;
+    title?: string | null;
+    assetName: string;
+    assetTag?: string | null;
+    type: string;
+    priority: string;
+    status: string;
+    completedAt?: string | null;
+    missingRca: boolean;
+    awaitingSupervisorApproval: boolean;
+    awaitingPlannerClosure: boolean;
+    reworkCount: number;
+  }>;
   exceptionWatchlist?: Array<{
     id: string;
     woNumber?: string | null;
@@ -219,6 +234,7 @@ type ReportData = {
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
 type AttentionFilter = 'all' | 'critical' | 'overdue' | 'materials' | 'tools' | 'assistance' | 'handovers' | 'downtime';
+type ClosureFilter = 'all' | 'missing-rca' | 'supervisor' | 'planner' | 'rework';
 
 type SavedReportView = {
   id: string;
@@ -390,6 +406,7 @@ export default function RWOPReportingPage() {
   const [savedViews, setSavedViews] = useState<SavedReportView[]>([]);
   const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all');
+  const [closureFilter, setClosureFilter] = useState<ClosureFilter>('all');
   const initialLoadStarted = useRef(false);
   const attentionRef = useRef<HTMLDivElement>(null);
 
@@ -520,6 +537,33 @@ export default function RWOPReportingPage() {
       downtime: rows.filter(item => item.downtimeMinutes >= 240).length,
     };
   }, [report?.exceptionWatchlist]);
+
+  const closureExceptionRows = useMemo(() => {
+    const rows = report?.closureExceptionWatchlist || [];
+    switch (closureFilter) {
+      case 'missing-rca':
+        return rows.filter(item => item.missingRca);
+      case 'supervisor':
+        return rows.filter(item => item.awaitingSupervisorApproval);
+      case 'planner':
+        return rows.filter(item => item.awaitingPlannerClosure);
+      case 'rework':
+        return rows.filter(item => item.reworkCount > 0);
+      default:
+        return rows;
+    }
+  }, [closureFilter, report?.closureExceptionWatchlist]);
+
+  const closureExceptionCounts = useMemo(() => {
+    const rows = report?.closureExceptionWatchlist || [];
+    return {
+      all: rows.length,
+      missingRca: rows.filter(item => item.missingRca).length,
+      supervisor: rows.filter(item => item.awaitingSupervisorApproval).length,
+      planner: rows.filter(item => item.awaitingPlannerClosure).length,
+      rework: rows.filter(item => item.reworkCount > 0).length,
+    };
+  }, [report?.closureExceptionWatchlist]);
 
   const appliedDescription = useMemo(() => {
     const source = appliedFilters || filters;
@@ -1269,15 +1313,23 @@ export default function RWOPReportingPage() {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Compliance</p><p className="text-xl font-bold">{report.closureCompliance?.complianceRate ?? 0}%</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Missing RCA</p><p className="text-xl font-bold text-amber-600">{report.closureCompliance?.missingRca ?? 0}</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework WOs</p><p className="text-xl font-bold">{report.closureCompliance?.reworkWOs ?? 0}</p></div>
+                  <button type="button" onClick={() => setClosureFilter('missing-rca')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Missing RCA</p>
+                    <p className="text-xl font-bold text-amber-600">{report.closureCompliance?.missingRca ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Show affected WOs</p>
+                  </button>
+                  <button type="button" onClick={() => setClosureFilter('rework')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Rework WOs</p>
+                    <p className="text-xl font-bold">{report.closureCompliance?.reworkWOs ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Show affected WOs</p>
+                  </button>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework Instances</p><p className="text-xl font-bold">{report.closureCompliance?.totalReworkInstances ?? 0}</p></div>
                 </div>
                 <div className="text-sm">
                   <div className="flex justify-between border-b py-2"><span>Eligible completed/closed WOs</span><strong>{report.closureCompliance?.eligibleWOs ?? 0}</strong></div>
                   <div className="flex justify-between border-b py-2"><span>Compliant WOs</span><strong>{report.closureCompliance?.compliantWOs ?? 0}</strong></div>
-                  <div className="flex justify-between border-b py-2"><span>Awaiting supervisor approval</span><strong>{report.closureCompliance?.awaitingSupervisorApproval ?? 0}</strong></div>
-                  <div className="flex justify-between py-2"><span>Planner closure exceptions</span><strong>{report.closureCompliance?.awaitingPlannerClosure ?? 0}</strong></div>
+                  <button type="button" onClick={() => setClosureFilter('supervisor')} className="flex w-full justify-between border-b py-2 text-left hover:text-emerald-700"><span>Awaiting supervisor approval</span><strong>{report.closureCompliance?.awaitingSupervisorApproval ?? 0}</strong></button>
+                  <button type="button" onClick={() => setClosureFilter('planner')} className="flex w-full justify-between py-2 text-left hover:text-emerald-700"><span>Planner closure exceptions</span><strong>{report.closureCompliance?.awaitingPlannerClosure ?? 0}</strong></button>
                 </div>
               </CardContent>
             </Card>
@@ -1307,6 +1359,87 @@ export default function RWOPReportingPage() {
               </CardContent>
             </Card>
           </div>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Closure / RCA Exception Queue</CardTitle>
+                  <CardDescription>Completed or closed repairs that still need RCA, approval, planner closure or rework follow-up</CardDescription>
+                </div>
+                <Badge variant={closureExceptionCounts.all > 0 ? 'outline' : 'secondary'}>
+                  {closureExceptionRows.length} shown / {closureExceptionCounts.all} exception(s)
+                </Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                {([
+                  ['all', 'All', closureExceptionCounts.all],
+                  ['missing-rca', 'Missing RCA', closureExceptionCounts.missingRca],
+                  ['supervisor', 'Supervisor Approval', closureExceptionCounts.supervisor],
+                  ['planner', 'Planner Closure', closureExceptionCounts.planner],
+                  ['rework', 'Rework', closureExceptionCounts.rework],
+                ] as Array<[ClosureFilter, string, number]>).map(([key, label, count]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant={closureFilter === key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setClosureFilter(key)}
+                    className={closureFilter === key ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
+                  >
+                    {label} <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[460px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>WO</TableHead>
+                      <TableHead>Title / Asset</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Exceptions</TableHead>
+                      <TableHead>Completed</TableHead>
+                      <TableHead className="text-right print:hidden">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {closureExceptionRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title={closureFilter === 'all' ? 'No closure or RCA exceptions in this report period' : 'No closure exceptions match this filter'} /></TableCell></TableRow>
+                    ) : closureExceptionRows.map(item => {
+                      const issues = [
+                        item.missingRca ? 'Missing RCA' : null,
+                        item.awaitingSupervisorApproval ? 'Supervisor approval' : null,
+                        item.awaitingPlannerClosure ? 'Planner closure' : null,
+                        item.reworkCount > 0 ? `Rework × ${item.reworkCount}` : null,
+                      ].filter(Boolean);
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{item.title || 'Untitled work order'}</div>
+                            <div className="text-xs text-muted-foreground">{item.assetName}{item.assetTag ? ` · ${item.assetTag}` : ''}</div>
+                          </TableCell>
+                          <TableCell><Badge variant={statusBadge(item.status)} className="text-[10px]">{prettify(item.status)}</Badge></TableCell>
+                          <TableCell className="max-w-[460px] text-xs">{issues.join(' · ')}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{item.completedAt ? formatDate(item.completedAt) : '—'}</TableCell>
+                          <TableCell className="text-right print:hidden">
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/work-orders/${item.id}`} aria-label={`Open closure exception work order ${item.woNumber || item.id}`}>
+                                Open <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
 
           <div ref={attentionRef} className="scroll-mt-6">
           <Card className="border-border/60 shadow-sm">

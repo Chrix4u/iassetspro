@@ -213,7 +213,8 @@ test.describe('Repairs Reports & Analytics', () => {
       .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
     await detailedReportCard.getByRole('button', { name: 'Excel' }).click();
     await expect.poll(() => detailedExportUrl).not.toBeNull();
-    const detailedUrl = new URL(detailedExportUrl as string);
+    if (!detailedExportUrl) throw new Error('Detailed report export URL was not captured');
+    const detailedUrl = new URL(detailedExportUrl);
     expect(detailedUrl.pathname).toBe('/api/repairs/reports/detailed');
     expect(detailedUrl.searchParams.get('format')).toBe('xlsx');
     expect(detailedUrl.searchParams.get('dateFrom')).toBeTruthy();

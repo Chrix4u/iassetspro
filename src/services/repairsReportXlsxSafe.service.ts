@@ -1379,6 +1379,169 @@ async function exportClosureAuditReport(
 }
 
 
+const DOWNTIME_DETAIL_COLUMNS_SAFE: ReportColumn[] = [
+  { key: 'woNumber', header: 'WO Number', width: 20 },
+  { key: 'assetName', header: 'Machine / Asset', width: 28 },
+  { key: 'trade', header: 'Trade', width: 20 },
+  { key: 'category', header: 'Category', width: 16 },
+  { key: 'impactLevel', header: 'Impact Level', width: 14 },
+  { key: 'downtimeStart', header: 'Downtime Start', format: 'datetime', width: 20 },
+  { key: 'downtimeEnd', header: 'Downtime End', format: 'datetime', width: 20 },
+  { key: 'durationMinutes', header: 'Duration (min)', format: 'number', width: 16 },
+  { key: 'productionLoss', header: 'Production Loss', format: 'number', width: 18 },
+  { key: 'reason', header: 'Reason', width: 34 },
+  { key: 'loggedBy', header: 'Logged By', width: 20 },
+  { key: 'notes', header: 'Notes', width: 28 },
+];
+
+const DOWNTIME_WEEK_COLUMNS: ReportColumn[] = [
+  { key: 'week', header: 'ISO Week', width: 14 },
+  { key: 'events', header: 'Events', format: 'number', width: 12 },
+  { key: 'totalMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+  { key: 'totalHours', header: 'Downtime (hrs)', format: 'number', width: 16 },
+  { key: 'avgMinutes', header: 'Avg Event (min)', format: 'number', width: 16 },
+  { key: 'productionLoss', header: 'Production Loss', format: 'number', width: 18 },
+];
+
+const DOWNTIME_ASSET_COLUMNS_SAFE: ReportColumn[] = [
+  { key: 'rank', header: 'Rank', format: 'number', width: 10 },
+  { key: 'assetName', header: 'Machine / Asset', width: 30 },
+  { key: 'events', header: 'Events', format: 'number', width: 12 },
+  { key: 'totalMinutes', header: 'Downtime (min)', format: 'number', width: 16 },
+  { key: 'totalHours', header: 'Downtime (hrs)', format: 'number', width: 16 },
+  { key: 'avgMinutes', header: 'Avg Event (min)', format: 'number', width: 16 },
+  { key: 'sharePercent', header: 'Downtime Share %', format: 'number', width: 18 },
+  { key: 'productionLoss', header: 'Production Loss', format: 'number', width: 18 },
+];
+
+async function exportDowntimeAnalysisReport(
+  filters: ReportFilters,
+  session: SessionData,
+): Promise<ReportResult> {
+  const where: Record<string, unknown> = {};
+  if (filters.plantId) where.plantId = filters.plantId;
+
+  if (filters.dateFrom || filters.dateTo) {
+    const downtimeStart: Record<string, Date> = {};
+    if (filters.dateFrom) downtimeStart.gte = new Date(`${filters.dateFrom}T00:00:00`);
+    if (filters.dateTo) downtimeStart.lte = new Date(`${filters.dateTo}T23:59:59`);
+    where.downtimeStart = downtimeStart;
+  }
+
+  const workOrderWhere = buildBaseWhere(filters);
+  delete workOrderWhere.createdAt;
+  delete workOrderWhere.plantId;
+  if (Object.keys(workOrderWhere).length > 0) where.workOrder = workOrderWhere;
+
+  const downtimes = await db.workOrderDowntime.findMany({
+    where: Object.keys(where).length > 0 ? where : undefined,
+    include: {
+      workOrder: {
+        select: {
+          woNumber: true,
+          title: true,
+          tradeActivity: true,
+          assetName: true,
+        },
+      },
+      createdBy: { select: { fullName: true } },
+    },
+    orderBy: { downtimeStart: 'asc' },
+    take: 10000,
+  });
+
+  const detailRows = downtimes.map((row) => ({
+    woNumber: row.workOrder?.woNumber || '',
+    assetName: row.assetName || row.workOrder?.assetName || 'Unassigned',
+    trade: row.workOrder?.tradeActivity || 'Unspecified',
+    category: row.category || 'Unspecified',
+    impactLevel: row.impactLevel || 'Unspecified',
+    downtimeStart: row.downtimeStart.toISOString(),
+    downtimeEnd: row.downtimeEnd?.toISOString() || '',
+    durationMinutes: Number((row.durationMinutes || 0).toFixed(2)),
+    productionLoss: Number((row.productionLoss || 0).toFixed(2)),
+    reason: row.reason || '',
+    loggedBy: row.createdBy?.fullName || '',
+    notes: row.notes || '',
+  }));
+
+  type DowntimeAggregate = { events: number; totalMinutes: number; productionLoss: number };
+  const byWeek = new Map<string, DowntimeAggregate>();
+  const byAsset = new Map<string, DowntimeAggregate>();
+  const byCategory = new Map<string, DowntimeAggregate>();
+  const byImpact = new Map<string, DowntimeAggregate>();
+
+  const accumulate = (map: Map<string, DowntimeAggregate>, key: string, minutes: number, productionLoss: number) => {
+    const current = map.get(key) || { events: 0, totalMinutes: 0, productionLoss: 0 };
+    current.events += 1;
+    current.totalMinutes += minutes;
+    current.productionLoss += productionLoss;
+    map.set(key, current);
+  };
+
+  for (const row of detailRows) {
+    accumulate(byWeek, isoWeekKey(new Date(row.downtimeStart)), row.durationMinutes, row.productionLoss);
+    accumulate(byAsset, row.assetName, row.durationMinutes, row.productionLoss);
+    accumulate(byCategory, row.category, row.durationMinutes, row.productionLoss);
+    accumulate(byImpact, row.impactLevel, row.durationMinutes, row.productionLoss);
+  }
+
+  const aggregateRows = (map: Map<string, DowntimeAggregate>, keyName: string) =>
+    [...map.entries()].map(([key, value]) => ({
+      [keyName]: key,
+      events: value.events,
+      totalMinutes: Number(value.totalMinutes.toFixed(2)),
+      totalHours: Number((value.totalMinutes / 60).toFixed(2)),
+      avgMinutes: value.events ? Number((value.totalMinutes / value.events).toFixed(2)) : 0,
+      productionLoss: Number(value.productionLoss.toFixed(2)),
+    }));
+
+  const weeklyRows = aggregateRows(byWeek, 'week').sort((a, b) => String(a.week).localeCompare(String(b.week)));
+  const totalMinutes = detailRows.reduce((sum, row) => sum + row.durationMinutes, 0);
+  const assetRows = aggregateRows(byAsset, 'assetName')
+    .sort((a, b) => Number(b.totalMinutes) - Number(a.totalMinutes))
+    .map((row, index) => ({
+      rank: index + 1,
+      ...row,
+      sharePercent: totalMinutes > 0 ? Number(((Number(row.totalMinutes) / totalMinutes) * 100).toFixed(2)) : 0,
+    }));
+  const categoryRows = aggregateRows(byCategory, 'category').sort((a, b) => Number(b.totalMinutes) - Number(a.totalMinutes));
+  const impactRows = aggregateRows(byImpact, 'impactLevel').sort((a, b) => Number(b.totalMinutes) - Number(a.totalMinutes));
+  const totalProductionLoss = detailRows.reduce((sum, row) => sum + row.productionLoss, 0);
+
+  const wb = createStandardWorkbook({
+    reportName: 'Downtime & Production Loss',
+    description: 'Downtime events with weekly trend, machine ranking, category, impact and production-loss analysis',
+    plantId: filters.plantId,
+    filters: flattenFilters(filters),
+    generatedBy: session.fullName || session.userId,
+    kpis: [
+      { label: 'Downtime Events', value: detailRows.length },
+      { label: 'Total Downtime (hrs)', value: (totalMinutes / 60).toFixed(2) },
+      { label: 'Avg Event Duration (min)', value: detailRows.length ? (totalMinutes / detailRows.length).toFixed(2) : '0' },
+      { label: 'Affected Assets', value: assetRows.length },
+      { label: 'Production Loss', value: totalProductionLoss.toFixed(2) },
+    ],
+  });
+
+  addDataSheet(wb, 'Downtime Events', DOWNTIME_DETAIL_COLUMNS_SAFE, detailRows);
+  addDataSheet(wb, 'Weekly Downtime', DOWNTIME_WEEK_COLUMNS, weeklyRows);
+  addDataSheet(wb, 'By Machine', DOWNTIME_ASSET_COLUMNS_SAFE, assetRows);
+  addDataSheet(wb, 'By Category', [
+    { key: 'category', header: 'Category', width: 20 },
+    ...DOWNTIME_WEEK_COLUMNS.slice(1),
+  ], categoryRows);
+  addDataSheet(wb, 'By Impact', [
+    { key: 'impactLevel', header: 'Impact Level', width: 18 },
+    ...DOWNTIME_WEEK_COLUMNS.slice(1),
+  ], impactRows);
+
+  return {
+    buffer: generateXlsxBuffer(wb),
+    filename: buildFilename('downtime-production-loss-report'),
+  };
+}
+
 const BREAKDOWN_DETAIL_COLUMNS: ReportColumn[] = [
   { key: 'woNumber', header: 'WO Number', width: 20 },
   { key: 'reportedAt', header: 'Reported', format: 'datetime', width: 20 },
@@ -1868,6 +2031,7 @@ export async function generateRepairsReport(
   session: SessionData,
 ): Promise<ReportResult> {
   if (reportType === 'work-order') return exportWorkOrderReport(filters, session);
+  if (reportType === 'downtime') return exportDowntimeAnalysisReport(filters, session);
   if (reportType === 'maintenance-request') return exportMaintenanceRequestReport(filters, session);
   if (reportType === 'operations-summary') return exportOperationsSummaryReport(filters, session);
   if (reportType === 'asset-history') return exportAssetRepairHistoryReport(filters, session);

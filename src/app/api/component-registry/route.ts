@@ -136,11 +136,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Component code already exists' }, { status: 409 });
     }
 
-    // Validate parentId if provided
+    // Validate parentId if provided. A component hierarchy must remain
+    // inside one parent machine/asset.
     if (parentId) {
       const parent = await db.componentRegistry.findUnique({ where: { id: parentId } });
       if (!parent) {
         return NextResponse.json({ success: false, error: 'Parent component not found' }, { status: 404 });
+      }
+      if (assetId && parent.assetId !== assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Parent component belongs to a different asset' },
+          { status: 400 },
+        );
       }
     }
 

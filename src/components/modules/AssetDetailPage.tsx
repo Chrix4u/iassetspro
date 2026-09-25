@@ -214,10 +214,11 @@ export function AssetDetailPage({ id }: { id: string }) {
             <div class="row"><span class="key">Model</span><span class="value">${esc(component.modelNumber || '—')}</span></div>
             <div class="footer">Use the component code on work orders, inspections, PM schedules and spare-part records.</div>
           </div>
-          <script>window.onload = () => { window.print(); };</script>
         </body>
       </html>`);
     popup.document.close();
+    popup.focus();
+    popup.print();
   };
 
   const handleCreateComponent = async () => {

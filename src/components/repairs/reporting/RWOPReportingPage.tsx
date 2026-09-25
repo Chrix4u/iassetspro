@@ -230,7 +230,12 @@ type OperationalXlsxReportType =
   | 'sla'
   | 'operations-summary'
   | 'asset-history'
-  | 'department-cost';
+  | 'department-cost'
+  | 'material-reconciliation'
+  | 'tool-custody'
+  | 'assistance'
+  | 'shift-handover'
+  | 'closure-audit';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -263,6 +268,11 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'operations-summary', title: 'Daily / Weekly Operations', description: 'Daily maintenance pulse covering opened/completed WOs, emergencies, labor, downtime, production loss and cost.', xlsxType: 'operations-summary', icon: Clock },
   { id: 'asset-history', title: 'Asset Repair History', description: 'Full repair and failure history by asset with RCA, technician, downtime, materials and cost.', xlsxType: 'asset-history', icon: History },
   { id: 'department-cost', title: 'Department / Cost-Center Cost', description: 'Maintenance spend by department/cost center with labor, parts, contractor, tools and average WO cost.', xlsxType: 'department-cost', icon: Coins },
+  { id: 'material-reconciliation', title: 'Material Reconciliation Audit', description: 'Issued versus consumed, wasted and returned quantities with cost and variance exceptions.', xlsxType: 'material-reconciliation', icon: Boxes },
+  { id: 'tool-custody', title: 'Tool Custody & Returns', description: 'Issued tool custody, technician returns, store confirmation, duration and condition exceptions.', xlsxType: 'tool-custody', icon: Wrench },
+  { id: 'assistance', title: 'Assistance Request Turnaround', description: 'Technician assistance requests, approval outcomes and review turnaround time.', xlsxType: 'assistance', icon: UserRoundCheck },
+  { id: 'shift-handover', title: 'Shift Handover Audit', description: 'Repair handovers with pending issues, safety notes, receiver confirmation and shift continuity.', xlsxType: 'shift-handover', icon: History },
+  { id: 'closure-audit', title: 'Closure / RCA Compliance Audit', description: 'RCA completeness, supervisor review, planner closure, rework and compliance exceptions.', xlsxType: 'closure-audit', icon: ShieldCheck },
 ];
 
 type ReportFilters = {

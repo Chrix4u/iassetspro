@@ -7,6 +7,7 @@ const convertDialog = fs.readFileSync('src/components/shared/ConvertMRToWODialog
 const planning = fs.readFileSync('src/services/repairPlanning.service.ts', 'utf8');
 const woComponents = fs.readFileSync('src/app/api/work-orders/[id]/components/route.ts', 'utf8');
 const pmApi = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
+const pmPage = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
 const pmDue = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'utf8');
 
 describe('machine component maintenance hierarchy contract', () => {
@@ -40,6 +41,8 @@ describe('machine component maintenance hierarchy contract', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('pmSchedules              PmSchedule[] @relation("PmScheduleComponent")');
     expect(pmApi).toContain('Selected component does not belong to the selected asset');
+    expect(pmPage).toContain('Target Assembly / Component');
+    expect(pmPage).toContain('Component-targeted PM work orders retain the parent machine');
     expect(pmDue).toContain('Inherited from component-targeted PM schedule');
     expect(pmDue).toContain('workOrderId_componentRegistryId');
   });

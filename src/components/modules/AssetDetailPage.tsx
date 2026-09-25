@@ -173,6 +173,53 @@ export function AssetDetailPage({ id }: { id: string }) {
   }, [activeTab, asset, id, twin, reloadComponents, reloadInventoryItems, reloadTwin, reloadDiagrams]);
 
   // Handlers
+  const printComponentLabel = (component: any) => {
+    const esc = (value: unknown) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    const parentName = component.parent?.name || 'Machine root';
+    const popup = window.open('', '_blank', 'width=520,height=420');
+    if (!popup) {
+      toast.error('Allow pop-ups to print the component label');
+      return;
+    }
+    popup.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>Component Label - ${esc(component.componentCode)}</title>
+          <style>
+            @page { size: 100mm 55mm; margin: 4mm; }
+            body { font-family: Arial, sans-serif; margin: 0; color: #111827; }
+            .label { border: 2px solid #111827; padding: 10px; border-radius: 8px; }
+            .code { font-size: 22px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
+            .name { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+            .row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; padding: 2px 0; }
+            .key { color: #6b7280; text-transform: uppercase; }
+            .value { font-weight: 600; text-align: right; }
+            .footer { margin-top: 8px; border-top: 1px solid #d1d5db; padding-top: 5px; font-size: 9px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <div class="code">${esc(component.componentCode)}</div>
+            <div class="name">${esc(component.name)}</div>
+            <div class="row"><span class="key">Machine</span><span class="value">${esc(asset?.name)} [${esc(asset?.assetTag)}]</span></div>
+            <div class="row"><span class="key">Type</span><span class="value">${esc(String(component.componentType || 'component').replace(/_/g, ' '))}</span></div>
+            <div class="row"><span class="key">Parent</span><span class="value">${esc(parentName)}</span></div>
+            <div class="row"><span class="key">Serial</span><span class="value">${esc(component.serialNumber || '—')}</span></div>
+            <div class="row"><span class="key">Model</span><span class="value">${esc(component.modelNumber || '—')}</span></div>
+            <div class="footer">Use the component code on work orders, inspections, PM schedules and spare-part records.</div>
+          </div>
+          <script>window.onload = () => { window.print(); };</script>
+        </body>
+      </html>`);
+    popup.document.close();
+  };
+
   const handleCreateComponent = async () => {
     if (!compForm.componentCode.trim() || !compForm.name.trim()) {
       toast.error('Component code and name are required');
@@ -769,7 +816,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                   <Card className="border-0 shadow-sm">
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
-                        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Store Parts</TableHead></TableRow></TableHeader><TableBody>
+                        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
                           {components.map((c: any) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
@@ -787,9 +834,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                                 {c.operatingHours ?? '-'} / {c.expectedLifeHours ?? '-'}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
-                                  Parts ({c._count?.sparePartLinks || 0})
-                                </Button>
+                                <div className="flex justify-end gap-1.5">
+                                  <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
+                                  <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
+                                    Parts ({c._count?.sparePartLinks || 0})
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}

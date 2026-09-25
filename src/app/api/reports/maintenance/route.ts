@@ -509,6 +509,112 @@ export async function GET(request: NextRequest) {
       overdueOpen: backlogAging.overdueOpen,
     };
 
+    // ========== BREAKDOWN PERFORMANCE / GTP LEGACY PARITY ==========
+    const breakdownOrders = workOrders.filter(wo => ['corrective', 'emergency'].includes(wo.type));
+    const isoWeekKey = (date: Date) => {
+      const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      const day = utc.getUTCDay() || 7;
+      utc.setUTCDate(utc.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+      const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / MS_PER_DAY) + 1) / 7);
+      return `${utc.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+    };
+    type BreakdownBucket = {
+      breakdowns: number;
+      responseMinutes: number[];
+      repairMinutes: number[];
+      restorationMinutes: number[];
+      recordedDowntimeMinutes: number;
+    };
+    const newBreakdownBucket = (): BreakdownBucket => ({
+      breakdowns: 0,
+      responseMinutes: [],
+      repairMinutes: [],
+      restorationMinutes: [],
+      recordedDowntimeMinutes: 0,
+    });
+    const breakdownWeeklyMap = new Map<string, BreakdownBucket>();
+    const breakdownAssetMap = new Map<string, BreakdownBucket & { assetId: string; assetName: string; assetTag?: string | null }>();
+    const allResponseMinutes: number[] = [];
+    const allRepairMinutes: number[] = [];
+    const allRestorationMinutes: number[] = [];
+    let totalBreakdownDowntimeMinutes = 0;
+    let missingStartCount = 0;
+    let missingCompletionCount = 0;
+
+    for (const wo of breakdownOrders) {
+      const asset = getAssetDetails(wo);
+      const responseMinutes = hoursBetween(wo.createdAt, wo.actualStart);
+      const repairMinutes = hoursBetween(wo.actualStart, wo.actualEnd);
+      const restorationMinutes = hoursBetween(wo.createdAt, wo.actualEnd);
+      const recordedDowntimeMinutes = (wo.workOrderDowntimes || [])
+        .reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
+
+      if (responseMinutes === null) missingStartCount += 1;
+      else allResponseMinutes.push(responseMinutes * 60);
+      if (repairMinutes === null) missingCompletionCount += 1;
+      else allRepairMinutes.push(repairMinutes * 60);
+      if (restorationMinutes !== null) allRestorationMinutes.push(restorationMinutes * 60);
+      totalBreakdownDowntimeMinutes += recordedDowntimeMinutes;
+
+      const addToBucket = (bucket: BreakdownBucket) => {
+        bucket.breakdowns += 1;
+        if (responseMinutes !== null) bucket.responseMinutes.push(responseMinutes * 60);
+        if (repairMinutes !== null) bucket.repairMinutes.push(repairMinutes * 60);
+        if (restorationMinutes !== null) bucket.restorationMinutes.push(restorationMinutes * 60);
+        bucket.recordedDowntimeMinutes += recordedDowntimeMinutes;
+      };
+
+      const weekKey = isoWeekKey(wo.createdAt);
+      const weekBucket = breakdownWeeklyMap.get(weekKey) || newBreakdownBucket();
+      addToBucket(weekBucket);
+      breakdownWeeklyMap.set(weekKey, weekBucket);
+
+      const assetKey = asset.assetId || asset.assetName;
+      const assetBucket = breakdownAssetMap.get(assetKey) || {
+        ...newBreakdownBucket(),
+        assetId: asset.assetId || '',
+        assetName: asset.assetName,
+        assetTag: asset.assetTag,
+      };
+      addToBucket(assetBucket);
+      breakdownAssetMap.set(assetKey, assetBucket);
+    }
+
+    const avg = (values: number[]) => values.length ? round2(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+    const breakdownPerformance = {
+      breakdownCount: breakdownOrders.length,
+      avgResponseMinutes: avg(allResponseMinutes),
+      avgRepairMinutes: avg(allRepairMinutes),
+      avgRestorationMinutes: avg(allRestorationMinutes),
+      recordedDowntimeMinutes: round2(totalBreakdownDowntimeMinutes),
+      missingStartCount,
+      missingCompletionCount,
+      weekly: [...breakdownWeeklyMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([week, row]) => ({
+          week,
+          breakdowns: row.breakdowns,
+          avgResponseMinutes: avg(row.responseMinutes),
+          avgRepairMinutes: avg(row.repairMinutes),
+          avgRestorationMinutes: avg(row.restorationMinutes),
+          recordedDowntimeMinutes: round2(row.recordedDowntimeMinutes),
+        })),
+      byAsset: [...breakdownAssetMap.values()]
+        .map(row => ({
+          assetId: row.assetId,
+          assetName: row.assetName,
+          assetTag: row.assetTag,
+          breakdowns: row.breakdowns,
+          avgResponseMinutes: avg(row.responseMinutes),
+          avgRepairMinutes: avg(row.repairMinutes),
+          avgRestorationMinutes: avg(row.restorationMinutes),
+          recordedDowntimeMinutes: round2(row.recordedDowntimeMinutes),
+        }))
+        .sort((a, b) => b.breakdowns - a.breakdowns || b.recordedDowntimeMinutes - a.recordedDowntimeMinutes)
+        .slice(0, 50),
+    };
+
     // ========== MONTHLY OPERATIONAL TREND ==========
     const monthlyTrendMap: Record<string, {
       opened: number;
@@ -703,10 +809,17 @@ export async function GET(request: NextRequest) {
       );
       const supervisorApproved = completion?.supervisorStatus === 'approved' && Boolean(completion.supervisorApprovedAt);
       const plannerClosed = wo.status !== 'closed' || (completion?.plannerStatus === 'closed' && Boolean(completion.plannerClosedAt));
+      const asset = getAssetDetails(wo);
       return {
         workOrderId: wo.id,
         woNumber: wo.woNumber,
+        title: wo.title,
+        assetName: asset.assetName,
+        assetTag: asset.assetTag,
+        type: wo.type,
+        priority: wo.priority,
         status: wo.status,
+        completedAt: wo.actualEnd?.toISOString() || completion?.createdAt?.toISOString() || null,
         requiresRca,
         rcaComplete,
         supervisorApproved,
@@ -725,6 +838,38 @@ export async function GET(request: NextRequest) {
       reworkWOs: closureRows.filter(row => row.reworkCount > 0).length,
       totalReworkInstances: closureRows.reduce((sum, row) => sum + row.reworkCount, 0),
     };
+
+    const closureExceptionWatchlist = closureRows
+      .filter(row =>
+        (row.requiresRca && !row.rcaComplete)
+        || !row.supervisorApproved
+        || (row.status === 'closed' && !row.plannerClosed)
+        || row.reworkCount > 0
+      )
+      .map(row => ({
+        id: row.workOrderId,
+        woNumber: row.woNumber,
+        title: row.title,
+        assetName: row.assetName,
+        assetTag: row.assetTag,
+        type: row.type,
+        priority: row.priority,
+        status: row.status,
+        completedAt: row.completedAt,
+        missingRca: row.requiresRca && !row.rcaComplete,
+        awaitingSupervisorApproval: !row.supervisorApproved,
+        awaitingPlannerClosure: row.status === 'closed' && !row.plannerClosed,
+        reworkCount: row.reworkCount,
+      }))
+      .sort((a, b) => {
+        const exceptionCount = (row: typeof a) =>
+          Number(row.missingRca)
+          + Number(row.awaitingSupervisorApproval)
+          + Number(row.awaitingPlannerClosure)
+          + Number(row.reworkCount > 0);
+        return exceptionCount(b) - exceptionCount(a);
+      })
+      .slice(0, 100);
 
     // ========== MANAGEMENT EXCEPTION WATCHLIST ==========
     const exceptionWatchlist = openWorkOrders.map(wo => {
@@ -837,12 +982,14 @@ export async function GET(request: NextRequest) {
         },
         backlogAging,
         responseAndSla,
+        breakdownPerformance,
         monthlyOperationalTrends,
         assetReliability,
         costAnalysis,
         resourceFlow,
         returnsAndDamage,
         closureCompliance,
+        closureExceptionWatchlist,
         exceptionWatchlist,
         topAssets,
         workOrdersByAsset,

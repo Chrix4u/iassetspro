@@ -108,6 +108,33 @@ type ReportData = {
     slaBreachedWOs: number;
     overdueOpen: number;
   };
+  breakdownPerformance?: {
+    breakdownCount: number;
+    avgResponseMinutes: number;
+    avgRepairMinutes: number;
+    avgRestorationMinutes: number;
+    recordedDowntimeMinutes: number;
+    missingStartCount: number;
+    missingCompletionCount: number;
+    weekly: Array<{
+      week: string;
+      breakdowns: number;
+      avgResponseMinutes: number;
+      avgRepairMinutes: number;
+      avgRestorationMinutes: number;
+      recordedDowntimeMinutes: number;
+    }>;
+    byAsset: Array<{
+      assetId: string;
+      assetName: string;
+      assetTag?: string | null;
+      breakdowns: number;
+      avgResponseMinutes: number;
+      avgRepairMinutes: number;
+      avgRestorationMinutes: number;
+      recordedDowntimeMinutes: number;
+    }>;
+  };
   monthlyOperationalTrends?: Array<{
     month: string;
     opened: number;
@@ -199,6 +226,21 @@ type ReportData = {
     reworkWOs: number;
     totalReworkInstances: number;
   };
+  closureExceptionWatchlist?: Array<{
+    id: string;
+    woNumber?: string | null;
+    title?: string | null;
+    assetName: string;
+    assetTag?: string | null;
+    type: string;
+    priority: string;
+    status: string;
+    completedAt?: string | null;
+    missingRca: boolean;
+    awaitingSupervisorApproval: boolean;
+    awaitingPlannerClosure: boolean;
+    reworkCount: number;
+  }>;
   exceptionWatchlist?: Array<{
     id: string;
     woNumber?: string | null;
@@ -218,6 +260,14 @@ type ReportData = {
 };
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
+type AttentionFilter = 'all' | 'critical' | 'overdue' | 'materials' | 'tools' | 'assistance' | 'handovers' | 'downtime';
+type ClosureFilter = 'all' | 'missing-rca' | 'supervisor' | 'planner' | 'rework';
+
+type SavedReportView = {
+  id: string;
+  name: string;
+  filters: ReportFilters;
+};
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 type OperationalXlsxReportType =
   | 'work-order'
@@ -237,7 +287,12 @@ type OperationalXlsxReportType =
   | 'tool-custody'
   | 'assistance'
   | 'shift-handover'
-  | 'closure-audit';
+  | 'closure-audit'
+  | 'breakdown-performance'
+  | 'breakdown-frequency'
+  | 'response-time-performance'
+  | 'repair-time-mttr'
+  | 'reliability-bad-actors';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -245,7 +300,11 @@ type OperationalPdfReportType =
   | 'materials'
   | 'tools'
   | 'downtime'
-  | 'technician_performance';
+  | 'technician_performance'
+  | 'breakdown-frequency'
+  | 'response-time-performance'
+  | 'repair-time-mttr'
+  | 'reliability-bad-actors';
 
 type OperationalReportCategory =
   | 'Operations & Performance'
@@ -279,6 +338,11 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'downtime', category: 'Reliability & Assets', title: 'Downtime & Production Loss', description: 'Downtime events, duration, impact level and production-loss exposure.', xlsxType: 'downtime', pdfType: 'downtime', icon: TrendingDown },
   { id: 'materials', category: 'Resources & Stores', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
   { id: 'tools', category: 'Resources & Stores', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
+  { id: 'breakdown-performance', category: 'Operations & Performance', title: 'Breakdown Performance & Response', description: 'Breakdown count, weekly trend, machine frequency, response time, repair time/MTTR and downtime in one management workbook.', xlsxType: 'breakdown-performance', icon: TrendingDown },
+  { id: 'breakdown-frequency', category: 'Operations & Performance', title: 'Breakdown Frequency', description: 'Machine and weekly breakdown counts with ranked bad-actor Pareto and maintenance-trade frequency.', xlsxType: 'breakdown-frequency', pdfType: 'breakdown-frequency', icon: BarChart3 },
+  { id: 'response-time-performance', category: 'Operations & Performance', title: 'Response Time Performance', description: 'Time from fault reporting to actual maintenance work start, compared by week, machine and trade.', xlsxType: 'response-time-performance', pdfType: 'response-time-performance', icon: Clock },
+  { id: 'repair-time-mttr', category: 'Reliability & Assets', title: 'Repair Time / MTTR', description: 'Actual repair duration from work start to completion, with machine and trade MTTR comparison.', xlsxType: 'repair-time-mttr', pdfType: 'repair-time-mttr', icon: Wrench },
+  { id: 'reliability-bad-actors', category: 'Reliability & Assets', title: 'Reliability & Repeat Failures', description: 'Bad-actor ranking using breakdown frequency, MTBF, MTTR, downtime, repeat failures and repair cost.', xlsxType: 'reliability-bad-actors', pdfType: 'reliability-bad-actors', icon: AlertTriangle },
   { id: 'failure-analysis', category: 'Reliability & Assets', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
   { id: 'cost', category: 'Cost & Compliance', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
   { id: 'backlog-aging', category: 'Operations & Performance', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
@@ -353,6 +417,8 @@ function statusBadge(status?: string | null): 'default' | 'destructive' | 'outli
   return 'outline';
 }
 
+const SAVED_REPORT_VIEWS_KEY = 'iassetspro:rwop-report-saved-views';
+
 function filtersEqual(a: ReportFilters, b: ReportFilters): boolean {
   return a.startDate === b.startDate
     && a.endDate === b.endDate
@@ -378,7 +444,12 @@ export default function RWOPReportingPage() {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
   const [operationalDownloading, setOperationalDownloading] = useState<string | null>(null);
+  const [savedViews, setSavedViews] = useState<SavedReportView[]>([]);
+  const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all');
+  const [closureFilter, setClosureFilter] = useState<ClosureFilter>('all');
   const initialLoadStarted = useRef(false);
+  const attentionRef = useRef<HTMLDivElement>(null);
 
   const canView = isAdmin()
     || hasPermission('reports.view')
@@ -389,6 +460,21 @@ export default function RWOPReportingPage() {
   useEffect(() => {
     if (!isAuthenticated && !authLoading) void fetchMe();
   }, [authLoading, fetchMe, isAuthenticated]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SAVED_REPORT_VIEWS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setSavedViews(parsed.filter((item): item is SavedReportView =>
+          Boolean(item?.id && item?.name && item?.filters?.startDate && item?.filters?.endDate)
+        ));
+      }
+    } catch {
+      // Ignore malformed local saved-view data and keep reporting usable.
+    }
+  }, []);
 
   const loadPlants = useCallback(async () => {
     const response = await api.get<Plant[]>('/api/plants', {
@@ -457,6 +543,69 @@ export default function RWOPReportingPage() {
   const workOrders = report?.recentWorkOrders || [];
   const filtersDirty = appliedFilters ? !filtersEqual(filters, appliedFilters) : false;
 
+  const exceptionRows = useMemo(() => {
+    const rows = report?.exceptionWatchlist || [];
+    switch (attentionFilter) {
+      case 'critical':
+        return rows.filter(item => item.riskLevel === 'critical');
+      case 'overdue':
+        return rows.filter(item => item.reasons.includes('Overdue'));
+      case 'materials':
+        return rows.filter(item => item.pendingMaterials > 0);
+      case 'tools':
+        return rows.filter(item => item.outstandingTools > 0);
+      case 'assistance':
+        return rows.filter(item => item.pendingAssistance > 0);
+      case 'handovers':
+        return rows.filter(item => item.pendingHandovers > 0);
+      case 'downtime':
+        return rows.filter(item => item.downtimeMinutes >= 240);
+      default:
+        return rows;
+    }
+  }, [attentionFilter, report?.exceptionWatchlist]);
+
+  const attentionCounts = useMemo(() => {
+    const rows = report?.exceptionWatchlist || [];
+    return {
+      all: rows.length,
+      critical: rows.filter(item => item.riskLevel === 'critical').length,
+      overdue: rows.filter(item => item.reasons.includes('Overdue')).length,
+      materials: rows.filter(item => item.pendingMaterials > 0).length,
+      tools: rows.filter(item => item.outstandingTools > 0).length,
+      assistance: rows.filter(item => item.pendingAssistance > 0).length,
+      handovers: rows.filter(item => item.pendingHandovers > 0).length,
+      downtime: rows.filter(item => item.downtimeMinutes >= 240).length,
+    };
+  }, [report?.exceptionWatchlist]);
+
+  const closureExceptionRows = useMemo(() => {
+    const rows = report?.closureExceptionWatchlist || [];
+    switch (closureFilter) {
+      case 'missing-rca':
+        return rows.filter(item => item.missingRca);
+      case 'supervisor':
+        return rows.filter(item => item.awaitingSupervisorApproval);
+      case 'planner':
+        return rows.filter(item => item.awaitingPlannerClosure);
+      case 'rework':
+        return rows.filter(item => item.reworkCount > 0);
+      default:
+        return rows;
+    }
+  }, [closureFilter, report?.closureExceptionWatchlist]);
+
+  const closureExceptionCounts = useMemo(() => {
+    const rows = report?.closureExceptionWatchlist || [];
+    return {
+      all: rows.length,
+      missingRca: rows.filter(item => item.missingRca).length,
+      supervisor: rows.filter(item => item.awaitingSupervisorApproval).length,
+      planner: rows.filter(item => item.awaitingPlannerClosure).length,
+      rework: rows.filter(item => item.reworkCount > 0).length,
+    };
+  }, [report?.closureExceptionWatchlist]);
+
   const appliedDescription = useMemo(() => {
     const source = appliedFilters || filters;
     const plant = source.plantId === 'all'
@@ -519,16 +668,70 @@ export default function RWOPReportingPage() {
   };
 
 
-  const applyQuickPeriod = (period: 'today' | 'week' | 'month') => {
+  const persistSavedViews = (views: SavedReportView[]) => {
+    setSavedViews(views);
+    window.localStorage.setItem(SAVED_REPORT_VIEWS_KEY, JSON.stringify(views));
+  };
+
+  const saveCurrentView = () => {
+    const nextNumber = savedViews.length + 1;
+    const view: SavedReportView = {
+      id: `view-${Date.now()}`,
+      name: `Saved view ${nextNumber}`,
+      filters: { ...filters },
+    };
+    persistSavedViews([...savedViews, view]);
+    setSelectedSavedViewId(view.id);
+    toast.success(`${view.name} saved`);
+  };
+
+  const applySavedView = (viewId: string) => {
+    setSelectedSavedViewId(viewId);
+    const view = savedViews.find(item => item.id === viewId);
+    if (!view) return;
+    setFilters({ ...view.filters });
+    void loadReport(view.filters);
+  };
+
+  const deleteSelectedView = () => {
+    if (!selectedSavedViewId) return;
+    const view = savedViews.find(item => item.id === selectedSavedViewId);
+    const remaining = savedViews.filter(item => item.id !== selectedSavedViewId);
+    persistSavedViews(remaining);
+    setSelectedSavedViewId('');
+    if (view) toast.success(`${view.name} removed`);
+  };
+
+  const openAttentionView = (filter: AttentionFilter) => {
+    setAttentionFilter(filter);
+    window.requestAnimationFrame(() => {
+      attentionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const applyQuickPeriod = (
+    period: 'today' | 'last7' | 'week' | 'last30' | 'month' | 'last90' | 'quarter' | 'ytd' | 'year'
+  ) => {
     const end = new Date();
     const start = new Date(end);
 
-    if (period === 'week') {
+    if (period === 'last7') {
+      start.setDate(start.getDate() - 6);
+    } else if (period === 'week') {
       const day = start.getDay();
       const daysSinceMonday = day === 0 ? 6 : day - 1;
       start.setDate(start.getDate() - daysSinceMonday);
+    } else if (period === 'last30') {
+      start.setDate(start.getDate() - 29);
     } else if (period === 'month') {
       start.setDate(1);
+    } else if (period === 'last90') {
+      start.setDate(start.getDate() - 89);
+    } else if (period === 'quarter') {
+      const quarterStartMonth = Math.floor(start.getMonth() / 3) * 3;
+      start.setMonth(quarterStartMonth, 1);
+    } else if (period === 'ytd' || period === 'year') {
+      start.setMonth(0, 1);
     }
 
     const next = {
@@ -796,8 +999,34 @@ export default function RWOPReportingPage() {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">Quick periods:</span>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('today')}>Today</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last7')}>Last 7 Days</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('week')}>This Week</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last30')}>Last 30 Days</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('month')}>This Month</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('last90')}>Last 90 Days</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('quarter')}>This Quarter</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('ytd')}>Year to Date</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('year')}>This Year</Button>
+            <span className="text-[11px] text-muted-foreground">Or choose any custom From/To dates above.</span>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-[240px] space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Saved report views</span>
+              <Select value={selectedSavedViewId || undefined} onValueChange={applySavedView}>
+                <SelectTrigger><SelectValue placeholder={savedViews.length ? 'Choose a saved view' : 'No saved views yet'} /></SelectTrigger>
+                <SelectContent>
+                  {savedViews.map(view => (
+                    <SelectItem key={view.id} value={view.id}>
+                      {view.name} · {view.filters.startDate} → {view.filters.endDate}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={saveCurrentView}>Save Current View</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={deleteSelectedView} disabled={!selectedSavedViewId}>Remove Saved View</Button>
+            <span className="text-[11px] text-muted-foreground">Saved on this device and browser.</span>
           </div>
 
           {filtersDirty && (
@@ -893,6 +1122,101 @@ export default function RWOPReportingPage() {
             <Card className="border-border/60"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Maintenance Cost</p><p className="mt-1 text-lg font-bold">{formatCurrency(summary?.totalCost ?? 0)}</p></CardContent></Card>
           </div>
 
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Breakdown Performance & Response</CardTitle>
+                  <CardDescription>Breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
+                </div>
+                <Badge variant="outline">{report.breakdownPerformance?.breakdownCount ?? 0} breakdown(s)</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  ['Breakdowns', report.breakdownPerformance?.breakdownCount ?? 0],
+                  ['Avg Response', `${report.breakdownPerformance?.avgResponseMinutes ?? 0} min`],
+                  ['Avg Repair / MTTR', `${report.breakdownPerformance?.avgRepairMinutes ?? 0} min`],
+                  ['Avg Restore', `${report.breakdownPerformance?.avgRestorationMinutes ?? 0} min`],
+                  ['Recorded Downtime', `${Math.round(report.breakdownPerformance?.recordedDowntimeMinutes ?? 0)} min`],
+                  ['Missing Start / End', `${report.breakdownPerformance?.missingStartCount ?? 0} / ${report.breakdownPerformance?.missingCompletionCount ?? 0}`],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border p-3">
+                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="mt-1 text-lg font-bold">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Weekly Breakdown Count</p>
+                  {(report.breakdownPerformance?.weekly || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={report.breakdownPerformance?.weekly || []} margin={{ top: 8, right: 8, bottom: 18, left: -12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={55} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                        <RechartsTooltip />
+                        <Bar dataKey="breakdowns" name="Breakdowns" fill="#dc2626" radius={[5, 5, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState icon={TrendingDown} title="No breakdown data" />}
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Weekly Response vs Repair Time</p>
+                  {(report.breakdownPerformance?.weekly || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={report.breakdownPerformance?.weekly || []} margin={{ top: 8, right: 8, bottom: 18, left: -12 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={55} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <RechartsTooltip formatter={(value) => [`${Number(value).toFixed(1)} min`, '']} />
+                        <Bar dataKey="avgResponseMinutes" name="Avg Response" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="avgRepairMinutes" name="Avg Repair / MTTR" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState icon={Clock} title="No response or repair data" />}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Top Machines by Breakdown Count</p>
+                  <div className="max-h-[275px] overflow-auto rounded-md border">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background">
+                        <TableRow>
+                          <TableHead>Machine</TableHead>
+                          <TableHead className="text-right">Breakdowns</TableHead>
+                          <TableHead className="text-right">Downtime</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(report.breakdownPerformance?.byAsset || []).slice(0, 12).map(asset => (
+                          <TableRow key={asset.assetId || asset.assetName}>
+                            <TableCell>
+                              <div className="font-medium">{asset.assetName}</div>
+                              {asset.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{asset.assetTag}</div>}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">{asset.breakdowns}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{Math.round(asset.recordedDowntimeMinutes)}m</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+              {(report.breakdownPerformance?.missingStartCount || report.breakdownPerformance?.missingCompletionCount) ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                  Data quality: {report.breakdownPerformance?.missingStartCount ?? 0} breakdown(s) have no recorded work-start time and {report.breakdownPerformance?.missingCompletionCount ?? 0} have no complete start/end repair interval. These records remain counted but are excluded from the affected averages.
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 print:grid-cols-2">
             <Card className="border-border/60 shadow-sm">
               <CardHeader className="pb-3">
@@ -959,7 +1283,11 @@ export default function RWOPReportingPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Open</p><p className="text-xl font-bold">{report.backlogAging?.totalOpen ?? 0}</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Overdue</p><p className="text-xl font-bold text-red-600">{report.backlogAging?.overdueOpen ?? 0}</p></div>
+                  <button type="button" onClick={() => openAttentionView('overdue')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Overdue</p>
+                    <p className="text-xl font-bold text-red-600">{report.backlogAging?.overdueOpen ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">View affected work orders</p>
+                  </button>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Avg Open Age</p><p className="text-xl font-bold">{report.backlogAging?.avgOpenAgeDays ?? 0}d</p></div>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Oldest Open</p><p className="text-xl font-bold">{report.backlogAging?.oldestOpenDays ?? 0}d</p></div>
                 </div>
@@ -1140,15 +1468,23 @@ export default function RWOPReportingPage() {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Compliance</p><p className="text-xl font-bold">{report.closureCompliance?.complianceRate ?? 0}%</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Missing RCA</p><p className="text-xl font-bold text-amber-600">{report.closureCompliance?.missingRca ?? 0}</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework WOs</p><p className="text-xl font-bold">{report.closureCompliance?.reworkWOs ?? 0}</p></div>
+                  <button type="button" onClick={() => setClosureFilter('missing-rca')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Missing RCA</p>
+                    <p className="text-xl font-bold text-amber-600">{report.closureCompliance?.missingRca ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Show affected WOs</p>
+                  </button>
+                  <button type="button" onClick={() => setClosureFilter('rework')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Rework WOs</p>
+                    <p className="text-xl font-bold">{report.closureCompliance?.reworkWOs ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Show affected WOs</p>
+                  </button>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rework Instances</p><p className="text-xl font-bold">{report.closureCompliance?.totalReworkInstances ?? 0}</p></div>
                 </div>
                 <div className="text-sm">
                   <div className="flex justify-between border-b py-2"><span>Eligible completed/closed WOs</span><strong>{report.closureCompliance?.eligibleWOs ?? 0}</strong></div>
                   <div className="flex justify-between border-b py-2"><span>Compliant WOs</span><strong>{report.closureCompliance?.compliantWOs ?? 0}</strong></div>
-                  <div className="flex justify-between border-b py-2"><span>Awaiting supervisor approval</span><strong>{report.closureCompliance?.awaitingSupervisorApproval ?? 0}</strong></div>
-                  <div className="flex justify-between py-2"><span>Planner closure exceptions</span><strong>{report.closureCompliance?.awaitingPlannerClosure ?? 0}</strong></div>
+                  <button type="button" onClick={() => setClosureFilter('supervisor')} className="flex w-full justify-between border-b py-2 text-left hover:text-emerald-700"><span>Awaiting supervisor approval</span><strong>{report.closureCompliance?.awaitingSupervisorApproval ?? 0}</strong></button>
+                  <button type="button" onClick={() => setClosureFilter('planner')} className="flex w-full justify-between py-2 text-left hover:text-emerald-700"><span>Planner closure exceptions</span><strong>{report.closureCompliance?.awaitingPlannerClosure ?? 0}</strong></button>
                 </div>
               </CardContent>
             </Card>
@@ -1181,14 +1517,119 @@ export default function RWOPReportingPage() {
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">Closure / RCA Exception Queue</CardTitle>
+                  <CardDescription>Completed or closed repairs that still need RCA, approval, planner closure or rework follow-up</CardDescription>
+                </div>
+                <Badge variant={closureExceptionCounts.all > 0 ? 'outline' : 'secondary'}>
+                  {closureExceptionRows.length} shown / {closureExceptionCounts.all} exception(s)
+                </Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                {([
+                  ['all', 'All', closureExceptionCounts.all],
+                  ['missing-rca', 'Missing RCA', closureExceptionCounts.missingRca],
+                  ['supervisor', 'Supervisor Approval', closureExceptionCounts.supervisor],
+                  ['planner', 'Planner Closure', closureExceptionCounts.planner],
+                  ['rework', 'Rework', closureExceptionCounts.rework],
+                ] as Array<[ClosureFilter, string, number]>).map(([key, label, count]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant={closureFilter === key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setClosureFilter(key)}
+                    className={closureFilter === key ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
+                  >
+                    {label} <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[460px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>WO</TableHead>
+                      <TableHead>Title / Asset</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Exceptions</TableHead>
+                      <TableHead>Completed</TableHead>
+                      <TableHead className="text-right print:hidden">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {closureExceptionRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title={closureFilter === 'all' ? 'No closure or RCA exceptions in this report period' : 'No closure exceptions match this filter'} /></TableCell></TableRow>
+                    ) : closureExceptionRows.map(item => {
+                      const issues = [
+                        item.missingRca ? 'Missing RCA' : null,
+                        item.awaitingSupervisorApproval ? 'Supervisor approval' : null,
+                        item.awaitingPlannerClosure ? 'Planner closure' : null,
+                        item.reworkCount > 0 ? `Rework × ${item.reworkCount}` : null,
+                      ].filter(Boolean);
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{item.title || 'Untitled work order'}</div>
+                            <div className="text-xs text-muted-foreground">{item.assetName}{item.assetTag ? ` · ${item.assetTag}` : ''}</div>
+                          </TableCell>
+                          <TableCell><Badge variant={statusBadge(item.status)} className="text-[10px]">{prettify(item.status)}</Badge></TableCell>
+                          <TableCell className="max-w-[460px] text-xs">{issues.join(' · ')}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{item.completedAt ? formatDate(item.completedAt) : '—'}</TableCell>
+                          <TableCell className="text-right print:hidden">
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/work-orders/${item.id}`} aria-label={`Open closure exception work order ${item.woNumber || item.id}`}>
+                                Open <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div ref={attentionRef} className="scroll-mt-6">
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Management Exception Watchlist</CardTitle>
                   <CardDescription>Open repairs needing management attention because of age, priority, downtime or unresolved resources</CardDescription>
                 </div>
-                <Badge variant={(report.exceptionWatchlist || []).some(item => item.riskLevel === 'critical') ? 'destructive' : 'outline'}>
-                  {(report.exceptionWatchlist || []).length} exception(s)
+                <Badge variant={attentionCounts.critical > 0 ? 'destructive' : 'outline'}>
+                  {exceptionRows.length} shown / {attentionCounts.all} exception(s)
                 </Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                {([
+                  ['all', 'All', attentionCounts.all],
+                  ['critical', 'Critical', attentionCounts.critical],
+                  ['overdue', 'Overdue', attentionCounts.overdue],
+                  ['materials', 'Materials', attentionCounts.materials],
+                  ['tools', 'Tools', attentionCounts.tools],
+                  ['assistance', 'Assistance', attentionCounts.assistance],
+                  ['handovers', 'Handovers', attentionCounts.handovers],
+                  ['downtime', 'High Downtime', attentionCounts.downtime],
+                ] as Array<[AttentionFilter, string, number]>).map(([key, label, count]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant={attentionFilter === key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setAttentionFilter(key)}
+                    className={attentionFilter === key ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
+                  >
+                    {label} <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                  </Button>
+                ))}
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -1200,9 +1641,9 @@ export default function RWOPReportingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(report.exceptionWatchlist || []).length === 0 ? (
-                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title="No management exceptions in this report period" /></TableCell></TableRow>
-                    ) : (report.exceptionWatchlist || []).map(item => (
+                    {exceptionRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title={attentionFilter === 'all' ? 'No management exceptions in this report period' : 'No exceptions match this attention filter'} /></TableCell></TableRow>
+                    ) : exceptionRows.map(item => (
                       <TableRow key={item.id}>
                         <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
                         <TableCell><div className="font-medium">{item.title || 'Untitled work order'}</div><div className="text-xs text-muted-foreground">{item.assetName}</div></TableCell>
@@ -1223,6 +1664,7 @@ export default function RWOPReportingPage() {
               </div>
             </CardContent>
           </Card>
+          </div>
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">

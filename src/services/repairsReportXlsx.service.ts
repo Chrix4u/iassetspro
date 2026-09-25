@@ -1151,6 +1151,11 @@ export const SUPPORTED_REPORT_TYPES = [
   'assistance',
   'shift-handover',
   'closure-audit',
+  'breakdown-performance',
+  'breakdown-frequency',
+  'response-time-performance',
+  'repair-time-mttr',
+  'reliability-bad-actors',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];

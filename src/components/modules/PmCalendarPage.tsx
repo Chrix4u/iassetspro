@@ -35,6 +35,7 @@ interface PmScheduleWithRelations extends PmSchedule {
   department?: { id: string; name: string; code: string } | null;
   createdBy?: { id: string; fullName: string; username: string } | null;
   template?: { id: string; title: string; type: string; _count: { tasks: number } } | null;
+  component?: { id: string; name: string; componentCode: string; componentType: string; parentId?: string | null; assetId?: string | null } | null;
   assignedTo?: { id: string; fullName: string; username: string }[];
 }
 
@@ -939,6 +940,23 @@ function PmScheduleDetail({ schedule }: { schedule: PmScheduleWithRelations }) {
             )}
           </div>
         </div>
+
+        {schedule.component && (
+          <div className="flex items-start gap-3">
+            <Wrench className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div>
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                Target Component
+              </p>
+              <div className="mt-0.5">
+                <p className="text-sm font-medium">{schedule.component.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {schedule.component.componentCode} · {schedule.component.componentType.replace(/_/g, ' ')}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Frequency */}
         <div className="flex items-start gap-3">

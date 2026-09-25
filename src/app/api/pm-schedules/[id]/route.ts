@@ -20,6 +20,9 @@ export async function GET(
         asset: {
           select: { id: true, name: true, assetTag: true, status: true, criticality: true },
         },
+        component: {
+          select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true },
+        },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },
@@ -70,7 +73,7 @@ export async function PUT(
       'title', 'description', 'frequencyType', 'frequencyValue',
       'lastCompletedDate', 'nextDueDate', 'estimatedDuration', 'priority',
       'assignedToId', 'departmentId', 'isActive', 'autoGenerateWO',
-      'leadDays', 'woTypeId',
+      'leadDays', 'woTypeId', 'componentId',
     ];
 
     for (const field of allowedFields) {
@@ -83,11 +86,28 @@ export async function PUT(
       }
     }
 
+    if (body.componentId !== undefined && body.componentId) {
+      const component = await db.componentRegistry.findUnique({
+        where: { id: body.componentId },
+        select: { id: true, assetId: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 400 });
+      }
+      if (component.assetId !== existing.assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Selected component does not belong to the PM schedule asset' },
+          { status: 400 },
+        );
+      }
+    }
+
     const updated = await db.pmSchedule.update({
       where: { id },
       data: updateData,
       include: {
         asset: { select: { id: true, name: true, assetTag: true, status: true } },
+        component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },

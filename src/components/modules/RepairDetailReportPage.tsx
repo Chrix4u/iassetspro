@@ -248,6 +248,7 @@ export default function RepairDetailReportPage() {
                     <TableHead className="whitespace-nowrap">WO Number</TableHead>
                     <TableHead className="whitespace-nowrap">Machine Name</TableHead>
                     <TableHead className="whitespace-nowrap">Component/Part</TableHead>
+                    <TableHead className="whitespace-nowrap hidden xl:table-cell">Hierarchy Path</TableHead>
                     <TableHead className="whitespace-nowrap hidden lg:table-cell">Component Code</TableHead>
                     <TableHead className="whitespace-nowrap hidden md:table-cell">Criticality</TableHead>
                     <TableHead className="whitespace-nowrap">Priority</TableHead>
@@ -271,6 +272,11 @@ export default function RepairDetailReportPage() {
                         ) : (
                           <span>{row['Component/Part'] as string}</span>
                         )}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell text-xs text-muted-foreground max-w-[320px]">
+                        <span className="line-clamp-2" title={String(row['Component Hierarchy'] || '')}>
+                          {(row['Component Hierarchy'] as string) || '—'}
+                        </span>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell font-mono text-xs">
                         {row['Component Code'] as string}

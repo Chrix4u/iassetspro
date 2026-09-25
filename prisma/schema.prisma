@@ -1087,6 +1087,7 @@ model PmSchedule {
   title             String
   description       String?
   assetId           String
+  componentId       String?
   frequencyType     String // daily, weekly, biweekly, monthly, quarterly, semiannual, annual, custom_hours, custom_days, meter_based
   frequencyValue    Int
   lastCompletedDate DateTime?
@@ -1104,6 +1105,7 @@ model PmSchedule {
   updatedAt         DateTime  @updatedAt
 
   asset      Asset       @relation(fields: [assetId], references: [id])
+  component  ComponentRegistry? @relation("PmScheduleComponent", fields: [componentId], references: [id])
   assignedTo User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id])
   createdBy  User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
@@ -1114,6 +1116,7 @@ model PmSchedule {
   workOrders WorkOrder[]
   trigger    PmTrigger?
 
+  @@index([componentId])
   @@map("pm_schedules")
 }
 
@@ -2915,6 +2918,7 @@ model ComponentRegistry {
   runtimeCounters          ComponentRuntimeCounter[]
   conditionReadings        ComponentConditionReading[]
   maintenanceHistory       ComponentMaintenanceHistory[]
+  pmSchedules              PmSchedule[] @relation("PmScheduleComponent")
   inspectionPoints         ComponentInspectionPoint[]
   inspectionRecords        ComponentInspectionRecord[]
   lubricationSchedules     ComponentLubricationSchedule[]

@@ -56,6 +56,10 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [bomItems, setBomItems] = useState<any[]>([]);
   const [bomAsChild, setBomAsChild] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [selectedComponentId, setSelectedComponentId] = useState<string>('');
+  const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
+  const [sparePartForm, setSparePartForm] = useState({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
@@ -69,7 +73,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
 
   // Component form
-  const [compForm, setCompForm] = useState({ componentCode: '', name: '', componentType: 'component', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
+  const [compForm, setCompForm] = useState({ componentCode: '', name: '', componentType: 'component', parentId: '', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
   // Twin form
   const [twinForm, setTwinForm] = useState({ name: '', type: 'pump', syncInterval: '5min' });
   // Diagram form
@@ -92,6 +96,19 @@ export function AssetDetailPage({ id }: { id: string }) {
       if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, [id]);
+
+  const reloadInventoryItems = useCallback(() => {
+    api.get('/api/inventory?mode=lookup&status=available&limit=100').then(res => {
+      if (res.success && res.data) setInventoryItems(Array.isArray(res.data) ? res.data : []);
+    }).catch(() => {});
+  }, []);
+
+  const loadComponentSpareParts = useCallback((componentId: string) => {
+    setSelectedComponentId(componentId);
+    api.get(`/api/component-registry/${componentId}/spare-parts`).then(res => {
+      if (res.success && res.data) setComponentSpareParts(Array.isArray(res.data) ? res.data : []);
+    }).catch(() => setComponentSpareParts([]));
+  }, []);
 
   // Reload digital twin
   const reloadTwin = useCallback(() => {
@@ -137,7 +154,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       loadedTabsRef.current.add('bom');
     }
     if (activeTab === 'components') {
-      promises.push(reloadComponents());
+      promises.push(reloadComponents(), reloadInventoryItems());
       loadedTabsRef.current.add('components');
     }
     if (activeTab === 'digital-twin' && !twin) {
@@ -153,9 +170,57 @@ export function AssetDetailPage({ id }: { id: string }) {
       tabDataLoadingRef.current = false;
       setTabDataLoading(false);
     });
-  }, [activeTab, asset, id, twin, reloadComponents, reloadTwin, reloadDiagrams]);
+  }, [activeTab, asset, id, twin, reloadComponents, reloadInventoryItems, reloadTwin, reloadDiagrams]);
 
   // Handlers
+  const printComponentLabel = (component: any) => {
+    const esc = (value: unknown) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+
+    const parentName = component.parent?.name || 'Machine root';
+    const popup = window.open('', '_blank', 'width=520,height=420');
+    if (!popup) {
+      toast.error('Allow pop-ups to print the component label');
+      return;
+    }
+    popup.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>Component Label - ${esc(component.componentCode)}</title>
+          <style>
+            @page { size: 100mm 55mm; margin: 4mm; }
+            body { font-family: Arial, sans-serif; margin: 0; color: #111827; }
+            .label { border: 2px solid #111827; padding: 10px; border-radius: 8px; }
+            .code { font-size: 22px; font-weight: 800; letter-spacing: 1px; margin-bottom: 4px; }
+            .name { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+            .row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; padding: 2px 0; }
+            .key { color: #6b7280; text-transform: uppercase; }
+            .value { font-weight: 600; text-align: right; }
+            .footer { margin-top: 8px; border-top: 1px solid #d1d5db; padding-top: 5px; font-size: 9px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="label">
+            <div class="code">${esc(component.componentCode)}</div>
+            <div class="name">${esc(component.name)}</div>
+            <div class="row"><span class="key">Machine</span><span class="value">${esc(asset?.name)} [${esc(asset?.assetTag)}]</span></div>
+            <div class="row"><span class="key">Type</span><span class="value">${esc(String(component.componentType || 'component').replace(/_/g, ' '))}</span></div>
+            <div class="row"><span class="key">Parent</span><span class="value">${esc(parentName)}</span></div>
+            <div class="row"><span class="key">Serial</span><span class="value">${esc(component.serialNumber || '—')}</span></div>
+            <div class="row"><span class="key">Model</span><span class="value">${esc(component.modelNumber || '—')}</span></div>
+            <div class="footer">Use the component code on work orders, inspections, PM schedules and spare-part records.</div>
+          </div>
+        </body>
+      </html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  };
+
   const handleCreateComponent = async () => {
     if (!compForm.componentCode.trim() || !compForm.name.trim()) {
       toast.error('Component code and name are required');
@@ -165,6 +230,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     try {
       const res = await api.post('/api/component-registry', {
         ...compForm,
+        parentId: compForm.parentId || null,
         assetId: id,
         healthScore: 100,
         lifecycleStatus: 'operational',
@@ -174,7 +240,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       if (res.success) {
         toast.success('Component registered successfully');
         setShowComponentForm(false);
-        setCompForm({ componentCode: '', name: '', componentType: 'component', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
+        setCompForm({ componentCode: '', name: '', componentType: 'component', parentId: '', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
         reloadComponents();
       } else {
         toast.error(res.error || 'Failed to create component');
@@ -183,6 +249,57 @@ export function AssetDetailPage({ id }: { id: string }) {
       toast.error('Failed to create component');
     }
     setSaving(false);
+  };
+
+  const handleLinkSparePart = async () => {
+    if (!selectedComponentId || !sparePartForm.inventoryItemId) {
+      toast.error('Select a component and inventory item');
+      return;
+    }
+    const item = inventoryItems.find((entry: any) => entry.id === sparePartForm.inventoryItemId);
+    if (!item) {
+      toast.error('Inventory item not found');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.post(`/api/component-registry/${selectedComponentId}/spare-parts`, {
+        inventoryItemId: item.id,
+        sparePartName: item.name,
+        sparePartCode: item.itemCode || item.sku || '',
+        quantityRequired: Number(sparePartForm.quantityRequired || 1),
+        unitCost: item.unitCost ?? null,
+        leadTimeDays: sparePartForm.leadTimeDays ? Number(sparePartForm.leadTimeDays) : null,
+        criticality: sparePartForm.criticality,
+        notes: sparePartForm.notes || null,
+      });
+      if (!res.success) {
+        toast.error(res.error || 'Failed to link spare part');
+        return;
+      }
+      toast.success('Inventory spare part linked to component');
+      setSparePartForm({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
+      loadComponentSpareParts(selectedComponentId);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUnlinkSparePart = async (sparePartId: string) => {
+    if (!selectedComponentId) return;
+    setSaving(true);
+    try {
+      const res = await api.delete(`/api/component-registry/${selectedComponentId}/spare-parts?sparePartId=${encodeURIComponent(sparePartId)}`);
+      if (!res.success) {
+        toast.error(res.error || 'Failed to remove spare-part link');
+        return;
+      }
+      toast.success('Store part unlinked from component');
+      loadComponentSpareParts(selectedComponentId);
+      reloadComponents();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCreateTwin = async () => {
@@ -543,6 +660,74 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {selectedComponentId && (
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Component Spare Parts & Store Linkage</CardTitle>
+                        <CardDescription>Link replaceable parts for the selected assembly/component to actual inventory items so technicians see store availability and stock.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-[2fr_100px_120px_140px]">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Inventory Item</Label>
+                            <Select value={sparePartForm.inventoryItemId} onValueChange={v => setSparePartForm(f => ({ ...f, inventoryItemId: v }))}>
+                              <SelectTrigger><SelectValue placeholder="Select store item" /></SelectTrigger>
+                              <SelectContent>
+                                {inventoryItems.map((item: any) => (
+                                  <SelectItem key={item.id} value={item.id}>
+                                    {item.itemCode || item.sku || '—'} · {item.name} · Stock {item.currentStock ?? 0}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1"><Label className="text-xs">Qty / Machine</Label><Input type="number" min="1" value={sparePartForm.quantityRequired} onChange={e => setSparePartForm(f => ({ ...f, quantityRequired: e.target.value }))} /></div>
+                          <div className="space-y-1"><Label className="text-xs">Lead Days</Label><Input type="number" min="0" value={sparePartForm.leadTimeDays} onChange={e => setSparePartForm(f => ({ ...f, leadTimeDays: e.target.value }))} /></div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Criticality</Label>
+                            <Select value={sparePartForm.criticality} onValueChange={v => setSparePartForm(f => ({ ...f, criticality: v }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="low">Low</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="critical">Critical</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <Button size="sm" onClick={handleLinkSparePart} disabled={saving || !sparePartForm.inventoryItemId}>
+                            Link Store Part
+                          </Button>
+                        </div>
+                        <div className="overflow-x-auto rounded-md border">
+                          <Table>
+                            <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Required</TableHead><TableHead>Stock</TableHead><TableHead>Location</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                            <TableBody>
+                              {componentSpareParts.length === 0 ? (
+                                <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">No store parts linked to this component yet.</TableCell></TableRow>
+                              ) : componentSpareParts.map((part: any) => (
+                                <TableRow key={part.id}>
+                                  <TableCell><div className="font-medium">{part.sparePartName}</div><div className="text-xs text-muted-foreground">{part.sparePartCode || part.inventoryItem?.itemCode || '—'}</div></TableCell>
+                                  <TableCell>{part.quantityRequired}</TableCell>
+                                  <TableCell>{part.inventoryItem?.currentStock ?? 'Not stocked'}</TableCell>
+                                  <TableCell>{part.inventoryItem?.location || '—'}</TableCell>
+                                  <TableCell><Badge variant="outline" className="capitalize">{part.criticality}</Badge></TableCell>
+                                  <TableCell className="text-right">
+                                    <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={() => handleUnlinkSparePart(part.id)} disabled={saving}>
+                                      Remove
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </>
               )}
             </TabsContent>
@@ -570,9 +755,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                         <Select value={compForm.componentType} onValueChange={v => setCompForm(f => ({ ...f, componentType: v }))}>
                           <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="assembly">Assembly</SelectItem>
+                            <SelectItem value="subassembly">Sub-Assembly</SelectItem>
                             <SelectItem value="component">Component</SelectItem>
-                            <SelectItem value="sub_assembly">Sub-Assembly</SelectItem>
-                            <SelectItem value="consumable">Consumable</SelectItem>
+                            <SelectItem value="auxiliary">Auxiliary</SelectItem>
                             <SelectItem value="instrument">Instrument</SelectItem>
                           </SelectContent>
                         </Select>
@@ -590,6 +776,20 @@ export function AssetDetailPage({ id }: { id: string }) {
                         </Select>
                       </div>
                       <div className="space-y-1"><Label className="text-xs">Serial Number</Label><Input className="h-8 text-sm" placeholder="Optional" value={compForm.serialNumber} onChange={e => setCompForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Parent Assembly / Component</Label>
+                      <Select value={compForm.parentId || 'root'} onValueChange={v => setCompForm(f => ({ ...f, parentId: v === 'root' ? '' : v }))}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Top level on machine" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="root">Top level on machine</SelectItem>
+                          {components.map((component: any) => (
+                            <SelectItem key={component.id} value={component.id}>
+                              {component.componentCode} · {component.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1"><Label className="text-xs">Manufacturer</Label><Input className="h-8 text-sm" placeholder="e.g. SKF" value={compForm.manufacturer} onChange={e => setCompForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
@@ -639,12 +839,13 @@ export function AssetDetailPage({ id }: { id: string }) {
                   <Card className="border-0 shadow-sm">
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
-                        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead></TableRow></TableHeader><TableBody>
+                        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
                           {components.map((c: any) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
                               <TableCell className="font-medium text-sm">{c.name}</TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden sm:table-cell capitalize">{c.componentType?.replace(/_/g, ' ')}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{c.parent?.name || 'Machine root'}</TableCell>
                               <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] uppercase ${criticalityColors[c.criticality] || ''}`}>{c.criticality}</Badge></TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -654,6 +855,14 @@ export function AssetDetailPage({ id }: { id: string }) {
                               </TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
                                 {c.operatingHours ?? '-'} / {c.expectedLifeHours ?? '-'}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
+                                  <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
+                                    Parts ({c._count?.sparePartLinks || 0})
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}

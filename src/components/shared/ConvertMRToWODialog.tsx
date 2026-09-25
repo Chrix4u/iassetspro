@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -50,6 +51,7 @@ interface ConvertForm {
   teamLeaderId: string;
   requiredParts: Array<{ itemId: string; quantity: number }>;
   requiredTools: Array<{ toolId: string; quantity: number }>;
+  componentIds: string[];
   safetyNotes: string;
   ppeRequired: string;
   notes: string;
@@ -67,6 +69,10 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
   const [dropdownLoading, setDropdownLoading] = useState(false);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [toolsData, setToolsData] = useState<any[]>([]);
+  const [availableComponents, setAvailableComponents] = useState<any[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
+  const [componentPartSuggestions, setComponentPartSuggestions] = useState<any[]>([]);
+  const [componentPartsLoading, setComponentPartsLoading] = useState(false);
 
   const loadDropdowns = async () => {
     setDropdownLoading(true);
@@ -100,13 +106,76 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
         teamLeaderId: '',
         requiredParts: [],
         requiredTools: [],
+        componentIds: [],
         safetyNotes: '',
         ppeRequired: '',
         notes: '',
       });
       loadDropdowns();
+      if (mr.assetId) {
+        setComponentsLoading(true);
+        api.get(`/api/component-registry?assetId=${mr.assetId}&limit=100`)
+          .then((res) => setAvailableComponents(res.success && Array.isArray(res.data) ? res.data : []))
+          .catch(() => setAvailableComponents([]))
+          .finally(() => setComponentsLoading(false));
+      } else {
+        setAvailableComponents([]);
+      }
     }
   }, [open, mr]);
+
+  useEffect(() => {
+    if (!open || form.componentIds.length === 0) {
+      setComponentPartSuggestions([]);
+      setComponentPartsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setComponentPartsLoading(true);
+    Promise.all(
+      form.componentIds.map((componentId) =>
+        api.get(`/api/component-registry/${componentId}/spare-parts`)
+          .then((res) => ({ componentId, rows: res.success && Array.isArray(res.data) ? res.data : [] }))
+          .catch(() => ({ componentId, rows: [] })),
+      ),
+    ).then((groups) => {
+      if (!active) return;
+      const componentById = new Map(availableComponents.map((component: any) => [component.id, component]));
+      const merged = new Map<string, any>();
+      for (const group of groups) {
+        const component = componentById.get(group.componentId);
+        for (const row of group.rows) {
+          const inventoryItem = row.inventoryItem;
+          if (!inventoryItem?.id) continue;
+          const existing = merged.get(inventoryItem.id);
+          const quantityRequired = Number(row.quantityRequired || 1);
+          if (existing) {
+            existing.quantityRequired += quantityRequired;
+            existing.componentNames = Array.from(new Set([...existing.componentNames, component?.name || 'Component']));
+          } else {
+            merged.set(inventoryItem.id, {
+              itemId: inventoryItem.id,
+              itemCode: inventoryItem.itemCode || row.sparePartCode || '',
+              itemName: inventoryItem.name || row.sparePartName || 'Spare part',
+              currentStock: inventoryItem.currentStock ?? 0,
+              unitOfMeasure: inventoryItem.unitOfMeasure || 'EA',
+              location: inventoryItem.location || '',
+              quantityRequired,
+              criticality: row.criticality || 'medium',
+              componentNames: [component?.name || 'Component'],
+            });
+          }
+        }
+      }
+      setComponentPartSuggestions([...merged.values()]);
+      setComponentPartsLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [open, form.componentIds, availableComponents]);
 
   // Helpers
   const handleEstHoursChange = (val: string) => {
@@ -145,6 +214,31 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
     setForm(f => ({ ...f, requiredTools: f.requiredTools.map(t => t.toolId === toolId ? { ...t, quantity: qty } : t) }));
   };
 
+  const componentLabel = (component: any) => {
+    const byId = new Map(availableComponents.map((item: any) => [item.id, item]));
+    let depth = 0;
+    let cursor = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    const prefix = depth > 0 ? `${'— '.repeat(depth)}` : '';
+    return `${prefix}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+  };
+
+  const toggleComponent = (componentId: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      componentIds: checked
+        ? Array.from(new Set([...current.componentIds, componentId]))
+        : current.componentIds.filter((id) => id !== componentId),
+    }));
+  };
+
   // Submit
   const handleConvert = useCallback(async () => {
     if (!mr) return;
@@ -164,6 +258,7 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
       notes: form.notes || undefined,
       requiredParts: form.requiredParts.length > 0 ? form.requiredParts : undefined,
       requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
+      componentIds: form.componentIds.length > 0 ? form.componentIds : undefined,
     };
     if (form.selectedWorkerIds.length > 0) {
       payload.teamMembers = form.selectedWorkerIds.map(workerId => ({
@@ -296,6 +391,35 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
             rows={3}
           />
         </div>
+        {mr.assetId && (
+          <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+            <Label className="text-xs">Affected Assembly / Component</Label>
+            {componentsLoading ? (
+              <div className="text-xs text-muted-foreground py-2">Loading machine components...</div>
+            ) : availableComponents.length === 0 ? (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No components are registered for this machine. The work order will remain linked to the parent machine only.</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto rounded-md border bg-white/70 p-2">
+                {availableComponents
+                  .slice()
+                  .sort((a: any, b: any) => componentLabel(a).localeCompare(componentLabel(b)))
+                  .map((component: any) => (
+                    <label key={component.id} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-muted/60 cursor-pointer">
+                      <Checkbox
+                        checked={form.componentIds.includes(component.id)}
+                        onCheckedChange={(checked) => toggleComponent(component.id, checked === true)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium truncate">{componentLabel(component)}</span>
+                        <span className="block text-[10px] text-muted-foreground capitalize">{String(component.componentType || 'component').replace(/_/g, ' ')} · {component.criticality || 'medium'} criticality</span>
+                      </span>
+                    </label>
+                  ))}
+              </div>
+            )}
+            <p className="text-[10px] text-muted-foreground">Select the exact assembly/component affected. Reports still roll the work order up to the parent machine.</p>
+          </div>
+        )}
         <div className="space-y-1.5 sm:col-span-2">
           <Label className="text-xs">Scheduled Date</Label>
           <DateTimePicker value={form.scheduledDate || undefined} onChange={v => setForm(f => ({ ...f, scheduledDate: v || '' }))} />
@@ -340,6 +464,52 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
               ) : null;
             })}
           </div>
+          {form.componentIds.length > 0 && (
+            <div className="rounded-md border border-dashed bg-white/70 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium">Linked Store Parts for Selected Components</p>
+                  <p className="text-[10px] text-muted-foreground">These are recommendations from the machine/component registry. Add only the parts expected for this repair.</p>
+                </div>
+                {componentPartsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              {!componentPartsLoading && componentPartSuggestions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No inventory spare parts are linked to the selected component(s).</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {componentPartSuggestions.map((suggestion) => {
+                    const alreadyAdded = form.requiredParts.some((part) => part.itemId === suggestion.itemId);
+                    return (
+                      <div key={suggestion.itemId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{suggestion.itemCode ? `${suggestion.itemCode} · ` : ''}{suggestion.itemName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {suggestion.componentNames.join(', ')} · Required {suggestion.quantityRequired} · Stock {suggestion.currentStock} {suggestion.unitOfMeasure}{suggestion.location ? ` · ${suggestion.location}` : ''}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant={alreadyAdded ? 'secondary' : 'outline'}
+                          size="sm"
+                          disabled={alreadyAdded}
+                          onClick={() => {
+                            setForm((current) => ({
+                              ...current,
+                              requiredParts: current.requiredParts.some((part) => part.itemId === suggestion.itemId)
+                                ? current.requiredParts
+                                : [...current.requiredParts, { itemId: suggestion.itemId, quantity: Math.max(1, suggestion.quantityRequired) }],
+                            }));
+                          }}
+                        >
+                          {alreadyAdded ? 'Added' : 'Add Part'}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <Select onValueChange={v => addPart(v)}>
             <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
             <SelectContent>
@@ -554,6 +724,31 @@ export function ConvertMRToWODialog({ open, onOpenChange, mr, onSuccess }: Conve
               <DateTimePicker value={form.scheduledDate || undefined} onChange={v => setForm(f => ({ ...f, scheduledDate: v || '' }))} />
             </div>
           </div>
+          {mr.assetId && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Affected Assembly / Component</Label>
+              {componentsLoading ? (
+                <div className="text-xs text-muted-foreground">Loading...</div>
+              ) : availableComponents.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No components registered for this machine.</div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto rounded-xl border p-2 space-y-1">
+                  {availableComponents
+                    .slice()
+                    .sort((a: any, b: any) => componentLabel(a).localeCompare(componentLabel(b)))
+                    .map((component: any) => (
+                      <label key={component.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-muted/50">
+                        <Checkbox
+                          checked={form.componentIds.includes(component.id)}
+                          onCheckedChange={(checked) => toggleComponent(component.id, checked === true)}
+                        />
+                        <span className="text-xs truncate">{componentLabel(component)}</span>
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Delivery Date</Label>
             <DatePicker value={form.deliveryDate || undefined} onChange={v => setForm(f => ({ ...f, deliveryDate: v || '' }))} />
@@ -764,6 +959,7 @@ function defaultForm(): ConvertForm {
     teamLeaderId: '',
     requiredParts: [],
     requiredTools: [],
+    componentIds: [],
     safetyNotes: '',
     ppeRequired: '',
     notes: '',

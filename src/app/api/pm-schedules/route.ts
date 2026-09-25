@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const assetId = searchParams.get('assetId');
+    const componentId = searchParams.get('componentId');
     const isActive = searchParams.get('isActive');
     const dueSoon = searchParams.get('dueSoon');
 
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
 
     if (assetId) where.assetId = assetId;
+    if (componentId) where.componentId = componentId;
     if (isActive !== null) {
       where.isActive = isActive === 'true';
     }
@@ -45,6 +47,9 @@ export async function GET(request: NextRequest) {
       include: {
         asset: {
           select: { id: true, name: true, assetTag: true, status: true },
+        },
+        component: {
+          select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
@@ -76,6 +81,7 @@ export async function POST(request: NextRequest) {
       title,
       description,
       assetId,
+      componentId,
       frequencyType,
       frequencyValue,
       lastCompletedDate,
@@ -108,11 +114,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 400 });
     }
 
+    if (componentId) {
+      const component = await db.componentRegistry.findUnique({
+        where: { id: componentId },
+        select: { id: true, assetId: true, name: true, componentCode: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 400 });
+      }
+      if (component.assetId !== assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Selected component does not belong to the selected asset' },
+          { status: 400 },
+        );
+      }
+    }
+
     const schedule = await db.pmSchedule.create({
       data: {
         title,
         description: description || null,
         assetId,
+        componentId: componentId || null,
         frequencyType,
         frequencyValue,
         lastCompletedDate: lastCompletedDate ? new Date(lastCompletedDate) : null,
@@ -127,6 +150,7 @@ export async function POST(request: NextRequest) {
       },
       include: {
         asset: { select: { id: true, name: true, assetTag: true, status: true } },
+        component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },
@@ -140,7 +164,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'pm_schedule',
         entityId: schedule.id,
-        newValues: JSON.stringify({ title, assetId, frequencyType, frequencyValue }),
+        newValues: JSON.stringify({ title, assetId, componentId: componentId || null, frequencyType, frequencyValue }),
       },
     });
 

@@ -173,7 +173,7 @@ if [[ "$NEEDS_MIGRATION" -eq 1 ]]; then
   DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"3306")')"
   DB_USER="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.username))')"
   DB_PASS="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.password))')"
-  DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\\//,"")))')"
+  DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
   BACKUP="${BACKUP_DIR}/pre-deploy-${SHA:0:12}-${STAMP}.sql.gz"
   MYSQL_PWD="$DB_PASS" "$DUMP_BIN" --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
     --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"

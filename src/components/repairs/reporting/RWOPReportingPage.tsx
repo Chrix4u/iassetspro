@@ -227,7 +227,10 @@ type OperationalXlsxReportType =
   | 'failure-analysis'
   | 'cost'
   | 'backlog-aging'
-  | 'sla';
+  | 'sla'
+  | 'operations-summary'
+  | 'asset-history'
+  | 'department-cost';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -257,6 +260,9 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'cost', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
   { id: 'backlog-aging', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },
   { id: 'sla', title: 'SLA Compliance', description: 'Response/closure compliance against priority-based service targets.', xlsxType: 'sla', icon: ShieldCheck },
+  { id: 'operations-summary', title: 'Daily / Weekly Operations', description: 'Daily maintenance pulse covering opened/completed WOs, emergencies, labor, downtime, production loss and cost.', xlsxType: 'operations-summary', icon: Clock },
+  { id: 'asset-history', title: 'Asset Repair History', description: 'Full repair and failure history by asset with RCA, technician, downtime, materials and cost.', xlsxType: 'asset-history', icon: History },
+  { id: 'department-cost', title: 'Department / Cost-Center Cost', description: 'Maintenance spend by department/cost center with labor, parts, contractor, tools and average WO cost.', xlsxType: 'department-cost', icon: Coins },
 ];
 
 type ReportFilters = {
@@ -527,6 +533,7 @@ export default function RWOPReportingPage() {
             dateTo: filters.endDate || undefined,
             plantId: filters.plantId === 'all' ? undefined : filters.plantId,
             departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
+            maintenanceScope: 'repairs',
           },
         }),
         timeout: 60_000,

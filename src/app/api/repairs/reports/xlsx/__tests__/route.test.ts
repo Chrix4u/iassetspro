@@ -27,7 +27,7 @@ vi.mock('@/lib/plant-scope', () => ({
   canAccessPlant: mockCanAccessPlant,
 }));
 vi.mock('@/services/repairsReportXlsx.service', () => ({
-  SUPPORTED_REPORT_TYPES: ['work-order', 'maintenance-request'],
+  SUPPORTED_REPORT_TYPES: ['work-order', 'maintenance-request', 'operations-summary', 'asset-history', 'department-cost'],
 }));
 vi.mock('@/services/repairsReportXlsxSafe.service', () => ({
   generateRepairsReport: mockGenerateRepairsReport,
@@ -138,4 +138,33 @@ describe('POST /api/repairs/reports/xlsx', () => {
       session,
     );
   });
+
+  it('accepts the extended operational report pack and preserves repairs scope filters', async () => {
+    mockGenerateRepairsReport.mockResolvedValue({
+      buffer: Buffer.from('xlsx-bytes'),
+      filename: 'asset-repair-history.xlsx',
+    });
+
+    const response = await POST(request({
+      reportType: 'asset-history',
+      filters: {
+        dateFrom: '2026-09-01',
+        dateTo: '2026-09-30',
+        maintenanceScope: 'repairs',
+      },
+    }, 'plant-a'));
+
+    expect(response.status).toBe(200);
+    expect(mockGenerateRepairsReport).toHaveBeenCalledWith(
+      'asset-history',
+      expect.objectContaining({
+        plantId: 'plant-a',
+        dateFrom: '2026-09-01',
+        dateTo: '2026-09-30',
+        maintenanceScope: 'repairs',
+      }),
+      session,
+    );
+  });
+
 });

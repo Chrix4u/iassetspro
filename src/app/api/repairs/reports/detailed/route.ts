@@ -161,6 +161,25 @@ export async function GET(request: NextRequest) {
       : [];
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
 
+    const componentCatalog = assetIds.length > 0
+      ? await db.componentRegistry.findMany({
+          where: { assetId: { in: assetIds } },
+          select: { id: true, name: true, componentCode: true, parentId: true, assetId: true },
+        })
+      : [];
+    const componentMap = new Map(componentCatalog.map((component) => [component.id, component]));
+    const componentPath = (componentId: string): string => {
+      const chain: string[] = [];
+      const seen = new Set<string>();
+      let current = componentMap.get(componentId);
+      while (current && !seen.has(current.id) && chain.length < 16) {
+        seen.add(current.id);
+        chain.unshift(current.name);
+        current = current.parentId ? componentMap.get(current.parentId) : undefined;
+      }
+      return chain.join(' → ');
+    };
+
     const rows: Record<string, unknown>[] = [];
 
     for (const wo of workOrders) {
@@ -177,6 +196,7 @@ export async function GET(request: NextRequest) {
           'Machine Tag': asset?.assetTag || 'N/A',
           'Serial Number': asset?.serialNumber || 'N/A',
           'Component/Part': '(No component specified)',
+          'Component Hierarchy': '',
           'Component Code': '',
           'Component Type': '',
           'Component Criticality': '',
@@ -211,6 +231,7 @@ export async function GET(request: NextRequest) {
             'Machine Tag': asset?.assetTag || 'N/A',
             'Serial Number': asset?.serialNumber || 'N/A',
             'Component/Part': comp.name,
+            'Component Hierarchy': componentPath(comp.id),
             'Component Code': comp.componentCode,
             'Component Type': comp.componentType,
             'Component Criticality': comp.criticality,

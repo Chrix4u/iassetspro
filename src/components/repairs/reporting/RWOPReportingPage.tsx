@@ -218,6 +218,13 @@ type ReportData = {
 };
 
 type ModuleFilter = 'all' | 'repairs' | 'pm';
+type AttentionFilter = 'all' | 'critical' | 'overdue' | 'materials' | 'tools' | 'assistance' | 'handovers' | 'downtime';
+
+type SavedReportView = {
+  id: string;
+  name: string;
+  filters: ReportFilters;
+};
 type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 type OperationalXlsxReportType =
   | 'work-order'
@@ -353,6 +360,8 @@ function statusBadge(status?: string | null): 'default' | 'destructive' | 'outli
   return 'outline';
 }
 
+const SAVED_REPORT_VIEWS_KEY = 'iassetspro:rwop-report-saved-views';
+
 function filtersEqual(a: ReportFilters, b: ReportFilters): boolean {
   return a.startDate === b.startDate
     && a.endDate === b.endDate
@@ -378,7 +387,11 @@ export default function RWOPReportingPage() {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
   const [operationalDownloading, setOperationalDownloading] = useState<string | null>(null);
+  const [savedViews, setSavedViews] = useState<SavedReportView[]>([]);
+  const [selectedSavedViewId, setSelectedSavedViewId] = useState('');
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all');
   const initialLoadStarted = useRef(false);
+  const attentionRef = useRef<HTMLDivElement>(null);
 
   const canView = isAdmin()
     || hasPermission('reports.view')
@@ -389,6 +402,21 @@ export default function RWOPReportingPage() {
   useEffect(() => {
     if (!isAuthenticated && !authLoading) void fetchMe();
   }, [authLoading, fetchMe, isAuthenticated]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SAVED_REPORT_VIEWS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setSavedViews(parsed.filter((item): item is SavedReportView =>
+          Boolean(item?.id && item?.name && item?.filters?.startDate && item?.filters?.endDate)
+        ));
+      }
+    } catch {
+      // Ignore malformed local saved-view data and keep reporting usable.
+    }
+  }, []);
 
   const loadPlants = useCallback(async () => {
     const response = await api.get<Plant[]>('/api/plants', {
@@ -457,6 +485,42 @@ export default function RWOPReportingPage() {
   const workOrders = report?.recentWorkOrders || [];
   const filtersDirty = appliedFilters ? !filtersEqual(filters, appliedFilters) : false;
 
+  const exceptionRows = useMemo(() => {
+    const rows = report?.exceptionWatchlist || [];
+    switch (attentionFilter) {
+      case 'critical':
+        return rows.filter(item => item.riskLevel === 'critical');
+      case 'overdue':
+        return rows.filter(item => item.reasons.includes('Overdue'));
+      case 'materials':
+        return rows.filter(item => item.pendingMaterials > 0);
+      case 'tools':
+        return rows.filter(item => item.outstandingTools > 0);
+      case 'assistance':
+        return rows.filter(item => item.pendingAssistance > 0);
+      case 'handovers':
+        return rows.filter(item => item.pendingHandovers > 0);
+      case 'downtime':
+        return rows.filter(item => item.downtimeMinutes >= 240);
+      default:
+        return rows;
+    }
+  }, [attentionFilter, report?.exceptionWatchlist]);
+
+  const attentionCounts = useMemo(() => {
+    const rows = report?.exceptionWatchlist || [];
+    return {
+      all: rows.length,
+      critical: rows.filter(item => item.riskLevel === 'critical').length,
+      overdue: rows.filter(item => item.reasons.includes('Overdue')).length,
+      materials: rows.filter(item => item.pendingMaterials > 0).length,
+      tools: rows.filter(item => item.outstandingTools > 0).length,
+      assistance: rows.filter(item => item.pendingAssistance > 0).length,
+      handovers: rows.filter(item => item.pendingHandovers > 0).length,
+      downtime: rows.filter(item => item.downtimeMinutes >= 240).length,
+    };
+  }, [report?.exceptionWatchlist]);
+
   const appliedDescription = useMemo(() => {
     const source = appliedFilters || filters;
     const plant = source.plantId === 'all'
@@ -518,6 +582,47 @@ export default function RWOPReportingPage() {
     }
   };
 
+
+  const persistSavedViews = (views: SavedReportView[]) => {
+    setSavedViews(views);
+    window.localStorage.setItem(SAVED_REPORT_VIEWS_KEY, JSON.stringify(views));
+  };
+
+  const saveCurrentView = () => {
+    const nextNumber = savedViews.length + 1;
+    const view: SavedReportView = {
+      id: `view-${Date.now()}`,
+      name: `Saved view ${nextNumber}`,
+      filters: { ...filters },
+    };
+    persistSavedViews([...savedViews, view]);
+    setSelectedSavedViewId(view.id);
+    toast.success(`${view.name} saved`);
+  };
+
+  const applySavedView = (viewId: string) => {
+    setSelectedSavedViewId(viewId);
+    const view = savedViews.find(item => item.id === viewId);
+    if (!view) return;
+    setFilters({ ...view.filters });
+    void loadReport(view.filters);
+  };
+
+  const deleteSelectedView = () => {
+    if (!selectedSavedViewId) return;
+    const view = savedViews.find(item => item.id === selectedSavedViewId);
+    const remaining = savedViews.filter(item => item.id !== selectedSavedViewId);
+    persistSavedViews(remaining);
+    setSelectedSavedViewId('');
+    if (view) toast.success(`${view.name} removed`);
+  };
+
+  const openAttentionView = (filter: AttentionFilter) => {
+    setAttentionFilter(filter);
+    window.requestAnimationFrame(() => {
+      attentionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   const applyQuickPeriod = (period: 'today' | 'week' | 'month') => {
     const end = new Date();
@@ -800,6 +905,25 @@ export default function RWOPReportingPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('month')}>This Month</Button>
           </div>
 
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-[240px] space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Saved report views</span>
+              <Select value={selectedSavedViewId || undefined} onValueChange={applySavedView}>
+                <SelectTrigger><SelectValue placeholder={savedViews.length ? 'Choose a saved view' : 'No saved views yet'} /></SelectTrigger>
+                <SelectContent>
+                  {savedViews.map(view => (
+                    <SelectItem key={view.id} value={view.id}>
+                      {view.name} · {view.filters.startDate} → {view.filters.endDate}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={saveCurrentView}>Save Current View</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={deleteSelectedView} disabled={!selectedSavedViewId}>Remove Saved View</Button>
+            <span className="text-[11px] text-muted-foreground">Saved on this device and browser.</span>
+          </div>
+
           {filtersDirty && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
               Filters have changed. Select Generate to refresh the report. Export buttons continue to use the currently displayed report filters.
@@ -959,7 +1083,11 @@ export default function RWOPReportingPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Open</p><p className="text-xl font-bold">{report.backlogAging?.totalOpen ?? 0}</p></div>
-                  <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Overdue</p><p className="text-xl font-bold text-red-600">{report.backlogAging?.overdueOpen ?? 0}</p></div>
+                  <button type="button" onClick={() => openAttentionView('overdue')} className="rounded-lg border p-3 text-left transition-colors hover:bg-muted/40 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <p className="text-xs text-muted-foreground">Overdue</p>
+                    <p className="text-xl font-bold text-red-600">{report.backlogAging?.overdueOpen ?? 0}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">View affected work orders</p>
+                  </button>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Avg Open Age</p><p className="text-xl font-bold">{report.backlogAging?.avgOpenAgeDays ?? 0}d</p></div>
                   <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Oldest Open</p><p className="text-xl font-bold">{report.backlogAging?.oldestOpenDays ?? 0}d</p></div>
                 </div>
@@ -1039,6 +1167,7 @@ export default function RWOPReportingPage() {
               ) : <EmptyState icon={BarChart3} title="No monthly trend data" />}
             </CardContent>
           </Card>
+          </div>
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">
@@ -1179,16 +1308,40 @@ export default function RWOPReportingPage() {
             </Card>
           </div>
 
+          <div ref={attentionRef} className="scroll-mt-6">
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Management Exception Watchlist</CardTitle>
                   <CardDescription>Open repairs needing management attention because of age, priority, downtime or unresolved resources</CardDescription>
                 </div>
-                <Badge variant={(report.exceptionWatchlist || []).some(item => item.riskLevel === 'critical') ? 'destructive' : 'outline'}>
-                  {(report.exceptionWatchlist || []).length} exception(s)
+                <Badge variant={attentionCounts.critical > 0 ? 'destructive' : 'outline'}>
+                  {exceptionRows.length} shown / {attentionCounts.all} exception(s)
                 </Badge>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 print:hidden">
+                {([
+                  ['all', 'All', attentionCounts.all],
+                  ['critical', 'Critical', attentionCounts.critical],
+                  ['overdue', 'Overdue', attentionCounts.overdue],
+                  ['materials', 'Materials', attentionCounts.materials],
+                  ['tools', 'Tools', attentionCounts.tools],
+                  ['assistance', 'Assistance', attentionCounts.assistance],
+                  ['handovers', 'Handovers', attentionCounts.handovers],
+                  ['downtime', 'High Downtime', attentionCounts.downtime],
+                ] as Array<[AttentionFilter, string, number]>).map(([key, label, count]) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant={attentionFilter === key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setAttentionFilter(key)}
+                    className={attentionFilter === key ? 'bg-emerald-600 text-white hover:bg-emerald-700' : ''}
+                  >
+                    {label} <Badge variant="secondary" className="ml-1.5">{count}</Badge>
+                  </Button>
+                ))}
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -1200,9 +1353,9 @@ export default function RWOPReportingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(report.exceptionWatchlist || []).length === 0 ? (
-                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title="No management exceptions in this report period" /></TableCell></TableRow>
-                    ) : (report.exceptionWatchlist || []).map(item => (
+                    {exceptionRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={CheckCircle2} title={attentionFilter === 'all' ? 'No management exceptions in this report period' : 'No exceptions match this attention filter'} /></TableCell></TableRow>
+                    ) : exceptionRows.map(item => (
                       <TableRow key={item.id}>
                         <TableCell className="font-mono text-xs">{item.woNumber || '—'}</TableCell>
                         <TableCell><div className="font-medium">{item.title || 'Untitled work order'}</div><div className="text-xs text-muted-foreground">{item.assetName}</div></TableCell>

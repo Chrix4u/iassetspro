@@ -89,7 +89,13 @@ export async function GET(request: NextRequest) {
     if (format === 'pdf') {
       const jsonBody = await result.json();
       if (jsonBody.success && jsonBody.data) {
-        const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, plantId, priority, department));
+        const plantRecord = plantId
+          ? await db.plant.findUnique({ where: { id: plantId }, select: { name: true, code: true } })
+          : null;
+        const plantLabel = plantRecord
+          ? `${plantRecord.name}${plantRecord.code ? ` (${plantRecord.code})` : ''}`
+          : undefined;
+        const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, plantLabel, priority, department));
         const filename = `repair-${type}-report.pdf`;
         return new NextResponse(new Uint8Array(pdfBuffer), {
           headers: {
@@ -700,14 +706,14 @@ function buildRepairPdfParams(
   generatedBy: string,
   from?: Date,
   to?: Date,
-  plantId?: string,
+  plantLabel?: string,
   priority?: string,
   department?: string,
 ): ReportPDFParams {
   const filters: Record<string, string> = {
     from: from?.toISOString().slice(0, 10) || 'All time',
     to: to?.toISOString().slice(0, 10) || 'Present',
-    ...(plantId && { plantId }),
+    ...(plantLabel && { plant: plantLabel }),
     ...(priority && { priority }),
     ...(department && { department }),
   };

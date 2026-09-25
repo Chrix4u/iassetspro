@@ -25,6 +25,8 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(schema).toContain('model WorkOrderComponent');
     expect(maintenancePages).toContain('componentIds: [] as string[]');
     expect(maintenancePages).toContain('workOrderComponentLabel');
+    expect(maintenancePages).toContain('Manage Affected Components');
+    expect(maintenancePages).toContain('/api/work-orders/${id}/components');
     expect(convertDialog).toContain('Affected Assembly / Component');
     expect(convertDialog).toContain('componentIds: form.componentIds.length > 0');
     expect(planningService).toContain('await tx.workOrderComponent.createMany');

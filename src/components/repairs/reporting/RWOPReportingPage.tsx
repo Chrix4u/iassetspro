@@ -1211,7 +1211,6 @@ export default function RWOPReportingPage() {
               ) : <EmptyState icon={BarChart3} title="No monthly trend data" />}
             </CardContent>
           </Card>
-          </div>
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">

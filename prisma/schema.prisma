@@ -2918,6 +2918,7 @@ model ComponentRegistry {
   runtimeCounters          ComponentRuntimeCounter[]
   conditionReadings        ComponentConditionReading[]
   maintenanceHistory       ComponentMaintenanceHistory[]
+  pmSchedules              PmSchedule[] @relation("PmScheduleComponent")
   inspectionPoints         ComponentInspectionPoint[]
   inspectionRecords        ComponentInspectionRecord[]
   lubricationSchedules     ComponentLubricationSchedule[]

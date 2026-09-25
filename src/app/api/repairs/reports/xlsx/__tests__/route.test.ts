@@ -42,6 +42,8 @@ vi.mock('@/services/repairsReportXlsx.service', () => ({
     'asset-history',
     'department-cost',
     'shift-handover',
+    'material-reconciliation',
+    'component-detail',
   ],
 }));
 vi.mock('@/services/repairsReportXlsxSafe.service', () => ({
@@ -139,7 +141,7 @@ describe('POST /api/repairs/reports/xlsx', () => {
   });
 
   it('accepts the expanded operational Repairs report types', async () => {
-    for (const reportType of ['daily-operations', 'asset-history', 'department-cost', 'shift-handover']) {
+    for (const reportType of ['daily-operations', 'asset-history', 'department-cost', 'shift-handover', 'material-reconciliation', 'component-detail']) {
       mockGenerateRepairsReport.mockResolvedValueOnce({
         buffer: Buffer.from('xlsx-bytes'),
         filename: reportType + '.xlsx',

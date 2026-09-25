@@ -1376,6 +1376,7 @@ export default function RWOPReportingPage() {
               </div>
             </CardContent>
           </Card>
+          </div>
 
           <Card className="border-border/60 shadow-sm">
             <CardHeader className="pb-3">

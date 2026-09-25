@@ -1074,6 +1074,9 @@ export const SUPPORTED_REPORT_TYPES = [
   'cost',
   'backlog-aging',
   'sla',
+  'operations-summary',
+  'asset-history',
+  'department-cost',
 ] as const;
 
 export type ReportType = (typeof SUPPORTED_REPORT_TYPES)[number];

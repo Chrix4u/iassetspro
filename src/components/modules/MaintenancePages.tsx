@@ -519,6 +519,21 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     lastAutoLocationRef.current = '';
   };
 
+  const workOrderComponentLabel = (component: { id: string; name: string; componentCode?: string; parentId?: string | null }) => {
+    const byId = new Map(availableComponents.map((item) => [item.id, item]));
+    let depth = 0;
+    let cursor: typeof component | undefined = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanTitle = title.trim();
@@ -2441,7 +2456,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const [departmentLabel, setDepartmentLabel] = useState('');
 
   // Component selection state
-  const [availableComponents, setAvailableComponents] = useState<Array<{id: string; name: string; componentCode?: string; componentType?: string; criticality?: string}>>([]);
+  const [availableComponents, setAvailableComponents] = useState<Array<{id: string; name: string; componentCode?: string; componentType?: string; criticality?: string; parentId?: string | null}>>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
 
   // Dropdown data
@@ -2481,6 +2496,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               componentCode: c.componentCode,
               componentType: c.componentType,
               criticality: c.criticality,
+              parentId: c.parentId || null,
             })));
           } else {
             setAvailableComponents([]);
@@ -2716,7 +2732,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                           }}
                           className="h-3.5 w-3.5"
                         />
-                        <span className="truncate">{comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}</span>
+                        <span className="truncate">{workOrderComponentLabel(comp)}</span>
                       </label>
                     ))}
                   </div>
@@ -2852,7 +2868,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                       }}
                     />
                     <span className="truncate">
-                      {comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}
+                      {workOrderComponentLabel(comp)}
                     </span>
                     {comp.criticality && comp.criticality !== 'low' && (
                       <Badge variant={comp.criticality === 'critical' ? 'destructive' : comp.criticality === 'high' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 shrink-0">
@@ -7552,6 +7568,9 @@ export function PmSchedulesPage() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formAssetId, setFormAssetId] = useState('');
+  const [formComponentId, setFormComponentId] = useState('');
+  const [pmComponentOptions, setPmComponentOptions] = useState<any[]>([]);
+  const [pmComponentsLoading, setPmComponentsLoading] = useState(false);
   const [formFreqType, setFormFreqType] = useState('monthly');
   const [formFreqValue, setFormFreqValue] = useState('1');
   const [formPriority, setFormPriority] = useState('medium');
@@ -7563,6 +7582,40 @@ export function PmSchedulesPage() {
   const [formNextDueDate, setFormNextDueDate] = useState('');
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
+
+  useEffect(() => {
+    if (!formAssetId) {
+      setPmComponentOptions([]);
+      setFormComponentId('');
+      return;
+    }
+    setPmComponentsLoading(true);
+    api.get(`/api/component-registry?assetId=${formAssetId}&limit=100`)
+      .then((res) => {
+        const options = res.success && Array.isArray(res.data) ? res.data : [];
+        setPmComponentOptions(options);
+        if (formComponentId && !options.some((component: any) => component.id === formComponentId)) {
+          setFormComponentId('');
+        }
+      })
+      .catch(() => setPmComponentOptions([]))
+      .finally(() => setPmComponentsLoading(false));
+  }, [formAssetId, formComponentId]);
+
+  const pmComponentLabel = (component: any) => {
+    const byId = new Map(pmComponentOptions.map((item: any) => [item.id, item]));
+    let depth = 0;
+    let cursor = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+  };
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true);
@@ -7589,7 +7642,7 @@ export function PmSchedulesPage() {
   }, []);
 
   const resetForm = () => {
-    setFormTitle(''); setFormDesc(''); setFormAssetId('');
+    setFormTitle(''); setFormDesc(''); setFormAssetId(''); setFormComponentId('');
     setFormFreqType('monthly'); setFormFreqValue('1');
     setFormPriority('medium'); setFormEstDuration('');
     setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
@@ -7601,6 +7654,7 @@ export function PmSchedulesPage() {
     setFormTitle(item.title || '');
     setFormDesc(item.description || '');
     setFormAssetId(item.assetId || '');
+    setFormComponentId(item.componentId || '');
     setFormFreqType(item.frequencyType || 'monthly');
     setFormFreqValue(String(item.frequencyValue || 1));
     setFormPriority(item.priority || 'medium');
@@ -7619,7 +7673,7 @@ export function PmSchedulesPage() {
     try {
       const payload: any = {
         title: formTitle, description: formDesc || null,
-        assetId: formAssetId, frequencyType: formFreqType,
+        assetId: formAssetId, componentId: formComponentId || null, frequencyType: formFreqType,
         frequencyValue: parseInt(formFreqValue, 10) || 1,
         priority: formPriority,
         estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
@@ -7906,7 +7960,7 @@ export function PmSchedulesPage() {
               <Label className="text-sm font-semibold">Asset *</Label>
               <AsyncSearchableSelect
                 value={formAssetId}
-                onValueChange={setFormAssetId}
+                onValueChange={(value) => { setFormAssetId(value); setFormComponentId(''); }}
                 fetchOptions={async () => {
                   const res = await api.get('/api/assets');
                   if (res.success && res.data) {
@@ -7922,6 +7976,32 @@ export function PmSchedulesPage() {
                 searchPlaceholder="Search assets by name or tag..."
               />
             </div>
+            {formAssetId && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Target Assembly / Component</Label>
+                {pmComponentsLoading ? (
+                  <div className="text-xs text-muted-foreground py-2">Loading machine hierarchy...</div>
+                ) : pmComponentOptions.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No components registered. Leave this schedule at machine level.</div>
+                ) : (
+                  <Select value={formComponentId || 'machine'} onValueChange={(value) => setFormComponentId(value === 'machine' ? '' : value)}>
+                    <SelectTrigger><SelectValue placeholder="Whole machine" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="machine">Whole machine</SelectItem>
+                      {pmComponentOptions
+                        .slice()
+                        .sort((a: any, b: any) => pmComponentLabel(a).localeCompare(pmComponentLabel(b)))
+                        .map((component: any) => (
+                          <SelectItem key={component.id} value={component.id}>
+                            {pmComponentLabel(component)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-[11px] text-muted-foreground">Component-targeted PM work orders retain the parent machine and automatically inherit this component.</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Frequency Type *</Label>

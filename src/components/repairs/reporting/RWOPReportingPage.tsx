@@ -1103,7 +1103,7 @@ export default function RWOPReportingPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Breakdown Performance & Response</CardTitle>
-                  <CardDescription>breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
+                  <CardDescription>Breakdown frequency with separated response, repair/MTTR and recorded downtime</CardDescription>
                 </div>
                 <Badge variant="outline">{report.breakdownPerformance?.breakdownCount ?? 0} breakdown(s)</Badge>
               </div>
@@ -1184,7 +1184,6 @@ export default function RWOPReportingPage() {
                     </Table>
                   </div>
                 </div>
-              </div>
 
               {(report.breakdownPerformance?.missingStartCount || report.breakdownPerformance?.missingCompletionCount) ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">

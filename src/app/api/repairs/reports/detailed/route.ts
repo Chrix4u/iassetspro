@@ -210,10 +210,12 @@ export async function GET(request: NextRequest) {
           'Corrective Action': completion?.correctiveAction || '',
           'Findings': completion?.findings || '',
           'Materials Used': materials.map((m) => `${m.itemName} (Qty: ${m.quantityIssued})`).join('; ') || '',
-          'Total Material Cost': wo.partsCost,
+          'Component Material Cost': '',
+          'WO Material Cost (Machine Total)': wo.partsCost,
           'Labor Hours': completion?.totalLaborHours ?? wo.actualHours ?? 0,
           'Downtime (mins)': completion?.totalDowntimeMinutes ?? 0,
-          'Total Cost': wo.totalCost,
+          'WO Total Cost (Machine Total)': wo.totalCost,
+          'Cost Allocation Note': 'No exact component specified; cost remains at machine/work-order level',
           'Started': wo.actualStart?.toISOString().split('T')[0] || '',
           'Completed': wo.actualEnd?.toISOString().split('T')[0] || '',
           'Completion Notes': completion?.completionNotes || '',
@@ -224,6 +226,10 @@ export async function GET(request: NextRequest) {
           const compMaterials = materials.filter(
             (m) => m.componentRegistryId === comp.id
           );
+          const componentMaterialCost = compMaterials.reduce((sum, material) => {
+            const usedQuantity = material.consumedQty ?? material.quantityIssued ?? 0;
+            return sum + (usedQuantity * (material.unitCost ?? 0));
+          }, 0);
 
           rows.push({
             'WO Number': wo.woNumber,
@@ -245,12 +251,16 @@ export async function GET(request: NextRequest) {
             'Corrective Action': completion?.correctiveAction || '',
             'Findings': completion?.findings || '',
             'Materials Used': compMaterials
-              .map((m) => `${m.itemName} (Qty: ${m.quantityIssued})`)
+              .map((m) => `${m.itemName} (Qty: ${m.consumedQty ?? m.quantityIssued})`)
               .join('; ') || '',
-            'Total Material Cost': wo.partsCost,
+            'Component Material Cost': Number(componentMaterialCost.toFixed(2)),
+            'WO Material Cost (Machine Total)': wo.partsCost,
             'Labor Hours': completion?.totalLaborHours ?? wo.actualHours ?? 0,
             'Downtime (mins)': completion?.totalDowntimeMinutes ?? 0,
-            'Total Cost': wo.totalCost,
+            'WO Total Cost (Machine Total)': wo.totalCost,
+            'Cost Allocation Note': components.length > 1
+              ? 'WO labor/downtime/total cost is machine-level and is intentionally not allocated across components'
+              : 'Single affected component; WO totals remain machine-level for financial roll-up',
             'Started': wo.actualStart?.toISOString().split('T')[0] || '',
             'Completed': wo.actualEnd?.toISOString().split('T')[0] || '',
             'Completion Notes': woc.notes || completion?.completionNotes || '',
@@ -259,10 +269,62 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const componentSummaryMap = new Map<string, {
+      machineName: string;
+      machineTag: string;
+      componentName: string;
+      componentHierarchy: string;
+      componentCode: string;
+      workOrderIds: Set<string>;
+      materialCost: number;
+      lastRepair: string;
+    }>();
+
+    for (const wo of workOrders) {
+      const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
+      for (const woc of wo.workOrderComponents) {
+        const comp = woc.componentRegistry;
+        const componentMaterials = wo.repairMaterialRequests.filter((material) => material.componentRegistryId === comp.id);
+        const materialCost = componentMaterials.reduce((sum, material) => {
+          const usedQuantity = material.consumedQty ?? material.quantityIssued ?? 0;
+          return sum + (usedQuantity * (material.unitCost ?? 0));
+        }, 0);
+        const current = componentSummaryMap.get(comp.id) || {
+          machineName: asset?.name || wo.assetName || 'N/A',
+          machineTag: asset?.assetTag || 'N/A',
+          componentName: comp.name,
+          componentHierarchy: componentPath(comp.id),
+          componentCode: comp.componentCode,
+          workOrderIds: new Set<string>(),
+          materialCost: 0,
+          lastRepair: '',
+        };
+        current.workOrderIds.add(wo.id);
+        current.materialCost += materialCost;
+        const completed = wo.actualEnd?.toISOString().split('T')[0] || wo.createdAt.toISOString().split('T')[0];
+        if (!current.lastRepair || completed > current.lastRepair) current.lastRepair = completed;
+        componentSummaryMap.set(comp.id, current);
+      }
+    }
+
+    const componentSummaryRows = [...componentSummaryMap.values()]
+      .map((entry) => ({
+        'Machine Name': entry.machineName,
+        'Machine Tag': entry.machineTag,
+        'Component/Part': entry.componentName,
+        'Component Hierarchy': entry.componentHierarchy,
+        'Component Code': entry.componentCode,
+        'Repair WO Count': entry.workOrderIds.size,
+        'Component Material Cost': Number(entry.materialCost.toFixed(2)),
+        'Last Repair': entry.lastRepair,
+      }))
+      .sort((a, b) => Number(b['Repair WO Count']) - Number(a['Repair WO Count']));
+
     if (format === 'json') {
       return NextResponse.json({
         success: true,
         data: rows,
+        componentSummary: componentSummaryRows,
         summary: {
           totalWorkOrders: total,
           workOrdersOnPage: workOrders.length,
@@ -295,6 +357,11 @@ export async function GET(request: NextRequest) {
     wsSummary['!cols'] = [{ wch: 35 }, { wch: 20 }];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Repair Details');
+    if (componentSummaryRows.length > 0) {
+      const wsComponents = XLSX.utils.json_to_sheet(componentSummaryRows);
+      wsComponents['!cols'] = Object.keys(componentSummaryRows[0]).map((key) => ({ wch: Math.max(key.length + 2, 18) }));
+      XLSX.utils.book_append_sheet(wb, wsComponents, 'Component Summary');
+    }
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

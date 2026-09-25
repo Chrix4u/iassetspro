@@ -300,7 +300,11 @@ type OperationalPdfReportType =
   | 'materials'
   | 'tools'
   | 'downtime'
-  | 'technician_performance';
+  | 'technician_performance'
+  | 'breakdown-frequency'
+  | 'response-time-performance'
+  | 'repair-time-mttr'
+  | 'reliability-bad-actors';
 
 type OperationalReportCategory =
   | 'Operations & Performance'
@@ -335,10 +339,10 @@ const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
   { id: 'materials', category: 'Resources & Stores', title: 'Materials Usage & Returns', description: 'Requested, issued, consumed, wasted and returned materials with costs.', xlsxType: 'material', pdfType: 'materials', icon: Boxes },
   { id: 'tools', category: 'Resources & Stores', title: 'Tools, Damage & Transfers', description: 'Tool requests, transfers, damage, repair cost and write-off exposure.', xlsxType: 'tool', pdfType: 'tools', icon: Wrench },
   { id: 'breakdown-performance', category: 'Operations & Performance', title: 'Breakdown Performance & Response', description: 'Breakdown count, weekly trend, machine frequency, response time, repair time/MTTR and downtime in one management workbook.', xlsxType: 'breakdown-performance', icon: TrendingDown },
-  { id: 'breakdown-frequency', category: 'Operations & Performance', title: 'Breakdown Frequency', description: 'Machine and weekly breakdown counts with ranked bad-actor Pareto and maintenance-trade frequency.', xlsxType: 'breakdown-frequency', icon: BarChart3 },
-  { id: 'response-time-performance', category: 'Operations & Performance', title: 'Response Time Performance', description: 'Time from fault reporting to actual maintenance work start, compared by week, machine and trade.', xlsxType: 'response-time-performance', icon: Clock },
-  { id: 'repair-time-mttr', category: 'Reliability & Assets', title: 'Repair Time / MTTR', description: 'Actual repair duration from work start to completion, with machine and trade MTTR comparison.', xlsxType: 'repair-time-mttr', icon: Wrench },
-  { id: 'reliability-bad-actors', category: 'Reliability & Assets', title: 'Reliability & Repeat Failures', description: 'Bad-actor ranking using breakdown frequency, MTBF, MTTR, downtime, repeat failures and repair cost.', xlsxType: 'reliability-bad-actors', icon: AlertTriangle },
+  { id: 'breakdown-frequency', category: 'Operations & Performance', title: 'Breakdown Frequency', description: 'Machine and weekly breakdown counts with ranked bad-actor Pareto and maintenance-trade frequency.', xlsxType: 'breakdown-frequency', pdfType: 'breakdown-frequency', icon: BarChart3 },
+  { id: 'response-time-performance', category: 'Operations & Performance', title: 'Response Time Performance', description: 'Time from fault reporting to actual maintenance work start, compared by week, machine and trade.', xlsxType: 'response-time-performance', pdfType: 'response-time-performance', icon: Clock },
+  { id: 'repair-time-mttr', category: 'Reliability & Assets', title: 'Repair Time / MTTR', description: 'Actual repair duration from work start to completion, with machine and trade MTTR comparison.', xlsxType: 'repair-time-mttr', pdfType: 'repair-time-mttr', icon: Wrench },
+  { id: 'reliability-bad-actors', category: 'Reliability & Assets', title: 'Reliability & Repeat Failures', description: 'Bad-actor ranking using breakdown frequency, MTBF, MTTR, downtime, repeat failures and repair cost.', xlsxType: 'reliability-bad-actors', pdfType: 'reliability-bad-actors', icon: AlertTriangle },
   { id: 'failure-analysis', category: 'Reliability & Assets', title: 'Failure Analysis', description: 'Failure modes, recurrence and downtime evidence for RCA and reliability review.', xlsxType: 'failure-analysis', icon: AlertTriangle },
   { id: 'cost', category: 'Cost & Compliance', title: 'Repair Cost Analysis', description: 'Labor, parts, contractors, tools and total work-order cost analysis.', xlsxType: 'cost', icon: Coins },
   { id: 'backlog-aging', category: 'Operations & Performance', title: 'Backlog & Aging', description: 'Open repairs, overdue work and aging buckets for planner follow-up.', xlsxType: 'backlog-aging', icon: History },

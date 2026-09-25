@@ -16,6 +16,10 @@ const {
     workOrderDowntime: { findMany: vi.fn() },
     asset: { findMany: vi.fn() },
     department: { findMany: vi.fn() },
+    repairMaterialRequest: { findMany: vi.fn() },
+    repairToolRequest: { findMany: vi.fn() },
+    woTeamMemberRequest: { findMany: vi.fn() },
+    shiftHandover: { findMany: vi.fn() },
   },
   mockCreateStandardWorkbook: vi.fn(() => ({})),
   mockAddDataSheet: vi.fn(),
@@ -55,6 +59,10 @@ describe('repairsReportXlsxSafe operational report pack', () => {
     mockDb.workOrderDowntime.findMany.mockResolvedValue([]);
     mockDb.asset.findMany.mockResolvedValue([]);
     mockDb.department.findMany.mockResolvedValue([]);
+    mockDb.repairMaterialRequest.findMany.mockResolvedValue([]);
+    mockDb.repairToolRequest.findMany.mockResolvedValue([]);
+    mockDb.woTeamMemberRequest.findMany.mockResolvedValue([]);
+    mockDb.shiftHandover.findMany.mockResolvedValue([]);
   });
 
   it('builds a date-bounded daily operations report and does not count an opening outside the selected period', async () => {
@@ -270,4 +278,251 @@ describe('repairsReportXlsxSafe operational report pack', () => {
       totalCost: 425,
     });
   });
+
+  it('audits material reconciliation and surfaces quantity variances', async () => {
+    mockDb.repairMaterialRequest.findMany.mockResolvedValue([
+      {
+        id: 'mat-1',
+        itemName: 'Bearing',
+        unit: 'each',
+        quantityIssued: 10,
+        quantityApproved: 10,
+        quantityReturned: 2,
+        unitCost: 25,
+        consumedQty: 6,
+        wastedQty: 1,
+        declaredConsumedQty: 6,
+        declaredWastedQty: 1,
+        declaredReturnQty: 3,
+        issuedAt: new Date('2026-09-10T08:00:00Z'),
+        workOrder: { woNumber: 'WO-MAT-1', title: 'Bearing repair' },
+        item: { itemCode: 'BRG-01', name: 'Bearing' },
+        requestedBy: { fullName: 'Technician One' },
+        issuedByUser: { fullName: 'Storekeeper One' },
+      },
+    ]);
+
+    const result = await generateRepairsReport(
+      'material-reconciliation',
+      { plantId: 'plant-a', maintenanceScope: 'repairs' },
+      session,
+    );
+
+    expect(result.filename).toBe('material-reconciliation-audit.xlsx');
+    expect(mockDb.repairMaterialRequest.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        plantId: 'plant-a',
+        workOrder: expect.objectContaining({
+          type: { in: ['corrective', 'emergency', 'predictive'] },
+        }),
+      }),
+    }));
+
+    const sheet = mockAddDataSheet.mock.calls.find((call) => call[1] === 'Reconciliation');
+    expect(sheet?.[3]?.[0]).toMatchObject({
+      woNumber: 'WO-MAT-1',
+      issuedQty: 10,
+      consumedQty: 6,
+      wastedQty: 1,
+      reconciledReturnQty: 3,
+      recordedReturnQty: 2,
+      balanceDelta: 1,
+      reconciliationStatus: 'Variance',
+      issuedCost: 250,
+      wastedCost: 25,
+      returnValue: 75,
+    });
+  });
+
+  it('reports outstanding tool custody and return-confirmation state', async () => {
+    mockDb.repairToolRequest.findMany.mockResolvedValue([
+      {
+        id: 'tool-req-1',
+        requestNumber: 'TR-202609-0001',
+        toolName: 'Torque Wrench',
+        status: 'issued',
+        toolConditionAtIssue: 'good',
+        toolConditionAtReturn: null,
+        reason: 'Bearing replacement',
+        notes: 'Return after task',
+        issuedAt: new Date('2026-09-10T08:00:00Z'),
+        returnedAt: null,
+        returnConfirmedAt: null,
+        workOrder: { woNumber: 'WO-TOOL-1', title: 'Bearing replacement' },
+        requestedBy: { fullName: 'Technician One' },
+        issuedByUser: { fullName: 'Storekeeper One' },
+        returnedByUser: null,
+        returnConfirmedByUser: null,
+        items: [
+          {
+            toolCode: 'TW-01',
+            toolName: 'Torque Wrench',
+            quantityRequested: 2,
+            quantityIssued: 2,
+            quantityReturned: 0,
+            quantityTransferred: 0,
+            pendingReturnQty: 1,
+            conditionAtIssue: 'good',
+            conditionAtReturn: null,
+            pendingReturnCondition: 'fair',
+            pendingReturnNotes: 'One unit ready for store confirmation',
+          },
+        ],
+      },
+    ]);
+
+    const result = await generateRepairsReport(
+      'tool-custody',
+      { plantId: 'plant-a', maintenanceScope: 'repairs' },
+      session,
+    );
+
+    expect(result.filename).toBe('tool-custody-return-audit.xlsx');
+    const sheet = mockAddDataSheet.mock.calls.find((call) => call[1] === 'Tool Custody');
+    expect(sheet?.[3]?.[0]).toMatchObject({
+      requestNumber: 'TR-202609-0001',
+      woNumber: 'WO-TOOL-1',
+      toolCode: 'TW-01',
+      toolName: 'Torque Wrench',
+      quantityRequested: 2,
+      quantityIssued: 2,
+      pendingReturnQty: 1,
+      custodyStatus: 'Awaiting Store Confirmation',
+      conditionAtIssue: 'good',
+      conditionAtReturn: 'fair',
+    });
+  });
+
+  it('calculates assistance request review turnaround from authoritative review timestamps', async () => {
+    mockDb.woTeamMemberRequest.findMany.mockResolvedValue([
+      {
+        id: 'assist-1',
+        requestedTrade: 'Electrician',
+        role: 'assistant',
+        status: 'approved',
+        reason: 'Electrical isolation support',
+        reviewNotes: 'Approved for shift',
+        createdAt: new Date('2026-09-10T08:00:00Z'),
+        reviewedAt: new Date('2026-09-10T10:30:00Z'),
+        workOrder: { woNumber: 'WO-AST-1', title: 'Motor repair' },
+        requestedByUser: { fullName: 'Technician One' },
+        requestedUser: { fullName: 'Electrician One' },
+        reviewedByUser: { fullName: 'Planner One' },
+      },
+    ]);
+
+    const result = await generateRepairsReport(
+      'assistance',
+      { plantId: 'plant-a', maintenanceScope: 'repairs' },
+      session,
+    );
+
+    expect(result.filename).toBe('assistance-turnaround-report.xlsx');
+    const sheet = mockAddDataSheet.mock.calls.find((call) => call[1] === 'Assistance Requests');
+    expect(sheet?.[3]?.[0]).toMatchObject({
+      woNumber: 'WO-AST-1',
+      requestedTrade: 'Electrician',
+      status: 'approved',
+      reviewHours: 2.5,
+      reviewedBy: 'Planner One',
+    });
+  });
+
+  it('exports shift handover continuity and pending issue evidence', async () => {
+    mockDb.shiftHandover.findMany.mockResolvedValue([
+      {
+        id: 'handover-1',
+        shiftDate: new Date('2026-09-10T00:00:00Z'),
+        shiftType: 'night',
+        fromShift: 'afternoon',
+        toShift: 'night',
+        status: 'pending',
+        tasksSummary: JSON.stringify(['Bearing removed', 'Shaft inspected']),
+        pendingIssues: JSON.stringify(['Replacement bearing pending']),
+        safetyNotes: 'LOTO remains active',
+        equipmentStatus: JSON.stringify({ state: 'stopped' }),
+        notes: 'Continue next shift',
+        createdAt: new Date('2026-09-10T21:45:00Z'),
+        updatedAt: new Date('2026-09-10T22:00:00Z'),
+        handedOverBy: { fullName: 'Technician One' },
+        receivedBy: null,
+        workOrder: { woNumber: 'WO-HO-1', title: 'Conveyor repair' },
+      },
+    ]);
+
+    const result = await generateRepairsReport(
+      'shift-handover',
+      { plantId: 'plant-a', maintenanceScope: 'repairs' },
+      session,
+    );
+
+    expect(result.filename).toBe('shift-handover-audit.xlsx');
+    const sheet = mockAddDataSheet.mock.calls.find((call) => call[1] === 'Shift Handovers');
+    expect(sheet?.[3]?.[0]).toMatchObject({
+      woNumber: 'WO-HO-1',
+      status: 'pending',
+      handedOverBy: 'Technician One',
+      pendingIssues: 'Replacement bearing pending',
+      safetyNotes: 'LOTO remains active',
+      elapsedToLastUpdateHours: 0.25,
+      createdAt: '2026-09-10T21:45:00.000Z',
+      updatedAt: '2026-09-10T22:00:00.000Z',
+    });
+  });
+
+  it('audits RCA, supervisor approval and planner closure compliance', async () => {
+    mockDb.workOrder.findMany.mockResolvedValue([
+      {
+        id: 'wo-close-1',
+        woNumber: 'WO-CLOSE-1',
+        title: 'Pump repair',
+        assetName: 'Process Pump',
+        type: 'corrective',
+        priority: 'high',
+        status: 'closed',
+        actualEnd: new Date('2026-09-10T15:00:00Z'),
+        assignee: { fullName: 'Technician One' },
+        repairCompletion: {
+          rootCause: 'Seal wear',
+          correctiveAction: 'Seal replaced',
+          findings: 'Leak eliminated',
+          supervisorStatus: 'approved',
+          supervisorApprovedAt: new Date('2026-09-10T16:00:00Z'),
+          supervisorApprovedBy: { fullName: 'Supervisor One' },
+          plannerStatus: 'closed',
+          plannerClosedAt: new Date('2026-09-10T17:00:00Z'),
+          plannerClosedBy: { fullName: 'Planner One' },
+          reworkCount: 0,
+        },
+      },
+    ]);
+
+    const result = await generateRepairsReport(
+      'closure-audit',
+      { plantId: 'plant-a', maintenanceScope: 'repairs' },
+      session,
+    );
+
+    expect(result.filename).toBe('closure-rca-compliance-audit.xlsx');
+    expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        plantId: 'plant-a',
+        type: { in: ['corrective', 'emergency', 'predictive'] },
+        status: { in: ['completed', 'verified', 'closed'] },
+      }),
+    }));
+
+    const sheet = mockAddDataSheet.mock.calls.find((call) => call[1] === 'Closure Audit');
+    expect(sheet?.[3]?.[0]).toMatchObject({
+      woNumber: 'WO-CLOSE-1',
+      rcaRequired: 'Yes',
+      rcaComplete: 'Yes',
+      supervisorStatus: 'approved',
+      plannerStatus: 'closed',
+      fullyCompliant: 'Yes',
+      supervisorApprovedBy: 'Supervisor One',
+      plannerClosedBy: 'Planner One',
+    });
+  });
+
 });

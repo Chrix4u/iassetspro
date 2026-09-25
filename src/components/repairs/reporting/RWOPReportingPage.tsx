@@ -21,6 +21,9 @@ import {
   TrendingDown,
   Coins,
   History,
+  CalendarDays,
+  Building2,
+  ArrowRightLeft,
   Wrench,
 } from 'lucide-react';
 import {
@@ -227,7 +230,11 @@ type OperationalXlsxReportType =
   | 'failure-analysis'
   | 'cost'
   | 'backlog-aging'
-  | 'sla';
+  | 'sla'
+  | 'daily-operations'
+  | 'asset-history'
+  | 'department-cost'
+  | 'shift-handover';
 
 type OperationalPdfReportType =
   | 'lifecycle'
@@ -247,6 +254,10 @@ type OperationalReportDefinition = {
 };
 
 const OPERATIONAL_REPORTS: OperationalReportDefinition[] = [
+  { id: 'daily-operations', title: 'Daily / Weekly Operations', description: 'Supervisor/planner operations report covering active work, priorities, resource blockers, handovers, downtime and cost.', xlsxType: 'daily-operations', icon: CalendarDays },
+  { id: 'asset-history', title: 'Asset Repair History', description: 'Complete repair, failure, RCA, downtime, rework and cost history by asset.', xlsxType: 'asset-history', icon: History },
+  { id: 'department-cost', title: 'Department / Cost Center Costs', description: 'Repair workload, downtime, production loss and maintenance cost allocation by department.', xlsxType: 'department-cost', icon: Building2 },
+  { id: 'shift-handover', title: 'Shift Handover Report', description: 'Shift-to-shift maintenance handovers, pending work, safety notes and equipment state.', xlsxType: 'shift-handover', icon: ArrowRightLeft },
   { id: 'work-orders', title: 'Work Orders', description: 'Detailed repairs work orders with status, asset, labor, cost and timeline.', xlsxType: 'work-order', pdfType: 'execution', icon: ClipboardList },
   { id: 'maintenance-requests', title: 'Maintenance Requests', description: 'Request intake, approvals, planner conversion and WO linkage.', xlsxType: 'maintenance-request', pdfType: 'lifecycle', icon: FileText },
   { id: 'labor', title: 'Technician Labor & Time', description: 'Technician time logs, activity, breaks, team logs and labor hours.', xlsxType: 'labor', pdfType: 'technician_performance', icon: UserRoundCheck },

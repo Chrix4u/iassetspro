@@ -4,7 +4,7 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
 import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
-type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
+type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance' | 'breakdown-frequency' | 'response-time-performance' | 'repair-time-mttr' | 'reliability-bad-actors';
 
 // GET /api/repairs/reports?type=lifecycle&plantId=&from=&to=&priority=&department=
 export async function GET(request: NextRequest) {
@@ -25,9 +25,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ReportType | null;
 
-    if (!type || !['lifecycle', 'execution', 'materials', 'tools', 'downtime', 'technician_performance'].includes(type)) {
+    if (!type || !['lifecycle', 'execution', 'materials', 'tools', 'downtime', 'technician_performance', 'breakdown-frequency', 'response-time-performance', 'repair-time-mttr', 'reliability-bad-actors'].includes(type)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid report type. Must be one of: lifecycle, execution, materials, tools, downtime, technician_performance' },
+        { success: false, error: 'Invalid report type' },
         { status: 400 },
       );
     }
@@ -81,6 +81,12 @@ export async function GET(request: NextRequest) {
       case 'materials': result = await handleMaterialsReport(plantId, from, to, dateFilter); break;
       case 'downtime': result = await handleDowntimeReport(plantId, from, to, dateFilter); break;
       case 'tools': result = await handleToolsReport(plantId, from, to, dateFilter); break;
+      case 'breakdown-frequency':
+      case 'response-time-performance':
+      case 'repair-time-mttr':
+      case 'reliability-bad-actors':
+        result = await handleBreakdownKpiReport(plantId, from, to, department, dateFilter);
+        break;
       default:
         return NextResponse.json({ success: false, error: 'Unknown report type' }, { status: 400 });
     }
@@ -699,6 +705,182 @@ async function handleToolsReport(
   });
 }
 
+
+async function handleBreakdownKpiReport(
+  plantId: string | undefined,
+  from: Date | undefined,
+  to: Date | undefined,
+  department: string | undefined,
+  dateFilter: Record<string, unknown>,
+): Promise<NextResponse> {
+  const where: Record<string, unknown> = {
+    type: { in: ['corrective', 'emergency'] },
+  };
+  if (plantId) where.plantId = plantId;
+  if (department) where.departmentId = department;
+  if (Object.keys(dateFilter).length > 0) where.createdAt = dateFilter;
+
+  const workOrders = await db.workOrder.findMany({
+    where,
+    include: { workOrderDowntimes: true },
+    orderBy: { createdAt: 'asc' },
+    take: 10000,
+  });
+
+  const assetIds = [...new Set(workOrders.map((wo) => wo.assetId).filter((id): id is string => Boolean(id)))];
+  const assets = assetIds.length
+    ? await db.asset.findMany({
+        where: { id: { in: assetIds } },
+        select: { id: true, name: true, assetTag: true },
+      })
+    : [];
+  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+
+  const minutesBetween = (start?: Date | null, end?: Date | null) => {
+    if (!start || !end) return null;
+    const value = (end.getTime() - start.getTime()) / 60000;
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const weekKey = (date: Date) => {
+    const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    const day = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return `${utc.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  };
+  const avg = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+
+  const detail = workOrders.map((wo) => {
+    const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
+    const responseMinutes = minutesBetween(wo.createdAt, wo.actualStart);
+    const repairMinutes = minutesBetween(wo.actualStart, wo.actualEnd);
+    const restorationMinutes = minutesBetween(wo.createdAt, wo.actualEnd);
+    const downtimeMinutes = (wo.workOrderDowntimes || []).reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
+    return {
+      id: wo.id,
+      woNumber: wo.woNumber,
+      reportedAt: wo.createdAt.toISOString(),
+      startedAt: wo.actualStart?.toISOString() || null,
+      completedAt: wo.actualEnd?.toISOString() || null,
+      week: weekKey(wo.createdAt),
+      assetName: asset?.name || wo.assetName || 'Unassigned',
+      assetTag: asset?.assetTag || null,
+      priority: wo.priority,
+      trade: wo.tradeActivity || 'Unspecified',
+      status: wo.status,
+      responseMinutes,
+      repairMinutes,
+      restorationMinutes,
+      downtimeMinutes,
+      totalCost: wo.totalCost || 0,
+    };
+  });
+
+  type Aggregate = {
+    count: number;
+    response: number[];
+    repair: number[];
+    restoration: number[];
+    downtime: number;
+    cost: number;
+    failureTimes: number[];
+    assetTag?: string | null;
+  };
+  const byWeekMap = new Map<string, Aggregate>();
+  const byAssetMap = new Map<string, Aggregate>();
+  const byTradeMap = new Map<string, Aggregate>();
+  const createAggregate = (): Aggregate => ({ count: 0, response: [], repair: [], restoration: [], downtime: 0, cost: 0, failureTimes: [] });
+
+  for (const row of detail) {
+    const add = (map: Map<string, Aggregate>, key: string, assetTag?: string | null) => {
+      const bucket = map.get(key) || createAggregate();
+      bucket.count += 1;
+      bucket.failureTimes.push(new Date(row.reportedAt).getTime());
+      if (row.responseMinutes !== null) bucket.response.push(row.responseMinutes);
+      if (row.repairMinutes !== null) bucket.repair.push(row.repairMinutes);
+      if (row.restorationMinutes !== null) bucket.restoration.push(row.restorationMinutes);
+      bucket.downtime += row.downtimeMinutes;
+      bucket.cost += row.totalCost;
+      if (assetTag && !bucket.assetTag) bucket.assetTag = assetTag;
+      map.set(key, bucket);
+    };
+    add(byWeekMap, row.week);
+    add(byAssetMap, row.assetName, row.assetTag);
+    add(byTradeMap, row.trade);
+  }
+
+  const weekly = [...byWeekMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, bucket]) => ({
+      week,
+      breakdowns: bucket.count,
+      avgResponseMinutes: Math.round(avg(bucket.response) * 100) / 100,
+      avgRepairMinutes: Math.round(avg(bucket.repair) * 100) / 100,
+      avgRestorationMinutes: Math.round(avg(bucket.restoration) * 100) / 100,
+      downtimeMinutes: Math.round(bucket.downtime * 100) / 100,
+    }));
+
+  const byAsset = [...byAssetMap.entries()]
+    .map(([assetName, bucket]) => {
+      const times = [...bucket.failureTimes].sort((a, b) => a - b);
+      const intervals = times.slice(1).map((time, index) => (time - times[index]) / 86400000);
+      return {
+        assetName,
+        assetTag: bucket.assetTag || null,
+        breakdowns: bucket.count,
+        avgResponseMinutes: Math.round(avg(bucket.response) * 100) / 100,
+        avgRepairMinutes: Math.round(avg(bucket.repair) * 100) / 100,
+        avgRestorationMinutes: Math.round(avg(bucket.restoration) * 100) / 100,
+        downtimeMinutes: Math.round(bucket.downtime * 100) / 100,
+        mtbfDays: intervals.length ? Math.round(avg(intervals) * 100) / 100 : null,
+        repeatFailure: bucket.count > 1,
+        totalCost: Math.round(bucket.cost * 100) / 100,
+      };
+    })
+    .sort((a, b) => b.breakdowns - a.breakdowns || b.downtimeMinutes - a.downtimeMinutes);
+
+  const byTrade = [...byTradeMap.entries()]
+    .map(([trade, bucket]) => ({
+      trade,
+      breakdowns: bucket.count,
+      avgResponseMinutes: Math.round(avg(bucket.response) * 100) / 100,
+      avgRepairMinutes: Math.round(avg(bucket.repair) * 100) / 100,
+      downtimeMinutes: Math.round(bucket.downtime * 100) / 100,
+    }))
+    .sort((a, b) => b.breakdowns - a.breakdowns);
+
+  const responseValues = detail.flatMap((row) => row.responseMinutes === null ? [] : [row.responseMinutes]);
+  const repairValues = detail.flatMap((row) => row.repairMinutes === null ? [] : [row.repairMinutes]);
+  const restorationValues = detail.flatMap((row) => row.restorationMinutes === null ? [] : [row.restorationMinutes]);
+  const totalDowntimeMinutes = detail.reduce((sum, row) => sum + row.downtimeMinutes, 0);
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      summary: {
+        breakdowns: detail.length,
+        affectedAssets: byAsset.length,
+        repeatFailureAssets: byAsset.filter((row) => row.repeatFailure).length,
+        avgResponseMinutes: Math.round(avg(responseValues) * 100) / 100,
+        avgRepairMinutes: Math.round(avg(repairValues) * 100) / 100,
+        avgRestorationMinutes: Math.round(avg(restorationValues) * 100) / 100,
+        totalDowntimeMinutes: Math.round(totalDowntimeMinutes * 100) / 100,
+        missingStart: detail.filter((row) => row.responseMinutes === null).length,
+        missingCompletion: detail.filter((row) => row.repairMinutes === null).length,
+      },
+      weekly,
+      byAsset,
+      byTrade,
+      detail,
+      period: {
+        from: from?.toISOString() || null,
+        to: to?.toISOString() || null,
+      },
+    },
+  });
+}
+
 // ── PDF PARAMS BUILDER ─────────────────────────────────────────────────────────
 function buildRepairPdfParams(
   type: ReportType,
@@ -725,6 +907,10 @@ function buildRepairPdfParams(
     materials: { title: 'Materials Report', subtitle: 'Material Cost Analysis & Spare Part Returns' },
     downtime: { title: 'Downtime Report', subtitle: 'Equipment Downtime Analysis & Impact Assessment' },
     tools: { title: 'Tool Damage Report', subtitle: 'Damage Incidents, Repair Costs & Tool Transfers' },
+    'breakdown-frequency': { title: 'Breakdown Frequency Report', subtitle: 'Machine, Weekly & Trade Breakdown Frequency' },
+    'response-time-performance': { title: 'Response Time Performance', subtitle: 'Fault Reported to Maintenance Work Start' },
+    'repair-time-mttr': { title: 'Repair Time / MTTR Report', subtitle: 'Work Start to Repair Completion' },
+    'reliability-bad-actors': { title: 'Reliability & Repeat Failure Report', subtitle: 'Bad Actors, MTBF, MTTR & Downtime' },
   };
 
   const { title, subtitle } = reportTitles[type];
@@ -868,6 +1054,109 @@ function buildRepairPdfParams(
             damageType,
             String(value.count),
             `$${value.cost.toLocaleString()}`,
+          ]),
+        }},
+      );
+      break;
+    }
+
+    case 'breakdown-frequency': {
+      sections.push(
+        { title: 'Breakdown Summary', type: 'summary-cards', data: [
+          { label: 'Total Breakdowns', value: data.summary.breakdowns },
+          { label: 'Affected Assets', value: data.summary.affectedAssets },
+          { label: 'Repeat-Failure Assets', value: data.summary.repeatFailureAssets },
+          { label: 'Downtime', value: `${Math.round((data.summary.totalDowntimeMinutes / 60) * 100) / 100}h` },
+        ]},
+        { title: 'Top Machines by Breakdown Count', type: 'table', data: {
+          headers: ['Machine / Asset', 'Breakdowns', 'MTBF Days', 'Downtime (min)'],
+          rows: (data.byAsset as any[]).slice(0, 20).map((row) => [
+            row.assetName,
+            String(row.breakdowns),
+            row.mtbfDays === null ? '—' : String(row.mtbfDays),
+            String(row.downtimeMinutes),
+          ]),
+        }},
+        { title: 'Weekly Breakdown Frequency', type: 'table', data: {
+          headers: ['Week', 'Breakdowns'],
+          rows: (data.weekly as any[]).map((row) => [row.week, String(row.breakdowns)]),
+        }},
+        { title: 'Breakdowns by Trade', type: 'table', data: {
+          headers: ['Trade', 'Breakdowns'],
+          rows: (data.byTrade as any[]).map((row) => [row.trade, String(row.breakdowns)]),
+        }},
+      );
+      break;
+    }
+
+    case 'response-time-performance': {
+      sections.push(
+        { title: 'Response Summary', type: 'summary-cards', data: [
+          { label: 'Breakdowns', value: data.summary.breakdowns },
+          { label: 'Avg Response', value: `${data.summary.avgResponseMinutes} min` },
+          { label: 'Missing Start Times', value: data.summary.missingStart },
+        ]},
+        { title: 'Response by Machine', type: 'table', data: {
+          headers: ['Machine / Asset', 'Breakdowns', 'Avg Response (min)'],
+          rows: (data.byAsset as any[]).slice(0, 20).map((row) => [
+            row.assetName, String(row.breakdowns), String(row.avgResponseMinutes),
+          ]),
+        }},
+        { title: 'Weekly Response Time', type: 'table', data: {
+          headers: ['Week', 'Breakdowns', 'Avg Response (min)'],
+          rows: (data.weekly as any[]).map((row) => [row.week, String(row.breakdowns), String(row.avgResponseMinutes)]),
+        }},
+        { title: 'Response by Trade', type: 'table', data: {
+          headers: ['Trade', 'Breakdowns', 'Avg Response (min)'],
+          rows: (data.byTrade as any[]).map((row) => [row.trade, String(row.breakdowns), String(row.avgResponseMinutes)]),
+        }},
+      );
+      break;
+    }
+
+    case 'repair-time-mttr': {
+      sections.push(
+        { title: 'Repair Time Summary', type: 'summary-cards', data: [
+          { label: 'Breakdowns', value: data.summary.breakdowns },
+          { label: 'Average MTTR', value: `${data.summary.avgRepairMinutes} min` },
+          { label: 'Avg Restore Time', value: `${data.summary.avgRestorationMinutes} min` },
+          { label: 'Missing Completion', value: data.summary.missingCompletion },
+        ]},
+        { title: 'MTTR by Machine', type: 'table', data: {
+          headers: ['Machine / Asset', 'Breakdowns', 'Avg MTTR (min)', 'Downtime (min)'],
+          rows: (data.byAsset as any[]).slice(0, 20).map((row) => [
+            row.assetName, String(row.breakdowns), String(row.avgRepairMinutes), String(row.downtimeMinutes),
+          ]),
+        }},
+        { title: 'Weekly MTTR', type: 'table', data: {
+          headers: ['Week', 'Breakdowns', 'Avg MTTR (min)'],
+          rows: (data.weekly as any[]).map((row) => [row.week, String(row.breakdowns), String(row.avgRepairMinutes)]),
+        }},
+        { title: 'MTTR by Trade', type: 'table', data: {
+          headers: ['Trade', 'Breakdowns', 'Avg MTTR (min)'],
+          rows: (data.byTrade as any[]).map((row) => [row.trade, String(row.breakdowns), String(row.avgRepairMinutes)]),
+        }},
+      );
+      break;
+    }
+
+    case 'reliability-bad-actors': {
+      sections.push(
+        { title: 'Reliability Summary', type: 'summary-cards', data: [
+          { label: 'Affected Assets', value: data.summary.affectedAssets },
+          { label: 'Repeat-Failure Assets', value: data.summary.repeatFailureAssets },
+          { label: 'Avg MTTR', value: `${data.summary.avgRepairMinutes} min` },
+          { label: 'Downtime', value: `${Math.round((data.summary.totalDowntimeMinutes / 60) * 100) / 100}h` },
+        ]},
+        { title: 'Bad Actor Ranking', type: 'table', data: {
+          headers: ['Machine / Asset', 'Breakdowns', 'MTBF Days', 'MTTR (min)', 'Downtime (min)', 'Cost'],
+          rows: (data.byAsset as any[]).slice(0, 25).map((row) => [
+            row.assetName,
+            String(row.breakdowns),
+            row.mtbfDays === null ? '—' : String(row.mtbfDays),
+            String(row.avgRepairMinutes),
+            String(row.downtimeMinutes),
+            String(row.totalCost),
           ]),
         }},
       );

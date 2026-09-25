@@ -9,6 +9,8 @@ const planningService = fs.readFileSync('src/services/repairPlanning.service.ts'
 const checkDue = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'utf8');
 const checkDueCron = fs.readFileSync('src/app/api/pm-schedules/check-due-cron/route.ts', 'utf8');
 const detailedReport = fs.readFileSync('src/app/api/repairs/reports/detailed/route.ts', 'utf8');
+const componentCreateApi = fs.readFileSync('src/app/api/component-registry/route.ts', 'utf8');
+const componentUpdateApi = fs.readFileSync('src/app/api/component-registry/[id]/route.ts', 'utf8');
 
 describe('machine component hierarchy maintenance workflow contract', () => {
   it('supports recursive assemblies/components and store spare-part linkage', () => {
@@ -31,6 +33,12 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(convertDialog).toContain('componentIds: form.componentIds.length > 0');
     expect(planningService).toContain('await tx.workOrderComponent.createMany');
     expect(planningService).toContain('component.assetId !== mr.assetId');
+  });
+
+  it('protects hierarchy integrity across machines and against cycles', () => {
+    expect(componentCreateApi).toContain('Parent component belongs to a different asset');
+    expect(componentUpdateApi).toContain('Parent component belongs to a different asset');
+    expect(componentUpdateApi).toContain('Parent selection would create a component hierarchy cycle');
   });
 
   it('allows PM schedules to target a component and carries it to generated PM work orders', () => {

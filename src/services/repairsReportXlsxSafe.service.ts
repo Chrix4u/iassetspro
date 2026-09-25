@@ -270,8 +270,8 @@ const OPERATIONS_COLUMNS: ReportColumn[] = [
 function dateRangeFilter(filters: ReportFilters): Record<string, Date> | undefined {
   if (!filters.dateFrom && !filters.dateTo) return undefined;
   const range: Record<string, Date> = {};
-  if (filters.dateFrom) range.gte = new Date(\`\${filters.dateFrom}T00:00:00\`);
-  if (filters.dateTo) range.lte = new Date(\`\${filters.dateTo}T23:59:59\`);
+  if (filters.dateFrom) range.gte = new Date(`${filters.dateFrom}T00:00:00`);
+  if (filters.dateTo) range.lte = new Date(`${filters.dateTo}T23:59:59`);
   return range;
 }
 
@@ -365,8 +365,8 @@ async function exportOperationsSummaryReport(
   };
 
   if (filters.dateFrom && filters.dateTo) {
-    const cursor = new Date(\`\${filters.dateFrom}T00:00:00Z\`);
-    const end = new Date(\`\${filters.dateTo}T00:00:00Z\`);
+    const cursor = new Date(`${filters.dateFrom}T00:00:00Z`);
+    const end = new Date(`${filters.dateTo}T00:00:00Z`);
     let guard = 0;
     while (cursor <= end && guard < 367) {
       ensure(cursor.toISOString().slice(0, 10));

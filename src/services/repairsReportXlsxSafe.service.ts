@@ -1772,6 +1772,7 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
     .map(([assetName, row]) => {
       const ordered = [...row.failureTimes].sort((a, b) => a - b);
       const intervals = ordered.slice(1).map((time, index) => (time - ordered[index]) / 86400000);
+      const mtbfDays: number | '' = intervals.length ? Number(average(intervals).toFixed(2)) : '';
       return {
         assetName,
         assetTag: row.assetTag || '',
@@ -1781,7 +1782,7 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
         restorationMinutes: Number(row.restorationMinutes.toFixed(2)),
         recordedDowntimeMinutes: Number(row.recordedDowntimeMinutes.toFixed(2)),
         totalCost: Number(row.totalCost.toFixed(2)),
-        mtbfDays: intervals.length ? Number(average(intervals).toFixed(2)) : '',
+        mtbfDays,
         repeatFailure: row.breakdowns > 1 ? 'Yes' : 'No',
         lastBreakdown: row.lastBreakdown || '',
       };

@@ -146,9 +146,24 @@ MIGRATION_RC=$?
 set -e
 printf '%s\n' "$MIGRATION_STATUS"
 
+RECOVERABLE_FAILED_MIGRATION="20260925161000_add_pm_schedule_component"
+NEEDS_MIGRATION=0
+RECOVER_FAILED_MIGRATION=0
+
 if grep -q "Database schema is up to date" <<<"$MIGRATION_STATUS"; then
   echo "No pending migrations"
 elif grep -Eq "not yet been applied|have not yet been applied|Following migration" <<<"$MIGRATION_STATUS"; then
+  NEEDS_MIGRATION=1
+elif grep -qi "failed" <<<"$MIGRATION_STATUS" && grep -q "$RECOVERABLE_FAILED_MIGRATION" <<<"$MIGRATION_STATUS"; then
+  echo "Recoverable failed migration detected: $RECOVERABLE_FAILED_MIGRATION"
+  NEEDS_MIGRATION=1
+  RECOVER_FAILED_MIGRATION=1
+else
+  echo "STOP: migration status unclassified (exit $MIGRATION_RC)"
+  exit 1
+fi
+
+if [[ "$NEEDS_MIGRATION" -eq 1 ]]; then
   mkdir -p "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
   DUMP_BIN="$(command -v mariadb-dump || command -v mysqldump || true)"
@@ -158,7 +173,7 @@ elif grep -Eq "not yet been applied|have not yet been applied|Following migratio
   DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"3306")')"
   DB_USER="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.username))')"
   DB_PASS="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.password))')"
-  DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
+  DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\\//,"")))')"
   BACKUP="${BACKUP_DIR}/pre-deploy-${SHA:0:12}-${STAMP}.sql.gz"
   MYSQL_PWD="$DB_PASS" "$DUMP_BIN" --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
     --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"
@@ -166,11 +181,14 @@ elif grep -Eq "not yet been applied|have not yet been applied|Following migratio
   test -s "$BACKUP"
   gzip -t "$BACKUP"
   echo "Verified database backup: $BACKUP"
+
+  if [[ "$RECOVER_FAILED_MIGRATION" -eq 1 ]]; then
+    echo "Marking failed migration as rolled back before retry: $RECOVERABLE_FAILED_MIGRATION"
+    node "$PRISMA_CLI" migrate resolve --rolled-back "$RECOVERABLE_FAILED_MIGRATION"
+  fi
+
   node "$PRISMA_CLI" migrate deploy
   node "$PRISMA_CLI" migrate status
-else
-  echo "STOP: migration status unclassified (exit $MIGRATION_RC)"
-  exit 1
 fi
 
 health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-old-postmigration.json 3 2 || {

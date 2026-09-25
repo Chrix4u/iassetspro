@@ -8,6 +8,17 @@ test.describe('Repairs Reports & Analytics', () => {
     await page.goto('/');
     await expect(page.getByText('UAT Planner', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 
+    let operationalExportBody: Record<string, unknown> | null = null;
+    await page.route('**/api/repairs/reports/xlsx', async (route) => {
+      operationalExportBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers: { 'content-disposition': 'attachment; filename="work-order-report.xlsx"' },
+        body: 'mock-xlsx',
+      });
+    });
+
     await page.route('**/api/reports/maintenance?**', async (route) => {
       await route.fulfill({
         status: 200,
@@ -133,8 +144,43 @@ test.describe('Repairs Reports & Analytics', () => {
     await expect(page.getByText('Main Conveyor')).toBeVisible();
     await expect(page.getByText('Tracked economic impact')).toBeVisible();
 
-    await expect(page.getByRole('button', { name: 'PDF' })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Excel' })).toBeEnabled();
+    const reportLibrary = page
+      .getByText('Repairs Report Library', { exact: true })
+      .locator('xpath=ancestor::*[@data-slot="card"][1]');
+    await expect(reportLibrary).toBeVisible();
+    for (const title of [
+      'Work Orders',
+      'Maintenance Requests',
+      'Technician Labor & Time',
+      'Downtime & Production Loss',
+      'Materials Usage & Returns',
+      'Tools, Damage & Transfers',
+      'Failure Analysis',
+      'Repair Cost Analysis',
+      'Backlog & Aging',
+      'SLA Compliance',
+    ]) {
+      await expect(reportLibrary.getByText(title, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole('button', { name: 'Today' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'This Week' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'This Month' })).toBeVisible();
+
+    const workOrderReportCard = reportLibrary
+      .getByText('Work Orders', { exact: true })
+      .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+    await workOrderReportCard.getByRole('button', { name: 'Excel' }).click();
+    await expect.poll(() => operationalExportBody).not.toBeNull();
+    expect(operationalExportBody).toMatchObject({
+      reportType: 'work-order',
+      filters: expect.objectContaining({
+        dateFrom: expect.any(String),
+        dateTo: expect.any(String),
+      }),
+    });
+
+    await expect(page.getByRole('button', { name: 'PDF' }).first()).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Excel' }).first()).toBeEnabled();
     await expect(page.getByRole('button', { name: 'CSV' })).toBeEnabled();
   });
 

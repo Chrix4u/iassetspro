@@ -149,6 +149,8 @@ test.describe('Repairs Reports & Analytics', () => {
       .locator('xpath=ancestor::*[@data-slot="card"][1]');
     await expect(reportLibrary).toBeVisible();
     for (const title of [
+      'Machine / Component Repair Detail',
+      'Material Reconciliation',
       'Daily / Weekly Operations',
       'Asset Repair History',
       'Department / Cost Center Costs',

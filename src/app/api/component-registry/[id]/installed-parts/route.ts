@@ -188,8 +188,17 @@ export async function POST(
     }
 
     if (serialNumber) {
-      const duplicate = await db.installedSparePart.findUnique({ where: { serialNumber: String(serialNumber).trim() } });
-      if (duplicate) return NextResponse.json({ success: false, error: 'Serial number is already tracked' }, { status: 409 });
+      const normalizedSerial = String(serialNumber).trim();
+      const duplicate = await db.installedSparePart.findFirst({
+        where: { serialNumber: normalizedSerial, status: 'installed' },
+        select: { id: true, componentId: true },
+      });
+      if (duplicate) {
+        return NextResponse.json(
+          { success: false, error: 'Serial number is already installed on a component' },
+          { status: 409 },
+        );
+      }
     }
 
     if (workOrderId) {

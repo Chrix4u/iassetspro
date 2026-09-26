@@ -193,7 +193,8 @@ if [[ "$USER_COUNT" == "0" ]]; then
   echo "Clean PostgreSQL staging detected; seeding constants/reference data only"
   NODE_ENV=production bun --env-file=.env run prisma/seed-constants.ts
 else
-  echo "PostgreSQL staging already commissioned with users; constants bootstrap skipped"
+  echo "PostgreSQL staging already commissioned; reconciling idempotent constants/reference data"
+  IASSETSPRO_ALLOW_COMMISSIONED_DATA=1 NODE_ENV=production bun --env-file=.env run prisma/seed-constants.ts
 fi
 unset DB_PASS
 

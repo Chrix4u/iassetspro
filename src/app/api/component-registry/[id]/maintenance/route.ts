@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getComponentPlantAccess } from '@/lib/component-plant-access';
 import { createAuditLog } from '@/lib/audit';
 
 export async function GET(
@@ -18,6 +19,13 @@ export async function GET(
     }
 
     const { id } = await params;
+    const componentAccess = await getComponentPlantAccess(request, session, id);
+    if (!componentAccess.exists) {
+      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+    }
+    if (!componentAccess.allowed) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
     const maintenanceType = searchParams.get('maintenanceType');
     const startDate = searchParams.get('startDate');
@@ -70,6 +78,13 @@ export async function POST(
     }
 
     const { id } = await params;
+    const componentAccess = await getComponentPlantAccess(request, session, id);
+    if (!componentAccess.exists) {
+      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+    }
+    if (!componentAccess.allowed) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
     const body = await request.json();
     const {
       maintenanceType,

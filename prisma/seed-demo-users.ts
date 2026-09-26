@@ -43,6 +43,8 @@ type DemoUser = {
   passwordKind: 'admin' | 'demo';
 };
 
+// Plant access is intentionally not seeded: commissioning creates real test
+// plants first, then UAT users can be assigned without reintroducing demo plant data.
 const demoUsers: DemoUser[] = [
   { username: 'admin', email: 'admin@iassetspro.com', fullName: 'System Administrator', staffId: 'EMP-001', roleSlug: 'admin', department: 'Maintenance', passwordKind: 'admin' },
   { username: 'pm.temafactory', email: 'pm.temafactory@iassetspro.com', fullName: 'Kwame Asante', staffId: 'EMP-002', roleSlug: 'admin', department: 'Maintenance', primaryTrade: 'Maintenance Management', passwordKind: 'admin' },

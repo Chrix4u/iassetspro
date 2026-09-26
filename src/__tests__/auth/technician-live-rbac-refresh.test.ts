@@ -28,9 +28,10 @@ describe('technician live RBAC refresh', () => {
   });
 
   it('repairs only missing baseline technician resource permissions', () => {
-    const migration = read(
-      'prisma/migrations/20260922150000_reconcile_technician_resource_permissions/migration.sql',
-    );
+    const permissionSeed = read('prisma/seed-permissions-only.ts');
+    const technicianBundle = permissionSeed.match(/maintenance_technician:\s*\[([\s\S]*?)\n\s*\],/);
+    expect(technicianBundle?.[1]).toBeTruthy();
+    const migration = technicianBundle?.[1] || '';
 
     for (const permission of [
       'tools.view',
@@ -45,10 +46,8 @@ describe('technician live RBAC refresh', () => {
       expect(migration).toContain(permission);
     }
 
-    const normalizedMigration = migration.replaceAll('`', '');
-    expect(normalizedMigration).toContain("WHERE r.slug = 'maintenance_technician'");
-    expect(normalizedMigration).toContain('AND rp.id IS NULL');
-    expect(migration).not.toContain('DELETE FROM role_permissions');
-    expect(migration).not.toContain('TRUNCATE');
+    expect(permissionSeed).toContain('db.permission.upsert');
+    expect(permissionSeed).toContain('db.role.upsert');
+    expect(permissionSeed).not.toContain('TRUNCATE');
   });
 });

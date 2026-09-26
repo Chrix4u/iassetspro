@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
-import { hash } from 'bcryptjs';
 import { seedCanonicalTransitions } from '../src/lib/state-machine';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -72,37 +71,6 @@ async function main() {
   runSeed('prisma/seed-permissions-only.ts');
   runSeed('prisma/seed-trades.ts');
 
-  const adminRole = await db.role.findUnique({ where: { slug: 'admin' } });
-  if (!adminRole) throw new Error('Admin role was not created by the RBAC seed');
-
-  const username = process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin';
-  const email = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@iassetspro.local';
-  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD || '';
-  if (password.length < 12) {
-    throw new Error('BOOTSTRAP_ADMIN_PASSWORD must be set and contain at least 12 characters');
-  }
-
-  const passwordHash = await hash(password, 12);
-  const admin = await db.user.upsert({
-    where: { username },
-    update: {
-      email,
-      fullName: process.env.BOOTSTRAP_ADMIN_NAME || 'System Administrator',
-      passwordHash,
-      status: 'active',
-    },
-    create: {
-      username,
-      email,
-      fullName: process.env.BOOTSTRAP_ADMIN_NAME || 'System Administrator',
-      passwordHash,
-      status: 'active',
-    },
-  });
-
-  await db.userRole.deleteMany({ where: { userId: admin.id } });
-  await db.userRole.create({ data: { userId: admin.id, roleId: adminRole.id } });
-
   for (const mod of systemModules) {
     const systemModule = await db.systemModule.upsert({
       where: { code: mod.code },
@@ -133,9 +101,9 @@ async function main() {
         isActive: true,
         isEnabled: true,
         licensedAt: new Date(),
-        licensedBy: admin.id,
+        licensedBy: null,
         activatedAt: new Date(),
-        activatedBy: admin.id,
+        activatedBy: null,
       };
       if (existing) {
         await db.companyModule.update({ where: { id: existing.id }, data: values });
@@ -162,6 +130,7 @@ async function main() {
     maintenanceRequests: await db.maintenanceRequest.count(),
     inventoryItems: await db.inventoryItem.count(),
     tools: await db.tool.count(),
+    users: await db.user.count(),
   };
 
   for (const [name, count] of Object.entries(operationalCounts)) {
@@ -170,7 +139,6 @@ async function main() {
     }
   }
 
-  console.log(`✅ Bootstrap admin: ${username}`);
   console.log(`✅ System modules: ${systemModules.length}`);
   console.log(`✅ Canonical transitions: ${transitionCount}`);
   console.log('✅ Operational staging tables are empty and ready for manual commissioning');

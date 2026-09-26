@@ -561,8 +561,8 @@ describe('convertMRToWorkOrder function contract', () => {
 
 describe('MR conversion material reconciliation source contract', () => {
   it('keeps legacy planner rows visible while requiring execution submission for new requests', () => {
-    const migration = fs.readFileSync(
-      path.join(process.cwd(), 'prisma/migrations/20260920194000_backfill_mr_conversion_materials/migration.sql'),
+    const planningService = fs.readFileSync(
+      path.join(process.cwd(), 'src/services/repairPlanning.service.ts'),
       'utf8',
     );
     const suggestedRoute = fs.readFileSync(
@@ -574,11 +574,10 @@ describe('MR conversion material reconciliation source contract', () => {
       'utf8',
     );
 
-    expect(migration).toContain("INSERT INTO `repair_material_requests`");
-    expect(migration).toContain("w.`maintenanceRequestId` IS NOT NULL");
-    expect(migration).toContain("wom.`status` = 'planned'");
-    expect(migration).toContain("'planner_suggested'");
-    expect(migration).toContain('NOT EXISTS');
+    expect(planningService).toContain('Planner-selected resources are recommendations only');
+    expect(planningService).toContain("status: 'planned'");
+    expect(planningService).toContain('suggestedParts.push');
+    expect(planningService).toContain('suggestedTools.push');
 
     expect(suggestedRoute).toContain('const reconciledParts = new Map');
     expect(suggestedRoute).toContain('for (const material of wo.materials)');

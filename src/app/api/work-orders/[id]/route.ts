@@ -83,6 +83,7 @@ export async function GET(
           supervisorApprovedBy: { select: { id: true, fullName: true } },
           storekeeperApprovedBy: { select: { id: true, fullName: true } },
           issuedByUser: { select: { id: true, fullName: true } },
+          componentRegistry: { select: { id: true, name: true, componentCode: true, componentType: true } },
         },
         orderBy: { createdAt: 'desc' as const },
       },

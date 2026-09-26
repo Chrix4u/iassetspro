@@ -149,6 +149,7 @@ export interface WODetail {
   repairMaterialRequests: Array<{
     id: string;
     workOrderId: string;
+    componentRegistryId: string | null;
     itemId: string | null;
     itemName: string | null;
     itemCode: string | null;
@@ -172,6 +173,7 @@ export interface WODetail {
     storekeeperApprovedBy: { id: string; fullName: string } | null;
     issuedByUser: { id: string; fullName: string } | null;
     item: { id: string; name: string; itemCode: string; category: string } | null;
+    componentRegistry: { id: string; name: string; componentCode: string; componentType: string } | null;
   }>;
   workOrderComponents: Array<{
     id: string;

@@ -1,54 +1,30 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { hash } from 'bcryptjs';
 import { seedCanonicalTransitions } from '../src/lib/state-machine';
 
-// ══════════════════════════════════════════════════════════════════════════
-// DATABASE CONNECTION — Robust, adapter-free for seed scripts
-// ══════════════════════════════════════════════════════════════════════════
-//
-// Why no adapter? The PrismaMariaDb adapter requires exact package versions
-// and can fail silently on some VPS setups. For seed scripts, the built-in
-// Prisma MySQL driver works perfectly with MariaDB and is more reliable.
-//
-// Usage:
-//   DATABASE_URL="mysql://user:pass@host:3306/dbname" npx tsx prisma/seed.ts
-//   -- OR with individual env vars:
-//   DB_HOST=localhost DB_USER=root DB_PASSWORD=xxx DB_NAME=eam npx tsx prisma/seed.ts
+const CANONICAL_ONLY = ['1', 'true', 'yes'].includes(String(process.env.SEED_CANONICAL_ONLY || '').toLowerCase());
 
-console.log('🔧 Connecting to database...');
+console.log('🔧 Connecting to PostgreSQL...');
 
-// Ensure DATABASE_URL is set (either directly or from individual vars)
-if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://')) {
-  const host = process.env.DB_HOST || 'localhost';
-  const port = process.env.DB_PORT || '3306';
-  const user = process.env.DB_USER || 'root';
-  const password = process.env.DB_PASSWORD || '';
-  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
-  process.env.DATABASE_URL = `mysql://${user}:${password}@${host}:${port}/${database}`;
-  console.log(`  📡 Built DATABASE_URL from individual env vars -> ${host}/${database}`);
+if (!process.env.DATABASE_URL || !/^postgres(?:ql)?:\/\//.test(process.env.DATABASE_URL)) {
+  const host = process.env.PGHOST || process.env.DB_HOST || 'localhost';
+  const port = process.env.PGPORT || process.env.DB_PORT || '5432';
+  const user = process.env.PGUSER || process.env.DB_USER || 'postgres';
+  const password = process.env.PGPASSWORD || process.env.DB_PASSWORD || '';
+  const database = process.env.PGDATABASE || process.env.DB_NAME || 'iassetspro';
+  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+  console.log(`  📡 Built PostgreSQL DATABASE_URL from environment -> ${host}/${database}`);
 } else {
   console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
 }
 
-// Parse DATABASE_URL and create adapter-based client for MySQL/MariaDB
-let _dbClient: PrismaClient;
-try {
-  const _url = new URL(process.env.DATABASE_URL!);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createAdapter } = require('../src/lib/create-mariadb-adapter');
-  const _adapter = createAdapter({
-    host: _url.hostname,
-    port: parseInt(_url.port || '3306', 10),
-    user: decodeURIComponent(_url.username),
-    password: decodeURIComponent(_url.password),
-    database: _url.pathname.slice(1),
-  });
-  _dbClient = new PrismaClient({ adapter: _adapter, log: ['warn', 'error'] });
-} catch (e) {
-  console.warn('Failed to create adapter client, falling back:', (e as Error).message);
-  _dbClient = new PrismaClient({ log: ['warn', 'error'] });
-}
-const db = _dbClient;
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL!,
+  max: Number.parseInt(process.env.DB_POOL_MAX || '10', 10),
+  connectionTimeoutMillis: Number.parseInt(process.env.DB_CONNECT_TIMEOUT_MS || '5000', 10),
+});
+const db = new PrismaClient({ adapter, log: ['warn', 'error'] });
 
 // ============================================================================
 // 1. PERMISSION DEFINITIONS — 11 modules with structured actions
@@ -745,38 +721,27 @@ async function seed() {
   }
 
   // ── Clear existing data for clean re-seed ──
-  // ⚠️  WARNING: This is a DESTRUCTIVE operation. Use seed-permissions-only.ts for production updates.
+  // PostgreSQL supports a single FK-safe TRUNCATE across the public schema.
   console.log('🗑️  Clearing existing data...');
-  console.log('  ⚠️  DESTRUCTIVE — this will delete ALL data. For non-destructive updates, use seed-permissions-only.ts');
+  console.log('  ⚠️  DESTRUCTIVE — all operational and reference rows will be recreated by this seed.');
   try {
-    // Method 1: TRUNCATE with FK checks disabled (fastest)
-    // NOTE: The MariaDB adapter may use connection pooling, so SET FOREIGN_KEY_CHECKS
-    // might not persist across queries. We use a single multi-statement approach.
-    const tables = await db.$queryRawUnsafe(
-      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_prisma_migrations'`
+    const rows = await db.$queryRawUnsafe<Array<{ tablename: string }>>(
+      `SELECT tablename
+       FROM pg_tables
+       WHERE schemaname = 'public'
+         AND tablename <> '_prisma_migrations'`
     );
-    const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
+    const tableNames = rows.map((row) => row.tablename);
     if (tableNames.length > 0) {
-      // Use a Prisma interactive transaction so all DELETE queries share one connection.
-      // This allows SET FOREIGN_KEY_CHECKS=0 to persist across all subsequent deletes.
-      console.log(`  🗑️  Clearing ${tableNames.length} tables via raw SQL in transaction...`);
-      await db.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0`);
-        for (const t of tableNames) {
-          try {
-            await tx.$executeRawUnsafe(`DELETE FROM \`${t}\``);
-          } catch {
-            /* skip — some tables may not exist yet or have circular refs */
-          }
-        }
-        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1`);
-      });
-      console.log(`  ✅ Cleared ${tableNames.length} tables`);
+      const quoted = tableNames.map((name) => `"${name.replace(/"/g, '""')}"`).join(', ');
+      await db.$executeRawUnsafe(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+      console.log(`  ✅ Cleared ${tableNames.length} PostgreSQL tables`);
     } else {
-      console.log('  ℹ️  No tables found (fresh database)');
+      console.log('  ℹ️  No application tables found (fresh database)');
     }
   } catch (e) {
-    console.error('  ❌ All clear methods failed:', (e as Error).message);
+    console.error('  ❌ PostgreSQL reset failed:', (e as Error).message);
+    throw e;
   }
   console.log('');
 
@@ -1159,6 +1124,55 @@ async function seed() {
   // populate the table in a way that suppresses later canonical auto-seeding.
   const seededTransitionCount = await seedCanonicalTransitions(db);
   console.log(`  ✅ Canonical status transitions synchronized: ${seededTransitionCount}\n`);
+
+  if (CANONICAL_ONLY) {
+    console.log('🧹 Canonical-only mode: removing demo/operational rows...');
+
+    const keepTables = new Set([
+      '_prisma_migrations',
+      'roles',
+      'permissions',
+      'role_permissions',
+      'system_modules',
+      'company_modules',
+      'status_transitions',
+      'users',
+      'user_roles',
+    ]);
+
+    const rows = await db.$queryRawUnsafe<Array<{ tablename: string }>>(
+      `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+    );
+    const purgeTables = rows
+      .map((row) => row.tablename)
+      .filter((name) => !keepTables.has(name));
+
+    if (purgeTables.length > 0) {
+      const quoted = purgeTables.map((name) => `"${name.replace(/"/g, '""')}"`).join(', ');
+      await db.$executeRawUnsafe(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+    }
+
+    await db.userRole.deleteMany({ where: { userId: { not: admin.id } } });
+    await db.user.deleteMany({ where: { id: { not: admin.id } } });
+
+    const bootstrapPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'ChangeMe-Immediately-2026!';
+    await db.user.update({
+      where: { id: admin.id },
+      data: {
+        email: process.env.DEFAULT_ADMIN_EMAIL || 'admin@iassetspro.local',
+        fullName: 'System Administrator',
+        staffId: 'SYS-ADMIN',
+        department: null,
+        phone: null,
+        passwordHash: await hash(bootstrapPassword, 12),
+      },
+    });
+
+    console.log('  ✅ Preserved canonical roles, permissions, module definitions, lifecycle transitions, and one bootstrap administrator.');
+    console.log('  ✅ Plants, departments, employees, assets, components, inventory, tools, PM and work-order data are empty.');
+    console.log('  🔐 Change the bootstrap administrator password immediately after first sign-in.');
+    return;
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 8: SAMPLE MAINTENANCE REQUESTS

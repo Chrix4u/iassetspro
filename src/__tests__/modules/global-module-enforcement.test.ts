@@ -23,7 +23,7 @@ describe('global operational-module enforcement', () => {
   const modulesApi = read('src/app/api/modules/route.ts');
   const moduleUpdateApi = read('src/app/api/modules/[id]/route.ts');
   const seed = read('prisma/seed.ts');
-  const constantsSeed = read('prisma/seed-constants.ts');
+  const referenceSeed = read('prisma/seed-reference-data.ts');
 
   it('reserves non-disableable core for the platform control plane only', () => {
     expect(moduleAccess).toContain(
@@ -43,7 +43,7 @@ describe('global operational-module enforcement', () => {
     }
 
     for (const code of ['assets', 'maintenance_requests', 'work_orders', 'inventory']) {
-      const line = constantsSeed
+      const line = referenceSeed
         .split('\n')
         .find((candidate) => candidate.includes(`code: '${code}'`));
       expect(line).toBeDefined();

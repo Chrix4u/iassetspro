@@ -246,6 +246,8 @@ model User {
   inspectionRecords        ComponentInspectionRecord[]   @relation("InspectionRecorded")
   lubricationPerformed     ComponentLubricationRecord[]  @relation("LubricationPerformed")
   replacementPerformed     ComponentReplacementHistory[] @relation("ReplacementPerformed")
+  installedSpareParts      InstalledSparePart[]          @relation("InstalledSpareInstalledBy")
+  removedSpareParts        InstalledSparePart[]          @relation("InstalledSpareRemovedBy")
 
   // Work Instruction relations
   workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
@@ -591,6 +593,7 @@ model WorkOrder {
 
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
+  installedSpareParts          InstalledSparePart[]          @relation("InstalledSpareWorkOrder")
 
   // Spare Part Return relations
   sparePartReturns SparePartReturn[]
@@ -925,7 +928,7 @@ model Asset {
   assetTag          String    @unique
   description       String?   @db.Text
   categoryId        String
-  serialNumber      String?   @unique
+  serialNumber      String?
   manufacturer      String?
   model             String?
   yearManufactured  Int?
@@ -1052,7 +1055,8 @@ model InventoryItem {
   bomItems BomRevisionItem[] @relation("BomItemInventory")
 
   // Spare Part Return relations
-  sparePartReturns SparePartReturn[] @relation("SparePartReturnItem")
+  sparePartReturns    SparePartReturn[]   @relation("SparePartReturnItem")
+  installedSpareParts InstalledSparePart[] @relation("InstalledSpareInventory")
 
   @@map("inventory_items")
 }
@@ -2570,7 +2574,8 @@ model RepairMaterialRequest {
   returnedByUser        User? @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
 
   // Spare Part Return relations
-  sparePartReturns SparePartReturn[] @relation("SparePartReturnMatReq")
+  sparePartReturns    SparePartReturn[]   @relation("SparePartReturnMatReq")
+  installedSpareParts InstalledSparePart[] @relation("InstalledSpareMaterialRequest")
 
   @@index([componentRegistryId])
   @@map("repair_material_requests")
@@ -2759,6 +2764,44 @@ model RepairCompletion {
 }
 
 // 6. SparePartReturn — Reusable parts returned from machine for refurbishment
+model InstalledSparePart {
+  id                String    @id @default(cuid())
+  componentId       String
+  inventoryItemId   String?
+  materialRequestId String?
+  workOrderId       String?
+  partName          String
+  partCode          String?
+  serialNumber      String?   @unique
+  lotNumber         String?
+  quantity          Float     @default(1)
+  sourceType        String    @default("manual") // material_request, commissioning, manual
+  status            String    @default("installed") // installed, removed, returned_to_store, scrapped
+  installedAt       DateTime  @default(now())
+  installedById     String
+  removedAt         DateTime?
+  removedById       String?
+  removalReason     String?
+  conditionOnRemoval String?
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  component       ComponentRegistry      @relation("InstalledSpareComponent", fields: [componentId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem?         @relation("InstalledSpareInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  materialRequest RepairMaterialRequest? @relation("InstalledSpareMaterialRequest", fields: [materialRequestId], references: [id], onDelete: SetNull)
+  workOrder       WorkOrder?             @relation("InstalledSpareWorkOrder", fields: [workOrderId], references: [id], onDelete: SetNull)
+  installedBy     User                   @relation("InstalledSpareInstalledBy", fields: [installedById], references: [id])
+  removedBy       User?                  @relation("InstalledSpareRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+
+  @@index([componentId, status])
+  @@index([inventoryItemId])
+  @@index([materialRequestId])
+  @@index([workOrderId])
+  @@index([installedAt])
+  @@map("installed_spare_parts")
+}
+
 model SparePartReturn {
   id                  String    @id @default(cuid())
   returnNumber        String    @unique // format SPR-YYYYMM-NNNN
@@ -2924,6 +2967,7 @@ model ComponentRegistry {
   lubricationSchedules     ComponentLubricationSchedule[]
   lubricationRecords       ComponentLubricationRecord[]
   replacementHistory       ComponentReplacementHistory[]
+  installedSpareParts      InstalledSparePart[] @relation("InstalledSpareComponent")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems              BomRevisionItem[]    @relation("BomItemComponent")

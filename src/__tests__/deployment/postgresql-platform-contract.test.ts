@@ -51,10 +51,11 @@ describe('PostgreSQL platform contract', () => {
     expect(deploy).not.toContain('mysqldump');
     expect(deploy).not.toContain('mariadb-dump');
 
-    expect(bootstrap).toContain('PG_APP_USER="${POSTGRESQL_APP_USER:-iassetspro_app}"');
-    expect(bootstrap).toContain('PG_DATABASE="${POSTGRESQL_DATABASE:-lightworld_iassetspro_pg}"');
-    expect(bootstrap).toContain('runuser -u postgres -- psql');
+    expect(bootstrap).toContain('POSTGRESQL_SHARED_ENV:-/home/lightworld/shared/iassetspro/postgres.env');
+    expect(bootstrap).toContain('shared PostgreSQL configuration is missing');
     expect(bootstrap).toContain('pg_isready');
+    expect(bootstrap).toContain('PGPASSWORD="$PG_APP_PASSWORD" psql');
+    expect(bootstrap).not.toContain('runuser -u postgres -- psql');
   });
 
   it('keeps operational staging empty and enables a race-safe first administrator setup', () => {

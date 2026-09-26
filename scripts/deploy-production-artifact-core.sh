@@ -241,7 +241,7 @@ fi
 echo "[6/10] Reconcile canonical lifecycle transitions"
 RECONCILIATION_STARTED=1
 cd "$NEW_RELEASE"
-if ! NODE_ENV=production bun run scripts/seed-transitions.ts; then
+if ! NODE_ENV=production bun --env-file=.env run scripts/seed-transitions.ts; then
   echo "STOP: transition reconciliation failed; rolling back runtime"
   rollback_runtime
   exit 1

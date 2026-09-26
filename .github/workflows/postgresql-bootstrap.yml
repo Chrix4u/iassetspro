@@ -1,0 +1,62 @@
+name: PostgreSQL Bootstrap Artifacts
+
+on:
+  push:
+    branches: [feat/postgresql-clean-staging]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: postgresql-bootstrap-artifacts
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/postgresql-clean-staging
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Resolve PostgreSQL dependencies and refresh lock
+        run: bun install
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/iassetspro_ci?schema=public
+        run: bunx prisma generate
+
+      - name: Replace MySQL migration history with PostgreSQL baseline
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/iassetspro_ci?schema=public
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf prisma/migrations
+          mkdir -p prisma/migrations/00000000000000_postgresql_baseline
+          bunx prisma migrate diff             --from-empty             --to-schema prisma/schema.prisma             --script             > prisma/migrations/00000000000000_postgresql_baseline/migration.sql
+          test -s prisma/migrations/00000000000000_postgresql_baseline/migration.sql
+          grep -q 'CREATE TABLE' prisma/migrations/00000000000000_postgresql_baseline/migration.sql
+
+      - name: Commit generated lock and baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bun.lock prisma/migrations
+          if git diff --cached --quiet; then
+            echo "Generated artifacts already current"
+            exit 0
+          fi
+          git commit -m "Database: generate PostgreSQL baseline and lock [skip ci]"
+          git push origin HEAD:feat/postgresql-clean-staging

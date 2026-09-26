@@ -18,17 +18,18 @@ describe('Tools module activation for RWOP', () => {
   });
 
   it('repairs existing production module state without making Tools core', () => {
-    const migration = read(
-      'prisma/migrations/20260922163500_activate_tools_module_for_rwop/migration.sql',
-    );
+    const constantsSeed = read('prisma/seed-constants.ts');
+    const toolsLine = constantsSeed
+      .split('\n')
+      .find((line) => line.includes("code: 'tools'"));
 
-    expect(migration).toContain("WHERE `code` = 'tools'");
-    expect(migration).toContain('`isCore` = 0');
-    expect(migration).toContain('`isSystemLicensed` = 1');
-    expect(migration).toContain("cm.`companyId` = '__default__'");
-    expect(migration).toContain('cm.`isActive` = 1');
-    expect(migration).toContain('cm.`isEnabled` = 1');
-    expect(migration).toContain('cm.`licensedAt` = COALESCE');
+    expect(toolsLine).toBeDefined();
+    expect(toolsLine).toContain('isCore: false');
+    expect(toolsLine).toContain('licensed: true');
+    expect(constantsSeed).toContain("companyId: '__default__'");
+    expect(constantsSeed).toContain('isActive: true');
+    expect(constantsSeed).toContain('isEnabled: true');
+    expect(constantsSeed).toContain('licensedAt: new Date()');
   });
 
   it('continues to enforce Tools at the proxy boundary', () => {

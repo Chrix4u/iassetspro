@@ -47,8 +47,8 @@ npx next build 2>&1 | tail -5
 
 echo -e "${GREEN}[5/6]${NC} Copying assets..."
 cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
-cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb 2>/dev/null || true
-cp -r node_modules/mariadb .next/standalone/node_modules/mariadb 2>/dev/null || true
+cp -r node_modules/@prisma/adapter-pg .next/standalone/node_modules/@prisma/adapter-pg 2>/dev/null || true
+cp -r node_modules/pg .next/standalone/node_modules/pg 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/
 cp -r public .next/standalone/
 

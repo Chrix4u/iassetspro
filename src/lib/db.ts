@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { createAdapter } from './create-postgres-adapter'
 
 let _db: PrismaClient | null = null
 let _dbInitFailed = false
@@ -88,61 +89,39 @@ function runHealthCheck(client: PrismaClient) {
 
 function initDb(): PrismaClient {
   if (_dbInitFailed) {
-    throw new Error('[db] Database not available — previous initialization failed. Check DB_* env vars.')
+    throw new Error('[db] Database not available — previous initialization failed. Check PostgreSQL configuration.')
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createAdapter } = require('./create-mariadb-adapter')
-
-    const host = process.env.DB_HOST
-    const port = parseInt(process.env.DB_PORT || '3306', 10)
-    const user = process.env.DB_USER
-    const password = process.env.DB_PASSWORD
-    const database = process.env.DB_NAME
-
-    if (host && user && password && database) {
-      const adapter = createAdapter({ host, port, user, password, database })
-      _db = new PrismaClient({ adapter })
-      console.log('[db] Connected to MariaDB:', host, '/', database)
-      runHealthCheck(_db)
-      return _db
-    }
-
-    // Try parsing DATABASE_URL if individual vars aren't set
-    const dbUrl = process.env.DATABASE_URL || ''
-    if (dbUrl.startsWith('mysql://')) {
-      try {
-        const url = new URL(dbUrl)
-        const adapter = createAdapter({
-          host: url.hostname,
-          port: parseInt(url.port || '3306', 10),
-          user: decodeURIComponent(url.username),
-          password: decodeURIComponent(url.password),
-          database: url.pathname.slice(1),
-        })
-        _db = new PrismaClient({ adapter })
-        console.log('[db] Connected to MariaDB via DATABASE_URL:', url.host)
-        runHealthCheck(_db)
-        return _db
-      } catch (urlErr) {
-        console.warn('[db] Failed to parse MySQL DATABASE_URL:', (urlErr as Error).message)
+    let connectionString = process.env.DATABASE_URL || ''
+    if (!connectionString) {
+      const host = process.env.DB_HOST
+      const port = process.env.DB_PORT || '5432'
+      const user = process.env.DB_USER
+      const password = process.env.DB_PASSWORD
+      const database = process.env.DB_NAME
+      if (host && user && password && database) {
+        connectionString =
+          `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`
       }
     }
 
-    // No valid MySQL config — create a placeholder client
-    console.warn('[db] No MySQL credentials found — creating placeholder client. Set DB_HOST/DB_USER/DB_PASSWORD/DB_NAME or DATABASE_URL.')
-    const adapter = createAdapter({ host: '127.0.0.1', port: 3306, user: 'placeholder', password: 'placeholder', database: 'placeholder' })
+    if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) {
+      throw new Error('DATABASE_URL must be a PostgreSQL connection string')
+    }
+
+    const adapter = createAdapter(connectionString)
     _db = new PrismaClient({ adapter })
+    const url = new URL(connectionString)
+    console.log('[db] Connected to PostgreSQL:', url.host, '/', url.pathname.slice(1))
     runHealthCheck(_db)
     return _db
   } catch (e) {
-    console.error('[db] MariaDB adapter initialization failed:', (e as Error).message)
+    console.error('[db] PostgreSQL adapter initialization failed:', (e as Error).message)
     _dbInitFailed = true
     throw e
   }
 }
-
 function getDb(): PrismaClient {
   if (_db) return _db
   return initDb()

@@ -23,9 +23,7 @@ describe('global operational-module enforcement', () => {
   const modulesApi = read('src/app/api/modules/route.ts');
   const moduleUpdateApi = read('src/app/api/modules/[id]/route.ts');
   const seed = read('prisma/seed.ts');
-  const migration = read(
-    'prisma/migrations/20260920182000_reclassify_operational_modules/migration.sql',
-  );
+  const constantsSeed = read('prisma/seed-constants.ts');
 
   it('reserves non-disableable core for the platform control plane only', () => {
     expect(moduleAccess).toContain(
@@ -44,10 +42,13 @@ describe('global operational-module enforcement', () => {
       expect(line).toContain('isCore: false');
     }
 
-    expect(migration).toContain(
-      "'assets', 'maintenance_requests', 'work_orders', 'inventory'",
-    );
-    expect(migration).toContain('SET `isCore` = 0');
+    for (const code of ['assets', 'maintenance_requests', 'work_orders', 'inventory']) {
+      const line = constantsSeed
+        .split('\n')
+        .find((candidate) => candidate.includes(`code: '${code}'`));
+      expect(line).toBeDefined();
+      expect(line).toContain('isCore: false');
+    }
   });
 
   it('requires system license, company license, enabled, and active state', () => {

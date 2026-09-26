@@ -1,28 +1,12 @@
 /**
- * Reconcile the canonical status_transitions rows without touching unrelated data.
+ * Reconcile canonical status_transitions on PostgreSQL.
  *
- * Run on VPS:
- *   cd /home/lightworld/webapps/iassetspro && bun run scripts/seed-transitions.ts
- *
- * Driver-only preflight (no database connection or writes):
- *   bun run scripts/seed-transitions.ts --check-driver
- *
- * Database-schema preflight (read-only):
- *   bun run scripts/seed-transitions.ts --check-schema
- *
- * Safe to run repeatedly:
- * - canonical rows are updated/inserted in place
- * - unrelated/custom transitions are preserved
- * - two known legacy transitions that bypass the verified → closed lifecycle are removed
- *
- * Uses the mariadb driver directly to avoid PrismaClient adapter issues in one-off
- * production maintenance scripts.
+ * Driver-only preflight: bun run scripts/seed-transitions.ts --check-driver
+ * Database-schema preflight: bun run scripts/seed-transitions.ts --check-schema
+ * Safe to run repeatedly; unrelated/custom transitions are preserved.
  */
-
-// mariadb 3.5.x exposes the Promise API as named ESM exports. Using the named
-// createConnection export also avoids Bun requiring a non-existent default
-// export from mariadb/promise.js.
-import { createConnection } from 'mariadb';
+import { randomUUID } from 'node:crypto';
+import { Client } from 'pg';
 
 type Transition = {
   entityType: 'maintenance_request' | 'work_order';
@@ -32,41 +16,32 @@ type Transition = {
   requiresReason: boolean;
 };
 
-type DbConnection = Awaited<ReturnType<typeof createConnection>>;
+type DbConnection = Client;
 
 if (process.argv.includes('--check-driver')) {
-  if (typeof createConnection !== 'function') {
-    console.error('❌ MariaDB driver import check failed: createConnection is unavailable.');
+  if (typeof Client !== 'function') {
+    console.error('❌ PostgreSQL driver import check failed: pg.Client is unavailable.');
     process.exit(1);
   }
-  console.log('✅ MariaDB driver import check passed: createConnection is available.');
+  console.log('✅ PostgreSQL driver import check passed: pg.Client is available.');
   process.exit(0);
 }
 
-function getDbConfig() {
-  const host = process.env.DB_HOST || process.env.MYSQL_HOST;
-  const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
-  const user = process.env.DB_USER || process.env.MYSQL_USER;
-  const password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
-  const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+function getDatabaseUrl(): string {
+  const direct = process.env.DATABASE_URL || '';
+  if (/^postgres(?:ql)?:\/\//i.test(direct)) return direct;
+
+  const host = process.env.DB_HOST;
+  const port = process.env.DB_PORT || '5432';
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const database = process.env.DB_NAME;
 
   if (host && user && password && database) {
-    return { host, port, user, password, database };
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
   }
 
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.startsWith('mysql://')) {
-    const url = new URL(dbUrl);
-    return {
-      host: url.hostname,
-      port: parseInt(url.port || '3306', 10),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      database: url.pathname.slice(1),
-    };
-  }
-
-  console.error('❌ No database credentials found. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME or DATABASE_URL.');
+  console.error('❌ No PostgreSQL credentials found. Set DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME.');
   process.exit(1);
 }
 
@@ -178,95 +153,78 @@ const REQUIRED_STATUS_TRANSITION_COLUMNS = [
 ] as const;
 
 async function verifyPhysicalSchema(conn: DbConnection) {
-  const rows = await conn.query(
-    'SHOW COLUMNS FROM status_transitions',
-  ) as Array<{ Field: string }>;
+  const result = await conn.query<{ column_name: string }>(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'status_transitions'`,
+  );
 
-  const actual = new Set(rows.map((row) => row.Field));
+  const actual = new Set(result.rows.map((row) => row.column_name));
   const missing = REQUIRED_STATUS_TRANSITION_COLUMNS.filter((column) => !actual.has(column));
-
   if (missing.length > 0) {
     throw new Error(`status_transitions schema mismatch; missing columns: ${missing.join(', ')}`);
   }
-
   console.log('✅ status_transitions physical schema verified');
 }
 
-async function upsertTransition(
-  conn: DbConnection,
-  transition: Transition,
-  sortOrder: number,
-) {
+async function upsertTransition(conn: DbConnection, transition: Transition, sortOrder: number) {
   if (transition.fromStatus === null) {
-    const existing = await conn.query(
-      `SELECT id
-       FROM status_transitions
-       WHERE entityType = ? AND fromStatus IS NULL AND toStatus = ?
-       ORDER BY createdAt ASC
-       LIMIT 1`,
+    const existing = await conn.query<{ id: string }>(
+      `SELECT "id"
+         FROM "status_transitions"
+        WHERE "entityType" = $1 AND "fromStatus" IS NULL AND "toStatus" = $2
+        ORDER BY "createdAt" ASC
+        LIMIT 1`,
       [transition.entityType, transition.toStatus],
-    ) as Array<{ id: string }>;
+    );
 
-    if (existing[0]?.id) {
+    if (existing.rows[0]?.id) {
       await conn.query(
-        `UPDATE status_transitions
-         SET allowedRoleSlugs = ?, requiresReason = ?, sortOrder = ?
-         WHERE id = ?`,
-        [
-          transition.allowedRoleSlugs,
-          transition.requiresReason ? 1 : 0,
-          sortOrder,
-          existing[0].id,
-        ],
+        `UPDATE "status_transitions"
+            SET "allowedRoleSlugs" = $1, "requiresReason" = $2, "sortOrder" = $3
+          WHERE "id" = $4`,
+        [transition.allowedRoleSlugs, transition.requiresReason, sortOrder, existing.rows[0].id],
       );
     } else {
       await conn.query(
-        `INSERT INTO status_transitions
-          (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
-         VALUES (UUID(), ?, NULL, ?, ?, ?, ?, NOW())`,
-        [
-          transition.entityType,
-          transition.toStatus,
-          transition.allowedRoleSlugs,
-          transition.requiresReason ? 1 : 0,
-          sortOrder,
-        ],
+        `INSERT INTO "status_transitions"
+          ("id", "entityType", "fromStatus", "toStatus", "allowedRoleSlugs", "requiresReason", "sortOrder", "createdAt")
+         VALUES ($1, $2, NULL, $3, $4, $5, $6, NOW())`,
+        [randomUUID(), transition.entityType, transition.toStatus, transition.allowedRoleSlugs, transition.requiresReason, sortOrder],
       );
     }
     return;
   }
 
   await conn.query(
-    `INSERT INTO status_transitions
-      (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
-     VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW())
-     ON DUPLICATE KEY UPDATE
-       allowedRoleSlugs = VALUES(allowedRoleSlugs),
-       requiresReason = VALUES(requiresReason),
-       sortOrder = VALUES(sortOrder)`,
+    `INSERT INTO "status_transitions"
+      ("id", "entityType", "fromStatus", "toStatus", "allowedRoleSlugs", "requiresReason", "sortOrder", "createdAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+     ON CONFLICT ("entityType", "fromStatus", "toStatus")
+     DO UPDATE SET
+       "allowedRoleSlugs" = EXCLUDED."allowedRoleSlugs",
+       "requiresReason" = EXCLUDED."requiresReason",
+       "sortOrder" = EXCLUDED."sortOrder"`,
     [
+      randomUUID(),
       transition.entityType,
       transition.fromStatus,
       transition.toStatus,
       transition.allowedRoleSlugs,
-      transition.requiresReason ? 1 : 0,
+      transition.requiresReason,
       sortOrder,
     ],
   );
 }
 
 async function seedTransitions() {
-  const config = getDbConfig();
-  console.log(`🔄 Connecting to MariaDB: ${config.host}/${config.database}...`);
+  const databaseUrl = getDatabaseUrl();
+  const url = new URL(databaseUrl);
+  console.log(`🔄 Connecting to PostgreSQL: ${url.hostname}/${url.pathname.slice(1)}...`);
 
-  const conn = await createConnection({
-    host: config.host,
-    port: config.port,
-    user: config.user,
-    password: config.password,
-    database: config.database,
-    multipleStatements: false,
-  });
+  const conn = new Client({ connectionString: databaseUrl });
+  await conn.connect();
 
   try {
     await verifyPhysicalSchema(conn);
@@ -277,11 +235,10 @@ async function seedTransitions() {
     }
 
     console.log('✅ Connected! Reconciling canonical status_transitions...');
-
     let committed = false;
 
     try {
-      await conn.beginTransaction();
+      await conn.query('BEGIN');
 
       for (let i = 0; i < MR_TRANSITIONS.length; i++) {
         await upsertTransition(conn, MR_TRANSITIONS[i], i);
@@ -295,54 +252,44 @@ async function seedTransitions() {
 
       for (const stale of LEGACY_FORBIDDEN_WO_TRANSITIONS) {
         await conn.query(
-          `DELETE FROM status_transitions
-           WHERE entityType = 'work_order' AND fromStatus = ? AND toStatus = ?`,
+          `DELETE FROM "status_transitions"
+            WHERE "entityType" = 'work_order' AND "fromStatus" = $1 AND "toStatus" = $2`,
           [stale.fromStatus, stale.toStatus],
         );
       }
-      console.log('  ✅ Removed legacy direct-close/reopen transitions');
 
-      const verifiedClose = await conn.query(
-        `SELECT COUNT(*) AS cnt
-         FROM status_transitions
-         WHERE entityType = 'work_order' AND fromStatus = 'verified' AND toStatus = 'closed'`,
-      ) as Array<{ cnt: number }>;
+      const verifiedClose = await conn.query<{ cnt: string }>(
+        `SELECT COUNT(*)::text AS cnt
+           FROM "status_transitions"
+          WHERE "entityType" = 'work_order' AND "fromStatus" = 'verified' AND "toStatus" = 'closed'`,
+      );
+      const directClose = await conn.query<{ cnt: string }>(
+        `SELECT COUNT(*)::text AS cnt
+           FROM "status_transitions"
+          WHERE "entityType" = 'work_order' AND "fromStatus" = 'completed' AND "toStatus" = 'closed'`,
+      );
 
-      const directClose = await conn.query(
-        `SELECT COUNT(*) AS cnt
-         FROM status_transitions
-         WHERE entityType = 'work_order' AND fromStatus = 'completed' AND toStatus = 'closed'`,
-      ) as Array<{ cnt: number }>;
-
-      if (Number(verifiedClose[0]?.cnt || 0) !== 1 || Number(directClose[0]?.cnt || 0) !== 0) {
+      if (Number(verifiedClose.rows[0]?.cnt || 0) !== 1 || Number(directClose.rows[0]?.cnt || 0) !== 0) {
         throw new Error('Canonical WO close path verification failed');
       }
 
-      // Perform all fallible verification queries before commit. Once commit
-      // succeeds, the script must not report a transactional failure that could
-      // make a deploy controller restore an older runtime against new lifecycle data.
-      const rows = await conn.query(
-        `SELECT entityType, COUNT(*) AS total
-         FROM status_transitions
-         WHERE entityType IN ('maintenance_request', 'work_order')
-         GROUP BY entityType`,
-      ) as Array<{ entityType: string; total: number }>;
+      const rows = await conn.query<{ entityType: string; total: string }>(
+        `SELECT "entityType", COUNT(*)::text AS total
+           FROM "status_transitions"
+          WHERE "entityType" IN ('maintenance_request', 'work_order')
+          GROUP BY "entityType"`,
+      );
 
-      await conn.commit();
+      await conn.query('COMMIT');
       committed = true;
 
-      for (const row of rows) {
+      for (const row of rows.rows) {
         console.log(`  ✅ ${row.entityType}: ${row.total} transition rows present`);
       }
       console.log('  ✅ Critical check PASSED: completed → verified → closed is enforced');
     } catch (error) {
       if (!committed) {
-        try {
-          await conn.rollback();
-        } catch (rollbackError) {
-          const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
-          console.error('❌ Rollback attempt also failed:', rollbackMessage);
-        }
+        try { await conn.query('ROLLBACK'); } catch {}
       }
       throw error;
     }
@@ -351,7 +298,7 @@ async function seedTransitions() {
       await conn.end();
     } catch (closeError) {
       const closeMessage = closeError instanceof Error ? closeError.message : String(closeError);
-      console.warn(`⚠️ MariaDB connection close warning: ${closeMessage}`);
+      console.warn(`⚠️ PostgreSQL connection close warning: ${closeMessage}`);
     }
   }
 }

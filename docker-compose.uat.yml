@@ -5,7 +5,7 @@
 # WHAT THIS FILE PROVIDES
 # -----------------------
 # Infrastructure services ONLY:
-#   • MariaDB 11.4  — accessible at localhost:3306
+#   • PostgreSQL 16   — accessible at localhost:5432
 #   • Redis 7        — accessible at localhost:6379
 #
 # WHAT IT DOES NOT INCLUDE
@@ -20,7 +20,7 @@
 #
 # ENVIRONMENT VARIABLES (set on the host before starting the app)
 # -----------------------------------------------------------------
-#   DATABASE_URL = mysql://repairs_uat:repairs_uat_pass@localhost:3306/repairs_uat
+#   DATABASE_URL = postgresql://repairs_uat:repairs_uat_pass@localhost:5432/repairs_uat?schema=public
 #   REDIS_URL    = redis://localhost:6379
 #
 # FULL UAT STACK STARTUP SEQUENCE
@@ -30,10 +30,10 @@
 #
 # 2. Wait for healthchecks to pass:
 #      docker compose -f docker-compose.uat.yml ps          # verify "healthy"
-#      # or simply wait ~15-20 seconds for MariaDB & Redis to initialise
+#      # or simply wait ~15-20 seconds for PostgreSQL & Redis to initialise
 #
 # 3. Set environment variables (Bash example):
-#      export DATABASE_URL="mysql://repairs_uat:repairs_uat_pass@localhost:3306/repairs_uat"
+#      export DATABASE_URL="postgresql://repairs_uat:repairs_uat_pass@localhost:5432/repairs_uat?schema=public"
 #      export REDIS_URL="redis://localhost:6379"
 #
 # 4. Run database migrations:
@@ -57,20 +57,19 @@
 
 version: '3.8'
 services:
-  mariadb:
-    image: mariadb:11.4
-    container_name: repairs-uat-mariadb
+  postgres:
+    image: postgres:16-alpine
+    container_name: repairs-uat-postgres
     environment:
-      MARIADB_ROOT_PASSWORD: uat_test_root
-      MARIADB_DATABASE: repairs_uat
-      MARIADB_USER: repairs_uat
-      MARIADB_PASSWORD: repairs_uat_pass
+      POSTGRES_DB: repairs_uat
+      POSTGRES_USER: repairs_uat
+      POSTGRES_PASSWORD: repairs_uat_pass
     ports:
-      - '3306:3306'
+      - '5432:5432'
     volumes:
-      - mariadb_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      test: ['CMD-SHELL', 'pg_isready -U repairs_uat -d repairs_uat']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,4 +86,4 @@ services:
       retries: 5
 
 volumes:
-  mariadb_data:
+  postgres_data:

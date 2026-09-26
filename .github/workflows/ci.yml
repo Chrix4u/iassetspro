@@ -168,13 +168,16 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .release-bundle .release-tools
-          mkdir -p .release-bundle/prisma .release-bundle/scripts .release-tools
+          mkdir -p .release-bundle/prisma .release-bundle/scripts .release-bundle/src/lib .release-tools
 
           cp -a .next/standalone/. .release-bundle/
           cp -a prisma/migrations .release-bundle/prisma/
           cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
+          cp prisma/seed-constants.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
           cp prisma.config.ts package.json bun.lock .release-bundle/
-          cp scripts/seed-transitions.ts .release-bundle/scripts/seed-transitions.ts
+          cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh .release-bundle/scripts/
+          cp src/lib/create-postgres-adapter.ts .release-bundle/src/lib/create-postgres-adapter.ts
+          chmod 755 .release-bundle/scripts/bootstrap-postgresql-staging.sh
           printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
 
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
@@ -235,7 +238,7 @@ jobs:
 
   # Repairs/RWOP UAT is a hard release gate. It runs for pull requests, manual
   # verification of an exact branch head, and again on the exact main SHA that
-  # may be deployed. It uses real MariaDB + Redis service containers, verifies
+  # may be deployed. It uses real PostgreSQL + Redis service containers, verifies
   # the deployed schema and BullMQ round-trip, then exercises the exact
   # standalone production artifact with Playwright.
   repairs-uat:
@@ -246,17 +249,16 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
 
     services:
-      mariadb:
-        image: mariadb:11.4
+      postgres:
+        image: postgres:16-alpine
         env:
-          MARIADB_ROOT_PASSWORD: uat_test_root
-          MARIADB_DATABASE: repairs_uat
-          MARIADB_USER: repairs_uat
-          MARIADB_PASSWORD: repairs_uat_pass
+          POSTGRES_DB: repairs_uat
+          POSTGRES_USER: repairs_uat
+          POSTGRES_PASSWORD: repairs_uat_pass
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-cmd="pg_isready -U repairs_uat -d repairs_uat"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -272,7 +274,7 @@ jobs:
           --health-retries=10
 
     env:
-      DATABASE_URL: mysql://repairs_uat:repairs_uat_pass@127.0.0.1:3306/repairs_uat
+      DATABASE_URL: postgresql://repairs_uat:repairs_uat_pass@127.0.0.1:5432/repairs_uat?schema=public
       REDIS_URL: redis://127.0.0.1:6379
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
@@ -304,8 +306,10 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
-      - name: Create isolated UAT schema
-        run: bunx prisma db push
+      - name: Apply PostgreSQL baseline migration to isolated UAT database
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate status
 
       - name: Seed Repairs UAT data, RBAC, and labor costing
         run: |
@@ -313,7 +317,7 @@ jobs:
           bunx tsx scripts/seed-repairs-uat-rbac.ts
           bunx tsx scripts/seed-repairs-uat-costing.ts
 
-      - name: Run Repairs RC1 MariaDB/Redis/BullMQ preflight
+      - name: Run Repairs RC1 PostgreSQL/Redis/BullMQ preflight
         run: bun run test:repairs-rc1-preflight
 
       - name: Run Repairs notification BullMQ burst validation
@@ -354,17 +358,16 @@ jobs:
     needs: [build, container-build]
 
     services:
-      mariadb:
-        image: mariadb:11.4
+      postgres:
+        image: postgres:16-alpine
         env:
-          MARIADB_ROOT_PASSWORD: platform_e2e_root
-          MARIADB_DATABASE: platform_e2e
-          MARIADB_USER: platform_e2e
-          MARIADB_PASSWORD: platform_e2e_pass
+          POSTGRES_DB: platform_e2e
+          POSTGRES_USER: platform_e2e
+          POSTGRES_PASSWORD: platform_e2e_pass
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-cmd="pg_isready -U platform_e2e -d platform_e2e"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -380,7 +383,7 @@ jobs:
           --health-retries=10
 
     env:
-      DATABASE_URL: mysql://platform_e2e:platform_e2e_pass@127.0.0.1:3306/platform_e2e
+      DATABASE_URL: postgresql://platform_e2e:platform_e2e_pass@127.0.0.1:5432/platform_e2e?schema=public
       REDIS_URL: redis://127.0.0.1:6379
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_USE_PRODUCTION_SERVER: 1
@@ -412,8 +415,10 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
-      - name: Create isolated platform E2E schema
-        run: bunx prisma db push
+      - name: Apply PostgreSQL baseline migration to isolated platform E2E database
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate status
 
       - name: Seed full platform demo data
         run: bun run seed

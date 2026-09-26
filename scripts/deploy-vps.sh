@@ -9,7 +9,7 @@
 #   - PM2 name:      eam-system
 #   - Nginx config:  /usr/local/apps/nginx/etc/conf.d/00-iassetspro.conf
 #   - Prisma:        Uses symlinks (NEVER cp -r)
-#   - DB:            MariaDB remote, camelCase columns
+#   - DB:            PostgreSQL, Prisma-managed schema
 #
 # USAGE:
 #   cd /home/ifleetpro/git/eam-system && bash scripts/deploy-vps.sh       # Full deploy
@@ -81,8 +81,8 @@ seed_transitions() {
     return 1
   fi
 
-  # Seed using Node.js (mariadb is CommonJS, won't work with bun)
-  DATABASE_URL="$db_url" node "$SCRIPT_DIR/seed-transitions.js"
+  # Reconcile canonical lifecycle transitions through PostgreSQL.
+  DATABASE_URL="$db_url" bun run "$SCRIPT_DIR/seed-transitions.ts"
   echo -e "  ${GREEN}✓${NC} Transitions seeded"
 }
 
@@ -249,16 +249,16 @@ npx prisma generate 2>&1 | tail -3 || echo -e "  ${YELLOW}!${NC} prisma generate
 # cp -r causes infinite nesting and hangs on large dirs
 # Path: standalone/node_modules -> ../../../ -> project root/node_modules
 STANDALONE_NM="${STANDALONE}/node_modules"
-rm -rf "${STANDALONE_NM}/.prisma" "${STANDALONE_NM}/@prisma" "${STANDALONE_NM}/mariadb"
+rm -rf "${STANDALONE_NM}/.prisma" "${STANDALONE_NM}/@prisma" "${STANDALONE_NM}/pg"
 
 ln -s ../../../node_modules/.prisma "${STANDALONE_NM}/.prisma"
 ln -s ../../../node_modules/@prisma "${STANDALONE_NM}/@prisma"
-ln -s ../../../node_modules/mariadb "${STANDALONE_NM}/mariadb"
-echo -e "  ${GREEN}✓${NC} Prisma & mariadb symlinked (3 links)"
+ln -s ../../../node_modules/pg "${STANDALONE_NM}/pg"
+echo -e "  ${GREEN}✓${NC} Prisma & pg symlinked (3 links)"
 
 # Verify symlinks
 local_err=false
-for link in .prisma @prisma mariadb; do
+for link in .prisma @prisma pg; do
   if [ ! -L "${STANDALONE_NM}/${link}" ]; then
     echo -e "  ${RED}✗${NC} Symlink ${link} is not a link!"
     local_err=true

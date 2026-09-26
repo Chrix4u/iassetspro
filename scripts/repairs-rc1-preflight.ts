@@ -1,7 +1,7 @@
 /*
  * Repairs RC1 staging preflight
  *
- * Run only against a staging environment with real MariaDB + Redis credentials:
+ * Run only against a staging environment with real PostgreSQL + Redis credentials:
  *   bun run test:repairs-rc1-preflight
  *
  * This script is intentionally fail-closed. It proves that the generated
@@ -39,9 +39,9 @@ async function assertDatabase(): Promise<void> {
 
   try {
     await db.$queryRawUnsafe('SELECT 1 AS repairs_rc1_db_probe');
-    check('MariaDB connectivity', true, 'SELECT 1 executed successfully');
+    check('PostgreSQL connectivity', true, 'SELECT 1 executed successfully');
   } catch (error) {
-    check('MariaDB connectivity', false, error instanceof Error ? error.message : String(error));
+    check('PostgreSQL connectivity', false, error instanceof Error ? error.message : String(error));
     return;
   }
 

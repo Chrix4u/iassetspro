@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+if (!process.env.DATABASE_URL || !/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)) {
+  throw new Error('Trade seed requires a PostgreSQL DATABASE_URL');
+}
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createAdapter } = require('../src/lib/create-postgres-adapter');
+const prisma = new PrismaClient({ adapter: createAdapter(process.env.DATABASE_URL) });
 
 async function seedTrades() {
   console.log('🌱 Seeding trades...');

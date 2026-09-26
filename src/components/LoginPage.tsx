@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -38,7 +38,21 @@ export default function LoginPage() {
   const [showDemo, setShowDemo] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  const [firstSetupRequired, setFirstSetupRequired] = useState(false);
   const { login } = useAuthStore();
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/setup/first-admin', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((payload) => {
+        if (active && payload?.success) {
+          setFirstSetupRequired(Boolean(payload.data?.setupRequired && payload.data?.constantsReady));
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,6 +204,18 @@ export default function LoginPage() {
 
           {/* Login Card */}
           <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-200/60 p-5 sm:p-7 lg:p-8">
+            {firstSetupRequired && (
+              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-950">
+                <p className="font-semibold">First-time system setup is required.</p>
+                <p className="mt-1 text-xs text-amber-800">Create the first administrator before signing in.</p>
+                <a
+                  href="/setup/first-admin"
+                  className="mt-3 inline-flex min-h-[40px] items-center rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                >
+                  Complete first-time setup
+                </a>
+              </div>
+            )}
             {/* Header */}
             <div className="text-center mb-5 sm:mb-7">
               <div className="inline-flex items-center justify-center h-12 w-12 sm:h-14 sm:w-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl sm:rounded-2xl mb-3 shadow-lg shadow-emerald-500/20">

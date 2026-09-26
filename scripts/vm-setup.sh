@@ -96,7 +96,7 @@ if [ ! -f .env ]; then
     echo "  Create .env with your database credentials:"
     echo "  ─────────────────────────────────────────"
     echo "  cat > .env << 'EOF'"
-    echo "  DATABASE_URL=\"mysql://USER:PASSWORD@HOST:3306/DB_NAME\""
+    echo "  DATABASE_URL=\"postgresql://USER:PASSWORD@HOST:5432/DB_NAME\""
     echo "  NEXTAUTH_SECRET=\"$(openssl rand -hex 32)\""
     echo "  NEXTAUTH_URL=\"http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR_VM_IP'):3000\""
     echo "  EOF"
@@ -122,8 +122,8 @@ npx next build
 
 log_info "Copying static assets..."
 cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
-cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb 2>/dev/null || true
-cp -r node_modules/mariadb .next/standalone/node_modules/mariadb 2>/dev/null || true
+cp -r node_modules/@prisma/adapter-pg .next/standalone/node_modules/@prisma/adapter-pg 2>/dev/null || true
+cp -r node_modules/pg .next/standalone/node_modules/pg 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/
 cp -r public .next/standalone/
 

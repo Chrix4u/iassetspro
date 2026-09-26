@@ -190,10 +190,11 @@ NODE_ENV=production bun --env-file=.env run scripts/seed-transitions.ts --check-
 
 USER_COUNT="$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atqc 'SELECT COUNT(*) FROM "users"')"
 if [[ "$USER_COUNT" == "0" ]]; then
-  echo "Clean PostgreSQL staging detected; seeding constants/reference data only"
+  echo "Clean PostgreSQL staging detected; bootstrapping reference data and enforcing empty operational state"
   NODE_ENV=production bun --env-file=.env run prisma/seed-constants.ts
 else
-  echo "PostgreSQL staging already commissioned with users; constants bootstrap skipped"
+  echo "PostgreSQL staging already commissioned; refreshing non-destructive reference/RBAC data"
+  NODE_ENV=production bun --env-file=.env run prisma/seed-reference-data.ts
 fi
 unset DB_PASS
 

@@ -168,13 +168,16 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .release-bundle .release-tools
-          mkdir -p .release-bundle/prisma .release-bundle/scripts .release-tools
+          mkdir -p .release-bundle/prisma .release-bundle/scripts .release-bundle/src/lib .release-tools
 
           cp -a .next/standalone/. .release-bundle/
           cp -a prisma/migrations .release-bundle/prisma/
           cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
+          cp prisma/seed-constants.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
           cp prisma.config.ts package.json bun.lock .release-bundle/
-          cp scripts/seed-transitions.ts .release-bundle/scripts/seed-transitions.ts
+          cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh .release-bundle/scripts/
+          cp src/lib/create-postgres-adapter.ts .release-bundle/src/lib/create-postgres-adapter.ts
+          chmod 755 .release-bundle/scripts/bootstrap-postgresql-staging.sh
           printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
 
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"

@@ -22,6 +22,7 @@ const PUBLIC_PATHS = [
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
   '/api/health',
+  '/api/setup/first-admin',
 ];
 const INTERNAL_SECRET = process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025';
 const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [

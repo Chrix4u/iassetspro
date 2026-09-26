@@ -34,9 +34,11 @@ describe('demo user staging contract', () => {
 
     expect(seed).toContain('const existing = await db.user.findUnique');
     expect(seed).toContain('? await db.user.update');
+    expect(seed).toContain('data: commonData');
     expect(seed).toContain(': await db.user.create');
     expect(seed).toContain('passwordHash: definition.passwordKind ===');
-    expect(seed).not.toMatch(/db\.user\.update\([\s\S]{0,500}passwordHash/);
+    expect(seed).toContain('const commonData = {');
+    expect(seed).not.toContain('const commonData = { passwordHash');
   });
 
   it('only activates demo reconciliation from a protected server credential file', () => {

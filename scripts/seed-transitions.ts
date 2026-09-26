@@ -16,41 +16,32 @@ type Transition = {
   requiresReason: boolean;
 };
 
-type DbConnection = Awaited<ReturnType<typeof createConnection>>;
+type DbConnection = Client;
 
 if (process.argv.includes('--check-driver')) {
-  if (typeof createConnection !== 'function') {
-    console.error('❌ MariaDB driver import check failed: createConnection is unavailable.');
+  if (typeof Client !== 'function') {
+    console.error('❌ PostgreSQL driver import check failed: pg.Client is unavailable.');
     process.exit(1);
   }
-  console.log('✅ MariaDB driver import check passed: createConnection is available.');
+  console.log('✅ PostgreSQL driver import check passed: pg.Client is available.');
   process.exit(0);
 }
 
-function getDbConfig() {
-  const host = process.env.DB_HOST || process.env.MYSQL_HOST;
-  const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
-  const user = process.env.DB_USER || process.env.MYSQL_USER;
-  const password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
-  const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+function getDatabaseUrl(): string {
+  const direct = process.env.DATABASE_URL || '';
+  if (/^postgres(?:ql)?:\/\//i.test(direct)) return direct;
+
+  const host = process.env.DB_HOST;
+  const port = process.env.DB_PORT || '5432';
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const database = process.env.DB_NAME;
 
   if (host && user && password && database) {
-    return { host, port, user, password, database };
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
   }
 
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.startsWith('mysql://')) {
-    const url = new URL(dbUrl);
-    return {
-      host: url.hostname,
-      port: parseInt(url.port || '3306', 10),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      database: url.pathname.slice(1),
-    };
-  }
-
-  console.error('❌ No database credentials found. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME or DATABASE_URL.');
+  console.error('❌ No PostgreSQL credentials found. Set DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME.');
   process.exit(1);
 }
 

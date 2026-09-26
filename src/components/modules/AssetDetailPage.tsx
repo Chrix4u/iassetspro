@@ -91,7 +91,8 @@ export function AssetDetailPage({ id }: { id: string }) {
     });
   }, [id]);
 
-  // Reload components
+  // Reload the complete component hierarchy. Large machines can exceed one API page,
+  // so fetch every page before constructing the tree.
   const reloadComponents = useCallback(async () => {
     try {
       const allComponents: any[] = [];
@@ -108,8 +109,9 @@ export function AssetDetailPage({ id }: { id: string }) {
       } while (page <= totalPages);
 
       setComponents(allComponents);
-      // Keep the initial view complete while still allowing users to collapse
-      // large machines into assembly/subassembly branches.
+
+      // Expand parent branches initially so commissioning shows the complete
+      // machine structure, while still allowing large branches to collapse.
       const parentIds = new Set<string>();
       for (const component of allComponents) {
         if (component.parentId) parentIds.add(component.parentId);

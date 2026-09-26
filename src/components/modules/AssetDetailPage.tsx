@@ -165,6 +165,18 @@ export function AssetDetailPage({ id }: { id: string }) {
     });
   }, []);
 
+  const expandAllComponentBranches = useCallback(() => {
+    const parentIds = new Set<string>();
+    for (const component of components) {
+      if (component.parentId) parentIds.add(component.parentId);
+    }
+    setExpandedComponentIds(parentIds);
+  }, [components]);
+
+  const collapseAllComponentBranches = useCallback(() => {
+    setExpandedComponentIds(new Set());
+  }, []);
+
   const reloadInventoryItems = useCallback(() => {
     api.get('/api/inventory?mode=lookup&status=available&limit=100').then(res => {
       if (res.success && res.data) setInventoryItems(Array.isArray(res.data) ? res.data : []);
@@ -885,7 +897,9 @@ export function AssetDetailPage({ id }: { id: string }) {
               ) : components.length === 0 && !showComponentForm ? (
                 <EmptyTab icon={Cpu} title="No Components Registered" description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance." actionLabel="Add Component" onAction={() => setShowComponentForm(true)} />
               ) : !showComponentForm && (
-                <div className="flex justify-end">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={expandAllComponentBranches}>Expand All</Button>
+                  <Button variant="outline" size="sm" onClick={collapseAllComponentBranches}>Collapse All</Button>
                   <Button size="sm" onClick={() => setShowComponentForm(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />Add Component</Button>
                 </div>
               )}

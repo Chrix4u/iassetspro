@@ -60,6 +60,10 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [selectedComponentId, setSelectedComponentId] = useState<string>('');
   const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
   const [sparePartForm, setSparePartForm] = useState({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
+  const [installedParts, setInstalledParts] = useState<any[]>([]);
+  const [installedPartForm, setInstalledPartForm] = useState({ inventoryItemId: '', serialNumber: '', lotNumber: '', quantity: '1', sourceType: 'commissioning', notes: '' });
+  const [removingInstalledPartId, setRemovingInstalledPartId] = useState<string>('');
+  const [removalForm, setRemovalForm] = useState({ removalReason: '', conditionOnRemoval: 'used', notes: '' });
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
@@ -105,9 +109,20 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   const loadComponentSpareParts = useCallback((componentId: string) => {
     setSelectedComponentId(componentId);
-    api.get(`/api/component-registry/${componentId}/spare-parts`).then(res => {
-      if (res.success && res.data) setComponentSpareParts(Array.isArray(res.data) ? res.data : []);
-    }).catch(() => setComponentSpareParts([]));
+    Promise.all([
+      api.get(`/api/component-registry/${componentId}/spare-parts`)
+        .then(res => {
+          if (res.success && res.data) setComponentSpareParts(Array.isArray(res.data) ? res.data : []);
+          else setComponentSpareParts([]);
+        })
+        .catch(() => setComponentSpareParts([])),
+      api.get(`/api/component-registry/${componentId}/installed-parts`)
+        .then(res => {
+          if (res.success && res.data) setInstalledParts(Array.isArray(res.data) ? res.data : []);
+          else setInstalledParts([]);
+        })
+        .catch(() => setInstalledParts([])),
+    ]).catch(() => {});
   }, []);
 
   // Reload digital twin
@@ -297,6 +312,75 @@ export function AssetDetailPage({ id }: { id: string }) {
       toast.success('Store part unlinked from component');
       loadComponentSpareParts(selectedComponentId);
       reloadComponents();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRecordInstalledPart = async () => {
+    if (!selectedComponentId || !installedPartForm.inventoryItemId) {
+      toast.error('Select a component and the inventory item being installed');
+      return;
+    }
+    const item = inventoryItems.find((entry: any) => entry.id === installedPartForm.inventoryItemId);
+    if (!item) {
+      toast.error('Inventory item not found');
+      return;
+    }
+    const quantity = Number(installedPartForm.quantity || 1);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Installed quantity must be greater than zero');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await api.post(`/api/component-registry/${selectedComponentId}/installed-parts`, {
+        inventoryItemId: item.id,
+        partName: item.name,
+        partCode: item.itemCode || item.sku || null,
+        serialNumber: installedPartForm.serialNumber || null,
+        lotNumber: installedPartForm.lotNumber || null,
+        quantity,
+        sourceType: installedPartForm.sourceType,
+        notes: installedPartForm.notes || null,
+      });
+      if (!res.success) {
+        toast.error(res.error || 'Failed to record installed part');
+        return;
+      }
+      toast.success('Installed part recorded on component');
+      setInstalledPartForm({ inventoryItemId: '', serialNumber: '', lotNumber: '', quantity: '1', sourceType: 'commissioning', notes: '' });
+      loadComponentSpareParts(selectedComponentId);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveInstalledPart = async () => {
+    if (!selectedComponentId || !removingInstalledPartId || !removalForm.removalReason.trim()) {
+      toast.error('Removal reason is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.patch(
+        `/api/component-registry/${selectedComponentId}/installed-parts/${removingInstalledPartId}`,
+        {
+          status: 'removed',
+          removalReason: removalForm.removalReason.trim(),
+          conditionOnRemoval: removalForm.conditionOnRemoval,
+          notes: removalForm.notes || null,
+        },
+      );
+      if (!res.success) {
+        toast.error(res.error || 'Failed to record part removal');
+        return;
+      }
+      toast.success('Part removal recorded');
+      setRemovingInstalledPartId('');
+      setRemovalForm({ removalReason: '', conditionOnRemoval: 'used', notes: '' });
+      loadComponentSpareParts(selectedComponentId);
     } finally {
       setSaving(false);
     }
@@ -860,7 +944,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                                 <div className="flex justify-end gap-1.5">
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
                                   <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
-                                    Parts ({c._count?.sparePartLinks || 0})
+                                    Manage Parts
                                   </Button>
                                 </div>
                               </TableCell>
@@ -870,6 +954,163 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {selectedComponentId && (
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Compatible Store Parts</CardTitle>
+                          <CardDescription>
+                            Link catalog/store items that can replace this component. This is compatibility data only and does not change stock.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid gap-3 sm:grid-cols-[1fr_100px]">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Inventory Item</Label>
+                              <Select value={sparePartForm.inventoryItemId} onValueChange={v => setSparePartForm(f => ({ ...f, inventoryItemId: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select store item" /></SelectTrigger>
+                                <SelectContent>
+                                  {inventoryItems.map((item: any) => (
+                                    <SelectItem key={item.id} value={item.id}>
+                                      {item.itemCode || item.sku || '—'} · {item.name} · Stock {item.currentStock ?? 0}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Qty / Machine</Label>
+                              <Input type="number" min="1" value={sparePartForm.quantityRequired} onChange={e => setSparePartForm(f => ({ ...f, quantityRequired: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="flex justify-end">
+                            <Button size="sm" onClick={handleLinkSparePart} disabled={saving || !sparePartForm.inventoryItemId}>Link Store Part</Button>
+                          </div>
+                          <div className="overflow-x-auto rounded-md border">
+                            <Table>
+                              <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Required</TableHead><TableHead>Stock</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                              <TableBody>
+                                {componentSpareParts.length === 0 ? (
+                                  <TableRow><TableCell colSpan={4} className="py-5 text-center text-xs text-muted-foreground">No compatible store parts linked yet.</TableCell></TableRow>
+                                ) : componentSpareParts.map((part: any) => (
+                                  <TableRow key={part.id}>
+                                    <TableCell><div className="font-medium text-sm">{part.sparePartName}</div><div className="text-xs text-muted-foreground">{part.sparePartCode || part.inventoryItem?.itemCode || '—'}</div></TableCell>
+                                    <TableCell>{part.quantityRequired}</TableCell>
+                                    <TableCell>{part.inventoryItem?.currentStock ?? '—'}</TableCell>
+                                    <TableCell className="text-right">
+                                      <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={() => handleUnlinkSparePart(part.id)} disabled={saving}>Remove</Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Installed Parts Register</CardTitle>
+                          <CardDescription>
+                            Record the physical spare currently fitted to this component. This register never adjusts store stock; issue and return remain controlled by stores.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Inventory Item *</Label>
+                              <Select value={installedPartForm.inventoryItemId} onValueChange={v => setInstalledPartForm(f => ({ ...f, inventoryItemId: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select installed item" /></SelectTrigger>
+                                <SelectContent>
+                                  {inventoryItems.map((item: any) => (
+                                    <SelectItem key={item.id} value={item.id}>
+                                      {item.itemCode || item.sku || '—'} · {item.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Source</Label>
+                              <Select value={installedPartForm.sourceType} onValueChange={v => setInstalledPartForm(f => ({ ...f, sourceType: v }))}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="commissioning">Commissioning / Existing</SelectItem>
+                                  <SelectItem value="manual">Manual Record</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1"><Label className="text-xs">Serial Number</Label><Input value={installedPartForm.serialNumber} onChange={e => setInstalledPartForm(f => ({ ...f, serialNumber: e.target.value }))} placeholder="Optional serialized part" /></div>
+                            <div className="space-y-1"><Label className="text-xs">Lot / Batch</Label><Input value={installedPartForm.lotNumber} onChange={e => setInstalledPartForm(f => ({ ...f, lotNumber: e.target.value }))} placeholder="Optional lot or batch" /></div>
+                            <div className="space-y-1"><Label className="text-xs">Quantity</Label><Input type="number" min="0.0001" step="any" value={installedPartForm.quantity} onChange={e => setInstalledPartForm(f => ({ ...f, quantity: e.target.value }))} /></div>
+                            <div className="space-y-1"><Label className="text-xs">Notes</Label><Input value={installedPartForm.notes} onChange={e => setInstalledPartForm(f => ({ ...f, notes: e.target.value }))} placeholder="Installation notes" /></div>
+                          </div>
+                          <div className="flex justify-end">
+                            <Button size="sm" onClick={handleRecordInstalledPart} disabled={saving || !installedPartForm.inventoryItemId}>Record Installation</Button>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-md border">
+                            <Table>
+                              <TableHeader><TableRow><TableHead>Installed Part</TableHead><TableHead>Serial / Lot</TableHead><TableHead>Qty</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                              <TableBody>
+                                {installedParts.length === 0 ? (
+                                  <TableRow><TableCell colSpan={5} className="py-5 text-center text-xs text-muted-foreground">No installation history recorded for this component.</TableCell></TableRow>
+                                ) : installedParts.map((part: any) => (
+                                  <React.Fragment key={part.id}>
+                                    <TableRow>
+                                      <TableCell>
+                                        <div className="font-medium text-sm">{part.partName}</div>
+                                        <div className="text-xs text-muted-foreground">{part.partCode || part.inventoryItem?.itemCode || '—'} · {part.sourceType?.replace(/_/g, ' ')}</div>
+                                      </TableCell>
+                                      <TableCell><div className="text-xs">{part.serialNumber || '—'}</div><div className="text-[10px] text-muted-foreground">{part.lotNumber ? `Lot ${part.lotNumber}` : ''}</div></TableCell>
+                                      <TableCell>{part.quantity}</TableCell>
+                                      <TableCell><Badge variant="outline" className="capitalize">{part.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                                      <TableCell className="text-right">
+                                        {part.status === 'installed' ? (
+                                          <Button variant="outline" size="sm" onClick={() => setRemovingInstalledPartId(part.id)} disabled={saving}>Remove</Button>
+                                        ) : (
+                                          <span className="text-[10px] text-muted-foreground">{part.removedAt ? formatDateTime(part.removedAt) : 'History'}</span>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                    {removingInstalledPartId === part.id && (
+                                      <TableRow>
+                                        <TableCell colSpan={5} className="bg-muted/30">
+                                          <div className="grid gap-3 md:grid-cols-[1fr_160px_1fr_auto] md:items-end">
+                                            <div className="space-y-1"><Label className="text-xs">Removal Reason *</Label><Input value={removalForm.removalReason} onChange={e => setRemovalForm(f => ({ ...f, removalReason: e.target.value }))} placeholder="Failure, wear, upgrade, preventive replacement..." /></div>
+                                            <div className="space-y-1">
+                                              <Label className="text-xs">Condition</Label>
+                                              <Select value={removalForm.conditionOnRemoval} onValueChange={v => setRemovalForm(f => ({ ...f, conditionOnRemoval: v }))}>
+                                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                  <SelectItem value="used">Used</SelectItem>
+                                                  <SelectItem value="good">Good</SelectItem>
+                                                  <SelectItem value="fair">Fair</SelectItem>
+                                                  <SelectItem value="worn">Worn</SelectItem>
+                                                  <SelectItem value="damaged">Damaged</SelectItem>
+                                                  <SelectItem value="failed">Failed</SelectItem>
+                                                </SelectContent>
+                                              </Select>
+                                            </div>
+                                            <div className="space-y-1"><Label className="text-xs">Notes</Label><Input value={removalForm.notes} onChange={e => setRemovalForm(f => ({ ...f, notes: e.target.value }))} placeholder="Removal observations" /></div>
+                                            <div className="flex gap-2">
+                                              <Button variant="outline" size="sm" onClick={() => { setRemovingInstalledPartId(''); setRemovalForm({ removalReason: '', conditionOnRemoval: 'used', notes: '' }); }}>Cancel</Button>
+                                              <Button size="sm" onClick={handleRemoveInstalledPart} disabled={saving || !removalForm.removalReason.trim()}>Confirm Removal</Button>
+                                            </div>
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
                 </>
               )}
             </TabsContent>

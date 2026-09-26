@@ -928,7 +928,7 @@ model Asset {
   assetTag          String    @unique
   description       String?   @db.Text
   categoryId        String
-  serialNumber      String?   @unique
+  serialNumber      String?
   manufacturer      String?
   model             String?
   yearManufactured  Int?

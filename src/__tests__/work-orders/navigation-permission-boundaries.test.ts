@@ -35,7 +35,7 @@ describe('navigation, module, and action permission boundaries', () => {
   const fullSeed = read('prisma/seed.ts');
   const uatSeed = read('scripts/seed-repairs-uat.ts');
   const singleTechUat = read('e2e/repairs/scenario-a-single-tech.spec.ts');
-  const constantsSeed = read('prisma/seed-constants.ts');
+  const referenceSeed = read('prisma/seed-reference-data.ts');
 
   it('separates Repairs Maintenance from PM Maintenance', () => {
     expect(sidebar).toContain("label: 'Repairs Maintenance'");
@@ -247,11 +247,11 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(uatSeed).toContain('isEnabled: true');
     expect(uatSeed).toContain('isActive: true');
     expect(uatSeed).not.toContain("code: 'pm_schedules'");
-    expect(constantsSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
-    expect(constantsSeed).toContain("code: 'tools'");
-    expect(constantsSeed).toContain('isSystemLicensed: mod.licensed');
-    expect(constantsSeed).toContain('isActive: true');
-    expect(constantsSeed).toContain('isEnabled: true');
+    expect(referenceSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
+    expect(referenceSeed).toContain("code: 'tools'");
+    expect(referenceSeed).toContain('isSystemLicensed: mod.licensed');
+    expect(referenceSeed).toContain('isActive: true');
+    expect(referenceSeed).toContain('isEnabled: true');
   });
 
   it('matches resource approval buttons to the accountable supervisor rule', () => {

@@ -40,11 +40,11 @@ describe('technician work-order vertical slice contract', () => {
 
   it('keeps assignment reset and schema migration explicit', () => {
     const assign = read('src/app/api/work-orders/[id]/assign/route.ts');
-    const migration = read('prisma/migrations/20260911030000_technician_assignment_ack/migration.sql');
+    const baseline = read('prisma/migrations/00000000000000_postgresql_baseline/migration.sql');
     expect(assign).toContain("assignmentResponseStatus: 'pending'");
     expect(assign).toContain('assignmentRespondedAt: null');
-    expect(migration).toContain('ADD COLUMN `assignmentResponseStatus`');
-    expect(migration).toContain("'in_progress', 'waiting_parts', 'waiting_tools'");
+    expect(baseline).toContain('"assignmentResponseStatus" TEXT NOT NULL DEFAULT \'pending\'');
+    expect(baseline).toContain('"assignmentRespondedAt" TIMESTAMP(3)');
   });
 
   it('does not send live pause/resume through retrospective time-log creation', () => {

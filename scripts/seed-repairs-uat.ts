@@ -3,7 +3,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import {
   DEFAULT_WO_TRANSITIONS,
   DEFAULT_MR_TRANSITIONS,
@@ -549,6 +549,18 @@ async function main() {
       },
     });
   }
+
+  const persistedPlanner = await db.user.findUnique({
+    where: { username: 'uat_planner' },
+    select: { username: true, passwordHash: true, status: true },
+  });
+  if (!persistedPlanner || persistedPlanner.status !== 'active') {
+    throw new Error('Repairs UAT planner fixture was not persisted as an active user');
+  }
+  if (!(await compare(PASSWORD, persistedPlanner.passwordHash))) {
+    throw new Error('Repairs UAT planner password hash failed PostgreSQL round-trip verification');
+  }
+  console.log('✅ UAT credential round-trip verified for uat_planner');
 
   console.log('\n✅ Repairs UAT seed completed successfully!');
   console.log(`   Plants: ${plantA.name}, ${plantB.name}`);

@@ -17,7 +17,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 
 # Install ALL dependencies (including devDependencies needed for build)
-RUN bun install --frozen-lockfile
+RUN bun install --no-save
 
 # ---------------------------------------------------------------------------
 # Stage 2: Build
@@ -37,7 +37,7 @@ ENV NEXT_PUBLIC_BUILD_TIME=${NEXT_PUBLIC_BUILD_TIME}
 # receive production database credentials, so give the builder a non-routable,
 # non-secret URL that satisfies configuration parsing only. This ENV belongs to
 # the builder stage and is not inherited by the final runtime image.
-ENV DATABASE_URL="mysql://build:build@127.0.0.1:3306/build"
+ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build"
 
 # Copy dependency manifests and node_modules from deps stage
 COPY package.json bun.lock ./
@@ -79,8 +79,6 @@ COPY --chown=bun:bun --from=builder /app/prisma ./prisma
 
 # Copy necessary runtime Prisma engine files
 COPY --chown=bun:bun --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
-COPY --chown=bun:bun --from=builder /app/node_modules/@prisma/adapter-mariadb ./node_modules/@prisma/adapter-mariadb
-COPY --chown=bun:bun --from=builder /app/node_modules/mariadb ./node_modules/mariadb
 
 # Copy package.json for runtime metadata/script references
 COPY --chown=bun:bun --from=builder /app/package.json ./package.json

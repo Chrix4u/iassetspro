@@ -824,6 +824,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                             <SelectItem value="assembly">Assembly</SelectItem>
                             <SelectItem value="subassembly">Sub-Assembly</SelectItem>
                             <SelectItem value="component">Component</SelectItem>
+                            <SelectItem value="part">Part</SelectItem>
                             <SelectItem value="auxiliary">Auxiliary</SelectItem>
                             <SelectItem value="instrument">Instrument</SelectItem>
                           </SelectContent>

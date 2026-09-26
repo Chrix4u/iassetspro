@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -21,7 +21,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2, Plus, X,
+  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, ChevronDown, Loader2, Plus, X,
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
@@ -56,6 +56,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [bomItems, setBomItems] = useState<any[]>([]);
   const [bomAsChild, setBomAsChild] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
+  const [expandedComponentIds, setExpandedComponentIds] = useState<Set<string>>(new Set());
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState<string>('');
   const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
@@ -93,9 +94,62 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Reload components
   const reloadComponents = useCallback(() => {
     api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
-      if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
+      if (res.success && res.data) {
+        const data = Array.isArray(res.data) ? res.data : [];
+        setComponents(data);
+        // Keep the initial view complete while still allowing users to collapse
+        // large machines into assembly/subassembly branches.
+        const parentIds = new Set<string>();
+        for (const component of data as any[]) {
+          if (component.parentId) parentIds.add(component.parentId);
+        }
+        setExpandedComponentIds(parentIds);
+      }
     }).catch(() => {});
   }, [id]);
+
+  const componentTreeRows = useMemo(() => {
+    const byParent = new Map<string | null, any[]>();
+    const knownIds = new Set(components.map((component: any) => component.id));
+
+    for (const component of components) {
+      const parentId = component.parentId && knownIds.has(component.parentId)
+        ? component.parentId
+        : null;
+      const siblings = byParent.get(parentId) || [];
+      siblings.push(component);
+      byParent.set(parentId, siblings);
+    }
+
+    for (const siblings of byParent.values()) {
+      siblings.sort((a: any, b: any) =>
+        String(a.componentCode || a.name).localeCompare(String(b.componentCode || b.name)),
+      );
+    }
+
+    const rows: Array<{ component: any; depth: number; hasChildren: boolean }> = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const component of byParent.get(parentId) || []) {
+        const children = byParent.get(component.id) || [];
+        rows.push({ component, depth, hasChildren: children.length > 0 });
+        if (children.length > 0 && expandedComponentIds.has(component.id)) {
+          walk(component.id, depth + 1);
+        }
+      }
+    };
+
+    walk(null, 0);
+    return rows;
+  }, [components, expandedComponentIds]);
+
+  const toggleComponentBranch = useCallback((componentId: string) => {
+    setExpandedComponentIds(current => {
+      const next = new Set(current);
+      if (next.has(componentId)) next.delete(componentId);
+      else next.add(componentId);
+      return next;
+    });
+  }, []);
 
   const reloadInventoryItems = useCallback(() => {
     api.get('/api/inventory?mode=lookup&status=available&limit=100').then(res => {
@@ -840,10 +894,28 @@ export function AssetDetailPage({ id }: { id: string }) {
                     <CardContent className="p-0">
                       <div className="overflow-x-auto">
                         <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-                          {components.map((c: any) => (
+                          {componentTreeRows.map(({ component: c, depth, hasChildren }) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
-                              <TableCell className="font-medium text-sm">{c.name}</TableCell>
+                              <TableCell className="font-medium text-sm">
+                                <div className="flex items-center min-w-0" style={{ paddingLeft: `${Math.min(depth, 8) * 18}px` }}>
+                                  {hasChildren ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleComponentBranch(c.id)}
+                                      className="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-muted"
+                                      aria-label={expandedComponentIds.has(c.id) ? `Collapse ${c.name}` : `Expand ${c.name}`}
+                                    >
+                                      {expandedComponentIds.has(c.id)
+                                        ? <ChevronDown className="h-3.5 w-3.5" />
+                                        : <ChevronRight className="h-3.5 w-3.5" />}
+                                    </button>
+                                  ) : (
+                                    <span className="mr-1.5 inline-block h-6 w-6 shrink-0" />
+                                  )}
+                                  <span className="truncate">{c.name}</span>
+                                </div>
+                              </TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden sm:table-cell capitalize">{c.componentType?.replace(/_/g, ' ')}</TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{c.parent?.name || 'Machine root'}</TableCell>
                               <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] uppercase ${criticalityColors[c.criticality] || ''}`}>{c.criticality}</Badge></TableCell>

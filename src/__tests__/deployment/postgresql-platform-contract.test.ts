@@ -10,7 +10,7 @@ describe('PostgreSQL platform contract', () => {
     const pkg = JSON.parse(read('package.json'));
 
     expect(schema).toContain('provider = "postgresql"');
-    expect(db).toContain("require('./create-postgres-adapter')");
+    expect(db).toContain("import { createAdapter } from './create-postgres-adapter'");
     expect(db).toContain('PostgreSQL adapter initialization failed');
     expect(pkg.dependencies['@prisma/adapter-pg']).toBeTruthy();
     expect(pkg.dependencies.pg).toBeTruthy();

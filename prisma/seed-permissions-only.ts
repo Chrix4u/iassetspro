@@ -17,38 +17,27 @@ import { PrismaClient } from '@prisma/client';
 //   -- OR with explicit env vars:
 //   DB_HOST=localhost DB_USER=root DB_PASSWORD=xxx DB_NAME=eam bun run prisma/seed-permissions-only.ts
 
-console.log('🔧 Connecting to database...');
+console.log('🔧 Connecting to PostgreSQL...');
 
-// Ensure DATABASE_URL is set
-if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://')) {
+if (!process.env.DATABASE_URL) {
   const host = process.env.DB_HOST || 'localhost';
-  const port = process.env.DB_PORT || '3306';
-  const user = process.env.DB_USER || 'root';
+  const port = process.env.DB_PORT || '5432';
+  const user = process.env.DB_USER || 'postgres';
   const password = process.env.DB_PASSWORD || '';
-  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
-  process.env.DATABASE_URL = `mysql://${user}:${password}@${host}:${port}/${database}`;
-  console.log(`  📡 Built DATABASE_URL from individual env vars -> ${host}/${database}`);
-} else {
-  console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  const database = process.env.DB_NAME || 'iassetspro';
+  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
 }
 
-// Create Prisma client
-let db: PrismaClient;
-try {
-  const _url = new URL(process.env.DATABASE_URL!);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createAdapter } = require('../src/lib/create-mariadb-adapter');
-  const _adapter = createAdapter({
-    host: _url.hostname,
-    port: parseInt(_url.port || '3306', 10),
-    user: decodeURIComponent(_url.username),
-    password: decodeURIComponent(_url.password),
-    database: _url.pathname.slice(1),
-  });
-  db = new PrismaClient({ adapter: _adapter, log: ['warn', 'error'] });
-} catch {
-  db = new PrismaClient({ log: ['warn', 'error'] });
+if (!/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)) {
+  throw new Error('Permission seed requires a PostgreSQL DATABASE_URL');
 }
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createAdapter } = require('../src/lib/create-postgres-adapter');
+const db = new PrismaClient({
+  adapter: createAdapter(process.env.DATABASE_URL),
+  log: ['warn', 'error'],
+});
 
 // ============================================================================
 // PERMISSION DEFINITIONS — Must match prisma/seed.ts

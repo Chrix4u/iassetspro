@@ -181,9 +181,17 @@ jobs:
           printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
 
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
-          printf '{"private":true,"dependencies":{"prisma":"%s"}}\n' "$PRISMA_VERSION" > .release-tools/package.json
+          ADAPTER_PG_VERSION="$(node -p "require('./node_modules/@prisma/adapter-pg/package.json').version")"
+          PG_VERSION="$(node -p "require('./node_modules/pg/package.json').version")"
+          printf '{"private":true,"dependencies":{"prisma":"%s","@prisma/adapter-pg":"%s","pg":"%s"}}\n' \
+            "$PRISMA_VERSION" "$ADAPTER_PG_VERSION" "$PG_VERSION" > .release-tools/package.json
           npm install --prefix .release-tools --omit=dev --no-audit --no-fund
           cp -a .release-tools/node_modules/. .release-bundle/node_modules/
+
+          (
+            cd .release-bundle
+            node --input-type=module -e "const a=await import('@prisma/adapter-pg'); const p=await import('pg'); if (typeof a.PrismaPg !== 'function' || typeof p.Client !== 'function') process.exit(1)"
+          )
 
           ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
           tar --dereference --hard-dereference -C .release-bundle -czf "$ARTIFACT" .

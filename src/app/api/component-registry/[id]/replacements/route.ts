@@ -70,6 +70,17 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'partName is required' }, { status: 400 });
     }
 
+    if (!reason) {
+      return NextResponse.json({ success: false, error: 'reason is required' }, { status: 400 });
+    }
+
+    const parsedCost = cost === undefined || cost === null || cost === ''
+      ? null
+      : Number(cost);
+    if (parsedCost !== null && !Number.isFinite(parsedCost)) {
+      return NextResponse.json({ success: false, error: 'cost must be a valid number' }, { status: 400 });
+    }
+
     const component = await db.componentRegistry.findUnique({
       where: { id },
       select: { id: true },
@@ -85,12 +96,12 @@ export async function POST(
         partCode: partCode || null,
         serialNumberOld: serialNumberOld || null,
         serialNumberNew: serialNumberNew || null,
-        reason: reason || null,
-        cost: cost !== undefined ? parseFloat(String(cost)) : null,
+        reason,
+        cost: parsedCost,
         vendor: vendor || null,
         expectedNextReplacement: expectedNextReplacement ? new Date(expectedNextReplacement) : null,
         replacedAt: new Date(),
-        replacedBy: session.userId,
+        performedById: session.userId,
       },
     });
 

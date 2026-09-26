@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
-import { seedCanonicalTransitions } from '../src/lib/state-machine';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { createAdapter } = require('../src/lib/create-postgres-adapter');
@@ -119,7 +118,8 @@ async function main() {
     }
   }
 
-  const transitionCount = await seedCanonicalTransitions(db);
+  runSeed('scripts/seed-transitions.ts');
+  const transitionCount = await db.statusTransition.count();
 
   const operationalCounts = {
     plants: await db.plant.count(),

@@ -306,8 +306,10 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
-      - name: Create isolated UAT schema
-        run: bunx prisma db push
+      - name: Apply PostgreSQL baseline migration to isolated UAT database
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate status
 
       - name: Seed Repairs UAT data, RBAC, and labor costing
         run: |
@@ -413,8 +415,10 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
-      - name: Create isolated platform E2E schema
-        run: bunx prisma db push
+      - name: Apply PostgreSQL baseline migration to isolated platform E2E database
+        run: |
+          bunx prisma migrate deploy
+          bunx prisma migrate status
 
       - name: Seed full platform demo data
         run: bun run seed

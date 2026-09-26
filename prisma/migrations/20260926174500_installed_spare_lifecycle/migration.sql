@@ -25,7 +25,9 @@ CREATE TABLE "installed_spare_parts" (
     CONSTRAINT "installed_spare_parts_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "installed_spare_parts_serialNumber_key" ON "installed_spare_parts"("serialNumber");
+CREATE UNIQUE INDEX "installed_spare_parts_active_serial_key"
+ON "installed_spare_parts"("serialNumber")
+WHERE "serialNumber" IS NOT NULL AND "status" = 'installed';
 CREATE INDEX "installed_spare_parts_componentId_status_idx" ON "installed_spare_parts"("componentId", "status");
 CREATE INDEX "installed_spare_parts_inventoryItemId_idx" ON "installed_spare_parts"("inventoryItemId");
 CREATE INDEX "installed_spare_parts_materialRequestId_idx" ON "installed_spare_parts"("materialRequestId");

@@ -1,0 +1,84 @@
+name: PostgreSQL Staging Capability Probe
+
+on:
+  push:
+    branches: [feat/postgresql-clean-staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgresql-staging-capability-probe
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST || secrets.DEPLOY_HOST || '163.245.212.15' }}
+  DEPLOY_USER: ${{ vars.DEPLOY_USER || secrets.DEPLOY_USER || 'iassetsdeploy' }}
+  DEPLOY_PORT: ${{ vars.DEPLOY_PORT || secrets.DEPLOY_PORT || '22' }}
+
+jobs:
+  probe:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Configure deployment SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/iassetspro_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/iassetspro_deploy ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Read-only PostgreSQL capability probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -4 -i ~/.ssh/iassetspro_deploy -p "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo "=== OS ==="
+          cat /etc/os-release 2>/dev/null || true
+          uname -a
+          echo
+          echo "=== Resources ==="
+          free -h 2>/dev/null || true
+          df -h / 2>/dev/null || true
+          echo
+          echo "=== PostgreSQL ==="
+          command -v psql || true
+          command -v pg_dump || true
+          command -v pg_restore || true
+          psql --version 2>/dev/null || true
+          pg_dump --version 2>/dev/null || true
+          systemctl list-unit-files 'postgresql*' --no-pager 2>/dev/null || true
+          systemctl list-units 'postgresql*' --no-pager 2>/dev/null || true
+          ss -ltn 2>/dev/null | grep ':5432' || true
+          echo
+          echo "=== Container runtime ==="
+          command -v docker || true
+          docker --version 2>/dev/null || true
+          command -v podman || true
+          podman --version 2>/dev/null || true
+          echo
+          echo "=== Package manager ==="
+          command -v apt-get || true
+          command -v dnf || true
+          command -v yum || true
+          echo
+          echo "=== Existing app/runtime ==="
+          command -v node || true
+          command -v bun || true
+          command -v pm2 || true
+          readlink -f /home/lightworld/webapps/iassetspro 2>/dev/null || true
+          echo
+          echo "=== Sudo policy (read only) ==="
+          sudo -n -l 2>/dev/null || true
+          REMOTE

@@ -132,12 +132,24 @@ test -f "$NEW_RELEASE/node_modules/prisma/build/prisma_schema_build_bg.wasm"
 test -f "$NEW_RELEASE/prisma/schema.prisma"
 test -d "$NEW_RELEASE/prisma/migrations"
 test -f "$NEW_RELEASE/scripts/seed-transitions.ts"
+test -f "$NEW_RELEASE/scripts/bootstrap-postgresql-staging.sh"
+test -f "$NEW_RELEASE/prisma/seed-constants.ts"
+test -f "$NEW_RELEASE/prisma/seed-permissions-only.ts"
+test -f "$NEW_RELEASE/prisma/seed-trades.ts"
+test -f "$NEW_RELEASE/src/lib/create-postgres-adapter.ts"
 cp -a "$OLD_RELEASE/.env" "$NEW_RELEASE/.env"
+chmod 600 "$NEW_RELEASE/.env"
 
+echo "[2/10] PostgreSQL staging bootstrap and driver preflight"
+bash "$NEW_RELEASE/scripts/bootstrap-postgresql-staging.sh" "$NEW_RELEASE/.env"
 cd "$NEW_RELEASE"
-echo "[2/10] RWOP driver/schema preflight"
-NODE_ENV=production bun run scripts/seed-transitions.ts --check-driver
-NODE_ENV=production bun run scripts/seed-transitions.ts --check-schema
+NODE_ENV=production bun --env-file=.env run scripts/seed-transitions.ts --check-driver
+
+DB_HOST="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.hostname)')"
+DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"5432")')"
+DB_USER="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.username))')"
+DB_PASS="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.password))')"
+DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
 
 echo "[3/10] PostgreSQL migration classification"
 set +e
@@ -159,33 +171,34 @@ fi
 if [[ "$NEEDS_MIGRATION" -eq 1 ]]; then
   command -v pg_dump >/dev/null || { echo "STOP: pg_dump is required for PostgreSQL deployment backups"; exit 1; }
   command -v pg_restore >/dev/null || { echo "STOP: pg_restore is required to verify PostgreSQL backups"; exit 1; }
-
   mkdir -p "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
-
-  DB_HOST="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.hostname)')"
-  DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"5432")')"
-  DB_USER="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.username))')"
-  DB_PASS="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.password))')"
-  DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
   BACKUP="${BACKUP_DIR}/pre-deploy-${SHA:0:12}-${STAMP}.pgdump"
-
   PGPASSWORD="$DB_PASS" pg_dump \
     --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" \
     --format=custom --no-owner --no-privileges \
     --file="$BACKUP" "$DB_NAME"
-  unset DB_PASS
   test -s "$BACKUP"
   pg_restore --list "$BACKUP" >/dev/null
   chmod 600 "$BACKUP"
   echo "Verified PostgreSQL backup: $BACKUP"
-
   node "$PRISMA_CLI" migrate deploy
   node "$PRISMA_CLI" migrate status
 fi
 
+NODE_ENV=production bun --env-file=.env run scripts/seed-transitions.ts --check-schema
+
+USER_COUNT="$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atqc 'SELECT COUNT(*) FROM "users"')"
+if [[ "$USER_COUNT" == "0" ]]; then
+  echo "Clean PostgreSQL staging detected; seeding constants/reference data only"
+  NODE_ENV=production bun --env-file=.env run prisma/seed-constants.ts
+else
+  echo "PostgreSQL staging already commissioned with users; constants bootstrap skipped"
+fi
+unset DB_PASS
+
 health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-old-postmigration.json 3 2 || {
-  echo "STOP: old runtime unhealthy after migration"; exit 1;
+  echo "STOP: current active runtime became unhealthy before cutover"; exit 1;
 }
 OLD_RUNTIME_POST_MIGRATION_OK=1
 

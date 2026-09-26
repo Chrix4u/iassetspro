@@ -24,7 +24,7 @@
 # PREREQUISITES:
 #   - Webuzo panel already installed and running
 #   - SSH access to the VPS
-#   - MySQL database created (via Webuzo panel)
+#   - PostgreSQL database created (via Webuzo panel)
 # =============================================================================
 
 set -e
@@ -144,7 +144,7 @@ if [ ! -f .env ]; then
     echo "  ╠══════════════════════════════════════════════╣"
     echo "  ║                                              ║"
     echo "  ║  1. Log into Webuzo: https://YOUR_VPS:2002   ║"
-    echo "  ║  2. Go to: Databases > MySQL Databases       ║"
+    echo "  ║  2. Go to: Databases > PostgreSQL Databases       ║"
     echo "  ║  3. Create a new database:                    ║"
     echo "  ║     - DB Name: eam_system                    ║"
     echo "  ║     - DB User: eam_user                      ║"
@@ -154,29 +154,29 @@ if [ ! -f .env ]; then
     echo "  ╚══════════════════════════════════════════════╝"
     echo ""
 
-    read -p "  Enter MySQL host (default: localhost): " DB_HOST
+    read -p "  Enter PostgreSQL host (default: localhost): " DB_HOST
     DB_HOST=${DB_HOST:-localhost}
 
-    read -p "  Enter MySQL port (default: 3306): " DB_PORT
-    DB_PORT=${DB_PORT:-3306}
+    read -p "  Enter PostgreSQL port (default: 5432): " DB_PORT
+    DB_PORT=${DB_PORT:-5432}
 
-    read -p "  Enter MySQL database name: " DB_NAME
+    read -p "  Enter PostgreSQL database name: " DB_NAME
     while [ -z "$DB_NAME" ]; do
         echo -e "${RED}  Database name is required!${NC}"
-        read -p "  Enter MySQL database name: " DB_NAME
+        read -p "  Enter PostgreSQL database name: " DB_NAME
     done
 
-    read -p "  Enter MySQL username: " DB_USER
+    read -p "  Enter PostgreSQL username: " DB_USER
     while [ -z "$DB_USER" ]; do
         echo -e "${RED}  Username is required!${NC}"
-        read -p "  Enter MySQL username: " DB_USER
+        read -p "  Enter PostgreSQL username: " DB_USER
     done
 
-    read -sp "  Enter MySQL password: " DB_PASS
+    read -sp "  Enter PostgreSQL password: " DB_PASS
     while [ -z "$DB_PASS" ]; do
         echo ""
         echo -e "${RED}  Password is required!${NC}"
-        read -sp "  Enter MySQL password: " DB_PASS
+        read -sp "  Enter PostgreSQL password: " DB_PASS
     done
     echo ""
 
@@ -184,7 +184,7 @@ if [ ! -f .env ]; then
 
     cat > .env << EOF
 # EAM System - Production Environment
-DATABASE_URL="mysql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 NEXTAUTH_SECRET="${AUTH_SECRET}"
 NEXTAUTH_URL="http://localhost:3000"
 NEXT_TELEMETRY_DISABLED=1
@@ -221,8 +221,8 @@ log_info "Build complete"
 
 log_info "Copying static assets..."
 cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
-cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb 2>/dev/null || true
-cp -r node_modules/mariadb .next/standalone/node_modules/mariadb 2>/dev/null || true
+cp -r node_modules/@prisma/adapter-pg .next/standalone/node_modules/@prisma/adapter-pg 2>/dev/null || true
+cp -r node_modules/pg .next/standalone/node_modules/pg 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/
 cp -r public .next/standalone/
 

@@ -133,15 +133,22 @@ async function main() {
     users: await db.user.count(),
   };
 
-  for (const [name, count] of Object.entries(operationalCounts)) {
-    if (count !== 0) {
-      throw new Error(`Constants-only seed invariant failed: ${name} expected 0, found ${count}`);
+  const allowCommissionedData = process.env.IASSETSPRO_ALLOW_COMMISSIONED_DATA === '1';
+  if (!allowCommissionedData) {
+    for (const [name, count] of Object.entries(operationalCounts)) {
+      if (count !== 0) {
+        throw new Error(`Constants-only seed invariant failed: ${name} expected 0, found ${count}`);
+      }
     }
   }
 
   console.log(`✅ System modules: ${systemModules.length}`);
   console.log(`✅ Canonical transitions: ${transitionCount}`);
-  console.log('✅ Operational staging tables are empty and ready for manual commissioning');
+  if (allowCommissionedData) {
+    console.log('✅ Reference data reconciled without modifying commissioned operational records');
+  } else {
+    console.log('✅ Operational staging tables are empty and ready for manual commissioning');
+  }
 }
 
 main()

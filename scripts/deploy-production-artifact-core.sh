@@ -139,53 +139,46 @@ echo "[2/10] RWOP driver/schema preflight"
 NODE_ENV=production bun run scripts/seed-transitions.ts --check-driver
 NODE_ENV=production bun run scripts/seed-transitions.ts --check-schema
 
-echo "[3/10] Prisma migration classification"
+echo "[3/10] PostgreSQL migration classification"
 set +e
 MIGRATION_STATUS="$(node "$PRISMA_CLI" migrate status 2>&1)"
 MIGRATION_RC=$?
 set -e
 printf '%s\n' "$MIGRATION_STATUS"
 
-RECOVERABLE_FAILED_MIGRATION="20260925161000_add_pm_schedule_component"
 NEEDS_MIGRATION=0
-RECOVER_FAILED_MIGRATION=0
-
 if grep -q "Database schema is up to date" <<<"$MIGRATION_STATUS"; then
-  echo "No pending migrations"
+  echo "No pending PostgreSQL migrations"
 elif grep -Eq "not yet been applied|have not yet been applied|Following migration" <<<"$MIGRATION_STATUS"; then
   NEEDS_MIGRATION=1
-elif grep -qi "failed" <<<"$MIGRATION_STATUS" && grep -q "$RECOVERABLE_FAILED_MIGRATION" <<<"$MIGRATION_STATUS"; then
-  echo "Recoverable failed migration detected: $RECOVERABLE_FAILED_MIGRATION"
-  NEEDS_MIGRATION=1
-  RECOVER_FAILED_MIGRATION=1
 else
-  echo "STOP: migration status unclassified (exit $MIGRATION_RC)"
+  echo "STOP: PostgreSQL migration status unclassified (exit $MIGRATION_RC)"
   exit 1
 fi
 
 if [[ "$NEEDS_MIGRATION" -eq 1 ]]; then
+  command -v pg_dump >/dev/null || { echo "STOP: pg_dump is required for PostgreSQL deployment backups"; exit 1; }
+  command -v pg_restore >/dev/null || { echo "STOP: pg_restore is required to verify PostgreSQL backups"; exit 1; }
+
   mkdir -p "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
-  DUMP_BIN="$(command -v mariadb-dump || command -v mysqldump || true)"
-  [[ -n "$DUMP_BIN" ]] || { echo "STOP: no database dump utility"; exit 1; }
 
   DB_HOST="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.hostname)')"
-  DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"3306")')"
+  DB_PORT="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(u.port||"5432")')"
   DB_USER="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.username))')"
   DB_PASS="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.password))')"
   DB_NAME="$(node --env-file=.env -e 'const u=new URL(process.env.DATABASE_URL);process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
-  BACKUP="${BACKUP_DIR}/pre-deploy-${SHA:0:12}-${STAMP}.sql.gz"
-  MYSQL_PWD="$DB_PASS" "$DUMP_BIN" --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
-    --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"
+  BACKUP="${BACKUP_DIR}/pre-deploy-${SHA:0:12}-${STAMP}.pgdump"
+
+  PGPASSWORD="$DB_PASS" pg_dump \
+    --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" \
+    --format=custom --no-owner --no-privileges \
+    --file="$BACKUP" "$DB_NAME"
   unset DB_PASS
   test -s "$BACKUP"
-  gzip -t "$BACKUP"
-  echo "Verified database backup: $BACKUP"
-
-  if [[ "$RECOVER_FAILED_MIGRATION" -eq 1 ]]; then
-    echo "Marking failed migration as rolled back before retry: $RECOVERABLE_FAILED_MIGRATION"
-    node "$PRISMA_CLI" migrate resolve --rolled-back "$RECOVERABLE_FAILED_MIGRATION"
-  fi
+  pg_restore --list "$BACKUP" >/dev/null
+  chmod 600 "$BACKUP"
+  echo "Verified PostgreSQL backup: $BACKUP"
 
   node "$PRISMA_CLI" migrate deploy
   node "$PRISMA_CLI" migrate status

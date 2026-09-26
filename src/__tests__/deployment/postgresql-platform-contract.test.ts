@@ -19,9 +19,17 @@ describe('PostgreSQL platform contract', () => {
     expect(pkg.dependencies.mysql2).toBeUndefined();
   });
 
-  it('has one clean PostgreSQL baseline instead of replaying MySQL history', () => {
-    const migrations = fs.readdirSync('prisma/migrations');
-    expect(migrations).toEqual(['00000000000000_postgresql_baseline']);
+  it('has one clean PostgreSQL baseline and only PostgreSQL-native follow-up migrations', () => {
+    const migrations = fs.readdirSync('prisma/migrations').sort();
+    expect(migrations[0]).toBe('00000000000000_postgresql_baseline');
+    expect(migrations).toContain('00000000000000_postgresql_baseline');
+
+    for (const migration of migrations) {
+      const sql = read(`prisma/migrations/${migration}/migration.sql`);
+      expect(sql).not.toContain('FOREIGN_KEY_CHECKS');
+      expect(sql).not.toContain('ENGINE=InnoDB');
+      expect(sql).not.toContain('CHARSET=utf8mb4');
+    }
 
     const baseline = read('prisma/migrations/00000000000000_postgresql_baseline/migration.sql');
     expect(baseline).toContain('CREATE SCHEMA IF NOT EXISTS "public"');

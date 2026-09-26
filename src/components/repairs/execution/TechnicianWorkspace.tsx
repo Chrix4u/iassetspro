@@ -233,6 +233,8 @@ export default function TechnicianWorkspace({
   const [assistanceForm, setAssistanceForm] = useState({
     reason: '', tradeSkill: '',
   });
+  const [materialInstallDrafts, setMaterialInstallDrafts] = useState<Record<string, { quantity: string; serialNumber: string; lotNumber: string }>>({});
+  const [installingMaterialId, setInstallingMaterialId] = useState<string | null>(null);
 
   // File input refs
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -327,6 +329,56 @@ export default function TechnicianWorkspace({
       toast.error('Failed to request assistance');
     }
   }, [assistanceForm, workOrderId, refetch]);
+
+  const handleInstallIssuedMaterial = useCallback(async (mr: WODetail['repairMaterialRequests'][number]) => {
+    if (!mr.componentRegistry || !mr.itemId) {
+      toast.error('This issued material is not linked to a machine component');
+      return;
+    }
+
+    const availableQuantity = mr.consumedQty ?? Math.max(0, mr.quantityIssued - mr.quantityReturned);
+    const draft = materialInstallDrafts[mr.id] ?? {
+      quantity: String(availableQuantity || 1),
+      serialNumber: '',
+      lotNumber: '',
+    };
+    const quantity = Number(draft.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Enter a valid installation quantity');
+      return;
+    }
+
+    setInstallingMaterialId(mr.id);
+    try {
+      const res = await api.post(`/api/component-registry/${mr.componentRegistry.id}/installed-parts`, {
+        materialRequestId: mr.id,
+        workOrderId,
+        inventoryItemId: mr.itemId,
+        partName: mr.item?.name || mr.itemName || 'Issued spare part',
+        partCode: mr.item?.itemCode || null,
+        serialNumber: draft.serialNumber || null,
+        lotNumber: draft.lotNumber || null,
+        quantity,
+        sourceType: 'material_request',
+      });
+
+      if (!res.success) {
+        toast.error(res.error || 'Failed to record installed spare');
+        return;
+      }
+
+      toast.success(`Installed on ${mr.componentRegistry.componentCode} · ${mr.componentRegistry.name}`);
+      setMaterialInstallDrafts(current => ({
+        ...current,
+        [mr.id]: { quantity: '', serialNumber: '', lotNumber: '' },
+      }));
+      await refetch();
+    } catch {
+      toast.error('Failed to record installed spare');
+    } finally {
+      setInstallingMaterialId(null);
+    }
+  }, [materialInstallDrafts, workOrderId, refetch]);
 
   // ─── Evidence Handlers ──────────────────────────────────────────────────
 
@@ -948,7 +1000,20 @@ export default function TechnicianWorkspace({
                     rejected: 'bg-red-50 text-red-700 border-red-200',
                     partially_returned: 'bg-orange-50 text-orange-700 border-orange-200',
                     returned: 'bg-slate-100 text-slate-600 border-slate-200',
+                    closed: 'bg-slate-100 text-slate-600 border-slate-200',
                   };
+                  const installableQuantity = mr.consumedQty ?? Math.max(0, mr.quantityIssued - mr.quantityReturned);
+                  const installDraft = materialInstallDrafts[mr.id] ?? {
+                    quantity: String(installableQuantity || 1),
+                    serialNumber: '',
+                    lotNumber: '',
+                  };
+                  const canRecordInstallation = Boolean(
+                    mr.componentRegistry
+                    && mr.itemId
+                    && mr.quantityIssued > 0
+                    && ['issued', 'returned', 'closed'].includes(mr.status),
+                  );
                   return (
                     <Card key={mr.id}>
                       <CardContent className="p-4">
@@ -971,6 +1036,61 @@ export default function TechnicianWorkspace({
                           <div><span className="text-muted-foreground">Consumed:</span> {mr.consumedQty ?? '—'}</div>
                           <div><span className="text-muted-foreground">Returned:</span> {mr.quantityReturned || '—'}</div>
                         </div>
+                        {mr.componentRegistry && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-muted-foreground">Target component:</span>
+                            <Badge variant="outline">
+                              {mr.componentRegistry.componentCode} · {mr.componentRegistry.name}
+                            </Badge>
+                          </div>
+                        )}
+                        {canRecordInstallation && (
+                          <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+                            <div className="mb-2">
+                              <p className="text-xs font-semibold">Install issued spare on component</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                This records physical installation only. Store stock was already handled by the material issue/reconciliation workflow.
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[100px_1fr_1fr_auto]">
+                              <Input
+                                type="number"
+                                min="0.0001"
+                                step="any"
+                                value={installDraft.quantity}
+                                onChange={event => setMaterialInstallDrafts(current => ({
+                                  ...current,
+                                  [mr.id]: { ...installDraft, quantity: event.target.value },
+                                }))}
+                                placeholder="Qty"
+                              />
+                              <Input
+                                value={installDraft.serialNumber}
+                                onChange={event => setMaterialInstallDrafts(current => ({
+                                  ...current,
+                                  [mr.id]: { ...installDraft, serialNumber: event.target.value },
+                                }))}
+                                placeholder="Serial number (optional)"
+                              />
+                              <Input
+                                value={installDraft.lotNumber}
+                                onChange={event => setMaterialInstallDrafts(current => ({
+                                  ...current,
+                                  [mr.id]: { ...installDraft, lotNumber: event.target.value },
+                                }))}
+                                placeholder="Lot / batch (optional)"
+                              />
+                              <Button
+                                size="sm"
+                                onClick={() => handleInstallIssuedMaterial(mr)}
+                                disabled={installingMaterialId === mr.id}
+                              >
+                                {installingMaterialId === mr.id && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                Install
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );

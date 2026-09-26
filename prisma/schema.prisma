@@ -2887,7 +2887,7 @@ model ComponentRegistry {
   componentCode     String
   name              String
   description       String?  @db.Text
-  componentType     String   @default("component") // component, assembly, subassembly, auxiliary, instrument
+  componentType     String   @default("component") // assembly, subassembly, component, part, auxiliary, instrument
   manufacturer      String?
   modelNumber       String?
   serialNumber      String?  @unique

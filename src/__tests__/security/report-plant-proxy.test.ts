@@ -40,6 +40,16 @@ describe('reporting proxy security', () => {
     mockGetUnavailableOperationalModules.mockResolvedValue([]);
   });
 
+
+  describe('public first-run setup', () => {
+    it('allows first-admin setup without an existing bearer token', async () => {
+      const response = await proxy(new NextRequest('http://localhost/api/setup/first-admin'));
+
+      expect(response.status).toBe(200);
+      expect(mockGetSessionAsync).not.toHaveBeenCalled();
+      expect(mockGetUnavailableOperationalModules).not.toHaveBeenCalled();
+    });
+  });
   describe('module availability gate', () => {
     it('maps primary and composite APIs to their required modules', () => {
       expect(requiredModulesForApiPath('/api/work-orders/wo-1')).toEqual(['work_orders']);

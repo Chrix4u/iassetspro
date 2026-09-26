@@ -195,6 +195,24 @@ if [[ "$USER_COUNT" == "0" ]]; then
 else
   echo "PostgreSQL staging already commissioned with users; constants bootstrap skipped"
 fi
+
+DEMO_USERS_ENV="${IASSETSPRO_DEMO_USERS_ENV:-/home/lightworld/shared/iassetspro/demo-users.env}"
+if [[ -f "$DEMO_USERS_ENV" ]]; then
+  test -f "$NEW_RELEASE/prisma/seed-demo-users.ts"
+  if [[ "$(stat -c '%a' "$DEMO_USERS_ENV")" != "600" ]]; then
+    echo "STOP: demo user credential file must have mode 600: $DEMO_USERS_ENV"
+    exit 1
+  fi
+  echo "Demo user credential file detected; reconciling UAT identities"
+  set -a
+  # shellcheck disable=SC1090
+  . "$DEMO_USERS_ENV"
+  set +a
+  NODE_ENV=production bun --env-file=.env run prisma/seed-demo-users.ts
+  unset DEMO_ADMIN_PASSWORD DEMO_USER_PASSWORD
+else
+  echo "Demo user credential file not present; demo identity seed skipped"
+fi
 unset DB_PASS
 
 health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-old-postmigration.json 3 2 || {

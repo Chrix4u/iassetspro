@@ -3,52 +3,33 @@ import { hash } from 'bcryptjs';
 import { seedCanonicalTransitions } from '../src/lib/state-machine';
 
 // ══════════════════════════════════════════════════════════════════════════
-// DATABASE CONNECTION — Robust, adapter-free for seed scripts
+// DATABASE CONNECTION — PostgreSQL / Prisma 7 adapter
 // ══════════════════════════════════════════════════════════════════════════
 //
-// Why no adapter? The PrismaMariaDb adapter requires exact package versions
-// and can fail silently on some VPS setups. For seed scripts, the built-in
-// Prisma MySQL driver works perfectly with MariaDB and is more reliable.
-//
 // Usage:
-//   DATABASE_URL="mysql://user:pass@host:3306/dbname" npx tsx prisma/seed.ts
-//   -- OR with individual env vars:
-//   DB_HOST=localhost DB_USER=root DB_PASSWORD=xxx DB_NAME=eam npx tsx prisma/seed.ts
+//   DATABASE_URL="postgresql://user:pass@host:5432/iassetspro?schema=public" bun run seed
 
-console.log('🔧 Connecting to database...');
+console.log('🔧 Connecting to PostgreSQL...');
 
-// Ensure DATABASE_URL is set (either directly or from individual vars)
-if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://')) {
+if (!process.env.DATABASE_URL) {
   const host = process.env.DB_HOST || 'localhost';
-  const port = process.env.DB_PORT || '3306';
-  const user = process.env.DB_USER || 'root';
+  const port = process.env.DB_PORT || '5432';
+  const user = process.env.DB_USER || 'postgres';
   const password = process.env.DB_PASSWORD || '';
-  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
-  process.env.DATABASE_URL = `mysql://${user}:${password}@${host}:${port}/${database}`;
-  console.log(`  📡 Built DATABASE_URL from individual env vars -> ${host}/${database}`);
-} else {
-  console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  const database = process.env.DB_NAME || 'iassetspro';
+  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
 }
 
-// Parse DATABASE_URL and create adapter-based client for MySQL/MariaDB
-let _dbClient: PrismaClient;
-try {
-  const _url = new URL(process.env.DATABASE_URL!);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createAdapter } = require('../src/lib/create-mariadb-adapter');
-  const _adapter = createAdapter({
-    host: _url.hostname,
-    port: parseInt(_url.port || '3306', 10),
-    user: decodeURIComponent(_url.username),
-    password: decodeURIComponent(_url.password),
-    database: _url.pathname.slice(1),
-  });
-  _dbClient = new PrismaClient({ adapter: _adapter, log: ['warn', 'error'] });
-} catch (e) {
-  console.warn('Failed to create adapter client, falling back:', (e as Error).message);
-  _dbClient = new PrismaClient({ log: ['warn', 'error'] });
+if (!/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)) {
+  throw new Error('Full demo seed requires a PostgreSQL DATABASE_URL');
 }
-const db = _dbClient;
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createAdapter } = require('../src/lib/create-postgres-adapter');
+const db = new PrismaClient({
+  adapter: createAdapter(process.env.DATABASE_URL),
+  log: ['warn', 'error'],
+});
 
 // ============================================================================
 // 1. PERMISSION DEFINITIONS — 11 modules with structured actions
@@ -745,38 +726,26 @@ async function seed() {
   }
 
   // ── Clear existing data for clean re-seed ──
-  // ⚠️  WARNING: This is a DESTRUCTIVE operation. Use seed-permissions-only.ts for production updates.
-  console.log('🗑️  Clearing existing data...');
-  console.log('  ⚠️  DESTRUCTIVE — this will delete ALL data. For non-destructive updates, use seed-permissions-only.ts');
+  // Test/demo only. PostgreSQL CASCADE safely handles the relation graph.
+  console.log('🗑️  Clearing existing demo data...');
   try {
-    // Method 1: TRUNCATE with FK checks disabled (fastest)
-    // NOTE: The MariaDB adapter may use connection pooling, so SET FOREIGN_KEY_CHECKS
-    // might not persist across queries. We use a single multi-statement approach.
-    const tables = await db.$queryRawUnsafe(
-      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_prisma_migrations'`
+    const tables = await db.$queryRawUnsafe<Array<{ tablename: string }>>(
+      `SELECT tablename
+         FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename <> '_prisma_migrations'`
     );
-    const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
+    const tableNames = tables.map((row) => row.tablename);
     if (tableNames.length > 0) {
-      // Use a Prisma interactive transaction so all DELETE queries share one connection.
-      // This allows SET FOREIGN_KEY_CHECKS=0 to persist across all subsequent deletes.
-      console.log(`  🗑️  Clearing ${tableNames.length} tables via raw SQL in transaction...`);
-      await db.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0`);
-        for (const t of tableNames) {
-          try {
-            await tx.$executeRawUnsafe(`DELETE FROM \`${t}\``);
-          } catch {
-            /* skip — some tables may not exist yet or have circular refs */
-          }
-        }
-        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1`);
-      });
-      console.log(`  ✅ Cleared ${tableNames.length} tables`);
+      const quoted = tableNames.map((name) => '"' + name.replace(/"/g, '""') + '"').join(', ');
+      await db.$executeRawUnsafe(`TRUNCATE TABLE ${quoted} RESTART IDENTITY CASCADE`);
+      console.log(`  ✅ Cleared ${tableNames.length} application tables`);
     } else {
-      console.log('  ℹ️  No tables found (fresh database)');
+      console.log('  ℹ️  No application tables found (fresh database)');
     }
   } catch (e) {
-    console.error('  ❌ All clear methods failed:', (e as Error).message);
+    console.error('  ❌ Failed to clear demo database:', (e as Error).message);
+    throw e;
   }
   console.log('');
 

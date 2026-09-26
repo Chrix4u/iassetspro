@@ -40,7 +40,10 @@ describe('demo users only seed', () => {
   });
 
   it('preserves canonical trade/skill metadata used for assignment', () => {
+    const trades = [...seed.matchAll(/primaryTrade:\\s*'([^']+)'/g)].map((match) => match[1]);
+
     for (const trade of [
+      'Maintenance Management',
       'Mechanical Engineer',
       'Production Supervisor',
       'Mechanical Fitter',
@@ -59,7 +62,7 @@ describe('demo users only seed', () => {
       'Instrumentation Fitter',
       'Electrical Technician',
     ]) {
-      expect(seed).toContain(`primaryTrade: '${trade}'`);
+      expect(trades).toContain(trade);
     }
   });
 });

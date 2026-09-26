@@ -1,85 +1,39 @@
-import path from "node:path";
-import { defineConfig } from "prisma/config";
-import { readFileSync, existsSync } from "node:fs";
+import { defineConfig } from 'prisma/config';
 
-let dbUrl = '';
-let provider: 'mysql' | 'sqlite' = 'mysql';
+function loadDatabaseUrl(): string {
+  let url = process.env.DATABASE_URL || '';
 
-// 1. Prefer individual MySQL/MariaDB env vars (most reliable for db push)
-const host = process.env.DB_HOST;
-const port = process.env.DB_PORT;
-const user = process.env.DB_USER;
-const pass = process.env.DB_PASSWORD;
-const dbName = process.env.DB_NAME;
-
-if (host && user && pass && dbName) {
-  dbUrl = `mysql://${user}:${pass}@${port ? `${host}:${port}` : host}/${dbName}`;
-  provider = 'mysql';
-}
-
-// 2. Fallback: DATABASE_URL from env or .env file
-if (!dbUrl) {
-  dbUrl = process.env.DATABASE_URL || '';
-
-  if (!dbUrl) {
-    const envPaths = [
-      path.resolve(process.cwd(), '.env'),
-      path.resolve(__dirname, '..', '.env'),
-      '/home/z/my-project/.env',
-    ];
-    for (const envPath of envPaths) {
-      if (existsSync(envPath)) {
-        try {
-          const content = readFileSync(envPath, 'utf-8');
-          for (const line of content.split('\n')) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('#') || !trimmed) continue;
-            const eqIdx = trimmed.indexOf('=');
-            if (eqIdx === -1) continue;
-            const key = trimmed.slice(0, eqIdx).trim();
-            const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
-            if (key === 'DATABASE_URL' && val) { dbUrl = val; break; }
-          }
-          if (dbUrl) break;
-        } catch {}
-      }
+  if (!url) {
+    const host = process.env.PGHOST || process.env.DB_HOST;
+    const port = process.env.PGPORT || process.env.DB_PORT || '5432';
+    const user = process.env.PGUSER || process.env.DB_USER;
+    const password = process.env.PGPASSWORD || process.env.DB_PASSWORD;
+    const database = process.env.PGDATABASE || process.env.DB_NAME;
+    if (host && user && password && database) {
+      url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
     }
   }
 
-  // Detect provider from URL scheme
-  if (dbUrl.startsWith('file:') || dbUrl.includes('sqlite')) {
-    provider = 'sqlite';
+  if (!url && process.env.CI) {
+    url = 'postgresql://ci:ci@127.0.0.1:5432/iassetspro_ci';
   }
-}
 
-// Prisma Client generation and TypeScript validation do not connect to the
-// database, but Prisma 7 still requires a datasource URL while loading the
-// config. GitHub Actions intentionally has no production database secrets, so
-// use a non-routable local placeholder only in CI/test. Real db push/migrate
-// operations outside CI still fail fast when no database configuration exists.
-if (!dbUrl && (process.env.CI === 'true' || process.env.NODE_ENV === 'test')) {
-  dbUrl = 'mysql://ci:ci@127.0.0.1:3306/iassetspro_ci';
-  provider = 'mysql';
-}
+  if (!/^postgres(?:ql)?:\/\//.test(url)) {
+    throw new Error(
+      'DATABASE_URL must be a PostgreSQL connection string. Example: postgresql://user:password@host:5432/iassetspro',
+    );
+  }
 
-if (!dbUrl) {
-  throw new Error(
-    'DATABASE_URL is not set. Set it in your environment or .env file.\n' +
-    'Examples:\n' +
-    '  MySQL/MariaDB: mysql://user:password@host:3306/dbname\n' +
-    '  SQLite (dev):  file:/path/to/db.sqlite\n' +
-    'Or set individual vars: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME'
-  );
+  return url;
 }
 
 export default defineConfig({
-  earlyAccess: true,
-  schema: path.join(__dirname, "prisma", "schema.prisma"),
-  datasource: {
-    provider,
-    url: dbUrl,
-  },
+  schema: 'prisma/schema.prisma',
   migrations: {
+    path: 'prisma/migrations',
     seed: 'bun ./prisma/seed.ts',
+  },
+  datasource: {
+    url: loadDatabaseUrl(),
   },
 });

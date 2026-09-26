@@ -43,6 +43,7 @@ import { useOfflineSync } from './hooks/useOfflineSync';
 import { useWOAttachments } from './hooks/useWOAttachments';
 import { useWOMeasurements } from './hooks/useWOMeasurements';
 import { OfflineSyncService } from '@/services/offlineSync.service';
+import { api } from '@/lib/api';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 

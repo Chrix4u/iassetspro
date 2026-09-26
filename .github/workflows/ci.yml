@@ -181,9 +181,18 @@ jobs:
           printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
 
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
-          printf '{"private":true,"dependencies":{"prisma":"%s"}}\n' "$PRISMA_VERSION" > .release-tools/package.json
+          PRISMA_ADAPTER_PG_VERSION="$(node -p "require('./node_modules/@prisma/adapter-pg/package.json').version")"
+          PG_VERSION="$(node -p "require('./node_modules/pg/package.json').version")"
+          printf '{"private":true,"dependencies":{"prisma":"%s","@prisma/adapter-pg":"%s","pg":"%s"}}\n' \
+            "$PRISMA_VERSION" "$PRISMA_ADAPTER_PG_VERSION" "$PG_VERSION" > .release-tools/package.json
           npm install --prefix .release-tools --omit=dev --no-audit --no-fund
           cp -a .release-tools/node_modules/. .release-bundle/node_modules/
+
+          # Production seeds run from the compact release bundle, not the full
+          # CI workspace. Verify the exact bundle can resolve and import the
+          # PostgreSQL adapter and all of its transitive runtime dependencies.
+          test -f .release-bundle/node_modules/@prisma/driver-adapter-utils/package.json
+          node --input-type=module -e "await import('./.release-bundle/node_modules/@prisma/adapter-pg/dist/index.mjs')"
 
           ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
           tar --dereference --hard-dereference -C .release-bundle -czf "$ARTIFACT" .

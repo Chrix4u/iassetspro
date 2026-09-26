@@ -173,7 +173,7 @@ jobs:
           cp -a .next/standalone/. .release-bundle/
           cp -a prisma/migrations .release-bundle/prisma/
           cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
-          cp prisma/seed-constants.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
+          cp prisma/seed-constants.ts prisma/seed-demo-users.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
           cp prisma.config.ts package.json bun.lock .release-bundle/
           cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh .release-bundle/scripts/
           cp src/lib/create-postgres-adapter.ts .release-bundle/src/lib/create-postgres-adapter.ts
@@ -183,8 +183,9 @@ jobs:
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
           PRISMA_ADAPTER_PG_VERSION="$(node -p "require('./node_modules/@prisma/adapter-pg/package.json').version")"
           PG_VERSION="$(node -p "require('./node_modules/pg/package.json').version")"
-          printf '{"private":true,"dependencies":{"prisma":"%s","@prisma/adapter-pg":"%s","pg":"%s"}}\n' \
-            "$PRISMA_VERSION" "$PRISMA_ADAPTER_PG_VERSION" "$PG_VERSION" > .release-tools/package.json
+          BCRYPTJS_VERSION="$(node -p "require('./node_modules/bcryptjs/package.json').version")"
+          printf '{"private":true,"dependencies":{"prisma":"%s","@prisma/adapter-pg":"%s","pg":"%s","bcryptjs":"%s"}}\n' \
+            "$PRISMA_VERSION" "$PRISMA_ADAPTER_PG_VERSION" "$PG_VERSION" "$BCRYPTJS_VERSION" > .release-tools/package.json
           npm install --prefix .release-tools --omit=dev --no-audit --no-fund
           cp -a .release-tools/node_modules/. .release-bundle/node_modules/
 
@@ -192,7 +193,10 @@ jobs:
           # CI workspace. Verify the exact bundle can resolve and import the
           # PostgreSQL adapter and all of its transitive runtime dependencies.
           test -f .release-bundle/node_modules/@prisma/driver-adapter-utils/package.json
+          test -f .release-bundle/node_modules/bcryptjs/package.json
+          test -f .release-bundle/prisma/seed-demo-users.ts
           node --input-type=module -e "await import('./.release-bundle/node_modules/@prisma/adapter-pg/dist/index.mjs')"
+          node -e "require('./.release-bundle/node_modules/bcryptjs')"
 
           ARTIFACT="iassetspro-release-${GITHUB_SHA}.tar.gz"
           tar --dereference --hard-dereference -C .release-bundle -czf "$ARTIFACT" .

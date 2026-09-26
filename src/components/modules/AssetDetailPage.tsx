@@ -92,20 +92,32 @@ export function AssetDetailPage({ id }: { id: string }) {
   }, [id]);
 
   // Reload components
-  const reloadComponents = useCallback(() => {
-    api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
-      if (res.success && res.data) {
-        const data = Array.isArray(res.data) ? res.data : [];
-        setComponents(data);
-        // Keep the initial view complete while still allowing users to collapse
-        // large machines into assembly/subassembly branches.
-        const parentIds = new Set<string>();
-        for (const component of data as any[]) {
-          if (component.parentId) parentIds.add(component.parentId);
-        }
-        setExpandedComponentIds(parentIds);
+  const reloadComponents = useCallback(async () => {
+    try {
+      const allComponents: any[] = [];
+      let page = 1;
+      let totalPages = 1;
+
+      do {
+        const res = await api.get(`/api/component-registry?assetId=${id}&limit=100&page=${page}`);
+        if (!res.success || !Array.isArray(res.data)) break;
+
+        allComponents.push(...res.data);
+        totalPages = Math.max(1, Number(res.pagination?.totalPages || 1));
+        page += 1;
+      } while (page <= totalPages);
+
+      setComponents(allComponents);
+      // Keep the initial view complete while still allowing users to collapse
+      // large machines into assembly/subassembly branches.
+      const parentIds = new Set<string>();
+      for (const component of allComponents) {
+        if (component.parentId) parentIds.add(component.parentId);
       }
-    }).catch(() => {});
+      setExpandedComponentIds(parentIds);
+    } catch {
+      // Preserve the last successful hierarchy snapshot on transient failures.
+    }
   }, [id]);
 
   const componentTreeRows = useMemo(() => {

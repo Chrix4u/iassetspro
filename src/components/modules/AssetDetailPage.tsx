@@ -109,6 +109,8 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   const loadComponentSpareParts = useCallback((componentId: string) => {
     setSelectedComponentId(componentId);
+    setRemovingInstalledPartId('');
+    setRemovalForm({ removalReason: '', conditionOnRemoval: 'used', notes: '' });
     Promise.all([
       api.get(`/api/component-registry/${componentId}/spare-parts`)
         .then(res => {

@@ -18,18 +18,18 @@ describe('Tools module activation for RWOP', () => {
   });
 
   it('repairs existing production module state without making Tools core', () => {
-    const constantsSeed = read('prisma/seed-constants.ts');
-    const toolsLine = constantsSeed
+    const referenceSeed = read('prisma/seed-reference-data.ts');
+    const toolsLine = referenceSeed
       .split('\n')
       .find((line) => line.includes("code: 'tools'"));
 
     expect(toolsLine).toBeDefined();
     expect(toolsLine).toContain('isCore: false');
     expect(toolsLine).toContain('licensed: true');
-    expect(constantsSeed).toContain("companyId: '__default__'");
-    expect(constantsSeed).toContain('isActive: true');
-    expect(constantsSeed).toContain('isEnabled: true');
-    expect(constantsSeed).toContain('licensedAt: new Date()');
+    expect(referenceSeed).toContain("companyId: '__default__'");
+    expect(referenceSeed).toContain('isActive: true');
+    expect(referenceSeed).toContain('isEnabled: true');
+    expect(referenceSeed).toContain('licensedAt: new Date()');
   });
 
   it('continues to enforce Tools at the proxy boundary', () => {

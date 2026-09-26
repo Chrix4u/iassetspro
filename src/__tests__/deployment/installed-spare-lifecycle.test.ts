@@ -24,12 +24,14 @@ describe('installed spare lifecycle contract', () => {
     expect(route).toContain('alreadyTracked');
     expect(route).toContain('getPlantScope(request, session)');
     expect(route).toContain('canAccessPlant(plantScope, component.asset?.plantId)');
-    expect(route).not.toContain('currentStock:');
-    expect(route).not.toContain('stockMovement.create');
+    expect(route).not.toContain('db.inventoryItem.update');
+    expect(route).not.toContain('db.inventoryItem.updateMany');
+    expect(route).not.toContain('db.stockMovement.create');
 
     expect(removal).toContain("status === 'returned_to_store'");
     expect(removal).toContain('Complete the spare-part return workflow to restore store stock');
-    expect(removal).not.toContain('currentStock:');
-    expect(removal).not.toContain('stockMovement.create');
+    expect(removal).not.toContain('db.inventoryItem.update');
+    expect(removal).not.toContain('db.inventoryItem.updateMany');
+    expect(removal).not.toContain('db.stockMovement.create');
   });
 });

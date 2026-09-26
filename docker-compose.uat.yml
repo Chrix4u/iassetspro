@@ -1,79 +1,27 @@
 # ==============================================================================
-# UAT Environment — Docker Compose (Infrastructure Only)
+# UAT Environment — PostgreSQL + Redis infrastructure
 # ==============================================================================
-#
-# WHAT THIS FILE PROVIDES
-# -----------------------
-# Infrastructure services ONLY:
-#   • MariaDB 11.4  — accessible at localhost:3306
-#   • Redis 7        — accessible at localhost:6379
-#
-# WHAT IT DOES NOT INCLUDE
-# -------------------------
-# The Next.js application and any BullMQ queue worker are NOT containerised.
-# They run directly on the host machine for rapid local development iteration.
-#
-# REQUIRED HOST TOOLS
-# --------------------
-#   • Node.js >= 20  (or Bun runtime)
-#   • Docker & Docker Compose
-#
-# ENVIRONMENT VARIABLES (set on the host before starting the app)
-# -----------------------------------------------------------------
-#   DATABASE_URL = mysql://repairs_uat:repairs_uat_pass@localhost:3306/repairs_uat
-#   REDIS_URL    = redis://localhost:6379
-#
-# FULL UAT STACK STARTUP SEQUENCE
-# --------------------------------
-# 1. Start infrastructure:
-#      docker compose -f docker-compose.uat.yml up -d
-#
-# 2. Wait for healthchecks to pass:
-#      docker compose -f docker-compose.uat.yml ps          # verify "healthy"
-#      # or simply wait ~15-20 seconds for MariaDB & Redis to initialise
-#
-# 3. Set environment variables (Bash example):
-#      export DATABASE_URL="mysql://repairs_uat:repairs_uat_pass@localhost:3306/repairs_uat"
-#      export REDIS_URL="redis://localhost:6379"
-#
-# 4. Run database migrations:
-#      npx prisma migrate deploy          # or: bunx prisma migrate deploy
-#
-# 5. (Optional) Seed UAT test data:
-#      npx tsx scripts/seed-repairs-uat.ts
-#
-# 6. Start the Next.js application:
-#      bun run dev                        # serves on http://localhost:3000
-#
-# 7. (Separate terminal) Start the BullMQ queue worker, if needed:
-#      bun run src/queue/worker.ts        # adjust path as appropriate
-#
-# TEARDOWN
-# --------
-#      docker compose -f docker-compose.uat.yml down -v   # stops & removes volumes
-#      docker compose -f docker-compose.uat.yml down        # stops but keeps data
-#
+# DATABASE_URL=postgresql://repairs_uat:repairs_uat_pass@localhost:5432/repairs_uat
+# REDIS_URL=redis://localhost:6379
 # ==============================================================================
 
-version: '3.8'
 services:
-  mariadb:
-    image: mariadb:11.4
-    container_name: repairs-uat-mariadb
+  postgres:
+    image: postgres:17-alpine
+    container_name: repairs-uat-postgres
     environment:
-      MARIADB_ROOT_PASSWORD: uat_test_root
-      MARIADB_DATABASE: repairs_uat
-      MARIADB_USER: repairs_uat
-      MARIADB_PASSWORD: repairs_uat_pass
+      POSTGRES_DB: repairs_uat
+      POSTGRES_USER: repairs_uat
+      POSTGRES_PASSWORD: repairs_uat_pass
     ports:
-      - '3306:3306'
+      - '5432:5432'
     volumes:
-      - mariadb_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      test: ['CMD-SHELL', 'pg_isready -U repairs_uat -d repairs_uat']
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -87,4 +35,4 @@ services:
       retries: 5
 
 volumes:
-  mariadb_data:
+  postgres_data:

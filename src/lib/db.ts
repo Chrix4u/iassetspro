@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { createAdapter } from './create-postgres-adapter'
 
 let _db: PrismaClient | null = null
 let _dbInitFailed = false
@@ -92,9 +93,6 @@ function initDb(): PrismaClient {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createAdapter } = require('./create-postgres-adapter')
-
     let connectionString = process.env.DATABASE_URL || ''
     if (!connectionString) {
       const host = process.env.DB_HOST

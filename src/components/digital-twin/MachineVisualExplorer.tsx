@@ -258,7 +258,11 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
     return chain;
   }, [selected, componentMap]);
 
-  const desiredType = mode === 'realistic' ? 'ai_realistic' : mode === 'exploded' ? 'exploded' : 'technical_2d';
+  const desiredType = mode === 'realistic'
+    ? 'ai_realistic'
+    : mode === 'exploded'
+      ? 'exploded'
+      : 'technical_2d';
   const currentVisual = useMemo(() => {
     const target = visuals.filter((visual) =>
       visual.visualType === desiredType
@@ -269,6 +273,8 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
 
   const fallbackImage = !selectedId && mode === 'realistic' ? asset.imageUrl || null : null;
   const imageUrl = currentVisual?.imageUrl || fallbackImage;
+  const drillChildren = selectedId ? (childrenByParent.get(selectedId) || []) : roots;
+  const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
   const generateVisual = async () => {
     setGenerating(true);
@@ -334,30 +340,61 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
         </CardHeader>
         <CardContent className="pt-0">
           <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="realistic" className="cursor-pointer"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />AI Realistic</TabsTrigger>
-              <TabsTrigger value="technical" className="cursor-pointer"><Network className="mr-1.5 h-3.5 w-3.5" />Engineering 2D</TabsTrigger>
+              <TabsTrigger value="diagram" className="cursor-pointer"><Network className="mr-1.5 h-3.5 w-3.5" />Diagram</TabsTrigger>
+              <TabsTrigger value="technical2d" className="cursor-pointer"><Focus className="mr-1.5 h-3.5 w-3.5" />Engineering 2D</TabsTrigger>
               <TabsTrigger value="exploded" className="cursor-pointer"><Layers3 className="mr-1.5 h-3.5 w-3.5" />Exploded</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="technical" className="mt-3">
+            <TabsContent value="diagram" className="mt-3">
               <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} />
             </TabsContent>
 
-            {['realistic', 'exploded'].map((tabMode) => (
+            {['realistic', 'technical2d', 'exploded'].map((tabMode) => (
               <TabsContent key={tabMode} value={tabMode} className="mt-3">
-                <div className="relative flex min-h-[500px] items-center justify-center overflow-auto rounded-xl border bg-slate-950">
-                  {imageUrl ? (
-                    <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
-                      className="max-h-[720px] origin-center object-contain transition-transform duration-200"
-                      style={{ transform: 'scale(' + zoom + ')' }} />
-                  ) : (
-                    <div className="flex max-w-sm flex-col items-center gap-3 p-8 text-center text-slate-400">
-                      <Sparkles className="h-10 w-10 text-cyan-400" />
-                      <div className="text-sm font-semibold text-slate-200">No {tabMode === 'realistic' ? 'realistic' : 'exploded'} visual yet</div>
-                      <p className="text-xs">Generate a dedicated AI view for this exact {selected?.componentType || 'machine'}.</p>
+                <div className="relative min-h-[500px] overflow-auto rounded-xl border bg-slate-950">
+                  <div className="flex min-h-[500px] items-center justify-center p-6">
+                    {imageUrl ? (
+                      <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
+                        className="max-h-[760px] origin-center object-contain transition-transform duration-200"
+                        style={{ transform: 'scale(' + zoom + ')' }} />
+                    ) : (
+                      <div className="flex max-w-sm flex-col items-center gap-3 p-8 text-center text-slate-400">
+                        <Sparkles className="h-10 w-10 text-cyan-400" />
+                        <div className="text-sm font-semibold text-slate-200">
+                          No {tabMode === 'realistic' ? 'realistic' : tabMode === 'technical2d' ? 'engineering 2D' : 'exploded'} visual yet
+                        </div>
+                        <p className="text-xs">Generate a dedicated AI view for this exact {selected?.componentType || 'machine'}.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="absolute left-3 top-3 max-w-[280px] rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
+                      {selectedId && (
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-slate-300 hover:text-white"
+                          onClick={() => setSelectedId(parentTarget?.id || null)}>
+                          Up one level
+                        </Button>
+                      )}
                     </div>
-                  )}
+                    {drillChildren.length > 0 ? (
+                      <div className="space-y-1">
+                        {drillChildren.map((child) => (
+                          <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
+                            className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
+                            <span className="min-w-0 truncate">{child.name}</span>
+                            <Badge variant="outline" className="border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] leading-relaxed text-slate-400">Lowest registered level reached. This item can still hold spare, PM, tool and work-order history.</div>
+                    )}
+                  </div>
+
                   <div className="absolute bottom-3 right-3 flex gap-2">
                     <Button size="sm" onClick={generateVisual} disabled={generating} className="cursor-pointer">
                       {generating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}

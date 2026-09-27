@@ -25,7 +25,7 @@ const logger = createLogger('lib:ai-client');
 // TYPES
 // ============================================================================
 
-type AIProvider = 'zai_sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
+type AIProvider = 'zai_sdk' | 'zai-api' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
 
 interface AiConfigRecord {
   id: string;
@@ -93,6 +93,13 @@ interface ImageGenerationResponse {
 // ============================================================================
 
 const PROVIDER_ENDPOINTS: Record<string, { chatUrl: string; imageUrl: string; models: string[]; docsUrl: string; freeModels: string[] }> = {
+  'zai-api': {
+    chatUrl: 'https://api.z.ai/api/paas/v4/chat/completions',
+    imageUrl: 'https://api.z.ai/api/paas/v4/images/generations',
+    models: ['glm-5.3', 'glm-4.6', 'glm-4.5'],
+    freeModels: [],
+    docsUrl: 'https://z.ai/manage-apikey/apikey-list',
+  },
   gemini: {
     chatUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     imageUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/images/generations',
@@ -148,6 +155,13 @@ const PROVIDER_ENDPOINTS: Record<string, { chatUrl: string; imageUrl: string; mo
     docsUrl: 'https://console.anthropic.com/',
   },
 };
+
+function normalizeZaiEndpoint(value: string, kind: 'chat' | 'image'): string {
+  const fallbackBase = 'https://api.z.ai/api/paas/v4';
+  let url = (value || fallbackBase).replace(/\/+$/, '');
+  url = url.replace(/\/chat\/completions$/, '').replace(/\/images\/generations$/, '');
+  return kind === 'chat' ? url + '/chat/completions' : url + '/images/generations';
+}
 
 // ============================================================================
 // CONFIG LOADING (DATABASE)
@@ -331,17 +345,11 @@ export async function aiChatCompletion(
   let apiKey = config.llmApiKey || '';
   let model = config.llmModel || '';
 
-  // ── DEBUG: Log the key being used (first 6 chars + last 4) ──
-  const maskedForLog = apiKey
-    ? (apiKey.length > 10 ? apiKey.substring(0, 6) + '•••' + apiKey.slice(-4) : apiKey.substring(0, 3) + '•••')
-    : '(empty)';
   const keyLooksMasked = apiKey.startsWith('****');
-  logger.warn(`[AI-KEY-DEBUG] Using key for ${provider}`, {
-    source: 'database',
-    keyMaskedPreview: maskedForLog,
-    keyLength: apiKey.length,
-    keyStartsWithAsterisk: keyLooksMasked,
-    keyIsMasked_PLACEHOLDER: keyLooksMasked ? '⚠️ KEY IS MASKED — THIS IS THE BUG!' : 'OK (real key)',
+  logger.info('Resolved AI provider credentials', {
+    provider,
+    hasApiKey: !!apiKey,
+    keyLooksMasked,
   });
   // If key starts with ****, it means the masked value leaked into the data file
   if (keyLooksMasked) {
@@ -354,7 +362,9 @@ export async function aiChatCompletion(
 
   // For pre-configured providers, use built-in endpoints if no custom endpoint
   const providerDef = PROVIDER_ENDPOINTS[provider];
-  if (providerDef && !endpoint) {
+  if (provider === 'zai-api') {
+    endpoint = normalizeZaiEndpoint(endpoint, 'chat');
+  } else if (providerDef && !endpoint) {
     endpoint = providerDef.chatUrl;
   }
 
@@ -414,9 +424,11 @@ export async function aiImageGeneration(
     throw new Error(`Provider "${provider}" does not support image generation. Image generation is optional — the asset will be created without an AI illustration.`);
   }
 
-  const endpoint = provider === 'custom'
-    ? (config.llmEndpoint || providerDef.imageUrl)
-    : providerDef.imageUrl;
+  const endpoint = provider === 'zai-api'
+    ? normalizeZaiEndpoint(config.llmEndpoint || providerDef.imageUrl, 'image')
+    : provider === 'custom'
+      ? (config.llmEndpoint || providerDef.imageUrl)
+      : providerDef.imageUrl;
   let apiKey = config.imageApiKey || config.llmApiKey || '';
 
   // For OpenAI with image key
@@ -443,7 +455,7 @@ export async function aiImageGeneration(
       prompt: options.prompt,
       n: 1,
       size: options.size || '1024x1024',
-      response_format: 'b64_json',
+      ...(provider === 'zai-api' ? {} : { response_format: 'b64_json' }),
     }),
     signal: AbortSignal.timeout(120_000),
   });

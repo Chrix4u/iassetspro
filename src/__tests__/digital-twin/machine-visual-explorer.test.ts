@@ -44,6 +44,9 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Preventive maintenance');
     expect(explorer).toContain('Store-linked spares');
     expect(explorer).toContain('Required tools');
+    expect(explorer).toContain('Recent maintenance & work orders');
+    expect(explorer).toContain('maintenanceHistory');
+    expect(explorer).toContain('workOrderComponents');
     expect(explorer).toContain('Loading component maintenance links...');
   });
 

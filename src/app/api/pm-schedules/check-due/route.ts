@@ -37,8 +37,8 @@ async function generateWoNumber(): Promise<string> {
   return `${prefix}-${String(nextNum).padStart(4, '0')}`;
 }
 
-// Internal cron secret (env-based, fallback to a default for dev)
-const CRON_SECRET = process.env.PM_CRON_SECRET || 'pm-scheduler-internal-2025';
+// Internal cron secret must be configured explicitly; no known/default fallback.
+const CRON_SECRET = process.env.PM_CRON_SECRET || '';
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     const cronSecret = request.headers.get('x-pm-cron-secret');
 
-    if (!session && cronSecret !== CRON_SECRET) {
+    if (!session && (!CRON_SECRET || cronSecret !== CRON_SECRET)) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 

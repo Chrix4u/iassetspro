@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession } from '@/lib/auth';
+import {
+  canDeleteComponentHierarchy,
+  canUpdateComponentHierarchy,
+  canViewComponentHierarchy,
+} from '@/lib/component-registry-permissions';
 import { createAuditLog } from '@/lib/audit';
 
 export async function GET(
@@ -13,7 +18,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    if (!canViewComponentHierarchy(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -92,7 +97,7 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+    if (!canUpdateComponentHierarchy(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -213,7 +218,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+    if (!canDeleteComponentHierarchy(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, getUserPlantId, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { getSession, hasPermission, isAdmin, type SessionData } from '@/lib/auth';
 
-async function canAccessAsset(userId: string, admin: boolean, assetId: string): Promise<boolean> {
-  if (admin) return true;
-  const [plantId, asset] = await Promise.all([
-    getUserPlantId(userId),
+async function canAccessAsset(
+  request: NextRequest,
+  session: SessionData,
+  assetId: string,
+): Promise<boolean> {
+  const [plantScope, asset] = await Promise.all([
+    getPlantScope(request, session),
     db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } }),
   ]);
-  return Boolean(asset && plantId && asset.plantId === plantId);
+  return Boolean(asset && canAccessPlantStrict(plantScope, asset.plantId));
 }
 
 export async function GET(request: NextRequest) {
@@ -36,7 +40,7 @@ export async function GET(request: NextRequest) {
       resolvedAssetId = component?.assetId || null;
     }
 
-    if (!resolvedAssetId || !(await canAccessAsset(session.userId, isAdmin(session), resolvedAssetId))) {
+    if (!resolvedAssetId || !(await canAccessAsset(request, session, resolvedAssetId))) {
       return NextResponse.json({ success: false, error: 'Asset not found or not accessible' }, { status: 404 });
     }
 
@@ -105,7 +109,7 @@ export async function POST(request: NextRequest) {
       resolvedAssetId = component.assetId;
     }
 
-    if (!resolvedAssetId || !(await canAccessAsset(session.userId, isAdmin(session), resolvedAssetId))) {
+    if (!resolvedAssetId || !(await canAccessAsset(request, session, resolvedAssetId))) {
       return NextResponse.json({ success: false, error: 'Asset not found or not accessible' }, { status: 404 });
     }
 

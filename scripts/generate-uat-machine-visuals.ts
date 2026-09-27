@@ -83,17 +83,24 @@ async function main() {
         : component.componentType === 'component' ? 3 : 4,
   }))];
 
-  const visualTypes = ['ai_realistic'] as string[];
+  const visualTypes = ['ai_realistic', 'technical_2d'] as const;
   for (const target of targets) {
     for (const visualType of visualTypes) {
-      const prompt = 'Photorealistic industrial engineering render of ' + target.name
-        + ' (' + target.code + '), part of ' + asset.name + '. '
-        + target.description + ' Technical context: ' + target.specification
-        + '. Show the selected ' + target.componentType
-        + ' prominently with mechanically credible geometry and realistic materials. '
-        + 'Neutral workshop or studio background, no people, no labels, no logos, no watermarks.';
+      const prompt = visualType === 'technical_2d'
+        ? 'Precise orthographic 2D engineering illustration of ' + target.name
+          + ' (' + target.code + '), part of ' + asset.name + '. '
+          + target.description + ' Technical context: ' + target.specification
+          + '. Show mechanically credible geometry, clean linework, section/detail cues where helpful, '
+          + 'white or very light blueprint background, no dimensions, no labels, no logos, no watermark.'
+        : 'Photorealistic industrial engineering render of ' + target.name
+          + ' (' + target.code + '), part of ' + asset.name + '. '
+          + target.description + ' Technical context: ' + target.specification
+          + '. Show the selected ' + target.componentType
+          + ' prominently with mechanically credible geometry and realistic materials. '
+          + 'Neutral workshop or studio background, no people, no labels, no logos, no watermarks.';
 
-      const filename = slug(asset.assetTag) + '-' + slug(target.code) + '-realistic.png';
+      const filename = slug(asset.assetTag) + '-' + slug(target.code)
+        + (visualType === 'technical_2d' ? '-technical-2d.png' : '-realistic.png');
       const imageUrl = await generatePng(prompt, filename);
 
       await db.componentVisual.updateMany({
@@ -110,7 +117,7 @@ async function main() {
           assetId: asset.id,
           componentId: target.componentId,
           visualType,
-          title: target.name + ' — AI realistic',
+          title: target.name + (visualType === 'technical_2d' ? ' — engineering 2D' : ' — AI realistic'),
           description: 'Commissioning visual for the clean RP-01 UAT hierarchy.',
           imageUrl,
           thumbnailUrl: imageUrl,
@@ -162,7 +169,12 @@ async function main() {
     console.log('Generated', target.code, 'exploded', imageUrl);
   }
 
-  console.log('RP-01 visual commissioning complete:', targets.length, 'realistic targets,', explodeTargets.length, 'exploded targets');
+  console.log(
+    'RP-01 visual commissioning complete:',
+    targets.length, 'realistic targets,',
+    targets.length, 'engineering 2D targets,',
+    explodeTargets.length, 'exploded targets',
+  );
 }
 
 main().finally(async () => db.$disconnect());

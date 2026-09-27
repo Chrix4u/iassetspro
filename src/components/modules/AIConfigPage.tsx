@@ -54,7 +54,7 @@ import {
 // TYPES
 // ============================================================================
 
-type ProviderType = 'zai-sdk' | 'gemini' | 'groq' | 'openrouter' | 'cerebras' | 'openai' | 'anthropic' | 'custom';
+type ProviderType = 'zai-sdk' | 'zai-api' | 'gemini' | 'groq' | 'openrouter' | 'cerebras' | 'openai' | 'anthropic' | 'custom';
 
 interface ProviderOption {
   id: ProviderType;
@@ -110,6 +110,15 @@ const PROVIDERS: ProviderOption[] = [
     icon: Zap,
     color: 'text-violet-600 dark:text-violet-400',
     bgColor: 'bg-violet-50 dark:bg-violet-950/30',
+  },
+  {
+    id: 'zai-api',
+    label: 'Z.ai API',
+    description: 'Use your Z.ai API key for production GLM chat and GLM-Image generation',
+    icon: Sparkles,
+    color: 'text-indigo-600 dark:text-indigo-400',
+    bgColor: 'bg-indigo-50 dark:bg-indigo-950/30',
+    docsUrl: 'https://z.ai/manage-apikey/apikey-list',
   },
   {
     id: 'gemini',
@@ -181,6 +190,7 @@ const PROVIDERS: ProviderOption[] = [
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
   'zai-sdk': ['z-ai-default'],
+  'zai-api': ['glm-5.3', 'glm-4.6', 'glm-4.5'],
   'gemini': ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash-preview-04-17', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
   'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
   'openrouter': ['google/gemini-2.5-flash-preview', 'meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen-2.5-72b-instruct:free', 'mistralai/mistral-7b-instruct:free'],
@@ -192,6 +202,7 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
 
 const IMAGE_MODEL_SUGGESTIONS: Record<string, string[]> = {
   'zai-sdk': ['z-ai-image'],
+  'zai-api': ['glm-image'],
   'gemini': [],
   'groq': [],
   'openrouter': [],
@@ -267,6 +278,8 @@ export function AIConfigPage() {
   const [showMeshyApiKey, setShowMeshyApiKey] = useState(false);
   const [showTripo3dApiKey, setShowTripo3dApiKey] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [imageTesting, setImageTesting] = useState(false);
+  const [imageTestResult, setImageTestResult] = useState<TestResult | null>(null);
 
   // Track whether user has actively typed a new key (not just showing masked value)
   const [userTypingLlmKey, setUserTypingLlmKey] = useState(false);
@@ -279,6 +292,7 @@ export function AIConfigPage() {
     const map: Record<string, ProviderType> = {
       'zai_sdk': 'zai-sdk',
       'zai-sdk': 'zai-sdk',
+      'zai-api': 'zai-api',
       'gemini': 'gemini',
       'groq': 'groq',
       'openrouter': 'openrouter',
@@ -341,7 +355,8 @@ export function AIConfigPage() {
       llmModel: defaultModel,
       imageModel: defaultImageModel,
       // Clear API key when switching to built-in
-      ...(provider === 'zai-sdk' ? { apiKey: '', imageApiKey: '' } : {}),
+      ...(provider === 'zai-sdk' ? { apiKey: '', imageApiKey: '', customEndpoint: '' } : {}),
+      ...(provider === 'zai-api' ? { customEndpoint: 'https://api.z.ai/api/paas/v4' } : {}),
     }));
     setTestResult(null);
   };
@@ -371,6 +386,29 @@ export function AIConfigPage() {
       setTestResult({ success: false, error: err.message || 'Connection test failed' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  // ── Test image generation ──
+  const handleTestImage = async () => {
+    setImageTesting(true);
+    setImageTestResult(null);
+    try {
+      const startTime = Date.now();
+      const res = await api.post<TestResult>('/api/ai/config/test-image', {
+        provider: config.provider,
+        customEndpoint: config.customEndpoint || undefined,
+        apiKey: config.apiKey || undefined,
+        imageApiKey: config.imageApiKey || undefined,
+        imageModel: config.imageModel,
+      }, { timeout: 120_000 });
+      const responseTime = Date.now() - startTime;
+      if (res.success && res.data) setImageTestResult({ ...res.data, responseTime });
+      else setImageTestResult({ success: false, responseTime, error: res.error || 'Image test failed' });
+    } catch (err: any) {
+      setImageTestResult({ success: false, error: err.message || 'Image test failed' });
+    } finally {
+      setImageTesting(false);
     }
   };
 
@@ -541,16 +579,23 @@ export function AIConfigPage() {
                 )}
               </div>
 
-              {/* Custom Endpoint (only for custom provider) */}
-              {config.provider === 'custom' && (
+              {/* Base/custom endpoint */}
+              {(config.provider === 'custom' || config.provider === 'zai-api') && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Custom Endpoint URL</Label>
+                  <Label className="text-xs font-medium">
+                    {config.provider === 'zai-api' ? 'Z.ai Base URL' : 'Custom Endpoint URL'}
+                  </Label>
                   <Input
                     value={config.customEndpoint}
                     onChange={(e) => updateConfig('customEndpoint', e.target.value)}
-                    placeholder="https://api.example.com/v1/chat/completions"
+                    placeholder={config.provider === 'zai-api' ? 'https://api.z.ai/api/paas/v4' : 'https://api.example.com/v1/chat/completions'}
                     className="h-9 text-sm font-mono"
                   />
+                  {config.provider === 'zai-api' && (
+                    <p className="text-[10px] text-muted-foreground">
+                      Use the general Z.ai API base for EAM workloads. Coding Plan endpoints are intended for coding scenarios and may not include image-generation quota.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -776,21 +821,21 @@ export function AIConfigPage() {
                   return (
                     <label
                       key={p.id}
-                      className={`flex items-start gap-2 rounded-lg border-2 p-3 cursor-pointer transition-all ${
+                      className={`flex flex-col gap-2.5 rounded-lg border-2 p-3 cursor-pointer transition-all ${
                         config.provider3d === p.id
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/30'
                       }`}
                     >
-                      <RadioGroupItem value={p.id} className="mt-0.5" />
-                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                      <div className="flex w-full items-center justify-between gap-3">
+                        <RadioGroupItem value={p.id} />
                         <div className={`h-7 w-7 rounded-md ${p.bgColor} flex items-center justify-center shrink-0`}>
                           <Icon className={`h-3.5 w-3.5 ${p.color}`} />
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold">{p.label}</p>
-                          <p className="text-[9px] text-muted-foreground mt-0.5 leading-tight">{p.description}</p>
-                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold">{p.label}</p>
+                        <p className="text-[9px] text-muted-foreground mt-1 leading-relaxed">{p.description}</p>
                       </div>
                     </label>
                   );
@@ -1034,6 +1079,26 @@ export function AIConfigPage() {
                   </>
                 )}
               </Button>
+
+              {!isBuiltIn && config.imageModel && (
+                <Button variant="outline" onClick={handleTestImage} disabled={imageTesting} className="w-full gap-2">
+                  {imageTesting ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Testing Image Generation...</>
+                  ) : (
+                    <><ImageIcon className="h-4 w-4" />Test Image Generation</>
+                  )}
+                </Button>
+              )}
+
+              {imageTestResult && (
+                <div className={`rounded-lg border p-3 ${imageTestResult.success ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800'}`}>
+                  <div className="flex items-center gap-2">
+                    {imageTestResult.success ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                    <p className="text-xs font-semibold">{imageTestResult.success ? 'Image Generation Successful' : 'Image Generation Failed'}</p>
+                  </div>
+                  {imageTestResult.error && <p className="mt-1 text-[10px] text-red-600 dark:text-red-500">{imageTestResult.error}</p>}
+                </div>
+              )}
 
               {/* Test Result */}
               {testResult && (

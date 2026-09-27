@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '@/lib/db';
-import { getSession, getUserPlantId, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { aiImageGeneration } from '@/lib/ai-client';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 export const maxDuration = 180;
 
@@ -63,11 +64,9 @@ export async function POST(request: NextRequest) {
     });
     if (!asset) return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
 
-    if (!isAdmin(session)) {
-      const userPlantId = await getUserPlantId(session.userId);
-      if (!userPlantId || userPlantId !== asset.plantId) {
-        return NextResponse.json({ success: false, error: 'Asset not found or not accessible' }, { status: 404 });
-      }
+    const plantScope = await getPlantScope(request, session);
+    if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Asset not found or not accessible' }, { status: 404 });
     }
 
     const component = componentId

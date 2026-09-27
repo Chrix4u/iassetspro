@@ -17,7 +17,7 @@ const CODE_VERSION = 'v4-db';
 // TYPES
 // ============================================================================
 
-type AIProvider = 'zai_sdk' | 'zai-sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
+type AIProvider = 'zai_sdk' | 'zai-sdk' | 'zai-api' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
 
 interface GenerationSettings {
   subsystemCount: string;
@@ -193,7 +193,7 @@ function denormalizeForFrontend(config: AiConfigRecord): Record<string, unknown>
 // VALIDATION
 // ============================================================================
 
-const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'zai-sdk', 'openai', 'anthropic', 'custom', 'gemini', 'groq', 'openrouter', 'cerebras'];
+const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'zai-sdk', 'zai-api', 'openai', 'anthropic', 'custom', 'gemini', 'groq', 'openrouter', 'cerebras'];
 
 /**
  * Normalize the request body — accept both frontend field names (apiKey, temperature, etc.)
@@ -362,8 +362,6 @@ export async function POST(request: NextRequest) {
 
     logger.info('POST /api/ai/config — incoming body after normalize', {
       hasLlmApiKey: !!body.llmApiKey,
-      llmApiKeyLength: String(body.llmApiKey || '').length,
-      llmApiKeyStartsWith: String(body.llmApiKey || '').substring(0, 6),
       provider: body.provider,
       llmModel: body.llmModel,
       storage: 'database',

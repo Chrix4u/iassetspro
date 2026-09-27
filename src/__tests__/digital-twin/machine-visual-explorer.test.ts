@@ -43,6 +43,7 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');
+    expect(explorer).toContain('not an OEM drawing or verified as-built photograph');
   });
 
   it('uses an explicit image provider and normalizes provider image payloads', () => {

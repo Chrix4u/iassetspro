@@ -66,12 +66,14 @@ async function main() {
   }, {});
   const hierarchy = calculateDepth(components);
 
-  const [componentPm, spareLinks, linkedSpareLinks, toolRequirements, linkedToolRequirements] = await Promise.all([
+  const [componentPm, spareLinks, linkedSpareLinks, toolRequirements, linkedToolRequirements, maintenanceHistory, componentWorkOrders] = await Promise.all([
     db.pmSchedule.count({ where: { assetId: asset.id, componentId: { not: null }, isActive: true } }),
     db.componentSparePart.count({ where: { component: { assetId: asset.id } } }),
     db.componentSparePart.count({ where: { component: { assetId: asset.id }, inventoryItemId: { not: null } } }),
     db.componentToolRequirement.count({ where: { component: { assetId: asset.id } } }),
     db.componentToolRequirement.count({ where: { component: { assetId: asset.id }, toolId: { not: null } } }),
+    db.componentMaintenanceHistory.count({ where: { component: { assetId: asset.id } } }),
+    db.workOrderComponent.count({ where: { componentRegistry: { assetId: asset.id } } }),
   ]);
 
   const checks = {
@@ -89,6 +91,8 @@ async function main() {
     allSparesStoreLinked: spareLinks > 0 && linkedSpareLinks === spareLinks,
     toolCoverage: toolRequirements >= 8,
     allToolsLinked: toolRequirements > 0 && linkedToolRequirements === toolRequirements,
+    maintenanceHistory: maintenanceHistory >= 1,
+    componentWorkOrderHistory: componentWorkOrders >= 1,
   };
 
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
@@ -102,6 +106,8 @@ async function main() {
     linkedSpareLinks,
     toolRequirements,
     linkedToolRequirements,
+    maintenanceHistory,
+    componentWorkOrders,
     checks,
     status: failed.length === 0 ? 'PASS' : 'FAIL',
     failed,

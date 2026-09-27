@@ -396,21 +396,13 @@ export async function aiImageGeneration(
 ): Promise<ImageGenerationResponse> {
   const config = await getActiveConfig();
 
-  // No config → try Z.ai SDK
+  // Image generation must use an explicitly configured provider in production.
+  // The bundled Z.ai SDK points at a sandbox-internal endpoint and is not
+  // reachable from normal VPS deployments.
   if (!config) {
-    try {
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
-      const response = await zai.images.generations.create({
-        prompt: options.prompt,
-        size: options.size || '1344x768',
-      });
-      return response as ImageGenerationResponse;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn('Z.ai SDK image generation failed', { message: msg });
-      throw new Error(`Image generation not available: ${msg}`);
-    }
+    throw new Error(
+      'No active AI image provider is configured. Open AI Settings and configure an image-capable provider before generating machine visuals.',
+    );
   }
 
   const provider = config.provider;
@@ -422,7 +414,9 @@ export async function aiImageGeneration(
     throw new Error(`Provider "${provider}" does not support image generation. Image generation is optional — the asset will be created without an AI illustration.`);
   }
 
-  let endpoint = config.llmEndpoint || providerDef.imageUrl;
+  const endpoint = provider === 'custom'
+    ? (config.llmEndpoint || providerDef.imageUrl)
+    : providerDef.imageUrl;
   let apiKey = config.imageApiKey || config.llmApiKey || '';
 
   // For OpenAI with image key
@@ -459,8 +453,16 @@ export async function aiImageGeneration(
     throw new Error(`Image generation API error (${response.status}): ${errorBody.slice(0, 300)}`);
   }
 
-  const data = await response.json() as ImageGenerationResponse;
-  return data;
+  const raw = await response.json() as {
+    data?: Array<{ base64?: string; b64_json?: string; url?: string; revised_prompt?: string }>;
+  };
+  return {
+    data: (raw.data || []).map((item) => ({
+      base64: item.base64 || item.b64_json,
+      url: item.url,
+      revised_prompt: item.revised_prompt,
+    })),
+  };
 }
 
 // ============================================================================

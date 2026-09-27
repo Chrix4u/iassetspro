@@ -67,6 +67,23 @@ type ComponentDetail = MachineComponent & {
     priority: string;
     autoGenerateWO: boolean;
   }>;
+  maintenanceHistory?: Array<{
+    id: string;
+    maintenanceType: string;
+    description: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    durationMinutes?: number | null;
+    cost?: number | null;
+    workOrder?: { id: string; woNumber: string; title: string; status: string; type: string } | null;
+    performedBy?: { id: string; fullName: string; username: string } | null;
+  }>;
+  workOrderComponents?: Array<{
+    id: string;
+    notes?: string | null;
+    createdAt: string;
+    workOrder: { id: string; woNumber: string; title: string; status: string; type: string; actualEnd?: string | null };
+  }>;
 };
 
 type ComponentVisual = {
@@ -765,6 +782,46 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
                         </div>
                       ))}
                       {!detail?.toolRequirements?.length && <div className="text-muted-foreground">No tool requirement linked to this component.</div>}
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="font-semibold">Recent maintenance & work orders</span>
+                      <Badge variant="outline">{(detail?.maintenanceHistory?.length || 0) + (detail?.workOrderComponents?.length || 0)}</Badge>
+                    </div>
+                    <div className="space-y-1.5">
+                      {(detail?.maintenanceHistory || []).slice(0, 4).map((entry) => (
+                        <div key={'history-' + entry.id} className="rounded-md border p-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{entry.workOrder?.woNumber ? entry.workOrder.woNumber + ' · ' : ''}{entry.maintenanceType.replace(/_/g, ' ')}</div>
+                              <div className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{entry.description}</div>
+                            </div>
+                            {entry.workOrder?.status && <Badge variant="outline" className="shrink-0">{entry.workOrder.status}</Badge>}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                            {entry.completedAt && <span>{new Date(entry.completedAt).toLocaleDateString()}</span>}
+                            {entry.durationMinutes != null && <span>· {entry.durationMinutes} min</span>}
+                            {entry.performedBy?.fullName && <span>· {entry.performedBy.fullName}</span>}
+                          </div>
+                        </div>
+                      ))}
+                      {(detail?.workOrderComponents || [])
+                        .filter((link) => !(detail?.maintenanceHistory || []).some((entry) => entry.workOrder?.id === link.workOrder.id))
+                        .slice(0, 4)
+                        .map((link) => (
+                          <div key={'wo-' + link.id} className="flex items-start justify-between gap-3 rounded-md border p-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{link.workOrder.woNumber} · {link.workOrder.title}</div>
+                              <div className="text-[10px] text-muted-foreground">{link.workOrder.type} · linked component work</div>
+                            </div>
+                            <Badge variant="outline" className="shrink-0">{link.workOrder.status}</Badge>
+                          </div>
+                        ))}
+                      {!detail?.maintenanceHistory?.length && !detail?.workOrderComponents?.length && (
+                        <div className="text-muted-foreground">No maintenance or work-order history recorded for this component yet.</div>
+                      )}
                     </div>
                   </div>
                 </>

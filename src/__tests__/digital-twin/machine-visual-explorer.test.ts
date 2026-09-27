@@ -29,6 +29,9 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Exploded');
     expect(explorer).toContain('Drill into parts');
     expect(explorer).toContain('setSelectedId(item.id)');
+    expect(explorer).toContain('ProgrammaticEngineeringView');
+    expect(explorer).toContain('deterministic engineering fallback');
+    expect(explorer).toContain("childNodes={drillChildren}");
   });
 
   it('has zoom controls and part-level AI generation', () => {
@@ -54,3 +57,5 @@ describe('deep machine visual explorer', () => {
     expect(generator).toContain("visualType: 'exploded'");
   });
 });
+
+[executed on device: vps.lightworldtech.com (31ed37c1-850c-4620-b64f-dd66de41fa53)]

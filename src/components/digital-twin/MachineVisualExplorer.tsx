@@ -335,6 +335,32 @@ function ProgrammaticEngineeringView({
   );
 }
 
+
+async function loadAllMachineComponents(assetId: string): Promise<MachineComponent[]> {
+  const all: MachineComponent[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const response = await api.get(
+      '/api/component-registry?assetId=' + encodeURIComponent(assetId)
+      + '&limit=100&page=' + page,
+    );
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to load machine component hierarchy');
+    }
+
+    all.push(...((response.data || []) as MachineComponent[]));
+    const reportedTotalPages = Number(response.pagination?.totalPages || 1);
+    totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0
+      ? Math.min(reportedTotalPages, 1000)
+      : 1;
+    page += 1;
+  } while (page <= totalPages);
+
+  return all;
+}
+
 export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
@@ -348,11 +374,11 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [componentRes, visualRes] = await Promise.all([
-        api.get('/api/component-registry?assetId=' + encodeURIComponent(asset.id) + '&limit=100'),
+      const [allComponents, visualRes] = await Promise.all([
+        loadAllMachineComponents(asset.id),
         api.get('/api/component-visuals?assetId=' + encodeURIComponent(asset.id)),
       ]);
-      if (componentRes.success) setComponents((componentRes.data || []) as MachineComponent[]);
+      setComponents(allComponents);
       if (visualRes.success) setVisuals((visualRes.data || []) as ComponentVisual[]);
     } catch {
       toast.error('Failed to load machine visual data');

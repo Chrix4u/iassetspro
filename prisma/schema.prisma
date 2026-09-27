@@ -594,6 +594,7 @@ model WorkOrder {
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
   installedSpareParts          InstalledSparePart[]          @relation("InstalledSpareWorkOrder")
+  componentReplacements        ComponentReplacementHistory[]
 
   // Spare Part Return relations
   sparePartReturns SparePartReturn[]
@@ -3341,6 +3342,7 @@ model ComponentLubricationRecord {
 model ComponentReplacementHistory {
   id              String   @id @default(cuid())
   componentId     String
+  workOrderId     String?
   partName        String
   partCode        String?
   serialNumberOld String?
@@ -3354,9 +3356,11 @@ model ComponentReplacementHistory {
   notes           String?  @db.Text
 
   component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder?        @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   performedBy User             @relation("ReplacementPerformed", fields: [performedById], references: [id])
 
   @@index([componentId])
+  @@index([workOrderId])
   @@index([replacedAt])
   @@map("component_replacement_history")
 }

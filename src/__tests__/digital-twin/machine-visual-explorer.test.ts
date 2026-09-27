@@ -32,6 +32,10 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('ProgrammaticEngineeringView');
     expect(explorer).toContain('deterministic engineering fallback');
     expect(explorer).toContain("childNodes={drillChildren}");
+    expect(explorer).toContain('loadAllMachineComponents');
+    expect(explorer).toContain("&limit=100&page=' + page");
+    expect(explorer).toContain('response.pagination?.totalPages');
+    expect(explorer).toContain('Math.min(reportedTotalPages, 1000)');
   });
 
   it('has zoom controls and part-level AI generation', () => {

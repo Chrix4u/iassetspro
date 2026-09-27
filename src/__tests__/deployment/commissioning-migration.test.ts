@@ -8,7 +8,9 @@ const migration = fs.readFileSync(
 
 describe('clean UAT commissioning migration', () => {
   it('is guarded so empty CI databases are untouched', () => {
-    expect(migration).toContain('v_user_count > 0 AND v_plant_count = 0');
+    expect(migration).toContain('EXISTS (SELECT 1 FROM "users")');
+    expect(migration).toContain('NOT EXISTS (SELECT 1 FROM "plants")');
+    expect(migration).toContain('"clean_uat_precondition"');
   });
 
   it('commissions only organization/access baseline data', () => {

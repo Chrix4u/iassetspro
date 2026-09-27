@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { SessionData } from '@/lib/auth';
 import {
@@ -43,5 +44,13 @@ describe('component hierarchy permissions', () => {
     expect(canCreateComponentHierarchy(twinManager)).toBe(true);
     expect(canUpdateComponentHierarchy(twinManager)).toBe(true);
     expect(canDeleteComponentHierarchy(twinManager)).toBe(true);
+  });
+
+  it('hides component-create actions when the client lacks matching permission', () => {
+    const page = fs.readFileSync('src/components/modules/AssetDetailPage.tsx', 'utf8');
+    expect(page).toContain("const canCreateComponent = isAdmin()");
+    expect(page).toContain("hasPermission('assets.hierarchy')");
+    expect(page).toContain("actionLabel={canCreateComponent ? 'Add Component' : undefined}");
+    expect(page).toContain("!showComponentForm && canCreateComponent");
   });
 });

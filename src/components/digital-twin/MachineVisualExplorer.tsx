@@ -533,7 +533,12 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
             </TabsContent>
 
             {['realistic', 'technical2d', 'exploded'].map((tabMode) => (
-              <TabsContent key={tabMode} value={tabMode} className="mt-3">
+              <TabsContent key={tabMode} value={tabMode} className="mt-3 space-y-2">
+                {tabMode === 'realistic' && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+                    AI-generated reference visualization — not an OEM drawing or verified as-built photograph. Verify geometry, dimensions, clearances and procedures against approved engineering documents and the physical machine before maintenance.
+                  </div>
+                )}
                 <div className="relative min-h-[500px] overflow-auto rounded-xl border bg-slate-950">
                   <div className="flex min-h-[500px] items-center justify-center p-6">
                     {imageUrl ? (

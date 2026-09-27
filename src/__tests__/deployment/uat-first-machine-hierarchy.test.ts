@@ -6,6 +6,7 @@ const migration = fs.readFileSync(
   'utf8',
 );
 
+// Stage-2 contract: validate the migration remains isolated from downstream UAT stages.
 describe('UAT first machine hierarchy migration', () => {
   it('is scoped to the designated staging database and commissioned plant', () => {
     expect(migration).toContain("current_database() <> 'lightworld_iassetspro_db'");

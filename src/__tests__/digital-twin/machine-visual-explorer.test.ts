@@ -22,6 +22,9 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('EngineeringSchematic');
     expect(explorer).toContain('AI Realistic');
     expect(explorer).toContain('Engineering 2D');
+    expect(explorer).toContain('expandedIds');
+    expect(explorer).toContain('aria-expanded={expanded}');
+    expect(explorer).toContain('onToggle={toggleExpanded}');
     expect(explorer).toContain('Diagram');
     expect(explorer).toContain('Exploded');
     expect(explorer).toContain('Drill into parts');

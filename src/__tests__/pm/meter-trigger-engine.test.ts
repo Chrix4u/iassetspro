@@ -17,6 +17,7 @@ describe('meter PM trigger engine', () => {
 
   it('has a protected evaluator route and restores RP-01 meter semantics', () => {
     const route = fs.readFileSync('src/app/api/pm-triggers/evaluate/route.ts', 'utf8');
+    const scheduleRoute = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
     const migration = fs.readFileSync('prisma/migrations/20260927223000_restore_rp01_meter_pm/migration.sql', 'utf8');
     expect(route).toContain('x-pm-cron-secret');
     expect(route).toContain('evaluateMeterPmTriggers');

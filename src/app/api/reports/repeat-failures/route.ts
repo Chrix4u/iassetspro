@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const failureRecords = await db.failureRecord.findMany({
       where: Object.keys(frFilter).length > 0 ? frFilter : undefined,
       include: {
-        asset: { select: { id: true, name: true, assetCode: true, criticality: true } },
+        asset: { select: { id: true, name: true, assetTag: true, criticality: true } },
         component: { select: { id: true, name: true, componentCode: true, criticality: true, expectedLifeHours: true, operatingHours: true } },
         workOrder: { select: { id: true, woNumber: true, title: true, assignedTo: true } },
       },
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     // ========== ASSETS WITH N+ FAILURES ==========
     const assetFailures: Record<string, {
-      assetId: string; assetName: string; assetCode: string; assetCriticality: string;
+      assetId: string; assetName: string; assetTag: string; assetCriticality: string;
       failures: any[];
     }> = {};
     failureRecords.forEach(fr => {
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
         assetFailures[key] = {
           assetId: key,
           assetName: fr.asset?.name || 'Unknown',
-          assetCode: fr.asset?.assetCode || '',
+          assetTag: fr.asset?.assetTag || '',
           assetCriticality: fr.asset?.criticality || 'medium',
           failures: [],
         };
@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
         return {
           assetId: a.assetId,
           assetName: a.assetName,
-          assetCode: a.assetCode,
+          assetTag: a.assetTag,
           assetCriticality: a.assetCriticality,
           failureCount: a.failures.length,
           failureModes,

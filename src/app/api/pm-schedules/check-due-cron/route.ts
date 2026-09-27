@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 
 /**
@@ -164,20 +164,9 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Calculate the next due date
-      const newNextDueDate = calculateNextDueDate(
-        nextDueDate,
-        schedule.frequencyType,
-        schedule.frequencyValue,
-      );
-
-      await db.pmSchedule.update({
-        where: { id: schedule.id },
-        data: {
-          lastCompletedDate: nextDueDate,
-          nextDueDate: newNextDueDate,
-        },
-      });
+      // Generation does not mark maintenance as completed and must not advance the cadence.
+      // The canonical planner-close service advances lastCompletedDate/nextDueDate only after
+      // the preventive work order is verified and irreversibly closed.
 
       // Notify assigned user
       if (schedule.assignedToId) {

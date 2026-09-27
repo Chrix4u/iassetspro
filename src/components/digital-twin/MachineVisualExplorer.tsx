@@ -217,6 +217,124 @@ function EngineeringSchematic({
   );
 }
 
+
+function ProgrammaticEngineeringView({
+  asset, selected, childNodes, exploded, zoom, onSelect,
+}: {
+  asset: AssetSummary;
+  selected: MachineComponent | null;
+  childNodes: MachineComponent[];
+  exploded: boolean;
+  zoom: number;
+  onSelect: (id: string) => void;
+}) {
+  const subjectName = selected?.name || asset.name;
+  const subjectCode = selected?.componentCode || asset.assetTag;
+  const subjectType = selected?.componentType || 'machine';
+  const visibleChildren = childNodes.slice(0, 10);
+  const width = 1040;
+  const height = 620;
+  const centerX = width / 2;
+  const centerY = exploded ? 250 : 270;
+  const bodyWidth = selected?.componentType === 'part' ? 300 : 430;
+  const bodyHeight = selected?.componentType === 'part' ? 150 : 220;
+
+  return (
+    <div className="relative min-h-[500px] overflow-auto rounded-xl border bg-slate-950">
+      <div
+        className="origin-center transition-transform duration-200"
+        style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'center center' }}
+      >
+        <svg
+          viewBox={'0 0 ' + width + ' ' + height}
+          className="mx-auto min-h-[500px] min-w-[860px] max-w-full"
+          role="img"
+          aria-label={(exploded ? 'Exploded engineering view of ' : '2D engineering view of ') + subjectName}
+        >
+          <defs>
+            <pattern id={exploded ? 'exploded-grid' : 'technical-grid'} width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="1" />
+            </pattern>
+            <marker id="engineering-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 z" fill="#64748b" />
+            </marker>
+          </defs>
+          <rect width={width} height={height} fill="#020617" />
+          <rect width={width} height={height} fill={'url(#' + (exploded ? 'exploded-grid' : 'technical-grid') + ')'} />
+
+          <text x="42" y="42" fill="#e2e8f0" fontSize="20" fontWeight="700">{subjectName}</text>
+          <text x="42" y="66" fill="#94a3b8" fontSize="12">{subjectCode} · {subjectType} · deterministic engineering fallback</text>
+
+          <g>
+            <line x1={centerX - bodyWidth / 2 - 60} y1={centerY} x2={centerX + bodyWidth / 2 + 60} y2={centerY} stroke="#334155" strokeDasharray="8 8" />
+            <line x1={centerX} y1={centerY - bodyHeight / 2 - 60} x2={centerX} y2={centerY + bodyHeight / 2 + 60} stroke="#334155" strokeDasharray="8 8" />
+            <rect
+              x={centerX - bodyWidth / 2}
+              y={centerY - bodyHeight / 2}
+              width={bodyWidth}
+              height={bodyHeight}
+              rx="16"
+              fill="#0f172a"
+              stroke="#38bdf8"
+              strokeWidth="3"
+            />
+            <rect
+              x={centerX - bodyWidth / 2 + 28}
+              y={centerY - bodyHeight / 2 + 28}
+              width={bodyWidth - 56}
+              height={bodyHeight - 56}
+              rx="10"
+              fill="none"
+              stroke="#64748b"
+              strokeWidth="2"
+              strokeDasharray={exploded ? '12 8' : undefined}
+            />
+            <circle cx={centerX} cy={centerY} r={selected?.componentType === 'part' ? 38 : 54} fill="#0b2536" stroke="#5eead4" strokeWidth="3" />
+            <circle cx={centerX} cy={centerY} r={selected?.componentType === 'part' ? 16 : 24} fill="#020617" stroke="#94a3b8" strokeWidth="2" />
+            <text x={centerX} y={centerY + bodyHeight / 2 + 34} textAnchor="middle" fill="#cbd5e1" fontSize="12">{subjectCode}</text>
+          </g>
+
+          {visibleChildren.map((child, index) => {
+            const count = Math.max(visibleChildren.length, 1);
+            const lane = index - (count - 1) / 2;
+            const childX = exploded ? centerX + lane * 120 : (index % 2 === 0 ? 170 : width - 170);
+            const childY = exploded ? 470 : 145 + Math.floor(index / 2) * 86;
+            const startX = exploded ? centerX : (childX < centerX ? centerX - bodyWidth / 2 : centerX + bodyWidth / 2);
+            const startY = exploded ? centerY + bodyHeight / 2 : centerY;
+            return (
+              <g key={child.id} onClick={() => onSelect(child.id)} className="cursor-pointer">
+                <line
+                  x1={startX}
+                  y1={startY}
+                  x2={childX}
+                  y2={childY - 30}
+                  stroke="#64748b"
+                  strokeWidth="1.5"
+                  markerEnd="url(#engineering-arrow)"
+                />
+                <rect x={childX - 82} y={childY - 30} width="164" height="60" rx="9" fill="#111827" stroke="#64748b" />
+                <text x={childX} y={childY - 4} textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="600">
+                  {child.name.length > 24 ? child.name.slice(0, 22) + '…' : child.name}
+                </text>
+                <text x={childX} y={childY + 15} textAnchor="middle" fill="#94a3b8" fontSize="8.5">{child.componentCode}</text>
+              </g>
+            );
+          })}
+
+          {visibleChildren.length === 0 && (
+            <text x={centerX} y="548" textAnchor="middle" fill="#94a3b8" fontSize="12">
+              Lowest registered maintainable level · no child geometry registered
+            </text>
+          )}
+          <text x="42" y="588" fill="#64748b" fontSize="10">
+            Programmatic 2D engineering fallback — AI imagery remains separate and requires a configured image provider.
+          </text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
@@ -396,14 +514,21 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
                       <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
                         className="max-h-[760px] origin-center object-contain transition-transform duration-200"
                         style={{ transform: 'scale(' + zoom + ')' }} />
-                    ) : (
+                    ) : tabMode === 'realistic' ? (
                       <div className="flex max-w-sm flex-col items-center gap-3 p-8 text-center text-slate-400">
                         <Sparkles className="h-10 w-10 text-cyan-400" />
-                        <div className="text-sm font-semibold text-slate-200">
-                          No {tabMode === 'realistic' ? 'realistic' : tabMode === 'technical2d' ? 'engineering 2D' : 'exploded'} visual yet
-                        </div>
-                        <p className="text-xs">Generate a dedicated AI view for this exact {selected?.componentType || 'machine'}.</p>
+                        <div className="text-sm font-semibold text-slate-200">No realistic visual yet</div>
+                        <p className="text-xs">Generate a dedicated real AI image for this exact {selected?.componentType || 'machine'} after an image-capable provider is configured.</p>
                       </div>
+                    ) : (
+                      <ProgrammaticEngineeringView
+                        asset={asset}
+                        selected={selected}
+                        childNodes={drillChildren}
+                        exploded={tabMode === 'exploded'}
+                        zoom={zoom}
+                        onSelect={setSelectedId}
+                      />
                     )}
                   </div>
 
@@ -484,3 +609,5 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
     </div>
   );
 }
+
+[executed on device: vps.lightworldtech.com (31ed37c1-850c-4620-b64f-dd66de41fa53)]

@@ -12,10 +12,19 @@ const LS_PLANT_ACCESS = 'user_plant_access';
 
 /** Persist auth-related data to localStorage so client-side guards can read it. */
 function persistAuthData(user: User, permissions: string[]): void {
+  const previousUserId = localStorage.getItem(LS_USER_ID);
+  const previouslySelectedPlantId = localStorage.getItem(LS_PLANT_ID);
+  const accessiblePlantIds = new Set((user.plantAccess || []).map((plant) => plant.id));
+  const selectedPlantId = previousUserId === user.id
+    && previouslySelectedPlantId
+    && accessiblePlantIds.has(previouslySelectedPlantId)
+    ? previouslySelectedPlantId
+    : (user.plantId || '');
+
   localStorage.setItem(LS_USER_ID, user.id);
   localStorage.setItem(LS_PERMISSIONS, JSON.stringify(permissions));
   localStorage.setItem(LS_ROLES, JSON.stringify((user.roles || []).map(r => r.slug)));
-  localStorage.setItem(LS_PLANT_ID, user.plantId || '');
+  localStorage.setItem(LS_PLANT_ID, selectedPlantId);
   localStorage.setItem(LS_PLANT_ACCESS, JSON.stringify(user.plantAccess || []));
 }
 

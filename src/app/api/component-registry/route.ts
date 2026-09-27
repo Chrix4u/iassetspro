@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
+import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +18,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
     const twinId = searchParams.get('twinId');
     const assetId = assetIdParam;
     const parentId = searchParams.get('parentId');
@@ -30,6 +36,15 @@ export async function GET(request: NextRequest) {
     limit = Math.min(100, Math.max(1, isNaN(limit) ? 50 : limit));
 
     const where: Record<string, unknown> = {};
+
+    if (!plantScope.isSystemWide) {
+      const allowedPlantIds = plantScope.isScoped && plantScope.plantId
+        ? [plantScope.plantId]
+        : plantScope.accessiblePlantIds;
+      where.asset = {
+        plantId: { in: allowedPlantIds.length > 0 ? allowedPlantIds : ['__ACCESS_DENIED__'] },
+      };
+    }
 
     if (twinId) where.twinId = twinId;
     if (assetId) where.assetId = assetId;
@@ -130,6 +145,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'name is required' }, { status: 400 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    if (assetId) {
+      const asset = await db.asset.findUnique({
+        where: { id: assetId },
+        select: { id: true, plantId: true },
+      });
+      if (!asset) {
+        return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+      }
+      if (!canAccessPlant(plantScope, asset.plantId)) {
+        return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+      }
+    }
+
     // Check unique componentCode
     const existingCode = await db.componentRegistry.findUnique({ where: { componentCode } });
     if (existingCode) {
@@ -139,9 +172,15 @@ export async function POST(request: NextRequest) {
     // Validate parentId if provided. A component hierarchy must remain
     // inside one parent machine/asset.
     if (parentId) {
-      const parent = await db.componentRegistry.findUnique({ where: { id: parentId } });
+      const parent = await db.componentRegistry.findUnique({
+        where: { id: parentId },
+        include: { asset: { select: { plantId: true } } },
+      });
       if (!parent) {
         return NextResponse.json({ success: false, error: 'Parent component not found' }, { status: 404 });
+      }
+      if (!canAccessPlant(plantScope, parent.asset?.plantId)) {
+        return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
       }
       if (assetId && parent.assetId !== assetId) {
         return NextResponse.json(

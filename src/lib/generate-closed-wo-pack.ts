@@ -58,6 +58,7 @@ export interface ClosedWOPackData {
   downtimes: Array<Record<string, unknown>>;
   taskExecutions: Array<Record<string, unknown>>;
   materials: Array<Record<string, unknown>>;
+  repairMaterialRequests?: Array<Record<string, unknown>>;
   toolRequests: Array<Record<string, unknown>>;
   toolTransactions: Array<Record<string, unknown>>;
   failureRecords: Array<Record<string, unknown>>;
@@ -1035,7 +1036,11 @@ function renderMaterials(doc: PDFDoc, data: ClosedWOPackData): void {
   ensureSpace(doc, 40);
   drawSectionHeader(doc, '17. Materials — Requested / Issued / Consumed / Returned');
 
-  if (!data.materials || data.materials.length === 0) {
+  const authoritative = data.repairMaterialRequests && data.repairMaterialRequests.length > 0
+    ? data.repairMaterialRequests
+    : data.materials;
+
+  if (!authoritative || authoritative.length === 0) {
     doc.font('Helvetica').fontSize(FONT.bodyText).fillColor(COLORS.textMuted);
     doc.text('No material requests for this work order.', MARGIN, doc.y, { width: CONTENT_WIDTH });
     doc.moveDown(0.5);
@@ -1043,27 +1048,38 @@ function renderMaterials(doc: PDFDoc, data: ClosedWOPackData): void {
   }
 
   const cur = data.companyInfo.currency;
-
-  // Use repair material requests if available (more detailed), else fall back to WO materials
-  if (data.toolRequests && (data as Record<string, unknown>).repairMaterialRequests) {
-    // RepairMaterialRequests are more detailed
-  }
+  const usingRepairLedger = data.repairMaterialRequests && data.repairMaterialRequests.length > 0;
 
   const headers = ['Item', 'Part #', 'Requested', 'Issued', 'Consumed', 'Returned', 'Unit Cost', 'Status'];
   const colWidths = [110, 70, 50, 50, 50, 50, 60, CONTENT_WIDTH - 440];
   const aligns: Array<'left' | 'right' | 'center'> = ['left', 'left', 'right', 'right', 'right', 'right', 'right', 'center'];
 
-  const rows = data.materials.map((m) => {
-    const inv = m.inventoryItem as Record<string, unknown> | null;
+  const rows = authoritative.map((m) => {
+    const record = m as Record<string, unknown>;
+    if (usingRepairLedger) {
+      const item = record.item as Record<string, unknown> | null;
+      return [
+        safeStr(record.itemName).substring(0, 50),
+        safeStr(item?.itemCode),
+        fmtNum(record.quantityRequested as number | null, 1),
+        fmtNum(record.quantityIssued as number | null, 1),
+        fmtNum(record.consumedQty as number | null, 1),
+        fmtNum(record.quantityReturned as number | null, 1),
+        fmtCurrency(record.unitCost as number | null, cur),
+        formatBadgeText(safeStr(record.status)),
+      ];
+    }
+
+    const inv = record.inventoryItem as Record<string, unknown> | null;
     return [
-      safeStr(m.itemName).substring(0, 50),
+      safeStr(record.itemName).substring(0, 50),
       safeStr(inv?.itemCode),
-      fmtNum(m.quantity as number | null, m.quantity !== null && m.quantity !== 0 && (m.quantity as number) % 1 !== 0 ? 1 : 0),
-      fmtNum((m as Record<string, unknown>).quantityIssued as number | null, 1),
-      fmtNum((m as Record<string, unknown>).consumedQty as number | null, 1),
-      fmtNum((m as Record<string, unknown>).quantityReturned as number | null, 1),
-      fmtCurrency(m.unitCost as number | null, cur),
-      formatBadgeText(safeStr(m.status)),
+      fmtNum(record.quantity as number | null, record.quantity !== null && record.quantity !== 0 && (record.quantity as number) % 1 !== 0 ? 1 : 0),
+      fmtNum(record.quantityIssued as number | null, 1),
+      fmtNum(record.consumedQty as number | null, 1),
+      fmtNum(record.quantityReturned as number | null, 1),
+      fmtCurrency(record.unitCost as number | null, cur),
+      formatBadgeText(safeStr(record.status)),
     ];
   });
 
@@ -1089,7 +1105,6 @@ function renderTools(doc: PDFDoc, data: ClosedWOPackData): void {
     return;
   }
 
-  // Tool requests
   if (data.toolRequests.length > 0) {
     doc.font('Helvetica-Bold').fontSize(FONT.small).fillColor(COLORS.textSecondary);
     doc.text('Tool Requests:', MARGIN, doc.y, { lineBreak: false });
@@ -1097,22 +1112,41 @@ function renderTools(doc: PDFDoc, data: ClosedWOPackData): void {
 
     const headers = ['Tool', 'Code', 'Qty Req', 'Qty Issued', 'Condition at Issue', 'Condition at Return', 'Status'];
     const colWidths = [85, 55, 40, 50, 75, 75, CONTENT_WIDTH - 380];
-    const rows = data.toolRequests.map((tr) => {
-      const tool = tr.tool as { toolCode: string } | null;
-      return [
-        safeStr(tr.toolName).substring(0, 40),
-        safeStr(tool?.toolCode),
-        fmtNum(tr.quantityRequested as number | null),
-        fmtNum(tr.quantityIssued as number | null),
-        formatBadgeText(safeStr(tr.toolConditionAtIssue)),
-        formatBadgeText(safeStr(tr.toolConditionAtReturn)),
-        formatBadgeText(safeStr(tr.status)),
-      ];
-    });
+
+    const rows: Array<Array<string | number>> = [];
+    for (const request of data.toolRequests) {
+      const req = request as Record<string, unknown>;
+      const items = Array.isArray(req.items) ? req.items as Array<Record<string, unknown>> : [];
+
+      if (items.length > 0) {
+        for (const item of items) {
+          const itemTool = item.tool as Record<string, unknown> | null;
+          rows.push([
+            safeStr(item.toolName || req.toolName).substring(0, 40),
+            safeStr(item.toolCode || itemTool?.toolCode),
+            fmtNum(item.quantityRequested as number | null),
+            fmtNum(item.quantityIssued as number | null),
+            formatBadgeText(safeStr(item.conditionAtIssue || req.toolConditionAtIssue)),
+            formatBadgeText(safeStr(item.conditionAtReturn || req.toolConditionAtReturn)),
+            formatBadgeText(safeStr(req.status)),
+          ]);
+        }
+      } else {
+        const tool = req.tool as Record<string, unknown> | null;
+        rows.push([
+          safeStr(req.toolName).substring(0, 40),
+          safeStr(tool?.toolCode),
+          fmtNum(req.quantityRequested as number | null),
+          fmtNum(req.quantityIssued as number | null),
+          formatBadgeText(safeStr(req.toolConditionAtIssue)),
+          formatBadgeText(safeStr(req.toolConditionAtReturn)),
+          formatBadgeText(safeStr(req.status)),
+        ]);
+      }
+    }
     drawTable(doc, headers, rows, colWidths);
   }
 
-  // Tool transactions summary
   if (data.toolTransactions.length > 0) {
     doc.moveDown(0.3);
     doc.font('Helvetica-Bold').fontSize(FONT.small).fillColor(COLORS.textSecondary);
@@ -1123,13 +1157,13 @@ function renderTools(doc: PDFDoc, data: ClosedWOPackData): void {
     const colWidths2 = [100, 70, 90, 80, CONTENT_WIDTH - 340];
     const rows2 = data.toolTransactions.map((tx) => {
       const tool = tx.tool as { name: string } | null;
-      const perf = tx.performedBy as { fullName: string } | null;
+      const performedBy = tx.performedBy as { fullName: string } | null;
       return [
-        safeStr(tool?.name).substring(0, 40),
+        safeStr(tool?.name),
         formatBadgeText(safeStr(tx.type)),
-        safeStr(perf?.fullName),
-        fmtDateShort(tx.createdAt as Date | string | null),
-        safeStr(tx.notes).substring(0, 30),
+        safeStr(performedBy?.fullName),
+        fmtDate(tx.createdAt as Date | string | null),
+        safeStr(tx.notes).substring(0, 45),
       ];
     });
     drawTable(doc, headers2, rows2, colWidths2);

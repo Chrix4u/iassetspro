@@ -17,7 +17,7 @@ import { notifyUser } from '@/lib/notifications';
  */
 
 // Internal cron secret
-const CRON_SECRET = process.env.PM_CRON_SECRET || 'pm-scheduler-internal-2025';
+const CRON_SECRET = process.env.PM_CRON_SECRET || '';
 
 // Helper: generate WO number WO-YYYYMM-NNNN
 async function generateWoNumber(): Promise<string> {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     const cronSecret = request.headers.get('x-pm-cron-secret');
 
-    if (!session && cronSecret !== CRON_SECRET) {
+    if (!session && (!CRON_SECRET || cronSecret !== CRON_SECRET)) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 

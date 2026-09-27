@@ -119,6 +119,12 @@ export async function GET(
         repairToolRequests: {
           include: {
             tool: { select: { id: true, toolCode: true, name: true } },
+            items: {
+              include: {
+                tool: { select: { id: true, toolCode: true, name: true, category: true } },
+              },
+              orderBy: { createdAt: 'asc' as const },
+            },
             requestedBy: { select: { id: true, fullName: true } },
             issuedByUser: { select: { id: true, fullName: true } },
             returnedByUser: { select: { id: true, fullName: true } },
@@ -277,6 +283,7 @@ export async function GET(
       downtimes: wo.workOrderDowntimes,
       taskExecutions: wo.taskExecutions,
       materials: materialsWithInventory,
+      repairMaterialRequests: wo.repairMaterialRequests,
       toolRequests: wo.repairToolRequests,
       toolTransactions: wo.toolTransactions,
       failureRecords: wo.failureRecords,

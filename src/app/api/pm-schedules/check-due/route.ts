@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 
 /**
@@ -9,7 +9,7 @@ import { notifyUser } from '@/lib/notifications';
  *
  * Checks all active PM schedules where autoGenerateWO is true and
  * nextDueDate is within the lead window (now + leadDays).
- * For each due schedule, creates a Work Order and advances nextDueDate.
+ * For each due schedule, creates a Work Order. PM cadence advances only after verified planner closure.
  *
  * Auth: Requires session (admin/planner role) OR internal secret header.
  * The internal secret header (X-PM-Cron-Secret) is used by cron jobs
@@ -248,21 +248,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Calculate the next due date
-      const newNextDueDate = calculateNextDueDate(
-        nextDueDate,
-        schedule.frequencyType,
-        schedule.frequencyValue,
-      );
-
-      // Update the schedule
-      await db.pmSchedule.update({
-        where: { id: schedule.id },
-        data: {
-          lastCompletedDate: nextDueDate,
-          nextDueDate: newNextDueDate,
-        },
-      });
+      // Generation does not mark maintenance as completed and must not advance the cadence.
+      // The canonical planner-close service advances lastCompletedDate/nextDueDate only after
+      // the preventive work order is verified and irreversibly closed.
 
       // Notify assigned user
       if (schedule.assignedToId) {

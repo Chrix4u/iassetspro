@@ -71,15 +71,18 @@ function badgeClass(criticality?: string) {
 }
 
 function HierarchyNode({
-  node, childrenByParent, selectedId, onSelect, depth = 0,
+  node, childrenByParent, selectedId, onSelect, expandedIds, onToggle, depth = 0,
 }: {
   node: MachineComponent;
   childrenByParent: Map<string, MachineComponent[]>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  expandedIds: Set<string>;
+  onToggle: (id: string) => void;
   depth?: number;
 }) {
   const children = childrenByParent.get(node.id) || [];
+  const expanded = expandedIds.has(node.id);
   const nodeIcon = node.componentType === 'assembly'
     ? <Layers3 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     : node.componentType === 'subassembly'
@@ -89,33 +92,41 @@ function HierarchyNode({
         : <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => onSelect(node.id)}
+      <div
         className={
-          'w-full rounded-lg border px-2.5 py-2 text-left transition-colors hover:bg-muted/60 cursor-pointer '
+          'flex w-full items-center rounded-lg border px-2.5 py-2 transition-colors hover:bg-muted/60 '
           + (selectedId === node.id ? 'border-primary bg-primary/5' : 'border-transparent')
         }
         style={{ paddingLeft: 10 + depth * 14 }}
       >
-        <div className="flex items-center gap-2 min-w-0">
+        {children.length > 0 ? (
+          <button
+            type="button"
+            aria-label={(expanded ? 'Collapse ' : 'Expand ') + node.name}
+            aria-expanded={expanded}
+            onClick={() => onToggle(node.id)}
+            className="mr-1 rounded p-0.5 hover:bg-muted cursor-pointer"
+          >
+            <ChevronRight className={'h-3.5 w-3.5 text-muted-foreground transition-transform ' + (expanded ? 'rotate-90' : '')} />
+          </button>
+        ) : <span className="mr-1 h-4 w-4 shrink-0" />}
+        <button type="button" onClick={() => onSelect(node.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer">
           {nodeIcon}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium">{node.name}</div>
-            <div className="truncate text-[10px] text-muted-foreground">
-              {node.componentCode} · {node.componentType}
-            </div>
-          </div>
-          {children.length > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
-        </div>
-      </button>
-      {children.map((child) => (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-medium">{node.name}</span>
+            <span className="block truncate text-[10px] text-muted-foreground">{node.componentCode} · {node.componentType}</span>
+          </span>
+        </button>
+      </div>
+      {expanded && children.map((child) => (
         <HierarchyNode
           key={child.id}
           node={child}
           childrenByParent={childrenByParent}
           selectedId={selectedId}
           onSelect={onSelect}
+          expandedIds={expandedIds}
+          onToggle={onToggle}
           depth={depth + 1}
         />
       ))}
@@ -210,6 +221,7 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState('realistic');
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -244,6 +256,30 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   }, [components]);
   const roots = useMemo(() => components.filter((item) => !item.parentId), [components]);
   const selected = selectedId ? componentMap.get(selectedId) || null : null;
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      let node = componentMap.get(selectedId);
+      let guard = 0;
+      while (node?.parentId && guard < 12) {
+        next.add(node.parentId);
+        node = componentMap.get(node.parentId);
+        guard += 1;
+      }
+      return next;
+    });
+  }, [selectedId, componentMap]);
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const path = useMemo(() => {
     if (!selected) return [];
@@ -314,7 +350,8 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
           <ScrollArea className="mt-1 h-[560px] pr-1">
             {roots.map((root) => (
               <HierarchyNode key={root.id} node={root} childrenByParent={childrenByParent}
-                selectedId={selectedId} onSelect={setSelectedId} />
+                selectedId={selectedId} onSelect={setSelectedId}
+                expandedIds={expandedIds} onToggle={toggleExpanded} />
             ))}
           </ScrollArea>
         </CardContent>

@@ -13,6 +13,7 @@ PM2_NAME="${PM2_NAME:-iassetspro}"
 CANARY_NAME="${CANARY_NAME:-iassetspro-deploy-canary}"
 BACKUP_DIR="${BACKUP_DIR:-/home/lightworld/backups/iassetspro}"
 INBOX_ROOT="${INBOX_ROOT:-/home/iassetsdeploy/incoming}"
+GENERATED_ASSETS_DIR="${GENERATED_ASSETS_DIR:-/home/lightworld/shared/iassetspro/generated-assets}"
 
 [[ "$(id -u)" -eq 0 ]] || { echo "STOP: root is required"; exit 1; }
 install -d -m 755 /run/lock
@@ -139,6 +140,12 @@ test -f "$NEW_RELEASE/prisma/seed-trades.ts"
 test -f "$NEW_RELEASE/src/lib/create-postgres-adapter.ts"
 cp -a "$OLD_RELEASE/.env" "$NEW_RELEASE/.env"
 chmod 600 "$NEW_RELEASE/.env"
+
+# Generated AI/engineering imagery is runtime data, not a release artifact.
+# Keep it in shared storage and expose it through every immutable release.
+install -d -m 755 "$GENERATED_ASSETS_DIR"
+rm -rf "$NEW_RELEASE/public/generated-assets"
+ln -s "$GENERATED_ASSETS_DIR" "$NEW_RELEASE/public/generated-assets"
 
 echo "[2/10] PostgreSQL staging bootstrap and driver preflight"
 bash "$NEW_RELEASE/scripts/bootstrap-postgresql-staging.sh" "$NEW_RELEASE/.env"

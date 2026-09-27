@@ -25,6 +25,7 @@ import {
   Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2, Plus, X,
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -476,6 +477,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     { id: 'hierarchy', label: 'Hierarchy', icon: GitBranch, badge: hasHierarchy ? asset.children.length + 1 : 0 },
     { id: 'bom', label: 'BOM', icon: Layers },
     { id: 'components', label: 'Components', icon: Cpu, badge: components.length || 0 },
+    { id: 'visual-explorer', label: 'Visual Explorer', icon: Monitor },
     { id: 'condition', label: 'Monitoring', icon: Activity, badge: hasIoT ? asset.iotDevices.length : 0 },
     { id: 'digital-twin', label: 'Digital Twin', icon: Monitor },
     { id: 'diagrams', label: 'Diagrams', icon: MapPin },
@@ -1140,6 +1142,11 @@ export function AssetDetailPage({ id }: { id: string }) {
                   })}
                 </div>
               )}
+            </TabsContent>
+
+            {/* ==================== VISUAL EXPLORER TAB ==================== */}
+            <TabsContent value="visual-explorer" className="mt-4 space-y-4">
+              <MachineVisualExplorer asset={asset} />
             </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}

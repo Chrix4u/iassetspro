@@ -975,6 +975,7 @@ model Asset {
   hotspotRefs         TwinHotspot[]        @relation("HotspotAsset")
   assetModels         AssetModel[]
   maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
+  componentVisuals    ComponentVisual[]     @relation("AssetComponentVisuals")
 
   systemDiagrams       SystemDiagram[]
 
@@ -2968,6 +2969,7 @@ model ComponentRegistry {
   lubricationRecords       ComponentLubricationRecord[]
   replacementHistory       ComponentReplacementHistory[]
   installedSpareParts      InstalledSparePart[] @relation("InstalledSpareComponent")
+  visuals                  ComponentVisual[]
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems              BomRevisionItem[]    @relation("BomItemComponent")
@@ -2990,6 +2992,38 @@ model ComponentRegistry {
   @@index([criticality])
   @@index([lifecycleStatus])
   @@map("component_registry")
+}
+
+model ComponentVisual {
+  id             String   @id @default(cuid())
+  assetId        String?
+  componentId    String?
+  visualType     String   @default("ai_realistic") // ai_realistic, technical_2d, exploded, photo, schematic
+  title          String
+  description    String?  @db.Text
+  imageUrl       String
+  thumbnailUrl   String?
+  hotspotData    String?  @db.Text // JSON array of normalized x/y hotspots
+  cameraData     String?  @db.Text // JSON viewer state / crop / focus metadata
+  sourceProvider String?  // openai, z_ai, meshy, uploaded, generated_svg
+  sourcePrompt   String?  @db.Text
+  zoomLevel      Int      @default(0)
+  sortOrder      Int      @default(0)
+  isPrimary      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  generatedAt    DateTime?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  asset      Asset?             @relation("AssetComponentVisuals", fields: [assetId], references: [id], onDelete: Cascade)
+  component  ComponentRegistry? @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([componentId])
+  @@index([visualType])
+  @@index([isPrimary])
+  @@map("component_visuals")
 }
 
 model ComponentSparePart {

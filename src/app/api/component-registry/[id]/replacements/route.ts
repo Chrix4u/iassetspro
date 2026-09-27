@@ -21,7 +21,7 @@ export async function GET(
 
     const component = await db.componentRegistry.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, assetId: true },
     });
     if (!component) {
       return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
@@ -64,6 +64,7 @@ export async function POST(
       cost,
       vendor,
       expectedNextReplacement,
+      workOrderId,
     } = body;
 
     if (!partName) {
@@ -89,9 +90,26 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
     }
 
+    if (workOrderId) {
+      const workOrder = await db.workOrder.findUnique({
+        where: { id: workOrderId },
+        select: { id: true, assetId: true },
+      });
+      if (!workOrder) {
+        return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+      }
+      if (component.assetId && workOrder.assetId && component.assetId !== workOrder.assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Work order belongs to a different asset' },
+          { status: 400 },
+        );
+      }
+    }
+
     const record = await db.componentReplacementHistory.create({
       data: {
         componentId: id,
+        workOrderId: workOrderId || null,
         partName,
         partCode: partCode || null,
         serialNumberOld: serialNumberOld || null,
@@ -111,7 +129,7 @@ export async function POST(
       'create',
       record.id,
       {
-        newValues: { componentId: id, partName, partCode, reason },
+        newValues: { componentId: id, workOrderId: workOrderId || null, partName, partCode, reason },
       },
     );
 

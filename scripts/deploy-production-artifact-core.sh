@@ -197,11 +197,6 @@ else
   NODE_ENV=production bun --env-file=.env run prisma/seed-reference-data.ts
 fi
 
-PLANT_COUNT="$(PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Atqc 'SELECT COUNT(*) FROM "plants"')"
-if [[ "$USER_COUNT" != "0" && "$PLANT_COUNT" == "0" ]]; then
-  echo "One-time clean UAT commissioning: users exist and no plant has been created yet"
-  NODE_ENV=production bun --env-file=.env run scripts/commission-clean-uat.ts
-fi
 unset DB_PASS
 
 health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-old-postmigration.json 3 2 || {

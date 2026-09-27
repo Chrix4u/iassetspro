@@ -11,11 +11,24 @@ const LS_PLANT_ID = 'user_plant_id';
 const LS_PLANT_ACCESS = 'user_plant_access';
 
 /** Persist auth-related data to localStorage so client-side guards can read it. */
-function persistAuthData(user: User, permissions: string[]): void {
+function persistAuthData(
+  user: User,
+  permissions: string[],
+  options: { preserveSelectedPlant?: boolean } = {},
+): void {
+  const existingPlantId = options.preserveSelectedPlant
+    ? localStorage.getItem(LS_PLANT_ID)
+    : null;
+  const canKeepExistingPlant = Boolean(
+    existingPlantId
+    && (user.plantAccess || []).some((plant) => plant.id === existingPlantId),
+  );
+  const selectedPlantId = canKeepExistingPlant ? existingPlantId : (user.plantId || '');
+
   localStorage.setItem(LS_USER_ID, user.id);
   localStorage.setItem(LS_PERMISSIONS, JSON.stringify(permissions));
   localStorage.setItem(LS_ROLES, JSON.stringify((user.roles || []).map(r => r.slug)));
-  localStorage.setItem(LS_PLANT_ID, user.plantId || '');
+  localStorage.setItem(LS_PLANT_ID, selectedPlantId || '');
   localStorage.setItem(LS_PLANT_ACCESS, JSON.stringify(user.plantAccess || []));
 }
 
@@ -96,7 +109,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.get<{ user: User; permissions: string[] }>('/api/auth/me');
       if (res.success && res.data) {
-        persistAuthData(res.data.user, res.data.permissions);
+        persistAuthData(res.data.user, res.data.permissions, { preserveSelectedPlant: true });
         set({
           user: res.data.user,
           permissions: res.data.permissions,

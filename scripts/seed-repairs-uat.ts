@@ -476,23 +476,34 @@ async function main() {
     },
   });
 
-  const techSingleId = userIds['uat_tech_single'];
-  const existingRate = await db.laborRate.findFirst({
-    where: {
-      userId: techSingleId,
-      plantId: plantA.id,
-      tradeId: tradeMech.id,
-      effectiveFrom: new Date('2024-01-01'),
-    },
-  });
-  if (!existingRate) {
-    await db.laborRate.create({
-      data: {
-        userId: techSingleId, plantId: plantA.id, tradeId: tradeMech.id,
-        normalHourlyRate: 50.0, overtimeHourlyRate: 75.0,
-        effectiveFrom: new Date('2024-01-01'), currency: 'GHS',
+  const effectiveFrom = new Date('2024-01-01');
+  const tradeRates = [
+    { tradeId: tradeMech.id, normalHourlyRate: 50.0, overtimeHourlyRate: 75.0 },
+    { tradeId: tradeElec.id, normalHourlyRate: 55.0, overtimeHourlyRate: 82.5 },
+  ];
+
+  for (const rate of tradeRates) {
+    const existingRate = await db.laborRate.findFirst({
+      where: {
+        userId: null,
+        plantId: plantA.id,
+        tradeId: rate.tradeId,
+        effectiveFrom,
       },
     });
+    if (!existingRate) {
+      await db.laborRate.create({
+        data: {
+          userId: null,
+          plantId: plantA.id,
+          tradeId: rate.tradeId,
+          normalHourlyRate: rate.normalHourlyRate,
+          overtimeHourlyRate: rate.overtimeHourlyRate,
+          effectiveFrom,
+          currency: 'GHS',
+        },
+      });
+    }
   }
 
   const storekeeperId = userIds['uat_storekeeper'];
@@ -569,7 +580,7 @@ async function main() {
   console.log(`   Component: ${pumpBearingComponent.componentCode}`);
   console.log(`   WOs: ${woA1.woNumber}, ${woA2.woNumber}`);
   console.log(`   MR: ${mrUat.requestNumber}`);
-  console.log('   Labor Rate: GHS 50/hr normal, 75/hr OT');
+  console.log('   Labor Rates: Mechanical GHS 50/75; Electrical GHS 55/82.5 (normal/OT)');
   console.log('   UAT Bearing 6205 unit cost: GHS 120');
 }
 

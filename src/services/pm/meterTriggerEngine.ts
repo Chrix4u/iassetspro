@@ -75,8 +75,8 @@ export async function evaluateMeterPmTriggers() {
   for (const trigger of triggers) {
     const schedule = trigger.schedule;
     const component = schedule.component;
-    if (!component || schedule.frequencyType !== 'meter_based') {
-      results.push({ triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is not an active component meter-based PM' });
+    if (!component || !['meter_based', 'custom_hours'].includes(schedule.frequencyType)) {
+      results.push({ triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is not an active component usage-based PM' });
       continue;
     }
 

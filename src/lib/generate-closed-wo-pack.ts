@@ -58,7 +58,7 @@ export interface ClosedWOPackData {
   downtimes: Array<Record<string, unknown>>;
   taskExecutions: Array<Record<string, unknown>>;
   materials: Array<Record<string, unknown>>;
-  repairMaterialRequests: Array<Record<string, unknown>>;
+  repairMaterialRequests?: Array<Record<string, unknown>>;
   toolRequests: Array<Record<string, unknown>>;
   toolTransactions: Array<Record<string, unknown>>;
   failureRecords: Array<Record<string, unknown>>;

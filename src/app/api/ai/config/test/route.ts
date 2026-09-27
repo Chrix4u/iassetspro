@@ -1,95 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
-import { testAIConnection, invalidateAIConfigCache } from '@/lib/ai-client';
+import { testAIConnection } from '@/lib/ai-client';
+import { db } from '@/lib/db';
 
 const logger = createLogger('api:ai:config:test');
-
 export const maxDuration = 30;
 
-/**
- * POST /api/ai/config/test
- *
- * Test the AI configuration by:
- * 1. Temporarily saving the provided config
- * 2. Running a test prompt
- * 3. Returning success/failure with timing info
- *
- * This accepts a temporary config in the body (doesn't permanently save it).
- */
+function zaiChatEndpoint(value?: string) {
+  let base = (value || 'https://api.z.ai/api/paas/v4').replace(/\/+$/, '');
+  base = base.replace(/\/chat\/completions$/, '').replace(/\/images\/generations$/, '');
+  return base + '/chat/completions';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Not authenticated' },
-        { status: 401 },
-      );
-    }
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
 
     const body = await request.json().catch(() => ({}));
-
-    // If a config is provided in the body, we need to temporarily set it
-    // so the test uses the user's new settings rather than the saved ones.
-    if (body.provider && body.provider !== 'zai-sdk') {
-      // Write a temporary test config
-      const { writeFile, mkdir } = await import('fs/promises');
-      const { join } = await import('path');
-
-      const DATA_FILE = join(process.cwd(), 'data', 'ai-config.json');
-
-      try {
-        const raw = await (await import('fs/promises')).readFile(DATA_FILE, 'utf-8');
-        const store = JSON.parse(raw);
-
-        // Deactivate all existing configs
-        for (const c of store.configs) {
-          c.isActive = false;
-        }
-
-        // Add a temporary test config
-        store.configs.push({
-          id: 'test-temp',
-          provider: body.provider === 'zai-sdk' ? 'zai_sdk' : body.provider,
-          llmModel: body.llmModel || 'default',
-          llmEndpoint: body.customEndpoint || body.llmEndpoint || '',
-          llmApiKey: body.apiKey || body.llmApiKey || '',
-          llmTemperature: body.temperature ?? 0.7,
-          llmMaxTokens: body.maxTokens ?? 8000,
-          imageModel: 'default',
-          imageApiKey: '',
-          meshyApiKey: '',
-          provider3d: 'programmatic',
-          generationSettings: {},
-          isActive: true,
-          createdById: session.userId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-
-        await mkdir(join(process.cwd(), 'data'), { recursive: true });
-        await writeFile(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8');
-
-        // Invalidate cache so the test picks up the new config
-        invalidateAIConfigCache();
-      } catch {
-        // If we can't read/write config, just test with whatever is saved
-      }
+    const provider = body.provider === 'zai-sdk' ? 'zai_sdk' : String(body.provider || '');
+    if (provider !== 'zai-api') {
+      const result = await testAIConnection();
+      return NextResponse.json({ success: result.success, data: result });
     }
 
-    // Run the connection test
-    const result = await testAIConnection();
+    const active = await db.aiConfig.findFirst({ where: { isActive: true } });
+    const sameProvider = active?.provider === 'zai-api';
+    const apiKey = String(body.apiKey || body.llmApiKey || (sameProvider ? active?.llmApiKey : '') || '');
+    const model = String(body.llmModel || (sameProvider ? active?.llmModel : '') || 'glm-5.3');
+    const endpoint = zaiChatEndpoint(String(body.customEndpoint || body.llmEndpoint || (sameProvider ? active?.llmEndpoint : '') || ''));
 
-    logger.info('AI connection test completed', {
-      success: result.success,
-      model: result.model,
-      responseTime: result.responseTime,
-    });
+    if (!apiKey) return NextResponse.json({ success: false, error: 'Enter or save your Z.ai API key before testing.' }, { status: 400 });
 
-    return NextResponse.json({
-      success: result.success,
-      data: result,
+    const started = Date.now();
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
+        temperature: 0,
+        max_tokens: 10,
+      }),
+      signal: AbortSignal.timeout(25_000),
     });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      return NextResponse.json({ success: false, error: 'Z.ai API error (' + response.status + '): ' + detail.slice(0, 240) }, { status: 400 });
+    }
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }>; model?: string };
+    const ok = Boolean(data.choices?.[0]?.message?.content);
+    const result = { success: ok, model: data.model || model, responseTime: Date.now() - started };
+    logger.info('Z.ai connection test completed', { success: ok, model: result.model, responseTime: result.responseTime });
+    return NextResponse.json({ success: ok, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Connection test failed';
     logger.error('AI connection test error', { message });

@@ -20,7 +20,10 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Deep visual explorer');
     expect(explorer).toContain('EngineeringSchematic');
     expect(explorer).toContain('AI Realistic');
+    expect(explorer).toContain('Engineering 2D');
+    expect(explorer).toContain('Diagram');
     expect(explorer).toContain('Exploded');
+    expect(explorer).toContain('Drill into parts');
     expect(explorer).toContain('setSelectedId(item.id)');
   });
 
@@ -34,8 +37,9 @@ describe('deep machine visual explorer', () => {
   it('commissions realistic RP-01 visuals through every hierarchy level', () => {
     expect(generator).toContain("assetTag: 'UAT-RP-001'");
     expect(generator).toContain("componentType === 'assembly' ? 1");
-    expect(generator).toContain("visualTypes = ['ai_realistic']");
+    expect(generator).toContain("visualTypes = ['ai_realistic', 'technical_2d']");
     expect(generator).toContain("target.zoomLevel >= 3");
+    expect(generator).toContain("visualType === 'technical_2d'");
     expect(generator).toContain("visualType: 'exploded'");
   });
 });

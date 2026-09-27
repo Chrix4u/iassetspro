@@ -12,3 +12,33 @@ BEGIN
       WHERE "id"='uat_pmtrg_bearing_500h';
   END IF;
 END $$;
+
+
+-- Backfill missing meter triggers for existing RP-01 hour-based component schedules.
+-- Baseline at current operating hours to avoid retroactive work-order floods.
+INSERT INTO "pm_triggers" (
+  "id","scheduleId","triggerType","triggerValue","triggerConfig",
+  "lastTriggeredAt","isActive","createdAt","updatedAt"
+)
+SELECT
+  'uat_pmtrg_' || substr(md5(p."id"), 1, 16),
+  p."id",
+  'meter',
+  p."frequencyValue",
+  json_build_object(
+    'source','component_operating_hours',
+    'componentId',p."componentId",
+    'baselineHours',c."operatingHours",
+    'unit','hours'
+  )::text,
+  NULL,
+  true,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+FROM "pm_schedules" p
+JOIN "component_registry" c ON c."id"=p."componentId"
+WHERE p."assetId"='uat_asset_rotary_printer_01'
+  AND p."frequencyType"='custom_hours'
+  AND p."componentId" IS NOT NULL
+  AND p."frequencyValue" > 0
+  AND NOT EXISTS (SELECT 1 FROM "pm_triggers" t WHERE t."scheduleId"=p."id");

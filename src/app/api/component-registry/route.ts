@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canCreateComponentHierarchy } from '@/lib/component-registry-permissions';
 import { createAuditLog } from '@/lib/audit';
 
 export async function GET(request: NextRequest) {
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+    if (!canCreateComponentHierarchy(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

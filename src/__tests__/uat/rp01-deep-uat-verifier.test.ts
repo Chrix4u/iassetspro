@@ -22,6 +22,8 @@ describe('RP-01 deep UAT verifier contract', () => {
   it('requires real store and tool linkage', () => {
     expect(verifier).toContain('linkedSpareLinks === spareLinks');
     expect(verifier).toContain('linkedToolRequirements === toolRequirements');
+    expect(verifier).toContain('maintenanceHistory >= 1');
+    expect(verifier).toContain('componentWorkOrders >= 1');
     expect(verifier).toContain("status: failed.length === 0 ? 'PASS' : 'FAIL'");
   });
 });

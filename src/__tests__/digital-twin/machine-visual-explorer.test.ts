@@ -29,6 +29,13 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Exploded');
     expect(explorer).toContain('Drill into parts');
     expect(explorer).toContain('setSelectedId(item.id)');
+    expect(explorer).toContain('ProgrammaticEngineeringView');
+    expect(explorer).toContain('deterministic engineering fallback');
+    expect(explorer).toContain("childNodes={drillChildren}");
+    expect(explorer).toContain('loadAllMachineComponents');
+    expect(explorer).toContain("&limit=100&page=' + page");
+    expect(explorer).toContain('response.pagination?.totalPages');
+    expect(explorer).toContain('Math.min(reportedTotalPages, 1000)');
   });
 
   it('has zoom controls and part-level AI generation', () => {
@@ -36,6 +43,7 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');
+    expect(explorer).toContain('not an OEM drawing or verified as-built photograph');
   });
 
   it('uses an explicit image provider and normalizes provider image payloads', () => {

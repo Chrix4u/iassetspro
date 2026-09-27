@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,12 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
 }
 
 export function AssetDetailPage({ id }: { id: string }) {
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canCreateComponent = isAdmin()
+    || hasPermission('digital_twin.manage')
+    || (hasPermission('assets.hierarchy')
+      && (hasPermission('assets.create') || hasPermission('assemblies.create')));
+
   const [activeTab, setActiveTab] = useState('overview');
   const [asset, setAsset] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -827,7 +834,7 @@ export function AssetDetailPage({ id }: { id: string }) {
             {/* ==================== COMPONENTS TAB ==================== */}
             <TabsContent value="components" className="mt-4 space-y-4">
               {/* Add Component Form */}
-              {showComponentForm && (
+              {showComponentForm && canCreateComponent && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
@@ -907,8 +914,14 @@ export function AssetDetailPage({ id }: { id: string }) {
               {tabDataLoading && activeTab === 'components' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : components.length === 0 && !showComponentForm ? (
-                <EmptyTab icon={Cpu} title="No Components Registered" description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance." actionLabel="Add Component" onAction={() => setShowComponentForm(true)} />
-              ) : !showComponentForm && (
+                <EmptyTab
+                  icon={Cpu}
+                  title="No Components Registered"
+                  description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance."
+                  actionLabel={canCreateComponent ? 'Add Component' : undefined}
+                  onAction={canCreateComponent ? () => setShowComponentForm(true) : undefined}
+                />
+              ) : !showComponentForm && canCreateComponent && (
                 <div className="flex justify-end">
                   <Button size="sm" onClick={() => setShowComponentForm(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />Add Component</Button>
                 </div>

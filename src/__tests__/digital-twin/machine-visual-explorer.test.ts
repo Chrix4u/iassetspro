@@ -5,6 +5,7 @@ const explorer = fs.readFileSync('src/components/digital-twin/MachineVisualExplo
 const schema = fs.readFileSync('prisma/schema.prisma', 'utf8');
 const migration = fs.readFileSync('prisma/migrations/20260927161000_component_visuals/migration.sql', 'utf8');
 const generator = fs.readFileSync('scripts/generate-uat-machine-visuals.ts', 'utf8');
+const aiClient = fs.readFileSync('src/lib/ai-client.ts', 'utf8');
 
 describe('deep machine visual explorer', () => {
   it('persists visuals independently from component maintenance notes', () => {
@@ -32,6 +33,13 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');
+  });
+
+  it('uses an explicit image provider and normalizes provider image payloads', () => {
+    expect(aiClient).toContain('No active AI image provider is configured');
+    expect(aiClient).toContain("provider === 'custom'");
+    expect(aiClient).toContain('providerDef.imageUrl');
+    expect(aiClient).toContain('item.b64_json');
   });
 
   it('commissions realistic RP-01 visuals through every hierarchy level', () => {

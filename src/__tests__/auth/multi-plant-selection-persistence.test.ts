@@ -23,5 +23,3 @@ describe('multi-plant selection persistence', () => {
     expect(loginBlock).not.toContain('preserveSelectedPlant: true');
   });
 });
-
-[executed on device: vps.lightworldtech.com (31ed37c1-850c-4620-b64f-dd66de41fa53)]

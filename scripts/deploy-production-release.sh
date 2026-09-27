@@ -190,24 +190,40 @@ elif grep -Eq "not yet been applied|have not yet been applied|Following migratio
   mkdir -p "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
 
-  DUMP_BIN="$(command -v mariadb-dump || command -v mysqldump || true)"
-  [[ -n "$DUMP_BIN" ]] || { echo "STOP: mariadb-dump/mysqldump unavailable."; exit 1; }
-
+  DB_PROTOCOL="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.protocol.replace(/:$/,""))')"
   DB_HOST="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.hostname)')"
-  DB_PORT="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "3306")')"
   DB_USER="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.username))')"
   DB_PASS="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.password))')"
   DB_NAME="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//,"")))')"
 
   BACKUP="${BACKUP_DIR}/pre-deploy-${RELEASE_SHA:0:12}-${STAMP}.sql.gz"
-  MYSQL_PWD="$DB_PASS" "$DUMP_BIN" \
-    --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
-    --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"
-  unset DB_PASS
+  case "$DB_PROTOCOL" in
+    postgresql|postgres)
+      DUMP_BIN="$(command -v pg_dump || true)"
+      [[ -n "$DUMP_BIN" ]] || { echo "STOP: pg_dump unavailable for PostgreSQL backup."; exit 1; }
+      DB_PORT="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "5432")')"
+      PGPASSWORD="$DB_PASS" "$DUMP_BIN" \
+        --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" \
+        --format=plain --no-owner --no-privileges "$DB_NAME" | gzip -1 > "$BACKUP"
+      ;;
+    mysql|mariadb)
+      DUMP_BIN="$(command -v mariadb-dump || command -v mysqldump || true)"
+      [[ -n "$DUMP_BIN" ]] || { echo "STOP: mariadb-dump/mysqldump unavailable for MySQL backup."; exit 1; }
+      DB_PORT="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "3306")')"
+      MYSQL_PWD="$DB_PASS" "$DUMP_BIN" \
+        --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
+        --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"
+      ;;
+    *)
+      echo "STOP: unsupported DATABASE_URL protocol for verified pre-migration backup: $DB_PROTOCOL"
+      exit 1
+      ;;
+  esac
+  unset DB_PASS PGPASSWORD MYSQL_PWD
 
   test -s "$BACKUP"
   gzip -t "$BACKUP"
-  echo "Verified pre-migration backup: $BACKUP"
+  echo "Verified pre-migration $DB_PROTOCOL backup: $BACKUP"
 
   bunx prisma migrate deploy
   bunx prisma migrate status

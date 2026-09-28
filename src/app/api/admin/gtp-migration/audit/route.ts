@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getSessionAsync, isAdmin } from '@/lib/auth';
+import { db } from '@/lib/db';
 import {
   auditGtpWorkbookRows,
   canonicalizeGtpTrade,
@@ -14,6 +15,36 @@ export const dynamic = 'force-dynamic';
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const REQUIRED_SHEETS = ['JobRecords', 'Machines', 'Trade', 'NewOder'] as const;
 type RawRow = Record<string, unknown>;
+
+type ReconciliationOverride = {
+  rowNumber: number;
+  action: 'asset' | 'non_equipment';
+  assetId?: string;
+};
+
+const criticalityToLegacyPriority = (criticality?: string | null): number => {
+  const value = String(criticality || '').toLowerCase();
+  if (value === 'critical') return 1;
+  if (value === 'high') return 2;
+  return 3;
+};
+
+function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('Invalid reconciliation override payload');
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('Invalid reconciliation override entry');
+    const row = item as Record<string, unknown>;
+    const rowNumber = Number(row.rowNumber);
+    const action = row.action;
+    const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : undefined;
+    if (!Number.isInteger(rowNumber) || rowNumber < 2) throw new Error('Invalid reconciliation row number');
+    if (action !== 'asset' && action !== 'non_equipment') throw new Error('Invalid reconciliation action');
+    if (action === 'asset' && !assetId) throw new Error('Asset mapping requires an assetId');
+    return { rowNumber, action, assetId };
+  });
+}
 
 const asText = (value: unknown) => String(value ?? '').trim();
 const asNumber = (value: unknown): number | null => {
@@ -91,8 +122,90 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const jobs = toJobs(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.JobRecords!, { defval: null }));
+    const rawJobs = toJobs(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.JobRecords!, { defval: null }));
     const machines = toMachines(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.Machines!, { defval: null }));
+    const overrides = parseOverrides(formData.get('overrides'));
+    const overrideByRow = new Map(overrides.map((override) => [override.rowNumber, override]));
+
+    const referencedAssetIds = [...new Set(
+      overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
+    )];
+    const referencedAssets = referencedAssetIds.length
+      ? await db.asset.findMany({
+          where: { id: { in: referencedAssetIds } },
+          select: { id: true, name: true, assetTag: true, criticality: true },
+        })
+      : [];
+    const assetById = new Map(referencedAssets.map((asset) => [asset.id, asset]));
+    const missingAssetIds = referencedAssetIds.filter((id) => !assetById.has(id));
+    if (missingAssetIds.length) {
+      return NextResponse.json({
+        success: false,
+        error: 'One or more reconciliation Assets no longer exist',
+        missingAssetIds,
+      }, { status: 400 });
+    }
+
+    const reconciliation: Array<{
+      rowNumber: number;
+      workOrderNo: string;
+      action: 'asset' | 'non_equipment';
+      assetId: string | null;
+      assetName: string | null;
+    }> = [];
+
+    const jobs = rawJobs.map((job) => {
+      const rowNumber = Number(job.rowNumber || 0);
+      const override = overrideByRow.get(rowNumber);
+      if (!override) return job;
+
+      if (override.action === 'asset') {
+        const asset = assetById.get(override.assetId!);
+        if (!asset) return job;
+        const syntheticCode = `APP-ASSET:${asset.id}`;
+        machines.push({
+          code: syntheticCode,
+          name: asset.name,
+          priority: criticalityToLegacyPriority(asset.criticality),
+          order: null,
+        });
+        reconciliation.push({
+          rowNumber,
+          workOrderNo: String(job.workOrderNo ?? ''),
+          action: 'asset',
+          assetId: asset.id,
+          assetName: asset.name,
+        });
+        return {
+          ...job,
+          equipmentCode: syntheticCode,
+          equipmentDescription: asset.assetTag ? `${asset.name} [${asset.assetTag}]` : asset.name,
+          priority: criticalityToLegacyPriority(asset.criticality),
+        };
+      }
+
+      const syntheticCode = `NON-EQUIPMENT:${String(job.workOrderNo ?? rowNumber)}`;
+      machines.push({
+        code: syntheticCode,
+        name: 'Non-equipment work',
+        priority: [1, 2, 3].includes(Number(job.priority)) ? Number(job.priority) : 3,
+        order: null,
+      });
+      reconciliation.push({
+        rowNumber,
+        workOrderNo: String(job.workOrderNo ?? ''),
+        action: 'non_equipment',
+        assetId: null,
+        assetName: null,
+      });
+      return {
+        ...job,
+        equipmentCode: syntheticCode,
+        equipmentDescription: 'Non-equipment work',
+        priority: [1, 2, 3].includes(Number(job.priority)) ? job.priority : 3,
+      };
+    });
+
     const audit = auditGtpWorkbookRows(jobs, machines);
 
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
@@ -157,6 +270,11 @@ export async function POST(request: NextRequest) {
           requiredSheetsPresent: true,
           hasVba: Boolean((workbook as typeof workbook & { vbaraw?: unknown }).vbaraw),
         },
+        reconciliation: {
+          overridesSubmitted: overrides.length,
+          overridesApplied: reconciliation.length,
+          rows: reconciliation,
+        },
         workbook: {
           jobRecords: jobs.length,
           machineMasterRows: machines.length,
@@ -174,4 +292,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
-

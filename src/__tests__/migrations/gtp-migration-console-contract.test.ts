@@ -87,6 +87,8 @@ describe('GTP migration reconciliation console', () => {
 
   it('builds a zero-write transactional import preview with idempotency checks', () => {
     expect(route).toContain("formData.get('preview')");
+    expect(route).toContain("createHash('sha256')");
+    expect(route).toContain('previewFingerprint');
     expect(route).toContain("GTP-MR-");
     expect(route).toContain("GTP-WO-");
     expect(route).toContain('db.workOrder.findMany');
@@ -97,6 +99,7 @@ describe('GTP migration reconciliation console', () => {
     expect(route).not.toContain('db.maintenanceRequest.create');
     expect(page).toContain('Generate Transactional Import Preview');
     expect(page).toContain('Preview only — no records will be written');
+    expect(page).toContain('Preview fingerprint');
     expect(page).toContain('Historical writes are still disabled');
   });
 

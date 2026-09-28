@@ -99,6 +99,12 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
 }
 
 const asText = (value: unknown) => String(value ?? '').trim();
+const normalizeIdentity = (value: unknown) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
 const asIso = (value: Date | string | number | null | undefined): string | null => {
   if (value === null || value === undefined || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);

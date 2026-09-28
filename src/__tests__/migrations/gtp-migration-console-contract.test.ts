@@ -25,6 +25,20 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain('/\\.(xlsm|xlsx)$/i');
   });
 
+  it('accepts dry-run reconciliation overrides without enabling historical writes', () => {
+    expect(route).toContain("formData.get('overrides')");
+    expect(route).toContain("action: 'asset' | 'non_equipment'");
+    expect(route).toContain('db.asset.findMany');
+    expect(route).toContain('APP-ASSET:');
+    expect(route).toContain('NON-EQUIPMENT:');
+    expect(route).not.toContain('db.asset.update');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(page).toContain('Apply Resolutions & Re-audit');
+    expect(page).toContain('Map to existing Asset');
+    expect(page).toContain('Non-equipment work');
+    expect(page).toContain('AsyncSearchableSelect');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');
@@ -44,4 +58,3 @@ describe('GTP migration reconciliation console', () => {
     expect(access).toContain("'settings-gtp-migration': 'core'");
   });
 });
-

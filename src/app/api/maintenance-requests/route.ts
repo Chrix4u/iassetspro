@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
         where: Object.keys(where).length > 0 ? where : undefined,
         include: {
           asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+          componentRegistry: { select: { id: true, componentCode: true, name: true, componentType: true, criticality: true, parentId: true } },
           requester: { select: { id: true, fullName: true, username: true } },
           supervisor: { select: { id: true, fullName: true, username: true } },
           approver: { select: { id: true, fullName: true, username: true } },
@@ -138,6 +139,7 @@ export async function POST(request: NextRequest) {
       category,
       assetId,
       assetName,
+      componentId,
       location,
       departmentId,
       plantId,
@@ -214,6 +216,30 @@ export async function POST(request: NextRequest) {
         );
       }
       resolvedAssetName = asset.name;
+    }
+
+    let resolvedComponentId: string | null = null;
+    if (componentId) {
+      if (!assetId) {
+        return NextResponse.json(
+          { success: false, error: 'A component/part can only be selected for a registered asset' },
+          { status: 400 },
+        );
+      }
+      const component = await db.componentRegistry.findUnique({
+        where: { id: String(componentId) },
+        select: { id: true, assetId: true, lifecycleStatus: true, componentCode: true, name: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Selected component/part was not found' }, { status: 404 });
+      }
+      if (component.assetId !== assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Selected component/part does not belong to the selected asset' },
+          { status: 400 },
+        );
+      }
+      resolvedComponentId = component.id;
     }
 
     let resolvedDepartmentId: string | null = departmentId || null;
@@ -307,6 +333,7 @@ export async function POST(request: NextRequest) {
         category: category || null,
         assetId: assetId || null,
         assetName: resolvedAssetName,
+        componentRegistryId: resolvedComponentId,
         location: location || null,
         departmentId: resolvedDepartmentId,
         plantId: resolvedPlantId,
@@ -320,6 +347,7 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
       },
       include: {
+        componentRegistry: { select: { id: true, componentCode: true, name: true, componentType: true, criticality: true, parentId: true } },
         requester: { select: { id: true, fullName: true, username: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
       },

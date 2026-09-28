@@ -66,6 +66,16 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Unlinked legacy equipment codes');
   });
 
+  it('maps one legacy equipment code to one existing Asset for all matching history', () => {
+    expect(route).toContain("formData.get('equipmentCodeMappings')");
+    expect(route).toContain('equipmentCodeMappingByCode');
+    expect(route).toContain('equipmentCodeMappingsApplied');
+    expect(route).not.toContain('db.asset.create');
+    expect(page).toContain('Apply Equipment Mappings & Re-audit');
+    expect(page).toContain('Map a code once and every historical row');
+    expect(page).toContain('Map to existing Asset...');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

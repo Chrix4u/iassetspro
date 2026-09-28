@@ -28,6 +28,26 @@ type ReportedTimeCorrection = {
   reason: string;
 };
 
+type EquipmentCodeMapping = {
+  equipmentCode: string;
+  assetId: string;
+};
+
+function parseEquipmentCodeMappings(raw: FormDataEntryValue | null): EquipmentCodeMapping[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('Invalid equipment-code mapping payload');
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('Invalid equipment-code mapping entry');
+    const row = item as Record<string, unknown>;
+    const equipmentCode = typeof row.equipmentCode === 'string' ? row.equipmentCode.trim() : '';
+    const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : '';
+    if (!equipmentCode) throw new Error('Equipment-code mapping requires an equipment code');
+    if (!assetId) throw new Error('Equipment-code mapping requires an assetId');
+    return { equipmentCode, assetId };
+  });
+}
+
 
 function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedTimeCorrection[] {
   if (typeof raw !== 'string' || !raw.trim()) return [];
@@ -158,10 +178,13 @@ export async function POST(request: NextRequest) {
     const reportedTimeCorrectionByRow = new Map(
       reportedTimeCorrections.map((correction) => [correction.rowNumber, correction]),
     );
+    const equipmentCodeMappings = parseEquipmentCodeMappings(formData.get('equipmentCodeMappings'));
+    const equipmentCodeMappingByCode = new Map(equipmentCodeMappings.map((mapping) => [mapping.equipmentCode, mapping]));
 
-    const referencedAssetIds = [...new Set(
-      overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
-    )];
+    const referencedAssetIds = [...new Set([
+      ...overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
+      ...equipmentCodeMappings.map((mapping) => mapping.assetId),
+    ])];
     const referencedAssets = referencedAssetIds.length
       ? await db.asset.findMany({
           where: { id: { in: referencedAssetIds } },
@@ -176,6 +199,20 @@ export async function POST(request: NextRequest) {
         error: 'One or more reconciliation Assets no longer exist',
         missingAssetIds,
       }, { status: 400 });
+    }
+
+    for (const mapping of equipmentCodeMappings) {
+      const asset = assetById.get(mapping.assetId);
+      if (!asset) continue;
+      const syntheticCode = `APP-ASSET:${asset.id}`;
+      if (!machines.some((machine) => machine.code === syntheticCode)) {
+        machines.push({
+          code: syntheticCode,
+          name: asset.name,
+          priority: criticalityToLegacyPriority(asset.criticality),
+          order: null,
+        });
+      }
     }
 
     const reconciliation: Array<{
@@ -212,7 +249,19 @@ export async function POST(request: NextRequest) {
       }
 
       const override = overrideByRow.get(rowNumber);
-      if (!override) return job;
+      if (!override) {
+        const equipmentCode = String(job.equipmentCode || '').trim();
+        const codeMapping = equipmentCodeMappingByCode.get(equipmentCode);
+        if (!codeMapping) return job;
+        const asset = assetById.get(codeMapping.assetId);
+        if (!asset) return job;
+        return {
+          ...job,
+          equipmentCode: `APP-ASSET:${asset.id}`,
+          equipmentDescription: asset.assetTag ? `${asset.name} [${asset.assetTag}]` : asset.name,
+          priority: criticalityToLegacyPriority(asset.criticality),
+        };
+      }
 
       if (override.action === 'asset') {
         const asset = assetById.get(override.assetId!);
@@ -401,6 +450,13 @@ export async function POST(request: NextRequest) {
           reportedTimeCorrectionsSubmitted: reportedTimeCorrections.length,
           reportedTimeCorrectionsApplied: appliedReportedTimeCorrections.length,
           reportedTimeCorrections: appliedReportedTimeCorrections,
+          equipmentCodeMappingsSubmitted: equipmentCodeMappings.length,
+          equipmentCodeMappingsApplied: equipmentCodeMappings.filter((mapping) => assetById.has(mapping.assetId)).length,
+          equipmentCodeMappings: equipmentCodeMappings.map((mapping) => ({
+            ...mapping,
+            assetName: assetById.get(mapping.assetId)?.name || null,
+            assetTag: assetById.get(mapping.assetId)?.assetTag || null,
+          })),
         },
         workbook: {
           jobRecords: jobs.length,

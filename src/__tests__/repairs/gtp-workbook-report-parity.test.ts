@@ -60,4 +60,9 @@ describe('GTP legacy workbook report parity', () => {
     expect(page).toContain('<BarChart');
   });
 
+  it('keeps breakdown work orders inside the Repairs/RWOP report scope', () => {
+    const maintenanceRoute = fs.readFileSync('src/app/api/reports/maintenance/route.ts', 'utf8');
+    expect(maintenanceRoute).toContain("['breakdown', 'corrective', 'emergency']");
+  });
+
 });

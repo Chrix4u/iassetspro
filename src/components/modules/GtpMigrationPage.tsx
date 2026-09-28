@@ -537,9 +537,11 @@ export function GtpMigrationPage() {
               </div>
             </div>}
             <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
-              {result.importPreview.safeToInsert
-                ? 'Preview gate is clean: no deterministic MR/WO number collisions were found. Historical writes are still disabled.'
-                : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
+              {result.importPreview.manifest?.executionReady === true
+                ? 'Execution gate is ready: workbook identity, Asset linkage, deterministic MR/WO identities and server approval are all satisfied.'
+                : result.importPreview.safeToInsert
+                  ? 'Preview gate is clean, but execution remains locked until the server signing key is configured and every row is bound to an active Asset.'
+                  : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -558,6 +560,15 @@ export function GtpMigrationPage() {
             </div>
           </CardContent>}
   
+      </Card>}
+
+        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0
+  ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' workbook-blocked row(s) first. Historical import remains disabled.'
+  : (result.tenantReadiness?.tenantBlockedRows || 0) > 0
+    ? 'Workbook blockers are resolved, but ' + result.tenantReadiness!.tenantBlockedRows.toLocaleString() + ' row(s) still lack an iAssetsPro Asset link. Historical import remains disabled.'
+    : result.importPreview?.manifest?.executionReady === true
+      ? 'Workbook, Asset linkage and signed approval gates are satisfied. Execute only the exact fingerprinted preview shown above.'
+      : 'Workbook and tenant Asset-link blockers are resolved. Generate a signed transactional preview; execution remains locked until all approval gates are satisfied.'}</p></CardContent></Card>
       <ResponsiveDialog open={importConfirmOpen} onOpenChange={(open) => { if (!importing) setImportConfirmOpen(open); }}>
         <div className="space-y-4">
           <div>
@@ -592,13 +603,6 @@ export function GtpMigrationPage() {
           </div>
         </div>
       </ResponsiveDialog>
-      </Card>}
-
-        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0
-  ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' workbook-blocked row(s) first. Historical import remains disabled.'
-  : (result.tenantReadiness?.tenantBlockedRows || 0) > 0
-    ? 'Workbook blockers are resolved, but ' + result.tenantReadiness!.tenantBlockedRows.toLocaleString() + ' row(s) still lack an iAssetsPro Asset link. Historical import remains disabled.'
-    : 'Workbook and tenant Asset-link blockers are resolved. The next stage is a previewable transactional import with explicit approval, idempotency checks and rollback protection.'}</p></CardContent></Card>
       </>}
     </div>
   );

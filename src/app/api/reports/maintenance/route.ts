@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
     const departmentId = searchParams.get('departmentId');
     const plantId = searchParams.get('plantId');
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
+    const priority = searchParams.get('priority');
+    const tradeActivity = searchParams.get('tradeActivity');
+    const assetId = searchParams.get('assetId');
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
@@ -37,6 +40,9 @@ export async function GET(request: NextRequest) {
     if (Object.keys(dateFilter).length > 0) baseFilter.createdAt = dateFilter;
     if (departmentId) baseFilter.departmentId = departmentId;
     if (plantId && !plantScope.isScoped) baseFilter.plantId = plantId;
+    if (priority) baseFilter.priority = priority;
+    if (tradeActivity) baseFilter.tradeActivity = tradeActivity;
+    if (assetId) baseFilter.assetId = assetId;
     if (moduleFilter === 'repairs') {
       (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -63,6 +69,7 @@ export async function GET(request: NextRequest) {
         sparePartReturns: true,
         damagedToolReports: true,
         shiftHandovers: true,
+        maintenanceRequest: { select: { createdAt: true, machineDownStatus: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -138,6 +145,8 @@ export async function GET(request: NextRequest) {
     if (Object.keys(dateFilter).length > 0) mrFilter.createdAt = dateFilter;
     if (departmentId) mrFilter.departmentId = departmentId;
     if (plantId && !plantScope.isScoped) mrFilter.plantId = plantId;
+    if (priority) mrFilter.priority = priority;
+    if (assetId) mrFilter.assetId = assetId;
     const mrs = await db.maintenanceRequest.findMany({
       where: Object.keys(mrFilter).length > 0 ? mrFilter : undefined,
       include: {
@@ -491,14 +500,14 @@ export async function GET(request: NextRequest) {
 
     // ========== RESPONSE, SLA & CLOSURE LATENCY ==========
     const responseHours = workOrders
-      .map(wo => hoursBetween(wo.createdAt, wo.actualStart))
+      .map(wo => hoursBetween(wo.maintenanceRequest?.createdAt || wo.createdAt, wo.actualStart))
       .filter((value): value is number => value !== null);
     const closureLagHours = workOrders
       .map(wo => hoursBetween(wo.actualEnd, wo.repairCompletion?.plannerClosedAt))
       .filter((value): value is number => value !== null);
     const emergencyResponseHours = workOrders
       .filter(wo => wo.type === 'emergency')
-      .map(wo => hoursBetween(wo.createdAt, wo.actualStart))
+      .map(wo => hoursBetween(wo.maintenanceRequest?.createdAt || wo.createdAt, wo.actualStart))
       .filter((value): value is number => value !== null);
     const responseAndSla = {
       avgResponseHours: responseHours.length ? round2(responseHours.reduce((a, b) => a + b, 0) / responseHours.length) : 0,
@@ -510,7 +519,12 @@ export async function GET(request: NextRequest) {
     };
 
     // ========== BREAKDOWN PERFORMANCE / GTP LEGACY PARITY ==========
-    const breakdownOrders = workOrders.filter(wo => ['corrective', 'emergency'].includes(wo.type));
+    const breakdownOrders = workOrders.filter(wo =>
+      wo.type === 'breakdown'
+      || wo.type === 'emergency'
+      || wo.maintenanceRequest?.machineDownStatus === true
+      || (wo.workOrderDowntimes || []).length > 0
+    );
     const isoWeekKey = (date: Date) => {
       const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
       const day = utc.getUTCDay() || 7;
@@ -544,9 +558,10 @@ export async function GET(request: NextRequest) {
 
     for (const wo of breakdownOrders) {
       const asset = getAssetDetails(wo);
-      const responseMinutes = hoursBetween(wo.createdAt, wo.actualStart);
+      const reportedAt = wo.maintenanceRequest?.createdAt || wo.createdAt;
+      const responseMinutes = hoursBetween(reportedAt, wo.actualStart);
       const repairMinutes = hoursBetween(wo.actualStart, wo.actualEnd);
-      const restorationMinutes = hoursBetween(wo.createdAt, wo.actualEnd);
+      const restorationMinutes = hoursBetween(reportedAt, wo.actualEnd);
       const recordedDowntimeMinutes = (wo.workOrderDowntimes || [])
         .reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
 
@@ -565,7 +580,7 @@ export async function GET(request: NextRequest) {
         bucket.recordedDowntimeMinutes += recordedDowntimeMinutes;
       };
 
-      const weekKey = isoWeekKey(wo.createdAt);
+      const weekKey = isoWeekKey(reportedAt);
       const weekBucket = breakdownWeeklyMap.get(weekKey) || newBreakdownBucket();
       addToBucket(weekBucket);
       breakdownWeeklyMap.set(weekKey, weekBucket);

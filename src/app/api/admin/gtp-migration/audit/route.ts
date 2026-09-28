@@ -347,6 +347,23 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      // A duplicate legacy machine code may have been resolved to a specific
+      // master variant by description/priority. A code-wide Asset mapping would
+      // collapse distinct physical machines, so require a row-level admin override.
+      if (row.machineResolution === 'duplicate_resolved') {
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: null,
+          assetTag: null,
+          assetName: null,
+          resolution: 'duplicate_variant_unconfirmed' as const,
+          tenantReady: false,
+        };
+      }
+
       const mappedAssetId = equipmentMappingByCode.get(row.equipmentCode);
       if (mappedAssetId) {
         const mappedAsset = assetById.get(mappedAssetId);

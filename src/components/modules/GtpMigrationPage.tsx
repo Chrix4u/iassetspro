@@ -17,7 +17,7 @@ type AuditIssue = { code: string; severity: 'warning' | 'error'; message: string
 type AuditResult = {
   dryRun: boolean;
   importLocked: boolean;
-  source: { fileName: string; sizeBytes: number; sheets: string[]; hasVba: boolean };
+  source: { fileName: string; sizeBytes: number; sha256?: string; sheets: string[]; hasVba: boolean };
   workbook: { jobRecords: number; machineMasterRows: number; uniqueMachineCodes: number };
   summary: {
     totalRows: number; importReadyRows: number; blockedRows: number; breakdownRows: number;
@@ -58,6 +58,7 @@ type AuditResult = {
     fingerprint?: string;
     sourceSha256?: string;
     identityConvention?: { maintenanceRequest: string; workOrder: string };
+    manifest?: Record<string, unknown>;
     sourceIdentityCollisions?: Array<{
       legacyWorkOrderNo: string;
       count: number;
@@ -206,6 +207,21 @@ export function GtpMigrationPage() {
     a.download = 'gtp-workbook-audit.json';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadPreviewManifest = () => {
+    const preview = result?.importPreview;
+    if (!preview?.safeToInsert || !preview.manifest || !preview.fingerprint) {
+      return toast.error('Generate a clean transactional preview before downloading the approved manifest');
+    }
+    const blob = new Blob([JSON.stringify(preview.manifest, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gtp-approved-preview-${preview.fingerprint.slice(0, 12)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Approved GTP preview manifest downloaded');
   };
 
   return (
@@ -457,9 +473,17 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Identity collisions</p><p className="text-xl font-semibold">{((result.importPreview.sourceIdentityCollisions?.length || 0) + (result.importPreview.idempotencyCollisions?.length || 0)).toLocaleString()}</p></div>
             </div>
             {result.importPreview.fingerprint && <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-              <p className="font-medium">Preview fingerprint</p>
-              <p className="mt-1 break-all font-mono text-muted-foreground">{result.importPreview.fingerprint}</p>
-              <p className="mt-2 text-muted-foreground">Any workbook or reconciliation change produces a different fingerprint. A future import must require this exact approved fingerprint.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-medium">Preview fingerprint</p>
+                  <p className="mt-1 break-all font-mono text-muted-foreground">{result.importPreview.fingerprint}</p>
+                  <p className="mt-2 text-muted-foreground">Any workbook or reconciliation change produces a different fingerprint. A future import must require this exact approved fingerprint.</p>
+                </div>
+                {result.importPreview.safeToInsert && result.importPreview.manifest && <Button size="sm" variant="outline" onClick={downloadPreviewManifest} className="shrink-0 gap-2">
+                  <Download className="h-4 w-4" />
+                  Download Approved Preview Manifest
+                </Button>}
+              </div>
             </div>}
             <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
               {result.importPreview.safeToInsert

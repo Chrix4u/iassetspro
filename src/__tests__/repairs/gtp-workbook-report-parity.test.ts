@@ -22,6 +22,19 @@ describe('GTP legacy workbook report parity', () => {
     expect(service).toContain('(wo.workOrderDowntimes || []).length > 0');
   });
 
+  it('threads familiar GTP machine, trade and priority filters through reporting', () => {
+    const reportingPage = page;
+    const maintenanceRoute = fs.readFileSync('src/app/api/reports/maintenance/route.ts', 'utf8');
+    const pdfRoute = fs.readFileSync('src/app/api/repairs/reports/route.ts', 'utf8');
+    expect(reportingPage).toContain('Machine / Asset');
+    expect(reportingPage).toContain('tradeActivity');
+    expect(reportingPage).toContain('priority');
+    expect(maintenanceRoute).toContain("searchParams.get('tradeActivity')");
+    expect(maintenanceRoute).toContain("searchParams.get('assetId')");
+    expect(pdfRoute).toContain("searchParams.get('trade')");
+    expect(pdfRoute).toContain("searchParams.get('assetId')");
+  });
+
   it('keeps legacy sums separate from modern averages and MTTR', () => {
     expect(service).toContain('legacyResponseByWeek');
     expect(service).toContain('legacyResponseByMachine');

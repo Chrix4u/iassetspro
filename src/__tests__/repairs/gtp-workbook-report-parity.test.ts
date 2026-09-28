@@ -41,4 +41,23 @@ describe('GTP legacy workbook report parity', () => {
     expect(service).toContain('avgRepairMinutes');
     expect(page).toContain('exact GTP workbook parity sheets');
   });
+  it('renders all five workbook graphs with matching chart families', () => {
+    const maintenanceRoute = fs.readFileSync('src/app/api/reports/maintenance/route.ts', 'utf8');
+    expect(maintenanceRoute).toContain('legacyParity');
+    expect(maintenanceRoute).toContain('breakdownsByMachine');
+    expect(maintenanceRoute).toContain('breakdownsByWeek');
+    expect(maintenanceRoute).toContain('downtimeByMachine');
+    expect(maintenanceRoute).toContain('responseByWeek');
+    expect(maintenanceRoute).toContain('responseByMachine');
+
+    expect(page).toContain('GTP Workbook Graph Parity');
+    expect(page).toContain('Machine repair downtime per week');
+    expect(page).toContain('Machine breakdown occurrence per machine');
+    expect(page).toContain('Machine breakdown per week');
+    expect(page).toContain('Response to repair per week');
+    expect(page).toContain('Response time to repair per machine');
+    expect(page).toContain('<LineChart');
+    expect(page).toContain('<BarChart');
+  });
+
 });

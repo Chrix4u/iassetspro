@@ -7,6 +7,7 @@ const app = fs.readFileSync('src/components/EAMApp.tsx', 'utf8');
 const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
 
+// PR CI synchronization marker: console contract remains dry-run only.
 describe('GTP migration reconciliation console', () => {
   it('is admin-only and dry-run only', () => {
     expect(route).toContain('isAdmin(session)');

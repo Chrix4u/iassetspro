@@ -52,7 +52,9 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain('verifyManifestSignature');
     expect(importRoute).toContain('workbookSha256 !== manifest.source.sha256');
     expect(importRoute).toContain('manifest.migrationActorUserId !== session.userId');
-    expect(importRoute).toContain("rows.some((row) => !row.assetId)");
+    expect(importRoute).toContain("row.assetResolution !== 'non_equipment'");
+    expect(importRoute).toContain('Every equipment-backed import row must resolve to a real Asset');
+    expect(importRoute).toContain("'Non-equipment work'");
     expect(importRoute).toContain('db.$transaction');
     expect(importRoute).toContain('tx.maintenanceRequest.create');
     expect(importRoute).toContain('tx.workOrder.create');

@@ -93,6 +93,12 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Historical writes are still disabled');
   });
 
+  it('keeps normal dry-run audit separate from transactional preview mode', () => {
+    expect(page).toContain('onClick={() => void runAudit()}');
+    expect(page).toContain('onClick={() => void runAudit(true)}');
+    expect(page).not.toContain('onClick={runAudit}');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

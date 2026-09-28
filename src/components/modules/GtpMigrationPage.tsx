@@ -105,7 +105,7 @@ type AuditResult = {
     assetId: string | null;
     assetTag: string | null;
     assetName: string | null;
-    resolution: 'asset_tag_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'unlinked';
+    resolution: 'asset_tag_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'duplicate_variant_unconfirmed' | 'unlinked';
     tenantReady: boolean;
   }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
@@ -322,7 +322,7 @@ export function GtpMigrationPage() {
           <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Completed</p><p className="text-sm font-medium">{new Date(lastImport.completedAt).toLocaleString()}</p></div>
           {lastImport.sourceSha256 && <div className="rounded-lg border bg-background/70 p-3 sm:col-span-2 lg:col-span-4"><p className="text-xs text-muted-foreground">Workbook SHA-256</p><p className="mt-1 break-all font-mono text-xs">{lastImport.sourceSha256}</p></div>}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
@@ -491,6 +491,39 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Asset-link blocked</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantBlockedRows.toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Direct Asset-tag matches</p><p className="text-xl font-semibold">{result.tenantReadiness.directlyMatchedAssetTags.toLocaleString()}</p></div>
             </div>
+            {(result.assetLinkageRows || []).some((row) => row.resolution === 'duplicate_variant_unconfirmed') && <Card className="border-amber-200">
+          <CardHeader>
+            <CardTitle className="text-base">Duplicate Machine Variant Asset Confirmation</CardTitle>
+            <CardDescription>These legacy jobs were deterministically resolved to a machine-master variant, but a code-wide Asset mapping would be unsafe. Confirm the physical Asset for each row.</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Legacy WO</TableHead><TableHead>Code</TableHead><TableHead>Resolved machine</TableHead><TableHead>Existing Asset</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {(result.assetLinkageRows || []).filter((row) => row.resolution === 'duplicate_variant_unconfirmed').map((row) => (
+                  <TableRow key={String(row.legacyRowNumber) + row.legacyWorkOrderNo}>
+                    <TableCell className="font-mono">{row.legacyWorkOrderNo}</TableCell>
+                    <TableCell className="font-mono">{row.equipmentCode}</TableCell>
+                    <TableCell>{row.equipmentName}</TableCell>
+                    <TableCell className="min-w-[360px]">
+                      <AsyncSearchableSelect
+                        value={overrides[String(row.legacyRowNumber)]?.assetId || ''}
+                        onValueChange={(assetId) => setRowOverride(row.legacyRowNumber, { action: 'asset', assetId })}
+                        fetchOptions={fetchAssetOptions}
+                        placeholder="Confirm exact Asset..."
+                        searchPlaceholder="Search asset name or tag..."
+                        emptyMessage="No matching Assets."
+                        clearable
+                        groupBy={false}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>}
+
             {result.tenantReadiness.unlinkedEquipmentCodes.length > 0 && <>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>

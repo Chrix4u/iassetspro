@@ -83,6 +83,9 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Apply Equipment Mappings & Re-audit');
     expect(page).toContain('Map each legacy machine code to an existing Asset');
     expect(page).toContain('Map to existing Asset...');
+    expect(route).toContain("resolution: 'legacy_metadata_match'");
+    expect(route).toContain('legacyMetadataMatchedRows');
+    expect(page).toContain('Legacy metadata matches');
     expect(route).toContain("resolution: 'duplicate_variant_unconfirmed'");
     expect(page).toContain('Duplicate Machine Variant Asset Confirmation');
     expect(page).toContain('Confirm exact Asset...');

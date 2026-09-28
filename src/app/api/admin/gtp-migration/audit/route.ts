@@ -97,6 +97,13 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
 }
 
 const asText = (value: unknown) => String(value ?? '').trim();
+const asIso = (value: Date | string | number | null | undefined): string | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+const mrPriorityFromWorkOrder = (priority: string | null): string =>
+  priority === 'critical' ? 'urgent' : (priority || 'medium');
 const asNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
@@ -181,6 +188,7 @@ export async function POST(request: NextRequest) {
       reportedTimeCorrections.map((correction) => [correction.rowNumber, correction]),
     );
     const equipmentMappings = parseEquipmentMappings(formData.get('equipmentMappings'));
+    const previewRequested = formData.get('preview') === 'true';
     const equipmentMappingByCode = new Map(equipmentMappings.map((mapping) => [mapping.equipmentCode, mapping.assetId]));
 
     const referencedAssetIds = [...new Set([
@@ -373,6 +381,117 @@ export async function POST(request: NextRequest) {
         .map((row) => row.equipmentCode),
     )].sort();
 
+    const previewGateOpen = audit.summary.blockedRows === 0 && tenantBlockedRows === 0;
+    let importPreview: Record<string, unknown> = {
+      requested: previewRequested,
+      available: previewGateOpen,
+      safeToInsert: false,
+      blockers: [
+        ...(audit.summary.blockedRows > 0 ? [`${audit.summary.blockedRows} workbook row(s) remain blocked`] : []),
+        ...(tenantBlockedRows > 0 ? [`${tenantBlockedRows} row(s) still lack an iAssetsPro Asset link`] : []),
+      ],
+    };
+
+    if (previewRequested && previewGateOpen) {
+      const linkageByRow = new Map(
+        assetLinkageRows.map((row) => [row.legacyRowNumber, row]),
+      );
+      const proposedRows = audit.rows
+        .filter((row) => row.importReady)
+        .map((row) => {
+          const job = jobs.find((candidate) => candidate.rowNumber === row.legacyRowNumber);
+          const linkage = linkageByRow.get(row.legacyRowNumber ?? null);
+          const legacyNo = row.legacyWorkOrderNo;
+          const requestNumber = `GTP-MR-${legacyNo}`;
+          const woNumber = `GTP-WO-${legacyNo}`;
+          const title = job?.description || `${row.mappedType} - ${row.equipmentName || 'Historical maintenance'}`;
+
+          return {
+            legacyRowNumber: row.legacyRowNumber ?? null,
+            legacyWorkOrderNo: legacyNo,
+            sourceType: row.mappedType,
+            sourceStatus: row.mappedStatus,
+            statusSource: row.statusSource,
+            assetId: linkage?.assetId || null,
+            assetTag: linkage?.assetTag || null,
+            assetName: linkage?.assetName || row.equipmentName || null,
+            assetResolution: linkage?.resolution || null,
+            reportedAt: asIso(job?.reportedAt),
+            workStartedAt: asIso(job?.workStartedAt),
+            workCompletedAt: asIso(job?.workCompletedAt),
+            trade: canonicalizeGtpTrade(job?.trade || null),
+            legacyPeople: {
+              requestedBy: job?.requestedBy || null,
+              plannedBy: job?.plannedBy || null,
+              assignedTo: job?.assignedTo || null,
+              department: job?.department || null,
+            },
+            proposedMaintenanceRequest: {
+              requestNumber,
+              title,
+              priority: mrPriorityFromWorkOrder(row.mappedPriority),
+              assetId: linkage?.assetId || null,
+              assetName: linkage?.assetName || row.equipmentName || null,
+              status: row.mappedStatus === 'closed' ? 'converted' : 'pending',
+              workflowStatus: row.mappedStatus === 'closed' ? 'closed' : 'work_order_created',
+              createdAt: asIso(job?.reportedAt),
+            },
+            proposedWorkOrder: {
+              woNumber,
+              title,
+              type: row.mappedType,
+              priority: row.mappedPriority || 'medium',
+              status: row.mappedStatus || 'requested',
+              assetId: linkage?.assetId || null,
+              assetName: linkage?.assetName || row.equipmentName || null,
+              tradeActivity: canonicalizeGtpTrade(job?.trade || null),
+              actualStart: asIso(job?.workStartedAt),
+              actualEnd: asIso(job?.workCompletedAt),
+            },
+          };
+        });
+
+      const woNumbers = proposedRows.map((row) => row.proposedWorkOrder.woNumber);
+      const requestNumbers = proposedRows.map((row) => row.proposedMaintenanceRequest.requestNumber);
+      const [existingWorkOrders, existingRequests] = await Promise.all([
+        woNumbers.length
+          ? db.workOrder.findMany({ where: { woNumber: { in: woNumbers } }, select: { id: true, woNumber: true } })
+          : [],
+        requestNumbers.length
+          ? db.maintenanceRequest.findMany({ where: { requestNumber: { in: requestNumbers } }, select: { id: true, requestNumber: true } })
+          : [],
+      ]);
+      const existingWoNumbers = new Set(existingWorkOrders.map((row) => row.woNumber));
+      const existingRequestNumbers = new Set(existingRequests.map((row) => row.requestNumber));
+      const collisions = proposedRows
+        .filter((row) => existingWoNumbers.has(row.proposedWorkOrder.woNumber)
+          || existingRequestNumbers.has(row.proposedMaintenanceRequest.requestNumber))
+        .map((row) => ({
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          woNumber: row.proposedWorkOrder.woNumber,
+          requestNumber: row.proposedMaintenanceRequest.requestNumber,
+          workOrderExists: existingWoNumbers.has(row.proposedWorkOrder.woNumber),
+          maintenanceRequestExists: existingRequestNumbers.has(row.proposedMaintenanceRequest.requestNumber),
+        }));
+
+      importPreview = {
+        requested: true,
+        available: true,
+        safeToInsert: collisions.length === 0,
+        blockers: collisions.length ? [`${collisions.length} idempotency collision(s) detected`] : [],
+        totalRows: proposedRows.length,
+        maintenanceRequestsToCreate: proposedRows.length,
+        workOrdersToCreate: proposedRows.length,
+        idempotencyCollisions: collisions,
+        migrationActorUserId: session.userId,
+        identityConvention: {
+          maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}',
+          workOrder: 'GTP-WO-{legacyWorkOrderNo}',
+        },
+        sample: proposedRows.slice(0, 100),
+      };
+    }
+
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
       code,
       affectedJobs: jobs.filter((job) => asText(job.equipmentCode) === code).length,
@@ -470,6 +589,7 @@ export async function POST(request: NextRequest) {
           };
         }),
         assetLinkageRows: assetLinkageRows.slice(0, 500),
+        importPreview,
         duplicateMachines,
         blankMachineCodeRows,
         tradeNormalizations: [...tradeMap.values()].sort((a, b) => b.count - a.count || a.from.localeCompare(b.from)),

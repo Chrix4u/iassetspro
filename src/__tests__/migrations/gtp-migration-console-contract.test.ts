@@ -52,6 +52,20 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('type="datetime-local"');
   });
 
+  it('previews legacy Machine master to Asset mapping without creating Assets', () => {
+    expect(route).toContain('machineAssetMapping');
+    expect(route).toContain("status = 'master_conflict'");
+    expect(route).toContain("status = 'needs_create'");
+    expect(route).toContain("status = 'matched_tag'");
+    expect(route).toContain("status = 'matched_name'");
+    expect(route).toContain('db.asset.findMany');
+    expect(route).not.toContain('db.asset.create');
+    expect(page).toContain('GTP Machine Master → iAssetsPro Assets');
+    expect(page).toContain('Needs new Asset');
+    expect(page).toContain('No Assets are created by this audit');
+    expect(page).toContain('target Plant, Asset Category');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

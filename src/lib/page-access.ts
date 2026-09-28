@@ -132,6 +132,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'settings-health': ['system_settings.view'],
   'settings-queues': ['system_settings.view'],
   'settings-preferences': ['system_settings.view'],
+  'settings-gtp-migration': ['system_settings.view'],
   // Observability & Historian (admin-only)
   'observability-dashboard': ['system_settings.view'],
   'historian-dashboard': ['system_settings.view'],
@@ -256,6 +257,7 @@ export const PAGE_MODULES: Record<string, string | string[]> = {
   'settings-health': 'core',
   'settings-queues': 'core',
   'settings-preferences': 'core',
+  'settings-gtp-migration': 'core',
   'observability-dashboard': 'core',
   'historian-dashboard': 'core',
   'assets': 'assets',

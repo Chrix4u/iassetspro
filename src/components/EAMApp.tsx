@@ -158,6 +158,7 @@ const PAGE_TITLES: Record<string, string> = {
   'settings-health': 'System Health',
   'settings-queues': 'Queue Manager',
   'settings-preferences': 'My Preferences',
+  'settings-gtp-migration': 'GTP Data Migration',
   // Observability
   'observability-dashboard': 'Observability',
   // Historian
@@ -315,6 +316,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'settings-health': () => import('./modules/SettingsPages').then(m => m.SystemHealthPage),
   'settings-queues': () => import('./modules/QueueManagerPage').then(m => m.default),
   'settings-preferences': () => import('./modules/SettingsPages').then(m => m.UserPreferencesPage),
+  'settings-gtp-migration': () => import('./modules/GtpMigrationPage').then(m => m.GtpMigrationPage),
   // Observability
   'observability-dashboard': () => import('./modules/ObservabilityPages').then(m => m.ObservabilityDashboard),
   // Historian

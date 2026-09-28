@@ -24,7 +24,9 @@ const PUBLIC_PATHS = [
   '/api/health',
   '/api/setup/first-admin',
 ];
-const INTERNAL_SECRET = process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025';
+function getInternalPmSecret(): string {
+  return process.env.PM_CRON_SECRET || '';
+}
 const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
   // Repairs composite resource/report surfaces — order matters.
   { prefix: '/api/repairs/material-requests', modules: ['repairs', 'inventory'] },
@@ -196,15 +198,22 @@ export default async function proxy(request: NextRequest) {
     return withSecurityHeaders(NextResponse.next());
   }
 
-  // Allow internal PM cron endpoint only while PM itself is operational.
-  if (pathname === '/api/pm-schedules/check-due') {
-    const cronSecret = request.headers.get('x-pm-cron-secret');
-    if (cronSecret === INTERNAL_SECRET) {
+  // Allow only the explicit internal PM automation endpoints, and only when
+  // PM_CRON_SECRET is configured. Never accept a known/default fallback secret.
+  const internalPmPaths = new Set([
+    '/api/pm-schedules/check-due',
+    '/api/pm-schedules/check-due-cron',
+    '/api/pm-triggers/evaluate',
+  ]);
+  if (internalPmPaths.has(pathname)) {
+    const cronSecret = request.headers.get('x-pm-cron-secret') || '';
+    const internalSecret = getInternalPmSecret();
+    if (internalSecret && cronSecret === internalSecret) {
       const blocked = await moduleGateResponse(pathname);
       if (blocked) return blocked;
       return withSecurityHeaders(NextResponse.next());
     }
-    // If no secret header, fall through to normal auth check
+    // Missing/invalid internal secret falls through to normal user auth.
   }
 
   // Check for Bearer token

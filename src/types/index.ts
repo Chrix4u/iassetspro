@@ -107,6 +107,7 @@ export interface MaintenanceRequest {
   machineDownStatus: boolean;
   assetId?: string;
   assetName?: string;
+  componentRegistryId?: string;
   location?: string;
   departmentId?: string;
   plantId?: string;
@@ -125,6 +126,8 @@ export interface MaintenanceRequest {
   updatedAt: string;
   // Joined
   department?: { id: string; name: string; code?: string; plantId?: string; supervisorId?: string | null } | null;
+  asset?: { id: string; name: string; assetTag?: string; serialNumber?: string; location?: string };
+  componentRegistry?: { id: string; componentCode: string; name: string; componentType?: string; criticality?: string; lifecycleStatus?: string; parentId?: string | null } | null;
   requester?: { id: string; fullName: string; username: string; department?: { id: string; name: string } | string };
   supervisor?: { id: string; fullName: string; username: string };
   approver?: { id: string; fullName: string; username: string };

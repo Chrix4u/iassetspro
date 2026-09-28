@@ -56,6 +56,12 @@ type AuditResult = {
     workOrdersToCreate?: number;
     migrationActorUserId?: string;
     identityConvention?: { maintenanceRequest: string; workOrder: string };
+    sourceIdentityCollisions?: Array<{
+      legacyWorkOrderNo: string;
+      count: number;
+      requestNumber: string;
+      woNumber: string;
+    }>;
     idempotencyCollisions?: Array<{
       legacyWorkOrderNo: string;
       woNumber: string;
@@ -446,7 +452,7 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rows in preview</p><p className="text-xl font-semibold">{(result.importPreview.totalRows || 0).toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Maintenance Requests</p><p className="text-xl font-semibold">{(result.importPreview.maintenanceRequestsToCreate || 0).toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Work Orders</p><p className="text-xl font-semibold">{(result.importPreview.workOrdersToCreate || 0).toLocaleString()}</p></div>
-              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">ID collisions</p><p className="text-xl font-semibold">{(result.importPreview.idempotencyCollisions?.length || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Identity collisions</p><p className="text-xl font-semibold">{((result.importPreview.sourceIdentityCollisions?.length || 0) + (result.importPreview.idempotencyCollisions?.length || 0)).toLocaleString()}</p></div>
             </div>
             <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
               {result.importPreview.safeToInsert

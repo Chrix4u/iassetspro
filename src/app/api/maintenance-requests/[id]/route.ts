@@ -35,6 +35,7 @@ export async function GET(
       where: { id },
       include: {
         asset: { select: { id: true, name: true, assetTag: true, serialNumber: true, location: true } },
+        componentRegistry: { select: { id: true, componentCode: true, name: true, componentType: true, criticality: true, lifecycleStatus: true, parentId: true } },
         requester: { select: { id: true, fullName: true, username: true, department: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },
@@ -167,7 +168,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'priority', 'category',
-      'assetId', 'assetName', 'location', 'departmentId', 'plantId', 'machineDownStatus',
+      'assetId', 'assetName', 'componentRegistryId', 'location', 'departmentId', 'plantId', 'machineDownStatus',
       'estimatedHours', 'slaHours', 'plannedStart', 'plannedEnd', 'notes',
     ];
 
@@ -186,6 +187,7 @@ export async function PUT(
       data: updateData,
       include: {
         asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+        componentRegistry: { select: { id: true, componentCode: true, name: true, componentType: true, criticality: true, lifecycleStatus: true, parentId: true } },
         requester: { select: { id: true, fullName: true, username: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },

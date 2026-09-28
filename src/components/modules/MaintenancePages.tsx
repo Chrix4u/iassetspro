@@ -389,7 +389,14 @@ export function MaintenanceRequestsPage() {
                   <TableCell className="hidden md:table-cell"><PriorityBadge priority={mr.priority} /></TableCell>
                   <TableCell><StatusBadge status={mr.status} /></TableCell>
                   <TableCell className="text-sm hidden lg:table-cell">{mr.requester?.fullName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{(mr as any).asset?.name || mr.assetName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[190px] hidden xl:table-cell">
+                    <div className="truncate">{mr.asset?.name || mr.assetName || '-'}</div>
+                    {mr.componentRegistry && (
+                      <div className="truncate text-[10px] font-medium text-emerald-700" title={`${mr.componentRegistry.componentCode} · ${mr.componentRegistry.name}`}>
+                        {mr.componentRegistry.componentCode} · {mr.componentRegistry.name}
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(mr.createdAt)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>

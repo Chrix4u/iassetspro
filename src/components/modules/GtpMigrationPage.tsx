@@ -42,6 +42,7 @@ type AuditResult = {
     tenantBlockedRows: number;
     unlinkedEquipmentCodes: string[];
     directlyMatchedAssetTags: number;
+    legacyMetadataMatchedRows?: number;
     adminAssetOverrides: number;
     legacyCodeMappingsSubmitted?: number;
     legacyCodeMappedRows?: number;
@@ -105,7 +106,7 @@ type AuditResult = {
     assetId: string | null;
     assetTag: string | null;
     assetName: string | null;
-    resolution: 'asset_tag_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'duplicate_variant_unconfirmed' | 'unlinked';
+    resolution: 'asset_tag_match' | 'legacy_metadata_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'duplicate_variant_unconfirmed' | 'unlinked';
     tenantReady: boolean;
   }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
@@ -490,6 +491,7 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Tenant-ready rows</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantReadyRows.toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Asset-link blocked</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantBlockedRows.toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Direct Asset-tag matches</p><p className="text-xl font-semibold">{result.tenantReadiness.directlyMatchedAssetTags.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Legacy metadata matches</p><p className="text-xl font-semibold">{(result.tenantReadiness.legacyMetadataMatchedRows || 0).toLocaleString()}</p></div>
             </div>
             {(result.assetLinkageRows || []).some((row) => row.resolution === 'duplicate_variant_unconfirmed') && <Card className="border-amber-200">
           <CardHeader>

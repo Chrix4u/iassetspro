@@ -46,6 +46,37 @@ type AuditResult = {
     nonEquipmentRows: number;
   };
   equipmentMappings?: Array<{ equipmentCode: string; assetId: string; assetTag: string | null; assetName: string | null }>;
+  importPreview?: {
+    requested: boolean;
+    available: boolean;
+    safeToInsert: boolean;
+    blockers: string[];
+    totalRows?: number;
+    maintenanceRequestsToCreate?: number;
+    workOrdersToCreate?: number;
+    migrationActorUserId?: string;
+    identityConvention?: { maintenanceRequest: string; workOrder: string };
+    idempotencyCollisions?: Array<{
+      legacyWorkOrderNo: string;
+      woNumber: string;
+      requestNumber: string;
+      workOrderExists: boolean;
+      maintenanceRequestExists: boolean;
+    }>;
+    sample?: Array<{
+      legacyRowNumber: number | null;
+      legacyWorkOrderNo: string;
+      sourceType: string;
+      sourceStatus: string | null;
+      assetName: string | null;
+      reportedAt: string | null;
+      workStartedAt: string | null;
+      workCompletedAt: string | null;
+      trade: string | null;
+      proposedMaintenanceRequest: { requestNumber: string; title: string; priority: string };
+      proposedWorkOrder: { woNumber: string; type: string; priority: string; status: string };
+    }>;
+  };
   assetLinkageRows?: Array<{
     legacyRowNumber: number | null;
     legacyWorkOrderNo: string;
@@ -91,7 +122,7 @@ export function GtpMigrationPage() {
     return Math.round((result.summary.importReadyRows / result.summary.totalRows) * 1000) / 10;
   }, [result]);
 
-  const runAudit = async () => {
+  const runAudit = async (previewRequested = false) => {
     if (!file) return toast.error('Choose the GTP workbook first');
     setAuditing(true);
     try {
@@ -119,6 +150,7 @@ export function GtpMigrationPage() {
         .filter(([, assetId]) => Boolean(assetId))
         .map(([equipmentCode, assetId]) => ({ equipmentCode, assetId }));
       if (legacyMappings.length) form.append('equipmentMappings', JSON.stringify(legacyMappings));
+      if (previewRequested) form.append('preview', 'true');
 
       const response = await api.post<AuditResult>('/api/admin/gtp-migration/audit', form, { timeout: 120000 });
       if (!response.success || !response.data) return toast.error(response.error || 'Workbook audit failed');
@@ -394,6 +426,49 @@ export function GtpMigrationPage() {
               <p className="text-xs text-muted-foreground">This audit never creates Assets. Missing machines must first be registered in Asset Management, then mapped here.</p>
             </>}
           </CardContent>
+        </Card>}
+
+        {result.summary.blockedRows === 0 && (result.tenantReadiness?.tenantBlockedRows || 0) === 0 && <Card className="border-blue-200">
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle className="text-base">Transactional Import Preview</CardTitle>
+                <CardDescription>Preview only — no records will be written. The server checks deterministic GTP identities for collisions before any future import can be enabled.</CardDescription>
+              </div>
+              <Button variant="outline" onClick={() => void runAudit(true)} disabled={auditing}>
+                {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Generate Transactional Import Preview
+              </Button>
+            </div>
+          </CardHeader>
+          {result.importPreview?.requested && <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rows in preview</p><p className="text-xl font-semibold">{(result.importPreview.totalRows || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Maintenance Requests</p><p className="text-xl font-semibold">{(result.importPreview.maintenanceRequestsToCreate || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Work Orders</p><p className="text-xl font-semibold">{(result.importPreview.workOrdersToCreate || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">ID collisions</p><p className="text-xl font-semibold">{(result.importPreview.idempotencyCollisions?.length || 0).toLocaleString()}</p></div>
+            </div>
+            <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
+              {result.importPreview.safeToInsert
+                ? 'Preview gate is clean: no deterministic MR/WO number collisions were found. Historical writes are still disabled.'
+                : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader><TableRow><TableHead>Legacy WO</TableHead><TableHead>Asset</TableHead><TableHead>Reported</TableHead><TableHead>Proposed MR</TableHead><TableHead>Proposed WO</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(result.importPreview.sample || []).slice(0, 50).map((row) => <TableRow key={row.legacyWorkOrderNo}>
+                    <TableCell className="font-mono">{row.legacyWorkOrderNo}</TableCell>
+                    <TableCell>{row.assetName || 'Non-equipment'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{row.reportedAt ? new Date(row.reportedAt).toLocaleString() : '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.proposedMaintenanceRequest.requestNumber}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.proposedWorkOrder.woNumber}</TableCell>
+                    <TableCell>{row.proposedWorkOrder.status}</TableCell>
+                  </TableRow>)}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>}
         </Card>}
 
         <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0

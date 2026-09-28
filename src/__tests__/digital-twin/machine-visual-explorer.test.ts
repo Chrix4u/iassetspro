@@ -38,6 +38,18 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Math.min(reportedTotalPages, 1000)');
   });
 
+  it('surfaces component maintenance intelligence inside the drill-down', () => {
+    expect(explorer).toContain("api.get('/api/component-registry/' + encodeURIComponent(selectedId))");
+    expect(explorer).toContain('Maintenance intelligence');
+    expect(explorer).toContain('Preventive maintenance');
+    expect(explorer).toContain('Store-linked spares');
+    expect(explorer).toContain('Required tools');
+    expect(explorer).toContain('Recent maintenance & work orders');
+    expect(explorer).toContain('maintenanceHistory');
+    expect(explorer).toContain('workOrderComponents');
+    expect(explorer).toContain('Loading component maintenance links...');
+  });
+
   it('has zoom controls and part-level AI generation', () => {
     expect(explorer).toContain('Math.min(4');
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");

@@ -61,6 +61,50 @@ export async function GET(
             },
           },
         },
+        pmSchedules: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            title: true,
+            frequencyType: true,
+            frequencyValue: true,
+            nextDueDate: true,
+            priority: true,
+            autoGenerateWO: true,
+          },
+          orderBy: [{ nextDueDate: 'asc' }, { title: 'asc' }],
+        },
+        maintenanceHistory: {
+          take: 6,
+          orderBy: [{ completedAt: 'desc' }, { startedAt: 'desc' }],
+          select: {
+            id: true,
+            maintenanceType: true,
+            description: true,
+            startedAt: true,
+            completedAt: true,
+            durationMinutes: true,
+            cost: true,
+            workOrder: {
+              select: { id: true, woNumber: true, title: true, status: true, type: true },
+            },
+            performedBy: {
+              select: { id: true, fullName: true, username: true },
+            },
+          },
+        },
+        workOrderComponents: {
+          take: 6,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            notes: true,
+            createdAt: true,
+            workOrder: {
+              select: { id: true, woNumber: true, title: true, status: true, type: true, actualEnd: true },
+            },
+          },
+        },
         predictiveModels: {
           select: { id: true, modelName: true, modelType: true, trainingStatus: true, accuracy: true },
           orderBy: { createdAt: 'desc' },
@@ -76,6 +120,7 @@ export async function GET(
             failureRecords: true,
             sparePartLinks: true,
             toolRequirements: true,
+            pmSchedules: true,
           },
         },
       },

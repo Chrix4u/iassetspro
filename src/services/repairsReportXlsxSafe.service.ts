@@ -1656,6 +1656,9 @@ type BreakdownPreparedData = {
     avgRepairMinutes: number;
     recordedDowntimeMinutes: number;
   }>;
+  machineWeekRows: Array<Record<string, string | number>>;
+  responseWeekRows: Array<{ week: string; breakdowns: number; avgResponseMinutes: number }>;
+  responseMachineRows: Array<{ assetName: string; assetTag: string; breakdowns: number; avgResponseMinutes: number }>;
   responseValues: number[];
   repairValues: number[];
   restorationValues: number[];
@@ -1799,12 +1802,58 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
     }))
     .sort((a, b) => b.breakdowns - a.breakdowns);
 
+  // GTP legacy workbook parity views.
+  const weeks = weeklyRows.map((row) => row.week);
+  const byMachineWeek = new Map<string, Map<string, number>>();
+  for (const row of detailRows) {
+    const machineKey = row.assetName + '|||' + row.assetTag;
+    const weekMap = byMachineWeek.get(machineKey) || new Map<string, number>();
+    weekMap.set(row.week, (weekMap.get(row.week) || 0) + 1);
+    byMachineWeek.set(machineKey, weekMap);
+  }
+  const machineWeekRows = [...byMachineWeek.entries()]
+    .map(([machineKey, weekMap]) => {
+      const [assetName, assetTag] = machineKey.split('|||');
+      const out: Record<string, string | number> = {
+        'Machine / Asset': assetName,
+        'Asset Tag': assetTag || '',
+        Total: [...weekMap.values()].reduce((sum, value) => sum + value, 0),
+      };
+      for (const week of weeks) out[week] = weekMap.get(week) || 0;
+      return out;
+    })
+    .sort((a, b) => Number(b.Total) - Number(a.Total) || String(a['Machine / Asset']).localeCompare(String(b['Machine / Asset'])));
+
+  const responseWeekRows = weeklyRows.map((row) => ({
+    week: row.week,
+    breakdowns: row.breakdowns,
+    avgResponseMinutes: row.avgResponseMinutes,
+  }));
+  const responseMachineRows = assetRows.map((row) => ({
+    assetName: row.assetName,
+    assetTag: row.assetTag,
+    breakdowns: row.breakdowns,
+    avgResponseMinutes: row.avgResponseMinutes,
+  }));
+
   const responseValues = detailRows.flatMap((row) => typeof row.responseMinutes === 'number' ? [row.responseMinutes] : []);
   const repairValues = detailRows.flatMap((row) => typeof row.repairMinutes === 'number' ? [row.repairMinutes] : []);
   const restorationValues = detailRows.flatMap((row) => typeof row.restorationMinutes === 'number' ? [row.restorationMinutes] : []);
   const totalRecordedDowntime = detailRows.reduce((sum, row) => sum + row.recordedDowntimeMinutes, 0);
 
-  return { detailRows, weeklyRows, assetRows, tradeRows, responseValues, repairValues, restorationValues, totalRecordedDowntime };
+  return {
+    detailRows,
+    weeklyRows,
+    assetRows,
+    tradeRows,
+    machineWeekRows,
+    responseWeekRows,
+    responseMachineRows,
+    responseValues,
+    repairValues,
+    restorationValues,
+    totalRecordedDowntime,
+  };
 }
 
 const BREAKDOWN_FREQUENCY_ASSET_COLUMNS: ReportColumn[] = [
@@ -1877,6 +1926,28 @@ async function exportBreakdownPerformanceReport(filters: ReportFilters, session:
   addDataSheet(wb, 'Weekly Trend', BREAKDOWN_WEEK_COLUMNS, data.weeklyRows);
   addDataSheet(wb, 'By Machine', BREAKDOWN_ASSET_COLUMNS, data.assetRows);
   addDataSheet(wb, 'By Trade', BREAKDOWN_TRADE_COLUMNS, data.tradeRows);
+
+  addAnalyticsSheet(wb, 'GTP No BD by Machine', data.assetRows.map((row) => ({
+    'Machine / Asset': row.assetName,
+    'Asset Tag': row.assetTag,
+    'No. of Breakdowns': row.breakdowns,
+  })));
+  addAnalyticsSheet(wb, 'GTP BD by Week', data.weeklyRows.map((row) => ({
+    Week: row.week,
+    'No. of Breakdowns': row.breakdowns,
+  })));
+  addAnalyticsSheet(wb, 'GTP BD Machine Week', data.machineWeekRows);
+  addAnalyticsSheet(wb, 'GTP Response by Week', data.responseWeekRows.map((row) => ({
+    Week: row.week,
+    Breakdowns: row.breakdowns,
+    'Avg Response (min)': row.avgResponseMinutes,
+  })));
+  addAnalyticsSheet(wb, 'GTP Response Machine', data.responseMachineRows.map((row) => ({
+    'Machine / Asset': row.assetName,
+    'Asset Tag': row.assetTag,
+    Breakdowns: row.breakdowns,
+    'Avg Response (min)': row.avgResponseMinutes,
+  })));
   return { buffer: generateXlsxBuffer(wb), filename: buildFilename('breakdown-performance-response-report') };
 }
 

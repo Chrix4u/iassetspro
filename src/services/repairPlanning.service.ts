@@ -316,7 +316,11 @@ export async function convertMRToWorkOrder(
         }
       }
 
-      const uniqueComponentIds = Array.from(new Set((payload.componentIds || []).filter(Boolean)));
+      // Carry the exact component requested on the MR into the WO automatically,
+      // while still allowing the planner to add related components during planning.
+      const uniqueComponentIds = Array.from(new Set(
+        [mr.componentRegistryId, ...(payload.componentIds || [])].filter((id): id is string => Boolean(id)),
+      ));
       if (uniqueComponentIds.length > 0) {
         if (!mr.assetId) {
           return { success: false as const, error: 'Cannot link components because the maintenance request has no registered asset' };

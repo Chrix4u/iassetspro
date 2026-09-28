@@ -495,23 +495,41 @@ export async function POST(request: NextRequest) {
         ...(sourceIdentityCollisions.length ? [`${sourceIdentityCollisions.length} duplicate legacy identity collision(s) detected`] : []),
         ...(collisions.length ? [`${collisions.length} existing database identity collision(s) detected`] : []),
       ];
-      const previewFingerprint = createHash('sha256')
-        .update(JSON.stringify({
-          sourceSha256,
+      const identityConvention = {
+        maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}',
+        workOrder: 'GTP-WO-{legacyWorkOrderNo}',
+      };
+      const manifestCore = {
+        schemaVersion: 'gtp-historical-import-preview/v1',
+        source: {
+          fileName: file.name,
+          sizeBytes: file.size,
+          sha256: sourceSha256,
+        },
+        reconciliation: {
           overrides: [...overrides].sort((a, b) => a.rowNumber - b.rowNumber),
           reportedTimeCorrections: [...reportedTimeCorrections].sort((a, b) => a.rowNumber - b.rowNumber),
           equipmentMappings: [...equipmentMappings].sort((a, b) => a.equipmentCode.localeCompare(b.equipmentCode)),
-          proposedIdentities: proposedRows.map((row) => ({
-            legacyWorkOrderNo: row.legacyWorkOrderNo,
-            requestNumber: row.proposedMaintenanceRequest.requestNumber,
-            woNumber: row.proposedWorkOrder.woNumber,
-            assetId: row.assetId,
-            reportedAt: row.reportedAt,
-            workStartedAt: row.workStartedAt,
-            workCompletedAt: row.workCompletedAt,
-          })),
-        }))
+        },
+        migrationActorUserId: session.userId,
+        identityConvention,
+        counts: {
+          rows: proposedRows.length,
+          maintenanceRequests: proposedRows.length,
+          workOrders: proposedRows.length,
+        },
+        rows: proposedRows,
+      };
+      const previewFingerprint = createHash('sha256')
+        .update(JSON.stringify(manifestCore))
         .digest('hex');
+      const approvedManifest = {
+        ...manifestCore,
+        generatedAt: new Date().toISOString(),
+        fingerprint: previewFingerprint,
+        safeToInsert: previewBlockers.length === 0,
+        blockers: previewBlockers,
+      };
 
       importPreview = {
         requested: true,
@@ -526,10 +544,8 @@ export async function POST(request: NextRequest) {
         migrationActorUserId: session.userId,
         fingerprint: previewFingerprint,
         sourceSha256,
-        identityConvention: {
-          maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}',
-          workOrder: 'GTP-WO-{legacyWorkOrderNo}',
-        },
+        identityConvention,
+        manifest: approvedManifest,
         sample: proposedRows.slice(0, 100),
       };
     }

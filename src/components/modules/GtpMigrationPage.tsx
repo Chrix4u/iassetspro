@@ -55,6 +55,8 @@ type AuditResult = {
     maintenanceRequestsToCreate?: number;
     workOrdersToCreate?: number;
     migrationActorUserId?: string;
+    fingerprint?: string;
+    sourceSha256?: string;
     identityConvention?: { maintenanceRequest: string; workOrder: string };
     sourceIdentityCollisions?: Array<{
       legacyWorkOrderNo: string;
@@ -454,6 +456,11 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Work Orders</p><p className="text-xl font-semibold">{(result.importPreview.workOrdersToCreate || 0).toLocaleString()}</p></div>
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Identity collisions</p><p className="text-xl font-semibold">{((result.importPreview.sourceIdentityCollisions?.length || 0) + (result.importPreview.idempotencyCollisions?.length || 0)).toLocaleString()}</p></div>
             </div>
+            {result.importPreview.fingerprint && <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+              <p className="font-medium">Preview fingerprint</p>
+              <p className="mt-1 break-all font-mono text-muted-foreground">{result.importPreview.fingerprint}</p>
+              <p className="mt-2 text-muted-foreground">Any workbook or reconciliation change produces a different fingerprint. A future import must require this exact approved fingerprint.</p>
+            </div>}
             <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
               {result.importPreview.safeToInsert
                 ? 'Preview gate is clean: no deterministic MR/WO number collisions were found. Historical writes are still disabled.'

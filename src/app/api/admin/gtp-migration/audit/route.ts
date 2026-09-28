@@ -344,12 +344,33 @@ export async function POST(request: NextRequest) {
         // Non-JSON free-text specifications are valid elsewhere; ignore them here.
       }
     }
-    const resolveLegacyMetadataAsset = (equipmentCode: string, equipmentName: string) => {
+    const resolveLegacyMetadataAsset = (
+      equipmentCode: string,
+      equipmentName: string,
+      mappedPriority?: string | null,
+    ) => {
       const candidates = tenantAssetsByLegacyCode.get(equipmentCode) || [];
       if (candidates.length === 1) return candidates[0];
       const normalizedName = normalizeIdentity(equipmentName);
       const exactNameMatches = candidates.filter((asset) => normalizeIdentity(asset.name) === normalizedName);
-      return exactNameMatches.length === 1 ? exactNameMatches[0] : null;
+      if (exactNameMatches.length === 1) return exactNameMatches[0];
+
+      const legacyPriority = mappedPriority === 'critical' ? 1
+        : mappedPriority === 'high' ? 2
+        : mappedPriority === 'medium' ? 3
+        : null;
+      if (legacyPriority && exactNameMatches.length > 1) {
+        const priorityMatches = exactNameMatches.filter((asset) => {
+          try {
+            const spec = JSON.parse(asset.specification || '{}') as Record<string, unknown>;
+            return Number(spec.legacyPriority) === legacyPriority;
+          } catch {
+            return false;
+          }
+        });
+        if (priorityMatches.length === 1) return priorityMatches[0];
+      }
+      return null;
     };
 
     const assetLinkageRows = readyAuditRows.map((row) => {
@@ -386,7 +407,7 @@ export async function POST(request: NextRequest) {
       // the same legacyCode metadata and the resolved machine name identifies
       // exactly one physical Asset. Otherwise require an explicit row override.
       if (row.machineResolution === 'duplicate_resolved') {
-        const legacyAsset = resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName);
+        const legacyAsset = resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName, row.mappedPriority);
         if (legacyAsset) {
           return {
             legacyRowNumber: row.legacyRowNumber ?? null,
@@ -430,7 +451,7 @@ export async function POST(request: NextRequest) {
       }
 
       const asset = tenantAssetByTag.get(row.equipmentCode)
-        || resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName);
+        || resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName, row.mappedPriority);
       const matchedByTag = asset?.assetTag === row.equipmentCode;
       return {
         legacyRowNumber: row.legacyRowNumber ?? null,

@@ -39,6 +39,13 @@ if [ ! -f .env ]; then
 fi
 echo "  .env: found"
 
+if ! grep -q '^GTP_MIGRATION_SIGNING_KEY=.' .env; then
+    echo "  WARNING: GTP_MIGRATION_SIGNING_KEY is not configured."
+    echo "           Historical GTP import execution will remain safely locked."
+else
+    echo "  GTP migration signing key: configured"
+fi
+
 if [ ! -f ".next/standalone/server.js" ]; then
     echo "ERROR: .next/standalone/server.js not found!"
     echo "  Run: git pull origin main"

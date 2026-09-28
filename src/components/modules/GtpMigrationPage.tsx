@@ -8,10 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 
 type AuditIssue = { code: string; severity: 'warning' | 'error'; message: string };
 type AuditResult = {
@@ -58,7 +60,16 @@ type AuditResult = {
     fingerprint?: string;
     sourceSha256?: string;
     identityConvention?: { maintenanceRequest: string; workOrder: string };
-    manifest?: Record<string, unknown>;
+    manifest?: {
+      generatedAt?: string;
+      fingerprint?: string;
+      safeToInsert?: boolean;
+      executionReady?: boolean;
+      blockers?: string[];
+      executionBlockers?: string[];
+      approval?: { algorithm: 'HMAC-SHA256'; signature: string } | null;
+      [key: string]: unknown;
+    };
     sourceIdentityCollisions?: Array<{
       legacyWorkOrderNo: string;
       count: number;
@@ -125,6 +136,9 @@ export function GtpMigrationPage() {
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
   const [equipmentMappings, setEquipmentMappings] = useState<Record<string, string>>({});
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [importConfirmation, setImportConfirmation] = useState('');
+  const [importing, setImporting] = useState(false);
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -207,6 +221,38 @@ export function GtpMigrationPage() {
     a.download = 'gtp-workbook-audit.json';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const executeHistoricalImport = async () => {
+    const preview = result?.importPreview;
+    const manifest = preview?.manifest;
+    const fingerprint = preview?.fingerprint;
+    if (!file || !manifest || !fingerprint || manifest.executionReady !== true) {
+      return toast.error('Generate an execution-ready signed preview first');
+    }
+    if (importConfirmation.trim() !== fingerprint) {
+      return toast.error('Confirmation fingerprint must exactly match the approved preview');
+    }
+
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('manifest', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'gtp-approved-preview.json');
+      form.append('fingerprint', fingerprint);
+      const response = await api.post<{ imported: number; fingerprint: string }>('/api/admin/gtp-migration/import', form, { timeout: 120000 });
+      if (!response.success || !response.data) {
+        return toast.error(response.error || 'Historical import failed');
+      }
+      toast.success(`Historical import completed · ${response.data.imported.toLocaleString()} work order(s) created`);
+      setImportConfirmOpen(false);
+      setImportConfirmation('');
+      await runAudit(true);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Historical import failed');
+    } finally {
+      setImporting(false);
+    }
   };
 
   const downloadPreviewManifest = () => {
@@ -479,16 +525,24 @@ export function GtpMigrationPage() {
                   <p className="mt-1 break-all font-mono text-muted-foreground">{result.importPreview.fingerprint}</p>
                   <p className="mt-2 text-muted-foreground">Any workbook or reconciliation change produces a different fingerprint. A future import must require this exact approved fingerprint.</p>
                 </div>
-                {result.importPreview.safeToInsert && result.importPreview.manifest && <Button size="sm" variant="outline" onClick={downloadPreviewManifest} className="shrink-0 gap-2">
-                  <Download className="h-4 w-4" />
-                  Download Approved Preview Manifest
-                </Button>}
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {result.importPreview.safeToInsert && result.importPreview.manifest && <Button size="sm" variant="outline" onClick={downloadPreviewManifest} className="gap-2">
+                    <Download className="h-4 w-4" />
+                    Download Approved Preview Manifest
+                  </Button>}
+                  {result.importPreview.manifest?.executionReady === true && <Button size="sm" onClick={() => { setImportConfirmation(''); setImportConfirmOpen(true); }} className="gap-2">
+                    <Database className="h-4 w-4" />
+                    Execute Historical Import
+                  </Button>}
+                </div>
               </div>
             </div>}
             <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
-              {result.importPreview.safeToInsert
-                ? 'Preview gate is clean: no deterministic MR/WO number collisions were found. Historical writes are still disabled.'
-                : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
+              {result.importPreview.manifest?.executionReady === true
+                ? 'Execution gate is ready: workbook identity, Asset linkage, deterministic MR/WO identities and server approval are all satisfied.'
+                : result.importPreview.safeToInsert
+                  ? 'Preview gate is clean, but execution remains locked until the server signing key is configured and every row is bound to an active Asset.'
+                  : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
             </div>
             <div className="overflow-x-auto">
               <Table>
@@ -506,13 +560,50 @@ export function GtpMigrationPage() {
               </Table>
             </div>
           </CardContent>}
-        </Card>}
+  
+      </Card>}
 
         <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0
   ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' workbook-blocked row(s) first. Historical import remains disabled.'
   : (result.tenantReadiness?.tenantBlockedRows || 0) > 0
     ? 'Workbook blockers are resolved, but ' + result.tenantReadiness!.tenantBlockedRows.toLocaleString() + ' row(s) still lack an iAssetsPro Asset link. Historical import remains disabled.'
-    : 'Workbook and tenant Asset-link blockers are resolved. The next stage is a previewable transactional import with explicit approval, idempotency checks and rollback protection.'}</p></CardContent></Card>
+    : result.importPreview?.manifest?.executionReady === true
+      ? 'Workbook, Asset linkage and signed approval gates are satisfied. Execute only the exact fingerprinted preview shown above.'
+      : 'Workbook and tenant Asset-link blockers are resolved. Generate a signed transactional preview; execution remains locked until all approval gates are satisfied.'}</p></CardContent></Card>
+      <ResponsiveDialog open={importConfirmOpen} onOpenChange={(open) => { if (!importing) setImportConfirmOpen(open); }}>
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold">Execute GTP Historical Import</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This will create the approved historical Maintenance Request and Work Order records in one database transaction. Any row failure rolls the complete batch back.
+            </p>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <p className="text-xs font-medium">Approved fingerprint</p>
+            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{result?.importPreview?.fingerprint || '—'}</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="gtp-import-confirmation">Type the complete fingerprint to confirm</Label>
+            <Input
+              id="gtp-import-confirmation"
+              value={importConfirmation}
+              onChange={(event) => setImportConfirmation(event.target.value)}
+              placeholder="Paste the approved fingerprint"
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setImportConfirmOpen(false)} disabled={importing}>Cancel</Button>
+            <Button
+              onClick={() => void executeHistoricalImport()}
+              disabled={importing || !result?.importPreview?.fingerprint || importConfirmation.trim() !== result.importPreview.fingerprint}
+            >
+              {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Database className="mr-2 h-4 w-4" />}
+              {importing ? 'Importing…' : 'Execute Approved Import'}
+            </Button>
+          </div>
+        </div>
+      </ResponsiveDialog>
       </>}
     </div>
   );

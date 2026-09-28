@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
+import { fingerprintManifestCore, signManifestFingerprint } from '@/lib/gtp-migration-manifest';
 import * as XLSX from 'xlsx';
 import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -520,15 +521,22 @@ export async function POST(request: NextRequest) {
         },
         rows: proposedRows,
       };
-      const previewFingerprint = createHash('sha256')
-        .update(JSON.stringify(manifestCore))
-        .digest('hex');
+      const previewFingerprint = fingerprintManifestCore(manifestCore);
+      const approvalSignature = signManifestFingerprint(previewFingerprint);
+      const executionBlockers = [
+        ...previewBlockers,
+        ...(!approvalSignature ? ['GTP_MIGRATION_SIGNING_KEY is not configured on this server'] : []),
+        ...(proposedRows.some((row) => !row.assetId) ? ['Every historical row must resolve to a real Asset before write execution'] : []),
+      ];
       const approvedManifest = {
         ...manifestCore,
         generatedAt: new Date().toISOString(),
         fingerprint: previewFingerprint,
+        approval: approvalSignature ? { algorithm: 'HMAC-SHA256', signature: approvalSignature } : null,
         safeToInsert: previewBlockers.length === 0,
+        executionReady: executionBlockers.length === 0,
         blockers: previewBlockers,
+        executionBlockers,
       };
 
       importPreview = {

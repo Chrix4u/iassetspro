@@ -101,7 +101,7 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Generate Transactional Import Preview');
     expect(page).toContain('Preview only — no records will be written');
     expect(page).toContain('Preview fingerprint');
-    expect(page).toContain('Historical writes are still disabled');
+    expect(page).toContain('Generate a signed transactional preview; execution remains locked until all approval gates are satisfied.');
   });
 
   it('builds a downloadable approved preview manifest without enabling writes', () => {

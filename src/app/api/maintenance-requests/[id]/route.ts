@@ -168,7 +168,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'priority', 'category',
-      'assetId', 'assetName', 'componentRegistryId', 'location', 'departmentId', 'plantId', 'machineDownStatus',
+      'assetId', 'assetName', 'location', 'departmentId', 'plantId', 'machineDownStatus',
       'estimatedHours', 'slaHours', 'plannedStart', 'plannedEnd', 'notes',
     ];
 

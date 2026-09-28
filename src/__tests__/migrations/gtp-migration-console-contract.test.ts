@@ -39,6 +39,19 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('AsyncSearchableSelect');
   });
 
+
+  it('supports provenance-backed reported-time correction in dry-run only', () => {
+    expect(route).toContain("formData.get('reportedTimeCorrections')");
+    expect(route).toContain('Reported time can only be corrected when the legacy row is missing it');
+    expect(route).toContain('reportedTimeCorrectionsApplied');
+    expect(route).not.toContain('db.workOrder.update');
+    expect(route).not.toContain('db.maintenanceRequest.update');
+    expect(page).toContain('Missing Reported Time');
+    expect(page).toContain('Apply Time Corrections & Re-audit');
+    expect(page).toContain('Reason / provenance');
+    expect(page).toContain('type="datetime-local"');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

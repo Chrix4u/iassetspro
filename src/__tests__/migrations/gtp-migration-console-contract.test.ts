@@ -1,0 +1,47 @@
+import fs from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const route = fs.readFileSync('src/app/api/admin/gtp-migration/audit/route.ts', 'utf8');
+const page = fs.readFileSync('src/components/modules/GtpMigrationPage.tsx', 'utf8');
+const app = fs.readFileSync('src/components/EAMApp.tsx', 'utf8');
+const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
+const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
+
+describe('GTP migration reconciliation console', () => {
+  it('is admin-only and dry-run only', () => {
+    expect(route).toContain('isAdmin(session)');
+    expect(route).toContain('dryRun: true');
+    expect(route).toContain('importLocked: true');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(route).not.toContain('db.maintenanceRequest.create');
+    expect(page).toContain('Historical import is locked');
+  });
+
+  it('validates the authoritative workbook structure', () => {
+    for (const sheet of ['JobRecords', 'Machines', 'Trade', 'NewOder']) {
+      expect(route).toContain("'" + sheet + "'");
+    }
+    expect(route).toContain('bookVBA: true');
+    expect(route).toContain('/\\.(xlsm|xlsx)$/i');
+  });
+
+  it('surfaces reconciliation findings', () => {
+    expect(route).toContain('duplicateMachines');
+    expect(route).toContain('blankMachineCodeRows');
+    expect(route).toContain('tradeNormalizations');
+    expect(route).toContain('blockedRows');
+    expect(page).toContain('Machine Master Conflicts');
+    expect(page).toContain('Rows With No Machine Code');
+    expect(page).toContain('Trade Normalization');
+    expect(page).toContain('Data Quality Findings');
+  });
+
+  it('registers the admin settings page', () => {
+    expect(app).toContain("'settings-gtp-migration': 'GTP Data Migration'");
+    expect(app).toContain("import('./modules/GtpMigrationPage')");
+    expect(sidebar).toContain("{ page: 'settings-gtp-migration', label: 'GTP Data Migration'");
+    expect(access).toContain("'settings-gtp-migration': ['system_settings.view']");
+    expect(access).toContain("'settings-gtp-migration': 'core'");
+  });
+});
+

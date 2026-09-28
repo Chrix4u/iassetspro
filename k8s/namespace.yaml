@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: iassetspro
-  labels:
-    app.kubernetes.io/name: iassetspro
-    app.kubernetes.io/part-of: iassetspro-eam
-    app.kubernetes.io/managed-by: kubectl

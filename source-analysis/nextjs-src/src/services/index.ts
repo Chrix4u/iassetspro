@@ -1,7 +1,0 @@
-export { authService } from './authService'
-export { assetService } from './assetService'
-export { pmService } from './pmService'
-export { workOrderService } from './workOrderService'
-export { inventoryService } from './inventoryService'
-export { userService } from './userService'
-export { roleService } from './roleService'

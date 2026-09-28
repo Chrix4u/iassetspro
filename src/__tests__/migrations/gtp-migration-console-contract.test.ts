@@ -60,7 +60,9 @@ describe('GTP migration reconciliation console', () => {
 
 
   it('separates workbook readiness from tenant Asset-link readiness', () => {
-    expect(route).toContain("where: { assetTag: { in: directEquipmentCodes } }");
+    expect(route).toContain("assetTag: { in: directEquipmentCodes }");
+    expect(route).toContain("specification: { contains: '\"legacyCode\"' }");
+    expect(route).toContain('resolveLegacyMetadataAsset');
     expect(route).toContain('tenantReadiness');
     expect(route).toContain('unlinkedEquipmentCodes');
     expect(route).toContain("'asset_tag_match'");

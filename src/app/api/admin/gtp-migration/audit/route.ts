@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
-import { getSessionAsync, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import {
   auditGtpWorkbookRows,
@@ -141,7 +141,7 @@ function toMachines(rows: RawRow[]): GtpMachineMasterRow[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSessionAsync(request);
+    const session = getSession(request);
     if (!session || !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Administrator access required' }, { status: 403 });
     }

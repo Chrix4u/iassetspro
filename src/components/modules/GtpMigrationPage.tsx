@@ -30,6 +30,9 @@ type AuditResult = {
     overridesSubmitted: number;
     overridesApplied: number;
     rows: Array<{ rowNumber: number; workOrderNo: string; action: 'asset' | 'non_equipment'; assetId: string | null; assetName: string | null }>;
+    reportedTimeCorrectionsSubmitted?: number;
+    reportedTimeCorrectionsApplied?: number;
+    reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
   };
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
   blankMachineCodeRows: Array<{ rowNumber: number | null; workOrderNo: string; description: string; equipmentDescription: string; trade: string; workOrderType: string }>;
@@ -57,6 +60,7 @@ export function GtpMigrationPage() {
   const [auditing, setAuditing] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
+  const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -77,6 +81,16 @@ export function GtpMigrationPage() {
         }))
         .filter((value) => value.action === 'non_equipment' || Boolean(value.assetId));
       if (reconciliation.length) form.append('overrides', JSON.stringify(reconciliation));
+
+      const timeCorrections = Object.entries(reportedTimeCorrections)
+        .map(([rowNumber, value]) => ({
+          rowNumber: Number(rowNumber),
+          reportedAt: value.reportedAt ? new Date(value.reportedAt).toISOString() : '',
+          reason: value.reason.trim(),
+        }))
+        .filter((value) => value.reportedAt && value.reason.length >= 8);
+      if (timeCorrections.length) form.append('reportedTimeCorrections', JSON.stringify(timeCorrections));
+
       const response = await api.post<AuditResult>('/api/admin/gtp-migration/audit', form, { timeout: 120000 });
       if (!response.success || !response.data) return toast.error(response.error || 'Workbook audit failed');
       setResult(response.data);
@@ -145,7 +159,7 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
             <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={runAudit} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
@@ -161,7 +175,8 @@ export function GtpMigrationPage() {
         <Card><CardHeader><CardTitle className="text-base">Migration Readiness</CardTitle><CardDescription>{readiness}% of historical rows have no blocking master-data errors.</CardDescription></CardHeader><CardContent className="space-y-3"><Progress value={readiness} /><div className="flex flex-wrap gap-2"><Badge variant="outline">{result.source.hasVba ? 'VBA detected' : 'No VBA payload'}</Badge><Badge variant="outline">{result.workbook.machineMasterRows} machine-master rows</Badge><Badge variant="outline">{result.workbook.uniqueMachineCodes} unique machine codes</Badge>
           {(result.summary.resolvedDuplicateMachineRows || 0) > 0 && <Badge variant="outline">{result.summary.resolvedDuplicateMachineRows} duplicate-code jobs auto-resolved</Badge>}
           {(result.summary.inferredStatusRows || 0) > 0 && <Badge variant="outline">{result.summary.inferredStatusRows} statuses inferred with provenance</Badge>}
-          {(result.reconciliation?.overridesApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.overridesApplied} admin reconciliation override(s)</Badge>}</div></CardContent></Card>
+          {(result.reconciliation?.overridesApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.overridesApplied} admin reconciliation override(s)</Badge>}
+          {(result.reconciliation?.reportedTimeCorrectionsApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.reportedTimeCorrectionsApplied} reported-time correction(s) applied</Badge>}</div></CardContent></Card>
 
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="h-5 w-5 text-amber-600" />Machine Master Conflicts</CardTitle><CardDescription>Duplicate machine codes must be reconciled before affected jobs can be imported.</CardDescription></CardHeader>
@@ -233,6 +248,64 @@ export function GtpMigrationPage() {
                   </TableCell>
                 </TableRow>;
               })}</TableBody>
+            </Table>
+          </CardContent>
+        </Card>}
+
+
+        {result.blockedRows.some((row) => row.issues.some((issue) => issue.code === 'missing_reported_time')) && <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle className="text-base">Missing Reported Time</CardTitle>
+                <CardDescription>Correct only source rows that have no reported timestamp. A reason is mandatory and the correction is recorded in the dry-run audit provenance.</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => void runAudit()}
+                disabled={auditing || !Object.values(reportedTimeCorrections).some((value) => value.reportedAt && value.reason.trim().length >= 8)}
+              >
+                {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Apply Time Corrections & Re-audit
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>WO</TableHead><TableHead>Description</TableHead><TableHead>Correct reported time</TableHead><TableHead>Reason / provenance</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {result.blockedRows
+                  .filter((row) => row.issues.some((issue) => issue.code === 'missing_reported_time'))
+                  .map((row) => {
+                    const key = String(row.rowNumber || '');
+                    const correction = reportedTimeCorrections[key] || { reportedAt: '', reason: '' };
+                    return <TableRow key={'reported-time-' + key}>
+                      <TableCell className="font-mono">{row.workOrderNo}</TableCell>
+                      <TableCell className="max-w-[520px] whitespace-normal">{row.description || '—'}</TableCell>
+                      <TableCell className="min-w-[230px]">
+                        <Input
+                          type="datetime-local"
+                          value={correction.reportedAt}
+                          onChange={(event) => setReportedTimeCorrections((current) => ({
+                            ...current,
+                            [key]: { ...correction, reportedAt: event.target.value },
+                          }))}
+                        />
+                      </TableCell>
+                      <TableCell className="min-w-[320px]">
+                        <Input
+                          value={correction.reason}
+                          placeholder="e.g. Confirmed from shift log / signed maintenance register"
+                          onChange={(event) => setReportedTimeCorrections((current) => ({
+                            ...current,
+                            [key]: { ...correction, reason: event.target.value },
+                          }))}
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">Minimum 8 characters. This is audit provenance, not an overwrite of the workbook.</p>
+                      </TableCell>
+                    </TableRow>;
+                  })}
+              </TableBody>
             </Table>
           </CardContent>
         </Card>}

@@ -79,6 +79,20 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Map to existing Asset...');
   });
 
+  it('builds a zero-write transactional import preview with idempotency checks', () => {
+    expect(route).toContain("formData.get('preview')");
+    expect(route).toContain("GTP-MR-");
+    expect(route).toContain("GTP-WO-");
+    expect(route).toContain('db.workOrder.findMany');
+    expect(route).toContain('db.maintenanceRequest.findMany');
+    expect(route).toContain('idempotencyCollisions');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(route).not.toContain('db.maintenanceRequest.create');
+    expect(page).toContain('Generate Transactional Import Preview');
+    expect(page).toContain('Preview only — no records will be written');
+    expect(page).toContain('Historical writes are still disabled');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

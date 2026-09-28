@@ -112,6 +112,100 @@ const asNumber = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+type LegacyParityPoint = {
+  category: string;
+  value: number;
+  order?: number;
+};
+
+type LegacyParitySheet = {
+  sheetName: string;
+  chartFamily: 'bar' | 'line';
+  metric: string;
+  filters: Record<string, string | number>;
+  cachedGrandTotal: string | number | null;
+  computedSeriesTotal: number;
+  points: LegacyParityPoint[];
+};
+
+function extractLegacyParitySheet(
+  workbook: XLSX.WorkBook,
+  sheetName: string,
+  chartFamily: LegacyParitySheet['chartFamily'],
+): LegacyParitySheet | null {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return null;
+
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: null,
+    raw: true,
+  });
+  const filters: Record<string, string | number> = {};
+  for (const row of rows.slice(0, 8)) {
+    const key = asText(row?.[0]);
+    const value = row?.[1];
+    if (!key || value === null || value === undefined || value === '') continue;
+    filters[key] = typeof value === 'number' ? value : asText(value);
+  }
+
+  const metricRow = rows.find((row) => {
+    const first = asText(row?.[0]);
+    return first.startsWith('Count of ') || first.startsWith('Sum of ');
+  });
+  const metric = asText(metricRow?.[0]) || sheetName;
+
+  const machinePivot = sheetName === 'BD_MC_Wk' || sheetName === 'No_BD_MC' || sheetName === 'Rpons_MC';
+  const points: LegacyParityPoint[] = [];
+  let cachedGrandTotal: string | number | null = null;
+
+  for (const row of rows) {
+    const first = row?.[0];
+    const second = row?.[1];
+    const third = row?.[2];
+
+    if (asText(first) === 'Grand Total') {
+      const value = machinePivot ? third : second;
+      if (typeof value === 'number') cachedGrandTotal = Number(value.toFixed(6));
+      else if (value !== null && value !== undefined && value !== '') cachedGrandTotal = asText(value);
+      continue;
+    }
+
+    if (machinePivot) {
+      const order = asNumber(first);
+      const category = asText(second);
+      const value = asNumber(third);
+      if (order === null || !category || value === null || category.endsWith(' Total')) continue;
+      points.push({ order, category, value: Number(value.toFixed(6)) });
+    } else {
+      const week = asNumber(first);
+      const value = asNumber(second);
+      if (week === null || value === null) continue;
+      points.push({ category: String(Math.trunc(week)), value: Number(value.toFixed(6)) });
+    }
+  }
+
+  const computedSeriesTotal = Number(points.reduce((sum, point) => sum + point.value, 0).toFixed(6));
+  return { sheetName, chartFamily, metric, filters, cachedGrandTotal, computedSeriesTotal, points };
+}
+
+function extractLegacyParityBaseline(workbook: XLSX.WorkBook) {
+  const sheets = [
+    extractLegacyParitySheet(workbook, 'BD_MC_Wk', 'bar'),
+    extractLegacyParitySheet(workbook, 'No_BD_MC', 'bar'),
+    extractLegacyParitySheet(workbook, 'BD_Wk', 'line'),
+    extractLegacyParitySheet(workbook, 'Rpon_Wk', 'line'),
+    extractLegacyParitySheet(workbook, 'Rpons_MC', 'bar'),
+  ].filter((sheet): sheet is LegacyParitySheet => Boolean(sheet));
+
+  return {
+    available: sheets.length === 5,
+    expectedSheetCount: 5,
+    extractedSheetCount: sheets.length,
+    sheets,
+  };
+}
+
 function toJobs(rows: RawRow[]): GtpLegacyJobRow[] {
   return rows
     .filter((row) => row['Work Order No'] !== null && row['Work Order No'] !== undefined && row['Work Order No'] !== '')
@@ -175,6 +269,7 @@ export async function POST(request: NextRequest) {
       bookVBA: true,
       cellFormula: true,
     });
+    const legacyParityBaseline = extractLegacyParityBaseline(workbook);
     const missingSheets = REQUIRED_SHEETS.filter((name) => !workbook.SheetNames.includes(name));
     if (missingSheets.length) {
       return NextResponse.json({
@@ -634,6 +729,7 @@ export async function POST(request: NextRequest) {
           machineMasterRows: machines.length,
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
+        legacyParityBaseline,
         summary: audit.summary,
         tenantReadiness: {
           spreadsheetReadyRows: audit.summary.importReadyRows,

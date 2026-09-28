@@ -64,6 +64,8 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority') || undefined;
     const department = searchParams.get('department') || undefined;
     const assignee = searchParams.get('assignee') || undefined;
+    const trade = searchParams.get('trade') || undefined;
+    const assetId = searchParams.get('assetId') || undefined;
     const format = searchParams.get('format');
     if (format === 'pdf' && !hasPermission(session, 'reports.export') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.export required' }, { status: 403 });
@@ -85,7 +87,7 @@ export async function GET(request: NextRequest) {
       case 'response-time-performance':
       case 'repair-time-mttr':
       case 'reliability-bad-actors':
-        result = await handleBreakdownKpiReport(plantId, from, to, department, dateFilter);
+        result = await handleBreakdownKpiReport(plantId, from, to, department, dateFilter, priority, trade, assetId);
         break;
       default:
         return NextResponse.json({ success: false, error: 'Unknown report type' }, { status: 400 });
@@ -712,22 +714,38 @@ async function handleBreakdownKpiReport(
   to: Date | undefined,
   department: string | undefined,
   dateFilter: Record<string, unknown>,
+  priority: string | undefined,
+  trade: string | undefined,
+  assetId: string | undefined,
 ): Promise<NextResponse> {
   const where: Record<string, unknown> = {
-    type: { in: ['corrective', 'emergency'] },
+    type: { in: ['breakdown', 'corrective', 'emergency'] },
   };
   if (plantId) where.plantId = plantId;
   if (department) where.departmentId = department;
+  if (priority) where.priority = priority;
+  if (trade) where.tradeActivity = trade;
+  if (assetId) where.assetId = assetId;
   if (Object.keys(dateFilter).length > 0) where.createdAt = dateFilter;
 
   const workOrders = await db.workOrder.findMany({
     where,
-    include: { workOrderDowntimes: true },
+    include: {
+      workOrderDowntimes: true,
+      maintenanceRequest: { select: { createdAt: true, machineDownStatus: true } },
+    },
     orderBy: { createdAt: 'asc' },
     take: 10000,
   });
 
-  const assetIds = [...new Set(workOrders.map((wo) => wo.assetId).filter((id): id is string => Boolean(id)))];
+  const breakdownOrders = workOrders.filter((wo) =>
+    wo.type === 'breakdown'
+    || wo.type === 'emergency'
+    || wo.maintenanceRequest?.machineDownStatus === true
+    || (wo.workOrderDowntimes || []).length > 0
+  );
+
+  const assetIds = [...new Set(breakdownOrders.map((wo) => wo.assetId).filter((id): id is string => Boolean(id)))];
   const assets = assetIds.length
     ? await db.asset.findMany({
         where: { id: { in: assetIds } },
@@ -751,19 +769,20 @@ async function handleBreakdownKpiReport(
   };
   const avg = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 
-  const detail = workOrders.map((wo) => {
+  const detail = breakdownOrders.map((wo) => {
     const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
-    const responseMinutes = minutesBetween(wo.createdAt, wo.actualStart);
+    const reportedAt = wo.maintenanceRequest?.createdAt || wo.createdAt;
+    const responseMinutes = minutesBetween(reportedAt, wo.actualStart);
     const repairMinutes = minutesBetween(wo.actualStart, wo.actualEnd);
-    const restorationMinutes = minutesBetween(wo.createdAt, wo.actualEnd);
+    const restorationMinutes = minutesBetween(reportedAt, wo.actualEnd);
     const downtimeMinutes = (wo.workOrderDowntimes || []).reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
     return {
       id: wo.id,
       woNumber: wo.woNumber,
-      reportedAt: wo.createdAt.toISOString(),
+      reportedAt: reportedAt.toISOString(),
       startedAt: wo.actualStart?.toISOString() || null,
       completedAt: wo.actualEnd?.toISOString() || null,
-      week: weekKey(wo.createdAt),
+      week: weekKey(reportedAt),
       assetName: asset?.name || wo.assetName || 'Unassigned',
       assetTag: asset?.assetTag || null,
       priority: wo.priority,

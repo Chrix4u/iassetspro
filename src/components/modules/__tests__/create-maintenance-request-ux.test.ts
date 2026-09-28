@@ -45,6 +45,17 @@ describe('Create Maintenance Request UX contract', () => {
     expect(registered).not.toContain("setLocation('')");
     expect(manual).not.toContain("setLocation('')");
   });
+
+  it('suggests request priority from registered asset criticality without hard-locking it', () => {
+    expect(form).toContain('criticality: String(a.criticality');
+    expect(form).toContain("critical: 'urgent'");
+    expect(form).toContain("high: 'high'");
+    expect(form).toContain("medium: 'medium'");
+    expect(form).toContain("low: 'low'");
+    expect(form).toContain('suggested from asset criticality');
+    expect(form).toContain('setPriority((current) =>');
+  });
+
   it('keeps the client-facing form concise and presentation-ready', () => {
     const verboseImplementationCopy = [
       'Search the asset register by name, tag, serial, manufacturer, or model',

@@ -17,9 +17,18 @@ describe('breakdown performance reporting contract', () => {
     expect(safe).toContain("header: 'Repair Time (min)'");
     expect(safe).toContain("header: 'Reported→Restored (min)'");
     expect(safe).toContain("header: 'Recorded Downtime (min)'");
-    expect(safe).toContain('minutesBetweenDates(wo.createdAt, wo.actualStart)');
+    expect(safe).toContain("const reportedAt = wo.maintenanceRequest?.createdAt || wo.createdAt");
+    expect(safe).toContain('minutesBetweenDates(reportedAt, wo.actualStart)');
     expect(safe).toContain('minutesBetweenDates(wo.actualStart, wo.actualEnd)');
-    expect(safe).toContain('minutesBetweenDates(wo.createdAt, wo.actualEnd)');
+    expect(safe).toContain('minutesBetweenDates(reportedAt, wo.actualEnd)');
+  });
+
+
+  it('does not treat every corrective work order as a breakdown', () => {
+    expect(safe).toContain("wo.type === 'breakdown'");
+    expect(safe).toContain("wo.type === 'emergency'");
+    expect(safe).toContain('wo.maintenanceRequest?.machineDownStatus === true');
+    expect(safe).toContain('(wo.workOrderDowntimes || []).length > 0');
   });
 
   it('exports weekly, machine, trade and detail views', () => {

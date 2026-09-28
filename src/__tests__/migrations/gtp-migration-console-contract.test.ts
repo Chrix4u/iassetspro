@@ -7,7 +7,6 @@ const app = fs.readFileSync('src/components/EAMApp.tsx', 'utf8');
 const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
 
-// PR CI synchronization marker: console contract remains dry-run only.
 describe('GTP migration reconciliation console', () => {
   it('is admin-only and dry-run only', () => {
     expect(route).toContain('isAdmin(session)');
@@ -24,6 +23,20 @@ describe('GTP migration reconciliation console', () => {
     }
     expect(route).toContain('bookVBA: true');
     expect(route).toContain('/\\.(xlsm|xlsx)$/i');
+  });
+
+  it('accepts dry-run reconciliation overrides without enabling historical writes', () => {
+    expect(route).toContain("formData.get('overrides')");
+    expect(route).toContain("action: 'asset' | 'non_equipment'");
+    expect(route).toContain('db.asset.findMany');
+    expect(route).toContain('APP-ASSET:');
+    expect(route).toContain('NON-EQUIPMENT:');
+    expect(route).not.toContain('db.asset.update');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(page).toContain('Apply Resolutions & Re-audit');
+    expect(page).toContain('Map to existing Asset');
+    expect(page).toContain('Non-equipment work');
+    expect(page).toContain('AsyncSearchableSelect');
   });
 
   it('surfaces reconciliation findings', () => {
@@ -45,4 +58,3 @@ describe('GTP migration reconciliation console', () => {
     expect(access).toContain("'settings-gtp-migration': 'core'");
   });
 });
-

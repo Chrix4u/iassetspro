@@ -453,6 +453,20 @@ export async function POST(request: NextRequest) {
 
       const woNumbers = proposedRows.map((row) => row.proposedWorkOrder.woNumber);
       const requestNumbers = proposedRows.map((row) => row.proposedMaintenanceRequest.requestNumber);
+      const sourceIdentityCounts = new Map<string, number>();
+      for (const row of proposedRows) {
+        const identity = row.legacyWorkOrderNo;
+        sourceIdentityCounts.set(identity, (sourceIdentityCounts.get(identity) || 0) + 1);
+      }
+      const sourceIdentityCollisions = [...sourceIdentityCounts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([legacyWorkOrderNo, count]) => ({
+          legacyWorkOrderNo,
+          count,
+          requestNumber: `GTP-MR-${legacyWorkOrderNo}`,
+          woNumber: `GTP-WO-${legacyWorkOrderNo}`,
+        }));
+
       const [existingWorkOrders, existingRequests] = await Promise.all([
         woNumbers.length
           ? db.workOrder.findMany({ where: { woNumber: { in: woNumbers } }, select: { id: true, woNumber: true } })
@@ -474,14 +488,20 @@ export async function POST(request: NextRequest) {
           maintenanceRequestExists: existingRequestNumbers.has(row.proposedMaintenanceRequest.requestNumber),
         }));
 
+      const previewBlockers = [
+        ...(sourceIdentityCollisions.length ? [`${sourceIdentityCollisions.length} duplicate legacy identity collision(s) detected`] : []),
+        ...(collisions.length ? [`${collisions.length} existing database identity collision(s) detected`] : []),
+      ];
+
       importPreview = {
         requested: true,
         available: true,
-        safeToInsert: collisions.length === 0,
-        blockers: collisions.length ? [`${collisions.length} idempotency collision(s) detected`] : [],
+        safeToInsert: previewBlockers.length === 0,
+        blockers: previewBlockers,
         totalRows: proposedRows.length,
         maintenanceRequestsToCreate: proposedRows.length,
         workOrdersToCreate: proposedRows.length,
+        sourceIdentityCollisions,
         idempotencyCollisions: collisions,
         migrationActorUserId: session.userId,
         identityConvention: {

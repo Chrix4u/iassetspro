@@ -89,6 +89,7 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain("formData.get('preview')");
     expect(route).toContain("createHash('sha256')");
     expect(route).toContain('previewFingerprint');
+    expect(route).toContain('sourceSha256');
     expect(route).toContain("GTP-MR-");
     expect(route).toContain("GTP-WO-");
     expect(route).toContain('db.workOrder.findMany');

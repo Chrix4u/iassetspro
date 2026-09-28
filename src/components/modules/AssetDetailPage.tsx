@@ -31,7 +31,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div className="flex justify-between text-sm py-1.5">
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium text-right max-w-[60%] truncate" title={String(value)}>{value || '-'}</span>
+      <span className="font-medium text-right max-w-[68%] whitespace-normal break-words" title={String(value)}>{value || '-'}</span>
     </div>
   );
 }

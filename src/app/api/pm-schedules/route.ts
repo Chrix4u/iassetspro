@@ -114,10 +114,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 400 });
     }
 
+    let componentForTrigger: { id: string; assetId: string | null; name: string; componentCode: string; operatingHours: number } | null = null;
     if (componentId) {
       const component = await db.componentRegistry.findUnique({
         where: { id: componentId },
-        select: { id: true, assetId: true, name: true, componentCode: true },
+        select: { id: true, assetId: true, name: true, componentCode: true, operatingHours: true },
       });
       if (!component) {
         return NextResponse.json({ success: false, error: 'Component not found' }, { status: 400 });
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+      componentForTrigger = component;
     }
 
     const schedule = await db.pmSchedule.create({
@@ -156,6 +158,30 @@ export async function POST(request: NextRequest) {
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    // Hour/meter based component PMs require an executable meter trigger.
+    // Use the component's current operating hours as baseline so a newly-created
+    // schedule starts counting from now instead of firing immediately on old hours.
+    if (
+      componentForTrigger
+      && ['custom_hours', 'meter_based'].includes(frequencyType)
+      && Number(frequencyValue) > 0
+    ) {
+      await db.pmTrigger.create({
+        data: {
+          scheduleId: schedule.id,
+          triggerType: 'meter',
+          triggerValue: Number(frequencyValue),
+          triggerConfig: JSON.stringify({
+            source: 'component_operating_hours',
+            componentId: componentForTrigger.id,
+            baselineHours: Number(componentForTrigger.operatingHours || 0),
+            unit: 'hours',
+          }),
+          isActive: true,
+        },
+      });
+    }
 
     // Create audit log
     await db.auditLog.create({

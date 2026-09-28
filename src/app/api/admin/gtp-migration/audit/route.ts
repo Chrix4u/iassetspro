@@ -309,13 +309,42 @@ export async function POST(request: NextRequest) {
         .filter((code) => code && !code.startsWith('APP-ASSET:') && !code.startsWith('NON-EQUIPMENT:')),
     )];
 
-    const tenantAssets = directEquipmentCodes.length
-      ? await db.asset.findMany({
-          where: { assetTag: { in: directEquipmentCodes } },
-          select: { id: true, assetTag: true, name: true, criticality: true, plantId: true },
-        })
-      : [];
+    const [directTagAssets, legacyMetadataAssets] = await Promise.all([
+      directEquipmentCodes.length
+        ? db.asset.findMany({
+            where: { assetTag: { in: directEquipmentCodes }, isActive: true },
+            select: { id: true, assetTag: true, name: true, criticality: true, plantId: true, specification: true },
+          })
+        : [],
+      db.asset.findMany({
+        where: { isActive: true, specification: { contains: '"legacyCode"' } },
+        select: { id: true, assetTag: true, name: true, criticality: true, plantId: true, specification: true },
+      }),
+    ]);
+    const tenantAssets = [...new Map(
+      [...directTagAssets, ...legacyMetadataAssets].map((asset) => [asset.id, asset]),
+    ).values()];
     const tenantAssetByTag = new Map(tenantAssets.map((asset) => [asset.assetTag, asset]));
+    const tenantAssetsByLegacyCode = new Map<string, typeof tenantAssets>();
+    for (const asset of legacyMetadataAssets) {
+      try {
+        const spec = JSON.parse(asset.specification || '{}') as Record<string, unknown>;
+        const legacyCode = typeof spec.legacyCode === 'string' ? spec.legacyCode.trim() : '';
+        if (!legacyCode) continue;
+        const group = tenantAssetsByLegacyCode.get(legacyCode) || [];
+        group.push(asset);
+        tenantAssetsByLegacyCode.set(legacyCode, group);
+      } catch {
+        // Non-JSON free-text specifications are valid elsewhere; ignore them here.
+      }
+    }
+    const resolveLegacyMetadataAsset = (equipmentCode: string, equipmentName: string) => {
+      const candidates = tenantAssetsByLegacyCode.get(equipmentCode) || [];
+      if (candidates.length === 1) return candidates[0];
+      const normalizedName = normalizeIdentity(equipmentName);
+      const exactNameMatches = candidates.filter((asset) => normalizeIdentity(asset.name) === normalizedName);
+      return exactNameMatches.length === 1 ? exactNameMatches[0] : null;
+    };
 
     const assetLinkageRows = readyAuditRows.map((row) => {
       if (row.equipmentCode.startsWith('APP-ASSET:')) {
@@ -347,10 +376,24 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      // A duplicate legacy machine code may have been resolved to a specific
-      // master variant by description/priority. A code-wide Asset mapping would
-      // collapse distinct physical machines, so require a row-level admin override.
+      // Duplicate legacy codes are only safe when the Asset Registry carries
+      // the same legacyCode metadata and the resolved machine name identifies
+      // exactly one physical Asset. Otherwise require an explicit row override.
       if (row.machineResolution === 'duplicate_resolved') {
+        const legacyAsset = resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName);
+        if (legacyAsset) {
+          return {
+            legacyRowNumber: row.legacyRowNumber ?? null,
+            legacyWorkOrderNo: row.legacyWorkOrderNo,
+            equipmentCode: row.equipmentCode,
+            equipmentName: row.equipmentName,
+            assetId: legacyAsset.id,
+            assetTag: legacyAsset.assetTag,
+            assetName: legacyAsset.name,
+            resolution: 'legacy_metadata_match' as const,
+            tenantReady: true,
+          };
+        }
         return {
           legacyRowNumber: row.legacyRowNumber ?? null,
           legacyWorkOrderNo: row.legacyWorkOrderNo,
@@ -380,7 +423,9 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      const asset = tenantAssetByTag.get(row.equipmentCode);
+      const asset = tenantAssetByTag.get(row.equipmentCode)
+        || resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName);
+      const matchedByTag = asset?.assetTag === row.equipmentCode;
       return {
         legacyRowNumber: row.legacyRowNumber ?? null,
         legacyWorkOrderNo: row.legacyWorkOrderNo,
@@ -389,12 +434,15 @@ export async function POST(request: NextRequest) {
         assetId: asset?.id || null,
         assetTag: asset?.assetTag || null,
         assetName: asset?.name || null,
-        resolution: asset ? 'asset_tag_match' as const : 'unlinked' as const,
+        resolution: asset
+          ? (matchedByTag ? 'asset_tag_match' as const : 'legacy_metadata_match' as const)
+          : 'unlinked' as const,
         tenantReady: Boolean(asset),
       };
     });
 
     const tenantReadyRows = assetLinkageRows.filter((row) => row.tenantReady).length;
+    const legacyMetadataMatchedRows = assetLinkageRows.filter((row) => row.resolution === 'legacy_metadata_match').length;
     const tenantBlockedRows = assetLinkageRows.length - tenantReadyRows;
     const unlinkedEquipmentCodes = [...new Set(
       assetLinkageRows

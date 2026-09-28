@@ -90,14 +90,20 @@ describe('reporting proxy security', () => {
       expect(mockGetUnavailableOperationalModules).not.toHaveBeenCalled();
     });
 
-    it('requires PM to be operational even for the internal cron secret', async () => {
+    it('requires PM to be operational even for the configured internal cron secret', async () => {
       mockGetUnavailableOperationalModules.mockResolvedValue(['pm_schedules']);
-      const headers = new Headers({ 'x-pm-cron-secret': process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025' });
+      const previous = process.env.PM_CRON_SECRET;
+      process.env.PM_CRON_SECRET = 'test-pm-cron-secret';
+      try {
+        const headers = new Headers({ 'x-pm-cron-secret': 'test-pm-cron-secret' });
+        const response = await proxy(new NextRequest('http://localhost/api/pm-schedules/check-due', { headers }));
 
-      const response = await proxy(new NextRequest('http://localhost/api/pm-schedules/check-due', { headers }));
-
-      expect(response.status).toBe(403);
-      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['pm_schedules']);
+        expect(response.status).toBe(403);
+        expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['pm_schedules']);
+      } finally {
+        if (previous === undefined) delete process.env.PM_CRON_SECRET;
+        else process.env.PM_CRON_SECRET = previous;
+      }
     });
   });
 

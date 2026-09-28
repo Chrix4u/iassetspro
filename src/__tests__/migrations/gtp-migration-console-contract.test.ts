@@ -52,6 +52,7 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('type="datetime-local"');
   });
 
+
   it('separates workbook readiness from tenant Asset-link readiness', () => {
     expect(route).toContain("where: { assetTag: { in: directEquipmentCodes } }");
     expect(route).toContain('tenantReadiness');
@@ -66,13 +67,15 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Unlinked legacy equipment codes');
   });
 
-  it('maps one legacy equipment code to one existing Asset for all matching history', () => {
-    expect(route).toContain("formData.get('equipmentCodeMappings')");
-    expect(route).toContain('equipmentCodeMappingByCode');
-    expect(route).toContain('equipmentCodeMappingsApplied');
+
+  it('maps unlinked legacy equipment codes to existing tenant Assets in dry-run only', () => {
+    expect(route).toContain("formData.get('equipmentMappings')");
+    expect(route).toContain("resolution: 'legacy_code_mapping'");
+    expect(route).toContain('legacyCodeMappedRows');
     expect(route).not.toContain('db.asset.create');
+    expect(route).not.toContain('db.asset.update');
     expect(page).toContain('Apply Equipment Mappings & Re-audit');
-    expect(page).toContain('Map a code once and every historical row');
+    expect(page).toContain('Map each legacy machine code to an existing Asset');
     expect(page).toContain('Map to existing Asset...');
   });
 

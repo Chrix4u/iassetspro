@@ -8,6 +8,12 @@ const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
 
 describe('GTP migration reconciliation console', () => {
+  it('uses the canonical request-session auth helper', () => {
+    expect(route).toContain("import { getSession, isAdmin } from '@/lib/auth'");
+    expect(route).toContain('const session = getSession(request)');
+    expect(route).not.toContain('getSessionAsync(request)');
+  });
+
   it('is admin-only and dry-run only', () => {
     expect(route).toContain('isAdmin(session)');
     expect(route).toContain('dryRun: true');
@@ -50,6 +56,58 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Apply Time Corrections & Re-audit');
     expect(page).toContain('Reason / provenance');
     expect(page).toContain('type="datetime-local"');
+  });
+
+
+  it('separates workbook readiness from tenant Asset-link readiness', () => {
+    expect(route).toContain("where: { assetTag: { in: directEquipmentCodes } }");
+    expect(route).toContain('tenantReadiness');
+    expect(route).toContain('unlinkedEquipmentCodes');
+    expect(route).toContain("'asset_tag_match'");
+    expect(route).toContain("'admin_asset_override'");
+    expect(route).toContain("'non_equipment'");
+    expect(route).not.toContain('db.asset.create');
+    expect(page).toContain('iAssetsPro Asset Linkage');
+    expect(page).toContain('Tenant-ready rows');
+    expect(page).toContain('Asset-link blocked');
+    expect(page).toContain('Unlinked legacy equipment codes');
+  });
+
+
+  it('maps unlinked legacy equipment codes to existing tenant Assets in dry-run only', () => {
+    expect(route).toContain("formData.get('equipmentMappings')");
+    expect(route).toContain("resolution: 'legacy_code_mapping'");
+    expect(route).toContain('legacyCodeMappedRows');
+    expect(route).not.toContain('db.asset.create');
+    expect(route).not.toContain('db.asset.update');
+    expect(page).toContain('Apply Equipment Mappings & Re-audit');
+    expect(page).toContain('Map each legacy machine code to an existing Asset');
+    expect(page).toContain('Map to existing Asset...');
+  });
+
+  it('builds a zero-write transactional import preview with idempotency checks', () => {
+    expect(route).toContain("formData.get('preview')");
+    expect(route).toContain("createHash('sha256')");
+    expect(route).toContain('previewFingerprint');
+    expect(route).toContain('sourceSha256');
+    expect(route).toContain("GTP-MR-");
+    expect(route).toContain("GTP-WO-");
+    expect(route).toContain('db.workOrder.findMany');
+    expect(route).toContain('db.maintenanceRequest.findMany');
+    expect(route).toContain('sourceIdentityCollisions');
+    expect(route).toContain('idempotencyCollisions');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(route).not.toContain('db.maintenanceRequest.create');
+    expect(page).toContain('Generate Transactional Import Preview');
+    expect(page).toContain('Preview only — no records will be written');
+    expect(page).toContain('Preview fingerprint');
+    expect(page).toContain('Historical writes are still disabled');
+  });
+
+  it('keeps normal dry-run audit separate from transactional preview mode', () => {
+    expect(page).toContain('onClick={() => void runAudit()}');
+    expect(page).toContain('onClick={() => void runAudit(true)}');
+    expect(page).not.toContain('onClick={runAudit}');
   });
 
   it('surfaces reconciliation findings', () => {

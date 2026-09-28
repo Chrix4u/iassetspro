@@ -34,6 +34,68 @@ type AuditResult = {
     reportedTimeCorrectionsApplied?: number;
     reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
   };
+  tenantReadiness?: {
+    spreadsheetReadyRows: number;
+    tenantReadyRows: number;
+    tenantBlockedRows: number;
+    unlinkedEquipmentCodes: string[];
+    directlyMatchedAssetTags: number;
+    adminAssetOverrides: number;
+    legacyCodeMappingsSubmitted?: number;
+    legacyCodeMappedRows?: number;
+    nonEquipmentRows: number;
+  };
+  equipmentMappings?: Array<{ equipmentCode: string; assetId: string; assetTag: string | null; assetName: string | null }>;
+  importPreview?: {
+    requested: boolean;
+    available: boolean;
+    safeToInsert: boolean;
+    blockers: string[];
+    totalRows?: number;
+    maintenanceRequestsToCreate?: number;
+    workOrdersToCreate?: number;
+    migrationActorUserId?: string;
+    fingerprint?: string;
+    sourceSha256?: string;
+    identityConvention?: { maintenanceRequest: string; workOrder: string };
+    sourceIdentityCollisions?: Array<{
+      legacyWorkOrderNo: string;
+      count: number;
+      requestNumber: string;
+      woNumber: string;
+    }>;
+    idempotencyCollisions?: Array<{
+      legacyWorkOrderNo: string;
+      woNumber: string;
+      requestNumber: string;
+      workOrderExists: boolean;
+      maintenanceRequestExists: boolean;
+    }>;
+    sample?: Array<{
+      legacyRowNumber: number | null;
+      legacyWorkOrderNo: string;
+      sourceType: string;
+      sourceStatus: string | null;
+      assetName: string | null;
+      reportedAt: string | null;
+      workStartedAt: string | null;
+      workCompletedAt: string | null;
+      trade: string | null;
+      proposedMaintenanceRequest: { requestNumber: string; title: string; priority: string };
+      proposedWorkOrder: { woNumber: string; type: string; priority: string; status: string };
+    }>;
+  };
+  assetLinkageRows?: Array<{
+    legacyRowNumber: number | null;
+    legacyWorkOrderNo: string;
+    equipmentCode: string;
+    equipmentName: string;
+    assetId: string | null;
+    assetTag: string | null;
+    assetName: string | null;
+    resolution: 'asset_tag_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'unlinked';
+    tenantReady: boolean;
+  }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
   blankMachineCodeRows: Array<{ rowNumber: number | null; workOrderNo: string; description: string; equipmentDescription: string; trade: string; workOrderType: string }>;
   tradeNormalizations: Array<{ from: string; to: string; count: number }>;
@@ -61,13 +123,14 @@ export function GtpMigrationPage() {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
+  const [equipmentMappings, setEquipmentMappings] = useState<Record<string, string>>({});
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
     return Math.round((result.summary.importReadyRows / result.summary.totalRows) * 1000) / 10;
   }, [result]);
 
-  const runAudit = async () => {
+  const runAudit = async (previewRequested = false) => {
     if (!file) return toast.error('Choose the GTP workbook first');
     setAuditing(true);
     try {
@@ -90,6 +153,12 @@ export function GtpMigrationPage() {
         }))
         .filter((value) => value.reportedAt && value.reason.length >= 8);
       if (timeCorrections.length) form.append('reportedTimeCorrections', JSON.stringify(timeCorrections));
+
+      const legacyMappings = Object.entries(equipmentMappings)
+        .filter(([, assetId]) => Boolean(assetId))
+        .map(([equipmentCode, assetId]) => ({ equipmentCode, assetId }));
+      if (legacyMappings.length) form.append('equipmentMappings', JSON.stringify(legacyMappings));
+      if (previewRequested) form.append('preview', 'true');
 
       const response = await api.post<AuditResult>('/api/admin/gtp-migration/audit', form, { timeout: 120000 });
       if (!response.success || !response.data) return toast.error(response.error || 'Workbook audit failed');
@@ -159,10 +228,10 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={runAudit} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
+            <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
           </div>
         </CardContent>
       </Card>
@@ -176,7 +245,8 @@ export function GtpMigrationPage() {
           {(result.summary.resolvedDuplicateMachineRows || 0) > 0 && <Badge variant="outline">{result.summary.resolvedDuplicateMachineRows} duplicate-code jobs auto-resolved</Badge>}
           {(result.summary.inferredStatusRows || 0) > 0 && <Badge variant="outline">{result.summary.inferredStatusRows} statuses inferred with provenance</Badge>}
           {(result.reconciliation?.overridesApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.overridesApplied} admin reconciliation override(s)</Badge>}
-          {(result.reconciliation?.reportedTimeCorrectionsApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.reportedTimeCorrectionsApplied} reported-time correction(s) applied</Badge>}</div></CardContent></Card>
+          {(result.reconciliation?.reportedTimeCorrectionsApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.reportedTimeCorrectionsApplied} reported-time correction(s) applied</Badge>}
+          {(result.tenantReadiness?.legacyCodeMappedRows || 0) > 0 && <Badge variant="outline">{result.tenantReadiness?.legacyCodeMappedRows} rows linked through legacy-code mapping</Badge>}</div></CardContent></Card>
 
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="h-5 w-5 text-amber-600" />Machine Master Conflicts</CardTitle><CardDescription>Duplicate machine codes must be reconciled before affected jobs can be imported.</CardDescription></CardHeader>
@@ -310,7 +380,115 @@ export function GtpMigrationPage() {
           </CardContent>
         </Card>}
 
-        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows === 0 ? 'Blocking master-data errors are resolved. The next stage will be a previewable transactional import with explicit approval and rollback protection.' : 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' blocked row(s) first. Historical import remains disabled.'}</p></CardContent></Card>
+        {result.tenantReadiness && <Card className={result.tenantReadiness.tenantBlockedRows === 0 ? 'border-emerald-200' : 'border-amber-200'}>
+          <CardHeader>
+            <CardTitle className="text-base">iAssetsPro Asset Linkage</CardTitle>
+            <CardDescription>A workbook row can be structurally clean but still cannot be imported until its equipment resolves to an Asset in this iAssetsPro tenant.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Spreadsheet-ready rows</p><p className="text-xl font-semibold">{result.tenantReadiness.spreadsheetReadyRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Tenant-ready rows</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantReadyRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Asset-link blocked</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantBlockedRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Direct Asset-tag matches</p><p className="text-xl font-semibold">{result.tenantReadiness.directlyMatchedAssetTags.toLocaleString()}</p></div>
+            </div>
+            {result.tenantReadiness.unlinkedEquipmentCodes.length > 0 && <>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Unlinked legacy equipment codes</p>
+                  <p className="text-xs text-muted-foreground">Map each legacy machine code to an existing Asset. One mapping resolves every import-ready historical row carrying that code.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void runAudit()}
+                  disabled={auditing || !Object.values(equipmentMappings).some(Boolean)}
+                >
+                  {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Apply Equipment Mappings & Re-audit
+                </Button>
+              </div>
+              <div className="max-h-[520px] overflow-y-auto rounded-lg border">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Legacy equipment code</TableHead><TableHead>Existing iAssetsPro Asset</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {result.tenantReadiness.unlinkedEquipmentCodes.slice(0, 250).map((code) => (
+                      <TableRow key={code}>
+                        <TableCell className="font-mono font-semibold">{code}</TableCell>
+                        <TableCell className="min-w-[360px]">
+                          <AsyncSearchableSelect
+                            value={equipmentMappings[code] || ''}
+                            onValueChange={(assetId) => setEquipmentMappings((current) => ({ ...current, [code]: assetId }))}
+                            fetchOptions={fetchAssetOptions}
+                            placeholder="Map to existing Asset..."
+                            searchPlaceholder="Search asset name or tag..."
+                            emptyMessage="No matching Assets."
+                            clearable
+                            groupBy={false}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">This audit never creates Assets. Missing machines must first be registered in Asset Management, then mapped here.</p>
+            </>}
+          </CardContent>
+        </Card>}
+
+        {result.summary.blockedRows === 0 && (result.tenantReadiness?.tenantBlockedRows || 0) === 0 && <Card className="border-blue-200">
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle className="text-base">Transactional Import Preview</CardTitle>
+                <CardDescription>Preview only — no records will be written. The server checks deterministic GTP identities for collisions before any future import can be enabled.</CardDescription>
+              </div>
+              <Button variant="outline" onClick={() => void runAudit(true)} disabled={auditing}>
+                {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Generate Transactional Import Preview
+              </Button>
+            </div>
+          </CardHeader>
+          {result.importPreview?.requested && <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Rows in preview</p><p className="text-xl font-semibold">{(result.importPreview.totalRows || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Maintenance Requests</p><p className="text-xl font-semibold">{(result.importPreview.maintenanceRequestsToCreate || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Work Orders</p><p className="text-xl font-semibold">{(result.importPreview.workOrdersToCreate || 0).toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Identity collisions</p><p className="text-xl font-semibold">{((result.importPreview.sourceIdentityCollisions?.length || 0) + (result.importPreview.idempotencyCollisions?.length || 0)).toLocaleString()}</p></div>
+            </div>
+            {result.importPreview.fingerprint && <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+              <p className="font-medium">Preview fingerprint</p>
+              <p className="mt-1 break-all font-mono text-muted-foreground">{result.importPreview.fingerprint}</p>
+              <p className="mt-2 text-muted-foreground">Any workbook or reconciliation change produces a different fingerprint. A future import must require this exact approved fingerprint.</p>
+            </div>}
+            <div className={`rounded-lg border p-3 text-sm ${result.importPreview.safeToInsert ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
+              {result.importPreview.safeToInsert
+                ? 'Preview gate is clean: no deterministic MR/WO number collisions were found. Historical writes are still disabled.'
+                : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader><TableRow><TableHead>Legacy WO</TableHead><TableHead>Asset</TableHead><TableHead>Reported</TableHead><TableHead>Proposed MR</TableHead><TableHead>Proposed WO</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(result.importPreview.sample || []).slice(0, 50).map((row) => <TableRow key={row.legacyWorkOrderNo}>
+                    <TableCell className="font-mono">{row.legacyWorkOrderNo}</TableCell>
+                    <TableCell>{row.assetName || 'Non-equipment'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{row.reportedAt ? new Date(row.reportedAt).toLocaleString() : '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.proposedMaintenanceRequest.requestNumber}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.proposedWorkOrder.woNumber}</TableCell>
+                    <TableCell>{row.proposedWorkOrder.status}</TableCell>
+                  </TableRow>)}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>}
+        </Card>}
+
+        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0
+  ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' workbook-blocked row(s) first. Historical import remains disabled.'
+  : (result.tenantReadiness?.tenantBlockedRows || 0) > 0
+    ? 'Workbook blockers are resolved, but ' + result.tenantReadiness!.tenantBlockedRows.toLocaleString() + ' row(s) still lack an iAssetsPro Asset link. Historical import remains disabled.'
+    : 'Workbook and tenant Asset-link blockers are resolved. The next stage is a previewable transactional import with explicit approval, idempotency checks and rollback protection.'}</p></CardContent></Card>
       </>}
     </div>
   );

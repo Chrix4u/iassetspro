@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import * as XLSX from 'xlsx';
-import { getSessionAsync, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import {
   auditGtpWorkbookRows,
@@ -28,6 +29,11 @@ type ReportedTimeCorrection = {
   reason: string;
 };
 
+type EquipmentAssetMapping = {
+  equipmentCode: string;
+  assetId: string;
+};
+
 
 function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedTimeCorrection[] {
   if (typeof raw !== 'string' || !raw.trim()) return [];
@@ -47,6 +53,23 @@ function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedT
     if (reason.length < 8) throw new Error('Reported-time correction requires a reason of at least 8 characters');
 
     return { rowNumber, reportedAt: parsedDate.toISOString(), reason };
+  });
+}
+
+
+function parseEquipmentMappings(raw: FormDataEntryValue | null): EquipmentAssetMapping[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('Invalid equipment mapping payload');
+
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('Invalid equipment mapping entry');
+    const row = item as Record<string, unknown>;
+    const equipmentCode = typeof row.equipmentCode === 'string' ? row.equipmentCode.trim() : '';
+    const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : '';
+    if (!equipmentCode) throw new Error('Equipment mapping requires an equipment code');
+    if (!assetId) throw new Error('Equipment mapping requires an assetId');
+    return { equipmentCode, assetId };
   });
 }
 
@@ -75,6 +98,13 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
 }
 
 const asText = (value: unknown) => String(value ?? '').trim();
+const asIso = (value: Date | string | number | null | undefined): string | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+const mrPriorityFromWorkOrder = (priority: string | null): string =>
+  priority === 'critical' ? 'urgent' : (priority || 'medium');
 const asNumber = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
@@ -119,7 +149,7 @@ function toMachines(rows: RawRow[]): GtpMachineMasterRow[] {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSessionAsync(request);
+    const session = getSession(request);
     if (!session || !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Administrator access required' }, { status: 403 });
     }
@@ -136,7 +166,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Only .xlsm or .xlsx workbooks are accepted' }, { status: 400 });
     }
 
-    const workbook = XLSX.read(Buffer.from(await file.arrayBuffer()), {
+    const workbookBuffer = Buffer.from(await file.arrayBuffer());
+    const sourceSha256 = createHash('sha256').update(workbookBuffer).digest('hex');
+    const workbook = XLSX.read(workbookBuffer, {
       type: 'buffer',
       cellDates: true,
       bookVBA: true,
@@ -158,10 +190,14 @@ export async function POST(request: NextRequest) {
     const reportedTimeCorrectionByRow = new Map(
       reportedTimeCorrections.map((correction) => [correction.rowNumber, correction]),
     );
+    const equipmentMappings = parseEquipmentMappings(formData.get('equipmentMappings'));
+    const previewRequested = formData.get('preview') === 'true';
+    const equipmentMappingByCode = new Map(equipmentMappings.map((mapping) => [mapping.equipmentCode, mapping.assetId]));
 
-    const referencedAssetIds = [...new Set(
-      overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
-    )];
+    const referencedAssetIds = [...new Set([
+      ...overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
+      ...equipmentMappings.map((mapping) => mapping.assetId).filter(Boolean),
+    ])];
     const referencedAssets = referencedAssetIds.length
       ? await db.asset.findMany({
           where: { id: { in: referencedAssetIds } },
@@ -263,6 +299,241 @@ export async function POST(request: NextRequest) {
 
     const audit = auditGtpWorkbookRows(jobs, machines);
 
+    // Spreadsheet consistency is not enough for a database import. Every
+    // equipment-backed row must also resolve to a real iAssetsPro Asset.
+    const readyAuditRows = audit.rows.filter((row) => row.importReady);
+    const directEquipmentCodes = [...new Set(
+      readyAuditRows
+        .map((row) => row.equipmentCode)
+        .filter((code) => code && !code.startsWith('APP-ASSET:') && !code.startsWith('NON-EQUIPMENT:')),
+    )];
+
+    const tenantAssets = directEquipmentCodes.length
+      ? await db.asset.findMany({
+          where: { assetTag: { in: directEquipmentCodes } },
+          select: { id: true, assetTag: true, name: true, criticality: true, plantId: true },
+        })
+      : [];
+    const tenantAssetByTag = new Map(tenantAssets.map((asset) => [asset.assetTag, asset]));
+
+    const assetLinkageRows = readyAuditRows.map((row) => {
+      if (row.equipmentCode.startsWith('APP-ASSET:')) {
+        const assetId = row.equipmentCode.slice('APP-ASSET:'.length);
+        const asset = referencedAssets.find((candidate) => candidate.id === assetId);
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: asset?.id || assetId,
+          assetTag: asset?.assetTag || null,
+          assetName: asset?.name || row.equipmentName,
+          resolution: 'admin_asset_override' as const,
+          tenantReady: Boolean(asset),
+        };
+      }
+      if (row.equipmentCode.startsWith('NON-EQUIPMENT:')) {
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: null,
+          assetTag: null,
+          assetName: 'Non-equipment work',
+          resolution: 'non_equipment' as const,
+          tenantReady: true,
+        };
+      }
+
+      const mappedAssetId = equipmentMappingByCode.get(row.equipmentCode);
+      if (mappedAssetId) {
+        const mappedAsset = assetById.get(mappedAssetId);
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: mappedAsset?.id || mappedAssetId,
+          assetTag: mappedAsset?.assetTag || null,
+          assetName: mappedAsset?.name || null,
+          resolution: 'legacy_code_mapping' as const,
+          tenantReady: Boolean(mappedAsset),
+        };
+      }
+
+      const asset = tenantAssetByTag.get(row.equipmentCode);
+      return {
+        legacyRowNumber: row.legacyRowNumber ?? null,
+        legacyWorkOrderNo: row.legacyWorkOrderNo,
+        equipmentCode: row.equipmentCode,
+        equipmentName: row.equipmentName,
+        assetId: asset?.id || null,
+        assetTag: asset?.assetTag || null,
+        assetName: asset?.name || null,
+        resolution: asset ? 'asset_tag_match' as const : 'unlinked' as const,
+        tenantReady: Boolean(asset),
+      };
+    });
+
+    const tenantReadyRows = assetLinkageRows.filter((row) => row.tenantReady).length;
+    const tenantBlockedRows = assetLinkageRows.length - tenantReadyRows;
+    const unlinkedEquipmentCodes = [...new Set(
+      assetLinkageRows
+        .filter((row) => !row.tenantReady && row.resolution === 'unlinked')
+        .map((row) => row.equipmentCode),
+    )].sort();
+
+    const previewGateOpen = audit.summary.blockedRows === 0 && tenantBlockedRows === 0;
+    let importPreview: Record<string, unknown> = {
+      requested: previewRequested,
+      available: previewGateOpen,
+      safeToInsert: false,
+      blockers: [
+        ...(audit.summary.blockedRows > 0 ? [`${audit.summary.blockedRows} workbook row(s) remain blocked`] : []),
+        ...(tenantBlockedRows > 0 ? [`${tenantBlockedRows} row(s) still lack an iAssetsPro Asset link`] : []),
+      ],
+    };
+
+    if (previewRequested && previewGateOpen) {
+      const linkageByRow = new Map(
+        assetLinkageRows.map((row) => [row.legacyRowNumber, row]),
+      );
+      const proposedRows = audit.rows
+        .filter((row) => row.importReady)
+        .map((row) => {
+          const job = jobs.find((candidate) => candidate.rowNumber === row.legacyRowNumber);
+          const linkage = linkageByRow.get(row.legacyRowNumber ?? null);
+          const legacyNo = row.legacyWorkOrderNo;
+          const requestNumber = `GTP-MR-${legacyNo}`;
+          const woNumber = `GTP-WO-${legacyNo}`;
+          const title = job?.description || `${row.mappedType} - ${row.equipmentName || 'Historical maintenance'}`;
+
+          return {
+            legacyRowNumber: row.legacyRowNumber ?? null,
+            legacyWorkOrderNo: legacyNo,
+            sourceType: row.mappedType,
+            sourceStatus: row.mappedStatus,
+            statusSource: row.statusSource,
+            assetId: linkage?.assetId || null,
+            assetTag: linkage?.assetTag || null,
+            assetName: linkage?.assetName || row.equipmentName || null,
+            assetResolution: linkage?.resolution || null,
+            reportedAt: asIso(job?.reportedAt),
+            workStartedAt: asIso(job?.workStartedAt),
+            workCompletedAt: asIso(job?.workCompletedAt),
+            trade: canonicalizeGtpTrade(job?.trade || null),
+            legacyPeople: {
+              requestedBy: job?.requestedBy || null,
+              plannedBy: job?.plannedBy || null,
+              assignedTo: job?.assignedTo || null,
+              department: job?.department || null,
+            },
+            proposedMaintenanceRequest: {
+              requestNumber,
+              title,
+              priority: mrPriorityFromWorkOrder(row.mappedPriority),
+              assetId: linkage?.assetId || null,
+              assetName: linkage?.assetName || row.equipmentName || null,
+              status: row.mappedStatus === 'closed' ? 'converted' : 'pending',
+              workflowStatus: row.mappedStatus === 'closed' ? 'closed' : 'work_order_created',
+              createdAt: asIso(job?.reportedAt),
+            },
+            proposedWorkOrder: {
+              woNumber,
+              title,
+              type: row.mappedType,
+              priority: row.mappedPriority || 'medium',
+              status: row.mappedStatus || 'requested',
+              assetId: linkage?.assetId || null,
+              assetName: linkage?.assetName || row.equipmentName || null,
+              tradeActivity: canonicalizeGtpTrade(job?.trade || null),
+              actualStart: asIso(job?.workStartedAt),
+              actualEnd: asIso(job?.workCompletedAt),
+            },
+          };
+        });
+
+      const woNumbers = proposedRows.map((row) => row.proposedWorkOrder.woNumber);
+      const requestNumbers = proposedRows.map((row) => row.proposedMaintenanceRequest.requestNumber);
+      const sourceIdentityCounts = new Map<string, number>();
+      for (const row of proposedRows) {
+        const identity = row.legacyWorkOrderNo;
+        sourceIdentityCounts.set(identity, (sourceIdentityCounts.get(identity) || 0) + 1);
+      }
+      const sourceIdentityCollisions = [...sourceIdentityCounts.entries()]
+        .filter(([, count]) => count > 1)
+        .map(([legacyWorkOrderNo, count]) => ({
+          legacyWorkOrderNo,
+          count,
+          requestNumber: `GTP-MR-${legacyWorkOrderNo}`,
+          woNumber: `GTP-WO-${legacyWorkOrderNo}`,
+        }));
+
+      const [existingWorkOrders, existingRequests] = await Promise.all([
+        woNumbers.length
+          ? db.workOrder.findMany({ where: { woNumber: { in: woNumbers } }, select: { id: true, woNumber: true } })
+          : [],
+        requestNumbers.length
+          ? db.maintenanceRequest.findMany({ where: { requestNumber: { in: requestNumbers } }, select: { id: true, requestNumber: true } })
+          : [],
+      ]);
+      const existingWoNumbers = new Set(existingWorkOrders.map((row) => row.woNumber));
+      const existingRequestNumbers = new Set(existingRequests.map((row) => row.requestNumber));
+      const collisions = proposedRows
+        .filter((row) => existingWoNumbers.has(row.proposedWorkOrder.woNumber)
+          || existingRequestNumbers.has(row.proposedMaintenanceRequest.requestNumber))
+        .map((row) => ({
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          woNumber: row.proposedWorkOrder.woNumber,
+          requestNumber: row.proposedMaintenanceRequest.requestNumber,
+          workOrderExists: existingWoNumbers.has(row.proposedWorkOrder.woNumber),
+          maintenanceRequestExists: existingRequestNumbers.has(row.proposedMaintenanceRequest.requestNumber),
+        }));
+
+      const previewBlockers = [
+        ...(sourceIdentityCollisions.length ? [`${sourceIdentityCollisions.length} duplicate legacy identity collision(s) detected`] : []),
+        ...(collisions.length ? [`${collisions.length} existing database identity collision(s) detected`] : []),
+      ];
+      const previewFingerprint = createHash('sha256')
+        .update(JSON.stringify({
+          sourceSha256,
+          overrides: [...overrides].sort((a, b) => a.rowNumber - b.rowNumber),
+          reportedTimeCorrections: [...reportedTimeCorrections].sort((a, b) => a.rowNumber - b.rowNumber),
+          equipmentMappings: [...equipmentMappings].sort((a, b) => a.equipmentCode.localeCompare(b.equipmentCode)),
+          proposedIdentities: proposedRows.map((row) => ({
+            legacyWorkOrderNo: row.legacyWorkOrderNo,
+            requestNumber: row.proposedMaintenanceRequest.requestNumber,
+            woNumber: row.proposedWorkOrder.woNumber,
+            assetId: row.assetId,
+            reportedAt: row.reportedAt,
+            workStartedAt: row.workStartedAt,
+            workCompletedAt: row.workCompletedAt,
+          })),
+        }))
+        .digest('hex');
+
+      importPreview = {
+        requested: true,
+        available: true,
+        safeToInsert: previewBlockers.length === 0,
+        blockers: previewBlockers,
+        totalRows: proposedRows.length,
+        maintenanceRequestsToCreate: proposedRows.length,
+        workOrdersToCreate: proposedRows.length,
+        sourceIdentityCollisions,
+        idempotencyCollisions: collisions,
+        migrationActorUserId: session.userId,
+        fingerprint: previewFingerprint,
+        sourceSha256,
+        identityConvention: {
+          maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}',
+          workOrder: 'GTP-WO-{legacyWorkOrderNo}',
+        },
+        sample: proposedRows.slice(0, 100),
+      };
+    }
+
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
       code,
       affectedJobs: jobs.filter((job) => asText(job.equipmentCode) === code).length,
@@ -321,6 +592,7 @@ export async function POST(request: NextRequest) {
         source: {
           fileName: file.name,
           sizeBytes: file.size,
+          sha256: sourceSha256,
           sheets: workbook.SheetNames,
           requiredSheetsPresent: true,
           hasVba: Boolean((workbook as typeof workbook & { vbaraw?: unknown }).vbaraw),
@@ -339,6 +611,28 @@ export async function POST(request: NextRequest) {
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
         summary: audit.summary,
+        tenantReadiness: {
+          spreadsheetReadyRows: audit.summary.importReadyRows,
+          tenantReadyRows,
+          tenantBlockedRows,
+          unlinkedEquipmentCodes,
+          directlyMatchedAssetTags: tenantAssets.length,
+          adminAssetOverrides: assetLinkageRows.filter((row) => row.resolution === 'admin_asset_override').length,
+          legacyCodeMappingsSubmitted: equipmentMappings.length,
+          legacyCodeMappedRows: assetLinkageRows.filter((row) => row.resolution === 'legacy_code_mapping').length,
+          nonEquipmentRows: assetLinkageRows.filter((row) => row.resolution === 'non_equipment').length,
+        },
+        equipmentMappings: equipmentMappings.map((mapping) => {
+          const asset = assetById.get(mapping.assetId);
+          return {
+            equipmentCode: mapping.equipmentCode,
+            assetId: mapping.assetId,
+            assetTag: asset?.assetTag || null,
+            assetName: asset?.name || null,
+          };
+        }),
+        assetLinkageRows: assetLinkageRows.slice(0, 500),
+        importPreview,
         duplicateMachines,
         blankMachineCodeRows,
         tradeNormalizations: [...tradeMap.values()].sort((a, b) => b.count - a.count || a.from.localeCompare(b.from)),

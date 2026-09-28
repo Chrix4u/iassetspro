@@ -1509,6 +1509,13 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-[11px] text-blue-600 font-medium uppercase">Machine / Asset</p>
                   <p className="text-sm font-semibold">{mr.asset?.name || mr.assetName || '-'}</p>
                 </div>
+                {mr.componentRegistry && (
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Requested Component / Part</p>
+                    <p className="text-sm font-semibold">{mr.componentRegistry.componentCode} · {mr.componentRegistry.name}</p>
+                    <p className="text-[11px] text-blue-700/70 capitalize">{mr.componentRegistry.componentType || 'component'} · {mr.componentRegistry.criticality || 'medium'} criticality</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-[11px] text-blue-600 font-medium uppercase">Department</p>
                   <p className="text-sm font-semibold">{(mr as any).department?.name || mr.requester?.department || '-'}</p>

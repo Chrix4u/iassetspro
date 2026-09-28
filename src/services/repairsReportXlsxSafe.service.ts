@@ -1656,9 +1656,11 @@ type BreakdownPreparedData = {
     avgRepairMinutes: number;
     recordedDowntimeMinutes: number;
   }>;
-  machineWeekRows: Array<Record<string, string | number>>;
-  responseWeekRows: Array<{ week: string; breakdowns: number; avgResponseMinutes: number }>;
-  responseMachineRows: Array<{ assetName: string; assetTag: string; breakdowns: number; avgResponseMinutes: number }>;
+  legacyBreakdownsByMachine: Array<{ assetName: string; assetTag: string; breakdowns: number }>;
+  legacyBreakdownsByWeek: Array<{ week: string; breakdowns: number }>;
+  legacyDowntimeByMachine: Array<{ assetName: string; assetTag: string; downtimeMinutes: number }>;
+  legacyResponseByWeek: Array<{ week: string; responseMinutes: number }>;
+  legacyResponseByMachine: Array<{ assetName: string; assetTag: string; responseMinutes: number }>;
   responseValues: number[];
   repairValues: number[];
   restorationValues: number[];
@@ -1671,7 +1673,10 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
 
   const workOrders = await db.workOrder.findMany({
     where: Object.keys(where).length > 0 ? where : undefined,
-    include: { workOrderDowntimes: true },
+    include: {
+      workOrderDowntimes: true,
+      maintenanceRequest: { select: { createdAt: true, machineDownStatus: true } },
+    },
     orderBy: { createdAt: 'asc' },
     take: 10000,
   });
@@ -1685,11 +1690,23 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
     : [];
   const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
 
-  const detailRows: BreakdownDetailRow[] = workOrders.map((wo) => {
+  // The GTP workbook has a distinct Breakdown class; ordinary corrective work
+  // must not inflate breakdown KPIs. In the modern workflow a breakdown is
+  // identified by an explicit breakdown/emergency type, a machine-down request,
+  // or recorded downtime evidence.
+  const breakdownOrders = workOrders.filter((wo) =>
+    wo.type === 'breakdown'
+    || wo.type === 'emergency'
+    || wo.maintenanceRequest?.machineDownStatus === true
+    || (wo.workOrderDowntimes || []).length > 0
+  );
+
+  const detailRows: BreakdownDetailRow[] = breakdownOrders.map((wo) => {
     const asset = wo.assetId ? assetMap.get(wo.assetId) : undefined;
-    const responseMinutes = minutesBetweenDates(wo.createdAt, wo.actualStart);
+    const reportedAt = wo.maintenanceRequest?.createdAt || wo.createdAt;
+    const responseMinutes = minutesBetweenDates(reportedAt, wo.actualStart);
     const repairMinutes = minutesBetweenDates(wo.actualStart, wo.actualEnd);
-    const restorationMinutes = minutesBetweenDates(wo.createdAt, wo.actualEnd);
+    const restorationMinutes = minutesBetweenDates(reportedAt, wo.actualEnd);
     const recordedDowntimeMinutes = (wo.workOrderDowntimes || [])
       .reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
     const productionLoss = (wo.workOrderDowntimes || [])
@@ -1697,10 +1714,10 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
 
     return {
       woNumber: wo.woNumber,
-      reportedAt: wo.createdAt.toISOString(),
+      reportedAt: reportedAt.toISOString(),
       startedAt: wo.actualStart?.toISOString() || '',
       completedAt: wo.actualEnd?.toISOString() || '',
-      week: isoWeekKey(wo.createdAt),
+      week: isoWeekKey(reportedAt),
       assetName: asset?.name || wo.assetName || 'Unassigned',
       assetTag: asset?.assetTag || '',
       priority: wo.priority,
@@ -1802,39 +1819,49 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
     }))
     .sort((a, b) => b.breakdowns - a.breakdowns);
 
-  // GTP legacy workbook parity views.
-  const weeks = weeklyRows.map((row) => row.week);
-  const byMachineWeek = new Map<string, Map<string, number>>();
-  for (const row of detailRows) {
-    const machineKey = row.assetName + '|||' + row.assetTag;
-    const weekMap = byMachineWeek.get(machineKey) || new Map<string, number>();
-    weekMap.set(row.week, (weekMap.get(row.week) || 0) + 1);
-    byMachineWeek.set(machineKey, weekMap);
-  }
-  const machineWeekRows = [...byMachineWeek.entries()]
-    .map(([machineKey, weekMap]) => {
-      const [assetName, assetTag] = machineKey.split('|||');
-      const out: Record<string, string | number> = {
-        'Machine / Asset': assetName,
-        'Asset Tag': assetTag || '',
-        Total: [...weekMap.values()].reduce((sum, value) => sum + value, 0),
-      };
-      for (const week of weeks) out[week] = weekMap.get(week) || 0;
-      return out;
-    })
-    .sort((a, b) => Number(b.Total) - Number(a.Total) || String(a['Machine / Asset']).localeCompare(String(b['Machine / Asset'])));
-
-  const responseWeekRows = weeklyRows.map((row) => ({
-    week: row.week,
-    breakdowns: row.breakdowns,
-    avgResponseMinutes: row.avgResponseMinutes,
-  }));
-  const responseMachineRows = assetRows.map((row) => ({
+  // Exact GTP legacy pivot semantics:
+  // No_BD_MC = COUNT(work orders) by machine
+  // BD_Wk = COUNT(work orders) by production/reporting week
+  // BD_MC_Wk = SUM(reported-to-completed minutes) by machine, with week as a filter
+  // Rpon_Wk = SUM(response minutes) by week
+  // Rpons_MC = SUM(response minutes) by machine, with week as a filter
+  const legacyBreakdownsByMachine = assetRows.map((row) => ({
     assetName: row.assetName,
     assetTag: row.assetTag,
     breakdowns: row.breakdowns,
-    avgResponseMinutes: row.avgResponseMinutes,
   }));
+  const legacyBreakdownsByWeek = weeklyRows.map((row) => ({
+    week: row.week,
+    breakdowns: row.breakdowns,
+  }));
+
+  const downtimeByMachine = new Map<string, { assetName: string; assetTag: string; downtimeMinutes: number }>();
+  const responseByMachine = new Map<string, { assetName: string; assetTag: string; responseMinutes: number }>();
+  const responseByWeek = new Map<string, number>();
+  for (const row of detailRows) {
+    const key = row.assetName + '|||' + row.assetTag;
+    const downtime = typeof row.restorationMinutes === 'number' ? row.restorationMinutes : 0;
+    const response = typeof row.responseMinutes === 'number' ? row.responseMinutes : 0;
+
+    const currentDown = downtimeByMachine.get(key) || { assetName: row.assetName, assetTag: row.assetTag, downtimeMinutes: 0 };
+    currentDown.downtimeMinutes += downtime;
+    downtimeByMachine.set(key, currentDown);
+
+    const currentResponse = responseByMachine.get(key) || { assetName: row.assetName, assetTag: row.assetTag, responseMinutes: 0 };
+    currentResponse.responseMinutes += response;
+    responseByMachine.set(key, currentResponse);
+
+    responseByWeek.set(row.week, (responseByWeek.get(row.week) || 0) + response);
+  }
+  const legacyDowntimeByMachine = [...downtimeByMachine.values()]
+    .map((row) => ({ ...row, downtimeMinutes: Number(row.downtimeMinutes.toFixed(2)) }))
+    .sort((a, b) => b.downtimeMinutes - a.downtimeMinutes);
+  const legacyResponseByWeek = [...responseByWeek.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, responseMinutes]) => ({ week, responseMinutes: Number(responseMinutes.toFixed(2)) }));
+  const legacyResponseByMachine = [...responseByMachine.values()]
+    .map((row) => ({ ...row, responseMinutes: Number(row.responseMinutes.toFixed(2)) }))
+    .sort((a, b) => b.responseMinutes - a.responseMinutes);
 
   const responseValues = detailRows.flatMap((row) => typeof row.responseMinutes === 'number' ? [row.responseMinutes] : []);
   const repairValues = detailRows.flatMap((row) => typeof row.repairMinutes === 'number' ? [row.repairMinutes] : []);
@@ -1846,9 +1873,11 @@ async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<
     weeklyRows,
     assetRows,
     tradeRows,
-    machineWeekRows,
-    responseWeekRows,
-    responseMachineRows,
+    legacyBreakdownsByMachine,
+    legacyBreakdownsByWeek,
+    legacyDowntimeByMachine,
+    legacyResponseByWeek,
+    legacyResponseByMachine,
     responseValues,
     repairValues,
     restorationValues,
@@ -1927,26 +1956,28 @@ async function exportBreakdownPerformanceReport(filters: ReportFilters, session:
   addDataSheet(wb, 'By Machine', BREAKDOWN_ASSET_COLUMNS, data.assetRows);
   addDataSheet(wb, 'By Trade', BREAKDOWN_TRADE_COLUMNS, data.tradeRows);
 
-  addAnalyticsSheet(wb, 'GTP No BD by Machine', data.assetRows.map((row) => ({
+  addAnalyticsSheet(wb, 'GTP No_BD_MC', data.legacyBreakdownsByMachine.map((row) => ({
     'Machine / Asset': row.assetName,
     'Asset Tag': row.assetTag,
-    'No. of Breakdowns': row.breakdowns,
+    'Count of Work Order No': row.breakdowns,
   })));
-  addAnalyticsSheet(wb, 'GTP BD by Week', data.weeklyRows.map((row) => ({
-    Week: row.week,
-    'No. of Breakdowns': row.breakdowns,
+  addAnalyticsSheet(wb, 'GTP BD_Wk', data.legacyBreakdownsByWeek.map((row) => ({
+    'Prod week reported': row.week,
+    'Count of Work Order No': row.breakdowns,
   })));
-  addAnalyticsSheet(wb, 'GTP BD Machine Week', data.machineWeekRows);
-  addAnalyticsSheet(wb, 'GTP Response by Week', data.responseWeekRows.map((row) => ({
-    Week: row.week,
-    Breakdowns: row.breakdowns,
-    'Avg Response (min)': row.avgResponseMinutes,
-  })));
-  addAnalyticsSheet(wb, 'GTP Response Machine', data.responseMachineRows.map((row) => ({
+  addAnalyticsSheet(wb, 'GTP BD_MC_Wk', data.legacyDowntimeByMachine.map((row) => ({
     'Machine / Asset': row.assetName,
     'Asset Tag': row.assetTag,
-    Breakdowns: row.breakdowns,
-    'Avg Response (min)': row.avgResponseMinutes,
+    'Sum of Downtime minutes breakdowns (date completed - date reported)': row.downtimeMinutes,
+  })));
+  addAnalyticsSheet(wb, 'GTP Rpon_Wk', data.legacyResponseByWeek.map((row) => ({
+    'Prod week reported': row.week,
+    'Sum of Response Time': row.responseMinutes,
+  })));
+  addAnalyticsSheet(wb, 'GTP Rpons_MC', data.legacyResponseByMachine.map((row) => ({
+    'Machine / Asset': row.assetName,
+    'Asset Tag': row.assetTag,
+    'Sum of Response Time': row.responseMinutes,
   })));
   return { buffer: generateXlsxBuffer(wb), filename: buildFilename('breakdown-performance-response-report') };
 }

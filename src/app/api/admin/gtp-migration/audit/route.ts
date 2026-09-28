@@ -263,6 +263,75 @@ export async function POST(request: NextRequest) {
 
     const audit = auditGtpWorkbookRows(jobs, machines);
 
+    // Spreadsheet consistency is not enough for a database import. Every
+    // equipment-backed row must also resolve to a real iAssetsPro Asset.
+    const readyAuditRows = audit.rows.filter((row) => row.importReady);
+    const directEquipmentCodes = [...new Set(
+      readyAuditRows
+        .map((row) => row.equipmentCode)
+        .filter((code) => code && !code.startsWith('APP-ASSET:') && !code.startsWith('NON-EQUIPMENT:')),
+    )];
+
+    const tenantAssets = directEquipmentCodes.length
+      ? await db.asset.findMany({
+          where: { assetTag: { in: directEquipmentCodes } },
+          select: { id: true, assetTag: true, name: true, criticality: true, plantId: true },
+        })
+      : [];
+    const tenantAssetByTag = new Map(tenantAssets.map((asset) => [asset.assetTag, asset]));
+
+    const assetLinkageRows = readyAuditRows.map((row) => {
+      if (row.equipmentCode.startsWith('APP-ASSET:')) {
+        const assetId = row.equipmentCode.slice('APP-ASSET:'.length);
+        const asset = referencedAssets.find((candidate) => candidate.id === assetId);
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: asset?.id || assetId,
+          assetTag: asset?.assetTag || null,
+          assetName: asset?.name || row.equipmentName,
+          resolution: 'admin_asset_override' as const,
+          tenantReady: Boolean(asset),
+        };
+      }
+      if (row.equipmentCode.startsWith('NON-EQUIPMENT:')) {
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: null,
+          assetTag: null,
+          assetName: 'Non-equipment work',
+          resolution: 'non_equipment' as const,
+          tenantReady: true,
+        };
+      }
+
+      const asset = tenantAssetByTag.get(row.equipmentCode);
+      return {
+        legacyRowNumber: row.legacyRowNumber ?? null,
+        legacyWorkOrderNo: row.legacyWorkOrderNo,
+        equipmentCode: row.equipmentCode,
+        equipmentName: row.equipmentName,
+        assetId: asset?.id || null,
+        assetTag: asset?.assetTag || null,
+        assetName: asset?.name || null,
+        resolution: asset ? 'asset_tag_match' as const : 'unlinked' as const,
+        tenantReady: Boolean(asset),
+      };
+    });
+
+    const tenantReadyRows = assetLinkageRows.filter((row) => row.tenantReady).length;
+    const tenantBlockedRows = assetLinkageRows.length - tenantReadyRows;
+    const unlinkedEquipmentCodes = [...new Set(
+      assetLinkageRows
+        .filter((row) => !row.tenantReady && row.resolution === 'unlinked')
+        .map((row) => row.equipmentCode),
+    )].sort();
+
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
       code,
       affectedJobs: jobs.filter((job) => asText(job.equipmentCode) === code).length,
@@ -339,6 +408,16 @@ export async function POST(request: NextRequest) {
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
         summary: audit.summary,
+        tenantReadiness: {
+          spreadsheetReadyRows: audit.summary.importReadyRows,
+          tenantReadyRows,
+          tenantBlockedRows,
+          unlinkedEquipmentCodes,
+          directlyMatchedAssetTags: tenantAssets.length,
+          adminAssetOverrides: assetLinkageRows.filter((row) => row.resolution === 'admin_asset_override').length,
+          nonEquipmentRows: assetLinkageRows.filter((row) => row.resolution === 'non_equipment').length,
+        },
+        assetLinkageRows: assetLinkageRows.slice(0, 500),
         duplicateMachines,
         blankMachineCodeRows,
         tradeNormalizations: [...tradeMap.values()].sort((a, b) => b.count - a.count || a.from.localeCompare(b.from)),

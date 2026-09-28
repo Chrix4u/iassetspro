@@ -24,7 +24,9 @@ const PUBLIC_PATHS = [
   '/api/health',
   '/api/setup/first-admin',
 ];
-const INTERNAL_SECRET = process.env.PM_CRON_SECRET || '';
+function getInternalPmSecret(): string {
+  return process.env.PM_CRON_SECRET || '';
+}
 const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
   // Repairs composite resource/report surfaces — order matters.
   { prefix: '/api/repairs/material-requests', modules: ['repairs', 'inventory'] },
@@ -205,7 +207,8 @@ export default async function proxy(request: NextRequest) {
   ]);
   if (internalPmPaths.has(pathname)) {
     const cronSecret = request.headers.get('x-pm-cron-secret') || '';
-    if (INTERNAL_SECRET && cronSecret === INTERNAL_SECRET) {
+    const internalSecret = getInternalPmSecret();
+    if (internalSecret && cronSecret === internalSecret) {
       const blocked = await moduleGateResponse(pathname);
       if (blocked) return blocked;
       return withSecurityHeaders(NextResponse.next());

@@ -85,6 +85,7 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain("GTP-WO-");
     expect(route).toContain('db.workOrder.findMany');
     expect(route).toContain('db.maintenanceRequest.findMany');
+    expect(route).toContain('sourceIdentityCollisions');
     expect(route).toContain('idempotencyCollisions');
     expect(route).not.toContain('db.workOrder.create');
     expect(route).not.toContain('db.maintenanceRequest.create');

@@ -50,6 +50,13 @@ function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedT
   });
 }
 
+const normalizeIdentity = (value?: string | null): string =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
 const criticalityToLegacyPriority = (criticality?: string | null): number => {
   const value = String(criticality || '').toLowerCase();
   if (value === 'critical') return 1;
@@ -152,6 +159,7 @@ export async function POST(request: NextRequest) {
 
     const rawJobs = toJobs(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.JobRecords!, { defval: null }));
     const machines = toMachines(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.Machines!, { defval: null }));
+    const legacyMachines = [...machines];
     const overrides = parseOverrides(formData.get('overrides'));
     const overrideByRow = new Map(overrides.map((override) => [override.rowNumber, override]));
     const reportedTimeCorrections = parseReportedTimeCorrections(formData.get('reportedTimeCorrections'));
@@ -261,6 +269,104 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    const existingAssets = await db.asset.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        assetTag: true,
+        criticality: true,
+        plantId: true,
+        departmentId: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const legacyByCode = new Map<string, GtpMachineMasterRow[]>();
+    for (const machine of legacyMachines) {
+      const code = asText(machine.code);
+      if (!code) continue;
+      const rows = legacyByCode.get(code) || [];
+      rows.push(machine);
+      legacyByCode.set(code, rows);
+    }
+
+    const machineAssetRows = [...legacyByCode.entries()]
+      .map(([code, variants]) => {
+        const normalizedCode = normalizeIdentity(code);
+        const variantKeys = new Set(
+          variants.map((variant) => normalizeIdentity(variant.name) + '|' + String(variant.priority ?? '')),
+        );
+        const masterConflict = variantKeys.size > 1;
+        const normalizedNames = new Set(variants.map((variant) => normalizeIdentity(variant.name)).filter(Boolean));
+        const tagMatches = existingAssets.filter((asset) => normalizeIdentity(asset.assetTag) === normalizedCode);
+        const nameMatches = existingAssets.filter((asset) => normalizedNames.has(normalizeIdentity(asset.name)));
+        const candidates = [...new Map([...tagMatches, ...nameMatches].map((asset) => [asset.id, asset])).values()];
+
+        let status: 'matched_tag' | 'matched_name' | 'needs_create' | 'ambiguous' | 'master_conflict';
+        let suggestedAsset = null as null | (typeof existingAssets)[number];
+        if (masterConflict) {
+          status = 'master_conflict';
+        } else if (tagMatches.length === 1) {
+          status = 'matched_tag';
+          suggestedAsset = tagMatches[0];
+        } else if (tagMatches.length > 1 || nameMatches.length > 1) {
+          status = 'ambiguous';
+        } else if (nameMatches.length === 1) {
+          status = 'matched_name';
+          suggestedAsset = nameMatches[0];
+        } else {
+          status = 'needs_create';
+        }
+
+        return {
+          code,
+          canonicalName: variants[0]?.name || '',
+          canonicalPriority: variants[0]?.priority ?? null,
+          status,
+          masterConflict,
+          variants: variants.map((variant) => ({
+            name: variant.name,
+            priority: variant.priority ?? null,
+            order: variant.order ?? null,
+          })),
+          suggestedAsset: suggestedAsset ? {
+            id: suggestedAsset.id,
+            assetTag: suggestedAsset.assetTag,
+            name: suggestedAsset.name,
+            criticality: suggestedAsset.criticality,
+            plantId: suggestedAsset.plantId,
+            departmentId: suggestedAsset.departmentId,
+          } : null,
+          candidateAssets: candidates.slice(0, 8).map((asset) => ({
+            id: asset.id,
+            assetTag: asset.assetTag,
+            name: asset.name,
+            criticality: asset.criticality,
+          })),
+        };
+      })
+      .sort((a, b) => {
+        const rank: Record<string, number> = {
+          master_conflict: 0,
+          ambiguous: 1,
+          needs_create: 2,
+          matched_name: 3,
+          matched_tag: 4,
+        };
+        return rank[a.status] - rank[b.status] || a.code.localeCompare(b.code);
+      });
+
+    const machineAssetSummary = {
+      legacyMasterRows: legacyMachines.length,
+      uniqueLegacyCodes: machineAssetRows.length,
+      currentAppAssets: existingAssets.length,
+      matchedExisting: machineAssetRows.filter((row) => row.status === 'matched_tag' || row.status === 'matched_name').length,
+      needsCreate: machineAssetRows.filter((row) => row.status === 'needs_create').length,
+      ambiguous: machineAssetRows.filter((row) => row.status === 'ambiguous').length,
+      masterConflicts: machineAssetRows.filter((row) => row.status === 'master_conflict').length,
+    };
+
     const audit = auditGtpWorkbookRows(jobs, machines);
 
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
@@ -339,6 +445,12 @@ export async function POST(request: NextRequest) {
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
         summary: audit.summary,
+        machineAssetMapping: {
+          dryRun: true,
+          writesEnabled: false,
+          summary: machineAssetSummary,
+          rows: machineAssetRows,
+        },
         duplicateMachines,
         blankMachineCodeRows,
         tradeNormalizations: [...tradeMap.values()].sort((a, b) => b.count - a.count || a.from.localeCompare(b.from)),

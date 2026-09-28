@@ -22,6 +22,34 @@ type ReconciliationOverride = {
   assetId?: string;
 };
 
+type ReportedTimeCorrection = {
+  rowNumber: number;
+  reportedAt: string;
+  reason: string;
+};
+
+
+function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedTimeCorrection[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('Invalid reported-time correction payload');
+
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('Invalid reported-time correction entry');
+    const row = item as Record<string, unknown>;
+    const rowNumber = Number(row.rowNumber);
+    const reportedAt = typeof row.reportedAt === 'string' ? row.reportedAt.trim() : '';
+    const reason = typeof row.reason === 'string' ? row.reason.trim() : '';
+
+    if (!Number.isInteger(rowNumber) || rowNumber < 2) throw new Error('Invalid reported-time correction row number');
+    const parsedDate = new Date(reportedAt);
+    if (!reportedAt || Number.isNaN(parsedDate.getTime())) throw new Error('Reported-time correction requires a valid timestamp');
+    if (reason.length < 8) throw new Error('Reported-time correction requires a reason of at least 8 characters');
+
+    return { rowNumber, reportedAt: parsedDate.toISOString(), reason };
+  });
+}
+
 const criticalityToLegacyPriority = (criticality?: string | null): number => {
   const value = String(criticality || '').toLowerCase();
   if (value === 'critical') return 1;
@@ -126,6 +154,10 @@ export async function POST(request: NextRequest) {
     const machines = toMachines(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.Machines!, { defval: null }));
     const overrides = parseOverrides(formData.get('overrides'));
     const overrideByRow = new Map(overrides.map((override) => [override.rowNumber, override]));
+    const reportedTimeCorrections = parseReportedTimeCorrections(formData.get('reportedTimeCorrections'));
+    const reportedTimeCorrectionByRow = new Map(
+      reportedTimeCorrections.map((correction) => [correction.rowNumber, correction]),
+    );
 
     const referencedAssetIds = [...new Set(
       overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
@@ -154,8 +186,31 @@ export async function POST(request: NextRequest) {
       assetName: string | null;
     }> = [];
 
-    const jobs = rawJobs.map((job) => {
-      const rowNumber = Number(job.rowNumber || 0);
+    const appliedReportedTimeCorrections: Array<{
+      rowNumber: number;
+      workOrderNo: string;
+      reportedAt: string;
+      reason: string;
+    }> = [];
+
+    const jobs = rawJobs.map((sourceJob) => {
+      const rowNumber = Number(sourceJob.rowNumber || 0);
+      const timeCorrection = reportedTimeCorrectionByRow.get(rowNumber);
+      let job = sourceJob;
+
+      if (timeCorrection) {
+        if (sourceJob.reportedAt !== null && sourceJob.reportedAt !== undefined && String(sourceJob.reportedAt).trim() !== '') {
+          throw new Error(`Reported time can only be corrected when the legacy row is missing it (row ${rowNumber})`);
+        }
+        job = { ...sourceJob, reportedAt: timeCorrection.reportedAt };
+        appliedReportedTimeCorrections.push({
+          rowNumber,
+          workOrderNo: String(sourceJob.workOrderNo ?? ''),
+          reportedAt: timeCorrection.reportedAt,
+          reason: timeCorrection.reason,
+        });
+      }
+
       const override = overrideByRow.get(rowNumber);
       if (!override) return job;
 
@@ -274,6 +329,9 @@ export async function POST(request: NextRequest) {
           overridesSubmitted: overrides.length,
           overridesApplied: reconciliation.length,
           rows: reconciliation,
+          reportedTimeCorrectionsSubmitted: reportedTimeCorrections.length,
+          reportedTimeCorrectionsApplied: appliedReportedTimeCorrections.length,
+          reportedTimeCorrections: appliedReportedTimeCorrections,
         },
         workbook: {
           jobRecords: jobs.length,

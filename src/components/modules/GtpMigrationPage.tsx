@@ -33,6 +33,9 @@ type AuditResult = {
     reportedTimeCorrectionsSubmitted?: number;
     reportedTimeCorrectionsApplied?: number;
     reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
+    equipmentCodeMappingsSubmitted?: number;
+    equipmentCodeMappingsApplied?: number;
+    equipmentCodeMappings?: Array<{ equipmentCode: string; assetId: string; assetName: string | null; assetTag: string | null }>;
   };
   tenantReadiness?: {
     spreadsheetReadyRows: number;
@@ -81,6 +84,7 @@ export function GtpMigrationPage() {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
+  const [equipmentCodeMappings, setEquipmentCodeMappings] = useState<Record<string, string>>({});
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -110,6 +114,11 @@ export function GtpMigrationPage() {
         }))
         .filter((value) => value.reportedAt && value.reason.length >= 8);
       if (timeCorrections.length) form.append('reportedTimeCorrections', JSON.stringify(timeCorrections));
+
+      const codeMappings = Object.entries(equipmentCodeMappings)
+        .filter(([, assetId]) => Boolean(assetId))
+        .map(([equipmentCode, assetId]) => ({ equipmentCode, assetId }));
+      if (codeMappings.length) form.append('equipmentCodeMappings', JSON.stringify(codeMappings));
 
       const response = await api.post<AuditResult>('/api/admin/gtp-migration/audit', form, { timeout: 120000 });
       if (!response.success || !response.data) return toast.error(response.error || 'Workbook audit failed');
@@ -179,7 +188,7 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentCodeMappings({}); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
             <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={runAudit} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
@@ -343,11 +352,43 @@ export function GtpMigrationPage() {
               <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Direct Asset-tag matches</p><p className="text-xl font-semibold">{result.tenantReadiness.directlyMatchedAssetTags.toLocaleString()}</p></div>
             </div>
             {result.tenantReadiness.unlinkedEquipmentCodes.length > 0 && <>
-              <p className="text-sm font-medium">Unlinked legacy equipment codes</p>
-              <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-lg border p-3">
-                {result.tenantReadiness.unlinkedEquipmentCodes.slice(0, 200).map((code) => <Badge key={code} variant="outline">{code}</Badge>)}
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Unlinked legacy equipment codes</p>
+                  <p className="text-xs text-muted-foreground">Map a code once and every historical row using that equipment code will be re-evaluated against the selected Asset.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void runAudit()}
+                  disabled={auditing || !Object.values(equipmentCodeMappings).some(Boolean)}
+                >
+                  {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Apply Equipment Mappings & Re-audit
+                </Button>
               </div>
-              <p className="text-xs text-muted-foreground">These machines must be created/mapped in Asset Management before historical Work Orders can be inserted. No Asset records are created by this audit.</p>
+              <div className="max-h-[420px] overflow-y-auto rounded-lg border">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Legacy equipment code</TableHead><TableHead>Existing iAssetsPro Asset</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {result.tenantReadiness.unlinkedEquipmentCodes.slice(0, 200).map((code) => <TableRow key={code}>
+                      <TableCell className="font-mono font-medium">{code}</TableCell>
+                      <TableCell className="min-w-[360px]">
+                        <AsyncSearchableSelect
+                          value={equipmentCodeMappings[code] || ''}
+                          onValueChange={(assetId) => setEquipmentCodeMappings((current) => ({ ...current, [code]: assetId }))}
+                          fetchOptions={fetchAssetOptions}
+                          placeholder="Map to existing Asset..."
+                          searchPlaceholder="Search asset name or tag..."
+                          emptyMessage="No matching Assets."
+                          clearable
+                          groupBy={false}
+                        />
+                      </TableCell>
+                    </TableRow>)}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">No Asset records are created by this audit. If the correct Asset does not exist yet, create it in Asset Management first, then return here and map the legacy code.</p>
             </>}
           </CardContent>
         </Card>}

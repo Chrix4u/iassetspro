@@ -26,6 +26,29 @@ type AuditResult = {
     resolvedDuplicateMachineRows?: number; inferredStatusRows?: number;
     issueCounts: Record<string, number>;
   };
+  assetRegistry?: {
+    totalMachineIdentities: number;
+    autoMatched: number;
+    explicitlyMapped: number;
+    unresolved: number;
+    mappingsSubmitted: number;
+    rows: Array<{
+      machineKey: string;
+      legacyCode: string;
+      legacyName: string;
+      legacyPriority: string | null;
+      affectedJobs: number;
+      resolution: 'auto_exact' | 'explicit' | 'unresolved';
+      assetId: string | null;
+      assetName: string | null;
+      assetTag: string | null;
+    }>;
+  };
+  migrationGate?: {
+    workbookBlockedRows: number;
+    unresolvedAssetIdentities: number;
+    readyForImportPreview: boolean;
+  };
   reconciliation?: {
     overridesSubmitted: number;
     overridesApplied: number;
@@ -61,6 +84,7 @@ export function GtpMigrationPage() {
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
+  const [machineAssetMappings, setMachineAssetMappings] = useState<Record<string, string>>({});
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -90,6 +114,11 @@ export function GtpMigrationPage() {
         }))
         .filter((value) => value.reportedAt && value.reason.length >= 8);
       if (timeCorrections.length) form.append('reportedTimeCorrections', JSON.stringify(timeCorrections));
+
+      const assetMappings = Object.entries(machineAssetMappings)
+        .filter(([, assetId]) => Boolean(assetId))
+        .map(([machineKey, assetId]) => ({ machineKey, assetId }));
+      if (assetMappings.length) form.append('machineAssetMappings', JSON.stringify(assetMappings));
 
       const response = await api.post<AuditResult>('/api/admin/gtp-migration/audit', form, { timeout: 120000 });
       if (!response.success || !response.data) return toast.error(response.error || 'Workbook audit failed');
@@ -159,7 +188,7 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setMachineAssetMappings({}); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
             <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={runAudit} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
@@ -187,6 +216,69 @@ export function GtpMigrationPage() {
           <Card><CardHeader><CardTitle className="text-base">Trade Normalization</CardTitle><CardDescription>Historical spelling variants are mapped to one canonical trade.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Legacy</TableHead><TableHead>Canonical</TableHead><TableHead className="text-right">Rows</TableHead></TableRow></TableHeader><TableBody>{result.tradeNormalizations.map((row) => <TableRow key={row.from + row.to}><TableCell>{row.from}</TableCell><TableCell>{row.to}</TableCell><TableCell className="text-right">{row.count}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
           <Card><CardHeader><CardTitle className="text-base">Data Quality Findings</CardTitle><CardDescription>Warnings determine which historical KPIs can be reconstructed reliably.</CardDescription></CardHeader><CardContent className="grid grid-cols-2 gap-3">{Object.entries(result.summary.issueCounts).sort((a,b)=>b[1]-a[1]).map(([code,count]) => <div key={code} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{issueLabels[code] || code.replaceAll('_',' ')}</p><p className="text-xl font-semibold">{count.toLocaleString()}</p></div>)}</CardContent></Card>
         </div>
+
+        {result.assetRegistry && <Card className={result.assetRegistry.unresolved === 0 ? 'border-emerald-200' : 'border-amber-200'}>
+          <CardHeader>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <CardTitle className="text-base">GTP Machine Master → Asset Registry</CardTitle>
+                <CardDescription>
+                  Workbook-valid machine identities must map to a real iAssetsPro Asset before historical work orders can be previewed for import.
+                  Exact code + name matches are accepted automatically; everything else requires an explicit mapping.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => void runAudit()}
+                disabled={auditing || Object.keys(machineAssetMappings).length === 0}
+              >
+                {auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Apply Asset Mappings & Re-audit
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">{result.assetRegistry.totalMachineIdentities} legacy machine identities</Badge>
+              <Badge variant="outline">{result.assetRegistry.autoMatched} exact Asset matches</Badge>
+              <Badge variant="outline">{result.assetRegistry.explicitlyMapped} admin mappings</Badge>
+              <Badge variant={result.assetRegistry.unresolved === 0 ? 'default' : 'destructive'}>{result.assetRegistry.unresolved} unresolved</Badge>
+            </div>
+            {result.assetRegistry.unresolved === 0 ? (
+              <p className="flex items-center gap-2 text-sm text-emerald-700">
+                <CheckCircle2 className="h-4 w-4" />All legacy machine identities resolve to iAssetsPro Assets.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Legacy code</TableHead><TableHead>Machine</TableHead><TableHead>Priority</TableHead><TableHead className="text-right">Jobs</TableHead><TableHead className="min-w-[340px]">iAssetsPro Asset</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {result.assetRegistry.rows.filter((row) => row.resolution === 'unresolved').map((row) => (
+                      <TableRow key={row.machineKey}>
+                        <TableCell className="font-mono">{row.legacyCode}</TableCell>
+                        <TableCell>{row.legacyName || '—'}</TableCell>
+                        <TableCell>{row.legacyPriority || '—'}</TableCell>
+                        <TableCell className="text-right">{row.affectedJobs}</TableCell>
+                        <TableCell>
+                          <AsyncSearchableSelect
+                            value={machineAssetMappings[row.machineKey] || ''}
+                            onValueChange={(assetId) => setMachineAssetMappings((current) => ({ ...current, [row.machineKey]: assetId }))}
+                            fetchOptions={fetchAssetOptions}
+                            placeholder="Map to existing Asset..."
+                            searchPlaceholder="Search asset name or tag..."
+                            emptyMessage="No matching Assets."
+                            clearable
+                            groupBy={false}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>}
 
         {result.blankMachineCodeRows.length > 0 && <Card>
           <CardHeader>
@@ -310,7 +402,22 @@ export function GtpMigrationPage() {
           </CardContent>
         </Card>}
 
-        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows === 0 ? 'Blocking master-data errors are resolved. The next stage will be a previewable transactional import with explicit approval and rollback protection.' : 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' blocked row(s) first. Historical import remains disabled.'}</p></CardContent></Card>
+        <Card className={result.migrationGate?.readyForImportPreview ? 'border-emerald-200' : 'border-red-200'}>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {result.migrationGate?.readyForImportPreview ? (
+              <p className="text-sm text-emerald-700">Workbook blockers and Asset Registry mappings are resolved. The next stage can safely generate a read-only import preview with explicit approval and rollback protection.</p>
+            ) : (
+              <>
+                <p className="text-sm">Historical import remains disabled.</p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={result.summary.blockedRows === 0 ? 'outline' : 'destructive'}>{result.summary.blockedRows} workbook-blocked row(s)</Badge>
+                  <Badge variant={(result.assetRegistry?.unresolved || 0) === 0 ? 'outline' : 'destructive'}>{result.assetRegistry?.unresolved || 0} unresolved Asset mapping(s)</Badge>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </>}
     </div>
   );

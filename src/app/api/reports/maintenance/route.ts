@@ -628,6 +628,38 @@ export async function GET(request: NextRequest) {
         }))
         .sort((a, b) => b.breakdowns - a.breakdowns || b.recordedDowntimeMinutes - a.recordedDowntimeMinutes)
         .slice(0, 50),
+      legacyParity: {
+        breakdownsByMachine: [...breakdownAssetMap.values()]
+          .map(row => ({
+            assetName: row.assetName,
+            assetTag: row.assetTag,
+            breakdowns: row.breakdowns,
+          }))
+          .sort((a, b) => b.breakdowns - a.breakdowns || a.assetName.localeCompare(b.assetName)),
+        breakdownsByWeek: [...breakdownWeeklyMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([week, row]) => ({ week, breakdowns: row.breakdowns })),
+        downtimeByMachine: [...breakdownAssetMap.values()]
+          .map(row => ({
+            assetName: row.assetName,
+            assetTag: row.assetTag,
+            downtimeMinutes: round2(row.restorationMinutes.reduce((sum, value) => sum + value, 0)),
+          }))
+          .sort((a, b) => b.downtimeMinutes - a.downtimeMinutes || a.assetName.localeCompare(b.assetName)),
+        responseByWeek: [...breakdownWeeklyMap.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([week, row]) => ({
+            week,
+            responseMinutes: round2(row.responseMinutes.reduce((sum, value) => sum + value, 0)),
+          })),
+        responseByMachine: [...breakdownAssetMap.values()]
+          .map(row => ({
+            assetName: row.assetName,
+            assetTag: row.assetTag,
+            responseMinutes: round2(row.responseMinutes.reduce((sum, value) => sum + value, 0)),
+          }))
+          .sort((a, b) => b.responseMinutes - a.responseMinutes || a.assetName.localeCompare(b.assetName)),
+      },
     };
 
     // ========== MONTHLY OPERATIONAL TREND ==========

@@ -139,6 +139,12 @@ export function GtpMigrationPage() {
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [importConfirmation, setImportConfirmation] = useState('');
   const [importing, setImporting] = useState(false);
+  const [lastImport, setLastImport] = useState<{
+    imported: number;
+    fingerprint: string;
+    sourceSha256?: string;
+    completedAt: string;
+  } | null>(null);
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -230,6 +236,9 @@ export function GtpMigrationPage() {
     if (!file || !manifest || !fingerprint || manifest.executionReady !== true) {
       return toast.error('Generate an execution-ready signed preview first');
     }
+    if (lastImport?.fingerprint === fingerprint) {
+      return toast.error('This approved fingerprint has already been imported in this session');
+    }
     if (importConfirmation.trim() !== fingerprint) {
       return toast.error('Confirmation fingerprint must exactly match the approved preview');
     }
@@ -240,10 +249,16 @@ export function GtpMigrationPage() {
       form.append('file', file);
       form.append('manifest', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'gtp-approved-preview.json');
       form.append('fingerprint', fingerprint);
-      const response = await api.post<{ imported: number; fingerprint: string }>('/api/admin/gtp-migration/import', form, { timeout: 120000 });
+      const response = await api.post<{ imported: number; fingerprint: string; sourceSha256?: string }>('/api/admin/gtp-migration/import', form, { timeout: 120000 });
       if (!response.success || !response.data) {
         return toast.error(response.error || 'Historical import failed');
       }
+      setLastImport({
+        imported: response.data.imported,
+        fingerprint: response.data.fingerprint,
+        sourceSha256: response.data.sourceSha256,
+        completedAt: new Date().toISOString(),
+      });
       toast.success(`Historical import completed · ${response.data.imported.toLocaleString()} work order(s) created`);
       setImportConfirmOpen(false);
       setImportConfirmation('');
@@ -280,17 +295,39 @@ export function GtpMigrationPage() {
         {result && <Button variant="outline" onClick={downloadAudit} className="gap-2"><Download className="h-4 w-4" />Download Audit JSON</Button>}
       </div>
 
-      <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900/60 dark:bg-amber-950/20">
+      <Card className={result?.importPreview?.manifest?.executionReady === true ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900/60 dark:bg-emerald-950/20' : 'border-amber-200 bg-amber-50/50 dark:border-amber-900/60 dark:bg-amber-950/20'}>
         <CardContent className="flex gap-3 p-4">
-          <LockKeyhole className="mt-0.5 h-5 w-5 text-amber-700" />
-          <div><p className="font-semibold">Historical import is locked</p><p className="text-sm text-muted-foreground">This page performs reconciliation only. It does not create or modify historical Work Orders, Assets, Trades or Maintenance Requests.</p></div>
+          {result?.importPreview?.manifest?.executionReady === true
+            ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" />
+            : <LockKeyhole className="mt-0.5 h-5 w-5 text-amber-700" />}
+          <div>
+            <p className="font-semibold">{result?.importPreview?.manifest?.executionReady === true ? 'Historical import execution is ready' : 'Historical import execution is gated'}</p>
+            <p className="text-sm text-muted-foreground">
+              {result?.importPreview?.manifest?.executionReady === true
+                ? 'The exact workbook, Asset links, collision checks and server signature have passed. Execution still requires full fingerprint confirmation.'
+                : 'Audit and reconciliation are always zero-write. Historical records can only be created from an execution-ready signed preview with explicit fingerprint confirmation.'}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {lastImport && <Card className="border-emerald-300 bg-emerald-50/40 dark:border-emerald-900/70 dark:bg-emerald-950/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-5 w-5 text-emerald-700" />Historical Import Receipt</CardTitle>
+          <CardDescription>The approved transaction completed successfully. The automatic re-audit may now show identity collisions because those historical identities correctly exist.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Imported work orders</p><p className="text-xl font-semibold">{lastImport.imported.toLocaleString()}</p></div>
+          <div className="rounded-lg border bg-background/70 p-3 sm:col-span-2"><p className="text-xs text-muted-foreground">Approved fingerprint</p><p className="mt-1 break-all font-mono text-xs">{lastImport.fingerprint}</p></div>
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Completed</p><p className="text-sm font-medium">{new Date(lastImport.completedAt).toLocaleString()}</p></div>
+          {lastImport.sourceSha256 && <div className="rounded-lg border bg-background/70 p-3 sm:col-span-2 lg:col-span-4"><p className="text-xs text-muted-foreground">Workbook SHA-256</p><p className="mt-1 break-all font-mono text-xs">{lastImport.sourceSha256}</p></div>}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
             <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
@@ -530,7 +567,7 @@ export function GtpMigrationPage() {
                     <Download className="h-4 w-4" />
                     Download Approved Preview Manifest
                   </Button>}
-                  {result.importPreview.manifest?.executionReady === true && <Button size="sm" onClick={() => { setImportConfirmation(''); setImportConfirmOpen(true); }} className="gap-2">
+                  {result.importPreview.manifest?.executionReady === true && lastImport?.fingerprint !== result.importPreview.fingerprint && <Button size="sm" onClick={() => { setImportConfirmation(''); setImportConfirmOpen(true); }} className="gap-2">
                     <Database className="h-4 w-4" />
                     Execute Historical Import
                   </Button>}

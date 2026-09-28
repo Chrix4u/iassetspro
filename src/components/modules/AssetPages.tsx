@@ -411,7 +411,7 @@ export function AssetsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="sm:max-w-3xl overflow-y-auto p-6 pt-0">
+        <SheetContent className="w-full sm:max-w-4xl lg:max-w-5xl overflow-y-auto p-6 pt-0">
           {detailId && <AssetDetailPage id={detailId} />}
         </SheetContent>
       </Sheet>

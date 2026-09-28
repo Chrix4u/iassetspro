@@ -34,6 +34,29 @@ type AuditResult = {
     reportedTimeCorrectionsApplied?: number;
     reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
   };
+  machineAssetMapping: {
+    dryRun: boolean;
+    writesEnabled: boolean;
+    summary: {
+      legacyMasterRows: number;
+      uniqueLegacyCodes: number;
+      currentAppAssets: number;
+      matchedExisting: number;
+      needsCreate: number;
+      ambiguous: number;
+      masterConflicts: number;
+    };
+    rows: Array<{
+      code: string;
+      canonicalName: string;
+      canonicalPriority: number | null;
+      status: 'matched_tag' | 'matched_name' | 'needs_create' | 'ambiguous' | 'master_conflict';
+      masterConflict: boolean;
+      variants: Array<{ name: string; priority: number | null; order: number | null }>;
+      suggestedAsset: null | { id: string; assetTag: string; name: string; criticality: string };
+      candidateAssets: Array<{ id: string; assetTag: string; name: string; criticality: string }>;
+    }>;
+  };
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
   blankMachineCodeRows: Array<{ rowNumber: number | null; workOrderNo: string; description: string; equipmentDescription: string; trade: string; workOrderType: string }>;
   tradeNormalizations: Array<{ from: string; to: string; count: number }>;
@@ -179,6 +202,51 @@ export function GtpMigrationPage() {
           {(result.reconciliation?.reportedTimeCorrectionsApplied || 0) > 0 && <Badge variant="outline">{result.reconciliation?.reportedTimeCorrectionsApplied} reported-time correction(s) applied</Badge>}</div></CardContent></Card>
 
         <Card>
+          <CardHeader>
+            <CardTitle className="text-base">GTP Machine Master → iAssetsPro Assets</CardTitle>
+            <CardDescription>Dry-run mapping only. Existing Assets are suggested by exact asset-tag or normalized-name match; unmatched machines are proposed for a later controlled Asset-creation stage.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              {[
+                ['Legacy rows', result.machineAssetMapping.summary.legacyMasterRows],
+                ['Unique codes', result.machineAssetMapping.summary.uniqueLegacyCodes],
+                ['App assets', result.machineAssetMapping.summary.currentAppAssets],
+                ['Matched', result.machineAssetMapping.summary.matchedExisting],
+                ['Need new Asset', result.machineAssetMapping.summary.needsCreate],
+                ['Master conflicts', result.machineAssetMapping.summary.masterConflicts + result.machineAssetMapping.summary.ambiguous],
+              ].map(([label, value]) => <div key={String(label)} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="text-xl font-semibold">{Number(value).toLocaleString()}</p></div>)}
+            </div>
+            <div className="max-h-[460px] overflow-auto rounded-lg border">
+              <Table>
+                <TableHeader><TableRow><TableHead>Legacy code</TableHead><TableHead>Machine</TableHead><TableHead>Priority</TableHead><TableHead>Mapping status</TableHead><TableHead>Suggested iAssetsPro Asset</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {result.machineAssetMapping.rows.map((row) => <TableRow key={row.code}>
+                    <TableCell className="font-mono font-semibold">{row.code}</TableCell>
+                    <TableCell className="max-w-[380px] whitespace-normal">
+                      <div>{row.canonicalName || 'Unnamed machine'}</div>
+                      {row.masterConflict && <div className="mt-1 text-xs text-amber-700">{row.variants.length} conflicting master variants — explicit reconciliation required</div>}
+                    </TableCell>
+                    <TableCell>{row.canonicalPriority ?? '—'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {row.status === 'matched_tag' ? 'Matched by asset tag'
+                          : row.status === 'matched_name' ? 'Matched by name'
+                          : row.status === 'needs_create' ? 'Needs new Asset'
+                          : row.status === 'ambiguous' ? 'Ambiguous match'
+                          : 'Master conflict'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{row.suggestedAsset ? row.suggestedAsset.name + ' [' + row.suggestedAsset.assetTag + ']' : '—'}</TableCell>
+                  </TableRow>)}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-xs text-muted-foreground">No Assets are created by this audit. The next stage must collect target Plant, Asset Category and any department policy before controlled creation is allowed.</p>
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><AlertTriangle className="h-5 w-5 text-amber-600" />Machine Master Conflicts</CardTitle><CardDescription>Duplicate machine codes must be reconciled before affected jobs can be imported.</CardDescription></CardHeader>
           <CardContent>{result.duplicateMachines.length === 0 ? <p className="flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 className="h-4 w-4" />No duplicate machine codes.</p> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Master variants</TableHead><TableHead className="text-right">Affected jobs</TableHead></TableRow></TableHeader><TableBody>{result.duplicateMachines.map((item) => <TableRow key={item.code}><TableCell className="font-mono font-semibold">{item.code}</TableCell><TableCell>{item.variants.map((v, i) => <div key={i} className="text-sm">{v.name || 'Unnamed'} <span className="text-xs text-muted-foreground">· priority {v.priority ?? '—'} · order {v.order ?? '—'}</span></div>)}</TableCell><TableCell className="text-right font-semibold">{item.affectedJobs}</TableCell></TableRow>)}</TableBody></Table></div>}</CardContent>
         </Card>
@@ -310,7 +378,13 @@ export function GtpMigrationPage() {
           </CardContent>
         </Card>}
 
-        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows === 0 ? 'Blocking master-data errors are resolved. The next stage will be a previewable transactional import with explicit approval and rollback protection.' : 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' blocked row(s) first. Historical import remains disabled.'}</p></CardContent></Card>
+        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{
+          result.summary.blockedRows > 0
+            ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' blocked JobRecord row(s) first. Historical import remains disabled.'
+            : (result.machineAssetMapping.summary.needsCreate + result.machineAssetMapping.summary.ambiguous + result.machineAssetMapping.summary.masterConflicts) > 0
+              ? 'JobRecord blockers are resolved, but the GTP Machines master is not yet fully mapped to iAssetsPro Assets. Complete Asset mapping/creation before historical import can be previewed.'
+              : 'JobRecord and machine-master blockers are resolved. The next stage may generate a preview-only historical import plan with explicit approval and rollback protection.'
+        }</p></CardContent></Card>
       </>}
     </div>
   );

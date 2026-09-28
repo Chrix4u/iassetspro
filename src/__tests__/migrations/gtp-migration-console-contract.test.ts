@@ -8,6 +8,12 @@ const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
 
 describe('GTP migration reconciliation console', () => {
+  it('uses the canonical request-session auth helper', () => {
+    expect(route).toContain("import { getSession, isAdmin } from '@/lib/auth'");
+    expect(route).toContain('const session = getSession(request)');
+    expect(route).not.toContain('getSessionAsync(request)');
+  });
+
   it('is admin-only and dry-run only', () => {
     expect(route).toContain('isAdmin(session)');
     expect(route).toContain('dryRun: true');

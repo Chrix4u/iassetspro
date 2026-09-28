@@ -104,6 +104,18 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Historical writes are still disabled');
   });
 
+  it('builds a downloadable approved preview manifest without enabling writes', () => {
+    expect(route).toContain("schemaVersion: 'gtp-historical-import-preview/v1'");
+    expect(route).toContain('manifestCore');
+    expect(route).toContain('approvedManifest');
+    expect(route).toContain('manifest: approvedManifest');
+    expect(route).not.toContain('db.workOrder.create');
+    expect(route).not.toContain('db.maintenanceRequest.create');
+    expect(page).toContain('Download Approved Preview Manifest');
+    expect(page).toContain('downloadPreviewManifest');
+    expect(page).toContain('gtp-approved-preview-');
+  });
+
   it('keeps normal dry-run audit separate from transactional preview mode', () => {
     expect(page).toContain('onClick={() => void runAudit()}');
     expect(page).toContain('onClick={() => void runAudit(true)}');

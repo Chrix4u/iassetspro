@@ -454,6 +454,7 @@ model MaintenanceRequest {
   machineDownStatus Boolean?  @default(false)
   assetId           String?
   assetName         String?
+  componentRegistryId String? // exact component/part requested for repair
   location          String?
   departmentId      String?
   requestedBy       String // → User
@@ -472,8 +473,9 @@ model MaintenanceRequest {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  // Asset relation
-  asset Asset? @relation("MRAsset", fields: [assetId], references: [id])
+  // Asset / component relations
+  asset             Asset?             @relation("MRAsset", fields: [assetId], references: [id])
+  componentRegistry ComponentRegistry? @relation("MRComponent", fields: [componentRegistryId], references: [id], onDelete: SetNull)
 
   // User relations
   requester       User? @relation("MRRequester", fields: [requestedBy], references: [id])
@@ -488,6 +490,7 @@ model MaintenanceRequest {
   comments MaintenanceRequestComment[]
 
   @@index([plantId])
+  @@index([componentRegistryId])
   @@index([status])
   @@index([priority])
   @@index([departmentId])
@@ -2981,6 +2984,7 @@ model ComponentRegistry {
 
   // Work Order - Component tracking
   workOrderComponents     WorkOrderComponent[]
+  maintenanceRequests     MaintenanceRequest[] @relation("MRComponent")
   repairMaterialRequests  RepairMaterialRequest[] @relation("RepairMatReqComponent")
   sparePartReturns        SparePartReturn[] @relation("SparePartReturnComponent")
 

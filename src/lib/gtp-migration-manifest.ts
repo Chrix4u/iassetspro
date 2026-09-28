@@ -28,6 +28,6 @@ export function signManifestFingerprint(fingerprint: string): string | null {
 
 export function verifyManifestSignature(fingerprint: string, signature: string): boolean {
   const expected = signManifestFingerprint(fingerprint);
-  if (!expected || expected.length !== signature.length) return false;
+  if (!expected || !/^[a-f0-9]{64}$/i.test(signature) || expected.length !== signature.length) return false;
   return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
 }

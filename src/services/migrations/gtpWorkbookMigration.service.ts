@@ -45,6 +45,8 @@ export interface GtpAuditedJob {
   equipmentCode: string;
   equipmentName: string;
   mappedPriority: 'critical' | 'high' | 'medium' | null;
+  machineResolution: 'direct' | 'duplicate_resolved' | 'missing' | 'ambiguous';
+  statusSource: 'explicit' | 'inferred' | 'unknown';
   importReady: boolean;
   issues: GtpAuditIssue[];
 }
@@ -59,6 +61,8 @@ export interface GtpWorkbookAuditSummary {
   missingCompletionRows: number;
   unmatchedMachineRows: number;
   duplicateMachineCodes: string[];
+  resolvedDuplicateMachineRows: number;
+  inferredStatusRows: number;
   tradeAliasesNormalized: number;
   issueCounts: Record<string, number>;
 }
@@ -119,6 +123,64 @@ export function mapGtpWorkStatus(value?: string | null): string | null {
   return null;
 }
 
+
+function normalizeIdentity(value?: string | null): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function inferGtpWorkStatus(
+  explicitStatus: string | null,
+  workStartedAt?: Date | string | number | null,
+  workCompletedAt?: Date | string | number | null,
+): { status: string | null; source: 'explicit' | 'inferred' | 'unknown' } {
+  if (explicitStatus) return { status: explicitStatus, source: 'explicit' };
+  if (hasValue(workCompletedAt)) return { status: 'closed', source: 'inferred' };
+  if (hasValue(workStartedAt)) return { status: 'in_progress', source: 'inferred' };
+  return { status: 'requested', source: 'inferred' };
+}
+
+export function resolveGtpMachine(
+  job: Pick<GtpLegacyJobRow, 'equipmentCode' | 'equipmentDescription' | 'priority'>,
+  machines: GtpMachineMasterRow[],
+): {
+  machine: GtpMachineMasterRow | null;
+  resolution: 'direct' | 'duplicate_resolved' | 'missing' | 'ambiguous';
+} {
+  const code = String(job.equipmentCode || '').trim();
+  if (!code) return { machine: null, resolution: 'missing' };
+
+  const candidates = machines.filter((machine) => String(machine.code || '').trim() === code);
+  if (candidates.length === 0) return { machine: null, resolution: 'missing' };
+  if (candidates.length === 1) return { machine: candidates[0], resolution: 'direct' };
+
+  const description = normalizeIdentity(job.equipmentDescription);
+  const priority = Number(job.priority);
+
+  let narrowed = description
+    ? candidates.filter((candidate) => normalizeIdentity(candidate.name) === description)
+    : candidates;
+
+  if (narrowed.length > 1 && Number.isFinite(priority)) {
+    const priorityMatches = narrowed.filter((candidate) => Number(candidate.priority) === priority);
+    if (priorityMatches.length === 1) narrowed = priorityMatches;
+  }
+
+  if (narrowed.length === 0 && Number.isFinite(priority)) {
+    const priorityMatches = candidates.filter((candidate) => Number(candidate.priority) === priority);
+    if (priorityMatches.length === 1) narrowed = priorityMatches;
+  }
+
+  if (narrowed.length === 1) {
+    return { machine: narrowed[0], resolution: 'duplicate_resolved' };
+  }
+
+  return { machine: null, resolution: 'ambiguous' };
+}
+
 function hasValue(value: unknown): boolean {
   return value !== null && value !== undefined && String(value).trim() !== '';
 }
@@ -138,14 +200,9 @@ export function auditGtpWorkbookRows(
   machines: GtpMachineMasterRow[],
 ): { rows: GtpAuditedJob[]; summary: GtpWorkbookAuditSummary } {
   const duplicateMachineCodes = findDuplicateMachineCodes(machines);
-  const duplicateSet = new Set(duplicateMachineCodes);
-  const machineMap = new Map<string, GtpMachineMasterRow>();
-  for (const machine of machines) {
-    const code = String(machine.code || '').trim();
-    if (code && !machineMap.has(code)) machineMap.set(code, machine);
-  }
-
   let tradeAliasesNormalized = 0;
+  let resolvedDuplicateMachineRows = 0;
+  let inferredStatusRows = 0;
   const issueCounts: Record<string, number> = {};
 
   const rows = jobs.map((job): GtpAuditedJob => {
@@ -157,7 +214,8 @@ export function auditGtpWorkbookRows(
 
     const legacyWorkOrderNo = String(job.workOrderNo ?? '').trim();
     const equipmentCode = String(job.equipmentCode ?? '').trim();
-    const machine = machineMap.get(equipmentCode);
+    const machineResult = resolveGtpMachine(job, machines);
+    const machine = machineResult.machine;
     const equipmentName = String(job.equipmentDescription || machine?.name || '').trim();
     const rawTrade = String(job.trade || '').trim();
     const canonicalTrade = canonicalizeGtpTrade(rawTrade);
@@ -165,13 +223,23 @@ export function auditGtpWorkbookRows(
 
     const prioritySource = machine?.priority ?? job.priority;
     const mappedPriority = mapGtpPriority(prioritySource);
-    const mappedStatus = mapGtpWorkStatus(job.workStatus);
+    const explicitStatus = mapGtpWorkStatus(job.workStatus);
+    const statusResult = inferGtpWorkStatus(explicitStatus, job.workStartedAt, job.workCompletedAt);
+    const mappedStatus = statusResult.status;
+    if (statusResult.source === 'inferred') inferredStatusRows += 1;
+    if (machineResult.resolution === 'duplicate_resolved') resolvedDuplicateMachineRows += 1;
     const mappedType = mapGtpWorkOrderType(job.workOrderType);
 
     if (!legacyWorkOrderNo) add('missing_work_order_no', 'error', 'Legacy Work Order No is missing.');
-    if (!equipmentCode) add('missing_machine_code', 'error', 'Equipment code is missing.');
-    else if (!machine) add('unmatched_machine_code', 'error', `Equipment code ${equipmentCode} is not in the machine master.`);
-    else if (duplicateSet.has(equipmentCode)) add('duplicate_machine_code', 'error', `Equipment code ${equipmentCode} occurs more than once in the machine master and needs reconciliation.`);
+    if (!equipmentCode) {
+      add('missing_machine_code', 'error', 'Equipment code is missing.');
+    } else if (machineResult.resolution === 'missing') {
+      add('unmatched_machine_code', 'error', `Equipment code ${equipmentCode} is not in the machine master.`);
+    } else if (machineResult.resolution === 'ambiguous') {
+      add('duplicate_machine_code', 'error', `Equipment code ${equipmentCode} maps to multiple machine-master rows and cannot be resolved from description/priority.`);
+    } else if (machineResult.resolution === 'duplicate_resolved') {
+      add('duplicate_machine_code_resolved', 'warning', `Duplicate code ${equipmentCode} was deterministically resolved using equipment description and/or legacy priority.`);
+    }
 
     if (!mappedPriority) {
       add(
@@ -182,7 +250,11 @@ export function auditGtpWorkbookRows(
           : 'Legacy priority could not be mapped.',
       );
     }
-    if (!mappedStatus) add('missing_or_unknown_status', 'warning', 'Work status is blank or cannot be mapped safely.');
+    if (statusResult.source === 'unknown') {
+      add('missing_or_unknown_status', 'warning', 'Work status cannot be mapped safely.');
+    } else if (statusResult.source === 'inferred') {
+      add('status_inferred_from_timestamps', 'warning', `Blank legacy status inferred as ${mappedStatus} from available start/completion timestamps.`);
+    }
     if (!hasValue(job.reportedAt)) add('missing_reported_time', 'error', 'Reported date/time is required for historical timeline calculations.');
     if (mappedType === 'breakdown' && !hasValue(job.workStartedAt)) add('missing_breakdown_start', 'warning', 'Breakdown has no work-start timestamp; response time cannot be reconstructed.');
     if (mappedType === 'breakdown' && !hasValue(job.workCompletedAt)) add('missing_breakdown_completion', 'warning', 'Breakdown has no completion timestamp; restoration time cannot be reconstructed.');
@@ -197,6 +269,8 @@ export function auditGtpWorkbookRows(
       equipmentCode,
       equipmentName,
       mappedPriority,
+      machineResolution: machineResult.resolution,
+      statusSource: statusResult.source,
       importReady: !issues.some((issue) => issue.severity === 'error'),
       issues,
     };
@@ -214,6 +288,8 @@ export function auditGtpWorkbookRows(
       missingCompletionRows: rows.filter((row) => row.issues.some((i) => i.code === 'missing_breakdown_completion')).length,
       unmatchedMachineRows: rows.filter((row) => row.issues.some((i) => i.code === 'unmatched_machine_code')).length,
       duplicateMachineCodes,
+      resolvedDuplicateMachineRows,
+      inferredStatusRows,
       tradeAliasesNormalized,
       issueCounts,
     },

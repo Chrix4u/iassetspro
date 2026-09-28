@@ -52,6 +52,20 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('type="datetime-local"');
   });
 
+  it('separates workbook readiness from tenant Asset-link readiness', () => {
+    expect(route).toContain("where: { assetTag: { in: directEquipmentCodes } }");
+    expect(route).toContain('tenantReadiness');
+    expect(route).toContain('unlinkedEquipmentCodes');
+    expect(route).toContain("'asset_tag_match'");
+    expect(route).toContain("'admin_asset_override'");
+    expect(route).toContain("'non_equipment'");
+    expect(route).not.toContain('db.asset.create');
+    expect(page).toContain('iAssetsPro Asset Linkage');
+    expect(page).toContain('Tenant-ready rows');
+    expect(page).toContain('Asset-link blocked');
+    expect(page).toContain('Unlinked legacy equipment codes');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

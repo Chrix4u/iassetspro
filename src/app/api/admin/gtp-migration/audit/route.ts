@@ -28,6 +28,23 @@ type ReportedTimeCorrection = {
   reason: string;
 };
 
+type MachineAssetMapping = {
+  machineKey: string;
+  assetId: string;
+};
+
+type AssetRegistryRow = {
+  machineKey: string;
+  legacyCode: string;
+  legacyName: string;
+  legacyPriority: string | null;
+  affectedJobs: number;
+  resolution: 'auto_exact' | 'explicit' | 'unresolved';
+  assetId: string | null;
+  assetName: string | null;
+  assetTag: string | null;
+};
+
 
 function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedTimeCorrection[] {
   if (typeof raw !== 'string' || !raw.trim()) return [];
@@ -49,6 +66,32 @@ function parseReportedTimeCorrections(raw: FormDataEntryValue | null): ReportedT
     return { rowNumber, reportedAt: parsedDate.toISOString(), reason };
   });
 }
+
+
+function parseMachineAssetMappings(raw: FormDataEntryValue | null): MachineAssetMapping[] {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error('Invalid machine-to-asset mapping payload');
+
+  return parsed.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('Invalid machine-to-asset mapping entry');
+    const row = item as Record<string, unknown>;
+    const machineKey = typeof row.machineKey === 'string' ? row.machineKey.trim() : '';
+    const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : '';
+    if (!machineKey) throw new Error('Machine-to-asset mapping requires a machine key');
+    if (!assetId) throw new Error('Machine-to-asset mapping requires an assetId');
+    return { machineKey, assetId };
+  });
+}
+
+const normalizeIdentity = (value: unknown) => String(value ?? '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+  .replace(/\s+/g, ' ');
+
+const makeMachineKey = (code: string, name: string, priority: string | null) =>
+  [code.trim(), normalizeIdentity(name), priority || ''].join('|||');
 
 const criticalityToLegacyPriority = (criticality?: string | null): number => {
   const value = String(criticality || '').toLowerCase();
@@ -155,19 +198,27 @@ export async function POST(request: NextRequest) {
     const overrides = parseOverrides(formData.get('overrides'));
     const overrideByRow = new Map(overrides.map((override) => [override.rowNumber, override]));
     const reportedTimeCorrections = parseReportedTimeCorrections(formData.get('reportedTimeCorrections'));
+    const machineAssetMappings = parseMachineAssetMappings(formData.get('machineAssetMappings'));
     const reportedTimeCorrectionByRow = new Map(
       reportedTimeCorrections.map((correction) => [correction.rowNumber, correction]),
     );
 
-    const referencedAssetIds = [...new Set(
-      overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
-    )];
-    const referencedAssets = referencedAssetIds.length
-      ? await db.asset.findMany({
-          where: { id: { in: referencedAssetIds } },
-          select: { id: true, name: true, assetTag: true, criticality: true },
-        })
-      : [];
+    const referencedAssetIds = [...new Set([
+      ...overrides.filter((override) => override.action === 'asset').map((override) => override.assetId!).filter(Boolean),
+      ...machineAssetMappings.map((mapping) => mapping.assetId).filter(Boolean),
+    ])];
+    const [referencedAssets, activeAssets] = await Promise.all([
+      referencedAssetIds.length
+        ? db.asset.findMany({
+            where: { id: { in: referencedAssetIds }, isActive: true },
+            select: { id: true, name: true, assetTag: true, criticality: true, plantId: true },
+          })
+        : Promise.resolve([]),
+      db.asset.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, assetTag: true, criticality: true, plantId: true },
+      }),
+    ]);
     const assetById = new Map(referencedAssets.map((asset) => [asset.id, asset]));
     const missingAssetIds = referencedAssetIds.filter((id) => !assetById.has(id));
     if (missingAssetIds.length) {
@@ -263,6 +314,93 @@ export async function POST(request: NextRequest) {
 
     const audit = auditGtpWorkbookRows(jobs, machines);
 
+    // Historical rows may be internally valid against the legacy Machines sheet
+    // and still not identify a real iAssetsPro Asset. Keep this as a second,
+    // explicit migration gate rather than treating workbook validity as import readiness.
+    const identityMap = new Map<string, {
+      machineKey: string;
+      legacyCode: string;
+      legacyName: string;
+      legacyPriority: string | null;
+      affectedJobs: number;
+    }>();
+    for (const row of audit.rows) {
+      if (!row.equipmentCode) continue;
+      if (row.equipmentCode.startsWith('APP-ASSET:') || row.equipmentCode.startsWith('NON-EQUIPMENT:')) continue;
+      if (!['direct', 'duplicate_resolved'].includes(row.machineResolution)) continue;
+
+      const machineKey = makeMachineKey(row.equipmentCode, row.equipmentName, row.mappedPriority);
+      const current = identityMap.get(machineKey) || {
+        machineKey,
+        legacyCode: row.equipmentCode,
+        legacyName: row.equipmentName,
+        legacyPriority: row.mappedPriority,
+        affectedJobs: 0,
+      };
+      current.affectedJobs += 1;
+      identityMap.set(machineKey, current);
+    }
+
+    const mappingByMachineKey = new Map(machineAssetMappings.map((mapping) => [mapping.machineKey, mapping.assetId]));
+    const assetRegistryRows: AssetRegistryRow[] = [...identityMap.values()]
+      .map((identity) => {
+        const explicitAssetId = mappingByMachineKey.get(identity.machineKey);
+        if (explicitAssetId) {
+          const asset = assetById.get(explicitAssetId);
+          if (!asset) throw new Error('Mapped Asset no longer exists: ' + explicitAssetId);
+          return {
+            ...identity,
+            resolution: 'explicit' as const,
+            assetId: asset.id,
+            assetName: asset.name,
+            assetTag: asset.assetTag,
+          };
+        }
+
+        const exactCandidates = activeAssets.filter((asset) =>
+          normalizeIdentity(asset.assetTag) === normalizeIdentity(identity.legacyCode)
+          && normalizeIdentity(asset.name) === normalizeIdentity(identity.legacyName)
+        );
+        if (exactCandidates.length === 1) {
+          const asset = exactCandidates[0];
+          return {
+            ...identity,
+            resolution: 'auto_exact' as const,
+            assetId: asset.id,
+            assetName: asset.name,
+            assetTag: asset.assetTag,
+          };
+        }
+
+        return {
+          ...identity,
+          resolution: 'unresolved' as const,
+          assetId: null,
+          assetName: null,
+          assetTag: null,
+        };
+      })
+      .sort((a, b) =>
+        (a.resolution === 'unresolved' ? 0 : 1) - (b.resolution === 'unresolved' ? 0 : 1)
+        || b.affectedJobs - a.affectedJobs
+        || a.legacyCode.localeCompare(b.legacyCode)
+      );
+
+    const assetRegistry = {
+      totalMachineIdentities: assetRegistryRows.length,
+      autoMatched: assetRegistryRows.filter((row) => row.resolution === 'auto_exact').length,
+      explicitlyMapped: assetRegistryRows.filter((row) => row.resolution === 'explicit').length,
+      unresolved: assetRegistryRows.filter((row) => row.resolution === 'unresolved').length,
+      mappingsSubmitted: machineAssetMappings.length,
+      rows: assetRegistryRows,
+    };
+
+    const migrationGate = {
+      workbookBlockedRows: audit.summary.blockedRows,
+      unresolvedAssetIdentities: assetRegistry.unresolved,
+      readyForImportPreview: audit.summary.blockedRows === 0 && assetRegistry.unresolved === 0,
+    };
+
     const duplicateMachines = audit.summary.duplicateMachineCodes.map((code) => ({
       code,
       affectedJobs: jobs.filter((job) => asText(job.equipmentCode) === code).length,
@@ -338,6 +476,8 @@ export async function POST(request: NextRequest) {
           machineMasterRows: machines.length,
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
+        assetRegistry,
+        migrationGate,
         summary: audit.summary,
         duplicateMachines,
         blankMachineCodeRows,

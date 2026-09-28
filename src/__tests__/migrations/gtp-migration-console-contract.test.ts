@@ -52,6 +52,22 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('type="datetime-local"');
   });
 
+
+  it('requires legacy machine identities to reconcile to the Asset Registry before import preview', () => {
+    expect(route).toContain("formData.get('machineAssetMappings')");
+    expect(route).toContain('assetRegistry');
+    expect(route).toContain('unresolvedAssetIdentities');
+    expect(route).toContain('readyForImportPreview');
+    expect(route).toContain("resolution: 'auto_exact'");
+    expect(route).toContain("resolution: 'explicit'");
+    expect(route).toContain("resolution: 'unresolved'");
+    expect(route).not.toContain('db.asset.create');
+    expect(route).not.toContain('db.asset.update');
+    expect(page).toContain('GTP Machine Master → Asset Registry');
+    expect(page).toContain('Apply Asset Mappings & Re-audit');
+    expect(page).toContain('unresolved Asset mapping(s)');
+  });
+
   it('surfaces reconciliation findings', () => {
     expect(route).toContain('duplicateMachines');
     expect(route).toContain('blankMachineCodeRows');

@@ -445,8 +445,9 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const assetMetaRef = useRef(new Map<string, { location: string }>());
+  const assetMetaRef = useRef(new Map<string, { location: string; criticality: string }>());
   const lastAutoLocationRef = useRef('');
+  const lastAutoPriorityRef = useRef('');
 
   const fetchAssetOptions = useCallback(async (query: string) => {
     const params = new URLSearchParams({ limit: '100' });
@@ -468,7 +469,10 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     assetMetaRef.current.clear();
 
     return assets.map((a: any) => {
-      assetMetaRef.current.set(a.id, { location: (a.location || '').trim() });
+      assetMetaRef.current.set(a.id, {
+        location: (a.location || '').trim(),
+        criticality: String(a.criticality || 'medium').toLowerCase(),
+      });
       const tag = a.assetTag ? ` [${a.assetTag}]` : '';
       const serial = a.serialNumber ? ` — ${a.serialNumber}` : '';
       return {
@@ -483,7 +487,8 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     setAssetId(value);
     if (!value) return;
 
-    const suggestedLocation = assetMetaRef.current.get(value)?.location || '';
+    const meta = assetMetaRef.current.get(value);
+    const suggestedLocation = meta?.location || '';
     setLocation((current) => {
       const currentTrimmed = current.trim();
       if (!currentTrimmed || currentTrimmed === lastAutoLocationRef.current) {
@@ -492,6 +497,21 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
       return current;
     });
     lastAutoLocationRef.current = suggestedLocation;
+
+    const priorityByCriticality: Record<string, string> = {
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      critical: 'urgent',
+    };
+    const suggestedPriority = priorityByCriticality[meta?.criticality || 'medium'] || 'medium';
+    setPriority((current) => {
+      if (!current || current === lastAutoPriorityRef.current || current === 'medium') {
+        return suggestedPriority;
+      }
+      return current;
+    });
+    lastAutoPriorityRef.current = suggestedPriority;
   }, []);
 
   useEffect(() => {
@@ -517,6 +537,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     setAssetMode('manual');
     setAssetId('');
     lastAutoLocationRef.current = '';
+    lastAutoPriorityRef.current = '';
   };
 
   const workOrderComponentLabel = (component: { id: string; name: string; componentCode?: string; parentId?: string | null }) => {
@@ -696,7 +717,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Priority</Label>
+          <Label>Priority <span className="text-xs text-muted-foreground font-normal ml-1">(suggested from asset criticality)</span></Label>
           <Select value={priority} onValueChange={setPriority}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -10242,4 +10263,3 @@ export function PmTemplatesPage() {
 // ============================================================================
 // INVENTORY SUBPAGES
 // ============================================================================
-

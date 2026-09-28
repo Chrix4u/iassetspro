@@ -437,6 +437,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [priority, setPriority] = useState('medium');
   const [assetMode, setAssetMode] = useState<'registered' | 'manual'>('registered');
   const [assetId, setAssetId] = useState('');
+  const [componentId, setComponentId] = useState('');
   const [manualAssetName, setManualAssetName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [departmentLabel, setDepartmentLabel] = useState('');
@@ -485,6 +486,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
 
   const handleRegisteredAssetChange = useCallback((value: string) => {
     setAssetId(value);
+    setComponentId('');
     if (!value) return;
 
     const meta = assetMetaRef.current.get(value);
@@ -536,24 +538,24 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const switchToManual = () => {
     setAssetMode('manual');
     setAssetId('');
+    setComponentId('');
     lastAutoLocationRef.current = '';
     lastAutoPriorityRef.current = '';
   };
 
-  const workOrderComponentLabel = (component: { id: string; name: string; componentCode?: string; parentId?: string | null }) => {
-    const byId = new Map(availableComponents.map((item) => [item.id, item]));
-    let depth = 0;
-    let cursor: typeof component | undefined = component;
-    const seen = new Set<string>();
-    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
-      seen.add(cursor.parentId);
-      const parent = byId.get(cursor.parentId);
-      if (!parent) break;
-      depth += 1;
-      cursor = parent;
-    }
-    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
-  };
+  const fetchComponentOptions = useCallback(async (query: string) => {
+    if (!assetId) return [];
+    const params = new URLSearchParams({ assetId, limit: '100' });
+    const q = query.trim();
+    if (q) params.set('search', q);
+    const res = await api.get(`/api/component-registry?${params.toString()}`);
+    if (!res.success || !Array.isArray(res.data)) return [];
+    return res.data.map((component: any) => ({
+      value: component.id,
+      label: `${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`,
+      badge: component.componentType || component.criticality,
+    }));
+  }, [assetId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -584,8 +586,10 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         machineDownStatus: machineDown,
         location: location.trim(),
       };
-      if (assetMode === 'registered') payload.assetId = assetId;
-      else payload.assetName = cleanManualAssetName;
+      if (assetMode === 'registered') {
+        payload.assetId = assetId;
+        if (componentId) payload.componentId = componentId;
+      } else payload.assetName = cleanManualAssetName;
 
       const res = await api.post('/api/maintenance-requests', payload);
       if (res.success) {
@@ -658,6 +662,23 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             placeholder="Enter asset, machine, component, facility, or item name"
             required
           />
+        </div>
+      )}
+
+      {assetMode === 'registered' && assetId && (
+        <div className="space-y-2">
+          <Label>Component / Part <span className="text-xs text-muted-foreground font-normal ml-1">(optional)</span></Label>
+          <AsyncSearchableSelect
+            value={componentId}
+            onValueChange={setComponentId}
+            fetchOptions={fetchComponentOptions}
+            placeholder="Select exact component or part..."
+            searchPlaceholder="Search component code or name..."
+            emptyMessage="No components are registered for this asset yet."
+          />
+          <p className="text-xs text-muted-foreground">
+            Selecting a component carries the exact repair target from this request into the work order automatically.
+          </p>
         </div>
       )}
 

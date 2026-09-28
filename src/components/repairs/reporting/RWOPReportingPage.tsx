@@ -29,6 +29,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   Cell,
   Pie,
   PieChart,
@@ -142,6 +144,13 @@ type ReportData = {
       avgRestorationMinutes: number;
       recordedDowntimeMinutes: number;
     }>;
+    legacyParity?: {
+      breakdownsByMachine: Array<{ assetName: string; assetTag?: string | null; breakdowns: number }>;
+      breakdownsByWeek: Array<{ week: string; breakdowns: number }>;
+      downtimeByMachine: Array<{ assetName: string; assetTag?: string | null; downtimeMinutes: number }>;
+      responseByWeek: Array<{ week: string; responseMinutes: number }>;
+      responseByMachine: Array<{ assetName: string; assetTag?: string | null; responseMinutes: number }>;
+    };
   };
   monthlyOperationalTrends?: Array<{
     month: string;
@@ -1299,6 +1308,84 @@ export default function RWOPReportingPage() {
                     </Table>
                   </div>
                 </div>
+
+              {report.breakdownPerformance?.legacyParity && (
+                <div className="space-y-4 rounded-xl border bg-muted/10 p-4">
+                  <div>
+                    <p className="text-sm font-semibold">GTP Workbook Graph Parity</p>
+                    <p className="text-xs text-muted-foreground">
+                      These five graphs follow the same aggregation semantics and chart types as the uploaded GTP maintenance workbook.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                    <div className="rounded-lg border bg-background p-3">
+                      <p className="mb-2 text-xs font-medium">Machine repair downtime per week</p>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <BarChart data={report.breakdownPerformance.legacyParity.downtimeByMachine} margin={{ top: 8, right: 8, bottom: 62, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="assetName" interval={0} angle={-55} textAnchor="end" height={88} tick={{ fontSize: 9 }} />
+                          <YAxis tick={{ fontSize: 10 }} />
+                          <RechartsTooltip formatter={(value) => [`${Number(value).toFixed(1)} min`, 'Downtime']} />
+                          <Bar dataKey="downtimeMinutes" name="Time minute" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="rounded-lg border bg-background p-3">
+                      <p className="mb-2 text-xs font-medium">Machine breakdown occurrence per machine</p>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <BarChart data={report.breakdownPerformance.legacyParity.breakdownsByMachine} margin={{ top: 8, right: 8, bottom: 62, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="assetName" interval={0} angle={-55} textAnchor="end" height={88} tick={{ fontSize: 9 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                          <RechartsTooltip />
+                          <Bar dataKey="breakdowns" name="No of Times" fill="#dc2626" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="rounded-lg border bg-background p-3">
+                      <p className="mb-2 text-xs font-medium">Machine breakdown per week</p>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={report.breakdownPerformance.legacyParity.breakdownsByWeek} margin={{ top: 8, right: 16, bottom: 36, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="week" angle={-35} textAnchor="end" height={58} tick={{ fontSize: 10 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                          <RechartsTooltip />
+                          <Line type="monotone" dataKey="breakdowns" name="No of Times" stroke="#dc2626" strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="rounded-lg border bg-background p-3">
+                      <p className="mb-2 text-xs font-medium">Response to repair per week</p>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={report.breakdownPerformance.legacyParity.responseByWeek} margin={{ top: 8, right: 16, bottom: 36, left: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="week" angle={-35} textAnchor="end" height={58} tick={{ fontSize: 10 }} />
+                          <YAxis tick={{ fontSize: 10 }} />
+                          <RechartsTooltip formatter={(value) => [`${Number(value).toFixed(1)} min`, 'Response']} />
+                          <Line type="monotone" dataKey="responseMinutes" name="Time minute" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-background p-3">
+                    <p className="mb-2 text-xs font-medium">Response time to repair per machine</p>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={report.breakdownPerformance.legacyParity.responseByMachine} margin={{ top: 8, right: 8, bottom: 72, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="assetName" interval={0} angle={-55} textAnchor="end" height={96} tick={{ fontSize: 9 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <RechartsTooltip formatter={(value) => [`${Number(value).toFixed(1)} min`, 'Response']} />
+                        <Bar dataKey="responseMinutes" name="Time minutes" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
 
               {(report.breakdownPerformance?.missingStartCount || report.breakdownPerformance?.missingCompletionCount) ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">

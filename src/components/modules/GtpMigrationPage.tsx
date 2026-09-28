@@ -613,7 +613,7 @@ export function GtpMigrationPage() {
               {result.importPreview.manifest?.executionReady === true
                 ? 'Execution gate is ready: workbook identity, Asset linkage, deterministic MR/WO identities and server approval are all satisfied.'
                 : result.importPreview.safeToInsert
-                  ? 'Preview gate is clean, but execution remains locked until the server signing key is configured and every row is bound to an active Asset.'
+                  ? 'Preview gate is clean, but execution remains locked until the server signing key is configured and every equipment-backed row is bound to an active Asset.'
                   : 'Preview detected blockers: ' + (result.importPreview.blockers || []).join('; ')}
             </div>
             <div className="overflow-x-auto">

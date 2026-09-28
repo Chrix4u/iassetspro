@@ -497,7 +497,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4 w-full min-w-0">
         <TabsList className="w-full flex overflow-x-auto p-0 h-auto gap-0 bg-transparent border-b rounded-none">
           {tabs.map((tab) => {
             const TabIcon = tab.icon;
@@ -515,8 +515,8 @@ export function AssetDetailPage({ id }: { id: string }) {
           })}
         </TabsList>
 
-        <ScrollArea className="max-h-[calc(100vh-14rem)]">
-          <div className="pb-6">
+        <ScrollArea className="max-h-[calc(100vh-14rem)] w-full min-w-0">
+          <div className="pb-6 w-full min-w-0">
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
               {asset.description && (
@@ -803,7 +803,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                             Link Store Part
                           </Button>
                         </div>
-                        <div className="overflow-x-auto rounded-md border">
+                        <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
                           <Table>
                             <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Required</TableHead><TableHead>Stock</TableHead><TableHead>Location</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
                             <TableBody>
@@ -834,7 +834,7 @@ export function AssetDetailPage({ id }: { id: string }) {
             </TabsContent>
 
             {/* ==================== COMPONENTS TAB ==================== */}
-            <TabsContent value="components" className="mt-4 space-y-4">
+            <TabsContent value="components" className="mt-4 w-full min-w-0 space-y-4 overflow-visible">
               {/* Add Component Form */}
               {showComponentForm && canCreateComponent && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -946,8 +946,8 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </div>
                   <Card className="border-0 shadow-sm">
                     <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+                      <div className="w-full max-w-full overflow-x-auto pb-2">
+                        <Table className="min-w-[980px]"><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
                           {components.map((c: any) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
@@ -1031,8 +1031,8 @@ export function AssetDetailPage({ id }: { id: string }) {
                             <p className="text-sm font-semibold">Currently Installed</p>
                             <Badge variant="outline">{installedParts.filter((part: any) => part.status === 'installed').length} active</Badge>
                           </div>
-                          <div className="overflow-x-auto rounded-md border">
-                            <Table>
+                          <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
+                            <Table className="min-w-[900px]">
                               <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Serial / Lot</TableHead><TableHead>Qty</TableHead><TableHead>Installed</TableHead><TableHead>Source</TableHead><TableHead className="min-w-[260px]">Remove</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {installedParts.filter((part: any) => part.status === 'installed').length === 0 ? (
@@ -1066,8 +1066,8 @@ export function AssetDetailPage({ id }: { id: string }) {
 
                         <div className="space-y-2">
                           <p className="text-sm font-semibold">Installed-Part History</p>
-                          <div className="overflow-x-auto rounded-md border">
-                            <Table>
+                          <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
+                            <Table className="min-w-[760px]">
                               <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Status</TableHead><TableHead>Installed</TableHead><TableHead>Removed</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {installedParts.length === 0 ? (
@@ -1088,8 +1088,8 @@ export function AssetDetailPage({ id }: { id: string }) {
 
                         <div className="space-y-2">
                           <p className="text-sm font-semibold">Replacement Records</p>
-                          <div className="overflow-x-auto rounded-md border">
-                            <Table>
+                          <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
+                            <Table className="min-w-[760px]">
                               <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Old Serial</TableHead><TableHead>New Serial</TableHead><TableHead>Reason</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {replacementHistory.length === 0 ? (

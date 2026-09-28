@@ -45,6 +45,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DateRangePicker } from '@/components/ui/datetime-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDate } from '@/components/shared/helpers';
 
@@ -60,6 +61,13 @@ type Department = {
   code?: string | null;
   plantId?: string | null;
   plant?: Plant | null;
+};
+
+type TradeOption = {
+  id: string;
+  name: string;
+  code?: string | null;
+  category?: string | null;
 };
 
 type WorkOrderRow = {
@@ -364,6 +372,9 @@ type ReportFilters = {
   plantId: string;
   departmentId: string;
   moduleFilter: ModuleFilter;
+  priority: string;
+  tradeActivity: string;
+  assetId: string;
 };
 
 const STATUS_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#14b8a6'];
@@ -386,6 +397,9 @@ function defaultFilters(): ReportFilters {
     plantId: 'all',
     departmentId: 'all',
     moduleFilter: 'repairs',
+    priority: 'all',
+    tradeActivity: 'all',
+    assetId: 'all',
   };
 }
 
@@ -403,6 +417,9 @@ function buildQuery(filters: ReportFilters): string {
   if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
   if (filters.departmentId !== 'all') params.set('departmentId', filters.departmentId);
   if (filters.moduleFilter !== 'all') params.set('moduleFilter', filters.moduleFilter);
+  if (filters.priority !== 'all') params.set('priority', filters.priority);
+  if (filters.tradeActivity !== 'all') params.set('tradeActivity', filters.tradeActivity);
+  if (filters.assetId !== 'all') params.set('assetId', filters.assetId);
   return params.toString();
 }
 
@@ -424,7 +441,10 @@ function filtersEqual(a: ReportFilters, b: ReportFilters): boolean {
     && a.endDate === b.endDate
     && a.plantId === b.plantId
     && a.departmentId === b.departmentId
-    && a.moduleFilter === b.moduleFilter;
+    && a.moduleFilter === b.moduleFilter
+    && a.priority === b.priority
+    && a.tradeActivity === b.tradeActivity
+    && a.assetId === b.assetId;
 }
 
 export default function RWOPReportingPage() {
@@ -440,6 +460,7 @@ export default function RWOPReportingPage() {
   const [appliedFilters, setAppliedFilters] = useState<ReportFilters | null>(null);
   const [plants, setPlants] = useState<Plant[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [trades, setTrades] = useState<TradeOption[]>([]);
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<ExportFormat | null>(null);
@@ -485,6 +506,26 @@ export default function RWOPReportingPage() {
     }
   }, []);
 
+  const loadTrades = useCallback(async () => {
+    const response = await api.get<TradeOption[]>('/api/trades');
+    setTrades(response.success && Array.isArray(response.data) ? response.data : []);
+  }, []);
+
+  const fetchReportAssetOptions = useCallback(async (query: string) => {
+    const params = new URLSearchParams({ limit: '100' });
+    if (query.trim()) params.set('search', query.trim());
+    if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
+    const response = await api.get<any[]>(`/api/assets?${params.toString()}`, {
+      headers: plantHeader(filters.plantId),
+    });
+    if (!response.success || !Array.isArray(response.data)) return [];
+    return response.data.map((asset: any) => ({
+      value: asset.id,
+      label: `${asset.name || 'Unnamed Asset'}${asset.assetTag ? ` [${asset.assetTag}]` : ''}`,
+      badge: asset.criticality || undefined,
+    }));
+  }, [filters.plantId]);
+
   const loadDepartments = useCallback(async (selectedPlant: string) => {
     const params = new URLSearchParams();
     if (selectedPlant !== 'all') params.set('plantId', selectedPlant);
@@ -526,7 +567,8 @@ export default function RWOPReportingPage() {
   useEffect(() => {
     if (!isAuthenticated) return;
     void loadPlants();
-  }, [isAuthenticated, loadPlants]);
+    void loadTrades();
+  }, [isAuthenticated, loadPlants, loadTrades]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -779,6 +821,9 @@ export default function RWOPReportingPage() {
               plantId: filters.plantId === 'all' ? undefined : filters.plantId,
               departmentId: filters.departmentId === 'all' ? undefined : filters.departmentId,
               maintenanceScope: 'repairs',
+            priority: filters.priority === 'all' ? undefined : filters.priority,
+            tradeActivity: filters.tradeActivity === 'all' ? undefined : filters.tradeActivity,
+            assetId: filters.assetId === 'all' ? undefined : filters.assetId,
             },
           }),
           timeout: 60_000,
@@ -828,6 +873,9 @@ export default function RWOPReportingPage() {
       if (filters.endDate) params.set('to', filters.endDate);
       if (filters.plantId !== 'all') params.set('plantId', filters.plantId);
       if (filters.departmentId !== 'all') params.set('department', filters.departmentId);
+      if (filters.priority !== 'all') params.set('priority', filters.priority);
+      if (filters.tradeActivity !== 'all') params.set('trade', filters.tradeActivity);
+      if (filters.assetId !== 'all') params.set('assetId', filters.assetId);
 
       const response = await api.getRaw(`/api/repairs/reports?${params.toString()}`, {
         headers: plantHeader(filters.plantId),
@@ -923,7 +971,7 @@ export default function RWOPReportingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(260px,1.4fr)_1fr_1fr_1fr_auto] lg:items-end">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 items-end">
             <DateRangePicker
               label="Date Range"
               from={filters.startDate || undefined}
@@ -943,6 +991,7 @@ export default function RWOPReportingPage() {
                   ...current,
                   plantId: value,
                   departmentId: 'all',
+                  assetId: 'all',
                 }))}
               >
                 <SelectTrigger><SelectValue placeholder="Plant" /></SelectTrigger>
@@ -988,6 +1037,48 @@ export default function RWOPReportingPage() {
                   <SelectItem value="all">All Maintenance</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Priority</span>
+              <Select value={filters.priority} onValueChange={value => setFilters(current => ({ ...current, priority: value }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priorities</SelectItem>
+                  <SelectItem value="urgent">Urgent / Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Trade</span>
+              <Select value={filters.tradeActivity} onValueChange={value => setFilters(current => ({ ...current, tradeActivity: value }))}>
+                <SelectTrigger><SelectValue placeholder="Trade" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All trades</SelectItem>
+                  {trades.map(trade => (
+                    <SelectItem key={trade.id} value={trade.name}>{trade.name}{trade.code ? ` (${trade.code})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Machine / Asset</span>
+              <AsyncSearchableSelect
+                value={filters.assetId === 'all' ? '' : filters.assetId}
+                onValueChange={value => setFilters(current => ({ ...current, assetId: value || 'all' }))}
+                fetchOptions={fetchReportAssetOptions}
+                deps={[filters.plantId]}
+                placeholder="All machines / assets"
+                searchPlaceholder="Search machine, asset tag or name..."
+                emptyMessage="No matching assets."
+                clearable
+                groupBy={false}
+              />
             </div>
 
             <Button onClick={() => void loadReport(filters)} disabled={loading} className="bg-emerald-600 text-white hover:bg-emerald-700">
@@ -1041,7 +1132,7 @@ export default function RWOPReportingPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Repairs Report Library</CardTitle>
           <CardDescription>
-            Operational reports use the currently selected date, plant and department filters. Excel exports contain the full filtered dataset.
+            Operational reports use the currently selected date, plant, department, priority, trade and machine/asset filters. Excel exports contain the full filtered dataset.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -5,7 +5,7 @@ const proxy = fs.readFileSync('src/proxy.ts', 'utf8');
 
 describe('PM internal proxy authentication', () => {
   it('has no hard-coded/default PM cron secret', () => {
-    expect(proxy).toContain("const INTERNAL_SECRET = process.env.PM_CRON_SECRET || ''");
+    expect(proxy).toContain("return process.env.PM_CRON_SECRET || ''");
     expect(proxy).not.toContain('eam-pm-cron-secret-2025');
     expect(proxy).not.toContain('pm-scheduler-internal-2025');
   });
@@ -14,7 +14,7 @@ describe('PM internal proxy authentication', () => {
     expect(proxy).toContain("'/api/pm-schedules/check-due'");
     expect(proxy).toContain("'/api/pm-schedules/check-due-cron'");
     expect(proxy).toContain("'/api/pm-triggers/evaluate'");
-    expect(proxy).toContain('INTERNAL_SECRET && cronSecret === INTERNAL_SECRET');
+    expect(proxy).toContain('internalSecret && cronSecret === internalSecret');
   });
 
   it('keeps invalid/missing secrets on the normal auth path', () => {

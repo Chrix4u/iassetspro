@@ -679,6 +679,7 @@ export type PageName =
   | 'settings-health'
   | 'settings-queues'
   | 'settings-preferences'
+  | 'settings-gtp-migration'
   // Legacy fallbacks
   | 'assets'
   | 'asset-detail'

@@ -307,6 +307,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'settings-notifications', label: 'Notifications', icon: BellRing },
         { page: 'settings-integrations', label: 'Integrations', icon: Link2 },
         { page: 'settings-backup', label: 'Backup', icon: Database },
+        { page: 'settings-gtp-migration', label: 'GTP Data Migration', icon: FileSpreadsheet },
         { page: 'settings-audit', label: 'Audit Logs', icon: Eye },
         { page: 'settings-security', label: 'Security', icon: ShieldAlert },
         { page: 'settings-health', label: 'System Health', icon: HeartPulse },

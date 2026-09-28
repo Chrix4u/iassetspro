@@ -207,19 +207,19 @@ elif grep -Eq "not yet been applied|have not yet been applied|Following migratio
         --format=plain --no-owner --no-privileges "$DB_NAME" | gzip -1 > "$BACKUP"
       ;;
     mysql|mariadb)
-      DUMP_BIN="$(command -v mariadb-dump || command -v mysqldump || true)"
+      DUMP_BIN="$(command -v pg_dump || true)"
       [[ -n "$DUMP_BIN" ]] || { echo "STOP: mariadb-dump/mysqldump unavailable for MySQL backup."; exit 1; }
-      DB_PORT="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "3306")')"
-      MYSQL_PWD="$DB_PASS" "$DUMP_BIN" \
-        --host="$DB_HOST" --port="$DB_PORT" --user="$DB_USER" \
-        --single-transaction --quick --hex-blob "$DB_NAME" | gzip -1 > "$BACKUP"
+      DB_PORT="$(node --env-file="$NEW_RELEASE/.env" -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "5432")')"
+      PGPASSWORD="$DB_PASS" "$DUMP_BIN" \
+        --host="$DB_HOST" --port="$DB_PORT" --username="$DB_USER" \
+        --format=plain --no-owner --no-privileges "$DB_NAME" | gzip -1 > "$BACKUP"
       ;;
     *)
       echo "STOP: unsupported DATABASE_URL protocol for verified pre-migration backup: $DB_PROTOCOL"
       exit 1
       ;;
   esac
-  unset DB_PASS PGPASSWORD MYSQL_PWD
+  unset DB_PASS PGPASSWORD PGPASSWORD MYSQL_PWD
 
   test -s "$BACKUP"
   gzip -t "$BACKUP"

@@ -34,6 +34,26 @@ type AuditResult = {
     reportedTimeCorrectionsApplied?: number;
     reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
   };
+  tenantReadiness?: {
+    spreadsheetReadyRows: number;
+    tenantReadyRows: number;
+    tenantBlockedRows: number;
+    unlinkedEquipmentCodes: string[];
+    directlyMatchedAssetTags: number;
+    adminAssetOverrides: number;
+    nonEquipmentRows: number;
+  };
+  assetLinkageRows?: Array<{
+    legacyRowNumber: number | null;
+    legacyWorkOrderNo: string;
+    equipmentCode: string;
+    equipmentName: string;
+    assetId: string | null;
+    assetTag: string | null;
+    assetName: string | null;
+    resolution: 'asset_tag_match' | 'admin_asset_override' | 'non_equipment' | 'unlinked';
+    tenantReady: boolean;
+  }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
   blankMachineCodeRows: Array<{ rowNumber: number | null; workOrderNo: string; description: string; equipmentDescription: string; trade: string; workOrderType: string }>;
   tradeNormalizations: Array<{ from: string; to: string; count: number }>;
@@ -310,7 +330,33 @@ export function GtpMigrationPage() {
           </CardContent>
         </Card>}
 
-        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows === 0 ? 'Blocking master-data errors are resolved. The next stage will be a previewable transactional import with explicit approval and rollback protection.' : 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' blocked row(s) first. Historical import remains disabled.'}</p></CardContent></Card>
+        {result.tenantReadiness && <Card className={result.tenantReadiness.tenantBlockedRows === 0 ? 'border-emerald-200' : 'border-amber-200'}>
+          <CardHeader>
+            <CardTitle className="text-base">iAssetsPro Asset Linkage</CardTitle>
+            <CardDescription>A workbook row can be structurally clean but still cannot be imported until its equipment resolves to an Asset in this iAssetsPro tenant.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Spreadsheet-ready rows</p><p className="text-xl font-semibold">{result.tenantReadiness.spreadsheetReadyRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Tenant-ready rows</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantReadyRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Asset-link blocked</p><p className="text-xl font-semibold">{result.tenantReadiness.tenantBlockedRows.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Direct Asset-tag matches</p><p className="text-xl font-semibold">{result.tenantReadiness.directlyMatchedAssetTags.toLocaleString()}</p></div>
+            </div>
+            {result.tenantReadiness.unlinkedEquipmentCodes.length > 0 && <>
+              <p className="text-sm font-medium">Unlinked legacy equipment codes</p>
+              <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-lg border p-3">
+                {result.tenantReadiness.unlinkedEquipmentCodes.slice(0, 200).map((code) => <Badge key={code} variant="outline">{code}</Badge>)}
+              </div>
+              <p className="text-xs text-muted-foreground">These machines must be created/mapped in Asset Management before historical Work Orders can be inserted. No Asset records are created by this audit.</p>
+            </>}
+          </CardContent>
+        </Card>}
+
+        <Card className={result.summary.blockedRows === 0 ? 'border-emerald-200' : 'border-red-200'}><CardHeader><CardTitle className="flex items-center gap-2 text-base"><LockKeyhole className="h-5 w-5" />Historical Import Gate</CardTitle></CardHeader><CardContent><p className="text-sm">{result.summary.blockedRows > 0
+  ? 'Resolve the ' + result.summary.blockedRows.toLocaleString() + ' workbook-blocked row(s) first. Historical import remains disabled.'
+  : (result.tenantReadiness?.tenantBlockedRows || 0) > 0
+    ? 'Workbook blockers are resolved, but ' + result.tenantReadiness!.tenantBlockedRows.toLocaleString() + ' row(s) still lack an iAssetsPro Asset link. Historical import remains disabled.'
+    : 'Workbook and tenant Asset-link blockers are resolved. The next stage is a previewable transactional import with explicit approval, idempotency checks and rollback protection.'}</p></CardContent></Card>
       </>}
     </div>
   );

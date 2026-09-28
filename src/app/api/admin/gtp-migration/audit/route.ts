@@ -618,7 +618,9 @@ export async function POST(request: NextRequest) {
       const executionBlockers = [
         ...previewBlockers,
         ...(!approvalSignature ? ['GTP_MIGRATION_SIGNING_KEY is not configured on this server'] : []),
-        ...(proposedRows.some((row) => !row.assetId) ? ['Every historical row must resolve to a real Asset before write execution'] : []),
+        ...(proposedRows.some((row) => !row.assetId && row.assetResolution !== 'non_equipment')
+          ? ['Every equipment-backed historical row must resolve to a real Asset before write execution']
+          : []),
       ];
       const approvedManifest = {
         ...manifestCore,
@@ -732,7 +734,8 @@ export async function POST(request: NextRequest) {
           tenantReadyRows,
           tenantBlockedRows,
           unlinkedEquipmentCodes,
-          directlyMatchedAssetTags: tenantAssets.length,
+          directlyMatchedAssetTags: assetLinkageRows.filter((row) => row.resolution === 'asset_tag_match').length,
+          legacyMetadataMatchedRows,
           adminAssetOverrides: assetLinkageRows.filter((row) => row.resolution === 'admin_asset_override').length,
           legacyCodeMappingsSubmitted: equipmentMappings.length,
           legacyCodeMappedRows: assetLinkageRows.filter((row) => row.resolution === 'legacy_code_mapping').length,

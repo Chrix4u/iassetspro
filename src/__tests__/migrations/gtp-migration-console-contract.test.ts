@@ -192,6 +192,19 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Data Quality Findings');
   });
 
+  it('proves workbook report parity from authoritative JobRecords instead of stale cached pivots', () => {
+    expect(route).toContain('buildWorkbookParity');
+    expect(route).toContain('authoritativeBreakdowns');
+    expect(route).toContain('cachedBreakdownPivotTotal');
+    expect(route).toContain('breakdownWeekMismatches');
+    expect(route).toContain('priorityOneBreakdownParity');
+    expect(route).toContain('responseParity');
+    expect(route).toContain('legacyDowntimeFormulaErrorRows');
+    expect(page).toContain('Workbook Report & Graph Parity');
+    expect(page).toContain('BD_Wk cached pivot');
+    expect(page).toContain('Stale Excel pivots are reported, not copied into iAssetsPro');
+  });
+
   it('registers the admin settings page', () => {
     expect(app).toContain("'settings-gtp-migration': 'GTP Data Migration'");
     expect(app).toContain("import('./modules/GtpMigrationPage')");

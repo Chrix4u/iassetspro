@@ -126,6 +126,113 @@ const asNumber = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
+type WorkbookParity = {
+  authoritativeJobRecords: number;
+  authoritativeBreakdowns: number;
+  cachedBreakdownPivotTotal: number | null;
+  breakdownPivotFresh: boolean;
+  breakdownWeekMismatches: Array<{ week: string; source: number; cachedPivot: number }>;
+  priorityOneBreakdowns: number;
+  cachedPriorityOneBreakdowns: number | null;
+  priorityOneBreakdownParity: boolean;
+  priorityOneResponseMinutes: number;
+  cachedResponseByWeekTotal: number | null;
+  cachedResponseByMachineTotal: number | null;
+  responseParity: boolean;
+  legacyDowntimeFormulaErrorRows: Array<{ rowNumber: number; workOrderNo: string; equipmentDescription: string; value: string }>;
+  warnings: string[];
+};
+
+const pivotRows = (sheet: XLSX.WorkSheet | undefined): unknown[][] =>
+  sheet ? XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: true }) : [];
+
+const pivotGrandTotal = (sheet: XLSX.WorkSheet | undefined): number | null => {
+  for (const row of pivotRows(sheet)) {
+    if (String(row[0] ?? '').trim() !== 'Grand Total') continue;
+    const numeric = Number(row[row.length - 1]);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+};
+
+const pivotWeekCounts = (sheet: XLSX.WorkSheet | undefined): Map<string, number> => {
+  const result = new Map<string, number>();
+  for (const row of pivotRows(sheet)) {
+    const week = String(row[0] ?? '').trim();
+    const numeric = Number(row[1]);
+    if (/^\d+$/.test(week) && Number.isFinite(numeric)) result.set(week, numeric);
+  }
+  return result;
+};
+
+function buildWorkbookParity(rawRows: RawRow[], workbook: XLSX.WorkBook): WorkbookParity {
+  const breakdownRows = rawRows.filter((row) => asText(row['Work Order Type']).toLowerCase() === 'breakdown');
+  const sourceWeeks = new Map<string, number>();
+  for (const row of breakdownRows) {
+    const week = asText(row['Prod week reported']);
+    if (week) sourceWeeks.set(week, (sourceWeeks.get(week) || 0) + 1);
+  }
+
+  const cachedWeeks = pivotWeekCounts(workbook.Sheets.BD_Wk);
+  const breakdownWeekMismatches = [...new Set([...sourceWeeks.keys(), ...cachedWeeks.keys()])]
+    .sort((a, b) => Number(a) - Number(b))
+    .flatMap((week) => {
+      const source = sourceWeeks.get(week) || 0;
+      const cachedPivot = cachedWeeks.get(week) || 0;
+      return source === cachedPivot ? [] : [{ week, source, cachedPivot }];
+    });
+
+  const priorityOneRows = breakdownRows.filter((row) =>
+    asText(row['Prod year reported']) === '2025' && Number(row['Priority']) === 1);
+  const priorityOneResponseMinutes = priorityOneRows.reduce((sum, row) => {
+    const value = Number(row['Response Time']);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+
+  const formulaErrors = breakdownRows.flatMap((row, index) => {
+    const value = asText(row['Downtime minutes breakdowns (date completed - date reported)']);
+    if (!value.startsWith('#')) return [];
+    return [{
+      rowNumber: Number(row['Row No']) || index + 2,
+      workOrderNo: asText(row['Work Order No']),
+      equipmentDescription: asText(row['Equipment Description']),
+      value,
+    }];
+  });
+
+  const cachedBreakdownPivotTotal = pivotGrandTotal(workbook.Sheets.BD_Wk);
+  const cachedPriorityOneBreakdowns = pivotGrandTotal(workbook.Sheets.No_BD_MC);
+  const cachedResponseByWeekTotal = pivotGrandTotal(workbook.Sheets.Rpon_Wk);
+  const cachedResponseByMachineTotal = pivotGrandTotal(workbook.Sheets.Rpons_MC);
+  const close = (a: number, b: number | null) => b !== null && Math.abs(a - b) < 0.01;
+
+  const warnings: string[] = [];
+  if (cachedBreakdownPivotTotal !== breakdownRows.length) {
+    warnings.push(`Cached BD_Wk pivot is stale: source has ${breakdownRows.length} breakdowns but pivot shows ${cachedBreakdownPivotTotal ?? 'unavailable'}.`);
+  }
+  if (formulaErrors.length) {
+    warnings.push(`${formulaErrors.length} legacy breakdown row(s) contain Excel downtime formula errors; iAssetsPro must preserve these as unavailable rather than reproducing #VALUE!.`);
+  }
+
+  return {
+    authoritativeJobRecords: rawRows.length,
+    authoritativeBreakdowns: breakdownRows.length,
+    cachedBreakdownPivotTotal,
+    breakdownPivotFresh: cachedBreakdownPivotTotal === breakdownRows.length && breakdownWeekMismatches.length === 0,
+    breakdownWeekMismatches,
+    priorityOneBreakdowns: priorityOneRows.length,
+    cachedPriorityOneBreakdowns,
+    priorityOneBreakdownParity: cachedPriorityOneBreakdowns === priorityOneRows.length,
+    priorityOneResponseMinutes: Number(priorityOneResponseMinutes.toFixed(6)),
+    cachedResponseByWeekTotal,
+    cachedResponseByMachineTotal,
+    responseParity: close(priorityOneResponseMinutes, cachedResponseByWeekTotal)
+      && close(priorityOneResponseMinutes, cachedResponseByMachineTotal),
+    legacyDowntimeFormulaErrorRows: formulaErrors,
+    warnings,
+  };
+}
+
 function toJobs(rows: RawRow[]): GtpLegacyJobRow[] {
   return rows
     .filter((row) => row['Work Order No'] !== null && row['Work Order No'] !== undefined && row['Work Order No'] !== '')
@@ -197,8 +304,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const rawJobs = toJobs(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.JobRecords!, { defval: null }));
+    const rawJobSheetRows = XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.JobRecords!, { defval: null, raw: true });
+    const rawJobs = toJobs(rawJobSheetRows);
     const machines = toMachines(XLSX.utils.sheet_to_json<RawRow>(workbook.Sheets.Machines!, { defval: null }));
+    const workbookParity = buildWorkbookParity(rawJobSheetRows, workbook);
     const overrides = parseOverrides(formData.get('overrides'));
     const overrideByRow = new Map(overrides.map((override) => [override.rowNumber, override]));
     const reportedTimeCorrections = parseReportedTimeCorrections(formData.get('reportedTimeCorrections'));
@@ -813,6 +922,7 @@ export async function POST(request: NextRequest) {
           machineMasterRows: machines.length,
           uniqueMachineCodes: new Set(machines.map((machine) => machine.code).filter(Boolean)).size,
         },
+        workbookParity,
         summary: audit.summary,
         tenantReadiness: {
           spreadsheetReadyRows: audit.summary.importReadyRows,

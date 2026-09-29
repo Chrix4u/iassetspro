@@ -19,7 +19,7 @@ export type GtpEvidenceSuggestion = {
 const STOP_WORDS = new Set([
   'and', 'the', 'for', 'from', 'with', 'into', 'onto', 'this', 'that', 'work', 'repair',
   'replace', 'replacement', 'check', 'inspect', 'inspection', 'service', 'maintenance',
-  'machine', 'equipment', 'unit', 'system', 'line', 'area', 'section', 'fault', 'issue',
+  'machine', 'equipment', 'unit', 'system', 'area', 'section', 'fault', 'issue',
   'job', 'carry', 'carried', 'attend', 'attended', 'fix', 'fixed', 'change', 'changed',
 ]);
 
@@ -30,9 +30,23 @@ const normalize = (value: unknown) =>
     .trim()
     .replace(/\s+/g, ' ');
 
+const canonicalToken = (token: string): string => {
+  // Lightweight morphology only. Keep industrial nouns such as "line" intact,
+  // while reconciling source-language variants like chock/chocked and leaks/leaking.
+  if (token.length > 5 && token.endsWith('ing')) return token.slice(0, -3);
+  if (token.length > 4 && token.endsWith('ed')) {
+    const stem = token.slice(0, -2);
+    return stem.endsWith('k') ? stem : stem;
+  }
+  if (token.length > 4 && token.endsWith('es')) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith('s')) return token.slice(0, -1);
+  return token;
+};
+
 const tokens = (...values: unknown[]): Set<string> => new Set(
   normalize(values.filter(Boolean).join(' '))
     .split(' ')
+    .map(canonicalToken)
     .filter((token) => token.length >= 3 && !STOP_WORDS.has(token)),
 );
 
@@ -105,4 +119,18 @@ export function rankGtpHistoricalEvidence(
       ...candidate,
       matchScore: Math.min(0.99, Number(score.toFixed(2))),
     }));
+}
+
+
+export function canDirectlyApplyGtpEvidence(
+  suggestions: GtpEvidenceSuggestion[],
+  index: number,
+  hasUniqueResolvedAsset: boolean,
+): boolean {
+  if (!hasUniqueResolvedAsset || index !== 0) return false;
+  const candidate = suggestions[index];
+  if (!candidate || candidate.matchScore < 0.70 || candidate.supportCount < 2) return false;
+  const runnerUp = suggestions[1];
+  if (!runnerUp) return true;
+  return candidate.matchScore - runnerUp.matchScore >= 0.12;
 }

@@ -120,7 +120,7 @@ type AuditResult = {
     workOrderType: string;
     suggestions?: Array<{
       equipmentCode: string;
-      confidence: number;
+      matchScore: number;
       sharedTerms: string[];
       supportCount: number;
       assetId: string | null;
@@ -416,7 +416,7 @@ export function GtpMigrationPage() {
                           <div key={suggestion.equipmentCode} className="rounded-md border bg-background p-2">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-mono text-xs font-semibold">{suggestion.equipmentCode}</span>
-                              <Badge variant="secondary">{Math.round(suggestion.confidence * 100)}% evidence</Badge>
+                              <Badge variant="secondary">{Math.round(suggestion.matchScore * 100)}% match</Badge>
                               <span className="text-[11px] text-muted-foreground">{suggestion.supportCount} supporting historical row{suggestion.supportCount === 1 ? '' : 's'}</span>
                             </div>
                             {suggestion.sharedTerms.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Shared terms: {suggestion.sharedTerms.join(', ')}</p>}

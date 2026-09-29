@@ -68,6 +68,27 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain("action: 'historical_import'");
   });
 
+  it('uses a bounded serializable batch transaction for full-workbook execution', () => {
+    expect(importRoute).toContain('createManyAndReturn');
+    expect(importRoute).toContain('tx.maintenanceRequest.createManyAndReturn');
+    expect(importRoute).toContain('tx.workOrder.createManyAndReturn');
+    expect(importRoute).toContain('tx.auditLog.createMany');
+    expect(importRoute).toContain('LINK_CHUNK_SIZE = 500');
+    expect(importRoute).toContain('Prisma.TransactionIsolationLevel.Serializable');
+    expect(importRoute).toContain('timeout: 120_000');
+    expect(importRoute).toContain('maxWait: 10_000');
+    expect(importRoute).toContain('Historical identity collision detected during transaction');
+    expect(importRoute).toContain("error.code === 'P2034'");
+    expect(importRoute).toContain("error.code === 'P2002'");
+    expect(importRoute).toContain('status: prismaConflict || stateConflict ? 409 : 500');
+    expect(importRoute).not.toContain('for (const row of rows) {\n        const asset =');
+    expect(importRoute).not.toContain('tx.maintenanceRequest.create({');
+    expect(importRoute).not.toContain('tx.workOrder.create({');
+    expect(importRoute).not.toContain('tx.auditLog.create({');
+    expect(importRoute).not.toContain('tx.workOrder.findUnique');
+    expect(importRoute).not.toContain('tx.maintenanceRequest.findUnique');
+  });
+
   it('refuses non-canonical or already-imported identities', () => {
     expect(importRoute).toContain('GTP-MR-');
     expect(importRoute).toContain('GTP-WO-');

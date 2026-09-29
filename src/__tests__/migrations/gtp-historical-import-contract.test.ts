@@ -68,6 +68,19 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain("action: 'historical_import'");
   });
 
+  it('verifies audit rows and bidirectional MR/WO links before commit', () => {
+    expect(importRoute).toContain('auditInsert.count !== rows.length');
+    expect(importRoute).toContain('Historical audit-log batch insert was incomplete');
+    expect(importRoute).toContain('verifiedMrs');
+    expect(importRoute).toContain('verifiedWos');
+    expect(importRoute).toContain('verifiedAudits');
+    expect(importRoute).toContain('Historical import commit verification count mismatch');
+    expect(importRoute).toContain('Historical maintenance request is missing its work-order link');
+    expect(importRoute).toContain('Historical MR/WO relationship verification failed');
+    expect(importRoute).toContain("transactionIsolation: 'Serializable'");
+    expect(importRoute).toContain('linkedPairs: imported.length');
+  });
+
   it('uses a bounded serializable batch transaction for full-workbook execution', () => {
     expect(importRoute).toContain('createManyAndReturn');
     expect(importRoute).toContain('tx.maintenanceRequest.createManyAndReturn');

@@ -74,6 +74,12 @@ describe('GTP migration reconciliation console', () => {
   });
 
 
+  it('does not create false duplicate-machine blockers when multiple rows map to one Asset', () => {
+    expect(route).toContain('registeredOverrideAssetCodes');
+    expect(route).toContain('if (!registeredOverrideAssetCodes.has(syntheticCode))');
+    expect(route).toContain('registeredOverrideAssetCodes.add(syntheticCode)');
+  });
+
   it('supports provenance-backed reported-time correction in dry-run only', () => {
     expect(route).toContain("formData.get('reportedTimeCorrections')");
     expect(route).toContain('Reported time can only be corrected when the legacy row is missing it');

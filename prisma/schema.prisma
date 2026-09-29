@@ -2773,7 +2773,7 @@ model InstalledSparePart {
   workOrderId       String?
   partName          String
   partCode          String?
-  serialNumber      String?   @unique
+  serialNumber      String?
   lotNumber         String?
   quantity          Float     @default(1)
   sourceType        String    @default("manual") // material_request, commissioning, manual

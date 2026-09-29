@@ -64,6 +64,7 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Bundle source size does not match the selected workbook');
     expect(page).toContain('Server SHA verification will still decide acceptance');
     expect(page).toContain('Reconciliation bundle loaded');
+    expect(page).toContain('reported.getTimezoneOffset() * 60_000');
   });
 
 

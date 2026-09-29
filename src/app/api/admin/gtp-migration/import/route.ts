@@ -20,6 +20,7 @@ type ProposedRow = {
   assetId: string | null;
   assetName: string | null;
   assetResolution?: string | null;
+  reconciliationReason?: string | null;
   reportedAt: string | null;
   workStartedAt: string | null;
   workCompletedAt: string | null;
@@ -58,6 +59,16 @@ type ApprovedManifest = GtpManifestCore & {
   blockers: string[];
   executionBlockers?: string[];
 };
+
+const allowsNullAsset = (resolution: string | null | undefined) =>
+  resolution === 'non_equipment' || resolution === 'historical_unassigned';
+
+const historicalAssetLabel = (resolution: string | null | undefined) =>
+  resolution === 'non_equipment'
+    ? 'Non-equipment work'
+    : resolution === 'historical_unassigned'
+      ? 'Unassigned historical work'
+      : null;
 
 const asDate = (value: string | null | undefined): Date | undefined => {
   if (!value) return undefined;
@@ -139,8 +150,8 @@ export async function POST(request: NextRequest) {
       || manifest.counts.workOrders !== rows.length) {
       return NextResponse.json({ success: false, error: 'Manifest counts do not match its proposed rows' }, { status: 409 });
     }
-    if (!rows.length || rows.some((row) => !row.assetId && row.assetResolution !== 'non_equipment')) {
-      return NextResponse.json({ success: false, error: 'Every equipment-backed import row must resolve to a real Asset' }, { status: 409 });
+    if (!rows.length || rows.some((row) => !row.assetId && !allowsNullAsset(row.assetResolution))) {
+      return NextResponse.json({ success: false, error: 'Every resolved equipment-backed import row must bind to a real Asset' }, { status: 409 });
     }
 
     for (const row of rows) {
@@ -187,8 +198,8 @@ export async function POST(request: NextRequest) {
       for (const row of rows) {
         const asset = row.assetId ? assetById.get(row.assetId) : null;
         if (row.assetId && !asset) throw new Error('Approved Asset disappeared during import');
-        if (!asset && row.assetResolution !== 'non_equipment') {
-          throw new Error('Equipment-backed historical row has no approved Asset');
+        if (!asset && !allowsNullAsset(row.assetResolution)) {
+          throw new Error('Resolved equipment-backed historical row has no approved Asset');
         }
 
         const duplicateWo = await tx.workOrder.findUnique({ where: { woNumber: row.proposedWorkOrder.woNumber }, select: { id: true } });
@@ -202,6 +213,9 @@ export async function POST(request: NextRequest) {
           legacyPeople: row.legacyPeople || {},
           manifestFingerprint: manifest.fingerprint,
           migrationPlantId: manifest.migrationPlantId,
+          assetResolution: row.assetResolution || null,
+          reconciliationReason: row.reconciliationReason || null,
+          sourceAssetName: row.assetName || null,
         });
 
         const mr = await tx.maintenanceRequest.create({
@@ -214,7 +228,7 @@ export async function POST(request: NextRequest) {
             status: row.proposedMaintenanceRequest.status || 'converted',
             workflowStatus: row.proposedMaintenanceRequest.workflowStatus || 'closed',
             assetId: asset?.id,
-            assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
+            assetName: asset?.name || row.assetName || historicalAssetLabel(row.assetResolution),
             requestedBy: session.userId,
             plantId: manifest.migrationPlantId,
             createdAt: asDate(row.proposedMaintenanceRequest.createdAt || row.reportedAt),
@@ -231,7 +245,7 @@ export async function POST(request: NextRequest) {
             status: row.proposedWorkOrder.status || 'closed',
             maintenanceRequestId: mr.id,
             assetId: asset?.id,
-            assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
+            assetName: asset?.name || row.assetName || historicalAssetLabel(row.assetResolution),
             plantId: manifest.migrationPlantId,
             plannerId: session.userId,
             tradeActivity: row.proposedWorkOrder.tradeActivity || row.trade || undefined,

@@ -10,6 +10,7 @@ import {
   type GtpLegacyJobRow,
   type GtpMachineMasterRow,
 } from '@/services/migrations/gtpWorkbookMigration.service';
+import { canDirectlyApplyGtpEvidence, rankGtpHistoricalEvidence } from '@/services/migrations/gtpReconciliationEvidence.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -721,14 +722,43 @@ export async function POST(request: NextRequest) {
         .map((job) => String(job.workOrderNo ?? '')),
     }));
 
-    const blankMachineCodeRows = jobs.filter((job) => !asText(job.equipmentCode)).map((job) => ({
-      rowNumber: job.rowNumber ?? null,
-      workOrderNo: String(job.workOrderNo ?? ''),
-      description: job.description || '',
-      equipmentDescription: job.equipmentDescription || '',
-      trade: job.trade || '',
-      workOrderType: job.workOrderType || '',
-    }));
+    const codedEvidenceJobs = rawJobs.filter((job) => {
+      const code = asText(job.equipmentCode);
+      return code
+        && !code.startsWith('APP-ASSET:')
+        && !code.startsWith('NON-EQUIPMENT:')
+        && !code.startsWith('HISTORICAL-UNASSIGNED:');
+    });
+
+    const blankMachineCodeRows = jobs.filter((job) => !asText(job.equipmentCode)).map((job) => {
+      const rankedSuggestions = rankGtpHistoricalEvidence(job, codedEvidenceJobs, 3);
+      const suggestions = rankedSuggestions.map((candidate, index) => {
+        const legacyAssets = tenantAssetsByLegacyCode.get(candidate.equipmentCode) || [];
+        const resolvedAsset = tenantAssetByTag.get(candidate.equipmentCode)
+          || (legacyAssets.length === 1 ? legacyAssets[0] : null);
+        const uniquelyResolved = Boolean(
+          resolvedAsset
+          && (resolvedAsset.assetTag === candidate.equipmentCode || legacyAssets.length === 1),
+        );
+        return {
+          ...candidate,
+          assetId: resolvedAsset?.id || null,
+          assetTag: resolvedAsset?.assetTag || null,
+          assetName: resolvedAsset?.name || null,
+          canApply: canDirectlyApplyGtpEvidence(rankedSuggestions, index, uniquelyResolved),
+        };
+      });
+
+      return {
+        rowNumber: job.rowNumber ?? null,
+        workOrderNo: String(job.workOrderNo ?? ''),
+        description: job.description || '',
+        equipmentDescription: job.equipmentDescription || '',
+        trade: job.trade || '',
+        workOrderType: job.workOrderType || '',
+        suggestions,
+      };
+    });
 
     const tradeMap = new Map<string, { from: string; to: string; count: number }>();
     for (const job of jobs) {

@@ -6,6 +6,7 @@ const page = fs.readFileSync('src/components/modules/GtpMigrationPage.tsx', 'utf
 const app = fs.readFileSync('src/components/EAMApp.tsx', 'utf8');
 const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
+const evidence = fs.readFileSync('src/services/migrations/gtpReconciliationEvidence.service.ts', 'utf8');
 
 describe('GTP migration reconciliation console', () => {
   it('uses the canonical request-session auth helper', () => {
@@ -103,6 +104,27 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain("resolution: 'duplicate_variant_unconfirmed'");
     expect(page).toContain('Duplicate Machine Variant Asset Confirmation');
     expect(page).toContain('Confirm exact Asset...');
+  });
+
+  it('surfaces advisory historical evidence for blank machine-code reconciliation', () => {
+    expect(route).toContain('rankGtpHistoricalEvidence');
+    expect(evidence).toContain('STOP_WORDS');
+    expect(evidence).toContain('similarity');
+    expect(evidence).toContain('shared.length < 2');
+    expect(evidence).toContain('.slice(0, Math.max(0, limit))');
+    expect(route).toContain('legacyAssets.length === 1');
+    expect(route).toContain('canDirectlyApplyGtpEvidence');
+    expect(evidence).toContain('candidate.matchScore < 0.70');
+    expect(evidence).toContain('candidate.supportCount < 2');
+    expect(evidence).toContain('candidate.matchScore - runnerUp.matchScore >= 0.12');
+    expect(evidence).toContain('matchScore: Math.min(0.99');
+    expect(page).toContain('Historical evidence suggestions');
+    expect(page).toContain('% match');
+    expect(page).toContain('supporting historical row');
+    expect(page).toContain('suggestion.canApply && suggestion.assetId');
+    expect(page).toContain('Evidence only — review and confirm manually');
+    expect(page).toContain('Suggestions are advisory only. Confirm the physical Asset before applying a mapping.');
+    expect(page).toContain("setRowOverride(row.rowNumber, { action: 'asset', assetId: suggestion.assetId! })");
   });
 
   it('builds a zero-write transactional import preview with idempotency checks', () => {

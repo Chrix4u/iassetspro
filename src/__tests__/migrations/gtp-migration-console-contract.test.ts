@@ -46,6 +46,10 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain("'historical_unassigned'");
     expect(route).toContain('historicalUnassignedRows');
     expect(page).toContain('legacy Asset identity is intentionally preserved as unknown');
+    expect(route).toContain('provenance reason of at least 8 characters');
+    expect(route).toContain('reconciliationReason');
+    expect(page).toContain('Resolution reason / provenance');
+    expect(page).toContain('signed into the approved manifest');
     expect(page).toContain('AsyncSearchableSelect');
   });
 

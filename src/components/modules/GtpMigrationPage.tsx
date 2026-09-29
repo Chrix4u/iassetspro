@@ -31,7 +31,7 @@ type AuditResult = {
   reconciliation?: {
     overridesSubmitted: number;
     overridesApplied: number;
-    rows: Array<{ rowNumber: number; workOrderNo: string; action: 'asset' | 'non_equipment'; assetId: string | null; assetName: string | null }>;
+    rows: Array<{ rowNumber: number; workOrderNo: string; action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId: string | null; assetName: string | null }>;
     reportedTimeCorrectionsSubmitted?: number;
     reportedTimeCorrectionsApplied?: number;
     reportedTimeCorrections?: Array<{ rowNumber: number; workOrderNo: string; reportedAt: string; reason: string }>;
@@ -47,6 +47,7 @@ type AuditResult = {
     legacyCodeMappingsSubmitted?: number;
     legacyCodeMappedRows?: number;
     nonEquipmentRows: number;
+    historicalUnassignedRows?: number;
   };
   equipmentMappings?: Array<{ equipmentCode: string; assetId: string; assetTag: string | null; assetName: string | null }>;
   importPreview?: {
@@ -106,7 +107,7 @@ type AuditResult = {
     assetId: string | null;
     assetTag: string | null;
     assetName: string | null;
-    resolution: 'asset_tag_match' | 'legacy_metadata_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'duplicate_variant_unconfirmed' | 'unlinked';
+    resolution: 'asset_tag_match' | 'legacy_metadata_match' | 'admin_asset_override' | 'legacy_code_mapping' | 'non_equipment' | 'historical_unassigned' | 'duplicate_variant_unconfirmed' | 'unlinked';
     tenantReady: boolean;
   }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
@@ -134,7 +135,7 @@ export function GtpMigrationPage() {
   const [file, setFile] = useState<File | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment'; assetId?: string }>>({});
+  const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
   const [equipmentMappings, setEquipmentMappings] = useState<Record<string, string>>({});
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
@@ -163,8 +164,9 @@ export function GtpMigrationPage() {
           rowNumber: Number(rowNumber),
           action: value.action,
           assetId: value.action === 'asset' ? value.assetId : undefined,
+          reason: value.reason?.trim() || undefined,
         }))
-        .filter((value) => value.action === 'non_equipment' || Boolean(value.assetId));
+        .filter((value) => value.action === 'non_equipment' || value.action === 'historical_unassigned' || Boolean(value.assetId));
       if (reconciliation.length) form.append('overrides', JSON.stringify(reconciliation));
 
       const timeCorrections = Object.entries(reportedTimeCorrections)
@@ -208,7 +210,7 @@ export function GtpMigrationPage() {
 
   const setRowOverride = (
     rowNumber: number | null,
-    next: { action: 'asset' | 'non_equipment'; assetId?: string } | null,
+    next: { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string } | null,
   ) => {
     if (!rowNumber) return;
     setOverrides((current) => {
@@ -363,7 +365,7 @@ export function GtpMigrationPage() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <CardTitle className="text-base">Rows With No Machine Code</CardTitle>
-                <CardDescription>Resolve each row by mapping it to an existing Asset or marking it as non-equipment work. Decisions are applied to the dry-run only.</CardDescription>
+                <CardDescription>Resolve each row by mapping it to an existing Asset, marking true non-equipment work, or preserving it as unassigned historical work when the legacy record clearly concerns equipment but its Asset identity cannot be proven. Decisions are applied to the dry-run only.</CardDescription>
               </div>
               <Button
                 variant="outline"
@@ -392,7 +394,8 @@ export function GtpMigrationPage() {
                         value={override?.action || 'unresolved'}
                         onValueChange={(value) => {
                           if (value === 'unresolved') setRowOverride(row.rowNumber, null);
-                          else if (value === 'non_equipment') setRowOverride(row.rowNumber, { action: 'non_equipment' });
+                          else if (value === 'non_equipment') setRowOverride(row.rowNumber, { action: 'non_equipment', reason: override?.reason });
+                          else if (value === 'historical_unassigned') setRowOverride(row.rowNumber, { action: 'historical_unassigned', reason: override?.reason });
                           else setRowOverride(row.rowNumber, { action: 'asset', assetId: override?.assetId });
                         }}
                       >
@@ -401,6 +404,7 @@ export function GtpMigrationPage() {
                           <SelectItem value="unresolved">Needs review</SelectItem>
                           <SelectItem value="asset">Map to existing Asset</SelectItem>
                           <SelectItem value="non_equipment">Non-equipment work</SelectItem>
+                          <SelectItem value="historical_unassigned">Unassigned historical work</SelectItem>
                         </SelectContent>
                       </Select>
                       {override?.action === 'asset' && <AsyncSearchableSelect
@@ -413,7 +417,17 @@ export function GtpMigrationPage() {
                         clearable
                         groupBy={false}
                       />}
-                      {override?.action === 'non_equipment' && <p className="text-xs text-muted-foreground">This historical job will remain intentionally unlinked to an Asset.</p>}
+                      {override?.action === 'non_equipment' && <p className="text-xs text-muted-foreground">This record is confirmed as work that did not belong to a specific Asset.</p>}
+                      {override?.action === 'historical_unassigned' && <p className="text-xs text-muted-foreground">The job remains plant-scoped and auditable, but the legacy Asset identity is intentionally preserved as unknown.</p>}
+                      {(override?.action === 'non_equipment' || override?.action === 'historical_unassigned') && <div className="space-y-1">
+                        <Label className="text-xs">Resolution reason / provenance</Label>
+                        <Input
+                          value={override.reason || ''}
+                          onChange={(event) => setRowOverride(row.rowNumber, { action: override.action, reason: event.target.value })}
+                          placeholder="Explain why no Asset can or should be linked..."
+                        />
+                        <p className="text-[11px] text-muted-foreground">Required · minimum 8 characters · signed into the approved manifest.</p>
+                      </div>}
                     </div>
                   </TableCell>
                 </TableRow>;

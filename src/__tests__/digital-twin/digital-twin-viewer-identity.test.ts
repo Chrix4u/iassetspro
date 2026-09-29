@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const page = fs.readFileSync('src/components/digital-twin/DigitalTwinMainPage.tsx', 'utf8');
 const viewer = fs.readFileSync('src/components/digital-twin/DigitalTwinViewer.tsx', 'utf8');
+const assetDetail = fs.readFileSync('src/components/modules/AssetDetailPage.tsx', 'utf8');
 
 describe('Digital Twin full-screen scene identity propagation', () => {
   it('passes the selected asset and twin identity into the real viewer', () => {
@@ -17,5 +18,13 @@ describe('Digital Twin full-screen scene identity propagation', () => {
     expect(viewer).toContain('twinId?: string | null');
     expect(viewer).toContain('twinName?: string | null');
     expect(viewer).toContain('isResolvingScene');
+  });
+
+  it('opens the selected asset twin directly from Asset Details', () => {
+    expect(assetDetail).toContain('Open 3D / 2D Viewer');
+    expect(assetDetail).toContain("navigate('assets-digital-twin', { twinId: twin.id, assetId: id, view: 'viewer' })");
+    expect(page).toContain("pageParams?.view !== 'viewer'");
+    expect(page).toContain('candidate.id === requestedTwinId');
+    expect(page).toContain('candidate.asset?.id === requestedAssetId');
   });
 });

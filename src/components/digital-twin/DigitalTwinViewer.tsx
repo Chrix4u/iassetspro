@@ -507,7 +507,14 @@ export function DigitalTwinViewer({
   }, [sceneId, twinId, propModelUrl]);
 
   // ── Effective model URL ─────────────────────────────────────────────────
-  const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  // Generated GLB files are served from the public generated-assets path.
+  // Historical model rows may still carry the authenticated API alias, which
+  // Three.js cannot load because GLTFLoader does not attach our bearer token.
+  const rawEffectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  const effectiveModelUrl = rawEffectiveModelUrl?.replace(
+    /^\/api\/generated-assets\/models\//,
+    '/generated-assets/models/',
+  ) ?? null;
 
   // ── Error handling ──────────────────────────────────────────────────────
   const effectiveError = sceneError || hookError || modelError;

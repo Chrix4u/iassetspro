@@ -856,7 +856,7 @@ export async function generateProgrammatic3DModel(
     // ── 3. Save GLB file ────────────────────────────────────────────────
     const fileName = `${assetId || 'programmatic'}.glb`;
     const diskPath = join(UPLOAD_DIR, fileName);
-    const relativePath = `/generated-assets/models/${fileName}`;
+    const relativePath = `/api/generated-assets/models/${fileName}`;
 
     try {
       await mkdir(UPLOAD_DIR, { recursive: true });

@@ -818,7 +818,7 @@ function computeMin(arr: Float32Array | number[]): number[] {
 // EXPORT — Main function: generate programmatic 3D model
 // ============================================================================
 
-const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads', 'models');
+const UPLOAD_DIR = join(process.cwd(), 'public', 'generated-assets', 'models');
 
 export async function generateProgrammatic3DModel(
   machineName: string,
@@ -856,7 +856,7 @@ export async function generateProgrammatic3DModel(
     // ── 3. Save GLB file ────────────────────────────────────────────────
     const fileName = `${assetId || 'programmatic'}.glb`;
     const diskPath = join(UPLOAD_DIR, fileName);
-    const relativePath = `/uploads/models/${fileName}`;
+    const relativePath = `/generated-assets/models/${fileName}`;
 
     try {
       await mkdir(UPLOAD_DIR, { recursive: true });
@@ -881,6 +881,7 @@ export async function generateProgrammatic3DModel(
 
         modelRecord = await db.assetModel.create({
           data: {
+            assetId,
             name: spec.machineName,
             fileName,
             filePath: relativePath,
@@ -906,9 +907,23 @@ export async function generateProgrammatic3DModel(
     // ── 5. Optionally create DigitalTwinScene ────────────────────────────
     if (assetId && userId && modelRecord) {
       try {
-        const twin = await db.digitalTwin.findFirst({
-          where: { assetId },
-        });
+        let twin = await db.digitalTwin.findFirst({ where: { assetId } });
+        if (!twin) {
+          twin = await db.digitalTwin.create({
+            data: {
+              assetId,
+              name: `${spec.machineName} Digital Twin`,
+              description: `Digital twin commissioned automatically with the generated 3D model for ${spec.machineName}.`,
+              type: 'other',
+              parameters: '{}',
+              connections: '{}',
+              healthScore: 100,
+              syncInterval: '5min',
+              createdById: userId,
+            },
+          });
+          logger.info('DigitalTwin created for generated model', { twinId: twin.id, assetId });
+        }
 
         if (twin) {
           await db.digitalTwinScene.create({

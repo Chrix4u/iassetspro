@@ -50,6 +50,7 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain('reconciliationReason');
     expect(page).toContain('Resolution reason / provenance');
     expect(page).toContain('signed into the approved manifest');
+    expect(page).toContain('minimum 8 characters');
     expect(page).toContain('AsyncSearchableSelect');
   });
 

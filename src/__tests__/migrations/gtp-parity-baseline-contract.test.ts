@@ -16,6 +16,7 @@ describe('GTP workbook parity baseline preview', () => {
     expect(route).toContain('filters: Record<string, string | number>');
     expect(route).toContain('metricRowIndex');
     expect(route).toContain('rows.slice(0, metricRowIndex >= 0 ? metricRowIndex : 8)');
+    expect(route).toContain('blankrows: false');
     expect(route).toContain('cachedGrandTotal');
     expect(route).toContain('computedSeriesTotal');
     expect(route).toContain("chartFamily: 'bar' | 'line'");

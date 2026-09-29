@@ -134,6 +134,42 @@ type AuditResult = {
   blockedRows: Array<{ rowNumber: number | null; workOrderNo: string; equipmentCode: string; description: string; issues: AuditIssue[] }>;
 };
 
+
+type ReconciliationBundle = {
+  schemaVersion: 'gtp-reconciliation-bundle/v1';
+  source: {
+    filename: string;
+    sizeBytes: number;
+    sha256: string;
+  };
+  overrides: Array<{
+    rowNumber: number;
+    action: 'asset' | 'non_equipment' | 'historical_unassigned';
+    assetId?: string;
+    reason?: string;
+  }>;
+  reportedTimeCorrections: Array<{
+    rowNumber: number;
+    reportedAt: string;
+    reason: string;
+  }>;
+  notes?: string[];
+};
+
+const sha256File = async (file: File): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+const toDateTimeLocalValue = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Reconciliation bundle contains an invalid reported timestamp');
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
 const issueLabels: Record<string, string> = {
   missing_machine_code: 'Missing machine code',
   unmatched_machine_code: 'Machine code not in master',
@@ -150,7 +186,10 @@ const issueLabels: Record<string, string> = {
 
 export function GtpMigrationPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const bundleInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [bundleLoading, setBundleLoading] = useState(false);
+  const [loadedBundle, setLoadedBundle] = useState<{ filename: string; sourceFilename: string; sha256: string; overrides: number; timeCorrections: number } | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }>>({});
@@ -211,6 +250,78 @@ export function GtpMigrationPage() {
       toast.error(error instanceof Error ? error.message : 'Workbook audit failed');
     } finally {
       setAuditing(false);
+    }
+  };
+
+
+  const loadReconciliationBundle = async (bundleFile: File) => {
+    if (!file) {
+      if (bundleInputRef.current) bundleInputRef.current.value = '';
+      return toast.error('Choose the exact GTP workbook before loading its reconciliation bundle');
+    }
+
+    setBundleLoading(true);
+    try {
+      const raw = JSON.parse(await bundleFile.text()) as Partial<ReconciliationBundle>;
+      if (raw.schemaVersion !== 'gtp-reconciliation-bundle/v1'
+        || !raw.source
+        || !Array.isArray(raw.overrides)
+        || !Array.isArray(raw.reportedTimeCorrections)) {
+        throw new Error('Unsupported or incomplete GTP reconciliation bundle');
+      }
+
+      if (raw.source.sizeBytes !== file.size) {
+        throw new Error(`Workbook size does not match this bundle (expected ${raw.source.sizeBytes.toLocaleString()} bytes)`);
+      }
+      const workbookSha256 = await sha256File(file);
+      if (workbookSha256.toLowerCase() !== String(raw.source.sha256 || '').toLowerCase()) {
+        throw new Error('Workbook SHA-256 does not match this reconciliation bundle');
+      }
+
+      const nextOverrides: Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }> = {};
+      for (const item of raw.overrides) {
+        if (!Number.isInteger(item.rowNumber) || item.rowNumber < 2) throw new Error('Bundle contains an invalid reconciliation row number');
+        if (!['asset', 'non_equipment', 'historical_unassigned'].includes(item.action)) throw new Error('Bundle contains an invalid reconciliation action');
+        if (item.action === 'asset' && !item.assetId) throw new Error(`Asset resolution for row ${item.rowNumber} is missing assetId`);
+        if ((item.action === 'non_equipment' || item.action === 'historical_unassigned') && (!item.reason || item.reason.trim().length < 8)) {
+          throw new Error(`Non-Asset resolution for row ${item.rowNumber} is missing a provenance reason`);
+        }
+        nextOverrides[String(item.rowNumber)] = {
+          action: item.action,
+          assetId: item.action === 'asset' ? item.assetId : undefined,
+          reason: item.reason?.trim() || undefined,
+        };
+      }
+
+      const nextCorrections: Record<string, { reportedAt: string; reason: string }> = {};
+      for (const item of raw.reportedTimeCorrections) {
+        if (!Number.isInteger(item.rowNumber) || item.rowNumber < 2) throw new Error('Bundle contains an invalid reported-time row number');
+        if (!item.reason || item.reason.trim().length < 8) throw new Error(`Reported-time correction for row ${item.rowNumber} is missing a provenance reason`);
+        nextCorrections[String(item.rowNumber)] = {
+          reportedAt: toDateTimeLocalValue(item.reportedAt),
+          reason: item.reason.trim(),
+        };
+      }
+
+      setOverrides(nextOverrides);
+      setReportedTimeCorrections(nextCorrections);
+      setEquipmentMappings({});
+      setResult(null);
+      setLastImport(null);
+      setLoadedBundle({
+        filename: bundleFile.name,
+        sourceFilename: raw.source.filename,
+        sha256: workbookSha256,
+        overrides: raw.overrides.length,
+        timeCorrections: raw.reportedTimeCorrections.length,
+      });
+      toast.success(`Reconciliation bundle verified · ${raw.overrides.length} row resolution(s) and ${raw.reportedTimeCorrections.length} time correction(s) loaded`);
+    } catch (error: unknown) {
+      setLoadedBundle(null);
+      toast.error(error instanceof Error ? error.message : 'Failed to load reconciliation bundle');
+    } finally {
+      setBundleLoading(false);
+      if (bundleInputRef.current) bundleInputRef.current.value = '';
     }
   };
 
@@ -348,10 +459,27 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); }} />
-          <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); setLoadedBundle(null); }} />
+          <Input ref={bundleInputRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const bundleFile = e.target.files?.[0]; if (bundleFile) void loadReconciliationBundle(bundleFile); }} />
+          <div className="space-y-3 rounded-xl border border-dashed p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button>
+                <Button variant="outline" onClick={() => bundleInputRef.current?.click()} disabled={!file || bundleLoading} className="gap-2">
+                  {bundleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {bundleLoading ? 'Verifying bundle…' : 'Load reconciliation bundle'}
+                </Button>
+                <Button onClick={() => void runAudit()} disabled={!file || auditing || bundleLoading}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button>
+              </div>
+            </div>
+            {loadedBundle && <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-sm dark:border-emerald-900/60 dark:bg-emerald-950/20">
+              <div className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" /><div>
+                <p className="font-medium text-emerald-900 dark:text-emerald-200">Reconciliation bundle verified against the selected workbook</p>
+                <p className="text-xs text-muted-foreground">{loadedBundle.overrides} row resolution(s) · {loadedBundle.timeCorrections} reported-time correction(s) · source {loadedBundle.sourceFilename}</p>
+                <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">SHA-256 {loadedBundle.sha256}</p>
+              </div></div>
+            </div>}
           </div>
         </CardContent>
       </Card>

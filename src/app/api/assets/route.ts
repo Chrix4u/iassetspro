@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       name,
+      assetTag: requestedAssetTag,
       description,
       categoryId,
       serialNumber,
@@ -197,7 +198,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const assetTag = await generateAssetTag();
+    const assetTag = String(requestedAssetTag || '').trim() || await generateAssetTag();
+    const existingAssetTag = await db.asset.findUnique({ where: { assetTag }, select: { id: true } });
+    if (existingAssetTag) {
+      return NextResponse.json({ success: false, error: 'Asset tag already exists' }, { status: 409 });
+    }
 
     // Build relation connections
     const categoryConnect = categoryId ? { connect: { id: categoryId } } : undefined;

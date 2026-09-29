@@ -122,10 +122,25 @@ export async function PUT(
       }
     }
 
+    if (body.assetTag !== undefined) {
+      const normalizedAssetTag = String(body.assetTag || '').trim();
+      if (!normalizedAssetTag) {
+        return NextResponse.json({ success: false, error: 'Asset tag cannot be empty' }, { status: 400 });
+      }
+      const conflictingAsset = await db.asset.findFirst({
+        where: { assetTag: normalizedAssetTag, id: { not: id } },
+        select: { id: true },
+      });
+      if (conflictingAsset) {
+        return NextResponse.json({ success: false, error: 'Asset tag already exists' }, { status: 409 });
+      }
+      body.assetTag = normalizedAssetTag;
+    }
+
     // Build update data — Prisma .update() uses scalar FK fields (not connect syntax)
     const updateData: Record<string, unknown> = {};
     const scalarFields = [
-      'name', 'description', 'serialNumber', 'manufacturer', 'model',
+      'name', 'assetTag', 'description', 'serialNumber', 'manufacturer', 'model',
       'condition', 'status', 'criticality', 'location',
       'building', 'floor', 'area', 'imageUrl',
       'drawingsUrl', 'manualUrl', 'specification', 'isActive',

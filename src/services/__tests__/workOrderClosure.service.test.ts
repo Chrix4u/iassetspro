@@ -15,6 +15,7 @@ const {
     $transaction: vi.fn(),
     workOrder: { findUnique: vi.fn() },
     repairCompletion: { update: vi.fn() },
+    maintenanceRequest: { updateMany: vi.fn() },
     workOrderComment: { create: vi.fn() },
     pmSchedule: { findUnique: vi.fn(), update: vi.fn() },
     failureRecord: { findFirst: vi.fn(), upsert: vi.fn() },
@@ -73,7 +74,7 @@ function verifiedWorkOrder(overrides: Record<string, unknown> = {}) {
     plannerId: 'planner-1',
     assignedTo: 'tech-1',
     teamLeaderId: null,
-    maintenanceRequest: { requestedBy: 'requester-1' },
+    maintenanceRequest: { id: 'mr-1', requestedBy: 'requester-1', workflowStatus: 'work_order_created' },
     workOrderDowntimes: [],
     workOrderComponents: [],
     ...overrides,
@@ -103,6 +104,7 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     });
     mockExecuteTransition.mockResolvedValue({ success: true });
     mockDb.repairCompletion.update.mockResolvedValue({ id: 'completion-1' });
+    mockDb.maintenanceRequest.updateMany.mockResolvedValue({ count: 1 });
     mockDb.auditLog.create.mockResolvedValue({ id: 'audit-1' });
     mockDb.pmSchedule.findUnique.mockResolvedValue({
       id: 'pm-1',

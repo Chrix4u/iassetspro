@@ -202,12 +202,10 @@ export async function POST(request: NextRequest) {
           where: { id: manifest.migrationPlantId, isActive: true },
           select: { id: true },
         }),
-        assetIds.length
-          ? tx.asset.findMany({
-              where: { id: { in: assetIds }, isActive: true },
-              select: { id: true, name: true, plantId: true },
-            })
-          : Promise.resolve([]),
+        tx.asset.findMany({
+          where: { id: { in: assetIds }, isActive: true },
+          select: { id: true, name: true, plantId: true },
+        }),
         tx.workOrder.findMany({ where: { woNumber: { in: woNumbers } }, select: { woNumber: true } }),
         tx.maintenanceRequest.findMany({ where: { requestNumber: { in: requestNumbers } }, select: { requestNumber: true } }),
       ]);

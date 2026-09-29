@@ -61,6 +61,7 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain("'Non-equipment work'");
     expect(importRoute).toContain("'Unassigned historical work'");
     expect(importRoute).toContain('assetResolution: row.assetResolution || null');
+    expect(importRoute).toContain('reconciliationReason: row.reconciliationReason || null');
     expect(importRoute).toContain('db.$transaction');
     expect(importRoute).toContain('tx.maintenanceRequest.create');
     expect(importRoute).toContain('tx.workOrder.create');

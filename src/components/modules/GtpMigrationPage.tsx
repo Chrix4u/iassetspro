@@ -210,8 +210,11 @@ export function GtpMigrationPage() {
         if (!row.reason || row.reason.trim().length < 8) {
           throw new Error(`Row ${row.rowNumber} time correction requires a provenance reason of at least 8 characters`);
         }
+        const localReportedAt = new Date(reported.getTime() - reported.getTimezoneOffset() * 60_000)
+          .toISOString()
+          .slice(0, 16);
         nextCorrections[String(row.rowNumber)] = {
-          reportedAt: reported.toISOString().slice(0, 16),
+          reportedAt: localReportedAt,
           reason: row.reason.trim(),
         };
       }

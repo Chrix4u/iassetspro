@@ -23,5 +23,3 @@ describe('asset tag contract', () => {
     expect(assetPages).toContain('if (!form.name || !form.assetTag)');
   });
 });
-
-[executed on device: vps.lightworldtech.com (76d866a1-0f6b-4a34-8bb9-99801c5b1b24)]

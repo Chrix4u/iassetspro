@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 import {
@@ -193,19 +194,39 @@ export async function POST(request: NextRequest) {
     }
 
     const imported = await db.$transaction(async (tx) => {
-      const result: Array<{ maintenanceRequestId: string; workOrderId: string; requestNumber: string; woNumber: string }> = [];
+      // Revalidate mutable database state inside the same serializable transaction
+      // that performs the import. This closes the gap between preview/request-time
+      // validation and the actual historical write.
+      const [txPlant, txAssets, txExistingWos, txExistingMrs] = await Promise.all([
+        tx.plant.findFirst({
+          where: { id: manifest.migrationPlantId, isActive: true },
+          select: { id: true },
+        }),
+        tx.asset.findMany({
+          where: { id: { in: assetIds }, isActive: true },
+          select: { id: true, name: true, plantId: true },
+        }),
+        tx.workOrder.findMany({ where: { woNumber: { in: woNumbers } }, select: { woNumber: true } }),
+        tx.maintenanceRequest.findMany({ where: { requestNumber: { in: requestNumbers } }, select: { requestNumber: true } }),
+      ]);
 
-      for (const row of rows) {
-        const asset = row.assetId ? assetById.get(row.assetId) : null;
-        if (row.assetId && !asset) throw new Error('Approved Asset disappeared during import');
+      if (!txPlant) throw new Error('Approved migration plant changed before transaction execution');
+      const txAssetById = new Map(txAssets.map((asset) => [asset.id, asset]));
+      if (assetIds.some((id) => !txAssetById.has(id))) {
+        throw new Error('One or more approved Assets changed before transaction execution');
+      }
+      if (txAssets.some((asset) => asset.plantId !== manifest.migrationPlantId)) {
+        throw new Error('Approved Asset plant scope changed before transaction execution');
+      }
+      if (txExistingWos.length || txExistingMrs.length) {
+        throw new Error('Historical identity collision detected during transaction');
+      }
+
+      const prepared = rows.map((row) => {
+        const asset = row.assetId ? txAssetById.get(row.assetId) : null;
         if (!asset && !allowsNullAsset(row.assetResolution)) {
           throw new Error('Resolved equipment-backed historical row has no approved Asset');
         }
-
-        const duplicateWo = await tx.workOrder.findUnique({ where: { woNumber: row.proposedWorkOrder.woNumber }, select: { id: true } });
-        const duplicateMr = await tx.maintenanceRequest.findUnique({ where: { requestNumber: row.proposedMaintenanceRequest.requestNumber }, select: { id: true } });
-        if (duplicateWo || duplicateMr) throw new Error('Historical identity collision detected during transaction');
-
         const provenance = JSON.stringify({
           source: 'GTP historical workbook',
           legacyRowNumber: row.legacyRowNumber,
@@ -217,26 +238,36 @@ export async function POST(request: NextRequest) {
           reconciliationReason: row.reconciliationReason || null,
           sourceAssetName: row.assetName || null,
         });
+        const resolvedAssetName = asset?.name || row.assetName || historicalAssetLabel(row.assetResolution);
 
-        const mr = await tx.maintenanceRequest.create({
-          data: {
-            requestNumber: row.proposedMaintenanceRequest.requestNumber,
-            title: row.proposedMaintenanceRequest.title,
-            description: provenance,
-            priority: row.proposedMaintenanceRequest.priority || 'medium',
-            category: row.trade || undefined,
-            status: row.proposedMaintenanceRequest.status || 'converted',
-            workflowStatus: row.proposedMaintenanceRequest.workflowStatus || 'closed',
-            assetId: asset?.id,
-            assetName: asset?.name || row.assetName || historicalAssetLabel(row.assetResolution),
-            requestedBy: session.userId,
-            plantId: manifest.migrationPlantId,
-            createdAt: asDate(row.proposedMaintenanceRequest.createdAt || row.reportedAt),
-          },
-        });
+        return { row, asset, provenance, resolvedAssetName };
+      });
 
-        const wo = await tx.workOrder.create({
-          data: {
+      const createdMrs = await tx.maintenanceRequest.createManyAndReturn({
+        data: prepared.map(({ row, asset, provenance, resolvedAssetName }) => ({
+          requestNumber: row.proposedMaintenanceRequest.requestNumber,
+          title: row.proposedMaintenanceRequest.title,
+          description: provenance,
+          priority: row.proposedMaintenanceRequest.priority || 'medium',
+          category: row.trade || undefined,
+          status: row.proposedMaintenanceRequest.status || 'converted',
+          workflowStatus: row.proposedMaintenanceRequest.workflowStatus || 'closed',
+          assetId: asset?.id,
+          assetName: resolvedAssetName,
+          requestedBy: session.userId,
+          plantId: manifest.migrationPlantId,
+          createdAt: asDate(row.proposedMaintenanceRequest.createdAt || row.reportedAt),
+        })),
+        select: { id: true, requestNumber: true },
+      });
+      if (createdMrs.length !== rows.length) throw new Error('Historical maintenance-request batch insert was incomplete');
+
+      const mrByRequestNumber = new Map(createdMrs.map((mr) => [mr.requestNumber, mr]));
+      const createdWos = await tx.workOrder.createManyAndReturn({
+        data: prepared.map(({ row, asset, provenance, resolvedAssetName }) => {
+          const mr = mrByRequestNumber.get(row.proposedMaintenanceRequest.requestNumber);
+          if (!mr) throw new Error('Created historical maintenance request could not be resolved');
+          return {
             woNumber: row.proposedWorkOrder.woNumber,
             title: row.proposedWorkOrder.title,
             description: provenance,
@@ -245,7 +276,7 @@ export async function POST(request: NextRequest) {
             status: row.proposedWorkOrder.status || 'closed',
             maintenanceRequestId: mr.id,
             assetId: asset?.id,
-            assetName: asset?.name || row.assetName || historicalAssetLabel(row.assetResolution),
+            assetName: resolvedAssetName,
             plantId: manifest.migrationPlantId,
             plannerId: session.userId,
             tradeActivity: row.proposedWorkOrder.tradeActivity || row.trade || undefined,
@@ -253,12 +284,39 @@ export async function POST(request: NextRequest) {
             actualEnd: asDate(row.proposedWorkOrder.actualEnd || row.workCompletedAt),
             notes: provenance,
             createdAt: asDate(row.reportedAt),
-          },
-        });
+          };
+        }),
+        select: { id: true, woNumber: true, maintenanceRequestId: true },
+      });
+      if (createdWos.length !== rows.length) throw new Error('Historical work-order batch insert was incomplete');
 
-        await tx.maintenanceRequest.update({ where: { id: mr.id }, data: { workOrderId: wo.id } });
-        await tx.auditLog.create({
-          data: {
+      // Preserve the legacy MR -> WO direct pointer used by conversion guards and
+      // reporting. Chunk the set-based update to keep each SQL statement compact.
+      const linkRows = createdWos
+        .filter((wo): wo is typeof wo & { maintenanceRequestId: string } => Boolean(wo.maintenanceRequestId))
+        .map((wo) => ({ maintenanceRequestId: wo.maintenanceRequestId, workOrderId: wo.id }));
+      const LINK_CHUNK_SIZE = 500;
+      for (let offset = 0; offset < linkRows.length; offset += LINK_CHUNK_SIZE) {
+        const chunk = linkRows.slice(offset, offset + LINK_CHUNK_SIZE);
+        const values = Prisma.join(
+          chunk.map((link) => Prisma.sql`(${link.maintenanceRequestId}, ${link.workOrderId})`),
+        );
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "maintenance_requests" AS mr
+          SET "workOrderId" = links.work_order_id
+          FROM (VALUES ${values}) AS links(maintenance_request_id, work_order_id)
+          WHERE mr.id = links.maintenance_request_id
+        `);
+      }
+
+      const preparedByWoNumber = new Map(prepared.map((item) => [item.row.proposedWorkOrder.woNumber, item]));
+      await tx.auditLog.createMany({
+        data: createdWos.map((wo) => {
+          const item = preparedByWoNumber.get(wo.woNumber);
+          if (!item) throw new Error('Created historical work order could not be matched for audit');
+          const mr = mrByRequestNumber.get(item.row.proposedMaintenanceRequest.requestNumber);
+          if (!mr) throw new Error('Created historical maintenance request could not be matched for audit');
+          return {
             userId: session.userId,
             action: 'historical_import',
             entityType: 'work_order',
@@ -266,16 +324,37 @@ export async function POST(request: NextRequest) {
             newValues: JSON.stringify({
               requestNumber: mr.requestNumber,
               woNumber: wo.woNumber,
-              legacyWorkOrderNo: row.legacyWorkOrderNo,
+              legacyWorkOrderNo: item.row.legacyWorkOrderNo,
               manifestFingerprint: manifest.fingerprint,
               sourceSha256: manifest.source.sha256,
+              migrationPlantId: manifest.migrationPlantId,
+              assetResolution: item.row.assetResolution || null,
             }),
             plantId: manifest.migrationPlantId,
-          },
-        });
-        result.push({ maintenanceRequestId: mr.id, workOrderId: wo.id, requestNumber: mr.requestNumber, woNumber: wo.woNumber });
-      }
-      return result;
+          };
+        }),
+      });
+
+      const woByMaintenanceRequestId = new Map(
+        createdWos
+          .filter((wo): wo is typeof wo & { maintenanceRequestId: string } => Boolean(wo.maintenanceRequestId))
+          .map((wo) => [wo.maintenanceRequestId, wo]),
+      );
+
+      return createdMrs.map((mr) => {
+        const wo = woByMaintenanceRequestId.get(mr.id);
+        if (!wo) throw new Error('Historical work-order relationship was not created');
+        return {
+          maintenanceRequestId: mr.id,
+          workOrderId: wo.id,
+          requestNumber: mr.requestNumber,
+          woNumber: wo.woNumber,
+        };
+      });
+    }, {
+      maxWait: 10_000,
+      timeout: 120_000,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
     return NextResponse.json({
@@ -287,6 +366,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Historical import failed';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const prismaConflict = error instanceof Prisma.PrismaClientKnownRequestError
+      && (error.code === 'P2002' || error.code === 'P2034');
+    const stateConflict = [
+      'Historical identity collision',
+      'changed before transaction execution',
+      'historical row has no approved Asset',
+    ].some((fragment) => message.includes(fragment));
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: prismaConflict || stateConflict ? 409 : 500 },
+    );
   }
 }

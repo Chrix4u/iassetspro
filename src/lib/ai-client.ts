@@ -440,7 +440,15 @@ export async function aiImageGeneration(
     throw new Error('No API key configured for image generation. Image generation is optional — the asset will be created without an AI illustration.');
   }
 
-  const model = config.imageModel || 'dall-e-3';
+  const defaultImageModels: Record<string, string> = {
+    'zai-api': 'glm-image',
+    openai: 'dall-e-3',
+  };
+  const model = config.imageModel || defaultImageModels[provider] || '';
+
+  if (!model) {
+    throw new Error(`No image model configured for provider "${provider}". Select an image-capable model in AI Settings before generating machine visuals.`);
+  }
 
   logger.info(`Generating image via ${provider}`, { model });
 

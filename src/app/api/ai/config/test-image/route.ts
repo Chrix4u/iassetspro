@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
-      return NextResponse.json({ success: false, error: 'Image API error (' + response.status + '): ' + detail.slice(0, 240) }, { status: 400 });
+      const insufficientZaiBalance = provider === 'zai-api'
+        && response.status === 429
+        && (/1113/.test(detail) || /insufficient balance|no resource package/i.test(detail));
+      const error = insufficientZaiBalance
+        ? 'Z.ai image generation is connected, but this account has no available image-generation balance or resource package. Recharge Z.ai image credits or assign a resource package, then retry.'
+        : 'Image API error (' + response.status + '): ' + detail.slice(0, 240);
+      return NextResponse.json({ success: false, error }, { status: insufficientZaiBalance ? 402 : 400 });
     }
     const data = await response.json() as { data?: Array<{ url?: string; b64_json?: string; base64?: string }> };
     const produced = Boolean(data.data?.[0]?.url || data.data?.[0]?.b64_json || data.data?.[0]?.base64);

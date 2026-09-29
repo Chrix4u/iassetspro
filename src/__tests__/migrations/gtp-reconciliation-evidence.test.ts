@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rankGtpHistoricalEvidence } from '@/services/migrations/gtpReconciliationEvidence.service';
+import { canDirectlyApplyGtpEvidence, rankGtpHistoricalEvidence } from '@/services/migrations/gtpReconciliationEvidence.service';
 
 describe('GTP historical reconciliation evidence ranking', () => {
   it('rejects weak one-term matches and ranks stronger historical evidence first', () => {
@@ -44,6 +44,42 @@ describe('GTP historical reconciliation evidence ranking', () => {
 
     expect(suggestions[0]).toMatchObject({ equipmentCode: '341/1', supportCount: 2 });
     expect(suggestions[0]?.examples).toHaveLength(2);
+  });
+
+
+  it('normalizes legacy morphology and preserves industrial line terminology', () => {
+    const suggestions = rankGtpHistoricalEvidence(
+      { description: 'Chocked thickener line at colour kitchen', trade: 'Mechanical' },
+      [
+        { workOrderNo: '3001', equipmentCode: '341/1', description: 'Chock thickener line on thickener preparation m/c', trade: 'Mechanical' },
+        { workOrderNo: '3002', equipmentCode: '341/1', description: 'Repair chock on thickener preparation line', trade: 'Mechanical' },
+        { workOrderNo: '3003', equipmentCode: '469/1', description: 'Repair pump line at colour kitchen', trade: 'Mechanical' },
+      ],
+    );
+
+    expect(suggestions[0]?.equipmentCode).toBe('341/1');
+    expect(suggestions[0]?.sharedTerms).toEqual(expect.arrayContaining(['chock', 'thickener', 'line']));
+  });
+
+  it('allows quick apply only for a dominant, repeatedly-supported top match', () => {
+    const safe = [
+      { equipmentCode: '469/1', matchScore: 0.86, sharedTerms: ['rsp', 'pump'], supportCount: 5, examples: [] },
+      { equipmentCode: '511/1', matchScore: 0.62, sharedTerms: ['treatment', 'plant'], supportCount: 2, examples: [] },
+    ];
+    expect(canDirectlyApplyGtpEvidence(safe, 0, true)).toBe(true);
+    expect(canDirectlyApplyGtpEvidence(safe, 1, true)).toBe(false);
+
+    const ambiguous = [
+      { equipmentCode: '381/1', matchScore: 0.97, sharedTerms: ['air', 'leak'], supportCount: 10, examples: [] },
+      { equipmentCode: '469/1', matchScore: 0.88, sharedTerms: ['air', 'leak'], supportCount: 12, examples: [] },
+    ];
+    expect(canDirectlyApplyGtpEvidence(ambiguous, 0, true)).toBe(false);
+
+    const thinEvidence = [
+      { equipmentCode: '484/1', matchScore: 0.84, sharedTerms: ['material', 'general'], supportCount: 1, examples: [] },
+    ];
+    expect(canDirectlyApplyGtpEvidence(thinEvidence, 0, true)).toBe(false);
+    expect(canDirectlyApplyGtpEvidence(safe, 0, false)).toBe(false);
   });
 
   it('caps the result set and exposes a similarity score rather than a probability', () => {

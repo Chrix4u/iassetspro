@@ -21,6 +21,20 @@ type AuditResult = {
   importLocked: boolean;
   source: { fileName: string; sizeBytes: number; sha256?: string; sheets: string[]; hasVba: boolean };
   workbook: { jobRecords: number; machineMasterRows: number; uniqueMachineCodes: number };
+  legacyParityBaseline?: {
+    available: boolean;
+    expectedSheetCount: number;
+    extractedSheetCount: number;
+    sheets: Array<{
+      sheetName: string;
+      chartFamily: 'bar' | 'line';
+      metric: string;
+      filters: Record<string, string | number>;
+      cachedGrandTotal: string | number | null;
+      computedSeriesTotal: number;
+      points: Array<{ category: string; value: number; order?: number }>;
+    }>;
+  };
   summary: {
     totalRows: number; importReadyRows: number; blockedRows: number; breakdownRows: number;
     missingStatusRows: number; missingStartRows: number; missingCompletionRows: number;
@@ -359,6 +373,45 @@ export function GtpMigrationPage() {
           <Card><CardHeader><CardTitle className="text-base">Trade Normalization</CardTitle><CardDescription>Historical spelling variants are mapped to one canonical trade.</CardDescription></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Legacy</TableHead><TableHead>Canonical</TableHead><TableHead className="text-right">Rows</TableHead></TableRow></TableHeader><TableBody>{result.tradeNormalizations.map((row) => <TableRow key={row.from + row.to}><TableCell>{row.from}</TableCell><TableCell>{row.to}</TableCell><TableCell className="text-right">{row.count}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
           <Card><CardHeader><CardTitle className="text-base">Data Quality Findings</CardTitle><CardDescription>Warnings determine which historical KPIs can be reconstructed reliably.</CardDescription></CardHeader><CardContent className="grid grid-cols-2 gap-3">{Object.entries(result.summary.issueCounts).sort((a,b)=>b[1]-a[1]).map(([code,count]) => <div key={code} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{issueLabels[code] || code.replaceAll('_',' ')}</p><p className="text-xl font-semibold">{count.toLocaleString()}</p></div>)}</CardContent></Card>
         </div>
+
+        {result.legacyParityBaseline && <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Workbook Parity Baseline</CardTitle>
+                <CardDescription>Frozen acceptance values extracted directly from the five saved GTP workbook pivots before import.</CardDescription>
+              </div>
+              <Badge variant="outline">
+                {result.legacyParityBaseline.extractedSheetCount}/{result.legacyParityBaseline.expectedSheetCount} pivot sheets
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Pivot sheet</TableHead><TableHead>Metric</TableHead><TableHead className="text-right">Points</TableHead><TableHead className="text-right">Cached total</TableHead><TableHead className="text-right">Independent total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableBody>{result.legacyParityBaseline.sheets.map((sheet) => {
+                const cachedNumeric = typeof sheet.cachedGrandTotal === 'number' ? sheet.cachedGrandTotal : null;
+                const reconciles = cachedNumeric !== null && Math.abs(cachedNumeric - sheet.computedSeriesTotal) < 0.000001;
+                const cachedLabel = sheet.cachedGrandTotal === null ? '—' : typeof sheet.cachedGrandTotal === 'number'
+                  ? sheet.cachedGrandTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                  : sheet.cachedGrandTotal;
+                return <TableRow key={sheet.sheetName}>
+                  <TableCell><div className="font-mono font-semibold">{sheet.sheetName}</div><div className="text-xs text-muted-foreground">{sheet.chartFamily} chart</div></TableCell>
+                  <TableCell className="max-w-[420px] whitespace-normal">{sheet.metric}</TableCell>
+                  <TableCell className="text-right">{sheet.points.length.toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">{cachedLabel}</TableCell>
+                  <TableCell className="text-right font-mono">{sheet.computedSeriesTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })}</TableCell>
+                  <TableCell>{reconciles
+                    ? <span className="text-emerald-700">Reconciled</span>
+                    : cachedNumeric === null
+                      ? <span className="text-amber-700">Cached value needs review</span>
+                      : <span className="text-amber-700">Total differs</span>}
+                  </TableCell>
+                </TableRow>;
+              })}</TableBody>
+            </Table>
+          </CardContent>
+        </Card>}
 
         {result.blankMachineCodeRows.length > 0 && <Card>
           <CardHeader>

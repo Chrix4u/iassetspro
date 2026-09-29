@@ -145,6 +145,7 @@ const issueLabels: Record<string, string> = {
 };
 
 type ReconciliationBundle = {
+  schemaVersion?: string;
   source?: { filename?: string; fileName?: string; sizeBytes?: number; sha256?: string };
   overrides?: Array<{
     rowNumber: number;
@@ -183,12 +184,22 @@ export function GtpMigrationPage() {
   const loadReconciliationBundle = async (bundleFile: File) => {
     try {
       const parsed = JSON.parse(await bundleFile.text()) as ReconciliationBundle;
+      if (!parsed || typeof parsed !== 'object') throw new Error('Bundle root must be a JSON object');
+      if (parsed.schemaVersion && parsed.schemaVersion !== 'gtp-reconciliation-bundle/v1') {
+        throw new Error('Unsupported reconciliation bundle schema version');
+      }
+      if (parsed.source?.sha256 && !/^[a-f0-9]{64}$/i.test(parsed.source.sha256)) {
+        throw new Error('Bundle source SHA-256 is malformed');
+      }
       const bundleOverrides = Array.isArray(parsed.overrides) ? parsed.overrides : [];
       const bundleCorrections = Array.isArray(parsed.reportedTimeCorrections) ? parsed.reportedTimeCorrections : [];
 
       const nextOverrides: Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }> = {};
+      const seenOverrideRows = new Set<number>();
       for (const row of bundleOverrides) {
         if (!Number.isInteger(row.rowNumber) || row.rowNumber < 2) throw new Error('Bundle contains an invalid row number');
+        if (seenOverrideRows.has(row.rowNumber)) throw new Error(`Bundle contains duplicate reconciliation row ${row.rowNumber}`);
+        seenOverrideRows.add(row.rowNumber);
         if (!['asset', 'non_equipment', 'historical_unassigned'].includes(row.action)) throw new Error('Bundle contains an invalid reconciliation action');
         if (row.action === 'asset' && !row.assetId) throw new Error(`Row ${row.rowNumber} Asset mapping is missing assetId`);
         if ((row.action === 'non_equipment' || row.action === 'historical_unassigned') && (!row.reason || row.reason.trim().length < 8)) {
@@ -202,7 +213,10 @@ export function GtpMigrationPage() {
       }
 
       const nextCorrections: Record<string, { reportedAt: string; reason: string }> = {};
+      const seenCorrectionRows = new Set<number>();
       for (const row of bundleCorrections) {
+        if (seenCorrectionRows.has(row.rowNumber)) throw new Error(`Bundle contains duplicate time-correction row ${row.rowNumber}`);
+        seenCorrectionRows.add(row.rowNumber);
         const reported = new Date(row.reportedAt);
         if (!Number.isInteger(row.rowNumber) || row.rowNumber < 2 || Number.isNaN(reported.getTime())) {
           throw new Error('Bundle contains an invalid reported-time correction');

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (tradeActivity) baseFilter.tradeActivity = tradeActivity;
     if (assetId) baseFilter.assetId = assetId;
     if (moduleFilter === 'repairs') {
-      (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+      (baseFilter as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
       (baseFilter as Record<string, unknown>).type = 'preventive';
     }

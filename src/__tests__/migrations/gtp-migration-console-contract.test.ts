@@ -113,11 +113,16 @@ describe('GTP migration reconciliation console', () => {
     expect(evidence).toContain('shared.length < 2');
     expect(evidence).toContain('.slice(0, Math.max(0, limit))');
     expect(route).toContain('legacyAssets.length === 1');
+    expect(route).toContain('canDirectlyApplyGtpEvidence');
+    expect(evidence).toContain('candidate.matchScore < 0.70');
+    expect(evidence).toContain('candidate.supportCount < 2');
+    expect(evidence).toContain('candidate.matchScore - runnerUp.matchScore >= 0.12');
     expect(evidence).toContain('matchScore: Math.min(0.99');
     expect(page).toContain('Historical evidence suggestions');
     expect(page).toContain('% match');
     expect(page).toContain('supporting historical row');
-    expect(page).toContain('Evidence only — this legacy code does not resolve uniquely to one current Asset.');
+    expect(page).toContain('suggestion.canApply && suggestion.assetId');
+    expect(page).toContain('Evidence only — review and confirm manually');
     expect(page).toContain('Suggestions are advisory only. Confirm the physical Asset before applying a mapping.');
     expect(page).toContain("setRowOverride(row.rowNumber, { action: 'asset', assetId: suggestion.assetId! })");
   });

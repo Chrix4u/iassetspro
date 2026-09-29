@@ -55,6 +55,20 @@ describe('GTP migration reconciliation console', () => {
   });
 
 
+  it('loads only SHA-bound reconciliation bundles for the selected workbook', () => {
+    expect(page).toContain("schemaVersion: 'gtp-reconciliation-bundle/v1'");
+    expect(page).toContain("crypto.subtle.digest('SHA-256'");
+    expect(page).toContain('Workbook size does not match this bundle');
+    expect(page).toContain('Workbook SHA-256 does not match this reconciliation bundle');
+    expect(page).toContain('Non-Asset resolution for row');
+    expect(page).toContain('reported timestamp');
+    expect(page).toContain('Load reconciliation bundle');
+    expect(page).toContain('Reconciliation bundle verified against the selected workbook');
+    expect(page).toContain('setOverrides(nextOverrides)');
+    expect(page).toContain('setReportedTimeCorrections(nextCorrections)');
+    expect(page).toContain('setEquipmentMappings({})');
+  });
+
   it('supports provenance-backed reported-time correction in dry-run only', () => {
     expect(route).toContain("formData.get('reportedTimeCorrections')");
     expect(route).toContain('Reported time can only be corrected when the legacy row is missing it');

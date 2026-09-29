@@ -19,6 +19,7 @@ type ProposedRow = {
   sourceStatus: string | null;
   assetId: string | null;
   assetName: string | null;
+  assetResolution?: string | null;
   reportedAt: string | null;
   workStartedAt: string | null;
   workCompletedAt: string | null;
@@ -137,8 +138,8 @@ export async function POST(request: NextRequest) {
       || manifest.counts.workOrders !== rows.length) {
       return NextResponse.json({ success: false, error: 'Manifest counts do not match its proposed rows' }, { status: 409 });
     }
-    if (!rows.length || rows.some((row) => !row.assetId)) {
-      return NextResponse.json({ success: false, error: 'Every import row must resolve to a real Asset' }, { status: 409 });
+    if (!rows.length || rows.some((row) => !row.assetId && row.assetResolution !== 'non_equipment')) {
+      return NextResponse.json({ success: false, error: 'Every equipment-backed import row must resolve to a real Asset' }, { status: 409 });
     }
 
     for (const row of rows) {
@@ -172,8 +173,11 @@ export async function POST(request: NextRequest) {
       const result: Array<{ maintenanceRequestId: string; workOrderId: string; requestNumber: string; woNumber: string }> = [];
 
       for (const row of rows) {
-        const asset = assetById.get(row.assetId!);
-        if (!asset) throw new Error('Approved Asset disappeared during import');
+        const asset = row.assetId ? assetById.get(row.assetId) : null;
+        if (row.assetId && !asset) throw new Error('Approved Asset disappeared during import');
+        if (!asset && row.assetResolution !== 'non_equipment') {
+          throw new Error('Equipment-backed historical row has no approved Asset');
+        }
 
         const duplicateWo = await tx.workOrder.findUnique({ where: { woNumber: row.proposedWorkOrder.woNumber }, select: { id: true } });
         const duplicateMr = await tx.maintenanceRequest.findUnique({ where: { requestNumber: row.proposedMaintenanceRequest.requestNumber }, select: { id: true } });
@@ -196,10 +200,10 @@ export async function POST(request: NextRequest) {
             category: row.trade || undefined,
             status: row.proposedMaintenanceRequest.status || 'converted',
             workflowStatus: row.proposedMaintenanceRequest.workflowStatus || 'closed',
-            assetId: asset.id,
-            assetName: asset.name,
+            assetId: asset?.id,
+            assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
             requestedBy: session.userId,
-            plantId: asset.plantId,
+            plantId: asset?.plantId,
             createdAt: asDate(row.proposedMaintenanceRequest.createdAt || row.reportedAt),
           },
         });
@@ -213,9 +217,9 @@ export async function POST(request: NextRequest) {
             priority: row.proposedWorkOrder.priority || 'medium',
             status: row.proposedWorkOrder.status || 'closed',
             maintenanceRequestId: mr.id,
-            assetId: asset.id,
-            assetName: asset.name,
-            plantId: asset.plantId,
+            assetId: asset?.id,
+            assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
+            plantId: asset?.plantId,
             plannerId: session.userId,
             tradeActivity: row.proposedWorkOrder.tradeActivity || row.trade || undefined,
             actualStart: asDate(row.proposedWorkOrder.actualStart || row.workStartedAt),
@@ -239,7 +243,7 @@ export async function POST(request: NextRequest) {
               manifestFingerprint: manifest.fingerprint,
               sourceSha256: manifest.source.sha256,
             }),
-            plantId: asset.plantId,
+            plantId: asset?.plantId,
           },
         });
         result.push({ maintenanceRequestId: mr.id, workOrderId: wo.id, requestNumber: mr.requestNumber, woNumber: wo.woNumber });

@@ -99,6 +99,12 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
 }
 
 const asText = (value: unknown) => String(value ?? '').trim();
+const normalizeIdentity = (value: unknown) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
 const asIso = (value: Date | string | number | null | undefined): string | null => {
   if (value === null || value === undefined || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -309,13 +315,63 @@ export async function POST(request: NextRequest) {
         .filter((code) => code && !code.startsWith('APP-ASSET:') && !code.startsWith('NON-EQUIPMENT:')),
     )];
 
-    const tenantAssets = directEquipmentCodes.length
-      ? await db.asset.findMany({
-          where: { assetTag: { in: directEquipmentCodes } },
-          select: { id: true, assetTag: true, name: true, criticality: true, plantId: true },
-        })
-      : [];
+    const [directTagAssets, legacyMetadataAssets] = await Promise.all([
+      directEquipmentCodes.length
+        ? db.asset.findMany({
+            where: { assetTag: { in: directEquipmentCodes }, isActive: true },
+            select: { id: true, assetTag: true, name: true, criticality: true, plantId: true, specification: true },
+          })
+        : [],
+      db.asset.findMany({
+        where: { isActive: true, specification: { contains: '"legacyCode"' } },
+        select: { id: true, assetTag: true, name: true, criticality: true, plantId: true, specification: true },
+      }),
+    ]);
+    const tenantAssets = [...new Map(
+      [...directTagAssets, ...legacyMetadataAssets].map((asset) => [asset.id, asset]),
+    ).values()];
     const tenantAssetByTag = new Map(tenantAssets.map((asset) => [asset.assetTag, asset]));
+    const tenantAssetsByLegacyCode = new Map<string, typeof tenantAssets>();
+    for (const asset of legacyMetadataAssets) {
+      try {
+        const spec = JSON.parse(asset.specification || '{}') as Record<string, unknown>;
+        const legacyCode = typeof spec.legacyCode === 'string' ? spec.legacyCode.trim() : '';
+        if (!legacyCode) continue;
+        const group = tenantAssetsByLegacyCode.get(legacyCode) || [];
+        group.push(asset);
+        tenantAssetsByLegacyCode.set(legacyCode, group);
+      } catch {
+        // Non-JSON free-text specifications are valid elsewhere; ignore them here.
+      }
+    }
+    const resolveLegacyMetadataAsset = (
+      equipmentCode: string,
+      equipmentName: string,
+      mappedPriority?: string | null,
+    ) => {
+      const candidates = tenantAssetsByLegacyCode.get(equipmentCode) || [];
+      if (candidates.length === 1) return candidates[0];
+      const normalizedName = normalizeIdentity(equipmentName);
+      const exactNameMatches = candidates.filter((asset) => normalizeIdentity(asset.name) === normalizedName);
+      if (exactNameMatches.length === 1) return exactNameMatches[0];
+
+      const legacyPriority = mappedPriority === 'critical' ? 1
+        : mappedPriority === 'high' ? 2
+        : mappedPriority === 'medium' ? 3
+        : null;
+      if (legacyPriority && exactNameMatches.length > 1) {
+        const priorityMatches = exactNameMatches.filter((asset) => {
+          try {
+            const spec = JSON.parse(asset.specification || '{}') as Record<string, unknown>;
+            return Number(spec.legacyPriority) === legacyPriority;
+          } catch {
+            return false;
+          }
+        });
+        if (priorityMatches.length === 1) return priorityMatches[0];
+      }
+      return null;
+    };
 
     const assetLinkageRows = readyAuditRows.map((row) => {
       if (row.equipmentCode.startsWith('APP-ASSET:')) {
@@ -347,6 +403,37 @@ export async function POST(request: NextRequest) {
         };
       }
 
+      // Duplicate legacy codes are only safe when the Asset Registry carries
+      // the same legacyCode metadata and the resolved machine name identifies
+      // exactly one physical Asset. Otherwise require an explicit row override.
+      if (row.machineResolution === 'duplicate_resolved') {
+        const legacyAsset = resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName, row.mappedPriority);
+        if (legacyAsset) {
+          return {
+            legacyRowNumber: row.legacyRowNumber ?? null,
+            legacyWorkOrderNo: row.legacyWorkOrderNo,
+            equipmentCode: row.equipmentCode,
+            equipmentName: row.equipmentName,
+            assetId: legacyAsset.id,
+            assetTag: legacyAsset.assetTag,
+            assetName: legacyAsset.name,
+            resolution: 'legacy_metadata_match' as const,
+            tenantReady: true,
+          };
+        }
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: null,
+          assetTag: null,
+          assetName: null,
+          resolution: 'duplicate_variant_unconfirmed' as const,
+          tenantReady: false,
+        };
+      }
+
       const mappedAssetId = equipmentMappingByCode.get(row.equipmentCode);
       if (mappedAssetId) {
         const mappedAsset = assetById.get(mappedAssetId);
@@ -363,7 +450,9 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      const asset = tenantAssetByTag.get(row.equipmentCode);
+      const asset = tenantAssetByTag.get(row.equipmentCode)
+        || resolveLegacyMetadataAsset(row.equipmentCode, row.equipmentName, row.mappedPriority);
+      const matchedByTag = asset?.assetTag === row.equipmentCode;
       return {
         legacyRowNumber: row.legacyRowNumber ?? null,
         legacyWorkOrderNo: row.legacyWorkOrderNo,
@@ -372,12 +461,15 @@ export async function POST(request: NextRequest) {
         assetId: asset?.id || null,
         assetTag: asset?.assetTag || null,
         assetName: asset?.name || null,
-        resolution: asset ? 'asset_tag_match' as const : 'unlinked' as const,
+        resolution: asset
+          ? (matchedByTag ? 'asset_tag_match' as const : 'legacy_metadata_match' as const)
+          : 'unlinked' as const,
         tenantReady: Boolean(asset),
       };
     });
 
     const tenantReadyRows = assetLinkageRows.filter((row) => row.tenantReady).length;
+    const legacyMetadataMatchedRows = assetLinkageRows.filter((row) => row.resolution === 'legacy_metadata_match').length;
     const tenantBlockedRows = assetLinkageRows.length - tenantReadyRows;
     const unlinkedEquipmentCodes = [...new Set(
       assetLinkageRows
@@ -526,7 +618,9 @@ export async function POST(request: NextRequest) {
       const executionBlockers = [
         ...previewBlockers,
         ...(!approvalSignature ? ['GTP_MIGRATION_SIGNING_KEY is not configured on this server'] : []),
-        ...(proposedRows.some((row) => !row.assetId) ? ['Every historical row must resolve to a real Asset before write execution'] : []),
+        ...(proposedRows.some((row) => !row.assetId && row.assetResolution !== 'non_equipment')
+          ? ['Every equipment-backed historical row must resolve to a real Asset before write execution']
+          : []),
       ];
       const approvedManifest = {
         ...manifestCore,
@@ -640,7 +734,8 @@ export async function POST(request: NextRequest) {
           tenantReadyRows,
           tenantBlockedRows,
           unlinkedEquipmentCodes,
-          directlyMatchedAssetTags: tenantAssets.length,
+          directlyMatchedAssetTags: assetLinkageRows.filter((row) => row.resolution === 'asset_tag_match').length,
+          legacyMetadataMatchedRows,
           adminAssetOverrides: assetLinkageRows.filter((row) => row.resolution === 'admin_asset_override').length,
           legacyCodeMappingsSubmitted: equipmentMappings.length,
           legacyCodeMappedRows: assetLinkageRows.filter((row) => row.resolution === 'legacy_code_mapping').length,

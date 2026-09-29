@@ -20,7 +20,7 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain('importLocked: true');
     expect(route).not.toContain('db.workOrder.create');
     expect(route).not.toContain('db.maintenanceRequest.create');
-    expect(page).toContain('Historical import is locked');
+    expect(page).toContain('Historical import execution is gated');
   });
 
   it('validates the authoritative workbook structure', () => {
@@ -60,7 +60,9 @@ describe('GTP migration reconciliation console', () => {
 
 
   it('separates workbook readiness from tenant Asset-link readiness', () => {
-    expect(route).toContain("where: { assetTag: { in: directEquipmentCodes } }");
+    expect(route).toContain("assetTag: { in: directEquipmentCodes }");
+    expect(route).toContain("specification: { contains: '\"legacyCode\"' }");
+    expect(route).toContain('resolveLegacyMetadataAsset');
     expect(route).toContain('tenantReadiness');
     expect(route).toContain('unlinkedEquipmentCodes');
     expect(route).toContain("'asset_tag_match'");
@@ -83,6 +85,12 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Apply Equipment Mappings & Re-audit');
     expect(page).toContain('Map each legacy machine code to an existing Asset');
     expect(page).toContain('Map to existing Asset...');
+    expect(route).toContain("resolution: 'legacy_metadata_match'");
+    expect(route).toContain('legacyMetadataMatchedRows');
+    expect(page).toContain('Legacy metadata matches');
+    expect(route).toContain("resolution: 'duplicate_variant_unconfirmed'");
+    expect(page).toContain('Duplicate Machine Variant Asset Confirmation');
+    expect(page).toContain('Confirm exact Asset...');
   });
 
   it('builds a zero-write transactional import preview with idempotency checks', () => {
@@ -102,6 +110,9 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Preview only — no records will be written');
     expect(page).toContain('Preview fingerprint');
     expect(page).toContain('Generate a signed transactional preview; execution remains locked until all approval gates are satisfied.');
+    expect(page).toContain('Historical import execution is ready');
+    expect(page).toContain('Historical Import Receipt');
+    expect(page).toContain('already been imported in this session');
   });
 
   it('builds a downloadable approved preview manifest without enabling writes', () => {

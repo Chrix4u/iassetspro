@@ -144,14 +144,28 @@ const issueLabels: Record<string, string> = {
   missing_trade: 'Missing trade',
 };
 
+type ReconciliationBundle = {
+  schemaVersion?: string;
+  source?: { filename?: string; fileName?: string; sizeBytes?: number; sha256?: string };
+  overrides?: Array<{
+    rowNumber: number;
+    action: 'asset' | 'non_equipment' | 'historical_unassigned';
+    assetId?: string;
+    reason?: string;
+  }>;
+  reportedTimeCorrections?: Array<{ rowNumber: number; reportedAt: string; reason: string }>;
+};
+
 export function GtpMigrationPage() {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const bundleInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
   const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
   const [equipmentMappings, setEquipmentMappings] = useState<Record<string, string>>({});
+  const [bundleSource, setBundleSource] = useState<ReconciliationBundle['source'] | null>(null);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [importConfirmation, setImportConfirmation] = useState('');
   const [importing, setImporting] = useState(false);
@@ -166,6 +180,91 @@ export function GtpMigrationPage() {
     if (!result?.summary.totalRows) return 0;
     return Math.round((result.summary.importReadyRows / result.summary.totalRows) * 1000) / 10;
   }, [result]);
+
+  const loadReconciliationBundle = async (bundleFile: File) => {
+    try {
+      const parsed = JSON.parse(await bundleFile.text()) as ReconciliationBundle;
+      if (!parsed || typeof parsed !== 'object') throw new Error('Bundle root must be a JSON object');
+      if (parsed.schemaVersion && parsed.schemaVersion !== 'gtp-reconciliation-bundle/v1') {
+        throw new Error('Unsupported reconciliation bundle schema version');
+      }
+      if (parsed.source?.sha256 && !/^[a-f0-9]{64}$/i.test(parsed.source.sha256)) {
+        throw new Error('Bundle source SHA-256 is malformed');
+      }
+      const bundleOverrides = Array.isArray(parsed.overrides) ? parsed.overrides : [];
+      const bundleCorrections = Array.isArray(parsed.reportedTimeCorrections) ? parsed.reportedTimeCorrections : [];
+
+      const nextOverrides: Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }> = {};
+      const seenOverrideRows = new Set<number>();
+      for (const row of bundleOverrides) {
+        if (!Number.isInteger(row.rowNumber) || row.rowNumber < 2) throw new Error('Bundle contains an invalid row number');
+        if (seenOverrideRows.has(row.rowNumber)) throw new Error(`Bundle contains duplicate reconciliation row ${row.rowNumber}`);
+        seenOverrideRows.add(row.rowNumber);
+        if (!['asset', 'non_equipment', 'historical_unassigned'].includes(row.action)) throw new Error('Bundle contains an invalid reconciliation action');
+        if (row.action === 'asset' && !row.assetId) throw new Error(`Row ${row.rowNumber} Asset mapping is missing assetId`);
+        if ((row.action === 'non_equipment' || row.action === 'historical_unassigned') && (!row.reason || row.reason.trim().length < 8)) {
+          throw new Error(`Row ${row.rowNumber} requires a provenance reason of at least 8 characters`);
+        }
+        nextOverrides[String(row.rowNumber)] = {
+          action: row.action,
+          assetId: row.action === 'asset' ? row.assetId : undefined,
+          reason: row.reason?.trim() || undefined,
+        };
+      }
+
+      const nextCorrections: Record<string, { reportedAt: string; reason: string }> = {};
+      const seenCorrectionRows = new Set<number>();
+      for (const row of bundleCorrections) {
+        if (seenCorrectionRows.has(row.rowNumber)) throw new Error(`Bundle contains duplicate time-correction row ${row.rowNumber}`);
+        seenCorrectionRows.add(row.rowNumber);
+        const reported = new Date(row.reportedAt);
+        if (!Number.isInteger(row.rowNumber) || row.rowNumber < 2 || Number.isNaN(reported.getTime())) {
+          throw new Error('Bundle contains an invalid reported-time correction');
+        }
+        if (!row.reason || row.reason.trim().length < 8) {
+          throw new Error(`Row ${row.rowNumber} time correction requires a provenance reason of at least 8 characters`);
+        }
+        const localReportedAt = new Date(reported.getTime() - reported.getTimezoneOffset() * 60_000)
+          .toISOString()
+          .slice(0, 16);
+        nextCorrections[String(row.rowNumber)] = {
+          reportedAt: localReportedAt,
+          reason: row.reason.trim(),
+        };
+      }
+
+      if (!Object.keys(nextOverrides).length && !Object.keys(nextCorrections).length) {
+        throw new Error('Bundle contains no reconciliation decisions or time corrections');
+      }
+      if (file && parsed.source?.sizeBytes && file.size !== parsed.source.sizeBytes) {
+        throw new Error('Bundle source size does not match the selected workbook');
+      }
+      if (file && parsed.source?.sha256) {
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        const selectedWorkbookSha = Array.from(new Uint8Array(digest))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('');
+        if (selectedWorkbookSha.toLowerCase() !== parsed.source.sha256.toLowerCase()) {
+          throw new Error('Bundle source SHA-256 does not match the selected workbook');
+        }
+      }
+      const expectedName = parsed.source?.filename || parsed.source?.fileName;
+      if (file && expectedName && file.name !== expectedName) {
+        toast.warning(`Bundle expects ${expectedName}; selected workbook is ${file.name}. Server SHA verification will still decide acceptance.`);
+      }
+
+      setOverrides(nextOverrides);
+      setReportedTimeCorrections(nextCorrections);
+      setBundleSource(parsed.source || null);
+      setResult(null);
+      setLastImport(null);
+      toast.success(`Reconciliation bundle loaded · ${Object.keys(nextOverrides).length} row decision(s) · ${Object.keys(nextCorrections).length} time correction(s)`);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Invalid reconciliation bundle');
+    } finally {
+      if (bundleInputRef.current) bundleInputRef.current.value = '';
+    }
+  };
 
   const runAudit = async (previewRequested = false) => {
     if (!file) return toast.error('Choose the GTP workbook first');
@@ -344,11 +443,22 @@ export function GtpMigrationPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setBundleSource(null); setLastImport(null); }} />
+          <Input ref={bundleInputRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const next = e.target.files?.[0]; if (next) void loadReconciliationBundle(next); }} />
           <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-medium">{file?.name || 'Select the current GTP workbook'}</p><p className="text-sm text-muted-foreground">{file ? (file.size / 1024 / 1024).toFixed(2) + ' MB · ready for dry-run audit' : 'The original workbook remains unchanged.'}</p></div>
-            <div className="flex gap-2"><Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button><Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button></div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button>
+              <Button variant="outline" onClick={() => bundleInputRef.current?.click()} disabled={!file} className="gap-2"><FileSpreadsheet className="h-4 w-4" />Load reconciliation bundle</Button>
+              <Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button>
+            </div>
           </div>
+          {bundleSource && <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Bundle source:</span>{' '}
+            {bundleSource.filename || bundleSource.fileName || 'GTP workbook'}
+            {bundleSource.sizeBytes ? ` · ${bundleSource.sizeBytes.toLocaleString()} bytes` : ''}
+            {bundleSource.sha256 ? <><span> · SHA-256 </span><span className="break-all font-mono">{bundleSource.sha256}</span></> : null}
+          </div>}
         </CardContent>
       </Card>
 

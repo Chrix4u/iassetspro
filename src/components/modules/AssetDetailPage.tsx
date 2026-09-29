@@ -846,11 +846,11 @@ export function AssetDetailPage({ id }: { id: string }) {
                     <CardDescription>Track this part&apos;s lifecycle, health, and maintenance history</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1"><Label className="text-xs">Component Code *</Label><Input className="h-8 text-sm" placeholder="e.g. RPM-DR-001" value={compForm.componentCode} onChange={e => setCompForm(f => ({ ...f, componentCode: e.target.value }))} /></div>
                       <div className="space-y-1"><Label className="text-xs">Name *</Label><Input className="h-8 text-sm" placeholder="e.g. Drive Roller" value={compForm.name} onChange={e => setCompForm(f => ({ ...f, name: e.target.value }))} /></div>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                       <div className="space-y-1">
                         <Label className="text-xs">Type</Label>
                         <Select value={compForm.componentType} onValueChange={v => setCompForm(f => ({ ...f, componentType: v }))}>
@@ -893,11 +893,11 @@ export function AssetDetailPage({ id }: { id: string }) {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1"><Label className="text-xs">Manufacturer</Label><Input className="h-8 text-sm" placeholder="e.g. SKF" value={compForm.manufacturer} onChange={e => setCompForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
                       <div className="space-y-1"><Label className="text-xs">Model Number</Label><Input className="h-8 text-sm" placeholder="e.g. 22222 EK" value={compForm.modelNumber} onChange={e => setCompForm(f => ({ ...f, modelNumber: e.target.value }))} /></div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1"><Label className="text-xs">Expected Life (hours)</Label><Input type="number" className="h-8 text-sm" placeholder="e.g. 20000" value={compForm.expectedLifeHours} onChange={e => setCompForm(f => ({ ...f, expectedLifeHours: e.target.value }))} /></div>
                       <div className="space-y-1"><Label className="text-xs">Operating Hours</Label><Input type="number" className="h-8 text-sm" placeholder="e.g. 5000" value={compForm.operatingHours} onChange={e => setCompForm(f => ({ ...f, operatingHours: e.target.value }))} /></div>
                     </div>
@@ -946,8 +946,8 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </div>
                   <Card className="border-0 shadow-sm">
                     <CardContent className="p-0">
-                      <div className="w-full max-w-full overflow-x-auto pb-2">
-                        <Table className="min-w-[980px]"><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+                      <div className="w-full max-w-full overflow-x-auto overscroll-x-contain pb-2">
+                        <Table className="min-w-[860px] xl:min-w-full"><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Parent</TableHead><TableHead className="hidden md:table-cell">Criticality</TableHead><TableHead className="text-right">Health</TableHead><TableHead className="hidden lg:table-cell">Life (hrs)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
                           {components.map((c: any) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
@@ -965,7 +965,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                                 {c.operatingHours ?? '-'} / {c.expectedLifeHours ?? '-'}
                               </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex justify-end gap-1.5">
+                                <div className="flex flex-wrap justify-end gap-1.5">
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
                                   <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
                                     Manage Parts ({c._count?.sparePartLinks || 0})

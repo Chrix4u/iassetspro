@@ -22,6 +22,7 @@ type ReconciliationOverride = {
   rowNumber: number;
   action: 'asset' | 'non_equipment' | 'historical_unassigned';
   assetId?: string;
+  reason?: string;
 };
 
 type ReportedTimeCorrection = {
@@ -91,12 +92,16 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
     const rowNumber = Number(row.rowNumber);
     const action = row.action;
     const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : undefined;
+    const reason = typeof row.reason === 'string' ? row.reason.trim() : undefined;
     if (!Number.isInteger(rowNumber) || rowNumber < 2) throw new Error('Invalid reconciliation row number');
     if (action !== 'asset' && action !== 'non_equipment' && action !== 'historical_unassigned') {
       throw new Error('Invalid reconciliation action');
     }
     if (action === 'asset' && !assetId) throw new Error('Asset mapping requires an assetId');
-    return { rowNumber, action, assetId };
+    if ((action === 'non_equipment' || action === 'historical_unassigned') && (!reason || reason.length < 8)) {
+      throw new Error('Non-Asset reconciliation requires a provenance reason of at least 8 characters');
+    }
+    return { rowNumber, action, assetId, reason };
   });
 }
 
@@ -229,6 +234,7 @@ export async function POST(request: NextRequest) {
       action: 'asset' | 'non_equipment' | 'historical_unassigned';
       assetId: string | null;
       assetName: string | null;
+      reason: string | null;
     }> = [];
 
     const appliedReportedTimeCorrections: Array<{
@@ -275,6 +281,7 @@ export async function POST(request: NextRequest) {
           action: 'asset',
           assetId: asset.id,
           assetName: asset.name,
+          reason: override.reason || null,
         });
         return {
           ...job,
@@ -301,6 +308,7 @@ export async function POST(request: NextRequest) {
         action: override.action,
         assetId: null,
         assetName: null,
+        reason: override.reason || null,
       });
       return {
         ...job,
@@ -539,6 +547,7 @@ export async function POST(request: NextRequest) {
           const job = jobs.find((candidate) => candidate.rowNumber === row.legacyRowNumber);
           const linkage = linkageByRow.get(row.legacyRowNumber ?? null);
           const legacyNo = row.legacyWorkOrderNo;
+          const reconciliationDecision = overrideByRow.get(Number(row.legacyRowNumber || 0));
           const requestNumber = `GTP-MR-${legacyNo}`;
           const woNumber = `GTP-WO-${legacyNo}`;
           const title = job?.description || `${row.mappedType} - ${row.equipmentName || 'Historical maintenance'}`;
@@ -553,6 +562,7 @@ export async function POST(request: NextRequest) {
             assetTag: linkage?.assetTag || null,
             assetName: linkage?.assetName || row.equipmentName || null,
             assetResolution: linkage?.resolution || null,
+            reconciliationReason: reconciliationDecision?.reason || null,
             reportedAt: asIso(job?.reportedAt),
             workStartedAt: asIso(job?.workStartedAt),
             workCompletedAt: asIso(job?.workCompletedAt),

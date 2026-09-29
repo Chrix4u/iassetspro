@@ -6,6 +6,7 @@ const page = fs.readFileSync('src/components/modules/GtpMigrationPage.tsx', 'utf
 const app = fs.readFileSync('src/components/EAMApp.tsx', 'utf8');
 const sidebar = fs.readFileSync('src/components/shared/Sidebar.tsx', 'utf8');
 const access = fs.readFileSync('src/lib/page-access.ts', 'utf8');
+const evidence = fs.readFileSync('src/services/migrations/gtpReconciliationEvidence.service.ts', 'utf8');
 
 describe('GTP migration reconciliation console', () => {
   it('uses the canonical request-session auth helper', () => {
@@ -106,12 +107,13 @@ describe('GTP migration reconciliation console', () => {
   });
 
   it('surfaces advisory historical evidence for blank machine-code reconciliation', () => {
-    expect(route).toContain('EVIDENCE_STOP_WORDS');
-    expect(route).toContain('evidenceSimilarity');
-    expect(route).toContain('shared.length < 2');
-    expect(route).toContain('.slice(0, 3)');
+    expect(route).toContain('rankGtpHistoricalEvidence');
+    expect(evidence).toContain('STOP_WORDS');
+    expect(evidence).toContain('similarity');
+    expect(evidence).toContain('shared.length < 2');
+    expect(evidence).toContain('.slice(0, Math.max(0, limit))');
     expect(route).toContain('legacyAssets.length === 1');
-    expect(route).toContain('matchScore: Math.min(0.99');
+    expect(evidence).toContain('matchScore: Math.min(0.99');
     expect(page).toContain('Historical evidence suggestions');
     expect(page).toContain('% match');
     expect(page).toContain('supporting historical row');

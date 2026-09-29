@@ -270,6 +270,11 @@ export function GtpMigrationPage() {
     if (incompleteTimeCorrection) {
       return toast.error(`Row ${incompleteTimeCorrection.rowNumber} needs a reported time and provenance reason of at least 8 characters`);
     }
+    const invalidTimeCorrection = timeCorrectionEntries.find((value) =>
+      value.reportedAt && Number.isNaN(new Date(value.reportedAt).getTime()));
+    if (invalidTimeCorrection) {
+      return toast.error(`Row ${invalidTimeCorrection.rowNumber} contains an invalid reported time`);
+    }
     const timeCorrections = timeCorrectionEntries
       .filter((value) => value.reportedAt && value.reason.length >= 8)
       .map((value) => ({

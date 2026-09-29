@@ -77,6 +77,8 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('sizeBytes: file.size');
     expect(page).toContain('sha256: workbookSha256');
     expect(page).toContain('needs a provenance reason of at least 8 characters');
+    expect(page).toContain('must select an Asset before downloading the bundle');
+    expect(page).toContain('needs a reported time and provenance reason of at least 8 characters');
     expect(page).toContain('server-side workbook, Asset, plant, signature, fingerprint and execution gates remain authoritative');
     expect(page).toContain('gtp-reconciliation-bundle-');
   });

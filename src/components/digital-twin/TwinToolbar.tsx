@@ -90,6 +90,8 @@ function ToolbarButton({ icon, label, isActive, onClick, shortcut, danger }: Too
         <Button
           variant="ghost"
           size="icon"
+          aria-label={label}
+          title={label}
           onClick={onClick}
           className={`
             h-8 w-8 rounded-md transition-all duration-150

@@ -20,6 +20,7 @@ type ProposedRow = {
   assetId: string | null;
   assetName: string | null;
   assetResolution?: string | null;
+  reconciliationReason?: string | null;
   reportedAt: string | null;
   workStartedAt: string | null;
   workCompletedAt: string | null;
@@ -213,6 +214,7 @@ export async function POST(request: NextRequest) {
           manifestFingerprint: manifest.fingerprint,
           migrationPlantId: manifest.migrationPlantId,
           assetResolution: row.assetResolution || null,
+          reconciliationReason: row.reconciliationReason || null,
           sourceAssetName: row.assetName || null,
         });
 

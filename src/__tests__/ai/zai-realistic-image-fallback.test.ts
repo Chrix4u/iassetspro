@@ -20,4 +20,11 @@ describe('Z.ai realistic image generation fallback', () => {
     expect(visualRoute).toContain('aiImageGeneration');
     expect(visualRoute).toContain("visualType || 'ai_realistic'");
   });
+
+  it('turns Z.ai insufficient-balance responses into actionable UI errors', () => {
+    expect(visualRoute).toContain('no available image-generation balance or resource package');
+    expect(visualRoute).toContain('insufficientZaiBalance ? 402 : 500');
+    expect(imageTestRoute).toContain('Z.ai image generation is connected');
+    expect(imageTestRoute).toContain('insufficientZaiBalance ? 402 : 400');
+  });
 });

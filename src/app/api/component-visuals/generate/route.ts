@@ -138,7 +138,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: visual }, { status: 201 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'AI visual generation failed';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const rawMessage = error instanceof Error ? error.message : 'AI visual generation failed';
+    const insufficientZaiBalance = /Image generation API error \(429\)/i.test(rawMessage)
+      && (/1113/.test(rawMessage) || /insufficient balance|no resource package/i.test(rawMessage));
+    const message = insufficientZaiBalance
+      ? 'Z.ai image generation is configured correctly, but this account has no available image-generation balance or resource package. Recharge Z.ai image credits or assign a resource package, then retry.'
+      : rawMessage;
+    return NextResponse.json({ success: false, error: message }, { status: insufficientZaiBalance ? 402 : 500 });
   }
 }

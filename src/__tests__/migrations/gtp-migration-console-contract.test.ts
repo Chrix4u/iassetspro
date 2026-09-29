@@ -105,6 +105,21 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Confirm exact Asset...');
   });
 
+  it('surfaces advisory historical evidence for blank machine-code reconciliation', () => {
+    expect(route).toContain('EVIDENCE_STOP_WORDS');
+    expect(route).toContain('evidenceSimilarity');
+    expect(route).toContain('shared.length < 2');
+    expect(route).toContain('.slice(0, 3)');
+    expect(route).toContain('legacyAssets.length === 1');
+    expect(route).toContain('confidence: Math.min(0.99');
+    expect(page).toContain('Historical evidence suggestions');
+    expect(page).toContain('% evidence');
+    expect(page).toContain('supporting historical row');
+    expect(page).toContain('Evidence only — this legacy code does not resolve uniquely to one current Asset.');
+    expect(page).toContain('Suggestions are advisory only. Confirm the physical Asset before applying a mapping.');
+    expect(page).toContain("setRowOverride(row.rowNumber, { action: 'asset', assetId: suggestion.assetId! })");
+  });
+
   it('builds a zero-write transactional import preview with idempotency checks', () => {
     expect(route).toContain("formData.get('preview')");
     expect(route).toContain("createHash('sha256')");

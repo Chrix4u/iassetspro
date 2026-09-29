@@ -10,7 +10,7 @@ import {
   type GtpLegacyJobRow,
   type GtpMachineMasterRow,
 } from '@/services/migrations/gtpWorkbookMigration.service';
-import { rankGtpHistoricalEvidence } from '@/services/migrations/gtpReconciliationEvidence.service';
+import { canDirectlyApplyGtpEvidence, rankGtpHistoricalEvidence } from '@/services/migrations/gtpReconciliationEvidence.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -731,18 +731,23 @@ export async function POST(request: NextRequest) {
     });
 
     const blankMachineCodeRows = jobs.filter((job) => !asText(job.equipmentCode)).map((job) => {
-      const suggestions = rankGtpHistoricalEvidence(job, codedEvidenceJobs, 3)
-        .map((candidate) => {
-          const legacyAssets = tenantAssetsByLegacyCode.get(candidate.equipmentCode) || [];
-          const resolvedAsset = tenantAssetByTag.get(candidate.equipmentCode)
-            || (legacyAssets.length === 1 ? legacyAssets[0] : null);
-          return {
-            ...candidate,
-            assetId: resolvedAsset?.id || null,
-            assetTag: resolvedAsset?.assetTag || null,
-            assetName: resolvedAsset?.name || null,
-          };
-        });
+      const rankedSuggestions = rankGtpHistoricalEvidence(job, codedEvidenceJobs, 3);
+      const suggestions = rankedSuggestions.map((candidate, index) => {
+        const legacyAssets = tenantAssetsByLegacyCode.get(candidate.equipmentCode) || [];
+        const resolvedAsset = tenantAssetByTag.get(candidate.equipmentCode)
+          || (legacyAssets.length === 1 ? legacyAssets[0] : null);
+        const uniquelyResolved = Boolean(
+          resolvedAsset
+          && (resolvedAsset.assetTag === candidate.equipmentCode || legacyAssets.length === 1),
+        );
+        return {
+          ...candidate,
+          assetId: resolvedAsset?.id || null,
+          assetTag: resolvedAsset?.assetTag || null,
+          assetName: resolvedAsset?.name || null,
+          canApply: canDirectlyApplyGtpEvidence(rankedSuggestions, index, uniquelyResolved),
+        };
+      });
 
       return {
         rowNumber: job.rowNumber ?? null,

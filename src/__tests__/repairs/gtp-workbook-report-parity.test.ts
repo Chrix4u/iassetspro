@@ -52,6 +52,8 @@ describe('GTP legacy workbook report parity', () => {
 
     expect(page).toContain('GTP Workbook Graph Parity');
     expect(page).toContain('Machine repair downtime per week');
+    expect(page).toContain('BD_MC_Wk semantics');
+    expect(page).toContain('date range or This Week shortcut');
     expect(page).toContain('Machine breakdown occurrence per machine');
     expect(page).toContain('Machine breakdown per week');
     expect(page).toContain('Response to repair per week');

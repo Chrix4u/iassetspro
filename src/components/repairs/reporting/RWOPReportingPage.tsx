@@ -1320,7 +1320,10 @@ export default function RWOPReportingPage() {
 
                   <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                     <div className="rounded-lg border bg-background p-3">
-                      <p className="mb-2 text-xs font-medium">Machine repair downtime per week</p>
+                      <p className="text-xs font-medium">Machine repair downtime per week</p>
+                      <p className="mb-2 mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                        BD_MC_Wk semantics: bars are summed by machine for the active report filters; filter the report to the desired week using the date range or This Week shortcut to reproduce the workbook&apos;s week-filtered machine view.
+                      </p>
                       <ResponsiveContainer width="100%" height={280}>
                         <BarChart data={report.breakdownPerformance.legacyParity.downtimeByMachine} margin={{ top: 8, right: 8, bottom: 62, left: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />

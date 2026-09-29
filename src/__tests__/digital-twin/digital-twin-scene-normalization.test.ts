@@ -25,6 +25,9 @@ describe('Digital Twin scene normalization contract', () => {
   it('loads the resolved twin scene so relational context reaches the viewer', () => {
     expect(viewer).toContain('await loadScene(firstScene.id)');
     expect(viewer).toContain('hotspots, annotations, camera presets, mesh bindings');
+    expect(viewer).toContain('retryCount]);');
+    expect(viewer).toContain('const canvas = canvasRef.current');
+    expect(viewer).not.toContain("document.querySelector('canvas')");
   });
 
   it('mounts the interactive viewer in the asset Digital Twin tab', () => {

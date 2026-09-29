@@ -463,6 +463,7 @@ export function DigitalTwinViewer({
         // (hotspots, annotations, camera presets, mesh bindings) into the store.
         const firstScene = scenesRes.data[0];
         await loadScene(firstScene.id);
+        if (cancelled) return;
 
         if (!firstScene.modelId) {
           // Scene exists but has no model linked
@@ -506,7 +507,7 @@ export function DigitalTwinViewer({
     return () => {
       cancelled = true;
     };
-  }, [sceneId, twinId, propModelUrl, loadScene, setModelUrl]);
+  }, [sceneId, twinId, propModelUrl, loadScene, setModelUrl, retryCount]);
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
@@ -526,8 +527,7 @@ export function DigitalTwinViewer({
 
   // ── Screenshot handler ──────────────────────────────────────────────────
   const handleScreenshot = useCallback(() => {
-    // Get the canvas from the DOM
-    const canvas = document.querySelector('canvas');
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const link = document.createElement('a');

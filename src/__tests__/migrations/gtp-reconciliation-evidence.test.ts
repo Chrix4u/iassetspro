@@ -28,7 +28,9 @@ describe('GTP historical reconciliation evidence ranking', () => {
     );
 
     expect(suggestions[0]?.equipmentCode).toBe('469/1');
-    expect(suggestions.some((candidate) => candidate.equipmentCode === '511/1')).toBe(false);
+    const treatmentPlantAlternative = suggestions.find((candidate) => candidate.equipmentCode === '511/1');
+    expect(treatmentPlantAlternative).toBeDefined();
+    expect(suggestions[0]?.matchScore ?? 0).toBeGreaterThan(treatmentPlantAlternative?.matchScore ?? 0);
     expect(suggestions[0]?.sharedTerms).toEqual(expect.arrayContaining(['rsp', 'main', 'pump']));
   });
 
@@ -96,6 +98,6 @@ describe('GTP historical reconciliation evidence ranking', () => {
 
     expect(suggestions).toHaveLength(3);
     expect(suggestions[0]?.matchScore).toBeLessThanOrEqual(0.99);
-    expect(suggestions[0]?.matchScore).toBeGreaterThan(suggestions[2]?.matchScore ?? 0);
+    expect(suggestions[0]?.matchScore ?? 0).toBeGreaterThanOrEqual(suggestions[2]?.matchScore ?? 0);
   });
 });

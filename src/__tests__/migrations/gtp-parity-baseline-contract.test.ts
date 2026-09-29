@@ -14,6 +14,8 @@ describe('GTP workbook parity baseline preview', () => {
 
   it('retains workbook filters, cached totals and an independently computed series total', () => {
     expect(route).toContain('filters: Record<string, string | number>');
+    expect(route).toContain('metricRowIndex');
+    expect(route).toContain('rows.slice(0, metricRowIndex >= 0 ? metricRowIndex : 8)');
     expect(route).toContain('cachedGrandTotal');
     expect(route).toContain('computedSeriesTotal');
     expect(route).toContain("chartFamily: 'bar' | 'line'");

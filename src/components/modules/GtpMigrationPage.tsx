@@ -266,6 +266,56 @@ export function GtpMigrationPage() {
     }
   };
 
+  const downloadReconciliationBundle = () => {
+    if (!file) return toast.error('Choose the GTP workbook first');
+
+    const bundleOverrides = Object.entries(overrides)
+      .map(([rowNumber, value]) => ({
+        rowNumber: Number(rowNumber),
+        action: value.action,
+        assetId: value.action === 'asset' ? value.assetId : undefined,
+        reason: value.reason?.trim() || undefined,
+      }))
+      .filter((value) =>
+        (value.action === 'asset' && Boolean(value.assetId))
+        || ((value.action === 'non_equipment' || value.action === 'historical_unassigned')
+          && Boolean(value.reason && value.reason.length >= 8)),
+      )
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+
+    const bundleCorrections = Object.entries(reportedTimeCorrections)
+      .map(([rowNumber, value]) => ({
+        rowNumber: Number(rowNumber),
+        reportedAt: value.reportedAt ? new Date(value.reportedAt).toISOString() : '',
+        reason: value.reason.trim(),
+      }))
+      .filter((value) => value.reportedAt && value.reason.length >= 8)
+      .sort((a, b) => a.rowNumber - b.rowNumber);
+
+    if (!bundleOverrides.length && !bundleCorrections.length) {
+      return toast.error('Add at least one complete reconciliation decision or time correction first');
+    }
+
+    const sourceSha256 = result?.source.sha256 || bundleSource?.sha256;
+    const payload: ReconciliationBundle = {
+      schemaVersion: 'gtp-reconciliation-bundle/v1',
+      source: {
+        filename: file.name,
+        sizeBytes: file.size,
+        ...(sourceSha256 ? { sha256: sourceSha256 } : {}),
+      },
+      overrides: bundleOverrides,
+      reportedTimeCorrections: bundleCorrections,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gtp-reconciliation-bundle.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const runAudit = async (previewRequested = false) => {
     if (!file) return toast.error('Choose the GTP workbook first');
     setAuditing(true);
@@ -450,6 +500,12 @@ export function GtpMigrationPage() {
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => inputRef.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{file ? 'Change workbook' : 'Choose workbook'}</Button>
               <Button variant="outline" onClick={() => bundleInputRef.current?.click()} disabled={!file} className="gap-2"><FileSpreadsheet className="h-4 w-4" />Load reconciliation bundle</Button>
+              <Button
+                variant="outline"
+                onClick={downloadReconciliationBundle}
+                disabled={!file || (!Object.keys(overrides).length && !Object.keys(reportedTimeCorrections).length)}
+                className="gap-2"
+              ><Download className="h-4 w-4" />Download reconciliation bundle</Button>
               <Button onClick={() => void runAudit()} disabled={!file || auditing}>{auditing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{auditing ? 'Auditing…' : 'Run Dry-Run Audit'}</Button>
             </div>
           </div>

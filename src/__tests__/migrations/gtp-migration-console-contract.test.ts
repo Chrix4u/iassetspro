@@ -71,6 +71,10 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Server SHA verification will still decide acceptance');
     expect(page).toContain('Reconciliation bundle loaded');
     expect(page).toContain('reported.getTimezoneOffset() * 60_000');
+    expect(page).toContain('Download reconciliation bundle');
+    expect(page).toContain('downloadReconciliationBundle');
+    expect(page).toContain("schemaVersion: 'gtp-reconciliation-bundle/v1'");
+    expect(page).toContain("a.download = 'gtp-reconciliation-bundle.json'");
   });
 
 

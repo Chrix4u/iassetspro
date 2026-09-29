@@ -70,7 +70,7 @@ function parseManifest(raw: string): ApprovedManifest {
   const manifest = JSON.parse(raw) as ApprovedManifest;
   if (!manifest || typeof manifest !== 'object') throw new Error('Invalid manifest');
   if (manifest.schemaVersion !== GTP_MANIFEST_SCHEMA) throw new Error('Unsupported GTP manifest schema');
-  if (!Array.isArray(manifest.rows) || !manifest.source?.sha256 || !manifest.fingerprint) {
+  if (!Array.isArray(manifest.rows) || !manifest.source?.sha256 || !manifest.fingerprint || !manifest.migrationPlantId) {
     throw new Error('Manifest is incomplete');
   }
   return manifest;
@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
       source: manifest.source,
       reconciliation: manifest.reconciliation,
       migrationActorUserId: manifest.migrationActorUserId,
+      migrationPlantId: manifest.migrationPlantId,
       identityConvention: manifest.identityConvention,
       counts: manifest.counts,
       rows: manifest.rows,
@@ -149,6 +150,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const migrationPlant = await db.plant.findFirst({
+      where: { id: manifest.migrationPlantId, isActive: true },
+      select: { id: true },
+    });
+    if (!migrationPlant) {
+      return NextResponse.json({ success: false, error: 'Approved migration plant no longer exists or is inactive' }, { status: 409 });
+    }
+
     const assetIds = [...new Set(rows.map((row) => row.assetId!).filter(Boolean))];
     const assets = await db.asset.findMany({
       where: { id: { in: assetIds }, isActive: true },
@@ -157,6 +166,9 @@ export async function POST(request: NextRequest) {
     const assetById = new Map(assets.map((asset) => [asset.id, asset]));
     if (assetIds.some((id) => !assetById.has(id))) {
       return NextResponse.json({ success: false, error: 'One or more approved Assets no longer exist or are inactive' }, { status: 409 });
+    }
+    if (assets.some((asset) => asset.plantId !== manifest.migrationPlantId)) {
+      return NextResponse.json({ success: false, error: 'Approved Assets no longer belong to the signed migration plant' }, { status: 409 });
     }
 
     const woNumbers = rows.map((row) => row.proposedWorkOrder.woNumber);
@@ -189,6 +201,7 @@ export async function POST(request: NextRequest) {
           legacyWorkOrderNo: row.legacyWorkOrderNo,
           legacyPeople: row.legacyPeople || {},
           manifestFingerprint: manifest.fingerprint,
+          migrationPlantId: manifest.migrationPlantId,
         });
 
         const mr = await tx.maintenanceRequest.create({
@@ -203,7 +216,7 @@ export async function POST(request: NextRequest) {
             assetId: asset?.id,
             assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
             requestedBy: session.userId,
-            plantId: asset?.plantId,
+            plantId: manifest.migrationPlantId,
             createdAt: asDate(row.proposedMaintenanceRequest.createdAt || row.reportedAt),
           },
         });
@@ -219,7 +232,7 @@ export async function POST(request: NextRequest) {
             maintenanceRequestId: mr.id,
             assetId: asset?.id,
             assetName: asset?.name || row.assetName || (row.assetResolution === 'non_equipment' ? 'Non-equipment work' : null),
-            plantId: asset?.plantId,
+            plantId: manifest.migrationPlantId,
             plannerId: session.userId,
             tradeActivity: row.proposedWorkOrder.tradeActivity || row.trade || undefined,
             actualStart: asDate(row.proposedWorkOrder.actualStart || row.workStartedAt),
@@ -243,7 +256,7 @@ export async function POST(request: NextRequest) {
               manifestFingerprint: manifest.fingerprint,
               sourceSha256: manifest.source.sha256,
             }),
-            plantId: asset?.plantId,
+            plantId: manifest.migrationPlantId,
           },
         });
         result.push({ maintenanceRequestId: mr.id, workOrderId: wo.id, requestNumber: mr.requestNumber, woNumber: wo.woNumber });

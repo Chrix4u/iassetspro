@@ -65,6 +65,9 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain('resolveLegacyMetadataAsset');
     expect(route).toContain('tenantReadiness');
     expect(route).toContain('unlinkedEquipmentCodes');
+    expect(route).toContain('migrationPlantId');
+    expect(route).toContain('plantScopeBlockers');
+    expect(route).toContain('must be split before import');
     expect(route).toContain("'asset_tag_match'");
     expect(route).toContain("'admin_asset_override'");
     expect(route).toContain("'non_equipment'");

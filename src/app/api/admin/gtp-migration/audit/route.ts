@@ -207,8 +207,8 @@ export async function POST(request: NextRequest) {
     ])];
     const referencedAssets = referencedAssetIds.length
       ? await db.asset.findMany({
-          where: { id: { in: referencedAssetIds } },
-          select: { id: true, name: true, assetTag: true, criticality: true },
+          where: { id: { in: referencedAssetIds }, isActive: true },
+          select: { id: true, name: true, assetTag: true, criticality: true, plantId: true },
         })
       : [];
     const assetById = new Map(referencedAssets.map((asset) => [asset.id, asset]));
@@ -385,6 +385,7 @@ export async function POST(request: NextRequest) {
           assetId: asset?.id || assetId,
           assetTag: asset?.assetTag || null,
           assetName: asset?.name || row.equipmentName,
+          plantId: asset?.plantId || null,
           resolution: 'admin_asset_override' as const,
           tenantReady: Boolean(asset),
         };
@@ -398,6 +399,7 @@ export async function POST(request: NextRequest) {
           assetId: null,
           assetTag: null,
           assetName: 'Non-equipment work',
+          plantId: null,
           resolution: 'non_equipment' as const,
           tenantReady: true,
         };
@@ -417,6 +419,7 @@ export async function POST(request: NextRequest) {
             assetId: legacyAsset.id,
             assetTag: legacyAsset.assetTag,
             assetName: legacyAsset.name,
+            plantId: legacyAsset.plantId,
             resolution: 'legacy_metadata_match' as const,
             tenantReady: true,
           };
@@ -429,6 +432,7 @@ export async function POST(request: NextRequest) {
           assetId: null,
           assetTag: null,
           assetName: null,
+          plantId: null,
           resolution: 'duplicate_variant_unconfirmed' as const,
           tenantReady: false,
         };
@@ -445,6 +449,7 @@ export async function POST(request: NextRequest) {
           assetId: mappedAsset?.id || mappedAssetId,
           assetTag: mappedAsset?.assetTag || null,
           assetName: mappedAsset?.name || null,
+          plantId: mappedAsset?.plantId || null,
           resolution: 'legacy_code_mapping' as const,
           tenantReady: Boolean(mappedAsset),
         };
@@ -461,6 +466,7 @@ export async function POST(request: NextRequest) {
         assetId: asset?.id || null,
         assetTag: asset?.assetTag || null,
         assetName: asset?.name || null,
+        plantId: asset?.plantId || null,
         resolution: asset
           ? (matchedByTag ? 'asset_tag_match' as const : 'legacy_metadata_match' as const)
           : 'unlinked' as const,
@@ -471,13 +477,24 @@ export async function POST(request: NextRequest) {
     const tenantReadyRows = assetLinkageRows.filter((row) => row.tenantReady).length;
     const legacyMetadataMatchedRows = assetLinkageRows.filter((row) => row.resolution === 'legacy_metadata_match').length;
     const tenantBlockedRows = assetLinkageRows.length - tenantReadyRows;
+    const migrationPlantIds = [...new Set(
+      assetLinkageRows
+        .map((row) => row.plantId)
+        .filter((plantId): plantId is string => Boolean(plantId)),
+    )].sort();
+    const migrationPlantId = migrationPlantIds.length === 1 ? migrationPlantIds[0] : null;
+    const plantScopeBlockers = migrationPlantIds.length === 0
+      ? ['Historical batch does not resolve to a migration plant']
+      : migrationPlantIds.length > 1
+        ? [`Historical batch spans ${migrationPlantIds.length} plants and must be split before import`]
+        : [];
     const unlinkedEquipmentCodes = [...new Set(
       assetLinkageRows
         .filter((row) => !row.tenantReady && row.resolution === 'unlinked')
         .map((row) => row.equipmentCode),
     )].sort();
 
-    const previewGateOpen = audit.summary.blockedRows === 0 && tenantBlockedRows === 0;
+    const previewGateOpen = audit.summary.blockedRows === 0 && tenantBlockedRows === 0 && plantScopeBlockers.length === 0;
     let importPreview: Record<string, unknown> = {
       requested: previewRequested,
       available: previewGateOpen,
@@ -485,6 +502,7 @@ export async function POST(request: NextRequest) {
       blockers: [
         ...(audit.summary.blockedRows > 0 ? [`${audit.summary.blockedRows} workbook row(s) remain blocked`] : []),
         ...(tenantBlockedRows > 0 ? [`${tenantBlockedRows} row(s) still lack an iAssetsPro Asset link`] : []),
+        ...plantScopeBlockers,
       ],
     };
 
@@ -605,6 +623,7 @@ export async function POST(request: NextRequest) {
           equipmentMappings: [...equipmentMappings].sort((a, b) => a.equipmentCode.localeCompare(b.equipmentCode)),
         },
         migrationActorUserId: session.userId,
+        migrationPlantId: migrationPlantId!,
         identityConvention,
         counts: {
           rows: proposedRows.length,
@@ -644,6 +663,7 @@ export async function POST(request: NextRequest) {
         sourceIdentityCollisions,
         idempotencyCollisions: collisions,
         migrationActorUserId: session.userId,
+        migrationPlantId,
         fingerprint: previewFingerprint,
         sourceSha256,
         identityConvention,
@@ -740,6 +760,8 @@ export async function POST(request: NextRequest) {
           legacyCodeMappingsSubmitted: equipmentMappings.length,
           legacyCodeMappedRows: assetLinkageRows.filter((row) => row.resolution === 'legacy_code_mapping').length,
           nonEquipmentRows: assetLinkageRows.filter((row) => row.resolution === 'non_equipment').length,
+          migrationPlantId,
+          migrationPlantIds,
         },
         equipmentMappings: equipmentMappings.map((mapping) => {
           const asset = assetById.get(mapping.assetId);

@@ -24,6 +24,7 @@ describe('signed GTP historical import gate', () => {
       source: { fileName: 'gtp.xlsm', sizeBytes: 123, sha256: 'a'.repeat(64) },
       reconciliation: { overrides: [], reportedTimeCorrections: [], equipmentMappings: [] },
       migrationActorUserId: 'admin-1',
+      migrationPlantId: 'plant-1',
       identityConvention: { maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}', workOrder: 'GTP-WO-{legacyWorkOrderNo}' },
       counts: { rows: 0, maintenanceRequests: 0, workOrders: 0 },
       rows: [],
@@ -52,6 +53,9 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain('verifyManifestSignature');
     expect(importRoute).toContain('workbookSha256 !== manifest.source.sha256');
     expect(importRoute).toContain('manifest.migrationActorUserId !== session.userId');
+    expect(importRoute).toContain('manifest.migrationPlantId');
+    expect(importRoute).toContain('Approved migration plant no longer exists or is inactive');
+    expect(importRoute).toContain('Approved Assets no longer belong to the signed migration plant');
     expect(importRoute).toContain("row.assetResolution !== 'non_equipment'");
     expect(importRoute).toContain('Every equipment-backed import row must resolve to a real Asset');
     expect(importRoute).toContain("'Non-equipment work'");

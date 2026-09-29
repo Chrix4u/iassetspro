@@ -11,6 +11,7 @@ export type GtpManifestCore = {
     equipmentMappings: unknown[];
   };
   migrationActorUserId: string;
+  migrationPlantId: string;
   identityConvention: { maintenanceRequest: string; workOrder: string };
   counts: { rows: number; maintenanceRequests: number; workOrders: number };
   rows: unknown[];

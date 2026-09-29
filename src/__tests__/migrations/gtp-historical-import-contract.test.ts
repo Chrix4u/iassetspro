@@ -85,6 +85,8 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).not.toContain('tx.maintenanceRequest.create({');
     expect(importRoute).not.toContain('tx.workOrder.create({');
     expect(importRoute).not.toContain('tx.auditLog.create({');
+    expect(importRoute).not.toContain('tx.workOrder.findUnique');
+    expect(importRoute).not.toContain('tx.maintenanceRequest.findUnique');
   });
 
   it('refuses non-canonical or already-imported identities', () => {

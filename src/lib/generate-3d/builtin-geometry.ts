@@ -112,6 +112,24 @@ const templates: Record<string, () => GeometrySpec> = {
     I('Support Cross', 'box', [0, 0.3, 0], [0, 0, 0], { size: [0.04, 0.04, 0.5], color: '#718096' }),
   ]),
 
+  // --- ROTARY / TEXTILE PRINTING MACHINES ---
+  printing_machine: () => machine('Rotary Printing Machine', 'Industrial rotary textile printing line with web handling, printing, ink delivery and drying sections', [
+    I('Main Machine Frame', 'box', [0, 0.10, 0], [0, 0, 0], { size: [3.6, 0.20, 1.40], color: '#374151' }),
+    I('Unwind Spindle', 'cylinder', [-1.45, 0.75, 0], [1.5708, 0, 0], { radiusTop: 0.30, radiusBottom: 0.30, height: 1.15, color: '#64748b' }),
+    I('Tension Roller', 'cylinder', [-0.95, 0.85, 0], [1.5708, 0, 0], { radiusTop: 0.12, radiusBottom: 0.12, height: 1.20, color: '#94a3b8' }),
+    I('Web Guide Roller', 'cylinder', [-0.58, 0.62, 0], [1.5708, 0, 0], { radiusTop: 0.10, radiusBottom: 0.10, height: 1.20, color: '#cbd5e1' }),
+    I('Rotary Screen Cylinder A', 'cylinder', [-0.18, 0.82, 0], [1.5708, 0, 0], { radiusTop: 0.24, radiusBottom: 0.24, height: 1.25, color: '#0f766e' }),
+    I('Rotary Screen Cylinder B', 'cylinder', [0.30, 0.82, 0], [1.5708, 0, 0], { radiusTop: 0.24, radiusBottom: 0.24, height: 1.25, color: '#0e7490' }),
+    I('Print Nip Roller', 'cylinder', [0.06, 0.48, 0], [1.5708, 0, 0], { radiusTop: 0.14, radiusBottom: 0.14, height: 1.25, color: '#475569' }),
+    I('Ink Trough', 'box', [0.06, 0.28, 0], [0, 0, 0], { size: [0.95, 0.18, 1.05], color: '#1e3a5f', metalness: 0.4 }),
+    I('Dryer Tunnel', 'box', [0.92, 0.80, 0], [0, 0, 0], { size: [0.95, 0.80, 1.28], color: '#475569' }),
+    I('Exhaust Stack', 'cylinder', [0.92, 1.48, 0], [0, 0, 0], { radiusTop: 0.13, radiusBottom: 0.16, height: 0.55, color: '#94a3b8' }),
+    I('Rewind Spindle', 'cylinder', [1.55, 0.75, 0], [1.5708, 0, 0], { radiusTop: 0.30, radiusBottom: 0.30, height: 1.15, color: '#64748b' }),
+    I('Main Drive Motor', 'cylinder', [0.35, 0.35, -0.82], [1.5708, 0, 0], { radiusTop: 0.18, radiusBottom: 0.18, height: 0.42, color: '#166534' }),
+    I('Electrical Control Cabinet', 'box', [1.48, 0.68, -0.82], [0, 0, 0], { size: [0.48, 1.05, 0.34], color: '#1f2937' }),
+    I('Safety Guard Rail', 'box', [0, 1.28, 0.68], [0, 0, 0], { size: [2.60, 0.06, 0.06], color: '#eab308', metalness: 0.3, roughness: 0.7 }),
+  ]),
+
   // --- FANS ---
   fan: () => machine('Industrial Fan', 'Large industrial ventilation fan', [
     I('Base', 'box', [0, 0.05, 0], [0, 0, 0], { size: [0.6, 0.1, 0.4], color: '#4a5568' }),
@@ -186,6 +204,7 @@ const machineKeywords: Record<string, string[]> = {
   turbine: ['turbine', 'steam turbine', 'gas turbine', 'wind turbine', 'turbo'],
   boiler: ['boiler', 'furnace', 'heater', 'calorifier', 'water heater'],
   conveyor: ['conveyor', 'belt conveyor', 'roller conveyor', 'bucket elevator'],
+  printing_machine: ['rotary printing', 'rotary screen', 'printing machine', 'textile printing', 'screen printing'],
   fan: ['fan', 'blower', 'ventilator', 'exhaust fan', 'axial fan', 'centrifugal fan'],
   'heat exchanger': ['heat exchanger', 'exchanger', 'cooler', 'radiator', 'condenser'],
   chiller: ['chiller', 'refrigeration', 'cooling unit', 'hvac', 'air conditioner'],
@@ -218,9 +237,9 @@ export function matchTemplate(machineName: string): string {
  */
 export function getBuiltinGeometrySpec(machineName: string): GeometrySpec {
   const templateKey = matchTemplate(machineName)
-  const templateFn = templates[templateKey]
-  if (!templateFn) {
-    return templates.generic()
-  }
-  return templateFn()
+  const templateFn = templates[templateKey] || templates.generic
+  const spec = templateFn()
+  // Preserve the user's actual asset identity even when geometry comes from a
+  // built-in fallback template rather than the external AI provider.
+  return { ...spec, machineName: machineName.trim() || spec.machineName }
 }

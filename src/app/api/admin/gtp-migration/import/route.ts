@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
       }
 
       const preparedByWoNumber = new Map(prepared.map((item) => [item.row.proposedWorkOrder.woNumber, item]));
-      await tx.auditLog.createMany({
+      const auditInsert = await tx.auditLog.createMany({
         data: createdWos.map((wo) => {
           const item = preparedByWoNumber.get(wo.woNumber);
           if (!item) throw new Error('Created historical work order could not be matched for audit');
@@ -334,6 +334,41 @@ export async function POST(request: NextRequest) {
           };
         }),
       });
+      if (auditInsert.count !== rows.length) throw new Error('Historical audit-log batch insert was incomplete');
+
+      const createdWoIds = createdWos.map((wo) => wo.id);
+      const [verifiedMrs, verifiedWos, verifiedAudits] = await Promise.all([
+        tx.maintenanceRequest.findMany({
+          where: { requestNumber: { in: requestNumbers }, plantId: manifest.migrationPlantId },
+          select: { id: true, requestNumber: true, workOrderId: true, plantId: true },
+        }),
+        tx.workOrder.findMany({
+          where: { woNumber: { in: woNumbers }, plantId: manifest.migrationPlantId },
+          select: { id: true, woNumber: true, maintenanceRequestId: true, plantId: true },
+        }),
+        tx.auditLog.findMany({
+          where: {
+            action: 'historical_import',
+            entityType: 'work_order',
+            entityId: { in: createdWoIds },
+            userId: session.userId,
+            plantId: manifest.migrationPlantId,
+          },
+          select: { id: true, entityId: true },
+        }),
+      ]);
+      if (verifiedMrs.length !== rows.length || verifiedWos.length !== rows.length || verifiedAudits.length !== rows.length) {
+        throw new Error('Historical import commit verification count mismatch');
+      }
+
+      const verifiedWoById = new Map(verifiedWos.map((wo) => [wo.id, wo]));
+      for (const mr of verifiedMrs) {
+        if (!mr.workOrderId) throw new Error('Historical maintenance request is missing its work-order link');
+        const wo = verifiedWoById.get(mr.workOrderId);
+        if (!wo || wo.maintenanceRequestId !== mr.id) {
+          throw new Error('Historical MR/WO relationship verification failed');
+        }
+      }
 
       const woByMaintenanceRequestId = new Map(
         createdWos
@@ -363,6 +398,14 @@ export async function POST(request: NextRequest) {
       fingerprint: manifest.fingerprint,
       sourceSha256: manifest.source.sha256,
       records: imported,
+      verification: {
+        maintenanceRequests: imported.length,
+        workOrders: imported.length,
+        auditRows: imported.length,
+        linkedPairs: imported.length,
+        migrationPlantId: manifest.migrationPlantId,
+        transactionIsolation: 'Serializable',
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Historical import failed';

@@ -818,7 +818,7 @@ function computeMin(arr: Float32Array | number[]): number[] {
 // EXPORT — Main function: generate programmatic 3D model
 // ============================================================================
 
-const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads', 'models');
+const UPLOAD_DIR = join(process.cwd(), 'public', 'generated-assets', 'models');
 
 export async function generateProgrammatic3DModel(
   machineName: string,
@@ -856,7 +856,7 @@ export async function generateProgrammatic3DModel(
     // ── 3. Save GLB file ────────────────────────────────────────────────
     const fileName = `${assetId || 'programmatic'}.glb`;
     const diskPath = join(UPLOAD_DIR, fileName);
-    const relativePath = `/uploads/models/${fileName}`;
+    const relativePath = `/api/generated-assets/models/${fileName}`;
 
     try {
       await mkdir(UPLOAD_DIR, { recursive: true });
@@ -873,28 +873,39 @@ export async function generateProgrammatic3DModel(
 
     if (assetId && userId) {
       try {
-        // Deactivate any existing models for this asset
-        await db.assetModel.updateMany({
-          where: { assetId, isActive: true },
-          data: { isActive: false },
+        const existingModel = await db.assetModel.findFirst({
+          where: { assetId },
+          orderBy: { createdAt: 'desc' },
         });
+        const modelData = {
+          name: spec.machineName,
+          fileName,
+          filePath: relativePath,
+          fileType: 'glb',
+          fileSize: glbBuffer.length,
+          format: 'glb',
+          meshCount: spec.parts.length,
+          vertexCount: spec.parts.length,
+          uploadedById: userId,
+          isActive: true,
+        };
 
-        modelRecord = await db.assetModel.create({
-          data: {
-            name: spec.machineName,
-            fileName,
-            filePath: relativePath,
-            fileType: 'glb',
-            fileSize: glbBuffer.length,
-            format: 'glb',
-            meshCount: spec.parts.length,
-            vertexCount: spec.parts.reduce((sum, _p) => sum + 1, 0), // approximate
-            uploadedById: userId,
-            isActive: true,
-          },
-        });
-
-        logger.info('AssetModel record created', { modelId: modelRecord?.id, assetId });
+        if (existingModel) {
+          await db.assetModel.updateMany({
+            where: { assetId, id: { not: existingModel.id }, isActive: true },
+            data: { isActive: false },
+          });
+          modelRecord = await db.assetModel.update({
+            where: { id: existingModel.id },
+            data: modelData,
+          });
+          logger.info('AssetModel record updated', { modelId: modelRecord.id, assetId });
+        } else {
+          modelRecord = await db.assetModel.create({
+            data: { assetId, ...modelData },
+          });
+          logger.info('AssetModel record created', { modelId: modelRecord.id, assetId });
+        }
       } catch (dbErr) {
         const msg = dbErr instanceof Error ? dbErr.message : 'Unknown DB error';
         logger.warn('Failed to create AssetModel record (non-fatal)', { message: msg });
@@ -906,22 +917,59 @@ export async function generateProgrammatic3DModel(
     // ── 5. Optionally create DigitalTwinScene ────────────────────────────
     if (assetId && userId && modelRecord) {
       try {
-        const twin = await db.digitalTwin.findFirst({
-          where: { assetId },
-        });
-
-        if (twin) {
-          await db.digitalTwinScene.create({
+        let twin = await db.digitalTwin.findFirst({ where: { assetId } });
+        const twinIdentity = {
+          name: `${spec.machineName} Digital Twin`,
+          description: `Digital twin commissioned automatically with the generated 3D model for ${spec.machineName}.`,
+          type: 'other',
+          healthScore: 100,
+          syncInterval: '5min',
+        };
+        if (!twin) {
+          twin = await db.digitalTwin.create({
             data: {
-              name: `3D Model - ${spec.machineName}`,
-              description: `Programmatic 3D model for ${spec.machineName}, generated via LLM geometry specification.`,
-              twinId: twin.id,
-              modelId: modelRecord.id,
-              isActive: true,
+              assetId,
+              ...twinIdentity,
+              parameters: '{}',
+              connections: '{}',
               createdById: userId,
             },
           });
-          logger.info('DigitalTwinScene created', { twinId: twin.id, modelId: modelRecord.id });
+          logger.info('DigitalTwin created for generated model', { twinId: twin.id, assetId });
+        } else {
+          twin = await db.digitalTwin.update({
+            where: { id: twin.id },
+            data: twinIdentity,
+          });
+          logger.info('DigitalTwin identity refreshed', { twinId: twin.id, assetId });
+        }
+
+        const sceneData = {
+          name: `3D Model - ${spec.machineName}`,
+          description: `Programmatic 3D model for ${spec.machineName}, generated from a machine-specific geometry specification.`,
+          modelId: modelRecord.id,
+          isActive: true,
+          createdById: userId,
+        };
+        const existingScene = await db.digitalTwinScene.findFirst({
+          where: { twinId: twin.id },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (existingScene) {
+          await db.digitalTwinScene.updateMany({
+            where: { twinId: twin.id, id: { not: existingScene.id }, isActive: true },
+            data: { isActive: false },
+          });
+          await db.digitalTwinScene.update({
+            where: { id: existingScene.id },
+            data: sceneData,
+          });
+          logger.info('DigitalTwinScene updated', { sceneId: existingScene.id, twinId: twin.id, modelId: modelRecord.id });
+        } else {
+          const scene = await db.digitalTwinScene.create({
+            data: { twinId: twin.id, ...sceneData },
+          });
+          logger.info('DigitalTwinScene created', { sceneId: scene.id, twinId: twin.id, modelId: modelRecord.id });
         }
       } catch (sceneErr) {
         const msg = sceneErr instanceof Error ? sceneErr.message : 'Unknown error';

@@ -82,7 +82,9 @@ export function AssetsPage() {
   const [showAllAssets, setShowAllAssets] = useState(false);
 
   const loadData = useCallback(() => {
-    const query = showAllAssets ? '' : '?topLevelOnly=true';
+    // Asset register filtering/search happens client-side, so load the complete
+    // authenticated plant scope instead of silently limiting search to page 1.
+    const query = showAllAssets ? '?limit=500' : '?topLevelOnly=true&limit=500';
     Promise.all([api.get<any[]>(`/api/assets${query}`), api.get<any[]>('/api/asset-categories'), api.get<any[]>('/api/plants')]).then(([aRes, cRes, pRes]) => {
       if (aRes.success && aRes.data) setAssets(Array.isArray(aRes.data) ? aRes.data : []);
       if (cRes.success && cRes.data) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
@@ -1251,4 +1253,3 @@ export function AssetsDigitalTwinPage() {
 // ============================================================================
 // MAINTENANCE SUBPAGES
 // ============================================================================
-

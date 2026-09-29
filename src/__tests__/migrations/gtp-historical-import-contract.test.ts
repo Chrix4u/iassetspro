@@ -8,6 +8,7 @@ import {
 
 const auditRoute = fs.readFileSync('src/app/api/admin/gtp-migration/audit/route.ts', 'utf8');
 const importRoute = fs.readFileSync('src/app/api/admin/gtp-migration/import/route.ts', 'utf8');
+const parityRoute = fs.readFileSync('src/app/api/admin/gtp-migration/parity/route.ts', 'utf8');
 
 describe('signed GTP historical import gate', () => {
   const previousKey = process.env.GTP_MIGRATION_SIGNING_KEY;
@@ -27,6 +28,15 @@ describe('signed GTP historical import gate', () => {
       migrationPlantId: 'plant-1',
       identityConvention: { maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}', workOrder: 'GTP-WO-{legacyWorkOrderNo}' },
       counts: { rows: 0, maintenanceRequests: 0, workOrders: 0 },
+      workbookParity: {
+        authoritativeJobRecords: 2807,
+        authoritativeBreakdowns: 411,
+        priorityOneBreakdowns: 236,
+        priorityOneResponseMinutes: 308180,
+        breakdownPivotFresh: false,
+        breakdownWeekMismatches: [{ week: '32', source: 6, cachedPivot: 7 }],
+        legacyDowntimeFormulaErrorRows: [],
+      },
       rows: [],
     };
     const fingerprint = fingerprintManifestCore(core);
@@ -100,6 +110,19 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).not.toContain('tx.auditLog.create({');
     expect(importRoute).not.toContain('tx.workOrder.findUnique');
     expect(importRoute).not.toContain('tx.maintenanceRequest.findUnique');
+  });
+
+  it('binds post-import parity to the signed workbook baseline', () => {
+    expect(auditRoute).toContain('workbookParity,');
+    expect(importRoute).toContain('workbookParity: manifest.workbookParity');
+    expect(parityRoute).toContain('fingerprintManifestCore');
+    expect(parityRoute).toContain('verifyManifestSignature');
+    expect(parityRoute).toContain('source.authoritativeJobRecords');
+    expect(parityRoute).toContain('source.authoritativeBreakdowns');
+    expect(parityRoute).toContain('source.priorityOneBreakdowns');
+    expect(parityRoute).toContain('source.priorityOneResponseMinutes');
+    expect(parityRoute).toContain("schemaVersion: 'gtp-post-import-parity/v1'");
+    expect(parityRoute).toContain('allPassed');
   });
 
   it('refuses non-canonical or already-imported identities', () => {

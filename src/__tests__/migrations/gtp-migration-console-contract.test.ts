@@ -55,6 +55,18 @@ describe('GTP migration reconciliation console', () => {
   });
 
 
+  it('loads a validated reconciliation bundle without hardcoding customer decisions', () => {
+    expect(page).toContain('Load reconciliation bundle');
+    expect(page).toContain('loadReconciliationBundle');
+    expect(page).toContain('accept=".json,application/json"');
+    expect(page).toContain('Bundle contains an invalid reconciliation action');
+    expect(page).toContain('requires a provenance reason of at least 8 characters');
+    expect(page).toContain('Bundle source size does not match the selected workbook');
+    expect(page).toContain('Server SHA verification will still decide acceptance');
+    expect(page).toContain('Reconciliation bundle loaded');
+  });
+
+
   it('supports provenance-backed reported-time correction in dry-run only', () => {
     expect(route).toContain("formData.get('reportedTimeCorrections')");
     expect(route).toContain('Reported time can only be corrected when the legacy row is missing it');

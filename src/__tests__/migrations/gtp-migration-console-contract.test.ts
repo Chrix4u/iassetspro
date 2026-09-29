@@ -42,6 +42,10 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Apply Resolutions & Re-audit');
     expect(page).toContain('Map to existing Asset');
     expect(page).toContain('Non-equipment work');
+    expect(page).toContain('Unassigned historical work');
+    expect(route).toContain("'historical_unassigned'");
+    expect(route).toContain('historicalUnassignedRows');
+    expect(page).toContain('legacy Asset identity is intentionally preserved as unknown');
     expect(page).toContain('AsyncSearchableSelect');
   });
 

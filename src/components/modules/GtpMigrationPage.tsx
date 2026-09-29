@@ -111,7 +111,24 @@ type AuditResult = {
     tenantReady: boolean;
   }>;
   duplicateMachines: Array<{ code: string; affectedJobs: number; variants: Array<{ name: string; priority: number | null; order: number | null }> }>;
-  blankMachineCodeRows: Array<{ rowNumber: number | null; workOrderNo: string; description: string; equipmentDescription: string; trade: string; workOrderType: string }>;
+  blankMachineCodeRows: Array<{
+    rowNumber: number | null;
+    workOrderNo: string;
+    description: string;
+    equipmentDescription: string;
+    trade: string;
+    workOrderType: string;
+    suggestions?: Array<{
+      equipmentCode: string;
+      confidence: number;
+      sharedTerms: string[];
+      supportCount: number;
+      assetId: string | null;
+      assetTag: string | null;
+      assetName: string | null;
+      examples: Array<{ workOrderNo: string; description: string; trade: string }>;
+    }>;
+  }>;
   tradeNormalizations: Array<{ from: string; to: string; count: number }>;
   blockedRows: Array<{ rowNumber: number | null; workOrderNo: string; equipmentCode: string; description: string; issues: AuditIssue[] }>;
 };
@@ -390,6 +407,39 @@ export function GtpMigrationPage() {
                   <TableCell>{row.trade || '—'}</TableCell>
                   <TableCell>
                     <div className="space-y-2">
+                      {row.suggestions && row.suggestions.length > 0 && <div className="space-y-2 rounded-lg border bg-muted/30 p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium">Historical evidence suggestions</p>
+                          <Badge variant="outline">{row.suggestions.length} candidate{row.suggestions.length === 1 ? '' : 's'}</Badge>
+                        </div>
+                        {row.suggestions.map((suggestion) => (
+                          <div key={suggestion.equipmentCode} className="rounded-md border bg-background p-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs font-semibold">{suggestion.equipmentCode}</span>
+                              <Badge variant="secondary">{Math.round(suggestion.confidence * 100)}% evidence</Badge>
+                              <span className="text-[11px] text-muted-foreground">{suggestion.supportCount} supporting historical row{suggestion.supportCount === 1 ? '' : 's'}</span>
+                            </div>
+                            {suggestion.sharedTerms.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Shared terms: {suggestion.sharedTerms.join(', ')}</p>}
+                            <div className="mt-1 space-y-1">
+                              {suggestion.examples.slice(0, 2).map((example) => (
+                                <p key={example.workOrderNo + example.description} className="text-[11px] leading-4 text-muted-foreground">
+                                  <span className="font-mono">{example.workOrderNo || 'Legacy WO'}</span> · {example.description || 'No description'}{example.trade ? ` · ${example.trade}` : ''}
+                                </p>
+                              ))}
+                            </div>
+                            {suggestion.assetId ? <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="mt-2 h-7 text-xs"
+                              onClick={() => setRowOverride(row.rowNumber, { action: 'asset', assetId: suggestion.assetId! })}
+                            >
+                              Use {suggestion.assetName || suggestion.assetTag || suggestion.equipmentCode}
+                            </Button> : <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400">Evidence only — this legacy code does not resolve uniquely to one current Asset.</p>}
+                          </div>
+                        ))}
+                        <p className="text-[11px] text-muted-foreground">Suggestions are advisory only. Confirm the physical Asset before applying a mapping.</p>
+                      </div>}
                       <Select
                         value={override?.action || 'unresolved'}
                         onValueChange={(value) => {

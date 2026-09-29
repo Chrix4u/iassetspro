@@ -366,6 +366,16 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Historical import failed';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const prismaConflict = error instanceof Prisma.PrismaClientKnownRequestError
+      && (error.code === 'P2002' || error.code === 'P2034');
+    const stateConflict = [
+      'Historical identity collision',
+      'changed before transaction execution',
+      'historical row has no approved Asset',
+    ].some((fragment) => message.includes(fragment));
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: prismaConflict || stateConflict ? 409 : 500 },
+    );
   }
 }

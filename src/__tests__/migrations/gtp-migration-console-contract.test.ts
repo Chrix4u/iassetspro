@@ -111,9 +111,9 @@ describe('GTP migration reconciliation console', () => {
     expect(route).toContain('shared.length < 2');
     expect(route).toContain('.slice(0, 3)');
     expect(route).toContain('legacyAssets.length === 1');
-    expect(route).toContain('confidence: Math.min(0.99');
+    expect(route).toContain('matchScore: Math.min(0.99');
     expect(page).toContain('Historical evidence suggestions');
-    expect(page).toContain('% evidence');
+    expect(page).toContain('% match');
     expect(page).toContain('supporting historical row');
     expect(page).toContain('Evidence only — this legacy code does not resolve uniquely to one current Asset.');
     expect(page).toContain('Suggestions are advisory only. Confirm the physical Asset before applying a mapping.');

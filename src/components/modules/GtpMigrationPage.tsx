@@ -239,6 +239,15 @@ export function GtpMigrationPage() {
       if (file && parsed.source?.sizeBytes && file.size !== parsed.source.sizeBytes) {
         throw new Error('Bundle source size does not match the selected workbook');
       }
+      if (file && parsed.source?.sha256) {
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        const selectedWorkbookSha = Array.from(new Uint8Array(digest))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('');
+        if (selectedWorkbookSha.toLowerCase() !== parsed.source.sha256.toLowerCase()) {
+          throw new Error('Bundle source SHA-256 does not match the selected workbook');
+        }
+      }
       const expectedName = parsed.source?.filename || parsed.source?.fileName;
       if (file && expectedName && file.name !== expectedName) {
         toast.warning(`Bundle expects ${expectedName}; selected workbook is ${file.name}. Server SHA verification will still decide acceptance.`);

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const route = fs.readFileSync('src/app/api/admin/gtp-migration/audit/route.ts', 'utf8');
+const page = fs.readFileSync('src/components/modules/GtpMigrationPage.tsx', 'utf8');
 
 describe('GTP workbook parity baseline preview', () => {
   it('extracts all five legacy pivot sheets from the uploaded workbook', () => {
@@ -25,5 +26,13 @@ describe('GTP workbook parity baseline preview', () => {
   it('preserves machine order and week categories instead of flattening the pivot semantics', () => {
     expect(route).toContain('points.push({ order, category, value:');
     expect(route).toContain('points.push({ category: String(Math.trunc(week)), value:');
+  });
+
+  it('surfaces the workbook acceptance baseline in the migration console', () => {
+    expect(page).toContain('Workbook Parity Baseline');
+    expect(page).toContain('Cached total');
+    expect(page).toContain('Independent total');
+    expect(page).toContain('Cached value needs review');
+    expect(page).toContain('Reconciled');
   });
 });

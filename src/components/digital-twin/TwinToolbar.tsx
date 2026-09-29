@@ -62,6 +62,10 @@ export interface TwinToolbarProps {
   onToggleFullscreen?: () => void;
   /** Available camera presets */
   cameraPresets?: { name: string; label: string }[];
+  /** Active projection mode */
+  viewMode?: '3d' | '2d-front' | '2d-top' | '2d-side';
+  /** Change between 3D and orthographic 2D projections */
+  onViewModeChange?: (mode: '3d' | '2d-front' | '2d-top' | '2d-side') => void;
   /** Whether the left scene tree panel is open (shifts toolbar right) */
   isTreeOpen?: boolean;
 }
@@ -297,6 +301,8 @@ export function TwinToolbar({
   isFullscreen = false,
   onToggleFullscreen,
   cameraPresets,
+  viewMode = '3d',
+  onViewModeChange,
   isTreeOpen = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
@@ -351,6 +357,26 @@ export function TwinToolbar({
           onClick={onFitView ?? (() => {})}
         />
         <CameraPresetsPopup presets={cameraPresets} onPreset={onCameraPreset} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div>
+              <ToolbarButton
+                icon={viewMode === '3d' ? <Box className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                label={viewMode === '3d' ? '3D View' : '2D Projection'}
+                isActive={viewMode !== '3d'}
+                onClick={() => {}}
+              />
+            </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="center" className="bg-slate-900 border-slate-700 text-slate-200 w-44">
+            <DropdownMenuLabel className="text-slate-300">Projection</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onViewModeChange?.('3d')} className={viewMode === '3d' ? 'bg-cyan-500/10 text-cyan-300 text-xs' : 'text-xs'}>3D Perspective</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onViewModeChange?.('2d-front')} className={viewMode === '2d-front' ? 'bg-cyan-500/10 text-cyan-300 text-xs' : 'text-xs'}>2D Front</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onViewModeChange?.('2d-top')} className={viewMode === '2d-top' ? 'bg-cyan-500/10 text-cyan-300 text-xs' : 'text-xs'}>2D Top</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onViewModeChange?.('2d-side')} className={viewMode === '2d-side' ? 'bg-cyan-500/10 text-cyan-300 text-xs' : 'text-xs'}>2D Side</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <ToolbarButton
           icon={isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           label={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}

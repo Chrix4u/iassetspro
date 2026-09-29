@@ -337,7 +337,7 @@ describe('getPlantScope integration', () => {
     vi.clearAllMocks();
   });
 
-  it('should bypass scoping for admin users', async () => {
+  it('should bypass scoping for admin users when no plant is selected', async () => {
     const request = new NextRequest({}) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     const session = { userId: 'admin-1', roles: ['admin'], permissions: [] } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -345,6 +345,19 @@ describe('getPlantScope integration', () => {
     expect(result.isScoped).toBe(false);
     expect(result.isSystemWide).toBe(true);
     expect(result.plantId).toBeNull();
+  });
+
+  it('should honor an explicitly selected plant for admin users', async () => {
+    const request = new NextRequest({ headers: { 'X-Plant-ID': 'plant-selected' } }) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const session = { userId: 'admin-1', roles: ['admin'], permissions: [] } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    const result = await getPlantScope(request, session);
+    expect(result.isScoped).toBe(true);
+    expect(result.isSystemWide).toBe(false);
+    expect(result.plantId).toBe('plant-selected');
+    expect(result.accessiblePlantIds).toEqual(['plant-selected']);
+    expect(result.accessLevel).toBe('admin');
+    expect(db.userPlant.findMany).not.toHaveBeenCalled();
   });
 
   it('should bypass scoping for plant_manager users', async () => {

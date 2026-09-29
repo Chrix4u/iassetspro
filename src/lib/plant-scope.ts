@@ -25,7 +25,8 @@ export interface PlantScopeResult {
  * Resolve plant scope from the request headers and user session.
  *
  * Semantic model:
- * - System admin / plant_manager → isSystemWide=true, no filter applied.
+ * - System admin / plant_manager WITHOUT X-Plant-ID → isSystemWide=true, no filter applied.
+ * - System admin / plant_manager WITH X-Plant-ID → explicitly narrowed to that plant.
  *
  * - Regular user WITH valid X-Plant-ID:
  *     → isScoped=true, plantId=that plant, filter exact plant.
@@ -46,8 +47,23 @@ export async function getPlantScope(
   request: NextRequest,
   session: SessionData,
 ): Promise<PlantScopeResult> {
-  // Admin and plant_manager roles bypass plant scoping — they see all plants
+  const plantIdHeader = request.headers.get('X-Plant-ID');
+
+  // Admin and plant_manager actors are system-wide when no plant is selected.
+  // When the UI deliberately sends X-Plant-ID, honor that narrower context so
+  // list pages, dashboards and reports reflect the plant the actor selected.
+  // A privileged actor may select any plant; the explicit filter itself remains
+  // fail-safe because it can only narrow the query, never widen it.
   if (isAdmin(session) || session.roles.includes('plant_manager')) {
+    if (plantIdHeader) {
+      return {
+        plantId: plantIdHeader,
+        accessiblePlantIds: [plantIdHeader],
+        isScoped: true,
+        isSystemWide: false,
+        accessLevel: 'admin',
+      };
+    }
     return {
       plantId: null,
       accessiblePlantIds: [],
@@ -64,8 +80,6 @@ export async function getPlantScope(
   });
 
   const accessiblePlantIds = userPlants.map((up) => up.plantId);
-
-  const plantIdHeader = request.headers.get('X-Plant-ID');
 
   // No explicit plant selected — return all accessible plants
   if (!plantIdHeader) {

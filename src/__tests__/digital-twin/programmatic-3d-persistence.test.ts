@@ -6,7 +6,7 @@ const generator = fs.readFileSync('src/lib/generate-3d/programmatic-generator.ts
 describe('programmatic 3D model persistence', () => {
   it('stores generated GLB files in persistent generated-assets storage', () => {
     expect(generator).toContain("public', 'generated-assets', 'models'");
-    expect(generator).toContain('/generated-assets/models/');
+    expect(generator).toContain('/api/generated-assets/models/');
     expect(generator).not.toContain('/uploads/models/');
   });
 
@@ -15,9 +15,13 @@ describe('programmatic 3D model persistence', () => {
     expect(generator).toContain('db.assetModel.create');
   });
 
-  it('ensures a digital twin exists before creating the scene', () => {
+  it('keeps model/twin/scene commissioning idempotent', () => {
+    expect(generator).toContain('db.assetModel.findFirst');
+    expect(generator).toContain('db.assetModel.update');
     expect(generator).toContain('db.digitalTwin.findFirst');
-    expect(generator).toContain('db.digitalTwin.create');
+    expect(generator).toContain('db.digitalTwin.update');
+    expect(generator).toContain('db.digitalTwinScene.findFirst');
+    expect(generator).toContain('db.digitalTwinScene.update');
     expect(generator).toContain('db.digitalTwinScene.create');
   });
 });

@@ -254,5 +254,3 @@ export async function DELETE(
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
-
-[executed on device: vps.lightworldtech.com (76d866a1-0f6b-4a34-8bb9-99801c5b1b24)]

@@ -341,6 +341,7 @@ export async function POST(request: NextRequest) {
       reportedAt: string;
       reason: string;
     }> = [];
+    const registeredOverrideAssetCodes = new Set<string>();
 
     const jobs = rawJobs.map((sourceJob) => {
       const rowNumber = Number(sourceJob.rowNumber || 0);
@@ -367,12 +368,15 @@ export async function POST(request: NextRequest) {
         const asset = assetById.get(override.assetId!);
         if (!asset) return job;
         const syntheticCode = `APP-ASSET:${asset.id}`;
-        machines.push({
-          code: syntheticCode,
-          name: asset.name,
-          priority: criticalityToLegacyPriority(asset.criticality),
-          order: null,
-        });
+        if (!registeredOverrideAssetCodes.has(syntheticCode)) {
+          machines.push({
+            code: syntheticCode,
+            name: asset.name,
+            priority: criticalityToLegacyPriority(asset.criticality),
+            order: null,
+          });
+          registeredOverrideAssetCodes.add(syntheticCode);
+        }
         reconciliation.push({
           rowNumber,
           workOrderNo: String(job.workOrderNo ?? ''),

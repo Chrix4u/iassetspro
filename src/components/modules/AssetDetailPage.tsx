@@ -1211,11 +1211,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : !twin && !showTwinForm ? (
                 <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." actionLabel="Create Digital Twin" onAction={() => setShowTwinForm(true)} />
-              ) : twin && !showTwinForm && (
-                <div className="flex justify-end">
-                  <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
-                </div>
-              )}
+              ) : null}
 
               {twin && (
                 <Card className="border-0 shadow-sm">

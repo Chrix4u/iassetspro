@@ -28,6 +28,7 @@ describe('Digital Twin full-screen scene identity propagation', () => {
 
   it('opens the selected asset twin directly from Asset Details', () => {
     expect(assetDetail).toContain('Open 3D / 2D Viewer');
+    expect(assetDetail).not.toContain('Recreate Twin');
     expect(assetDetail).toContain("navigate('assets-digital-twin', { twinId: twin.id, assetId: id, view: 'viewer' })");
     expect(page).toContain("pageParams?.view !== 'viewer'");
     expect(page).toContain('candidate.id === requestedTwinId');

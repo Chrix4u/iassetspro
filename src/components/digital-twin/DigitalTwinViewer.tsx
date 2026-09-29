@@ -11,6 +11,7 @@ import React, {
 import { Canvas } from '@react-three/fiber';
 import {
   OrbitControls,
+  OrthographicCamera,
   PerspectiveCamera,
   Preload,
   Stats,
@@ -238,7 +239,7 @@ ErrorStateOverlay.displayName = 'ErrorStateOverlay';
 // Camera Controller (R3F component inside Canvas)
 // ============================================================================
 
-function CameraController() {
+function CameraController({ locked2D = false }: { locked2D?: boolean }) {
   const { cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
   const controlsRef = useRef<any>(null);
   // Use refs to avoid unstable deps in useEffect.
@@ -279,7 +280,7 @@ function CameraController() {
       maxPolarAngle={Math.PI * 0.85}
       enablePan
       enableZoom
-      enableRotate
+      enableRotate={!locked2D}
     />
   );
 }
@@ -350,7 +351,7 @@ export function DigitalTwinViewer({
   const loadAssetData = useDigitalTwinStore((s) => s.loadAssetData);
 
   // ── Hooks ────────────────────────────────────────────────────────────────
-  const { resetCamera } = useCameraControls();
+  const { resetCamera, setCameraPosition, setCameraTarget } = useCameraControls();
   const { error: hookError, refresh } = useDigitalTwinScene(sceneId, {
     iotPollInterval,
     enableRealtime,
@@ -372,6 +373,7 @@ export function DigitalTwinViewer({
   // ── Local UI state ──────────────────────────────────────────────────────
   const [isTreeOpen, setIsTreeOpen] = useState(showSceneTree);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState<'3d' | '2d-front' | '2d-top' | '2d-side'>('3d');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -543,6 +545,22 @@ export function DigitalTwinViewer({
     }
   }, []);
 
+  const handleViewModeChange = useCallback((mode: '3d' | '2d-front' | '2d-top' | '2d-side') => {
+    setViewMode(mode);
+    if (mode === '3d') {
+      resetCamera();
+      return;
+    }
+
+    const positions: Record<'2d-front' | '2d-top' | '2d-side', [number, number, number]> = {
+      '2d-front': [0, 0, 20],
+      '2d-top': [0, 20, 0.001],
+      '2d-side': [20, 0, 0],
+    };
+    setCameraTarget([0, 0, 0]);
+    setCameraPosition(positions[mode]);
+  }, [resetCamera, setCameraPosition, setCameraTarget]);
+
   // ── Model loading callbacks ────────────────────────────────────────────
   const handleModelLoadingStart = useCallback(() => {
     setIsModelLoading(true);
@@ -604,10 +622,14 @@ export function DigitalTwinViewer({
           <>
             <Suspense fallback={<ViewerLoadingState />}>
               {/* Camera */}
-              <PerspectiveCamera makeDefault fov={50} position={[10, 8, 10]} near={0.1} far={1000} />
+              {viewMode === '3d' ? (
+                <PerspectiveCamera makeDefault fov={50} position={[10, 8, 10]} near={0.1} far={1000} />
+              ) : (
+                <OrthographicCamera makeDefault zoom={45} position={viewMode === '2d-front' ? [0, 0, 20] : viewMode === '2d-top' ? [0, 20, 0.001] : [20, 0, 0]} near={0.1} far={1000} />
+              )}
 
               {/* Camera controls */}
-              <CameraController />
+              <CameraController locked2D={viewMode !== '3d'} />
 
               {/* Lighting */}
               <SceneLighting />
@@ -709,7 +731,7 @@ export function DigitalTwinViewer({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <Monitor className="h-3 w-3 text-cyan-400" />
-            <span className="text-[10px] text-slate-400">Digital Twin Viewer</span>
+            <span className="text-[10px] text-slate-400">Digital Twin Viewer · {viewMode === '3d' ? '3D' : viewMode.replace('2d-', '2D ').replace(/^2D /, '2D ').replace(/\b\w/g, c => c.toUpperCase())}</span>
           </div>
           {currentScene && (
             <>
@@ -738,6 +760,8 @@ export function DigitalTwinViewer({
           onScreenshot={handleScreenshot}
           isFullscreen={isFullscreen}
           onToggleFullscreen={handleToggleFullscreen}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
         />
       )}

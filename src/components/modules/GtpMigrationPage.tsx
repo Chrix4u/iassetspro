@@ -126,6 +126,7 @@ type AuditResult = {
       assetId: string | null;
       assetTag: string | null;
       assetName: string | null;
+      canApply: boolean;
       examples: Array<{ workOrderNo: string; description: string; trade: string }>;
     }>;
   }>;
@@ -427,7 +428,7 @@ export function GtpMigrationPage() {
                                 </p>
                               ))}
                             </div>
-                            {suggestion.assetId ? <Button
+                            {suggestion.canApply && suggestion.assetId ? <Button
                               type="button"
                               size="sm"
                               variant="outline"
@@ -435,7 +436,9 @@ export function GtpMigrationPage() {
                               onClick={() => setRowOverride(row.rowNumber, { action: 'asset', assetId: suggestion.assetId! })}
                             >
                               Use {suggestion.assetName || suggestion.assetTag || suggestion.equipmentCode}
-                            </Button> : <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400">Evidence only — this legacy code does not resolve uniquely to one current Asset.</p>}
+                            </Button> : <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                              Evidence only — review and confirm manually{suggestion.assetName ? ` (${suggestion.assetName})` : ''}.
+                            </p>}
                           </div>
                         ))}
                         <p className="text-[11px] text-muted-foreground">Suggestions are advisory only. Confirm the physical Asset before applying a mapping.</p>

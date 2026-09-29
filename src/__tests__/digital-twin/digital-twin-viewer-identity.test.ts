@@ -18,6 +18,10 @@ describe('Digital Twin full-screen scene identity propagation', () => {
     expect(viewer).toContain('twinId?: string | null');
     expect(viewer).toContain('twinName?: string | null');
     expect(viewer).toContain('isResolvingScene');
+    expect(viewer).toContain('const [resolvedSceneId, setResolvedSceneId]');
+    expect(viewer).toContain('const effectiveSceneId = sceneId ?? resolvedSceneId');
+    expect(viewer).toContain('useDigitalTwinScene(effectiveSceneId');
+    expect(viewer).toContain('setResolvedSceneId(firstScene.id)');
   });
 
   it('opens the selected asset twin directly from Asset Details', () => {

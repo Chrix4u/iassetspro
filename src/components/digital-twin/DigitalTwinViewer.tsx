@@ -350,9 +350,15 @@ export function DigitalTwinViewer({
   const reset = useDigitalTwinStore((s) => s.reset);
   const loadAssetData = useDigitalTwinStore((s) => s.loadAssetData);
 
+  // Scene identity may be supplied directly or resolved from the selected twin.
+  // Keep the resolved ID in React state so the scene hook loads the full scene
+  // (hotspots, annotations, bindings and metadata), not just the model URL.
+  const [resolvedSceneId, setResolvedSceneId] = useState<string | null>(null);
+  const effectiveSceneId = sceneId ?? resolvedSceneId;
+
   // ── Hooks ────────────────────────────────────────────────────────────────
   const { resetCamera, setCameraPosition, setCameraTarget } = useCameraControls();
-  const { error: hookError, refresh } = useDigitalTwinScene(sceneId, {
+  const { error: hookError, refresh } = useDigitalTwinScene(effectiveSceneId, {
     iotPollInterval,
     enableRealtime,
   });
@@ -429,8 +435,10 @@ export function DigitalTwinViewer({
 
   // ── Resolve scene from twinId when sceneId is not provided ─────────────
   useEffect(() => {
-    // Only attempt resolution when sceneId is not given but twinId is
-    if (sceneId || !twinId || propModelUrl) {
+    // Only attempt resolution when sceneId is not given but twinId is.
+    // Even when a modelUrl override exists, resolve the scene so scene-level
+    // state (hotspots, annotations, bindings) is still loaded.
+    if (sceneId || !twinId) {
       return;
     }
 
@@ -439,6 +447,7 @@ export function DigitalTwinViewer({
     const resolveScene = async () => {
       setIsResolvingScene(true);
       setHasNoScenes(false);
+      setResolvedSceneId(null);
       setResolvedModelUrl(null);
 
       try {
@@ -459,8 +468,15 @@ export function DigitalTwinViewer({
           return;
         }
 
-        // Take the first scene
+        // Take the first active/default scene and promote its ID into the
+        // scene hook before resolving the model file.
         const firstScene = scenesRes.data[0];
+        setResolvedSceneId(firstScene.id);
+
+        if (propModelUrl) {
+          setIsResolvingScene(false);
+          return;
+        }
 
         if (!firstScene.modelId) {
           // Scene exists but has no model linked
@@ -504,7 +520,7 @@ export function DigitalTwinViewer({
     return () => {
       cancelled = true;
     };
-  }, [sceneId, twinId, propModelUrl]);
+  }, [sceneId, twinId, propModelUrl, setModelUrl]);
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
@@ -516,11 +532,11 @@ export function DigitalTwinViewer({
   const handleRetry = useCallback(() => {
     setModelError(null);
     setRetryCount((c) => c + 1);
-    if (sceneId) {
-      loadScene(sceneId);
+    if (effectiveSceneId) {
+      loadScene(effectiveSceneId);
     }
     refresh();
-  }, [sceneId, loadScene, refresh]);
+  }, [effectiveSceneId, loadScene, refresh]);
 
   // ── Screenshot handler ──────────────────────────────────────────────────
   const handleScreenshot = useCallback(() => {

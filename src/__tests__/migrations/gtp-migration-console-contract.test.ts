@@ -82,6 +82,9 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('contains an invalid reported time');
     expect(page).toContain('server-side workbook, Asset, plant, signature, fingerprint and execution gates remain authoritative');
     expect(page).toContain('gtp-reconciliation-bundle-');
+    expect(page).toContain('equipmentMappings: legacyEquipmentMappings');
+    expect(page).toContain('setEquipmentMappings(nextEquipmentMappings)');
+    expect(page).toContain('Bundle contains an invalid equipment mapping');
   });
 
   it('supports provenance-backed reported-time correction in dry-run only', () => {

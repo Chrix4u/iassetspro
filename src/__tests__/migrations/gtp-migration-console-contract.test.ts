@@ -69,6 +69,18 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('setEquipmentMappings({})');
   });
 
+  it('exports SHA-bound reconciliation bundles for future migration sessions', () => {
+    expect(page).toContain('downloadReconciliationBundle');
+    expect(page).toContain('Download reconciliation bundle');
+    expect(page).toContain("schemaVersion: 'gtp-reconciliation-bundle/v1'");
+    expect(page).toContain('filename: file.name');
+    expect(page).toContain('sizeBytes: file.size');
+    expect(page).toContain('sha256: workbookSha256');
+    expect(page).toContain('needs a provenance reason of at least 8 characters');
+    expect(page).toContain('server-side workbook, Asset, plant, signature, fingerprint and execution gates remain authoritative');
+    expect(page).toContain('gtp-reconciliation-bundle-');
+  });
+
   it('supports provenance-backed reported-time correction in dry-run only', () => {
     expect(route).toContain("formData.get('reportedTimeCorrections')");
     expect(route).toContain('Reported time can only be corrected when the legacy row is missing it');

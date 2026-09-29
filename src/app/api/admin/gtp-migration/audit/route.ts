@@ -804,7 +804,7 @@ export async function POST(request: NextRequest) {
             || (legacyAssets.length === 1 ? legacyAssets[0] : null);
           return {
             ...candidate,
-            confidence: Math.min(0.99, Number(candidate.score.toFixed(2))),
+            matchScore: Math.min(0.99, Number(candidate.score.toFixed(2))),
             assetId: resolvedAsset?.id || null,
             assetTag: resolvedAsset?.assetTag || null,
             assetName: resolvedAsset?.name || null,

@@ -245,25 +245,40 @@ export function GtpMigrationPage() {
         action: value.action,
         assetId: value.action === 'asset' ? value.assetId : undefined,
         reason: value.reason?.trim() || undefined,
-      }))
-      .filter((value) => value.action === 'non_equipment' || value.action === 'historical_unassigned' || Boolean(value.assetId));
+      }));
 
-    const timeCorrections = Object.entries(reportedTimeCorrections)
-      .map(([rowNumber, value]) => ({
-        rowNumber: Number(rowNumber),
-        reportedAt: value.reportedAt ? new Date(value.reportedAt).toISOString() : '',
-        reason: value.reason.trim(),
-      }))
-      .filter((value) => value.reportedAt && value.reason.length >= 8);
-
-    if (!reconciliation.length && !timeCorrections.length) {
-      return toast.error('Add at least one reconciliation decision or time correction before downloading a bundle');
+    const incompleteAsset = reconciliation.find((value) => value.action === 'asset' && !value.assetId);
+    if (incompleteAsset) {
+      return toast.error(`Row ${incompleteAsset.rowNumber} must select an Asset before downloading the bundle`);
     }
     const invalidNonAsset = reconciliation.find((value) =>
       (value.action === 'non_equipment' || value.action === 'historical_unassigned')
       && (!value.reason || value.reason.length < 8));
     if (invalidNonAsset) {
       return toast.error(`Row ${invalidNonAsset.rowNumber} needs a provenance reason of at least 8 characters`);
+    }
+
+    const timeCorrectionEntries = Object.entries(reportedTimeCorrections)
+      .map(([rowNumber, value]) => ({
+        rowNumber: Number(rowNumber),
+        reportedAt: value.reportedAt,
+        reason: value.reason.trim(),
+      }));
+    const incompleteTimeCorrection = timeCorrectionEntries.find((value) =>
+      Boolean(value.reportedAt || value.reason)
+      && (!value.reportedAt || value.reason.length < 8));
+    if (incompleteTimeCorrection) {
+      return toast.error(`Row ${incompleteTimeCorrection.rowNumber} needs a reported time and provenance reason of at least 8 characters`);
+    }
+    const timeCorrections = timeCorrectionEntries
+      .filter((value) => value.reportedAt && value.reason.length >= 8)
+      .map((value) => ({
+        ...value,
+        reportedAt: new Date(value.reportedAt).toISOString(),
+      }));
+
+    if (!reconciliation.length && !timeCorrections.length) {
+      return toast.error('Add at least one reconciliation decision or time correction before downloading a bundle');
     }
 
     try {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Database, Download, FileSpreadsheet, Loader2, LockKeyhole, Upload } from 'lucide-react';
+import { AlertTriangle, BarChart3, CheckCircle2, Database, Download, FileSpreadsheet, Loader2, LockKeyhole, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,22 @@ type AuditResult = {
   importLocked: boolean;
   source: { fileName: string; sizeBytes: number; sha256?: string; sheets: string[]; hasVba: boolean };
   workbook: { jobRecords: number; machineMasterRows: number; uniqueMachineCodes: number };
+  workbookParity?: {
+    authoritativeJobRecords: number;
+    authoritativeBreakdowns: number;
+    cachedBreakdownPivotTotal: number | null;
+    breakdownPivotFresh: boolean;
+    breakdownWeekMismatches: Array<{ week: string; source: number; cachedPivot: number }>;
+    priorityOneBreakdowns: number;
+    cachedPriorityOneBreakdowns: number | null;
+    priorityOneBreakdownParity: boolean;
+    priorityOneResponseMinutes: number;
+    cachedResponseByWeekTotal: number | null;
+    cachedResponseByMachineTotal: number | null;
+    responseParity: boolean;
+    legacyDowntimeFormulaErrorRows: Array<{ rowNumber: number; workOrderNo: string; equipmentDescription: string; value: string }>;
+    warnings: string[];
+  };
   summary: {
     totalRows: number; importReadyRows: number; blockedRows: number; breakdownRows: number;
     missingStatusRows: number; missingStartRows: number; missingCompletionRows: number;
@@ -488,6 +504,45 @@ export function GtpMigrationPage() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           {[['Legacy jobs', result.summary.totalRows], ['Import-ready', result.summary.importReadyRows], ['Blocked', result.summary.blockedRows], ['Breakdowns', result.summary.breakdownRows], ['Aliases normalized', result.summary.tradeAliasesNormalized]].map(([label, value]) => <Card key={String(label)}><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{Number(value).toLocaleString()}</p></CardContent></Card>)}
         </div>
+
+        {result.workbookParity && <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-5 w-5" />Workbook Report & Graph Parity</CardTitle>
+            <CardDescription>Checks the authoritative JobRecords rows against the cached GTP pivot/report outputs before historical import. Stale Excel pivots are reported, not copied into iAssetsPro.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Authoritative JobRecords</p><p className="mt-1 text-xl font-semibold">{result.workbookParity.authoritativeJobRecords.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Authoritative breakdowns</p><p className="mt-1 text-xl font-semibold">{result.workbookParity.authoritativeBreakdowns.toLocaleString()}</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Priority 1 breakdown parity</p><p className="mt-1 text-xl font-semibold">{result.workbookParity.priorityOneBreakdownParity ? 'PASS' : 'CHECK'}</p><p className="text-xs text-muted-foreground">{result.workbookParity.priorityOneBreakdowns.toLocaleString()} source · {result.workbookParity.cachedPriorityOneBreakdowns?.toLocaleString() ?? '—'} cached</p></div>
+              <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Response-time parity</p><p className="mt-1 text-xl font-semibold">{result.workbookParity.responseParity ? 'PASS' : 'CHECK'}</p><p className="text-xs text-muted-foreground">{result.workbookParity.priorityOneResponseMinutes.toLocaleString(undefined, { maximumFractionDigits: 2 })} min</p></div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={result.workbookParity.breakdownPivotFresh ? 'secondary' : 'destructive'}>
+                BD_Wk cached pivot {result.workbookParity.breakdownPivotFresh ? 'fresh' : 'stale'}
+              </Badge>
+              <Badge variant={result.workbookParity.priorityOneBreakdownParity ? 'secondary' : 'destructive'}>
+                No_BD_MC {result.workbookParity.priorityOneBreakdownParity ? 'matches source' : 'mismatch'}
+              </Badge>
+              <Badge variant={result.workbookParity.responseParity ? 'secondary' : 'destructive'}>
+                Response pivots {result.workbookParity.responseParity ? 'match source' : 'mismatch'}
+              </Badge>
+              <Badge variant={result.workbookParity.legacyDowntimeFormulaErrorRows.length ? 'outline' : 'secondary'}>
+                {result.workbookParity.legacyDowntimeFormulaErrorRows.length} legacy downtime formula error(s)
+              </Badge>
+            </div>
+
+            {result.workbookParity.breakdownWeekMismatches.length > 0 && <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader><TableRow><TableHead>Week</TableHead><TableHead className="text-right">JobRecords source</TableHead><TableHead className="text-right">Cached Excel pivot</TableHead></TableRow></TableHeader>
+                <TableBody>{result.workbookParity.breakdownWeekMismatches.map((row) => <TableRow key={row.week}><TableCell>{row.week}</TableCell><TableCell className="text-right font-semibold">{row.source}</TableCell><TableCell className="text-right">{row.cachedPivot}</TableCell></TableRow>)}</TableBody>
+              </Table>
+            </div>}
+
+            {result.workbookParity.warnings.map((warning) => <p key={warning} className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{warning}</p>)}
+          </CardContent>
+        </Card>}
 
         <Card><CardHeader><CardTitle className="text-base">Migration Readiness</CardTitle><CardDescription>{readiness}% of historical rows have no blocking master-data errors.</CardDescription></CardHeader><CardContent className="space-y-3"><Progress value={readiness} /><div className="flex flex-wrap gap-2"><Badge variant="outline">{result.source.hasVba ? 'VBA detected' : 'No VBA payload'}</Badge><Badge variant="outline">{result.workbook.machineMasterRows} machine-master rows</Badge><Badge variant="outline">{result.workbook.uniqueMachineCodes} unique machine codes</Badge>
           {(result.summary.resolvedDuplicateMachineRows || 0) > 0 && <Badge variant="outline">{result.summary.resolvedDuplicateMachineRows} duplicate-code jobs auto-resolved</Badge>}

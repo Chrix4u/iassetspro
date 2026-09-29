@@ -61,6 +61,10 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('accept=".json,application/json"');
     expect(page).toContain('Bundle contains an invalid reconciliation action');
     expect(page).toContain('requires a provenance reason of at least 8 characters');
+    expect(page).toContain('Unsupported reconciliation bundle schema version');
+    expect(page).toContain('Bundle source SHA-256 is malformed');
+    expect(page).toContain('Bundle contains duplicate reconciliation row');
+    expect(page).toContain('Bundle contains duplicate time-correction row');
     expect(page).toContain('Bundle source size does not match the selected workbook');
     expect(page).toContain('Server SHA verification will still decide acceptance');
     expect(page).toContain('Reconciliation bundle loaded');

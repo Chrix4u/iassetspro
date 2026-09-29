@@ -154,6 +154,7 @@ function extractLegacyParitySheet(
     header: 1,
     defval: null,
     raw: true,
+    blankrows: false,
   });
   const metricRowIndex = rows.findIndex((row) => {
     const first = asText(row?.[0]);

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const route = fs.readFileSync('src/app/api/admin/gtp-migration/parity/route.ts', 'utf8');
+const page = fs.readFileSync('src/components/modules/GtpMigrationPage.tsx', 'utf8');
 
 describe('GTP post-import PostgreSQL parity certificate', () => {
   it('locks the known workbook baseline to its exact source SHA', () => {
@@ -27,5 +28,13 @@ describe('GTP post-import PostgreSQL parity certificate', () => {
   it('treats authoritative JobRecords rather than the stale cached pivot as truth', () => {
     expect(route).toContain('stale cached Excel breakdown pivot is informational only');
     expect(route).toContain('is not treated as the source of truth');
+  });
+
+  it('surfaces the certificate in the migration console after import', () => {
+    expect(page).toContain('Source ↔ PostgreSQL Parity Certificate');
+    expect(page).toContain('/api/admin/gtp-migration/parity?sourceSha256=');
+    expect(page).toContain('Linked MR ↔ WO pairs');
+    expect(page).toContain("databaseParity.allPass ? 'PASS' : 'CHECK'");
+    expect(page).toContain('await verifyPostImportParity(response.data.sourceSha256)');
   });
 });

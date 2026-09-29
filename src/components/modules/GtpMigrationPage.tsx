@@ -135,7 +135,7 @@ export function GtpMigrationPage() {
   const [file, setFile] = useState<File | null>(null);
   const [auditing, setAuditing] = useState(false);
   const [result, setResult] = useState<AuditResult | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string }>>({});
+  const [overrides, setOverrides] = useState<Record<string, { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string }>>({});
   const [reportedTimeCorrections, setReportedTimeCorrections] = useState<Record<string, { reportedAt: string; reason: string }>>({});
   const [equipmentMappings, setEquipmentMappings] = useState<Record<string, string>>({});
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
@@ -164,6 +164,7 @@ export function GtpMigrationPage() {
           rowNumber: Number(rowNumber),
           action: value.action,
           assetId: value.action === 'asset' ? value.assetId : undefined,
+          reason: value.reason?.trim() || undefined,
         }))
         .filter((value) => value.action === 'non_equipment' || value.action === 'historical_unassigned' || Boolean(value.assetId));
       if (reconciliation.length) form.append('overrides', JSON.stringify(reconciliation));
@@ -209,7 +210,7 @@ export function GtpMigrationPage() {
 
   const setRowOverride = (
     rowNumber: number | null,
-    next: { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string } | null,
+    next: { action: 'asset' | 'non_equipment' | 'historical_unassigned'; assetId?: string; reason?: string } | null,
   ) => {
     if (!rowNumber) return;
     setOverrides((current) => {
@@ -393,8 +394,8 @@ export function GtpMigrationPage() {
                         value={override?.action || 'unresolved'}
                         onValueChange={(value) => {
                           if (value === 'unresolved') setRowOverride(row.rowNumber, null);
-                          else if (value === 'non_equipment') setRowOverride(row.rowNumber, { action: 'non_equipment' });
-                          else if (value === 'historical_unassigned') setRowOverride(row.rowNumber, { action: 'historical_unassigned' });
+                          else if (value === 'non_equipment') setRowOverride(row.rowNumber, { action: 'non_equipment', reason: override?.reason });
+                          else if (value === 'historical_unassigned') setRowOverride(row.rowNumber, { action: 'historical_unassigned', reason: override?.reason });
                           else setRowOverride(row.rowNumber, { action: 'asset', assetId: override?.assetId });
                         }}
                       >
@@ -418,6 +419,15 @@ export function GtpMigrationPage() {
                       />}
                       {override?.action === 'non_equipment' && <p className="text-xs text-muted-foreground">This record is confirmed as work that did not belong to a specific Asset.</p>}
                       {override?.action === 'historical_unassigned' && <p className="text-xs text-muted-foreground">The job remains plant-scoped and auditable, but the legacy Asset identity is intentionally preserved as unknown.</p>}
+                      {(override?.action === 'non_equipment' || override?.action === 'historical_unassigned') && <div className="space-y-1">
+                        <Label className="text-xs">Resolution reason / provenance</Label>
+                        <Input
+                          value={override.reason || ''}
+                          onChange={(event) => setRowOverride(row.rowNumber, { action: override.action, reason: event.target.value })}
+                          placeholder="Explain why no Asset can or should be linked..."
+                        />
+                        <p className="text-[11px] text-muted-foreground">Required · minimum 8 characters · signed into the approved manifest.</p>
+                      </div>}
                     </div>
                   </TableCell>
                 </TableRow>;

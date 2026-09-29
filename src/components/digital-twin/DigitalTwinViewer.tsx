@@ -459,8 +459,10 @@ export function DigitalTwinViewer({
           return;
         }
 
-        // Take the first scene
+        // Take the first scene and load its complete relational context
+        // (hotspots, annotations, camera presets, mesh bindings) into the store.
         const firstScene = scenesRes.data[0];
+        await loadScene(firstScene.id);
 
         if (!firstScene.modelId) {
           // Scene exists but has no model linked
@@ -504,7 +506,7 @@ export function DigitalTwinViewer({
     return () => {
       cancelled = true;
     };
-  }, [sceneId, twinId, propModelUrl]);
+  }, [sceneId, twinId, propModelUrl, loadScene, setModelUrl]);
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;

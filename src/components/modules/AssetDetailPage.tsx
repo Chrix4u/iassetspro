@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
+import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -1213,6 +1214,28 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <div className="flex justify-end">
                   <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
                 </div>
+              )}
+
+              {twin && !showTwinForm && (
+                <Card className="border-0 shadow-sm overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Interactive Digital Twin</CardTitle>
+                    <CardDescription>
+                      Inspect the live 3D scene, switch to orthographic 2D projections, explode assemblies, use section planes, and review hotspots/annotations.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <DigitalTwinViewer
+                      assetId={asset.id}
+                      twinId={twin.id}
+                      twinName={twin.name}
+                      height="620px"
+                      showSceneTree
+                      showInfoPanel
+                      showToolbar
+                    />
+                  </CardContent>
+                </Card>
               )}
 
               {twin && (

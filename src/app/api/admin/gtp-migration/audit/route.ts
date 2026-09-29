@@ -155,18 +155,19 @@ function extractLegacyParitySheet(
     defval: null,
     raw: true,
   });
+  const metricRowIndex = rows.findIndex((row) => {
+    const first = asText(row?.[0]);
+    return first.startsWith('Count of ') || first.startsWith('Sum of ');
+  });
+  const metricRow = metricRowIndex >= 0 ? rows[metricRowIndex] : undefined;
   const filters: Record<string, string | number> = {};
-  for (const row of rows.slice(0, 8)) {
+  for (const row of rows.slice(0, metricRowIndex >= 0 ? metricRowIndex : 8)) {
     const key = asText(row?.[0]);
     const value = row?.[1];
     if (!key || value === null || value === undefined || value === '') continue;
     filters[key] = typeof value === 'number' ? value : asText(value);
   }
 
-  const metricRow = rows.find((row) => {
-    const first = asText(row?.[0]);
-    return first.startsWith('Count of ') || first.startsWith('Sum of ');
-  });
   const metric = asText(metricRow?.[0]) || sheetName;
 
   const machinePivot = sheetName === 'BD_MC_Wk' || sheetName === 'No_BD_MC' || sheetName === 'Rpons_MC';

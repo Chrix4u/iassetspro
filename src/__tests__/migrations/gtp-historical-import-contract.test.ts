@@ -56,9 +56,12 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).toContain('manifest.migrationPlantId');
     expect(importRoute).toContain('Approved migration plant no longer exists or is inactive');
     expect(importRoute).toContain('Approved Assets no longer belong to the signed migration plant');
-    expect(importRoute).toContain("row.assetResolution !== 'non_equipment'");
-    expect(importRoute).toContain('Every equipment-backed import row must resolve to a real Asset');
+    expect(importRoute).toContain("resolution === 'historical_unassigned'");
+    expect(importRoute).toContain('Every resolved equipment-backed import row must bind to a real Asset');
     expect(importRoute).toContain("'Non-equipment work'");
+    expect(importRoute).toContain("'Unassigned historical work'");
+    expect(importRoute).toContain('assetResolution: row.assetResolution || null');
+    expect(importRoute).toContain('reconciliationReason: row.reconciliationReason || null');
     expect(importRoute).toContain('db.$transaction');
     expect(importRoute).toContain('tx.maintenanceRequest.create');
     expect(importRoute).toContain('tx.workOrder.create');

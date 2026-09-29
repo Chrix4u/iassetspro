@@ -20,8 +20,9 @@ type RawRow = Record<string, unknown>;
 
 type ReconciliationOverride = {
   rowNumber: number;
-  action: 'asset' | 'non_equipment';
+  action: 'asset' | 'non_equipment' | 'historical_unassigned';
   assetId?: string;
+  reason?: string;
 };
 
 type ReportedTimeCorrection = {
@@ -91,10 +92,16 @@ function parseOverrides(raw: FormDataEntryValue | null): ReconciliationOverride[
     const rowNumber = Number(row.rowNumber);
     const action = row.action;
     const assetId = typeof row.assetId === 'string' ? row.assetId.trim() : undefined;
+    const reason = typeof row.reason === 'string' ? row.reason.trim() : undefined;
     if (!Number.isInteger(rowNumber) || rowNumber < 2) throw new Error('Invalid reconciliation row number');
-    if (action !== 'asset' && action !== 'non_equipment') throw new Error('Invalid reconciliation action');
+    if (action !== 'asset' && action !== 'non_equipment' && action !== 'historical_unassigned') {
+      throw new Error('Invalid reconciliation action');
+    }
     if (action === 'asset' && !assetId) throw new Error('Asset mapping requires an assetId');
-    return { rowNumber, action, assetId };
+    if ((action === 'non_equipment' || action === 'historical_unassigned') && (!reason || reason.length < 8)) {
+      throw new Error('Non-Asset reconciliation requires a provenance reason of at least 8 characters');
+    }
+    return { rowNumber, action, assetId, reason };
   });
 }
 
@@ -224,9 +231,10 @@ export async function POST(request: NextRequest) {
     const reconciliation: Array<{
       rowNumber: number;
       workOrderNo: string;
-      action: 'asset' | 'non_equipment';
+      action: 'asset' | 'non_equipment' | 'historical_unassigned';
       assetId: string | null;
       assetName: string | null;
+      reason: string | null;
     }> = [];
 
     const appliedReportedTimeCorrections: Array<{
@@ -273,6 +281,7 @@ export async function POST(request: NextRequest) {
           action: 'asset',
           assetId: asset.id,
           assetName: asset.name,
+          reason: override.reason || null,
         });
         return {
           ...job,
@@ -282,24 +291,29 @@ export async function POST(request: NextRequest) {
         };
       }
 
-      const syntheticCode = `NON-EQUIPMENT:${String(job.workOrderNo ?? rowNumber)}`;
+      const isHistoricalUnassigned = override.action === 'historical_unassigned';
+      const syntheticCode = isHistoricalUnassigned
+        ? `HISTORICAL-UNASSIGNED:${String(job.workOrderNo ?? rowNumber)}`
+        : `NON-EQUIPMENT:${String(job.workOrderNo ?? rowNumber)}`;
+      const syntheticName = isHistoricalUnassigned ? 'Unassigned historical work' : 'Non-equipment work';
       machines.push({
         code: syntheticCode,
-        name: 'Non-equipment work',
+        name: syntheticName,
         priority: [1, 2, 3].includes(Number(job.priority)) ? Number(job.priority) : 3,
         order: null,
       });
       reconciliation.push({
         rowNumber,
         workOrderNo: String(job.workOrderNo ?? ''),
-        action: 'non_equipment',
+        action: override.action,
         assetId: null,
         assetName: null,
+        reason: override.reason || null,
       });
       return {
         ...job,
         equipmentCode: syntheticCode,
-        equipmentDescription: 'Non-equipment work',
+        equipmentDescription: syntheticName,
         priority: [1, 2, 3].includes(Number(job.priority)) ? job.priority : 3,
       };
     });
@@ -312,7 +326,10 @@ export async function POST(request: NextRequest) {
     const directEquipmentCodes = [...new Set(
       readyAuditRows
         .map((row) => row.equipmentCode)
-        .filter((code) => code && !code.startsWith('APP-ASSET:') && !code.startsWith('NON-EQUIPMENT:')),
+        .filter((code) => code
+          && !code.startsWith('APP-ASSET:')
+          && !code.startsWith('NON-EQUIPMENT:')
+          && !code.startsWith('HISTORICAL-UNASSIGNED:')),
     )];
 
     const [directTagAssets, legacyMetadataAssets] = await Promise.all([
@@ -401,6 +418,20 @@ export async function POST(request: NextRequest) {
           assetName: 'Non-equipment work',
           plantId: null,
           resolution: 'non_equipment' as const,
+          tenantReady: true,
+        };
+      }
+      if (row.equipmentCode.startsWith('HISTORICAL-UNASSIGNED:')) {
+        return {
+          legacyRowNumber: row.legacyRowNumber ?? null,
+          legacyWorkOrderNo: row.legacyWorkOrderNo,
+          equipmentCode: row.equipmentCode,
+          equipmentName: row.equipmentName,
+          assetId: null,
+          assetTag: null,
+          assetName: 'Unassigned historical work',
+          plantId: null,
+          resolution: 'historical_unassigned' as const,
           tenantReady: true,
         };
       }
@@ -516,6 +547,7 @@ export async function POST(request: NextRequest) {
           const job = jobs.find((candidate) => candidate.rowNumber === row.legacyRowNumber);
           const linkage = linkageByRow.get(row.legacyRowNumber ?? null);
           const legacyNo = row.legacyWorkOrderNo;
+          const reconciliationDecision = overrideByRow.get(Number(row.legacyRowNumber || 0));
           const requestNumber = `GTP-MR-${legacyNo}`;
           const woNumber = `GTP-WO-${legacyNo}`;
           const title = job?.description || `${row.mappedType} - ${row.equipmentName || 'Historical maintenance'}`;
@@ -530,6 +562,7 @@ export async function POST(request: NextRequest) {
             assetTag: linkage?.assetTag || null,
             assetName: linkage?.assetName || row.equipmentName || null,
             assetResolution: linkage?.resolution || null,
+            reconciliationReason: reconciliationDecision?.reason || null,
             reportedAt: asIso(job?.reportedAt),
             workStartedAt: asIso(job?.workStartedAt),
             workCompletedAt: asIso(job?.workCompletedAt),
@@ -637,8 +670,10 @@ export async function POST(request: NextRequest) {
       const executionBlockers = [
         ...previewBlockers,
         ...(!approvalSignature ? ['GTP_MIGRATION_SIGNING_KEY is not configured on this server'] : []),
-        ...(proposedRows.some((row) => !row.assetId && row.assetResolution !== 'non_equipment')
-          ? ['Every equipment-backed historical row must resolve to a real Asset before write execution']
+        ...(proposedRows.some((row) => !row.assetId
+          && row.assetResolution !== 'non_equipment'
+          && row.assetResolution !== 'historical_unassigned')
+          ? ['Every resolved equipment-backed historical row must bind to a real Asset before write execution']
           : []),
       ];
       const approvedManifest = {
@@ -760,6 +795,7 @@ export async function POST(request: NextRequest) {
           legacyCodeMappingsSubmitted: equipmentMappings.length,
           legacyCodeMappedRows: assetLinkageRows.filter((row) => row.resolution === 'legacy_code_mapping').length,
           nonEquipmentRows: assetLinkageRows.filter((row) => row.resolution === 'non_equipment').length,
+          historicalUnassignedRows: assetLinkageRows.filter((row) => row.resolution === 'historical_unassigned').length,
           migrationPlantId,
           migrationPlantIds,
         },

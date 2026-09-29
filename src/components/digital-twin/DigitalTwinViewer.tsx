@@ -435,10 +435,10 @@ export function DigitalTwinViewer({
 
   // ── Resolve scene from twinId when sceneId is not provided ─────────────
   useEffect(() => {
-    // Only attempt resolution when sceneId is not given but twinId is.
+    // Resolve the scene from either an explicit twinId or the asset's twin.
     // Even when a modelUrl override exists, resolve the scene so scene-level
     // state (hotspots, annotations, bindings) is still loaded.
-    if (sceneId || !twinId) {
+    if (sceneId || (!twinId && !assetId)) {
       return;
     }
 
@@ -451,13 +451,30 @@ export function DigitalTwinViewer({
       setResolvedModelUrl(null);
 
       try {
-        // Fetch scenes for this twin
+        let resolvedTwinId = twinId;
+        if (!resolvedTwinId && assetId) {
+          const twinRes = await api.get<Array<{ id: string }>>(
+            `/api/digital-twins?assetId=${encodeURIComponent(assetId)}&limit=1`,
+          );
+          if (cancelled) return;
+          resolvedTwinId = twinRes.success && Array.isArray(twinRes.data)
+            ? twinRes.data[0]?.id || null
+            : null;
+        }
+
+        if (!resolvedTwinId) {
+          setHasNoScenes(true);
+          setIsResolvingScene(false);
+          return;
+        }
+
+        // Fetch scenes for the selected/resolved twin.
         const scenesRes = await api.get<Array<{
           id: string;
           name: string;
           modelId: string;
           model?: { id: string; name: string; format: string; filePath: string } | null;
-        }>>(`/api/digital-twin-scenes?twinId=${twinId}`);
+        }>>(`/api/digital-twin-scenes?twinId=${encodeURIComponent(resolvedTwinId)}`);
 
         if (cancelled) return;
 
@@ -520,7 +537,7 @@ export function DigitalTwinViewer({
     return () => {
       cancelled = true;
     };
-  }, [sceneId, twinId, propModelUrl, setModelUrl]);
+  }, [assetId, sceneId, twinId, propModelUrl, setModelUrl]);
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;

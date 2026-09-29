@@ -112,6 +112,27 @@ const normalizeIdentity = (value: unknown) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+const EVIDENCE_STOP_WORDS = new Set([
+  'and', 'the', 'for', 'from', 'with', 'into', 'onto', 'this', 'that', 'work', 'repair',
+  'replace', 'replacement', 'check', 'inspect', 'inspection', 'service', 'maintenance',
+  'machine', 'equipment', 'unit', 'system', 'line', 'area', 'section', 'fault', 'issue',
+  'job', 'carry', 'carried', 'attend', 'attended', 'fix', 'fixed', 'change', 'changed',
+]);
+
+const evidenceTokens = (...values: unknown[]): Set<string> => new Set(
+  normalizeIdentity(values.filter(Boolean).join(' '))
+    .split(' ')
+    .filter((token) => token.length >= 3 && !EVIDENCE_STOP_WORDS.has(token)),
+);
+
+const evidenceSimilarity = (target: Set<string>, candidate: Set<string>): { score: number; shared: string[] } => {
+  if (!target.size || !candidate.size) return { score: 0, shared: [] };
+  const shared = [...target].filter((token) => candidate.has(token));
+  if (shared.length < 2) return { score: 0, shared };
+  const score = shared.length / Math.sqrt(target.size * candidate.size);
+  return { score, shared };
+};
+
 const asIso = (value: Date | string | number | null | undefined): string | null => {
   if (value === null || value === undefined || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -721,14 +742,85 @@ export async function POST(request: NextRequest) {
         .map((job) => String(job.workOrderNo ?? '')),
     }));
 
-    const blankMachineCodeRows = jobs.filter((job) => !asText(job.equipmentCode)).map((job) => ({
-      rowNumber: job.rowNumber ?? null,
-      workOrderNo: String(job.workOrderNo ?? ''),
-      description: job.description || '',
-      equipmentDescription: job.equipmentDescription || '',
-      trade: job.trade || '',
-      workOrderType: job.workOrderType || '',
-    }));
+    const codedEvidenceJobs = rawJobs.filter((job) => {
+      const code = asText(job.equipmentCode);
+      return code
+        && !code.startsWith('APP-ASSET:')
+        && !code.startsWith('NON-EQUIPMENT:')
+        && !code.startsWith('HISTORICAL-UNASSIGNED:');
+    });
+
+    const blankMachineCodeRows = jobs.filter((job) => !asText(job.equipmentCode)).map((job) => {
+      const targetTokens = evidenceTokens(job.description, job.equipmentDescription, job.technicianReport);
+      const byCode = new Map<string, {
+        equipmentCode: string;
+        score: number;
+        sharedTerms: string[];
+        supportCount: number;
+        examples: Array<{ workOrderNo: string; description: string; trade: string }>;
+      }>();
+
+      for (const candidate of codedEvidenceJobs) {
+        const equipmentCode = asText(candidate.equipmentCode);
+        const candidateTokens = evidenceTokens(candidate.description, candidate.equipmentDescription, candidate.technicianReport);
+        const similarity = evidenceSimilarity(targetTokens, candidateTokens);
+        if (similarity.score <= 0) continue;
+
+        let score = similarity.score;
+        if (asText(job.trade) && normalizeIdentity(job.trade) === normalizeIdentity(candidate.trade)) score += 0.08;
+        if (asText(job.workOrderType) && normalizeIdentity(job.workOrderType) === normalizeIdentity(candidate.workOrderType)) score += 0.04;
+        if (score < 0.28) continue;
+
+        const existing = byCode.get(equipmentCode);
+        const example = {
+          workOrderNo: String(candidate.workOrderNo ?? ''),
+          description: candidate.description || candidate.equipmentDescription || '',
+          trade: candidate.trade || '',
+        };
+        if (!existing) {
+          byCode.set(equipmentCode, {
+            equipmentCode,
+            score,
+            sharedTerms: similarity.shared.slice(0, 6),
+            supportCount: 1,
+            examples: [example],
+          });
+          continue;
+        }
+        existing.supportCount += 1;
+        if (existing.examples.length < 3) existing.examples.push(example);
+        if (score > existing.score) {
+          existing.score = score;
+          existing.sharedTerms = similarity.shared.slice(0, 6);
+        }
+      }
+
+      const suggestions = [...byCode.values()]
+        .sort((a, b) => b.score - a.score || b.supportCount - a.supportCount || a.equipmentCode.localeCompare(b.equipmentCode))
+        .slice(0, 3)
+        .map((candidate) => {
+          const legacyAssets = tenantAssetsByLegacyCode.get(candidate.equipmentCode) || [];
+          const resolvedAsset = tenantAssetByTag.get(candidate.equipmentCode)
+            || (legacyAssets.length === 1 ? legacyAssets[0] : null);
+          return {
+            ...candidate,
+            confidence: Math.min(0.99, Number(candidate.score.toFixed(2))),
+            assetId: resolvedAsset?.id || null,
+            assetTag: resolvedAsset?.assetTag || null,
+            assetName: resolvedAsset?.name || null,
+          };
+        });
+
+      return {
+        rowNumber: job.rowNumber ?? null,
+        workOrderNo: String(job.workOrderNo ?? ''),
+        description: job.description || '',
+        equipmentDescription: job.equipmentDescription || '',
+        trade: job.trade || '',
+        workOrderType: job.workOrderType || '',
+        suggestions,
+      };
+    });
 
     const tradeMap = new Map<string, { from: string; to: string; count: number }>();
     for (const job of jobs) {

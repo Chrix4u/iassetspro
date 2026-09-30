@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('GTP workbook preset reproduces full imported history', async ({ page }) => {
+  test.skip(Boolean(process.env.CI), 'Requires the migrated GTP-UAT historical workbook dataset; covered by live acceptance.');
   await page.goto('/');
   await page.getByPlaceholder('Enter your username').fill('admin');
   await page.getByPlaceholder('Enter your password').fill('admin123');

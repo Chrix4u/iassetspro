@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (tradeActivity) baseFilter.tradeActivity = tradeActivity;
     if (assetId) baseFilter.assetId = assetId;
     if (moduleFilter === 'repairs') {
-      (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+      (baseFilter as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
     } else if (moduleFilter === 'pm') {
       (baseFilter as Record<string, unknown>).type = 'preventive';
     }
@@ -162,7 +162,10 @@ export async function GET(request: NextRequest) {
     const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
 
     const completedWithActuals = workOrders.filter(
-      wo => (wo.status === 'completed' || wo.status === 'closed') && wo.actualStart && wo.actualEnd
+      wo => (wo.status === 'completed' || wo.status === 'closed')
+        && wo.actualStart
+        && wo.actualEnd
+        && wo.actualEnd.getTime() >= wo.actualStart.getTime()
     );
     const avgCompletionHours = completedWithActuals.length > 0
       ? completedWithActuals.reduce((sum, wo) => {
@@ -699,7 +702,7 @@ export async function GET(request: NextRequest) {
       }));
 
     // ========== ASSET RELIABILITY / REPEAT FAILURES ==========
-    const failureOrders = workOrders.filter(wo => ['corrective', 'emergency'].includes(wo.type));
+    const failureOrders = workOrders.filter(wo => ['breakdown', 'corrective', 'emergency', 'predictive'].includes(wo.type));
     const reliabilityMap = new Map<string, {
       assetId: string;
       assetName: string;

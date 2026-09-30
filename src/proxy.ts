@@ -121,6 +121,28 @@ export function requiredModulesForApiPath(pathname: string): string[] {
 }
 
 async function moduleGateResponse(pathname: string): Promise<NextResponse | null> {
+  // A specific handover record is shared operational infrastructure:
+  // Repairs uses it for WO custody transfer while the standalone handover
+  // workspace belongs to Shift Management. Permit nested record/confirm routes
+  // when either owning module is operational; keep the generic collection
+  // endpoint governed by shift_management below.
+  if (/^\/api\/shift-handovers\/[^/]+(?:\/confirm)?$/.test(pathname)) {
+    const alternatives = ['repairs', 'shift_management'];
+    const unavailableAlternatives = await getUnavailableOperationalModules(alternatives);
+    if (unavailableAlternatives.length < alternatives.length) return null;
+
+    return withSecurityHeaders(
+      NextResponse.json(
+        {
+          success: false,
+          error: 'Required module is not licensed, enabled, and active',
+          unavailableModules: unavailableAlternatives,
+        },
+        { status: 403 },
+      ),
+    );
+  }
+
   const requiredModules = requiredModulesForApiPath(pathname);
   if (requiredModules.length === 0) return null;
 
@@ -330,3 +352,5 @@ export default async function proxy(request: NextRequest) {
 export const config = {
   matcher: ['/api/:path*'],
 };
+
+[executed on device: vps.lightworldtech.com (2d2a1aee-4b1f-4402-80cb-9bf1af4847e4)]

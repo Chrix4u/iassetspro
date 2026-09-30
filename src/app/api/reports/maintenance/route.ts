@@ -1051,5 +1051,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
-
-[executed on device: vps.lightworldtech.com (2d2a1aee-4b1f-4402-80cb-9bf1af4847e4)]

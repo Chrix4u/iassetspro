@@ -72,8 +72,6 @@ export interface ConvertMRToWOResult {
   notifications?: ConversionNotification[];
 }
 
-const WO_NUMBER_MAX_RETRIES = 3;
-
 function buildWoNumber(monthStr: string, seq: number): string {
   return `WO-${monthStr}-${String(seq).padStart(4, '0')}`;
 }
@@ -83,13 +81,25 @@ async function determineBaseSequence(
 ): Promise<{ monthStr: string; baseSeq: number }> {
   const now = new Date();
   const monthStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const lastWO = await tx.workOrder.findFirst({
-    where: { woNumber: { startsWith: `WO-${monthStr}` } },
-    orderBy: { woNumber: 'desc' },
+  const prefix = `WO-${monthStr}-`;
+
+  // Historical/UAT work orders may legitimately use non-numeric suffixes
+  // (for example WO-202609-UAT-RP01-01). Never let those participate in
+  // canonical sequential number allocation.
+  const candidates = await tx.workOrder.findMany({
+    where: { woNumber: { startsWith: prefix } },
+    select: { woNumber: true },
   });
-  if (!lastWO) return { monthStr, baseSeq: 1 };
-  const parts = lastWO.woNumber.split('-');
-  return { monthStr, baseSeq: (parseInt(parts[2] || '0', 10) + 1) };
+
+  let maxSeq = 0;
+  for (const candidate of candidates) {
+    const suffix = candidate.woNumber.slice(prefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    const seq = Number.parseInt(suffix, 10);
+    if (Number.isFinite(seq)) maxSeq = Math.max(maxSeq, seq);
+  }
+
+  return { monthStr, baseSeq: maxSeq + 1 };
 }
 
 function buildRequesterNotification(
@@ -341,6 +351,14 @@ export async function convertMRToWorkOrder(
       const woStatus = hasAssignment ? 'assigned' : 'approved';
       const now = new Date();
 
+      // Serialize WO-number allocation for PostgreSQL. Catching a unique
+      // violation and retrying inside the same transaction is invalid because
+      // PostgreSQL marks the transaction aborted after the first constraint
+      // error. The transaction-scoped advisory lock prevents concurrent
+      // conversions from choosing the same next WO number.
+      await tx.$executeRawUnsafe(
+        "SELECT pg_advisory_xact_lock(hashtext('iassetspro:work-order-number'))",
+      );
       const { monthStr, baseSeq } = await determineBaseSequence(tx);
       let workOrder!: Awaited<ReturnType<typeof tx.workOrder.create>>;
 
@@ -352,11 +370,8 @@ export async function convertMRToWorkOrder(
         maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
       } as const;
 
-      let created = false;
-      for (let attempt = 0; attempt < WO_NUMBER_MAX_RETRIES; attempt++) {
-        const woNumber = buildWoNumber(monthStr, baseSeq + attempt);
-        try {
-          workOrder = await tx.workOrder.create({
+      const woNumber = buildWoNumber(monthStr, baseSeq);
+      workOrder = await tx.workOrder.create({
             data: {
               woNumber,
               title: payload.title || mr.title,
@@ -389,30 +404,6 @@ export async function convertMRToWorkOrder(
             },
             include: woInclude,
           });
-          created = true;
-          break;
-        } catch (err: unknown) {
-          if (
-            err &&
-            typeof err === 'object' &&
-            'code' in err &&
-            (err as { code: string }).code === 'P2002'
-          ) {
-            continue;
-          }
-          throw err;
-        }
-      }
-
-      if (!created) {
-        const conflictWO = await tx.workOrder.findFirst({ where: { maintenanceRequestId: mrId } });
-        const woRef = conflictWO ? conflictWO.woNumber : 'an existing work order';
-        return {
-          success: false as const,
-          error: `This request has already been converted to ${woRef}`,
-          conflictWoNumber: conflictWO?.woNumber,
-        };
-      }
 
       if (uniqueComponentIds.length > 0) {
         await tx.workOrderComponent.createMany({

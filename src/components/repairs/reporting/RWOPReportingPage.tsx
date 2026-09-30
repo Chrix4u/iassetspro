@@ -1054,7 +1054,8 @@ export default function RWOPReportingPage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All priorities</SelectItem>
-                  <SelectItem value="urgent">Urgent / Critical</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
                   <SelectItem value="high">High</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>
                   <SelectItem value="low">Low</SelectItem>

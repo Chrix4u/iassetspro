@@ -162,7 +162,10 @@ export async function GET(request: NextRequest) {
     const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
 
     const completedWithActuals = workOrders.filter(
-      wo => (wo.status === 'completed' || wo.status === 'closed') && wo.actualStart && wo.actualEnd
+      wo => (wo.status === 'completed' || wo.status === 'closed')
+        && wo.actualStart
+        && wo.actualEnd
+        && wo.actualEnd.getTime() >= wo.actualStart.getTime()
     );
     const avgCompletionHours = completedWithActuals.length > 0
       ? completedWithActuals.reduce((sum, wo) => {

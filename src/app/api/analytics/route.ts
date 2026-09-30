@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     // then divide the period (hours) by that count.
     const failureCountInPeriod = hasModel(db, 'workOrder')
       ? await db.workOrder.count({
-          where: { ...pf, type: { in: ['corrective', 'emergency'] }, createdAt: { gte: startDate } },
+          where: { ...pf, type: { in: ['breakdown', 'corrective', 'emergency'] }, createdAt: { gte: startDate } },
         }).catch(() => 0)
       : 0;
     const periodHours = parseInt(period) * 24;

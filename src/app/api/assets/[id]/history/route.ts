@@ -47,7 +47,7 @@ export async function GET(
       ...(Object.keys(dateFilter).length > 0 ? dateFilter : {}),
     };
     if (moduleFilter === 'repairs') {
-      woWhere.type = { in: ['corrective', 'emergency'] };
+      woWhere.type = { in: ['breakdown', 'corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
       woWhere.type = 'preventive';
     }

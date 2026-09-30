@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       Object.assign(woWhere, plantFilter);
     }
     if (moduleFilter === 'repairs') {
-      (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+      (woWhere as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
       (woWhere as Record<string, unknown>).type = 'preventive';
     }

@@ -404,9 +404,11 @@ describe('convertMRToWorkOrder function contract', () => {
     });
 
     const tx = {
+      $executeRawUnsafe: vi.fn().mockResolvedValue(1),
       workOrder: {
         findUnique: vi.fn(),
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({
           id: 'wo-1',
           woNumber: 'WO-202609-0001',
@@ -472,6 +474,9 @@ describe('convertMRToWorkOrder function contract', () => {
     );
 
     expect(result.success).toBe(true);
+    expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(
+      "SELECT pg_advisory_xact_lock(hashtext('iassetspro:work-order-number'))",
+    );
 
     expect(tx.workOrderMaterial.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     if (department) woWhere.departmentId = department;
     if (trade) woWhere.tradeActivity = trade;
     if (priority) woWhere.priority = priority;
-    if (moduleFilter === 'repairs') woWhere.type = { in: ['corrective', 'emergency'] };
+    if (moduleFilter === 'repairs') woWhere.type = { in: ['breakdown', 'corrective', 'emergency'] };
     if (moduleFilter === 'pm') woWhere.type = { in: ['preventive'] };
 
     // Fetch all relevant WOs with relations

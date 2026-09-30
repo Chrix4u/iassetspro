@@ -119,7 +119,7 @@ describe('GET /api/reports/maintenance/export', () => {
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        type: { in: ['corrective', 'emergency'] },
+        type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
       }),
     }));
   });

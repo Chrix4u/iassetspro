@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
     if (department) woWhere.departmentId = department;
     if (moduleFilter === 'repairs') {
-      (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+      (woWhere as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
       (woWhere as Record<string, unknown>).type = 'preventive';
     }

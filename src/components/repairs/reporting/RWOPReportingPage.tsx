@@ -761,8 +761,30 @@ export default function RWOPReportingPage() {
   };
 
   const applyQuickPeriod = (
-    period: 'today' | 'last7' | 'week' | 'last30' | 'month' | 'last90' | 'quarter' | 'ytd' | 'year'
+    period: 'today' | 'last7' | 'week' | 'last30' | 'month' | 'last90' | 'quarter' | 'ytd' | 'year' | 'gtpWorkbook'
   ) => {
+    if (period === 'gtpWorkbook') {
+      const gtpPlant = plants.find(plant => plant.code === 'GTP-UAT');
+      if (!gtpPlant) {
+        toast.error('GTP Repairs UAT Plant is not available');
+        return;
+      }
+      const next: ReportFilters = {
+        ...filters,
+        startDate: '2024-01-01',
+        endDate: '2025-12-31',
+        plantId: gtpPlant.id,
+        departmentId: 'all',
+        moduleFilter: 'all',
+        priority: 'all',
+        tradeActivity: 'all',
+        assetId: 'all',
+      };
+      setFilters(next);
+      void loadReport(next);
+      return;
+    }
+
     const end = new Date();
     const start = new Date(end);
 
@@ -1107,6 +1129,9 @@ export default function RWOPReportingPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('quarter')}>This Quarter</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('ytd')}>Year to Date</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('year')}>This Year</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => applyQuickPeriod('gtpWorkbook')} className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50">
+              GTP Workbook · 2,807
+            </Button>
             <span className="text-[11px] text-muted-foreground">Or choose any custom From/To dates above.</span>
           </div>
 

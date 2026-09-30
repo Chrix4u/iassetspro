@@ -404,9 +404,11 @@ describe('convertMRToWorkOrder function contract', () => {
     });
 
     const tx = {
+      $executeRawUnsafe: vi.fn().mockResolvedValue(0),
       workOrder: {
         findUnique: vi.fn(),
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({
           id: 'wo-1',
           woNumber: 'WO-202609-0001',

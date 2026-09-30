@@ -28,7 +28,7 @@ function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.type) {
     where.type = filters.type;
   } else if (filters.maintenanceScope === 'repairs') {
-    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+    where.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
   } else if (filters.maintenanceScope === 'pm') {
     where.type = 'preventive';
   }
@@ -493,7 +493,7 @@ async function exportAssetRepairHistoryReport(
 ): Promise<ReportResult> {
   const where = buildBaseWhere(filters);
   if (!filters.type) {
-    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+    where.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
   }
 
   const workOrders = await db.workOrder.findMany({
@@ -1309,7 +1309,7 @@ async function exportClosureAuditReport(
 
   const rows = workOrders.map((wo) => {
     const completion = wo.repairCompletion;
-    const rcaRequired = ['corrective', 'emergency', 'predictive'].includes(wo.type);
+    const rcaRequired = ['breakdown', 'corrective', 'emergency', 'predictive'].includes(wo.type);
     const rcaComplete = !rcaRequired || Boolean(
       completion?.rootCause?.trim() && completion?.correctiveAction?.trim(),
     );
@@ -1669,7 +1669,7 @@ type BreakdownPreparedData = {
 
 async function prepareBreakdownPerformanceData(filters: ReportFilters): Promise<BreakdownPreparedData> {
   const where = buildBaseWhere({ ...filters, maintenanceScope: 'repairs' });
-  where.type = { in: ['corrective', 'emergency'] };
+  where.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
 
   const workOrders = await db.workOrder.findMany({
     where: Object.keys(where).length > 0 ? where : undefined,
@@ -2151,3 +2151,5 @@ export async function generateRepairsReport(
   if (reportType === 'reliability-bad-actors') return exportReliabilityBadActorsReport(filters, session);
   return generateLegacyReport(reportType, filters, session);
 }
+
+[executed on device: vps.lightworldtech.com (2d2a1aee-4b1f-4402-80cb-9bf1af4847e4)]

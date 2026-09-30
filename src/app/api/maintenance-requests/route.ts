@@ -164,6 +164,15 @@ export async function POST(request: NextRequest) {
 
     let resolvedPlantId: string | null = plantId || null;
     if (!resolvedPlantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess) {
+        return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+      }
+      if (plantScope.isScoped && plantScope.plantId) {
+        resolvedPlantId = plantScope.plantId;
+      }
+    }
+    if (!resolvedPlantId) {
       const primaryPlant = await db.userPlant.findFirst({
         where: { userId: session.userId, isPrimary: true },
         select: { plantId: true },

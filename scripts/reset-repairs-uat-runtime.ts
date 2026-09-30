@@ -157,5 +157,3 @@ main()
   .finally(async () => {
     await db.$disconnect();
   });
-
-[executed on device: vps.lightworldtech.com (2d2a1aee-4b1f-4402-80cb-9bf1af4847e4)]

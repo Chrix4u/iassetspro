@@ -526,7 +526,7 @@ export async function GET(request: NextRequest) {
         ? safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0)
         : Promise.resolve(0),
       canViewAnalyticsKPIs
-        ? safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0)
+        ? safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['breakdown', 'corrective', 'emergency'] } } }), 0)
         : Promise.resolve(0),
       // PM schedules due (nextDueDate within 7 days) — plant filter routes through asset relation
       canViewPmKPIs

@@ -855,7 +855,7 @@ function buildBaseWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.type) {
     where.type = filters.type;
   } else if (filters.maintenanceScope === 'repairs') {
-    where.type = { in: ['corrective', 'emergency', 'predictive'] };
+    where.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
   } else if (filters.maintenanceScope === 'pm') {
     where.type = 'preventive';
   }
@@ -917,7 +917,7 @@ function buildLaborWhere(filters: ReportFilters): Record<string, unknown> {
     if (filters.type) {
       woWhere.type = filters.type;
     } else if (filters.maintenanceScope === 'repairs') {
-      woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
+      woWhere.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
     } else if (filters.maintenanceScope === 'pm') {
       woWhere.type = 'preventive';
     }
@@ -940,7 +940,7 @@ function buildDowntimeWhere(filters: ReportFilters): Record<string, unknown> {
   if (filters.type) {
     woWhere.type = filters.type;
   } else if (filters.maintenanceScope === 'repairs') {
-    woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
+    woWhere.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
   } else if (filters.maintenanceScope === 'pm') {
     woWhere.type = 'preventive';
   }
@@ -965,7 +965,7 @@ function buildResourceWorkOrderWhere(filters: ReportFilters): Record<string, unk
   if (filters.type) {
     woWhere.type = filters.type;
   } else if (filters.maintenanceScope === 'repairs') {
-    woWhere.type = { in: ['corrective', 'emergency', 'predictive'] };
+    woWhere.type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
   } else if (filters.maintenanceScope === 'pm') {
     woWhere.type = 'preventive';
   }

@@ -15,9 +15,10 @@ export default defineConfig({
   timeout: 60_000,
   retries: 0,
   fullyParallel: false, // Sequential — scenarios share DB state
+  workers: 1, // Shared UAT actors/runtime state must never execute scenario files concurrently
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: (process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 10_000,

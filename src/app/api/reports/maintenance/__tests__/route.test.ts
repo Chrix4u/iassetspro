@@ -121,7 +121,7 @@ describe('GET /api/reports/maintenance', () => {
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        type: { in: ['corrective', 'emergency'] },
+        type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         createdAt: {
           gte: new Date('2026-09-01T00:00:00'),
           lte: new Date('2026-09-09T23:59:59'),

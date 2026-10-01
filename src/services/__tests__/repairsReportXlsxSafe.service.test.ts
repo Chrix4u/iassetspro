@@ -107,7 +107,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        type: { in: ['corrective', 'emergency', 'predictive'] },
+        type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         OR: expect.any(Array),
       }),
     }));
@@ -115,7 +115,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
       where: expect.objectContaining({
         workOrder: expect.objectContaining({
           plantId: 'plant-a',
-          type: { in: ['corrective', 'emergency', 'predictive'] },
+          type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         }),
       }),
     }));
@@ -123,7 +123,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
       where: expect.objectContaining({
         plantId: 'plant-a',
         workOrder: expect.objectContaining({
-          type: { in: ['corrective', 'emergency', 'predictive'] },
+          type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         }),
       }),
     }));
@@ -194,7 +194,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        type: { in: ['corrective', 'emergency', 'predictive'] },
+        type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
       }),
     }));
 
@@ -313,7 +313,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
       where: expect.objectContaining({
         plantId: 'plant-a',
         workOrder: expect.objectContaining({
-          type: { in: ['corrective', 'emergency', 'predictive'] },
+          type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         }),
       }),
     }));
@@ -507,7 +507,7 @@ describe('repairsReportXlsxSafe operational report pack', () => {
     expect(mockDb.workOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        type: { in: ['corrective', 'emergency', 'predictive'] },
+        type: { in: ['breakdown', 'corrective', 'emergency', 'predictive'] },
         status: { in: ['completed', 'verified', 'closed'] },
       }),
     }));

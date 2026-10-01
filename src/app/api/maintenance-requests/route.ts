@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
     const canonicalPattern = new RegExp(`^${requestPrefix}-(\\d{4})$`);
 
     const mr = await db.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(${MR_NUMBER_LOCK_KEY})`);
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${MR_NUMBER_LOCK_KEY})`);
 
       const candidates = await tx.maintenanceRequest.findMany({
         where: { requestNumber: { startsWith: requestPrefix } },

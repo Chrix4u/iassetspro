@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
+import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -1238,6 +1239,26 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </div>
                     </div>
                     {twin.lastSynced && <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">Last synced: {formatDateTime(twin.lastSynced)}</p>}
+                  </CardContent>
+                </Card>
+              )}
+
+              {twin && (
+                <Card className="border-0 shadow-sm overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Interactive Digital Twin</CardTitle>
+                    <CardDescription>Inspect the machine in 3D or switch to front, top and side engineering projections without leaving the asset record.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <DigitalTwinViewer
+                      assetId={asset.id}
+                      twinId={twin.id}
+                      twinName={twin.name}
+                      height="460px"
+                      showToolbar
+                      showSceneTree={false}
+                      showInfoPanel={false}
+                    />
                   </CardContent>
                 </Card>
               )}

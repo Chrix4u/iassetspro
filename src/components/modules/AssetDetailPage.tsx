@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
+import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -763,7 +764,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
 
                   {selectedComponentId && (
-                    <Card className="border-0 shadow-sm">
+                    <Card id="component-store-linkage" className="border-0 shadow-sm scroll-mt-4">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Component Spare Parts & Store Linkage</CardTitle>
                         <CardDescription>Link replaceable parts for the selected assembly/component to actual inventory items so technicians see store availability and stock.</CardDescription>
@@ -967,7 +968,17 @@ export function AssetDetailPage({ id }: { id: string }) {
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-1.5">
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
-                                  <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      loadComponentSpareParts(c.id);
+                                      setActiveTab('bom');
+                                      window.setTimeout(() => {
+                                        document.getElementById('component-store-linkage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                      }, 100);
+                                    }}
+                                  >
                                     Manage Parts ({c._count?.sparePartLinks || 0})
                                   </Button>
                                 </div>
@@ -1238,6 +1249,26 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </div>
                     </div>
                     {twin.lastSynced && <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">Last synced: {formatDateTime(twin.lastSynced)}</p>}
+                  </CardContent>
+                </Card>
+              )}
+
+              {twin && (
+                <Card className="border-0 shadow-sm overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Interactive Digital Twin</CardTitle>
+                    <CardDescription>Inspect the machine in 3D or switch to front, top and side engineering projections without leaving the asset record.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <DigitalTwinViewer
+                      assetId={asset.id}
+                      twinId={twin.id}
+                      twinName={twin.name}
+                      height="460px"
+                      showToolbar
+                      showSceneTree={false}
+                      showInfoPanel={false}
+                    />
                   </CardContent>
                 </Card>
               )}

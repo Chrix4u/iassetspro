@@ -764,7 +764,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
 
                   {selectedComponentId && (
-                    <Card className="border-0 shadow-sm">
+                    <Card id="component-store-linkage" className="border-0 shadow-sm scroll-mt-4">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm">Component Spare Parts & Store Linkage</CardTitle>
                         <CardDescription>Link replaceable parts for the selected assembly/component to actual inventory items so technicians see store availability and stock.</CardDescription>
@@ -968,7 +968,17 @@ export function AssetDetailPage({ id }: { id: string }) {
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-1.5">
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
-                                  <Button variant="outline" size="sm" onClick={() => loadComponentSpareParts(c.id)}>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      loadComponentSpareParts(c.id);
+                                      setActiveTab('bom');
+                                      window.setTimeout(() => {
+                                        document.getElementById('component-store-linkage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                      }, 100);
+                                    }}
+                                  >
                                     Manage Parts ({c._count?.sparePartLinks || 0})
                                   </Button>
                                 </div>

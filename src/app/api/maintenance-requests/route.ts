@@ -4,25 +4,7 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
-async function generateRequestNumber(): Promise<string> {
-  const now = new Date();
-  const prefix = `MR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  const latest = await db.maintenanceRequest.findFirst({
-    where: { requestNumber: { startsWith: prefix } },
-    orderBy: { requestNumber: 'desc' },
-    select: { requestNumber: true },
-  });
-
-  let nextNum = 1;
-  if (latest) {
-    const parts = latest.requestNumber.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    nextNum = lastNum + 1;
-  }
-
-  return `${prefix}-${String(nextNum).padStart(4, '0')}`;
-}
+const MR_NUMBER_LOCK_KEY = 482030910;
 
 export async function GET(request: NextRequest) {
   try {
@@ -306,45 +288,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let mr: Awaited<ReturnType<typeof db.maintenanceRequest.create>> | null = null;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const requestNumber = await generateRequestNumber();
-      try {
-        mr = await db.maintenanceRequest.create({
-          data: {
-            requestNumber,
-            title,
-            description: description || null,
-            priority: priority || 'medium',
-            category: category || null,
-            assetId: assetId || null,
-            assetName: resolvedAssetName,
-            location: location || null,
-            departmentId: resolvedDepartmentId,
-            plantId: resolvedPlantId,
-            requestedBy: session.userId,
-            supervisorId: resolvedSupervisorId,
-            machineDownStatus: machineDownStatus || false,
-            estimatedHours: estimatedHours || null,
-            slaHours: slaHours || null,
-            plannedStart: plannedStart ? new Date(plannedStart) : null,
-            plannedEnd: plannedEnd ? new Date(plannedEnd) : null,
-            notes: notes || null,
-          },
-          include: {
-            requester: { select: { id: true, fullName: true, username: true } },
-            supervisor: { select: { id: true, fullName: true, username: true } },
-          },
-        });
-        break;
-      } catch (error: unknown) {
-        const code = typeof error === 'object' && error !== null && 'code' in error
-          ? String((error as { code?: unknown }).code || '')
-          : '';
-        if (code !== 'P2002' || attempt === 4) throw error;
+    const now = new Date();
+    const requestPrefix = `MR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const canonicalPattern = new RegExp(`^${requestPrefix}-(\\d{4})$`);
+
+    const mr = await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(${MR_NUMBER_LOCK_KEY})`);
+
+      const candidates = await tx.maintenanceRequest.findMany({
+        where: { requestNumber: { startsWith: requestPrefix } },
+        select: { requestNumber: true },
+      });
+
+      let maxSequence = 0;
+      for (const candidate of candidates) {
+        const match = canonicalPattern.exec(candidate.requestNumber);
+        if (!match) continue;
+        const sequence = Number.parseInt(match[1], 10);
+        if (Number.isFinite(sequence)) maxSequence = Math.max(maxSequence, sequence);
       }
-    }
-    if (!mr) throw new Error('Failed to allocate a unique maintenance request number');
+
+      const requestNumber = `${requestPrefix}-${String(maxSequence + 1).padStart(4, '0')}`;
+      return tx.maintenanceRequest.create({
+        data: {
+          requestNumber,
+          title,
+          description: description || null,
+          priority: priority || 'medium',
+          category: category || null,
+          assetId: assetId || null,
+          assetName: resolvedAssetName,
+          location: location || null,
+          departmentId: resolvedDepartmentId,
+          plantId: resolvedPlantId,
+          requestedBy: session.userId,
+          supervisorId: resolvedSupervisorId,
+          machineDownStatus: machineDownStatus || false,
+          estimatedHours: estimatedHours || null,
+          slaHours: slaHours || null,
+          plannedStart: plannedStart ? new Date(plannedStart) : null,
+          plannedEnd: plannedEnd ? new Date(plannedEnd) : null,
+          notes: notes || null,
+        },
+        include: {
+          requester: { select: { id: true, fullName: true, username: true } },
+          supervisor: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+    });
 
     if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
       const desc = description ? description.substring(0, 120) : '';

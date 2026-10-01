@@ -306,33 +306,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requestNumber = await generateRequestNumber();
-    const mr = await db.maintenanceRequest.create({
-      data: {
-        requestNumber,
-        title,
-        description: description || null,
-        priority: priority || 'medium',
-        category: category || null,
-        assetId: assetId || null,
-        assetName: resolvedAssetName,
-        location: location || null,
-        departmentId: resolvedDepartmentId,
-        plantId: resolvedPlantId,
-        requestedBy: session.userId,
-        supervisorId: resolvedSupervisorId,
-        machineDownStatus: machineDownStatus || false,
-        estimatedHours: estimatedHours || null,
-        slaHours: slaHours || null,
-        plannedStart: plannedStart ? new Date(plannedStart) : null,
-        plannedEnd: plannedEnd ? new Date(plannedEnd) : null,
-        notes: notes || null,
-      },
-      include: {
-        requester: { select: { id: true, fullName: true, username: true } },
-        supervisor: { select: { id: true, fullName: true, username: true } },
-      },
-    });
+    let mr: Awaited<ReturnType<typeof db.maintenanceRequest.create>> | null = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const requestNumber = await generateRequestNumber();
+      try {
+        mr = await db.maintenanceRequest.create({
+          data: {
+            requestNumber,
+            title,
+            description: description || null,
+            priority: priority || 'medium',
+            category: category || null,
+            assetId: assetId || null,
+            assetName: resolvedAssetName,
+            location: location || null,
+            departmentId: resolvedDepartmentId,
+            plantId: resolvedPlantId,
+            requestedBy: session.userId,
+            supervisorId: resolvedSupervisorId,
+            machineDownStatus: machineDownStatus || false,
+            estimatedHours: estimatedHours || null,
+            slaHours: slaHours || null,
+            plannedStart: plannedStart ? new Date(plannedStart) : null,
+            plannedEnd: plannedEnd ? new Date(plannedEnd) : null,
+            notes: notes || null,
+          },
+          include: {
+            requester: { select: { id: true, fullName: true, username: true } },
+            supervisor: { select: { id: true, fullName: true, username: true } },
+          },
+        });
+        break;
+      } catch (error: unknown) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code?: unknown }).code || '')
+          : '';
+        if (code !== 'P2002' || attempt === 4) throw error;
+      }
+    }
+    if (!mr) throw new Error('Failed to allocate a unique maintenance request number');
 
     if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
       const desc = description ? description.substring(0, 120) : '';

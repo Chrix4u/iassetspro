@@ -41,7 +41,7 @@ const RULES = [
   { key: 'estop', code: 'CMP-ESTOP', re: /emergency stop/i },
   { key: 'yard', code: 'INS-YARD', re: /yardage counter/i },
   { key: 'level', code: 'INS-LEVEL', re: /level sensor/i },
-  { key: 'electrical', code: 'CMP-ELEC', re: /electrical fault(?:y)?/i },
+  { key: 'electrical', code: 'CMP-ELEC', re: /electrical\s+fault(?:y)?/i },
   { key: 'drive', code: 'CMP-DRIVE', re: /unable to move|machine unable to move/i },
   { key: 'wheels', code: 'CMP-WHEELS', re: /lubricate wheels/i },
 ] as const;

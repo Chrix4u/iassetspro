@@ -73,10 +73,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const targetCombobox = targetLabel.locator('..').getByRole('combobox');
       await expect(targetCombobox).toBeEnabled({ timeout: 10_000 });
       await targetCombobox.click();
-      const escapedTargetCode = targetCode.replace(/[.*+?^\${}()|[\]\\\\]/g, '\\      await targetCombobox.click();
-      await page.getByRole('option').filter({ hasText: targetCode }).click();');
       const targetOption = page.getByRole('option').filter({
-        hasText: new RegExp(`${escapedTargetCode}\\s*·`),
+        hasText: new RegExp(`${targetCode}\\s*·`),
       });
       await expect(targetOption).toHaveCount(1);
       await targetOption.click();

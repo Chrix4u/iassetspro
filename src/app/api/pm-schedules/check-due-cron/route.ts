@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // Resolve a persisted actor before any PM mutation so cron execution fails
+    // cleanly instead of leaving records with invalid User foreign keys.
+    const automationActorId = await resolvePmAutomationActorId(session?.userId);
+
     const now = new Date();
     const results = {
       dueSchedulesChecked: 0,

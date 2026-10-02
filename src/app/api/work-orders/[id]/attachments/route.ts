@@ -152,3 +152,95 @@ export async function GET(
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id: workOrderId } = await params;
+    const attachmentId = new URL(request.url).searchParams.get('id');
+    if (!attachmentId) {
+      return NextResponse.json({ success: false, error: 'Attachment id is required' }, { status: 400 });
+    }
+
+    const wo = await db.workOrder.findUnique({
+      where: { id: workOrderId },
+      select: {
+        id: true,
+        status: true,
+        isLocked: true,
+        plantId: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamMembers: { select: { userId: true, accessLevel: true } },
+      },
+    });
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, wo.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const isWritableExecutionActor =
+      wo.assignedTo === session.userId ||
+      wo.teamLeaderId === session.userId ||
+      wo.teamMembers.some((member) => member.userId === session.userId && member.accessLevel !== 'read_only');
+    const canManage =
+      canManageWorkOrder(session, wo) &&
+      (isAdmin(session) || hasPermission(session, 'work_orders.update'));
+
+    if (!isWritableExecutionActor && !canManage) {
+      return NextResponse.json({ success: false, error: 'Only assigned execution staff or authorized maintenance management can remove work-order evidence' }, { status: 403 });
+    }
+
+    if (wo.isLocked || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order is locked and cannot be modified' }, { status: 409 });
+    }
+
+    const attachment = await db.attachment.findFirst({
+      where: {
+        id: attachmentId,
+        entityType: 'work_order',
+        entityId: workOrderId,
+      },
+      select: {
+        id: true,
+        filePath: true,
+        uploadedById: true,
+      },
+    });
+    if (!attachment) {
+      return NextResponse.json({ success: false, error: 'Attachment not found' }, { status: 404 });
+    }
+
+    if (!canManage && attachment.uploadedById !== session.userId) {
+      return NextResponse.json({ success: false, error: 'You may only remove evidence that you uploaded' }, { status: 403 });
+    }
+
+    const exists = await ObjectStorageService.exists(attachment.filePath);
+    if (exists) {
+      const removed = await ObjectStorageService.delete(attachment.filePath);
+      if (!removed) {
+        return NextResponse.json({ success: false, error: 'Attachment file could not be removed from storage' }, { status: 500 });
+      }
+    }
+
+    await db.attachment.delete({ where: { id: attachment.id } });
+    return NextResponse.json({ success: true, data: { id: attachment.id } });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to remove attachment';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+

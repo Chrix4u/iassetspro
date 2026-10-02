@@ -773,6 +773,7 @@ export async function POST(request: NextRequest) {
           maintenanceRequests: proposedRows.length,
           workOrders: proposedRows.length,
         },
+        workbookParity,
         rows: proposedRows,
       };
       const previewFingerprint = fingerprintManifestCore(manifestCore);

@@ -151,6 +151,22 @@ type AuditResult = {
 };
 
 
+type ParityCertificate = {
+  schemaVersion: 'gtp-post-import-parity/v1';
+  generatedAt: string;
+  fingerprint: string;
+  sourceSha256: string;
+  migrationPlantId: string;
+  allPassed: boolean;
+  checks: {
+    jobRecords: { expected: number; actualWorkOrders: number; actualMaintenanceRequests: number; pass: boolean };
+    breakdowns: { expected: number; actual: number; pass: boolean };
+    priorityOneBreakdowns2025: { expected: number; actual: number; pass: boolean };
+    priorityOneResponseMinutes: { expected: number; actual: number; pass: boolean };
+    legacyDowntimeFormulaErrors: { expectedUnavailable: number; workOrderNumbers: string[]; pass: boolean; note: string };
+  };
+};
+
 type ReconciliationBundle = {
   schemaVersion: 'gtp-reconciliation-bundle/v1';
   source: {
@@ -220,6 +236,7 @@ export function GtpMigrationPage() {
     sourceSha256?: string;
     completedAt: string;
   } | null>(null);
+  const [parityCertificate, setParityCertificate] = useState<ParityCertificate | null>(null);
 
   const readiness = useMemo(() => {
     if (!result?.summary.totalRows) return 0;
@@ -324,6 +341,7 @@ export function GtpMigrationPage() {
       setEquipmentMappings({});
       setResult(null);
       setLastImport(null);
+      setParityCertificate(null);
       setLoadedBundle({
         filename: bundleFile.name,
         sourceFilename: raw.source.filename,
@@ -407,6 +425,20 @@ export function GtpMigrationPage() {
         sourceSha256: response.data.sourceSha256,
         completedAt: new Date().toISOString(),
       });
+
+      const parity = await api.post<ParityCertificate>('/api/admin/gtp-migration/parity', {
+        manifest,
+        fingerprint,
+      }, { timeout: 120000 });
+      if (parity.success && parity.data) {
+        setParityCertificate(parity.data);
+        if (parity.data.allPassed) toast.success('Post-import PostgreSQL parity certificate passed');
+        else toast.warning('Historical import completed, but one or more parity checks require review');
+      } else {
+        setParityCertificate(null);
+        toast.warning(parity.error || 'Historical import completed, but parity verification could not be completed');
+      }
+
       toast.success(`Historical import completed · ${response.data.imported.toLocaleString()} work order(s) created`);
       setImportConfirmOpen(false);
       setImportConfirmation('');
@@ -472,10 +504,41 @@ export function GtpMigrationPage() {
         </CardContent>
       </Card>}
 
+      {parityCertificate && <Card className={parityCertificate.allPassed ? 'border-emerald-300' : 'border-amber-300'}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            {parityCertificate.allPassed ? <CheckCircle2 className="h-5 w-5 text-emerald-700" /> : <AlertTriangle className="h-5 w-5 text-amber-700" />}
+            PostgreSQL ↔ Workbook Parity Certificate
+          </CardTitle>
+          <CardDescription>
+            Signed source baseline compared against the historical records committed to PostgreSQL.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={parityCertificate.allPassed ? 'secondary' : 'destructive'}>{parityCertificate.allPassed ? 'PASS' : 'CHECK'}</Badge>
+            <span className="text-xs text-muted-foreground">{new Date(parityCertificate.generatedAt).toLocaleString()}</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Historical jobs</p><p className="text-lg font-semibold">{parityCertificate.checks.jobRecords.actualWorkOrders.toLocaleString()} / {parityCertificate.checks.jobRecords.expected.toLocaleString()}</p><p className="text-xs">{parityCertificate.checks.jobRecords.pass ? 'PASS' : 'CHECK'}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Breakdowns</p><p className="text-lg font-semibold">{parityCertificate.checks.breakdowns.actual.toLocaleString()} / {parityCertificate.checks.breakdowns.expected.toLocaleString()}</p><p className="text-xs">{parityCertificate.checks.breakdowns.pass ? 'PASS' : 'CHECK'}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Priority-1 breakdowns</p><p className="text-lg font-semibold">{parityCertificate.checks.priorityOneBreakdowns2025.actual.toLocaleString()} / {parityCertificate.checks.priorityOneBreakdowns2025.expected.toLocaleString()}</p><p className="text-xs">{parityCertificate.checks.priorityOneBreakdowns2025.pass ? 'PASS' : 'CHECK'}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Priority-1 response minutes</p><p className="text-lg font-semibold">{parityCertificate.checks.priorityOneResponseMinutes.actual.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {parityCertificate.checks.priorityOneResponseMinutes.expected.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p><p className="text-xs">{parityCertificate.checks.priorityOneResponseMinutes.pass ? 'PASS' : 'CHECK'}</p></div>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+            Legacy Excel downtime formula errors preserved as unavailable: {parityCertificate.checks.legacyDowntimeFormulaErrors.expectedUnavailable.toLocaleString()} row(s).
+          </div>
+          <div className="rounded-lg border p-3 text-xs">
+            <p className="font-medium">Signed fingerprint</p>
+            <p className="mt-1 break-all font-mono text-muted-foreground">{parityCertificate.fingerprint}</p>
+          </div>
+        </CardContent>
+      </Card>}
+
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); setLoadedBundle(null); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); setParityCertificate(null); setLoadedBundle(null); }} />
           <Input ref={bundleInputRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const bundleFile = e.target.files?.[0]; if (bundleFile) void loadReconciliationBundle(bundleFile); }} />
           <div className="space-y-3 rounded-xl border border-dashed p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

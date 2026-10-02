@@ -161,6 +161,10 @@ describe('GTP migration reconciliation console', () => {
     expect(page).toContain('Historical import execution is ready');
     expect(page).toContain('Historical Import Receipt');
     expect(page).toContain('already been imported in this session');
+    expect(page).toContain('PostgreSQL ↔ Workbook Parity Certificate');
+    expect(page).toContain("/api/admin/gtp-migration/parity");
+    expect(page).toContain('parityCertificate.allPassed');
+    expect(page).toContain('Priority-1 response minutes');
   });
 
   it('builds a downloadable approved preview manifest without enabling writes', () => {

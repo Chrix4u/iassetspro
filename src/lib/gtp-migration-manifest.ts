@@ -14,6 +14,16 @@ export type GtpManifestCore = {
   migrationPlantId: string;
   identityConvention: { maintenanceRequest: string; workOrder: string };
   counts: { rows: number; maintenanceRequests: number; workOrders: number };
+  workbookParity?: {
+    authoritativeJobRecords: number;
+    authoritativeBreakdowns: number;
+    priorityOneBreakdowns: number;
+    priorityOneResponseMinutes: number;
+    breakdownPivotFresh: boolean;
+    breakdownWeekMismatches: Array<{ week: string; source: number; cachedPivot: number }>;
+    legacyDowntimeFormulaErrorRows: Array<{ rowNumber: number; workOrderNo: string; equipmentDescription: string; value: string }>;
+    [key: string]: unknown;
+  };
   rows: unknown[];
 };
 

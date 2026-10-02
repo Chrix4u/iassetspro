@@ -120,6 +120,7 @@ export async function POST(request: NextRequest) {
       migrationPlantId: manifest.migrationPlantId,
       identityConvention: manifest.identityConvention,
       counts: manifest.counts,
+      workbookParity: manifest.workbookParity,
       rows: manifest.rows,
     };
     const calculatedFingerprint = fingerprintManifestCore(core);

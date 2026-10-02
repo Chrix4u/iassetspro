@@ -27,9 +27,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       `${assemblyCode},Frontend Test Drive Assembly,assembly,,high,,,Browser-created UAT assembly`,
       `${partCode},Frontend Test Bearing,part,${assemblyCode},high,SKF,6205-2RS,Browser-created UAT part`,
     ].join('\n');
-    await page.locator('textarea').filter({ has: page.locator('') }).first().fill(hierarchyText).catch(async () => {
-      await page.locator('textarea').first().fill(hierarchyText);
-    });
+    await page.locator('textarea').first().fill(hierarchyText);
     await expect(page.getByText('Ready to import')).toBeVisible();
     await page.getByRole('button', { name: /Import 2 Nodes/i }).click();
 

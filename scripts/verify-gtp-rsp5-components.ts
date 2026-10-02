@@ -36,6 +36,9 @@ async function main() {
   const templateMarked = components.filter((item) =>
     item.notes?.includes('Generic rotary-printing-machine structure only'),
   );
+  const nestedProvenance = components.filter((item) =>
+    item.notes?.includes('UAT-RP-001'),
+  );
 
   const byType = components.reduce<Record<string, number>>((acc, item) => {
     acc[item.componentType] = (acc[item.componentType] || 0) + 1;
@@ -47,6 +50,7 @@ async function main() {
     rootCount: roots.length === 8,
     noOrphans: orphans.length === 0,
     templateDisclosure: templateMarked.length === 77,
+    noNestedTemplateProvenance: nestedProvenance.length === 0,
     assemblies: byType.assembly === 8,
     subassemblies: byType.subassembly === 20,
     components: byType.component === 25,

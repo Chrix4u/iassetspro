@@ -19,7 +19,7 @@ describe('atomic hierarchy commissioning contract', () => {
   });
 
   it('resolves parent codes and commits components plus audits in one transaction', () => {
-    expect(route).toContain('const ordered = orderRows(rows, new Set(existingParentMap.keys()))');
+    expect(route).toContain('ordered = orderRows(rows, new Set(existingParentMap.keys()))');
     expect(route).toContain('const created = await db.$transaction(async (tx) =>');
     expect(route).toContain('await tx.componentRegistry.create');
     expect(route).toContain('await tx.auditLog.create');

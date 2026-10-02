@@ -37,9 +37,15 @@ export async function GET(request: NextRequest) {
       : plantScope.isScoped && plantScope.plantId
         ? [plantScope.plantId]
         : plantScope.accessiblePlantIds;
-    const assetScopeWhere = allowedPlantIds === null
+    const scopedPlantIds = allowedPlantIds === null
+      ? null
+      : allowedPlantIds.length > 0 ? allowedPlantIds : ['__ACCESS_DENIED__'];
+    const assetScopeWhere = scopedPlantIds === null
       ? {}
-      : { asset: { plantId: { in: allowedPlantIds.length > 0 ? allowedPlantIds : ['__ACCESS_DENIED__'] } } };
+      : { asset: { plantId: { in: scopedPlantIds } } };
+    const workOrderScopeWhere = scopedPlantIds === null
+      ? {}
+      : { plantId: { in: scopedPlantIds } };
 
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -76,7 +82,7 @@ export async function GET(request: NextRequest) {
 
       // 4. All PM work orders (generated from schedules) with completion info
       db.workOrder.findMany({
-        where: { pmScheduleId: { not: null }, ...assetScopeWhere },
+        where: { pmScheduleId: { not: null }, ...workOrderScopeWhere },
         select: {
           id: true,
           createdAt: true,

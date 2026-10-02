@@ -46,7 +46,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(part?.parentId).toBe(assembly.id);
 
     const createPmViaUi = async (title: string, targetCode: string) => {
-      const pmHeading = page.getByRole('heading', { name: 'PM Schedules' });
+      const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
         // Asset detail is rendered as a modal sheet, so return to the authenticated
         // dashboard before exercising the same visible PM quick action a planner uses.

@@ -118,6 +118,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   const loadComponentSpareParts = useCallback((componentId: string) => {
     setSelectedComponentId(componentId);
+    setActiveTab('bom');
     Promise.all([
       api.get(`/api/component-registry/${componentId}/spare-parts`),
       api.get(`/api/component-registry/${componentId}/installed-parts`),
@@ -130,6 +131,10 @@ export function AssetDetailPage({ id }: { id: string }) {
       setComponentSpareParts([]);
       setInstalledParts([]);
       setReplacementHistory([]);
+    }).finally(() => {
+      window.setTimeout(() => {
+        document.getElementById('component-store-linkage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 0);
     });
   }, []);
 

@@ -185,7 +185,7 @@ export default function TechnicianWorkspace({
   const offlineSync = useOfflineSync();
 
   // Evidence: attachments & measurements
-  const { attachments, uploading, upload: uploadAttachment, refetch: refetchAttachments } = useWOAttachments(workOrderId);
+  const { attachments, uploading, upload: uploadAttachment, remove: removeAttachment, refetch: refetchAttachments } = useWOAttachments(workOrderId);
   const { measurements, addMeasurement } = useWOMeasurements(workOrderId);
 
   // Evidence: measurement form state
@@ -1336,6 +1336,18 @@ export default function TechnicianWorkspace({
                                 </span>
                               </div>
                             </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 flex-shrink-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                              aria-label={`Remove attachment ${att.fileName}`}
+                              title="Remove attachment"
+                              disabled={uploading}
+                              onClick={() => void removeAttachment(att.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         );
                       })}

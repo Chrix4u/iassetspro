@@ -92,15 +92,44 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Diagram form
   const [diagForm, setDiagForm] = useState({ name: '', type: 'process', description: '' });
 
-  // Load main asset data
+  // Load main asset data and reset all asset-scoped state on cross-asset navigation.
+  // AssetDetailPage stays mounted while SPA routes change the id prop, so retaining
+  // lazy-load markers or tab data here can show the previous machine's components.
   useEffect(() => {
+    let cancelled = false;
+
+    setActiveTab('overview');
+    setAsset(null);
+    setLoading(true);
+    setBomItems([]);
+    setBomAsChild([]);
+    setComponents([]);
+    setInventoryItems([]);
+    setSelectedComponentId('');
+    setComponentSpareParts([]);
+    setInstalledParts([]);
+    setReplacementHistory([]);
+    setRemovalReasons({});
+    setTwin(null);
+    setDiagrams([]);
+    setTabDataLoading(false);
+    loadedTabsRef.current = new Set(['overview']);
+    tabDataLoadingRef.current = false;
+
     api.get<any>(`/api/assets/${id}`).then(res => {
+      if (cancelled) return;
       if (res.success && res.data) {
         setAsset(res.data);
-        if (res.data.digitalTwin) setTwin(res.data.digitalTwin);
+        setTwin(res.data.digitalTwin || null);
       }
       setLoading(false);
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // Reload components

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
+import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 
 /**
  * POST /api/pm-schedules/check-due-cron
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Audit log
-      const auditUserId = session?.userId || 'system';
+      const auditUserId = automationActorId;
       await db.auditLog.create({
         data: {
           userId: auditUserId,

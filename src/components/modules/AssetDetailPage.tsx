@@ -27,6 +27,7 @@ import {
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
 import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
+import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -81,6 +82,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Create dialogs
   const [showComponentForm, setShowComponentForm] = useState(false);
+  const [showHierarchyCommissioning, setShowHierarchyCommissioning] = useState(false);
   const [showTwinForm, setShowTwinForm] = useState(false);
   const [showDiagramForm, setShowDiagramForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -106,6 +108,8 @@ export function AssetDetailPage({ id }: { id: string }) {
     setComponents([]);
     setInventoryItems([]);
     setSelectedComponentId('');
+    setShowComponentForm(false);
+    setShowHierarchyCommissioning(false);
     setComponentSpareParts([]);
     setInstalledParts([]);
     setReplacementHistory([]);
@@ -870,6 +874,18 @@ export function AssetDetailPage({ id }: { id: string }) {
 
             {/* ==================== COMPONENTS TAB ==================== */}
             <TabsContent value="components" className="mt-4 w-full min-w-0 space-y-4 overflow-visible">
+              {showHierarchyCommissioning && canCreateComponent && (
+                <HierarchyCommissioningPanel
+                  assetId={id}
+                  existingComponents={components}
+                  onCancel={() => setShowHierarchyCommissioning(false)}
+                  onComplete={() => {
+                    setShowHierarchyCommissioning(false);
+                    reloadComponents();
+                  }}
+                />
+              )}
+
               {/* Add Component Form */}
               {showComponentForm && canCreateComponent && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -955,12 +971,33 @@ export function AssetDetailPage({ id }: { id: string }) {
                   icon={Cpu}
                   title="No Components Registered"
                   description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance."
-                  actionLabel={canCreateComponent ? 'Add Component' : undefined}
-                  onAction={canCreateComponent ? () => setShowComponentForm(true) : undefined}
+                  actionLabel={canCreateComponent ? 'Commission Hierarchy' : undefined}
+                  onAction={canCreateComponent ? () => {
+                    setShowComponentForm(false);
+                    setShowHierarchyCommissioning(true);
+                  } : undefined}
                 />
-              ) : !showComponentForm && canCreateComponent && (
-                <div className="flex justify-end">
-                  <Button size="sm" onClick={() => setShowComponentForm(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />Add Component</Button>
+              ) : !showComponentForm && !showHierarchyCommissioning && canCreateComponent && (
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowComponentForm(false);
+                      setShowHierarchyCommissioning(true);
+                    }}
+                  >
+                    <Layers className="h-3.5 w-3.5 mr-1.5" />Commission Hierarchy
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setShowHierarchyCommissioning(false);
+                      setShowComponentForm(true);
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />Add Component
+                  </Button>
                 </div>
               )}
 

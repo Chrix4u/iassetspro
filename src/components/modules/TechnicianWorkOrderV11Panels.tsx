@@ -426,7 +426,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       label: `${tool.name}${tool.toolCode ? ` [${tool.toolCode}]` : ''}`,
       detail: tool.availabilityVerified
         ? `${Number(tool.quantity ?? 1)} available${tool.condition ? ` · ${pretty(tool.condition)}` : ''}${tool.location ? ` · ${tool.location}` : ''}`
-        : `Availability pending${tool.condition ? ` · ${pretty(tool.condition)}` : ''}`,
+        : [tool.toolCode, tool.condition ? pretty(tool.condition) : '', tool.location].filter(Boolean).join(' · '),
       searchText: `${tool.name} ${tool.toolCode || ''} ${tool.status || ''} ${tool.condition || ''} ${tool.location || ''}`.toLowerCase(),
     })),
     [toolOptions],
@@ -955,7 +955,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       <span className="min-w-0 truncate text-right text-[11px] text-muted-foreground">
                         {selectedTool.availabilityVerified
                           ? `Available: ${Number(selectedTool.quantity ?? 1)} · ${selectedTool.toolCode || 'No code'} · ${pretty(selectedTool.condition)}${selectedTool.location ? ` · ${selectedTool.location}` : ''}`
-                          : `Availability pending${selectedTool.toolCode ? ` · ${selectedTool.toolCode}` : ''}`}
+                          : [selectedTool.toolCode, selectedTool.condition ? pretty(selectedTool.condition) : '', selectedTool.location].filter(Boolean).join(' · ')}
                       </span>
                     )}
                   </div>

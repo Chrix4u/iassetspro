@@ -12,10 +12,10 @@ describe('frontend hierarchy commissioning and PM targeting', () => {
   it('offers bulk hierarchy commissioning from the asset component tab', () => {
     expect(assetDetail).toContain('HierarchyCommissioningPanel')
     expect(assetDetail).toContain('Commission Hierarchy')
-    expect(commissioning).toContain("api.post<any>('/api/component-registry'")
+    expect(commissioning).toContain("api.post<any>('/api/component-registry/bulk'")
     expect(commissioning).toContain('componentCode,name,componentType,parentCode,criticality')
     expect(commissioning).toContain("new Set(['assembly', 'subassembly', 'component', 'part', 'auxiliary', 'instrument'])")
-    expect(commissioning).toContain('best-effort rollback')
+    expect(commissioning).toContain('committed atomically on the server')
   })
 
   it('allows PM schedules to target any component-registry hierarchy node', () => {

@@ -12,5 +12,12 @@ describe('technician evidence removal UI contract', () => {
     expect(source).toContain('remove: removeAttachment');
     expect(source).toContain('aria-label={\`Remove attachment \${att.fileName}\`}');
     expect(source).toContain('onClick={() => void removeAttachment(att.id)}');
+
+    const hook = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/repairs/execution/hooks/useWOAttachments.ts'),
+      'utf8',
+    );
+    expect(hook).toContain('attachments/${attachmentId}`');
+    expect(hook).not.toContain('attachments?id=${attachmentId}`');
   });
 });

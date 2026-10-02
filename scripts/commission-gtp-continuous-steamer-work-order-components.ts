@@ -10,7 +10,7 @@ const DRY_RUN = process.env.DRY_RUN === '1';
 const EXCLUDE = /drying range/i;
 
 const RULES = [
-  { key: 'rollover', code: 'CMP-ROLLOVER', re: /roll ?over|rolled over|rollover/i },
+  { key: 'rollover', code: 'CMP-ROLLOVER', re: /roll[- ]?over|rolled over|rollover/i },
   { key: 'infeed', code: 'CMP-INFEED', re: /infeed/i },
   { key: 'guider', code: 'CMP-GUIDER', re: /foxwell guider/i },
   { key: 'draw-roller', code: 'CMP-DRAW-ROLLER', re: /cloth drawn roller/i },
@@ -18,6 +18,7 @@ const RULES = [
   { key: 'grip-tape', code: 'PRT-GRIP-TAPE', re: /grip tape/i },
   { key: 'infeed-chain', code: 'PRT-INFEED-CHAIN', re: /chain.*infeed|infeed.*chain/i },
 
+  { key: 'main-chain', code: 'SUB-MAIN-CHAIN', re: /tension chain|inside chain|loosed chain/i },
   { key: 'inside-chain', code: 'PRT-INSIDE-CHAIN', re: /inside chain/i },
   { key: 'tension-sprocket', code: 'PRT-TENSION-SPROCKET', re: /tension sprocket/i },
   { key: 'chain-sprocket', code: 'PRT-CHAIN-SPROCKET', re: /chain sprocket/i },

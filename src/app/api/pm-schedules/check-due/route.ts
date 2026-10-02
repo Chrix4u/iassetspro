@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
+import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -49,6 +50,10 @@ export async function POST(request: NextRequest) {
     if (!session && (!CRON_SECRET || cronSecret !== CRON_SECRET)) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    // Resolve a persisted actor before any PM mutation so cron execution fails
+    // cleanly instead of leaving records with invalid User foreign keys.
+    const automationActorId = await resolvePmAutomationActorId(session?.userId);
 
     const now = new Date();
 
@@ -236,7 +241,7 @@ export async function POST(request: NextRequest) {
 
       // Create WO comments for each template task as individual checklist items
       if (tasks.length > 0) {
-        const auditUserId = session?.userId || 'system';
+        const auditUserId = automationActorId;
         for (const task of tasks) {
           await db.workOrderComment.create({
             data: {
@@ -265,7 +270,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Audit log (use system user if cron, or session user if manual)
-      const auditUserId = session?.userId || 'system';
+      const auditUserId = automationActorId;
       await db.auditLog.create({
         data: {
           userId: auditUserId,

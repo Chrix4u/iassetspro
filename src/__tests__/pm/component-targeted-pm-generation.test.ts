@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   commentCreate: vi.fn(),
   notifyUser: vi.fn(),
   auditCreate: vi.fn(),
+  userFindUnique: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -28,6 +29,7 @@ vi.mock('@/lib/db', () => ({
     workOrderComponent: { upsert: mocks.componentUpsert },
     workOrderComment: { create: mocks.commentCreate },
     auditLog: { create: mocks.auditCreate },
+    user: { findUnique: mocks.userFindUnique },
   },
 }));
 
@@ -77,6 +79,7 @@ describe('component-targeted PM work-order generation', () => {
     });
     mocks.componentUpsert.mockResolvedValue({});
     mocks.auditCreate.mockResolvedValue({});
+    mocks.userFindUnique.mockResolvedValue({ id: 'uat_planner', status: 'active' });
   });
 
   it('keeps the parent asset and exact component context on the generated WO', async () => {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
+import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 
 /**
  * POST /api/pm-schedules/check-due-cron
@@ -49,6 +50,10 @@ export async function POST(request: NextRequest) {
     if (!session && (!CRON_SECRET || cronSecret !== CRON_SECRET)) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    // Resolve a persisted actor before any PM mutation so cron execution fails
+    // cleanly instead of leaving records with invalid User foreign keys.
+    const automationActorId = await resolvePmAutomationActorId(session?.userId);
 
     const now = new Date();
     const results = {
@@ -181,7 +186,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Audit log
-      const auditUserId = session?.userId || 'system';
+      const auditUserId = automationActorId;
       await db.auditLog.create({
         data: {
           userId: auditUserId,

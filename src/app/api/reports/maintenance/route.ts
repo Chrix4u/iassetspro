@@ -599,6 +599,50 @@ export async function GET(request: NextRequest) {
       breakdownAssetMap.set(assetKey, assetBucket);
     }
 
+    // The GTP workbook-parity charts must stay anchored to the imported historical workbook only.
+    // The GTP-UAT plant also contains later UAT/test WOs, so using the full plant population here
+    // would inflate the legacy workbook counts (for example 563 plant breakdowns vs 411 workbook breakdowns).
+    const legacyBreakdownOrders = breakdownOrders.filter(wo =>
+      wo.woNumber?.startsWith('GTP-WO-')
+      && typeof wo.description === 'string'
+      && wo.description.includes('GTP historical workbook')
+    );
+    const legacyBreakdownWeeklyMap = new Map<string, BreakdownBucket>();
+    const legacyBreakdownAssetMap = new Map<string, BreakdownBucket & { assetId: string; assetName: string; assetTag?: string | null }>();
+
+    for (const wo of legacyBreakdownOrders) {
+      const asset = getAssetDetails(wo);
+      const reportedAt = wo.maintenanceRequest?.createdAt || wo.createdAt;
+      const responseMinutes = hoursBetween(reportedAt, wo.actualStart);
+      const repairMinutes = hoursBetween(wo.actualStart, wo.actualEnd);
+      const restorationMinutes = hoursBetween(reportedAt, wo.actualEnd);
+      const recordedDowntimeMinutes = (wo.workOrderDowntimes || [])
+        .reduce((sum, row) => sum + (row.durationMinutes || 0), 0);
+
+      const addLegacyToBucket = (bucket: BreakdownBucket) => {
+        bucket.breakdowns += 1;
+        if (responseMinutes !== null) bucket.responseMinutes.push(responseMinutes * 60);
+        if (repairMinutes !== null) bucket.repairMinutes.push(repairMinutes * 60);
+        if (restorationMinutes !== null) bucket.restorationMinutes.push(restorationMinutes * 60);
+        bucket.recordedDowntimeMinutes += recordedDowntimeMinutes;
+      };
+
+      const weekKey = isoWeekKey(reportedAt);
+      const weekBucket = legacyBreakdownWeeklyMap.get(weekKey) || newBreakdownBucket();
+      addLegacyToBucket(weekBucket);
+      legacyBreakdownWeeklyMap.set(weekKey, weekBucket);
+
+      const assetKey = asset.assetId || asset.assetName;
+      const assetBucket = legacyBreakdownAssetMap.get(assetKey) || {
+        ...newBreakdownBucket(),
+        assetId: asset.assetId || '',
+        assetName: asset.assetName,
+        assetTag: asset.assetTag,
+      };
+      addLegacyToBucket(assetBucket);
+      legacyBreakdownAssetMap.set(assetKey, assetBucket);
+    }
+
     const avg = (values: number[]) => values.length ? round2(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
     const breakdownPerformance = {
       breakdownCount: breakdownOrders.length,
@@ -632,30 +676,30 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => b.breakdowns - a.breakdowns || b.recordedDowntimeMinutes - a.recordedDowntimeMinutes)
         .slice(0, 50),
       legacyParity: {
-        breakdownsByMachine: [...breakdownAssetMap.values()]
+        breakdownsByMachine: [...legacyBreakdownAssetMap.values()]
           .map(row => ({
             assetName: row.assetName,
             assetTag: row.assetTag,
             breakdowns: row.breakdowns,
           }))
           .sort((a, b) => b.breakdowns - a.breakdowns || a.assetName.localeCompare(b.assetName)),
-        breakdownsByWeek: [...breakdownWeeklyMap.entries()]
+        breakdownsByWeek: [...legacyBreakdownWeeklyMap.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([week, row]) => ({ week, breakdowns: row.breakdowns })),
-        downtimeByMachine: [...breakdownAssetMap.values()]
+        downtimeByMachine: [...legacyBreakdownAssetMap.values()]
           .map(row => ({
             assetName: row.assetName,
             assetTag: row.assetTag,
             downtimeMinutes: round2(row.restorationMinutes.reduce((sum, value) => sum + value, 0)),
           }))
           .sort((a, b) => b.downtimeMinutes - a.downtimeMinutes || a.assetName.localeCompare(b.assetName)),
-        responseByWeek: [...breakdownWeeklyMap.entries()]
+        responseByWeek: [...legacyBreakdownWeeklyMap.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([week, row]) => ({
             week,
             responseMinutes: round2(row.responseMinutes.reduce((sum, value) => sum + value, 0)),
           })),
-        responseByMachine: [...breakdownAssetMap.values()]
+        responseByMachine: [...legacyBreakdownAssetMap.values()]
           .map(row => ({
             assetName: row.assetName,
             assetTag: row.assetTag,

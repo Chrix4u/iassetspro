@@ -54,7 +54,9 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await expect(page.getByText(/Welcome back/i).first()).toBeVisible({ timeout: 20_000 });
         const pmQuickAction = page.getByRole('button', { name: 'PM Schedules', exact: true }).last();
         await expect(pmQuickAction).toBeVisible({ timeout: 20_000 });
+        const analyticsResponse = page.waitForResponse((response) => response.url().includes('/api/pm-analytics'));
         await pmQuickAction.click();
+        expect((await analyticsResponse).status()).toBe(200);
       }
       await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();

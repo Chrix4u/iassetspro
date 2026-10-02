@@ -9,11 +9,11 @@ const RULES=[
  {key:'printing',code:'GTP-RSP2-ASM-PRINT',re:/printing head|screen head|head\s*(no|number|#|\d)|screen washer|screen width|screen holder|glue wiper|magnetic beam|position\s*\d|misfit|diagonal adjustment|vertical adjustment/i},
  {key:'ink-pump',code:'GTP-RSP2-CMP-INKPUMP',re:/colou?r pump|pump switch|pump side/i},
  {key:'dryer',code:'GTP-RSP2-ASM-DRYER',re:/burner|dryer|drying chamber|heater|gas leakage/i},
- {key:'web-handling',code:'GTP-RSP2-ASM-WEB',re:/conveyor|belt|blanket|grip tape|roller|out\s*feed|infeed cloth tensioner|cloth tensioner|sewing machine|needle/i},
+ {key:'web-handling',code:'GTP-RSP2-ASM-WEB',re:/conveyor|convayor|belt|blanket|grip tape|roller|out\s*feed|infeed cloth tensioner|cloth tensioner|sewing machine|needle/i},
  {key:'drive',code:'GTP-RSP2-ASM-DRIVE',re:/main drive|drive not responding|conveyor drive|motor|shaft|chain/i},
- {key:'controls',code:'GTP-RSP2-ASM-CTRL',re:/electrical|error\s*\d+|keypad|counter|yards counter|switch|lighting|panel|supply cable/i},
- {key:'exhaust-fan',code:'GTP-RSP2-CMP-EXFAN',re:/circulating fan|circular fan|ceiling fan|\bfan\b|exhaust|chimney|funnel/i},
- {key:'pneumatics',code:'GTP-RSP2-ASM-PNEU',re:/air leakage|air supply|air connection|cylinder|pneumatic|hose/i},
+ {key:'controls',code:'GTP-RSP2-ASM-CTRL',re:/electrical|error(?:\s+code)?\s*\d+|keypad|counter|yards counter|switch|lighting|panel|supply cable/i},
+ {key:'exhaust-fan',code:'GTP-RSP2-CMP-EXFAN',re:/circulating fan|circulation fan|circular fan|ceiling fan|\bfan\b|exhaust|chimney|funnel/i},
+ {key:'pneumatics',code:'GTP-RSP2-ASM-PNEU',re:/air leakage|air laeakage|air supply|air connection|cylinder|pneumatic|hose/i},
 ] as const;
 const MARKER='Auto-mapped from GTP historical RSP2 work-order title by conservative UAT commissioning rule; verify during OEM/master-data review.';
 async function main(){const asset=await db.asset.findUnique({where:{assetTag:TAG},select:{id:true,assetTag:true,name:true}});if(!asset)throw new Error('RSP2 missing');

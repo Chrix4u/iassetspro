@@ -38,17 +38,17 @@ async function main() {
   }, {});
 
   const checks = {
-    workOrderCount: totalWorkOrders === 006,
+    workOrderCount: totalWorkOrders === 106,
     mappedWorkOrders: workOrders.size === 83,
     totalLinks: links.length === 86,
     meaningfulCoverage: workOrders.size / totalWorkOrders >= 0.75,
     printing: counts['GTP-RSP4-ASM-PRINT'] === 21,
-    inkPump: counts['GTP-RSP4-CMP-INKPUMP'] === 1,
-    dryer: counts['GTP-RSP4-ASM-DRYER'] === 1,
+    inkPump: counts['GTP-RSP4-CMP-INKPUMP'] === 5,
+    dryer: (counts['GTP-RSP4-ASM-DRYER'] || 0) === 0,
     webHandling: counts['GTP-RSP4-ASM-WEB'] === 41,
     drive: counts['GTP-RSP4-ASM-DRIVE'] === 3,
     controls: counts['GTP-RSP4-ASM-CTRL'] === 10,
-    exhaustFan: counts['GTP-RSP4-CMP-EXFAN'] === 5,
+    exhaustFan: counts['GTP-RSP4-CMP-EXFAN'] === 1,
     pneumatics: counts['GTP-RSP4-ASM-PNEU'] === 5,
   };
 

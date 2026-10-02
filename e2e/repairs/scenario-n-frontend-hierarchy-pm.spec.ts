@@ -30,6 +30,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await page.locator('textarea').first().fill(hierarchyText);
     await expect(page.getByText('Ready to import')).toBeVisible();
     await page.getByRole('button', { name: /Import 2 Nodes/i }).click();
+    await expect(page.getByText('Bulk Hierarchy Commissioning')).toBeHidden({ timeout: 20_000 });
 
     await expect(page.getByText(assemblyCode, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(partCode, { exact: false }).first()).toBeVisible({ timeout: 20_000 });

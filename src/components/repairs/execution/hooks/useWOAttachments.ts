@@ -97,7 +97,7 @@ export function useWOAttachments(workOrderId: string): UseWOAttachmentsReturn {
 
   const remove = useCallback(async (attachmentId: string): Promise<boolean> => {
     try {
-      const res = await api.delete(`/api/work-orders/${workOrderId}/attachments?id=${attachmentId}`);
+      const res = await api.delete(`/api/work-orders/${workOrderId}/attachments/${attachmentId}`);
       if (res.success && mountedRef.current) {
         setAttachments(prev => prev.filter(a => a.id !== attachmentId));
         toast.success('Attachment removed');

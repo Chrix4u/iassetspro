@@ -1002,8 +1002,9 @@ export default function RWOPReportingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 items-end">
-            <DateRangePicker
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-9 items-end">
+            <div className="min-w-0 md:col-span-2 2xl:col-span-2">
+              <DateRangePicker
               label="Date Range"
               from={filters.startDate || undefined}
               to={filters.endDate || undefined}
@@ -1012,9 +1013,10 @@ export default function RWOPReportingPage() {
                 startDate: from || '',
                 endDate: to || '',
               }))}
-            />
+              />
+            </div>
 
-            <div className="space-y-1.5">
+            <div className="min-w-0 space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground">Plant</span>
               <Select
                 value={filters.plantId}

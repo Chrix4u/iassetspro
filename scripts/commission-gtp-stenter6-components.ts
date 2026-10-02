@@ -86,7 +86,7 @@ async function main(){
   }
  });
  const rows=await db.componentRegistry.findMany({where:{assetId:asset.id,componentCode:{startsWith:PREFIX}},select:{id:true,parentId:true}});const ids=new Set(rows.map(r=>r.id));const roots=rows.filter(r=>!r.parentId);const orphans=rows.filter(r=>r.parentId&&!ids.has(r.parentId));
- if(rows.length!==HIERARCHY.length||roots.length!==8||orphans.length)throw new Error(`Stenter 6 hierarchy verification failed nodes=${rows.length} roots=${roots.length} orphans=${orphans.length}`);
+ if(rows.length!==HIERARCHY.length||roots.length!==9||orphans.length)throw new Error(`Stenter 6 hierarchy verification failed nodes=${rows.length} roots=${roots.length} orphans=${orphans.length}`);
  console.log(JSON.stringify({asset,nodes:rows.length,roots:roots.length,orphans:orphans.length,status:'PASS'},null,2));
 }
 main().catch(e=>{console.error(e);process.exit(1)}).finally(async()=>db.$disconnect());

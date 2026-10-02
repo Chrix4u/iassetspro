@@ -1231,6 +1231,28 @@ export function AssetDetailPage({ id }: { id: string }) {
                 </div>
               )}
 
+              {twin && !showTwinForm && (
+                <Card className="border-0 shadow-sm overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Interactive Digital Twin</CardTitle>
+                    <CardDescription>
+                      Inspect the live 3D scene, switch to orthographic 2D projections, explode assemblies, use section planes, and review hotspots/annotations.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <DigitalTwinViewer
+                      assetId={asset.id}
+                      twinId={twin.id}
+                      twinName={twin.name}
+                      height="620px"
+                      showSceneTree
+                      showInfoPanel
+                      showToolbar
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
               {twin && (
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-4">

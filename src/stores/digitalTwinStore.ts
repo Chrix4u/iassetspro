@@ -77,6 +77,68 @@ export type SectionAxis = 'x' | 'y' | 'z';
 const DEFAULT_CAMERA_POSITION: [number, number, number] = [5, 5, 5];
 const DEFAULT_CAMERA_TARGET: [number, number, number] = [0, 0, 0];
 
+function parseVector3(value: unknown, fallback: [number, number, number] = [0, 0, 0]): [number, number, number] {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    if (Array.isArray(parsed) && parsed.length >= 3) {
+      const tuple = parsed.slice(0, 3).map(Number);
+      if (tuple.every(Number.isFinite)) return tuple as [number, number, number];
+    }
+    if (parsed && typeof parsed === 'object') {
+      const record = parsed as Record<string, unknown>;
+      const tuple = [Number(record.x), Number(record.y), Number(record.z)];
+      if (tuple.every(Number.isFinite)) return tuple as [number, number, number];
+    }
+  } catch {
+    // Fall back to a safe origin when legacy JSON is malformed.
+  }
+  return fallback;
+}
+
+function normalizeHotspotType(icon: unknown): DigitalTwinHotspot['type'] {
+  const value = String(icon || '').toLowerCase();
+  if (value === 'danger' || value === 'critical') return 'critical';
+  if (value === 'warning') return 'warning';
+  if (value === 'link') return 'link';
+  return 'info';
+}
+
+function normalizeDigitalTwinScene(raw: any): DigitalTwinScene {
+  const meshBindings = Array.isArray(raw?.model?.meshBindings) ? raw.model.meshBindings : [];
+  const meshNameByBindingId = new Map(meshBindings.map((binding: any) => [binding.id, binding.meshName]));
+
+  return {
+    id: String(raw?.id || ''),
+    name: String(raw?.name || 'Digital Twin Scene'),
+    assetId: String(raw?.assetId || raw?.twin?.assetId || raw?.twin?.asset?.id || ''),
+    description: raw?.description || undefined,
+    modelUrl: raw?.modelUrl || raw?.model?.filePath || undefined,
+    cameraPresets: (Array.isArray(raw?.cameraPresets) ? raw.cameraPresets : []).map((preset: any) => ({
+      name: String(preset.name || 'View'),
+      position: parseVector3(preset.position, DEFAULT_CAMERA_POSITION),
+      target: parseVector3(preset.target, DEFAULT_CAMERA_TARGET),
+      fov: Number.isFinite(Number(preset.fov)) ? Number(preset.fov) : undefined,
+    })),
+    hotspots: (Array.isArray(raw?.hotspots) ? raw.hotspots : []).filter((hotspot: any) => hotspot?.isActive !== false).map((hotspot: any) => ({
+      id: String(hotspot.id),
+      meshName: String(hotspot.meshName || meshNameByBindingId.get(hotspot.bindingId) || ''),
+      position: parseVector3(hotspot.position),
+      title: String(hotspot.title || hotspot.label || 'Hotspot'),
+      description: hotspot.description || undefined,
+      type: normalizeHotspotType(hotspot.type || hotspot.icon),
+      linkUrl: hotspot.linkUrl || undefined,
+    })),
+    annotations: (Array.isArray(raw?.annotations) ? raw.annotations : []).map((annotation: any) => ({
+      id: String(annotation.id),
+      meshName: annotation.meshName || undefined,
+      position: parseVector3(annotation.position),
+      text: String(annotation.text || annotation.content || annotation.title || ''),
+      author: annotation.author?.fullName || annotation.author?.username || undefined,
+      createdAt: annotation.createdAt || undefined,
+    })),
+  };
+}
+
 interface DigitalTwinStateData {
   // Scene
   currentSceneId: string | null;
@@ -324,7 +386,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
             return;
           }
 
-          const scene = res.data;
+          const scene = normalizeDigitalTwinScene(res.data);
 
           set(
             {

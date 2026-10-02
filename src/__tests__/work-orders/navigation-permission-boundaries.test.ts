@@ -233,7 +233,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(fullTech?.[1]).toContain("'repair_material_requests.create'");
   });
 
-  it('models Repairs UAT with explicit licensed dependencies without implicitly enabling PM', () => {
+  it('models Repairs UAT with explicit licensed dependencies including PM acceptance coverage', () => {
     expect(fullSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
     expect(uatSeed).toContain('const uatModules = [');
     expect(uatSeed).toContain("code: 'repairs'");
@@ -246,7 +246,7 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(uatSeed).toContain('isSystemLicensed: true');
     expect(uatSeed).toContain('isEnabled: true');
     expect(uatSeed).toContain('isActive: true');
-    expect(uatSeed).not.toContain("code: 'pm_schedules'");
+    expect(uatSeed).toContain("code: 'pm_schedules'");
     expect(referenceSeed).toContain("{ code: 'repairs', name: 'Repairs Maintenance'");
     expect(referenceSeed).toContain("code: 'tools'");
     expect(referenceSeed).toContain('isSystemLicensed: mod.licensed');

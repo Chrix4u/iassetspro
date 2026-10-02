@@ -34,10 +34,12 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await expect(page.getByText(assemblyCode, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(partCode, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
 
-    const componentState = await apiCall(plannerToken, 'GET', `/api/component-registry?assetId=${encodeURIComponent(assetId)}&limit=100`);
-    expect(componentState.status).toBe(200);
-    const assembly = (componentState.data.data as any[]).find((item) => item.componentCode === assemblyCode);
-    const part = (componentState.data.data as any[]).find((item) => item.componentCode === partCode);
+    const assemblyState = await apiCall(plannerToken, 'GET', `/api/component-registry?assetId=${encodeURIComponent(assetId)}&search=${encodeURIComponent(assemblyCode)}&limit=10`);
+    const partState = await apiCall(plannerToken, 'GET', `/api/component-registry?assetId=${encodeURIComponent(assetId)}&search=${encodeURIComponent(partCode)}&limit=10`);
+    expect(assemblyState.status).toBe(200);
+    expect(partState.status).toBe(200);
+    const assembly = (assemblyState.data.data as any[]).find((item) => item.componentCode === assemblyCode);
+    const part = (partState.data.data as any[]).find((item) => item.componentCode === partCode);
     expect(assembly?.id).toBeTruthy();
     expect(part?.id).toBeTruthy();
     expect(part?.parentId).toBe(assembly.id);

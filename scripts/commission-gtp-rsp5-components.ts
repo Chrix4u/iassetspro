@@ -71,10 +71,15 @@ async function main() {
     for (const node of ordered) {
       const componentCode = targetCode(node.componentCode);
       const parentId = node.parentId ? idMap.get(node.parentId) ?? null : null;
+      const sourceSpecificNotes = (node.notes || '')
+        .replace(/UAT template commissioned from [^.]+\./gi, '')
+        .replace(/Generic rotary-printing-machine structure only; verify OEM names\/specifications before production master-data approval\./gi, '')
+        .trim();
+
       const notes = [
         `UAT template commissioned from ${SOURCE_ASSET_TAG} for ${TARGET_ASSET_TAG}.`,
         'Generic rotary-printing-machine structure only; verify OEM names/specifications before production master-data approval.',
-        node.notes || null,
+        sourceSpecificNotes || null,
       ]
         .filter(Boolean)
         .join(' ');

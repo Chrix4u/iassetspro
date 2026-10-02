@@ -46,8 +46,16 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(part?.parentId).toBe(assembly.id);
 
     const createPmViaUi = async (title: string, targetCode: string) => {
-      await page.goto('/#/pm-schedules');
-      await expect(page.getByRole('heading', { name: 'PM Schedules' })).toBeVisible({ timeout: 20_000 });
+      const pmHeading = page.getByRole('heading', { name: 'PM Schedules' });
+      if (!(await pmHeading.isVisible().catch(() => false))) {
+        const pmGroup = page.getByRole('button', { name: 'PM Maintenance' });
+        await expect(pmGroup).toBeVisible({ timeout: 20_000 });
+        await pmGroup.click();
+        const pmSchedulesNav = page.getByRole('button', { name: 'PM Schedules' });
+        await expect(pmSchedulesNav).toBeVisible({ timeout: 10_000 });
+        await pmSchedulesNav.click();
+      }
+      await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();
       await expect(page.getByText('PM Target — Assembly / Component / Part')).toBeVisible();
 

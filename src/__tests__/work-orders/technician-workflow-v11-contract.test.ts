@@ -34,8 +34,11 @@ describe('technician workflow V1.1 completion contract', () => {
   });
 
   it('keeps edit cancellation compact inside resource cards', () => {
+    const page = read('src/components/modules/TechnicianWorkOrderPage.tsx');
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
     expect(panel).not.toContain('Cancel Edit');
+    expect(page).not.toContain('>Cancel Edit</Button>');
+    expect(page).toContain('aria-label="Cancel assistance edit"');
     expect(panel).toContain('className="shrink-0 whitespace-nowrap" onClick={resetMaterialRequest}');
     expect(panel).toContain('className="shrink-0 whitespace-nowrap" onClick={resetToolRequest}');
   });

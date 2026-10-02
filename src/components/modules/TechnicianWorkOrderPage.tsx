@@ -851,7 +851,20 @@ export function TechnicianWorkOrderPage() {
                     <Textarea value={assistanceReason} onChange={(e) => setAssistanceReason(e.target.value)} placeholder={assistanceRequestReason({ woNumber: wo?.woNumber, title: wo?.title, trade: assistanceTrade })} rows={2} />
                     <div className="flex gap-2">
                       <Button variant="outline" className="flex-1" onClick={saveAssistanceRequest} disabled={busy !== null || assistanceTrade.trim().length < 2}>{editingAssistanceId ? 'Update Request' : 'Request Assistance'}</Button>
-                      {editingAssistanceId && <Button variant="ghost" onClick={() => { setEditingAssistanceId(null); setAssistanceTrade(''); setAssistanceReason(''); }} disabled={busy !== null}>Cancel Edit</Button>}
+                      {editingAssistanceId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 text-muted-foreground"
+                          aria-label="Cancel assistance edit"
+                          title="Cancel edit"
+                          onClick={() => { setEditingAssistanceId(null); setAssistanceTrade(''); setAssistanceReason(''); }}
+                          disabled={busy !== null}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </>
                 )}

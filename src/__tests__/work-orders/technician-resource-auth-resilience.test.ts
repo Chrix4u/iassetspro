@@ -35,7 +35,7 @@ describe('technician resource auth resilience', () => {
     expect(panel).toContain('setToolOptions(plannerToolFallbacks)');
     expect(panel).toContain("plannerRecommended: true");
     expect(panel).toContain('availabilityVerified: false');
-    expect(panel).toContain('Availability pending');
+    expect(panel).not.toContain('Availability pending');
     expect(panel).not.toContain('Planner recommendation · availability pending');
   });
 

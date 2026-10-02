@@ -48,12 +48,13 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const createPmViaUi = async (title: string, targetCode: string) => {
       const pmHeading = page.getByRole('heading', { name: 'PM Schedules' });
       if (!(await pmHeading.isVisible().catch(() => false))) {
-        const pmGroup = page.getByRole('button', { name: 'PM Maintenance' });
-        await expect(pmGroup).toBeVisible({ timeout: 20_000 });
-        await pmGroup.click();
-        const pmSchedulesNav = page.getByRole('button', { name: 'PM Schedules' });
-        await expect(pmSchedulesNav).toBeVisible({ timeout: 10_000 });
-        await pmSchedulesNav.click();
+        // Asset detail is rendered as a modal sheet, so return to the authenticated
+        // dashboard before exercising the same visible PM quick action a planner uses.
+        await page.goto('/');
+        await expect(page.getByText(/Welcome back/i).first()).toBeVisible({ timeout: 20_000 });
+        const pmQuickAction = page.getByRole('button', { name: 'PM Schedules', exact: true }).last();
+        await expect(pmQuickAction).toBeVisible({ timeout: 20_000 });
+        await pmQuickAction.click();
       }
       await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();

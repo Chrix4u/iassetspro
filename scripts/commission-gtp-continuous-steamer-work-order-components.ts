@@ -1,0 +1,19 @@
+import { PrismaClient } from '@prisma/client';
+if (!process.env.DATABASE_URL || !/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)) throw new Error('DATABASE_URL must point to PostgreSQL');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createAdapter } = require('../src/lib/create-postgres-adapter');
+const db=new PrismaClient({adapter:createAdapter(process.env.DATABASE_URL)});
+const TAG='UAT-GTP-333-1-005',PREFIX='GTP-CST';
+const RULES=[
+{key:'rollover',code:'CMP-ROLLOVER',re:/roll ?over|roll-over|rolled over/i},{key:'infeed',code:'CMP-INFEED',re:/infeed.*not working|faulty machine \(infeed\)|infeed cloth drawn roller/i},{key:'guider',code:'CMP-GUIDER',re:/foxwell guider/i},{key:'grip',code:'CMP-GRIP',re:/grip tape/i},
+{key:'steam',code:'CMP-STEAM-LINE',re:/steam leakage|steam leakages|steam supply|condensate/i},{key:'tank',code:'CMP-STEAM-TANK',re:/steam tanks?/i},{key:'lagging',code:'CMP-LAGGING',re:/lagging/i},{key:'steam-indicator',code:'INS-STEAM',re:/steam indicator/i},
+{key:'chain',code:'CMP-CHAIN',re:/inside chain|loosed chain|chain at the infeed/i},{key:'sprocket',code:'CMP-SPROCKET',re:/tension sprocket|chain sprocket/i},{key:'tension',code:'CMP-TENSION',re:/tension chain/i},
+{key:'plaiter',code:'CMP-PLAIT1',re:/plaiter 1|plaiter outfeed/i},{key:'plaiter-2',code:'CMP-PLAIT2',re:/plaiter 2/i},{key:'plaiter-9',code:'CMP-PLAIT9',re:/plaiter 9/i},{key:'plait-arm',code:'PRT-PLAIT-ARM',re:/plaiter.*arm|stud.*plaiter/i},
+{key:'sewing',code:'CMP-SEW',re:/sewing machine/i},{key:'needle',code:'PRT-NEEDLE',re:/needle/i},{key:'sew-cable',code:'PRT-SEW-CABLE',re:/live cable on sewing machine|sewing machine.*cable/i},
+{key:'water',code:'CMP-WATER',re:/water leakage|water pipeline|water line/i},{key:'air',code:'CMP-AIR',re:/air tube|air leakage/i},{key:'drive',code:'CMP-DRIVE',re:/faulty drive|main drive/i},{key:'belt',code:'PRT-BELT',re:/worn-out belt/i},{key:'bearing',code:'PRT-BEAR',re:/bearing on infeed cloth drawn roller/i},
+{key:'panel',code:'CMP-PANEL',re:/main panel/i},{key:'estop',code:'CMP-ESTOP',re:/emergency switch|emergency stop/i},{key:'light',code:'CMP-LIGHT',re:/steam indicating light/i},{key:'fire',code:'CMP-FIRE',re:/fire extinguisher|fire extingusher/i}
+] as const;
+const MARKER='Auto-mapped from GTP Continuous Steamer historical work-order title by conservative UAT commissioning rule; verify against OEM/master-data before production approval.';
+function full(c:string){return `${PREFIX}-${c}`;}
+async function main(){const asset=await db.asset.findUnique({where:{assetTag:TAG},select:{id:true,assetTag:true,name:true}});if(!asset)throw new Error('Continuous Steamer missing');const comps=await db.componentRegistry.findMany({where:{assetId:asset.id,componentCode:{in:RULES.map(r=>full(r.code))}},select:{id:true,componentCode:true}});const map=new Map(comps.map(c=>[c.componentCode,c.id]));for(const r of RULES)if(!map.has(full(r.code)))throw new Error(`Missing ${full(r.code)}`);const wos=await db.workOrder.findMany({where:{assetId:asset.id},select:{id:true,title:true}});let matched=0,links=0;const counts:Record<string,number>={};await db.$transaction(async tx=>{for(const wo of wos){const title=wo.title||'';const ms=RULES.filter(r=>r.re.test(title));if(!ms.length)continue;matched++;for(const r of ms){await tx.workOrderComponent.upsert({where:{workOrderId_componentRegistryId:{workOrderId:wo.id,componentRegistryId:map.get(full(r.code))!}},update:{notes:`${MARKER} Rule=${r.key}; source title: ${title}`},create:{workOrderId:wo.id,componentRegistryId:map.get(full(r.code))!,notes:`${MARKER} Rule=${r.key}; source title: ${title}`}});links++;counts[r.key]=(counts[r.key]||0)+1;}}});console.log(JSON.stringify({asset,totalWorkOrders:wos.length,matchedWorkOrders:matched,coveragePct:Number((matched/wos.length*100).toFixed(1)),upsertedLinks:links,ruleLinks:counts},null,2));}
+main().catch(e=>{console.error(e);process.exit(1)}).finally(async()=>db.$disconnect());

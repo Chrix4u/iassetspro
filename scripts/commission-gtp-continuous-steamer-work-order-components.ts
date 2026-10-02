@@ -9,7 +9,7 @@ const RULES=[
 {key:'steam',code:'CMP-STEAM-LINE',re:/steam leakage|steam leakages|steam supply|condensate/i},{key:'tank',code:'CMP-STEAM-TANK',re:/steam tanks?/i},{key:'lagging',code:'CMP-LAGGING',re:/lagging/i},{key:'steam-indicator',code:'INS-STEAM',re:/steam indicator/i},
 {key:'chain',code:'CMP-CHAIN',re:/inside chain|loosed chain|chain at the infeed/i},{key:'sprocket',code:'CMP-SPROCKET',re:/tension sprocket|chain sprocket/i},{key:'tension',code:'CMP-TENSION',re:/tension chain/i},
 {key:'plaiter',code:'CMP-PLAIT1',re:/plaiter 1|plaiter outfeed/i},{key:'plaiter-2',code:'CMP-PLAIT2',re:/plaiter 2/i},{key:'plaiter-9',code:'CMP-PLAIT9',re:/plaiter 9/i},{key:'plait-arm',code:'PRT-PLAIT-ARM',re:/plaiter.*arm|stud.*plaiter/i},
-{key:'sewing',code:'CMP-SEW',re:/sewing machine/i},{key:'needle',code:'PRT-NEEDLE',re:/needle/i},{key:'sew-cable',code:'PRT-SEW-CABLE',re:/live cable on sewing machine|sewing machine.*cable/i},
+{key:'sewing',code:'CMP-SEW',re:/sewing machine/i},{key:'needle',code:'PRT-NEEDLE',re:/needle|niddle/i},{key:'sew-cable',code:'PRT-SEW-CABLE',re:/live cable on sewing machine|sewing machine.*cable/i},
 {key:'water',code:'CMP-WATER',re:/water leakage|water pipeline|water line/i},{key:'air',code:'CMP-AIR',re:/air tube|air leakage/i},{key:'drive',code:'CMP-DRIVE',re:/faulty drive|main drive/i},{key:'belt',code:'PRT-BELT',re:/worn-out belt/i},{key:'bearing',code:'PRT-BEAR',re:/bearing on infeed cloth drawn roller/i},
 {key:'panel',code:'CMP-PANEL',re:/main panel/i},{key:'estop',code:'CMP-ESTOP',re:/emergency switch|emergency stop/i},{key:'light',code:'CMP-LIGHT',re:/steam indicating light/i},{key:'fire',code:'CMP-FIRE',re:/fire extinguisher|fire extingusher/i}
 ] as const;

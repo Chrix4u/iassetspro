@@ -58,8 +58,6 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       }
       await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();
-      await expect(page.getByText('PM Target — Assembly / Component / Part')).toBeVisible();
-
       await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(title);
 
       const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
@@ -69,6 +67,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const assetSearch = page.getByPlaceholder('Search assets by name or tag...');
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
+      await expect(page.getByText('PM Target — Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
 
       const targetLabel = page.locator('label').filter({ hasText: /PM Target/ }).first();
       const targetCombobox = targetLabel.locator('..').getByRole('combobox');

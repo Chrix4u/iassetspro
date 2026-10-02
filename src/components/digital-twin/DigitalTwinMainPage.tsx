@@ -4,6 +4,7 @@ import React, { Component, useState, useEffect, useCallback, useMemo, useRef } f
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1499,7 +1500,12 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <Component height="100%" />
+      <Component
+        height="100%"
+        assetId={assetId}
+        twinId={twinId}
+        twinName={twinName}
+      />
     </ViewerErrorBoundary>
   );
 }
@@ -1529,6 +1535,8 @@ function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string 
 
 export function DigitalTwinMainPage() {
   const { hasPermission, isAdmin } = useAuthStore();
+  const pageParams = useNavigationStore((state) => state.pageParams);
+  const autoOpenedViewerRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [contentView, setContentView] = useState<ContentView>('grid');
   const [selectedTwin, setSelectedTwin] = useState<TwinData | null>(null);
@@ -1610,6 +1618,27 @@ export function DigitalTwinMainPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (loading || pageParams?.view !== 'viewer' || twins.length === 0) return;
+    const requestedTwinId = pageParams?.twinId;
+    const requestedAssetId = pageParams?.assetId;
+    const requestKey = requestedTwinId || requestedAssetId;
+    if (!requestKey || autoOpenedViewerRef.current === requestKey) return;
+
+    const target = twins.find((candidate) =>
+      (requestedTwinId && candidate.id === requestedTwinId)
+      || (requestedAssetId && candidate.asset?.id === requestedAssetId),
+    );
+    if (!target) return;
+
+    autoOpenedViewerRef.current = requestKey;
+    useDigitalTwinStore.getState().reset();
+    React.startTransition(() => {
+      setSelectedTwin(target);
+      setViewMode('viewer');
+    });
+  }, [loading, pageParams?.assetId, pageParams?.twinId, pageParams?.view, twins]);
 
   const handleDeleteTwin = useCallback(async (twinId: string) => {
     try {

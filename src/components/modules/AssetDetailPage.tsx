@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
 
 export function AssetDetailPage({ id }: { id: string }) {
   const { hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((state) => state.navigate);
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
@@ -1225,16 +1227,13 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : !twin && !showTwinForm ? (
                 <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." actionLabel="Create Digital Twin" onAction={() => setShowTwinForm(true)} />
-              ) : twin && !showTwinForm && (
-                <div className="flex justify-end">
-                  <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
-                </div>
-              )}
+              ) : null}
 
               {twin && (
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <div className="flex min-w-0 flex-1 items-center gap-4">
                       <div className="relative h-16 w-16">
                         <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
                           <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted/30" />
@@ -1252,6 +1251,15 @@ export function AssetDetailPage({ id }: { id: string }) {
                           <span className="text-[10px] text-muted-foreground">Sync: {twin.syncInterval || 'N/A'}</span>
                         </div>
                       </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => navigate('assets-digital-twin', { twinId: twin.id, assetId: id, view: 'viewer' })}
+                        className="shrink-0"
+                      >
+                        <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                        Open 3D / 2D Viewer
+                      </Button>
                     </div>
                     {twin.lastSynced && <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">Last synced: {formatDateTime(twin.lastSynced)}</p>}
                   </CardContent>

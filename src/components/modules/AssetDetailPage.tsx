@@ -729,7 +729,7 @@ export function AssetDetailPage({ id }: { id: string }) {
             <TabsContent value="bom" className="mt-4 space-y-4">
               {tabDataLoading && activeTab === 'bom' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-              ) : bomItems.length === 0 && bomAsChild.length === 0 ? (
+              ) : bomItems.length === 0 && bomAsChild.length === 0 && !selectedComponentId ? (
                 <EmptyTab icon={Layers} title="No Bill of Materials" description="No BOM entries found for this asset. Add components to build the bill of materials." />
               ) : (
                 <>

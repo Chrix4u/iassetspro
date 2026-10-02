@@ -160,7 +160,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const ordered = orderRows(rows, new Set(existingParentMap.keys()));
+    let ordered: NormalizedRow[];
+    try {
+      ordered = orderRows(rows, new Set(existingParentMap.keys()));
+    } catch (error) {
+      return NextResponse.json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Invalid hierarchy relationships',
+      }, { status: 400 });
+    }
 
     const created = await db.$transaction(async (tx) => {
       const createdIds = new Map<string, string>();

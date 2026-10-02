@@ -146,39 +146,30 @@ export function HierarchyCommissioningPanel({
   const handleImport = async () => {
     if (parsed.length === 0 || validation.length > 0) return;
     setImporting(true);
-    const existingByCode = new Map(existingComponents.map((item) => [item.componentCode, item.id]));
-    const created: Array<{ id: string; componentCode: string }> = [];
     try {
-      const ordered = orderRows(parsed, new Set(existingByCode.keys()));
-      for (const row of ordered) {
-        const parentId = row.parentCode ? existingByCode.get(row.parentCode) || created.find((item) => item.componentCode === row.parentCode)?.id : null;
-        const response = await api.post<any>('/api/component-registry', {
-          assetId,
+      const ordered = orderRows(parsed, new Set(existingComponents.map((item) => item.componentCode)));
+      const response = await api.post<any>('/api/component-registry/bulk', {
+        assetId,
+        rows: ordered.map((row) => ({
           componentCode: row.componentCode,
           name: row.name,
           componentType: row.componentType,
-          parentId,
+          parentCode: row.parentCode || null,
           criticality: row.criticality,
           manufacturer: row.manufacturer || null,
           modelNumber: row.modelNumber || null,
           description: row.description || null,
-          lifecycleStatus: 'operational',
-          healthScore: 100,
-          notes: 'Created through frontend hierarchy commissioning import.',
-        });
-        if (!response.success || !response.data?.id) {
-          throw new Error(response.error || `Failed to create ${row.componentCode}`);
-        }
-        created.push({ id: response.data.id, componentCode: row.componentCode });
+        })),
+      });
+
+      if (!response.success || !response.data?.createdCount) {
+        throw new Error(response.error || 'Hierarchy import failed');
       }
-      toast.success(`Imported ${created.length} hierarchy node${created.length === 1 ? '' : 's'} successfully`);
+
+      const createdCount = Number(response.data.createdCount);
+      toast.success(`Imported ${createdCount} hierarchy node${createdCount === 1 ? '' : 's'} successfully`);
       onComplete();
     } catch (error) {
-      // Roll back this batch in reverse order when possible so a failed import
-      // does not leave a half-created hierarchy behind.
-      for (const item of [...created].reverse()) {
-        try { await api.delete(`/api/component-registry/${item.id}`); } catch { /* best-effort rollback */ }
-      }
       toast.error(error instanceof Error ? error.message : 'Hierarchy import failed');
     } finally {
       setImporting(false);
@@ -226,7 +217,7 @@ export function HierarchyCommissioningPanel({
         )}
 
         <div className="rounded-lg border p-3 text-xs text-muted-foreground">
-          This import uses the same authenticated Component Registry API as manual creation. Plant access, hierarchy ownership, uniqueness, permissions and audit logging are enforced server-side.
+          This import is committed atomically on the server. Plant access, hierarchy ownership, uniqueness, permissions and audit logging are enforced inside one database transaction.
         </div>
 
         <div className="flex justify-end gap-2">

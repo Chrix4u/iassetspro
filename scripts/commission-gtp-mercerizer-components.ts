@@ -94,7 +94,7 @@ const HIERARCHY: NodeSpec[] = [
   { code: 'CMP-CAUSTIC-PANEL', name: 'Caustic Control Panel', type: 'component', parent: 'ASM-CTRL' },
   { code: 'INS-FLOW', name: 'Process Flow Instrumentation', type: 'instrument', parent: 'ASM-CTRL' },
   { code: 'INS-PRESSURE', name: 'Air / Vacuum Pressure Instrumentation', type: 'instrument', parent: 'ASM-CTRL' },
-  { code: 'CMP-SEWING', name: 'Pegasus / Cloth Sewing Machine', type: 'component', parent: 'ASM-CTRL' },
+  { code: 'CMP-SEWING', name: 'Pegasus / Cloth Sewing Machine', type: 'component', parent: 'ASM-WEB' },
 ];
 
 function fullCode(code: string) { return `${PREFIX}-${code}`; }

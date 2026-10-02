@@ -1342,6 +1342,9 @@ export default function RWOPReportingPage() {
                     <p className="text-xs text-muted-foreground">
                       These five graphs follow the same aggregation semantics and chart types as the uploaded GTP maintenance workbook.
                     </p>
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                      Source integrity: EAM follows the workbook&apos;s authoritative JobRecords rows rather than stale Excel pivot-cache classifications. In the uploaded workbook, WO 161418 is Corrective in JobRecords but remains cached as Breakdown in the pivot cache, inflating week 32 from 6 to 7 and the cached breakdown total from 411 to 412. EAM preserves the 411 source-row breakdown records.
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">

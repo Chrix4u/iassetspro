@@ -50,7 +50,8 @@ describe('component hierarchy permissions', () => {
     const page = fs.readFileSync('src/components/modules/AssetDetailPage.tsx', 'utf8');
     expect(page).toContain("const canCreateComponent = isAdmin()");
     expect(page).toContain("hasPermission('assets.hierarchy')");
-    expect(page).toContain("actionLabel={canCreateComponent ? 'Add Component' : undefined}");
-    expect(page).toContain("!showComponentForm && canCreateComponent");
+    expect(page).toContain("actionLabel={canCreateComponent ? 'Commission Hierarchy' : undefined}");
+    expect(page).toContain("!showComponentForm && !showHierarchyCommissioning && canCreateComponent");
+    expect(page).toContain('HierarchyCommissioningPanel');
   });
 });

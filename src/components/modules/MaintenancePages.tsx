@@ -7744,17 +7744,23 @@ export function PmSchedulesPage() {
 
   const pmComponentLabel = (component: any) => {
     const byId = new Map(pmComponentOptions.map((item: any) => [item.id, item]));
-    let depth = 0;
+    const path: any[] = [component];
     let cursor = component;
     const seen = new Set<string>();
-    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+    while (cursor?.parentId && path.length < 9 && !seen.has(cursor.parentId)) {
       seen.add(cursor.parentId);
       const parent = byId.get(cursor.parentId);
       if (!parent) break;
-      depth += 1;
+      path.unshift(parent);
       cursor = parent;
     }
-    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+    const typeLabel = String(component.componentType || 'component')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const hierarchyPath = path
+      .map((item) => item.componentCode || item.name)
+      .join(' › ');
+    return `[${typeLabel}] ${hierarchyPath}${component.name && component.componentCode ? ` · ${component.name}` : ''}`;
   };
 
   const fetchSchedules = useCallback(async () => {
@@ -8028,11 +8034,16 @@ export function PmSchedulesPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <div>
+                    <div className="flex items-start gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                      <div className="min-w-0">
                         <p className="text-xs font-medium">{s.asset?.name || '—'}</p>
                         <p className="text-[10px] text-muted-foreground">{s.asset?.assetTag || ''}</p>
+                        {s.component && (
+                          <Badge variant="outline" className="mt-1 max-w-[220px] truncate text-[9px] font-normal">
+                            {String(s.component.componentType || 'component').replace(/_/g, ' ')} · {s.component.componentCode || s.component.name}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -8118,7 +8129,7 @@ export function PmSchedulesPage() {
             </div>
             {formAssetId && (
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Target Assembly / Component</Label>
+                <Label className="text-sm font-semibold">PM Target — Assembly / Component / Part</Label>
                 {pmComponentsLoading ? (
                   <div className="text-xs text-muted-foreground py-2">Loading machine hierarchy...</div>
                 ) : pmComponentOptions.length === 0 ? (
@@ -8139,7 +8150,7 @@ export function PmSchedulesPage() {
                     </SelectContent>
                   </Select>
                 )}
-                <p className="text-[11px] text-muted-foreground">Component-targeted PM work orders retain the parent machine and automatically inherit this component.</p>
+                <p className="text-[11px] text-muted-foreground">Choose the whole machine or any hierarchy node: assembly, subassembly, component, part, auxiliary or instrument. Generated PM work orders retain the parent machine and inherit the selected node.</p>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

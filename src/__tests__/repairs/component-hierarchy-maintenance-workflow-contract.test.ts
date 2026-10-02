@@ -50,7 +50,8 @@ describe('machine component hierarchy maintenance workflow contract', () => {
   it('allows PM schedules to target a component and carries it to generated PM work orders', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('@relation("PmScheduleComponent"');
-    expect(maintenancePages).toContain('Target Assembly / Component');
+    expect(maintenancePages).toContain('PM Target — Assembly / Component / Part');
+    expect(maintenancePages).toContain('assembly, subassembly, component, part, auxiliary or instrument');
     expect(maintenancePages).toContain('componentId: formComponentId || null');
     expect(checkDue).toContain('Inherited from component-targeted PM schedule');
     expect(checkDueCron).toContain('Inherited from component-targeted PM schedule');

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 /**
  * GET /api/pm-analytics
@@ -26,6 +27,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    const allowedPlantIds = plantScope.isSystemWide
+      ? null
+      : plantScope.isScoped && plantScope.plantId
+        ? [plantScope.plantId]
+        : plantScope.accessiblePlantIds;
+    const scopedPlantIds = allowedPlantIds === null
+      ? null
+      : allowedPlantIds.length > 0 ? allowedPlantIds : ['__ACCESS_DENIED__'];
+    const assetScopeWhere = scopedPlantIds === null
+      ? {}
+      : { asset: { plantId: { in: scopedPlantIds } } };
+    const workOrderScopeWhere = scopedPlantIds === null
+      ? {}
+      : { plantId: { in: scopedPlantIds } };
+
     const now = new Date();
     const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -37,15 +58,15 @@ export async function GET(request: NextRequest) {
       upcomingSchedules,
       pmWorkOrders,
       departmentBreakdown,
-      monthlyData,
     ] = await Promise.all([
       // 1. Total active schedules
-      db.pmSchedule.count({ where: { isActive: true } }),
+      db.pmSchedule.count({ where: { isActive: true, ...assetScopeWhere } }),
 
       // 2. Overdue schedules (nextDueDate < now and active)
       db.pmSchedule.count({
         where: {
           isActive: true,
+          ...assetScopeWhere,
           nextDueDate: { not: null, lt: now },
         },
       }),
@@ -54,13 +75,14 @@ export async function GET(request: NextRequest) {
       db.pmSchedule.count({
         where: {
           isActive: true,
+          ...assetScopeWhere,
           nextDueDate: { not: null, gte: now, lte: weekFromNow },
         },
       }),
 
       // 4. All PM work orders (generated from schedules) with completion info
       db.workOrder.findMany({
-        where: { pmScheduleId: { not: null } },
+        where: { pmScheduleId: { not: null }, ...workOrderScopeWhere },
         select: {
           id: true,
           createdAt: true,
@@ -74,27 +96,9 @@ export async function GET(request: NextRequest) {
       // 5. Department breakdown — schedule counts per department
       db.pmSchedule.groupBy({
         by: ['departmentId'],
-        where: { isActive: true },
+        where: { isActive: true, departmentId: { not: null }, ...assetScopeWhere },
         _count: { id: true },
-        having: { departmentId: { not: null } },
       }),
-
-      // 6. Monthly trend — PM WOs created per month (last 12 months)
-      db.$queryRawUnsafe<
-        Array<{ month: string; generated: number; completed: number }>
-      >(
-        `
-        SELECT
-          DATE_FORMAT(w.createdAt, '%Y-%m') as month,
-          COUNT(*) as generated,
-          SUM(CASE WHEN w.actualEnd IS NOT NULL THEN 1 ELSE 0 END) as completed
-        FROM work_orders w
-        WHERE w.pmScheduleId IS NOT NULL
-          AND w.createdAt >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-        GROUP BY DATE_FORMAT(w.createdAt, '%Y-%m')
-        ORDER BY month ASC
-        `,
-      ),
     ]);
 
     // ── Compute compliance rate ──
@@ -164,7 +168,19 @@ export async function GET(request: NextRequest) {
     });
 
     // ── Build monthly trend (ensure all 12 months present) ──
-    const trendMap = new Map(monthlyData.map((m) => [m.month, m]));
+    // Aggregate in application code so the route remains database-portable after
+    // the PostgreSQL migration (the legacy implementation used MySQL DATE_FORMAT).
+    const trendMap = new Map<string, { generated: number; completed: number }>();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    for (const wo of pmWorkOrders) {
+      const createdAt = new Date(wo.createdAt);
+      if (createdAt < twelveMonthsAgo) continue;
+      const key = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}`;
+      const entry = trendMap.get(key) || { generated: 0, completed: 0 };
+      entry.generated += 1;
+      if (wo.actualEnd) entry.completed += 1;
+      trendMap.set(key, entry);
+    }
     const monthlyTrend: Array<{ month: string; generated: number; completed: number }> = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);

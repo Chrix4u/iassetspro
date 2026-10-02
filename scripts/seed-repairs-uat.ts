@@ -132,7 +132,8 @@ async function main() {
   // Repairs UAT licenses the explicit operational dependencies used by
   // the scenarios. These modules previously bypassed licensing as legacy core
   // modules; the application now requires the registry for every operational
-  // domain. PM Maintenance remains intentionally unlicensed here.
+  // domain. PM Schedules is licensed as well because Repairs UAT now includes
+  // the planner frontend acceptance path for hierarchy-targeted preventive maintenance.
   const uatModules = [
     {
       code: 'repairs',
@@ -181,6 +182,12 @@ async function main() {
       name: 'Analytics',
       description: 'Operational KPI and maintenance analytics',
       version: '1.0.0',
+    },
+    {
+      code: 'pm_schedules',
+      name: 'PM Schedules',
+      description: 'Preventive maintenance scheduling with hierarchy-targeted work-order generation',
+      version: '2.0.0',
     },
     {
       code: 'shift_management',

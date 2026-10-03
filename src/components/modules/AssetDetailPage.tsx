@@ -1349,7 +1349,8 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
               )}
 
               {canGenerate3d && !showTwinForm && (
-                <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+                  <p className="text-[10px] text-muted-foreground">Generated 3D geometry is an engineering maintenance visualization, not OEM or verified as-built CAD.</p>
                   <Button size="sm" onClick={handleGenerate3D} disabled={generating3d}>
                     {generating3d ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Monitor className="h-3.5 w-3.5 mr-1.5" />}
                     {twin ? 'Regenerate 3D Model' : 'Generate 3D Twin'}

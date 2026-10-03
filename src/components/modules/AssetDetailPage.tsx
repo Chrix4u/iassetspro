@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
 
 export function AssetDetailPage({ id }: { id: string }) {
   const { hasPermission, isAdmin } = useAuthStore();
+  const pageParams = useNavigationStore((state) => state.pageParams);
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
@@ -137,6 +139,15 @@ export function AssetDetailPage({ id }: { id: string }) {
       cancelled = true;
     };
   }, [id]);
+
+  // Report and search drill-throughs can deep-link directly to a component.
+  // Keep the side-sheet asset experience, but open Visual Explorer already focused
+  // on the requested assembly/component/part.
+  useEffect(() => {
+    if (!pageParams?.componentId || pageParams.id !== id) return;
+    setVisualFocusId(pageParams.componentId);
+    setActiveTab('visual-explorer');
+  }, [id, pageParams]);
 
   // Reload components
   const reloadComponents = useCallback(() => {

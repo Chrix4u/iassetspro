@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import { Button } from '@/components/ui/button';
@@ -102,6 +103,7 @@ export default function EnterpriseReports() {
   /* eslint-disable react-hooks/preserve-manual-memoization */
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const { hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((state) => state.navigate);
 
   const [reportData, setReportData] = useState<any>(null);
   const [enterpriseData, setEnterpriseData] = useState<any>(null);
@@ -239,6 +241,7 @@ export default function EnterpriseReports() {
     // Prefer API data which has enriched asset details
     if (enterpriseData?.repeatFailures?.length > 0) {
       return enterpriseData.repeatFailures.map((a: any) => ({
+        assetId: a.assetId,
         name: a.assetName,
         count: a.failureCount,
         latest: a.lastFailureDate,
@@ -739,7 +742,13 @@ export default function EnterpriseReports() {
                       <TableRow><TableCell colSpan={4}><EmptyState icon={Activity} title="No asset data" /></TableCell></TableRow>
                     ) : reportData.topAssets.map((asset: any, i: number) => (
                       <TableRow key={i} className="hover:bg-muted/30">
-                        <TableCell className="font-medium">{asset.assetName}</TableCell>
+                        <TableCell className="font-medium">
+                          {asset.assetId ? (
+                            <button type="button" className="text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: asset.assetId })}>
+                              {asset.assetName}
+                            </button>
+                          ) : asset.assetName}
+                        </TableCell>
                         <TableCell className="text-right"><Badge variant="outline" className="font-mono text-xs">{asset.woCount}</Badge></TableCell>
                         <TableCell className="text-right">{asset.downtimeMinutes ?? '—'} min</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(asset.totalCost || 0)}</TableCell>
@@ -767,8 +776,8 @@ export default function EnterpriseReports() {
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>Equipment</TableHead>
-                    <TableHead className="hidden md:tablecell">Tag</TableHead>
-                    <TableHead className="hidden lg:tablecell">Manufacturer</TableHead>
+                    <TableHead className="hidden md:table-cell">Tag</TableHead>
+                    <TableHead className="hidden lg:table-cell">Manufacturer</TableHead>
                     <TableHead className="text-right">Failures</TableHead>
                     <TableHead className="hidden md:table-cell">Latest Failure</TableHead>
                     <TableHead className="hidden lg:table-cell">Urgency</TableHead>
@@ -782,7 +791,11 @@ export default function EnterpriseReports() {
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell>
                         <div>
-                          <span className="font-medium">{asset.name}</span>
+                          {(asset as any).assetId ? (
+                            <button type="button" className="font-medium text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: (asset as any).assetId })}>
+                              {asset.name}
+                            </button>
+                          ) : <span className="font-medium">{asset.name}</span>}
                           {(asset as any).criticality && <Badge variant="outline" className={`ml-2 text-[9px] ${(asset as any).criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : (asset as any).criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{(asset as any).criticality}</Badge>}
                           {(asset as any).failureModes?.length > 0 && <p className="text-[10px] text-muted-foreground mt-0.5">Modes: {(asset as any).failureModes.join(', ')}</p>}
                         </div>
@@ -944,7 +957,11 @@ export default function EnterpriseReports() {
                           <TableCell className="text-muted-foreground text-xs">{i + 1}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">{a.assetName}</span>
+                              {a.assetId ? (
+                                <button type="button" className="font-medium text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: a.assetId })}>
+                                  {a.assetName}
+                                </button>
+                              ) : <span className="font-medium">{a.assetName}</span>}
                               {a.criticality && <Badge variant="outline" className={`text-[9px] ${a.criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : a.criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{a.criticality}</Badge>}
                             </div>
                           </TableCell>
@@ -976,7 +993,13 @@ export default function EnterpriseReports() {
                         <TableRow><TableCell colSpan={8}><EmptyState icon={Cpu} title="No component cost data" description="Component-linked work order costs will appear here." /></TableCell></TableRow>
                       ) : enterpriseData.costAnalytics.byComponent.map((c: any, i: number) => (
                         <TableRow key={c.componentId || i} className="hover:bg-muted/30">
-                          <TableCell className="font-medium">{c.componentName}</TableCell>
+                          <TableCell className="font-medium">
+                            {c.assetId && c.componentId ? (
+                              <button type="button" className="text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: c.assetId, componentId: c.componentId })}>
+                                {c.componentName}
+                              </button>
+                            ) : c.componentName}
+                          </TableCell>
                           <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">{c.componentCode || '-'}</TableCell>
                           <TableCell className="hidden lg:table-cell text-sm">
                             <div>{c.assetName}</div>

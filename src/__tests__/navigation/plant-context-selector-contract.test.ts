@@ -12,7 +12,7 @@ describe('app shell plant context selector', () => {
     expect(source).toContain('aria-label="Active plant"');
     expect(source).toContain("localStorage.getItem('user_plant_id')");
     expect(source).toContain("localStorage.setItem('user_plant_id', plantId)");
-    expect(source).toContain("value="__all__">All accessible plants");
+    expect(source).toContain('value="__all__">All accessible plants');
     expect(source).toContain('plantAccess.map((plant)');
     expect(source).toContain('window.location.reload()');
   });

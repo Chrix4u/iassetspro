@@ -16,6 +16,10 @@ describe('GTP report to asset/component drilldown contract', () => {
       path.join(process.cwd(), 'src/components/modules/AssetDetailPage.tsx'),
       'utf8',
     );
+    const enterpriseRoute = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/reports/enterprise/route.ts'),
+      'utf8',
+    );
 
     expect(reports).toContain("navigate('asset-detail', { id: asset.assetId })");
     expect(reports).toContain("navigate('asset-detail', { id: a.assetId })");
@@ -28,5 +32,8 @@ describe('GTP report to asset/component drilldown contract', () => {
     expect(detail).toContain("initialComponentId = null");
     expect(detail).toContain("setActiveTab(initialTab)");
     expect(detail).toContain("setVisualFocusId(initialComponentId)");
+
+    expect(enterpriseRoute).toContain("assetId: comp.assetId || wo.assetId || ''");
+    expect(enterpriseRoute).toContain("assetId: c.assetId || null");
   });
 });

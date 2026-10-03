@@ -418,7 +418,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       case 'issue': {
         const qtyToIssue = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
-        updated = await issueMaterialRequest(id, session.userId, qtyToIssue, notes);
+        await issueMaterialRequest(id, session.userId, qtyToIssue, notes);
+        // Re-read after the custody transaction commits so the API response always
+        // reflects the committed state rather than a stale transactional snapshot.
+        updated = await db.repairMaterialRequest.findUnique({ where: { id } });
         await db.auditLog.create({ data: { userId: session.userId, action: 'material_request_issue', entityType: 'repair_material_request', entityId: id, newValues: JSON.stringify({ action: 'issue', status: 'issued', quantityIssued: qtyToIssue, wasReserved: !!matReq.stockReserved, itemId: matReq.itemId || null }) } });
         await notifyUser(matReq.requestedById, 'repair_material_request', 'Materials Issued', `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`, 'repair_material_request', id, `material-requests?id=${id}`);
         if (matReq.workOrder.plannerId && matReq.workOrder.plannerId !== matReq.requestedById) await notifyUser(matReq.workOrder.plannerId, 'repair_material_request', 'Material Issued for Planned Work Order', `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`, 'repair_material_request', id, 'maintenance-work-orders');

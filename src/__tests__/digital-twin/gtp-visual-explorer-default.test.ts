@@ -23,5 +23,6 @@ describe('GTP Visual Explorer default mode contract', () => {
     expect(assetDetail).toContain("provider3d: 'programmatic'");
     expect(assetDetail).toContain("'Generate 3D Twin'");
     expect(assetDetail).toContain("'Regenerate 3D Model'");
+    expect(assetDetail).toContain('not OEM or verified as-built CAD');
   });
 });

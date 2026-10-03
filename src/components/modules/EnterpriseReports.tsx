@@ -241,6 +241,7 @@ export default function EnterpriseReports() {
     // Prefer API data which has enriched asset details
     if (enterpriseData?.repeatFailures?.length > 0) {
       return enterpriseData.repeatFailures.map((a: any) => ({
+        assetId: a.assetId,
         name: a.assetName,
         count: a.failureCount,
         latest: a.lastFailureDate,
@@ -775,8 +776,8 @@ export default function EnterpriseReports() {
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>Equipment</TableHead>
-                    <TableHead className="hidden md:tablecell">Tag</TableHead>
-                    <TableHead className="hidden lg:tablecell">Manufacturer</TableHead>
+                    <TableHead className="hidden md:table-cell">Tag</TableHead>
+                    <TableHead className="hidden lg:table-cell">Manufacturer</TableHead>
                     <TableHead className="text-right">Failures</TableHead>
                     <TableHead className="hidden md:table-cell">Latest Failure</TableHead>
                     <TableHead className="hidden lg:table-cell">Urgency</TableHead>
@@ -790,7 +791,11 @@ export default function EnterpriseReports() {
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                       <TableCell>
                         <div>
-                          <span className="font-medium">{asset.name}</span>
+                          {(asset as any).assetId ? (
+                            <button type="button" className="font-medium text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: (asset as any).assetId })}>
+                              {asset.name}
+                            </button>
+                          ) : <span className="font-medium">{asset.name}</span>}
                           {(asset as any).criticality && <Badge variant="outline" className={`ml-2 text-[9px] ${(asset as any).criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : (asset as any).criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{(asset as any).criticality}</Badge>}
                           {(asset as any).failureModes?.length > 0 && <p className="text-[10px] text-muted-foreground mt-0.5">Modes: {(asset as any).failureModes.join(', ')}</p>}
                         </div>

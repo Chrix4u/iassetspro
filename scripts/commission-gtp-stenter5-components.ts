@@ -78,6 +78,7 @@ const HIERARCHY: NodeSpec[] = [
   { code: 'PRT-AIR-LINE', name: 'Air Lines & Fittings', type: 'part', parent: 'SUB-AIR' },
   { code: 'SUB-STEAM', name: 'Steam Distribution', type: 'subassembly', parent: 'ASM-UTIL' },
   { code: 'PRT-STEAM-LINE', name: 'Main Steam Pipe', type: 'part', parent: 'SUB-STEAM' },
+  { code: 'PRT-WATER-LINE', name: 'Reuse Water Pipeline', type: 'part', parent: 'ASM-UTIL' },
   { code: 'PRT-PROC-VALVE', name: 'Process Valve', type: 'part', parent: 'ASM-UTIL' },
 
   { code: 'ASM-CTRL', name: 'Electrical Controls & Synchronization', type: 'assembly', criticality: 'high' },

@@ -23,7 +23,9 @@ describe('GTP report to asset/component drilldown contract', () => {
 
     expect(reports).toContain("navigate('asset-detail', { id: asset.assetId })");
     expect(reports).toContain("navigate('asset-detail', { id: a.assetId })");
+    expect(reports).toContain("navigate('asset-detail', { id: (asset as any).assetId })");
     expect(reports).toContain("navigate('asset-detail', { id: c.assetId, componentId: c.componentId, tab: 'visual-explorer' })");
+    expect(reports).toContain("assetId: a.assetId");
 
     expect(assets).toContain("initialTab={pageParams?.tab || 'overview'}");
     expect(assets).toContain("initialComponentId={pageParams?.componentId || null}");

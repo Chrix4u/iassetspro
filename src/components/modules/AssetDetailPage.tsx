@@ -68,6 +68,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [components, setComponents] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState<string>('');
+  const [visualFocusId, setVisualFocusId] = useState<string | null>(null);
   const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
   const [sparePartForm, setSparePartForm] = useState({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
   const [installedParts, setInstalledParts] = useState<any[]>([]);
@@ -108,6 +109,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     setComponents([]);
     setInventoryItems([]);
     setSelectedComponentId('');
+    setVisualFocusId(null);
     setShowComponentForm(false);
     setShowHierarchyCommissioning(false);
     setComponentSpareParts([]);
@@ -439,6 +441,21 @@ export function AssetDetailPage({ id }: { id: string }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const componentDepth = (component: any) => {
+    const byId = new Map(components.map((item: any) => [item.id, item]));
+    let depth = 0;
+    let cursor = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    return depth;
   };
 
   const handleCreateTwin = async () => {
@@ -1023,7 +1040,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                           {components.map((c: any) => (
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
-                              <TableCell className="font-medium text-sm">{c.name}</TableCell>
+                              <TableCell className="font-medium text-sm">
+                                <div className="flex items-center min-w-0" style={{ paddingLeft: `${Math.min(componentDepth(c), 6) * 12}px` }}>
+                                  {componentDepth(c) > 0 && <span className="mr-1.5 text-muted-foreground">↳</span>}
+                                  <span className="truncate">{c.name}</span>
+                                </div>
+                              </TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden sm:table-cell capitalize">{c.componentType?.replace(/_/g, ' ')}</TableCell>
                               <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{c.parent?.name || 'Machine root'}</TableCell>
                               <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] uppercase ${criticalityColors[c.criticality] || ''}`}>{c.criticality}</Badge></TableCell>
@@ -1038,6 +1060,16 @@ export function AssetDetailPage({ id }: { id: string }) {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex flex-wrap justify-end gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setVisualFocusId(c.id);
+                                      setActiveTab('visual-explorer');
+                                    }}
+                                  >
+                                    Explore
+                                  </Button>
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
                                   <Button
                                     variant="outline"
@@ -1228,7 +1260,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
             {/* ==================== VISUAL EXPLORER TAB ==================== */}
             <TabsContent value="visual-explorer" className="mt-4 space-y-4">
-              <MachineVisualExplorer asset={asset} />
+              <MachineVisualExplorer asset={asset} initialComponentId={visualFocusId} />
             </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}

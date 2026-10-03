@@ -9,5 +9,8 @@ describe('hash deep-link navigation synchronization', () => {
     expect(source).toContain('const syncFromHash = () =>');
     expect(source).toContain('currentPage: parsed.page');
     expect(source).toContain('pageParams: parsed.params');
+    expect(source).toContain('const hashRoute = parseHash()');
+    expect(source).toContain('currentPage: hashRoute.page');
+    expect(source).toContain('window.history.replaceState(');
   });
 });

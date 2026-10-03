@@ -15,7 +15,7 @@ const RULES = [
   { key: 'support-cylinder', code: 'CMP-SUPPORT-CYL', re: /support cylinder/i },
   { key: 'pressure-actuation', code: 'CMP-PRESS-ACT', re: /ending pressure|movement.*pressure|pressure.*movement/i },
 
-  { key: 'water', code: 'CMP-HP-WATER', re: /water leakage|water hose|water pipeline|water pipe line|water on the holes/i },
+  { key: 'water', code: 'CMP-HP-WATER', re: /water leakage|oil\s*&\s*water\s+leakage|water hose|water pipeline|water pipe line|water on the holes/i },
   { key: 'water-hose', code: 'PRT-WATER-HOSE', re: /water hose|high pressure.*hose/i },
   { key: 'water-pipe', code: 'PRT-WATER-PIPE', re: /water pipeline|water pipe line|pipe line.*stripping/i },
   { key: 'water-holes', code: 'CMP-WATER-HOLES', re: /water leakage on the holes|water.*holes/i },
@@ -23,7 +23,7 @@ const RULES = [
   { key: 'nozzle-stopper', code: 'PRT-NOZZLE-STOP', re: /nozzle bar stopper/i },
 
   { key: 'oil-tank', code: 'CMP-OIL-TANK', re: /oil shortage.*tank|novo jet tank|nova jet tank/i },
-  { key: 'oil-line', code: 'PRT-OIL-LINE', re: /oil leakage/i },
+  { key: 'oil-line', code: 'PRT-OIL-LINE', re: /oil leakage|oil\s*&\s*water\s+leakage/i },
   { key: 'pressure', code: 'CMP-PRESSURE', re: /unstable pressure|high pressure|check pressure|pressure on the stripping/i },
 
   { key: 'chiller', code: 'CMP-CHILLER', re: /chiller/i },

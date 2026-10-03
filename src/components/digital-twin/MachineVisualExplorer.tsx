@@ -418,10 +418,10 @@ async function loadAllMachineComponents(assetId: string): Promise<MachineCompone
   return all;
 }
 
-export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
+export function MachineVisualExplorer({ asset, initialComponentId = null }: { asset: AssetSummary; initialComponentId?: string | null }) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialComponentId);
   const [selectedDetail, setSelectedDetail] = useState<ComponentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -447,6 +447,7 @@ export function MachineVisualExplorer({ asset }: { asset: AssetSummary }) {
   }, [asset.id]);
 
   useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
   useEffect(() => { setZoom(1); }, [selectedId, mode]);
 
   useEffect(() => {

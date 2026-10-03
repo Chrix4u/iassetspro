@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -192,11 +192,13 @@ function HierarchyNode({
 }
 
 function EngineeringSchematic({
-  asset, components, selectedId, onSelect,
+  asset, components, selectedId, zoom, onZoomChange, onSelect,
 }: {
   asset: AssetSummary;
   components: MachineComponent[];
   selectedId: string | null;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
   onSelect: (id: string | null) => void;
 }) {
   const layout = useMemo(() => {
@@ -227,9 +229,111 @@ function EngineeringSchematic({
     row.forEach((component, index) => positions.set(component.id, { x: gap * (index + 1), y }));
   });
 
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef({ pointerId: -1, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0, moved: false });
+  const [dragging, setDragging] = useState(false);
+
+  const clampZoom = useCallback((value: number) => Math.min(4, Math.max(0.6, +value.toFixed(2))), []);
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+      moved: false,
+    };
+    viewport.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    const drag = dragRef.current;
+    if (!viewport || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 5) return;
+    drag.moved = true;
+    setDragging(true);
+    viewport.scrollLeft = drag.scrollLeft - deltaX;
+    viewport.scrollTop = drag.scrollTop - deltaY;
+    event.preventDefault();
+  }, []);
+
+  const finishDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current.pointerId !== event.pointerId) return;
+    if (viewportRef.current?.hasPointerCapture?.(event.pointerId)) {
+      viewportRef.current.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current.pointerId = -1;
+    setDragging(false);
+  }, []);
+
+  const handleClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragRef.current.moved) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dragRef.current.moved = false;
+  }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -0.2 : 0.2;
+      onZoomChange(clampZoom(zoom + direction));
+    };
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [clampZoom, onZoomChange, zoom]);
+
+  const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const amount = 80;
+    if (event.key === 'ArrowLeft') viewport.scrollBy({ left: -amount, behavior: 'smooth' });
+    else if (event.key === 'ArrowRight') viewport.scrollBy({ left: amount, behavior: 'smooth' });
+    else if (event.key === 'ArrowUp') viewport.scrollBy({ top: -amount, behavior: 'smooth' });
+    else if (event.key === 'ArrowDown') viewport.scrollBy({ top: amount, behavior: 'smooth' });
+    else if (event.key === '+' || event.key === '=') onZoomChange(clampZoom(zoom + 0.2));
+    else if (event.key === '-' || event.key === '_') onZoomChange(clampZoom(zoom - 0.2));
+    else if (event.key === '0') onZoomChange(1);
+    else return;
+    event.preventDefault();
+  }, [clampZoom, onZoomChange, zoom]);
+
   return (
-    <div className="h-full min-h-[460px] overflow-auto rounded-xl border bg-slate-950">
-      <svg width={width} height={height} role="img" aria-label="Machine component engineering schematic">
+    <div
+      ref={viewportRef}
+      role="region"
+      tabIndex={0}
+      aria-label="Interactive machine component engineering schematic. Drag to pan. Use Control or Command plus mouse wheel, or the zoom buttons, to zoom. Arrow keys pan the view."
+      className={'relative h-full min-h-[460px] overflow-auto rounded-xl border bg-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (dragging ? 'cursor-grabbing' : 'cursor-grab')}
+      style={{ touchAction: 'pan-y' }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onClickCapture={handleClickCapture}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="pointer-events-none sticky left-3 top-3 z-10 inline-flex rounded-md border border-white/10 bg-slate-950/90 px-2 py-1 text-[10px] text-slate-300 backdrop-blur">
+        Drag to pan · Ctrl/⌘ + wheel to zoom
+      </div>
+      <svg
+        width={Math.round(width * zoom)}
+        height={Math.round(height * zoom)}
+        viewBox={'0 0 ' + width + ' ' + height}
+        className="block max-w-none"
+        role="img"
+        aria-label="Machine component engineering schematic"
+      >
         <defs>
           <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.09)" strokeWidth="1" />
@@ -615,7 +719,14 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
             </TabsList>
 
             <TabsContent value="diagram" className="mt-3">
-              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} />
+              <EngineeringSchematic
+                asset={asset}
+                components={components}
+                selectedId={selectedId}
+                zoom={zoom}
+                onZoomChange={setZoom}
+                onSelect={setSelectedId}
+              />
             </TabsContent>
 
             {['realistic', 'technical2d', 'exploded'].map((tabMode) => (

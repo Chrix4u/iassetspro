@@ -50,8 +50,18 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Loading component maintenance links...');
   });
 
-  it('has zoom controls and part-level AI generation', () => {
+  it('has draggable pan, zoom controls and part-level AI generation', () => {
     expect(explorer).toContain('Math.min(4');
+    expect(explorer).toContain('cursor-grabbing');
+    expect(explorer).toContain('viewport.scrollLeft = drag.scrollLeft - deltaX');
+    expect(explorer).toContain('viewport.scrollTop = drag.scrollTop - deltaY');
+    expect(explorer).toContain("viewport.addEventListener('wheel', handleWheel, { passive: false })");
+    expect(explorer).toContain('Math.round(width * zoom)');
+    expect(explorer).toContain('Math.round(height * zoom)');
+    expect(explorer).toContain("event.key === 'ArrowLeft'");
+    expect(explorer).toContain('Drag to pan · Ctrl/⌘ + wheel to zoom');
+    expect(explorer).toContain('zoom={zoom}');
+    expect(explorer).toContain('onZoomChange={setZoom}');
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');

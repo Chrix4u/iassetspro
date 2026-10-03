@@ -11,6 +11,24 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const partCode = `UAT-FE-PRT-${suffix}`;
     const assemblyPmTitle = `UAT Frontend Assembly PM ${suffix}`;
     const partPmTitle = `UAT Frontend Part PM ${suffix}`;
+    const cycleA = `UAT-FE-CYCLE-A-${suffix}`;
+    const cycleB = `UAT-FE-CYCLE-B-${suffix}`;
+
+    const cycleAttempt = await apiCall(plannerToken, 'POST', '/api/component-registry/bulk', {
+      assetId,
+      rows: [
+        { componentCode: cycleA, name: 'Cycle A', componentType: 'component', parentCode: cycleB, criticality: 'medium' },
+        { componentCode: cycleB, name: 'Cycle B', componentType: 'component', parentCode: cycleA, criticality: 'medium' },
+      ],
+    });
+    expect(cycleAttempt.status).toBe(400);
+    expect(String(cycleAttempt.data.error || '')).toMatch(/circular|unresolved/i);
+
+    for (const code of [cycleA, cycleB]) {
+      const state = await apiCall(plannerToken, 'GET', `/api/component-registry?assetId=${encodeURIComponent(assetId)}&search=${encodeURIComponent(code)}&limit=10`);
+      expect(state.status).toBe(200);
+      expect((state.data.data as any[]).some((item) => item.componentCode === code)).toBe(false);
+    }
 
     await authenticateAs(context, 'planner');
     await page.goto(`/#/asset-detail?id=${encodeURIComponent(assetId)}`);

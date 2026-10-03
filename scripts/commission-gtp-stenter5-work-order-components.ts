@@ -22,7 +22,7 @@ const RULES = [
   { key: 'chem-tank', code: 'CMP-CHEM-TANK', re: /chemical tanks?/i },
   { key: 'chem-pump', code: 'CMP-CHEM-PUMP', re: /chemical pump/i },
   { key: 'stirrer', code: 'CMP-STIRRER', re: /stirrer motor/i },
-  { key: 'chem-sensor', code: 'INS-CHEM-SENSOR', re: /chemical tray.*sensor|infeed chemical sensor/i },
+  { key: 'chem-sensor', code: 'INS-CHEM-SENSOR', re: /chemical tray.*sensor|sensor.*chemical tray|infeed chemical sensor/i },
   { key: 'chem-limit', code: 'INS-CHEM-LIMIT', re: /chemical limit sensor/i },
 
   { key: 'chain', code: 'CMP-STENTER-CHAIN', re: /stenter chain|stater chain|faulty chain on the stenter 5|broken chain.*stenter 5/i },

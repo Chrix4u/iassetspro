@@ -65,7 +65,7 @@ export function AssetsPage() {
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
-  const { navigate, pageParams } = useNavigationStore();
+  const { navigate, goBack, currentPage, pageParams } = useNavigationStore();
   const { hasPermission, isAdmin } = useAuthStore();
 
   // If navigated here with an asset ID, open detail view
@@ -412,7 +412,12 @@ export function AssetsPage() {
       </ResponsiveDialog>
 
       {/* Detail Side Sheet */}
-      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+      <Sheet open={!!detailId} onOpenChange={(open) => {
+        if (!open) {
+          setDetailId(null);
+          if (currentPage === 'asset-detail') goBack();
+        }
+      }}>
         <SheetContent className="w-full sm:max-w-[92vw] md:max-w-[88vw] lg:max-w-[82vw] xl:max-w-6xl 2xl:max-w-7xl overflow-y-auto p-4 sm:p-6 pt-0">
           {detailId && <AssetDetailPage id={detailId} initialTab={pageParams?.tab || 'overview'} initialComponentId={pageParams?.componentId || null} />}
         </SheetContent>

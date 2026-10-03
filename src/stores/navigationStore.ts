@@ -165,6 +165,25 @@ if (typeof window !== 'undefined') {
       return;
     }
 
+    // Browsers can emit popstate with null state for a direct hash change even
+    // though the URL already points to a valid in-app route. Preserve that
+    // route instead of letting the root-history guard force Dashboard.
+    const hashRoute = parseHash();
+    if (hashRoute) {
+      setTimeout(() => {
+        useNavigationStore.setState({
+          currentPage: hashRoute.page,
+          pageParams: hashRoute.params,
+        });
+      }, 0);
+      window.history.replaceState(
+        { [HISTORY_STATE_KEY]: true, page: hashRoute.page, params: hashRoute.params },
+        '',
+        buildUrl(hashRoute.page, hashRoute.params)
+      );
+      return;
+    }
+
     // Guard entry or external navigation — we've hit the bottom of app history.
     // Push forward to dashboard to prevent the tab/webview from closing.
     // This is critical for mobile browsers and webviews where pressing back

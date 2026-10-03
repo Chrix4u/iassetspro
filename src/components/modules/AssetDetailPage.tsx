@@ -669,6 +669,10 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
                   <Layers className="h-4 w-4 text-muted-foreground" />
                   <div><p className="text-xs font-medium">BOM</p><p className="text-[10px] text-muted-foreground">View components</p></div>
                 </button>
+                <button onClick={() => { setVisualFocusId(null); setActiveTab('visual-explorer'); }} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
+                  <Monitor className="h-4 w-4 text-muted-foreground" />
+                  <div><p className="text-xs font-medium">Visual Explorer</p><p className="text-[10px] text-muted-foreground">Diagram &amp; part drill-down</p></div>
+                </button>
                 {hasIoT && (
                   <button onClick={() => setActiveTab('condition')} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
                     <Activity className="h-4 w-4 text-muted-foreground" />

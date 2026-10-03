@@ -483,7 +483,7 @@ export async function GET(request: NextRequest) {
       },
     }) : [];
     const woMapEnt = new Map(workOrders.map(wo => [wo.id, wo]));
-    const componentCostMapEnt = new Map<string, { componentId: string; componentCode: string; componentName: string; criticality: string; assetName: string; assetTag: string; woCount: number; totalCost: number; laborCost: number; partsCost: number; contractorCost: number }>();
+    const componentCostMapEnt = new Map<string, { componentId: string; componentCode: string; componentName: string; criticality: string; assetId: string; assetName: string; assetTag: string; woCount: number; totalCost: number; laborCost: number; partsCost: number; contractorCost: number }>();
     for (const woc of woComponents) {
       const comp = woc.componentRegistry;
       if (!comp) continue;
@@ -502,6 +502,7 @@ export async function GET(request: NextRequest) {
           componentCode: comp.componentCode || '',
           componentName: comp.name || 'Unknown',
           criticality: comp.criticality || 'low',
+          assetId: comp.assetId || wo.assetId || '',
           assetName: comp.asset?.name || wo.assetName || 'Unknown',
           assetTag: comp.asset?.assetTag || '',
           woCount: 1,
@@ -520,6 +521,7 @@ export async function GET(request: NextRequest) {
         componentCode: c.componentCode,
         componentName: c.componentName,
         criticality: c.criticality,
+        assetId: c.assetId || null,
         assetName: c.assetName,
         assetTag: c.assetTag,
         woCount: c.woCount,

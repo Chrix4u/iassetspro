@@ -5,6 +5,7 @@
  */
 
 import type { GeometrySpec } from './programmatic-generator'
+import { textileGeometryKeywords, textileGeometryTemplates } from './textile-geometry'
 
 // Re-export the type to avoid circular imports
 type BuiltinGeometrySpec = GeometrySpec
@@ -26,6 +27,7 @@ const I = (n: string, type: any, position: number[], rotation: number[], props: 
 // ============================================================================
 
 const templates: Record<string, () => GeometrySpec> = {
+  ...textileGeometryTemplates,
   // --- PUMPS ---
   pump: () => machine('Centrifugal Pump', 'Industrial centrifugal pump with motor and volute casing', [
     I('Base Plate', 'box', [0, 0.05, 0], [0, 0, 0], { size: [0.8, 0.1, 0.6], color: '#4a5568' }),
@@ -197,6 +199,7 @@ const templates: Record<string, () => GeometrySpec> = {
 // ============================================================================
 
 const machineKeywords: Record<string, string[]> = {
+  ...textileGeometryKeywords,
   pump: ['pump', 'centrifugal', 'submersible', 'water pump', 'hydraulic pump'],
   motor: ['motor', 'electric motor', 'servo motor', 'induction motor', 'dc motor'],
   compressor: ['compressor', 'air compressor', 'screw compressor', 'reciprocating compressor'],

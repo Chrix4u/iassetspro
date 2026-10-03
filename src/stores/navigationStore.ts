@@ -120,6 +120,21 @@ if (typeof window !== 'undefined') {
   // This prevents the "back to previous page" loop after guard recovery.
   let guardRecoveryPending = false;
 
+  const syncFromHash = () => {
+    const parsed = parseHash();
+    if (!parsed) return;
+    useNavigationStore.setState({
+      currentPage: parsed.page,
+      pageParams: parsed.params,
+    });
+  };
+
+  // Hash-only navigation does not fire popstate. Keep the SPA navigation
+  // store synchronized when a user or integration changes #/page directly.
+  window.addEventListener('hashchange', () => {
+    setTimeout(syncFromHash, 0);
+  });
+
   window.addEventListener('popstate', (event) => {
     // If we just pushed forward after hitting the guard, the browser may
     // fire popstate again as it reconciles. Ignore it and stay put.

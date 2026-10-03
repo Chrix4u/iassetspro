@@ -18,7 +18,7 @@ const RULES = [
   { key: 'sewing', code: 'CMP-SEW', re: /sewing machine/i },
   { key: 'needle', code: 'PRT-NEEDLE', re: /needle/i },
 
-  { key: 'fix-pump', code: 'CMP-FIX-PUMP', re: /fixation pump/i },
+  { key: 'fix-pump', code: 'CMP-FIX-PUMP', re: /fixation pump|pump\s*\(fixation\)|pump.*fixation/i },
   { key: 'chemical-pump', code: 'CMP-CHEM-PUMP', re: /chemical pump/i },
   { key: 'colour-pump', code: 'CMP-COLOUR-PUMP', re: /colour pump/i },
   { key: 'colour-motor', code: 'CMP-COLOUR-MOTOR', re: /colour pumping motor/i },

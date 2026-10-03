@@ -53,14 +53,14 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
   );
 }
 
-export function AssetDetailPage({ id }: { id: string }) {
+export function AssetDetailPage({ id, initialTab = 'overview', initialComponentId = null }: { id: string; initialTab?: string; initialComponentId?: string | null }) {
   const { hasPermission, isAdmin } = useAuthStore();
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
       && (hasPermission('assets.create') || hasPermission('assemblies.create')));
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [asset, setAsset] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [bomItems, setBomItems] = useState<any[]>([]);
@@ -68,7 +68,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [components, setComponents] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [selectedComponentId, setSelectedComponentId] = useState<string>('');
-  const [visualFocusId, setVisualFocusId] = useState<string | null>(null);
+  const [visualFocusId, setVisualFocusId] = useState<string | null>(initialComponentId);
   const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
   const [sparePartForm, setSparePartForm] = useState({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
   const [installedParts, setInstalledParts] = useState<any[]>([]);
@@ -101,7 +101,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   useEffect(() => {
     let cancelled = false;
 
-    setActiveTab('overview');
+    setActiveTab(initialTab);
     setAsset(null);
     setLoading(true);
     setBomItems([]);
@@ -109,7 +109,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     setComponents([]);
     setInventoryItems([]);
     setSelectedComponentId('');
-    setVisualFocusId(null);
+    setVisualFocusId(initialComponentId);
     setShowComponentForm(false);
     setShowHierarchyCommissioning(false);
     setComponentSpareParts([]);
@@ -136,7 +136,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, initialTab, initialComponentId]);
 
   // Reload components
   const reloadComponents = useCallback(() => {

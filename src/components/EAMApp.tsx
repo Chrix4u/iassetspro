@@ -11,6 +11,7 @@ import NotificationPopover from '@/components/shared/NotificationPopover';
 import GlobalSearch from '@/components/shared/GlobalSearch';
 import CommandPalette from '@/components/CommandPalette';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -23,8 +24,9 @@ import {
   Menu, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Bell, LogOut,
   LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
-import type { PageName } from '@/types';
+import type { PageName, Plant } from '@/types';
 import { PAGE_PERMISSIONS, pageHasPermission, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
+import { api } from '@/lib/api';
 
 // ============================================================================
 // PAGE TITLE MAP — module-level (no hook dependency)
@@ -456,6 +458,8 @@ function AppShell() {
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const [plantOptions, setPlantOptions] = React.useState<Plant[]>([]);
+  const [activePlantId, setActivePlantId] = React.useState('');
   const notificationsVisible = pageHasPermission('notifications', hasPermission, isAdmin())
     && pageModuleIsEnabled('notifications', enabledModules);
   const currentPageAdminAllowed = !currentPage.startsWith('settings-')
@@ -475,6 +479,24 @@ function AppShell() {
   React.useEffect(() => {
     fetchModules();
   }, [fetchModules]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const selectedPlantId = localStorage.getItem('user_plant_id') || user.plantId || '';
+    setActivePlantId(selectedPlantId);
+    api.get<Plant[]>('/api/plants').then((response) => {
+      if (response.success && Array.isArray(response.data)) {
+        setPlantOptions(response.data);
+      }
+    }).catch(() => setPlantOptions(user.plantAccess || []));
+  }, [isAuthenticated, user]);
+
+  const handlePlantContextChange = (plantId: string) => {
+    if (!plantId || plantId === activePlantId) return;
+    localStorage.setItem('user_plant_id', plantId);
+    setActivePlantId(plantId);
+    window.location.reload();
+  };
 
   // Never expose a disabled/unauthorized module name in the browser title
   // while a deep link is being rejected or the module registry is loading.
@@ -527,6 +549,21 @@ function AppShell() {
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
           <div className="flex-1" />
+          {plantOptions.length > 1 && (
+            <Select value={activePlantId || undefined} onValueChange={handlePlantContextChange}>
+              <SelectTrigger aria-label="Active plant" className="h-8 w-[150px] sm:w-[220px] text-xs">
+                <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0 text-muted-foreground" />
+                <SelectValue placeholder="Select plant" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {plantOptions.map((plant) => (
+                  <SelectItem key={plant.id} value={plant.id}>
+                    {plant.code} · {plant.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {/* Command Palette trigger */}
           <TooltipProvider delayDuration={0}>
             <Tooltip>

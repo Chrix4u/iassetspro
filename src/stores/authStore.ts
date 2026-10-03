@@ -19,9 +19,10 @@ function persistAuthData(
   const existingPlantId = options.preserveSelectedPlant
     ? localStorage.getItem(LS_PLANT_ID)
     : null;
+  const isSystemAdmin = (user.roles || []).some((role) => role.slug === 'admin');
   const canKeepExistingPlant = Boolean(
     existingPlantId
-    && (user.plantAccess || []).some((plant) => plant.id === existingPlantId),
+    && (isSystemAdmin || (user.plantAccess || []).some((plant) => plant.id === existingPlantId)),
   );
   const selectedPlantId = canKeepExistingPlant ? existingPlantId : (user.plantId || '');
 

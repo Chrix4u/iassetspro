@@ -13,7 +13,7 @@ describe('GTP asset visual drilldown contract', () => {
       'utf8',
     );
 
-    expect(assetDetail).toContain("const [visualFocusId, setVisualFocusId] = useState<string | null>(null)");
+    expect(assetDetail).toContain("const [visualFocusId, setVisualFocusId] = useState<string | null>(initialComponentId)");
     expect(assetDetail).toContain("setVisualFocusId(c.id)");
     expect(assetDetail).toContain("setActiveTab('visual-explorer')");
     expect(assetDetail).toContain("initialComponentId={visualFocusId}");

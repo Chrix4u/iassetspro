@@ -101,4 +101,6 @@ export const textileGeometryTemplates: Record<string, () => GeometrySpec> = {
 export const textileGeometryKeywords: Record<string, string[]> = {
   stenter: ['stenter', 'tenter', 'heat setting', 'heat-setting'],
   singeing_machine: ['singeing', 'singeing machine', 'singe machine'],
+  mercerizer: ['mercerizer', 'mercerising', 'mercerizing', 'mercerization'],
+  rope_soaper: ['rope soaper', 'rope-soaper', 'soaper machine', 'rope washing'],
 };

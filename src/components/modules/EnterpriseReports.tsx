@@ -373,36 +373,36 @@ export default function EnterpriseReports() {
   return (
     <div className="page-content">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <BarChart3 className="h-6 w-6 text-emerald-600" />
-            Reporting
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">Comprehensive maintenance analytics across the organization</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={fetchReport} disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
-            Refresh
-          </Button>
-          <Button variant="outline" size="sm" onClick={handlePdfExport} disabled={!reportData}>
-            <FileDown className="h-4 w-4 mr-1.5" />PDF
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={!reportData}>
-            <Download className="h-4 w-4 mr-1.5" />CSV
-          </Button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <BarChart3 className="h-6 w-6 text-emerald-600" />
+          Reporting
+        </h1>
+        <p className="text-muted-foreground text-sm mt-1">Comprehensive maintenance analytics across the organization</p>
       </div>
 
-      {/* Date Range */}
+      {/* Report toolbar — filters and actions stay on one operating row where space allows */}
       <Card className="border border-border/60 shadow-sm">
         <CardContent className="p-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
-            <Button size="sm" onClick={fetchReport} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              Generate
-            </Button>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
+              <Button size="sm" onClick={fetchReport} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+                Generate
+              </Button>
+              <Button variant="outline" size="sm" onClick={fetchReport} disabled={loading}>
+                <RefreshCw className="h-4 w-4 mr-1.5" />Refresh
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePdfExport} disabled={!reportData}>
+                <FileDown className="h-4 w-4 mr-1.5" />PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={!reportData}>
+                <Download className="h-4 w-4 mr-1.5" />CSV
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

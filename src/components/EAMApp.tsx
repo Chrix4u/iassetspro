@@ -489,7 +489,7 @@ function AppShell() {
         setPlantOptions(response.data);
       }
     }).catch(() => setPlantOptions(user.plantAccess || []));
-  }, [isAuthenticated, user?.id, user?.plantId]);
+  }, [isAuthenticated, user]);
 
   const handlePlantContextChange = (plantId: string) => {
     if (!plantId || plantId === activePlantId) return;

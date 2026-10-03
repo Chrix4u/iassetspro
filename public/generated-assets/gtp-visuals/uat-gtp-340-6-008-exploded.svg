@@ -1,0 +1,48 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<defs><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#e2e8f0" stroke-width="1"/></pattern></defs>
+<rect width="100%" height="100%" fill="#f8fafc"/><rect width="100%" height="100%" fill="url(#grid)"/>
+<text x="60" y="62" font-family="Arial,sans-serif" font-size="30" font-weight="700" fill="#0f172a">Stenter 6</text>
+<text x="60" y="94" font-family="monospace" font-size="17" fill="#475569">UAT-GTP-340-6-008 · EXPLODED ASSEMBLY SCHEMATIC</text>
+<rect x="570" y="330" width="460" height="240" rx="28" fill="#e2e8f0" stroke="#0f172a" stroke-width="4"/>
+<rect x="625" y="390" width="350" height="90" rx="18" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="800" y="425" text-anchor="middle" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#0f172a">Stenter 6</text>
+<text x="800" y="460" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" fill="#475569">9 commissioned root assemblies</text>
+<line x1="800" y1="450" x2="800" y2="140" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="675" y="104" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="689" y="133" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Infeed, Guiding &amp; Pinning</text>
+<text x="689" y="157" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-INFEED</text>
+<line x1="800" y1="450" x2="999.2641590028272" y2="212.52622263311682" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="874.2641590028272" y="176.52622263311682" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="888.2641590028272" y="205.52622263311682" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Stenter Chain, Clips &amp; Convey…</text>
+<text x="888.2641590028272" y="229.52622263311682" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-CHAIN</text>
+<line x1="800" y1="450" x2="1105.2904034337844" y2="396.1690649232516" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="980.2904034337844" y="360.1690649232516" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="994.2904034337844" y="389.1690649232516" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Mangle, Squeezing &amp; Roller Tr…</text>
+<text x="994.2904034337844" y="413.1690649232516" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-MANGLE</text>
+<line x1="800" y1="450" x2="1068.467875173176" y2="605" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="943.467875173176" y="569" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="957.467875173176" y="598" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Drying Chambers, Burners &amp; Ai…</text>
+<text x="957.467875173176" y="622" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-DRY</text>
+<line x1="800" y1="450" x2="906.0262444309574" y2="741.3047124436316" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="781.0262444309574" y="705.3047124436316" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="795.0262444309574" y="734.3047124436316" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Main Drive &amp; Transmission</text>
+<text x="795.0262444309574" y="758.3047124436316" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-DRIVE</text>
+<line x1="800" y1="450" x2="693.9737555690427" y2="741.3047124436316" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="568.9737555690427" y="705.3047124436316" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="582.9737555690427" y="734.3047124436316" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Pneumatic, Hydraulic &amp; Utilit…</text>
+<text x="582.9737555690427" y="758.3047124436316" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-FLUID</text>
+<line x1="800" y1="450" x2="531.5321248268241" y2="605.0000000000001" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="406.5321248268241" y="569.0000000000001" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="420.5321248268241" y="598.0000000000001" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Outfeed, Batching &amp; Framing</text>
+<text x="420.5321248268241" y="622.0000000000001" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-OUTFEED</text>
+<line x1="800" y1="450" x2="494.70959656621545" y2="396.1690649232517" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="369.70959656621545" y="360.1690649232517" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="383.70959656621545" y="389.1690649232517" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Sewing &amp; Cloth Joining Station</text>
+<text x="383.70959656621545" y="413.1690649232517" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-SEW</text>
+<line x1="800" y1="450" x2="600.7358409971728" y2="212.52622263311684" stroke="#64748b" stroke-width="2" stroke-dasharray="10 8"/>
+<rect x="475.7358409971728" y="176.52622263311684" width="250" height="72" rx="12" fill="#ffffff" stroke="#334155" stroke-width="2"/>
+<text x="489.7358409971728" y="205.52622263311684" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a">Electrical &amp; General Controls</text>
+<text x="489.7358409971728" y="229.52622263311684" font-family="monospace" font-size="13" fill="#64748b">GTP-ST6-ASM-CTRL</text>
+<text x="60" y="852" font-family="Arial,sans-serif" font-size="14" fill="#64748b">Hierarchy-derived commissioning schematic · not OEM CAD · use component drill-down for maintenance context</text>
+</svg>

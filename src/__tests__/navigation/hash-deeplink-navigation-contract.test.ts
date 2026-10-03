@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('hash deep-link navigation synchronization', () => {
-  it('keeps the SPA navigation store aligned with direct URL hash changes', () => {
+  it('keeps the SPA navigation store aligned with direct URL hash changes and deep links', () => {
     const source = fs.readFileSync(
       path.join(process.cwd(), 'src/stores/navigationStore.ts'),
       'utf8',

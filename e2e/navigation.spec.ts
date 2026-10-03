@@ -73,6 +73,15 @@ test.describe('Navigation & Routing', () => {
     }
   });
 
+  test('direct hash change updates the rendered SPA page', async ({ page }) => {
+    await page.evaluate(() => {
+      window.location.hash = '#/assets';
+    });
+
+    await expect(page).toHaveURL(/#\/assets$/);
+    await expect(page.getByRole('heading', { name: 'Asset Register', exact: true })).toBeVisible({ timeout: 15_000 });
+  });
+
   test('sidebar navigation - navigate to each main page', async ({ page }) => {
     try {
       for (const pageDef of NAVIGATION_PAGES) {

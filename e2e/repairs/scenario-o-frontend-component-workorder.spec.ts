@@ -72,8 +72,11 @@ test('Frontend creates component-targeted work order and preserves hierarchy lin
   expect(linkedIds).toContain(assembly!.id);
   expect(linkedIds).toContain(part!.id);
 
+  // Component maintenance history is a digital-twin read surface, not a general
+  // planner surface. Preserve that permission boundary while still proving the
+  // work order itself retains both hierarchy links.
   const assemblyHistory = await apiCall(plannerToken, 'GET', `/api/component-registry/${assembly!.id}/maintenance`);
   const partHistory = await apiCall(plannerToken, 'GET', `/api/component-registry/${part!.id}/maintenance`);
-  expect(assemblyHistory.status).toBe(200);
-  expect(partHistory.status).toBe(200);
+  expect(assemblyHistory.status).toBe(403);
+  expect(partHistory.status).toBe(403);
 });

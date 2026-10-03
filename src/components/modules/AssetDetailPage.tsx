@@ -59,6 +59,7 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
       && (hasPermission('assets.create') || hasPermission('assemblies.create')));
+  const canGenerate3d = isAdmin() || hasPermission('assets.create');
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [asset, setAsset] = useState<any>(null);
@@ -87,6 +88,7 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
   const [showTwinForm, setShowTwinForm] = useState(false);
   const [showDiagramForm, setShowDiagramForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [generating3d, setGenerating3d] = useState(false);
 
   // Component form
   const [compForm, setCompForm] = useState({ componentCode: '', name: '', componentType: 'component', parentId: '', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
@@ -456,6 +458,29 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
       cursor = parent;
     }
     return depth;
+  };
+
+  const handleGenerate3D = async () => {
+    if (!asset || !canGenerate3d) return;
+    setGenerating3d(true);
+    try {
+      const res = await api.post('/api/ai/generate-3d', {
+        machineName: asset.name,
+        description: asset.description || undefined,
+        assetId: id,
+        provider3d: 'programmatic',
+      });
+      if (res.success) {
+        toast.success('3D model generated and linked to the digital twin');
+        reloadTwin();
+      } else {
+        toast.error(res.error || 'Failed to generate 3D model');
+      }
+    } catch {
+      toast.error('Failed to generate 3D model');
+    } finally {
+      setGenerating3d(false);
+    }
   };
 
   const handleCreateTwin = async () => {
@@ -1323,15 +1348,20 @@ export function AssetDetailPage({ id, initialTab = 'overview', initialComponentI
                 </Card>
               )}
 
+              {canGenerate3d && !showTwinForm && (
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={handleGenerate3D} disabled={generating3d}>
+                    {generating3d ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Monitor className="h-3.5 w-3.5 mr-1.5" />}
+                    {twin ? 'Regenerate 3D Model' : 'Generate 3D Twin'}
+                  </Button>
+                </div>
+              )}
+
               {tabDataLoading && activeTab === 'digital-twin' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : !twin && !showTwinForm ? (
                 <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." actionLabel="Create Digital Twin" onAction={() => setShowTwinForm(true)} />
-              ) : twin && !showTwinForm && (
-                <div className="flex justify-end">
-                  <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
-                </div>
-              )}
+              ) : null}
 
               {twin && (
                 <Card className="border-0 shadow-sm">

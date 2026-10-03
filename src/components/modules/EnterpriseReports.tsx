@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import { Button } from '@/components/ui/button';
@@ -102,6 +103,7 @@ export default function EnterpriseReports() {
   /* eslint-disable react-hooks/preserve-manual-memoization */
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const { hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((state) => state.navigate);
 
   const [reportData, setReportData] = useState<any>(null);
   const [enterpriseData, setEnterpriseData] = useState<any>(null);
@@ -739,7 +741,13 @@ export default function EnterpriseReports() {
                       <TableRow><TableCell colSpan={4}><EmptyState icon={Activity} title="No asset data" /></TableCell></TableRow>
                     ) : reportData.topAssets.map((asset: any, i: number) => (
                       <TableRow key={i} className="hover:bg-muted/30">
-                        <TableCell className="font-medium">{asset.assetName}</TableCell>
+                        <TableCell className="font-medium">
+                          {asset.assetId ? (
+                            <button type="button" className="text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: asset.assetId })}>
+                              {asset.assetName}
+                            </button>
+                          ) : asset.assetName}
+                        </TableCell>
                         <TableCell className="text-right"><Badge variant="outline" className="font-mono text-xs">{asset.woCount}</Badge></TableCell>
                         <TableCell className="text-right">{asset.downtimeMinutes ?? '—'} min</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(asset.totalCost || 0)}</TableCell>
@@ -944,7 +952,11 @@ export default function EnterpriseReports() {
                           <TableCell className="text-muted-foreground text-xs">{i + 1}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">{a.assetName}</span>
+                              {a.assetId ? (
+                                <button type="button" className="font-medium text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: a.assetId })}>
+                                  {a.assetName}
+                                </button>
+                              ) : <span className="font-medium">{a.assetName}</span>}
                               {a.criticality && <Badge variant="outline" className={`text-[9px] ${a.criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : a.criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{a.criticality}</Badge>}
                             </div>
                           </TableCell>
@@ -976,7 +988,13 @@ export default function EnterpriseReports() {
                         <TableRow><TableCell colSpan={8}><EmptyState icon={Cpu} title="No component cost data" description="Component-linked work order costs will appear here." /></TableCell></TableRow>
                       ) : enterpriseData.costAnalytics.byComponent.map((c: any, i: number) => (
                         <TableRow key={c.componentId || i} className="hover:bg-muted/30">
-                          <TableCell className="font-medium">{c.componentName}</TableCell>
+                          <TableCell className="font-medium">
+                            {c.assetId && c.componentId ? (
+                              <button type="button" className="text-left hover:underline cursor-pointer" onClick={() => navigate('asset-detail', { id: c.assetId, componentId: c.componentId })}>
+                                {c.componentName}
+                              </button>
+                            ) : c.componentName}
+                          </TableCell>
                           <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">{c.componentCode || '-'}</TableCell>
                           <TableCell className="hidden lg:table-cell text-sm">
                             <div>{c.assetName}</div>

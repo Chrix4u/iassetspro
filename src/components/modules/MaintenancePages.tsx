@@ -2480,6 +2480,21 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const [availableComponents, setAvailableComponents] = useState<Array<{id: string; name: string; componentCode?: string; componentType?: string; criticality?: string; parentId?: string | null}>>([]);
   const [componentsLoading, setComponentsLoading] = useState(false);
 
+  const workOrderComponentLabel = (component: { id: string; name: string; componentCode?: string; parentId?: string | null }) => {
+    const byId = new Map(availableComponents.map((item) => [item.id, item]));
+    let depth = 0;
+    let cursor: typeof component | undefined = component;
+    const seen = new Set<string>();
+    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
+      seen.add(cursor.parentId);
+      const parent = byId.get(cursor.parentId);
+      if (!parent) break;
+      depth += 1;
+      cursor = parent;
+    }
+    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
+  };
+
   // Dropdown data
   const [departments, setDepartments] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);

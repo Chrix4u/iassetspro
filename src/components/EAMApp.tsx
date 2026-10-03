@@ -13,6 +13,7 @@ import CommandPalette from '@/components/CommandPalette';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -456,6 +457,9 @@ function AppShell() {
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const [activePlantId, setActivePlantId] = useState('__loading__');
+  const plantAccess = user?.plantAccess || [];
+  const canChoosePlant = isAdmin() || plantAccess.length > 1;
   const notificationsVisible = pageHasPermission('notifications', hasPermission, isAdmin())
     && pageModuleIsEnabled('notifications', enabledModules);
   const currentPageAdminAllowed = !currentPage.startsWith('settings-')
@@ -475,6 +479,24 @@ function AppShell() {
   React.useEffect(() => {
     fetchModules();
   }, [fetchModules]);
+
+  React.useEffect(() => {
+    const storedPlantId = localStorage.getItem('user_plant_id') || '';
+    setActivePlantId(storedPlantId || '__all__');
+  }, [user?.id]);
+
+  const handlePlantChange = (value: string) => {
+    const plantId = value === '__all__' ? '' : value;
+    if (plantId && !plantAccess.some((plant) => plant.id === plantId)) return;
+    if (!plantId && !isAdmin()) return;
+
+    localStorage.setItem('user_plant_id', plantId);
+    setActivePlantId(value);
+    // Plant context is carried as X-Plant-ID by the shared API client. Reloading
+    // guarantees every mounted module drops stale plant-scoped data and refetches
+    // under the newly selected context.
+    window.location.reload();
+  };
 
   // Never expose a disabled/unauthorized module name in the browser title
   // while a deep link is being rejected or the module registry is loading.
@@ -527,6 +549,24 @@ function AppShell() {
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
           <div className="flex-1" />
+          {canChoosePlant && activePlantId !== '__loading__' && (
+            <div className="hidden sm:block w-[220px]">
+              <Select value={activePlantId} onValueChange={handlePlantChange}>
+                <SelectTrigger aria-label="Active plant" className="h-8 text-xs">
+                  <Building2 className="h-3.5 w-3.5 mr-1.5 text-muted-foreground shrink-0" />
+                  <SelectValue placeholder="Select plant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {isAdmin() && <SelectItem value="__all__">All accessible plants</SelectItem>}
+                  {plantAccess.map((plant) => (
+                    <SelectItem key={plant.id} value={plant.id}>
+                      {plant.code ? `${plant.code} · ${plant.name}` : plant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {/* Command Palette trigger */}
           <TooltipProvider delayDuration={0}>
             <Tooltip>

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import { Button } from '@/components/ui/button';
@@ -102,6 +103,14 @@ export default function EnterpriseReports() {
   /* eslint-disable react-hooks/preserve-manual-memoization */
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const { hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((state) => state.navigate);
+
+  const openAsset = useCallback((assetId?: string | null, componentId?: string | null) => {
+    if (!assetId) return;
+    navigate('asset-detail', componentId
+      ? { id: assetId, componentId, tab: 'visual-explorer' }
+      : { id: assetId });
+  }, [navigate]);
 
   const [reportData, setReportData] = useState<any>(null);
   const [enterpriseData, setEnterpriseData] = useState<any>(null);

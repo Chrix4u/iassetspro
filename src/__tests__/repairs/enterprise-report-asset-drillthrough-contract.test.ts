@@ -12,6 +12,10 @@ describe('enterprise report asset/component drill-through contract', () => {
       path.join(process.cwd(), 'src/components/modules/AssetDetailPage.tsx'),
       'utf8',
     );
+    const enterpriseApi = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/reports/enterprise/route.ts'),
+      'utf8',
+    );
 
     expect(reports).toContain("useNavigationStore");
     expect(reports).toContain("navigate('asset-detail', { id: asset.assetId })");
@@ -22,5 +26,9 @@ describe('enterprise report asset/component drill-through contract', () => {
     expect(detail).toContain("pageParams.id !== id");
     expect(detail).toContain("setVisualFocusId(pageParams.componentId)");
     expect(detail).toContain("setActiveTab('visual-explorer')");
+
+    expect(enterpriseApi).toContain("select: { id: true, name: true, assetTag: true }");
+    expect(enterpriseApi).toContain("assetId: comp.asset?.id || wo.assetId || ''");
+    expect(enterpriseApi).toContain("assetId: c.assetId");
   });
 });

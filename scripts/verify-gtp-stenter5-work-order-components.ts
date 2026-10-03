@@ -6,6 +6,7 @@ const db = new PrismaClient({ adapter: createAdapter(process.env.DATABASE_URL) }
 
 const TAG = 'UAT-GTP-340-5-007';
 const MARKER = 'Auto-mapped from GTP Stenter 5 historical work-order title by conservative UAT commissioning rule';
+const EXCLUDE = /stenter 6 machine|woodin platfoam|woodin pallets|air condition|chemical trolley/i;
 
 async function main() {
   const asset = await db.asset.findUnique({
@@ -20,15 +21,21 @@ async function main() {
       workOrder: { assetId: asset.id },
       notes: { contains: MARKER },
     },
-    select: { workOrderId: true },
+    select: {
+      workOrderId: true,
+      workOrder: { select: { woNumber: true, title: true } },
+      componentRegistry: { select: { componentCode: true } },
+    },
   });
   const mapped = new Set(links.map((link) => link.workOrderId));
+  const excludedLinks = links.filter((link) => EXCLUDE.test(link.workOrder.title || ''));
 
   const checks = {
     workOrderCount: total === 64,
     conservativeCoverage: mapped.size >= 54,
     conservativeCoveragePct: mapped.size / Math.max(total, 1) >= 0.84,
     meaningfulLinks: links.length >= 74,
+    noExcludedLinks: excludedLinks.length === 0,
   };
 
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([key]) => key);
@@ -38,6 +45,7 @@ async function main() {
     mappedWorkOrders: mapped.size,
     totalLinks: links.length,
     coveragePct: Number((mapped.size / Math.max(total, 1) * 100).toFixed(1)),
+    excludedLinks: excludedLinks.map((link) => ({ woNumber: link.workOrder.woNumber, title: link.workOrder.title, componentCode: link.componentRegistry.componentCode })),
     checks,
     status: failed.length ? 'FAIL' : 'PASS',
     failed,

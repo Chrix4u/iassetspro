@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -553,11 +552,11 @@ export function AssetDetailPage({ id }: { id: string }) {
   return (
     <>
       {/* Header */}
-      <SheetHeader>
+      <SheetHeader className="px-4 pt-5 pb-0 sm:px-6 sm:pt-6">
         <SheetTitle>{asset.name}</SheetTitle>
         <SheetDescription>{asset.assetTag} · {asset.category?.name || 'Asset'}</SheetDescription>
       </SheetHeader>
-      <div className="flex items-center gap-2 flex-wrap mt-3">
+      <div className="flex items-center gap-2 flex-wrap mt-3 px-4 sm:px-6">
         <Badge variant="outline" className={`capitalize ${statusColors[asset.status] || ''}`}>{(asset.status || '').replace(/_/g, ' ')}</Badge>
         <Badge variant="outline" className={`capitalize ${condColors[asset.condition] || ''}`}>{asset.condition || '-'}</Badge>
         <Badge variant="outline" className={`uppercase ${criticalityColors[asset.criticality] || ''}`}>{asset.criticality || '-'}</Badge>
@@ -565,7 +564,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4 w-full min-w-0">
-        <TabsList className="w-full flex overflow-x-auto p-0 h-auto gap-0 bg-transparent border-b rounded-none">
+        <TabsList className="sticky top-0 z-30 w-full flex overflow-x-auto px-4 sm:px-6 py-0 h-auto gap-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 border-b rounded-none shadow-sm">
           {tabs.map((tab) => {
             const TabIcon = tab.icon;
             return (
@@ -582,8 +581,7 @@ export function AssetDetailPage({ id }: { id: string }) {
           })}
         </TabsList>
 
-        <ScrollArea className="max-h-[calc(100vh-14rem)] w-full min-w-0">
-          <div className="pb-6 w-full min-w-0">
+        <div className="px-4 sm:px-6 pb-6 w-full min-w-0">
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
               {asset.description && (
@@ -1462,8 +1460,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                 </Card>
               )}
             </TabsContent>
-          </div>
-        </ScrollArea>
+        </div>
       </Tabs>
     </>
   );

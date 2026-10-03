@@ -413,7 +413,7 @@ export function AssetsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="w-full sm:max-w-[92vw] md:max-w-[88vw] lg:max-w-[82vw] xl:max-w-6xl 2xl:max-w-7xl overflow-y-auto p-4 sm:p-6 pt-0">
+        <SheetContent className="!w-screen !max-w-none sm:!max-w-none md:!max-w-none lg:!max-w-none xl:!max-w-none 2xl:!max-w-none h-dvh overflow-y-auto overflow-x-hidden p-0 gap-0">
           {detailId && <AssetDetailPage id={detailId} />}
         </SheetContent>
       </Sheet>

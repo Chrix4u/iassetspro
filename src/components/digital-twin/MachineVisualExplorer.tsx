@@ -304,7 +304,7 @@ function ProgrammaticEngineeringView({
       >
         <svg
           viewBox={'0 0 ' + width + ' ' + height}
-          className="mx-auto min-h-[500px] min-w-[860px] max-w-full"
+          className="mx-auto w-full min-w-0 min-h-[500px] h-auto"
           role="img"
           aria-label={(exploded ? 'Exploded engineering view of ' : '2D engineering view of ') + subjectName}
         >

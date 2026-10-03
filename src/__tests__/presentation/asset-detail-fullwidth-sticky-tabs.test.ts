@@ -13,5 +13,9 @@ describe('asset detail full viewport layout', () => {
     expect(detail).toContain('bg-background/95 backdrop-blur');
     expect(detail).not.toContain('max-h-[calc(100vh-14rem)]');
     expect(detail).not.toContain("import { ScrollArea } from '@/components/ui/scroll-area'");
+
+    const explorer = fs.readFileSync('src/components/digital-twin/MachineVisualExplorer.tsx', 'utf8');
+    expect(explorer).toContain('w-full min-w-0 min-h-[500px] h-auto');
+    expect(explorer).not.toContain('min-w-[860px]');
   });
 });

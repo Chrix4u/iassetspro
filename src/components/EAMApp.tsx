@@ -13,6 +13,7 @@ import CommandPalette from '@/components/CommandPalette';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -456,6 +457,23 @@ function AppShell() {
   const logout = useAuthStore((s) => s.logout);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const [activePlantId, setActivePlantId] = useState('');
+  const plantAccess = user?.plantAccess || [];
+
+  useEffect(() => {
+    if (!user) return;
+    const persisted = localStorage.getItem('user_plant_id') || '';
+    const canUsePersisted = plantAccess.some((plant) => plant.id === persisted);
+    setActivePlantId(canUsePersisted ? persisted : (user.plantId || plantAccess[0]?.id || ''));
+  }, [user, plantAccess]);
+
+  const switchPlant = (plantId: string) => {
+    if (!plantId || plantId === activePlantId) return;
+    localStorage.setItem('user_plant_id', plantId);
+    setActivePlantId(plantId);
+    window.location.reload();
+  };
+
   const notificationsVisible = pageHasPermission('notifications', hasPermission, isAdmin())
     && pageModuleIsEnabled('notifications', enabledModules);
   const currentPageAdminAllowed = !currentPage.startsWith('settings-')
@@ -527,6 +545,22 @@ function AppShell() {
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
           <div className="flex-1" />
+          {plantAccess.length > 1 && activePlantId && (
+            <div className="hidden md:block w-[220px] max-w-[24vw]">
+              <Select value={activePlantId} onValueChange={switchPlant}>
+                <SelectTrigger aria-label="Active plant" className="h-8 text-xs bg-background/70">
+                  <SelectValue placeholder="Active plant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {plantAccess.map((plant) => (
+                    <SelectItem key={plant.id} value={plant.id}>
+                      {plant.code ? `${plant.code} · ${plant.name}` : plant.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {/* Command Palette trigger */}
           <TooltipProvider delayDuration={0}>
             <Tooltip>

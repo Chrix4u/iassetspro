@@ -425,7 +425,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   const [selectedDetail, setSelectedDetail] = useState<ComponentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState('realistic');
+  const [mode, setMode] = useState(asset.imageUrl ? 'realistic' : 'diagram');
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -447,7 +447,10 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   }, [asset.id]);
 
   useEffect(() => { loadData(); }, [loadData]);
-  useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
+  useEffect(() => {
+    setSelectedId(initialComponentId);
+    setMode(asset.imageUrl ? 'realistic' : 'diagram');
+  }, [asset.id, asset.imageUrl, initialComponentId]);
   useEffect(() => { setZoom(1); }, [selectedId, mode]);
 
   useEffect(() => {

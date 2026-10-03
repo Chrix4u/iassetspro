@@ -20,6 +20,8 @@ describe('enterprise report asset/component drill-through contract', () => {
     expect(reports).toContain("useNavigationStore");
     expect(reports).toContain("navigate('asset-detail', { id: asset.assetId })");
     expect(reports).toContain("navigate('asset-detail', { id: a.assetId })");
+    expect(reports).toContain("assetId: a.assetId");
+    expect(reports).toContain("navigate('asset-detail', { id: (asset as any).assetId })");
     expect(reports).toContain("navigate('asset-detail', { id: c.assetId, componentId: c.componentId })");
 
     expect(detail).toContain("pageParams?.componentId");

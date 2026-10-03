@@ -248,6 +248,7 @@ export default function EnterpriseReports() {
     // Prefer API data which has enriched asset details
     if (enterpriseData?.repeatFailures?.length > 0) {
       return enterpriseData.repeatFailures.map((a: any) => ({
+        assetId: a.assetId,
         name: a.assetName,
         count: a.failureCount,
         latest: a.lastFailureDate,

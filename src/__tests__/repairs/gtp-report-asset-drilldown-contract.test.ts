@@ -27,6 +27,7 @@ describe('GTP report to asset/component drilldown contract', () => {
 
     expect(assets).toContain("initialTab={pageParams?.tab || 'overview'}");
     expect(assets).toContain("initialComponentId={pageParams?.componentId || null}");
+    expect(assets).toContain("if (currentPage === 'asset-detail') goBack()");
 
     expect(detail).toContain("initialTab = 'overview'");
     expect(detail).toContain("initialComponentId = null");

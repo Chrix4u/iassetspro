@@ -24,4 +24,15 @@ describe('GTP workbook report parity contract', () => {
     expect(route).toContain('weekly: [...breakdownWeeklyMap.entries()]')
     expect(route).toContain('byAsset: [...breakdownAssetMap.values()]')
   })
+  it('documents the known stale workbook pivot-cache classification', () => {
+    const reportingPage = readFileSync(
+      join(process.cwd(), 'src/components/repairs/reporting/RWOPReportingPage.tsx'),
+      'utf8',
+    )
+    expect(reportingPage).toContain('Source integrity: EAM follows the workbook&apos;s authoritative JobRecords rows')
+    expect(reportingPage).toContain('WO 161418 is Corrective in JobRecords but remains cached as Breakdown')
+    expect(reportingPage).toContain('inflating week 32 from 6 to 7')
+    expect(reportingPage).toContain('411 source-row breakdown records')
+  })
+
 })

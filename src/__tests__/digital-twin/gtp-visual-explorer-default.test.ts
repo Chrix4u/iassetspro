@@ -8,10 +8,16 @@ describe('GTP Visual Explorer default mode contract', () => {
       path.join(process.cwd(), 'src/components/digital-twin/MachineVisualExplorer.tsx'),
       'utf8',
     );
+    const assetDetail = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/modules/AssetDetailPage.tsx'),
+      'utf8',
+    );
 
     expect(source).toContain("useState(asset.imageUrl ? 'realistic' : 'diagram')");
     expect(source).toContain("setMode(asset.imageUrl ? 'realistic' : 'diagram')");
     expect(source).toContain("value="diagram"");
     expect(source).toContain("EngineeringSchematic");
+    expect(assetDetail).toContain("<p className=\"text-xs font-medium\">Visual Explorer</p>");
+    expect(assetDetail).toContain("setActiveTab('visual-explorer')");
   });
 });

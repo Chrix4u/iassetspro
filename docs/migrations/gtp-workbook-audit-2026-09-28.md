@@ -2,6 +2,23 @@
 
 Source workbook: `Work Orders 20062025.07(1).xlsm`
 
+## Production import status — verified 2026-10-04
+
+The September 28 sections below are retained as the original pre-import audit snapshot. The historical import was subsequently completed on **2026-09-30** and was verified directly against the production PostgreSQL database on **2026-10-04**.
+
+- Historical work orders imported: **2,807 / 2,807**
+- Matching maintenance requests: **2,807**
+- Historical-import audit records: **2,807**
+- Workbook source SHA-256: `b05a023b0486693ae54186f985e9a04b175571fabfc7a17f1b3963188a7967cc`
+- Import batches:
+  - workbook breakdown subset: **411**
+  - remaining safe history: **2,376**
+  - reconciled formerly blocked rows: **20**
+- Final work-order types: **411 breakdown**, **2,372 corrective**, **24 preventive**
+- Historical rows retained without an asset assignment: **19**
+
+The 19 machine-less source rows are preserved as `Unassigned historical work` rather than discarded or fabricated onto an asset. The formerly blocked timestamp row was reconciled before import. All 2,807 imported work orders have matching historical-import audit evidence.
+
 This snapshot records the dry-run reconciliation outcome used to prepare the historical migration into iAssetsPro. No database records were written.
 
 ## Workbook population

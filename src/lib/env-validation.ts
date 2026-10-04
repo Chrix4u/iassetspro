@@ -217,14 +217,14 @@ function checkDatabaseConfig(): ValidationIssue[] {
   if (process.env.NODE_ENV === 'production' && dbUrl.startsWith('file:')) {
     issues.push({
       severity: 'warning',
-      message: 'Using SQLite in production — consider migrating to MariaDB/MySQL for durability',
+      message: 'Using SQLite in production — migrate to PostgreSQL for supported production durability',
       key: 'DATABASE_URL',
-      suggestion: 'Configure a MariaDB/MySQL connection for production',
+      suggestion: 'Configure a PostgreSQL connection for production',
     });
   }
 
   // Check for exposed DB credentials in URL
-  if (dbUrl.startsWith('mysql://')) {
+  if (/^postgres(?:ql)?:\/\//i.test(dbUrl)) {
     try {
       const url = new URL(dbUrl);
       if (url.password === '' || url.password === 'password' || url.password === 'root') {

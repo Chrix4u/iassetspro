@@ -37,8 +37,6 @@ import {
   GitBranch,
   Heart,
   ShieldAlert,
-  Hammer,
-  WrenchIcon,
   Eye,
   BarChart3,
   AlertOctagon,
@@ -62,6 +60,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import type { ComponentRegistryItem, FailureRecord, FailureAnalysisData, PredictionAlertData } from '@/types';
 
 // ============================================================================
@@ -334,6 +333,8 @@ function SkeletonRow() {
 
 function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
   const lastInspection = (asset?.lastInspection as string | null) ?? null;
+  const navigate = useNavigationStore((s) => s.navigate);
+  const assetId = asset?.id ? String(asset.id) : '';
 
   const daysSinceInspection = useMemo(() => {
     if (!lastInspection) return null;
@@ -481,6 +482,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
           <Button
             variant="outline"
             size="sm"
+            disabled={!assetId}
+            onClick={() => navigate('maintenance-work-orders', { create: 'true', assetId })}
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <PlusCircle className="h-3 w-3" />
@@ -489,6 +492,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
           <Button
             variant="outline"
             size="sm"
+            disabled={!assetId}
+            onClick={() => navigate('maintenance-requests', { create: 'true', assetId })}
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <PlusCircle className="h-3 w-3" />
@@ -497,6 +502,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
           <Button
             variant="outline"
             size="sm"
+            disabled={!assetId}
+            onClick={() => navigate('asset-detail', { id: assetId, tab: 'diagrams' })}
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <FileSearch className="h-3 w-3" />
@@ -523,6 +530,8 @@ function MaintenanceTab({
   failureAnalysis: FailureAnalysisData | null;
   failureRecords: FailureRecord[];
 }) {
+  const navigate = useNavigationStore((s) => s.navigate);
+
   return (
     <div className="space-y-3">
       {/* Failure Analysis Summary */}
@@ -614,9 +623,13 @@ function MaintenanceTab({
                 !['completed', 'closed', 'cancelled'].includes(String(wo.status ?? '').toLowerCase());
 
               return (
-                <div
+                <button
+                  type="button"
                   key={String(wo.id ?? i)}
-                  className="flex items-center gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors"
+                  onClick={() => {
+                    if (wo.id) navigate('maintenance-work-orders', { id: String(wo.id) });
+                  }}
+                  className="w-full flex items-center gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors text-left"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -633,7 +646,7 @@ function MaintenanceTab({
                     <StatusBadge status={field(wo, 'status', 'unknown')} />
                     <PriorityBadge priority={field(wo, 'priority', 'low')} />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -682,60 +695,11 @@ function MaintenanceTab({
         )}
       </SectionCard>
 
-      {/* Spare Parts */}
-      <SectionCard title="Spare Parts" icon={<Package className="h-3.5 w-3.5 text-slate-400" />}>
-        <div className="space-y-1.5">
-          {[
-            { name: 'Bearing Assembly', stock: 12, min: 5 },
-            { name: 'Seal Kit - Primary', stock: 3, min: 4 },
-            { name: 'Filter Element', stock: 0, min: 2 },
-          ].map((part, i) => {
-            const inStock = part.stock > part.min;
-            const lowStock = part.stock > 0 && part.stock <= part.min;
-            return (
-              <div key={i} className="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${inStock ? 'bg-emerald-500' : lowStock ? 'bg-amber-500' : 'bg-red-500'}`} />
-                  <span className="text-xs text-slate-300">{part.name}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-semibold ${inStock ? 'text-emerald-400' : lowStock ? 'text-amber-400' : 'text-red-400'}`}>
-                    {part.stock}
-                  </span>
-                  <span className="text-[9px] text-slate-600">in stock</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </SectionCard>
-
-      {/* Tool Requirements */}
-      <SectionCard title="Tool Requirements" icon={<Hammer className="h-3.5 w-3.5 text-slate-400" />}>
-        <div className="space-y-1.5">
-          {[
-            { tool: 'Torque Wrench (50-200 Nm)', status: 'available' },
-            { tool: 'Multimeter (Digital)', status: 'available' },
-            { tool: 'Vibration Analyzer', status: 'checked_out' },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
-              <div className="flex items-center gap-2">
-                <WrenchIcon className="h-3 w-3 text-slate-500" />
-                <span className="text-xs text-slate-300">{item.tool}</span>
-              </div>
-              <Badge
-                variant="outline"
-                className={`text-[9px] px-1.5 py-0 ${
-                  item.status === 'available'
-                    ? 'border-emerald-500/30 text-emerald-400'
-                    : 'border-amber-500/30 text-amber-400'
-                }`}
-              >
-                {item.status === 'available' ? 'Available' : 'In Use'}
-              </Badge>
-            </div>
-          ))}
-        </div>
+      <SectionCard title="Parts & tools" icon={<Package className="h-3.5 w-3.5 text-slate-400" />}>
+        <p className="text-[10px] leading-relaxed text-slate-500">
+          Live parts and tool requirements come from linked work orders and PM schedules.
+          This panel does not invent stock or availability when no authoritative resource data is linked.
+        </p>
       </SectionCard>
     </div>
   );

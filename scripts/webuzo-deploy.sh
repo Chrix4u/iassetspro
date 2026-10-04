@@ -26,26 +26,25 @@ echo -e "${BLUE}═════════════════════�
 
 cd "$APP_PATH" || { echo "Error: $APP_PATH not found"; exit 1; }
 
-echo -e "${GREEN}[1/6]${NC} Pulling latest code..."
+echo -e "${GREEN}[1/7]${NC} Pulling latest code..."
 git fetch origin main
 git reset --hard origin/main
 echo "  Commit: $(git log --oneline -1)"
 
-echo -e "${GREEN}[2/6]${NC} Installing dependencies..."
+echo -e "${GREEN}[2/7]${NC} Installing dependencies..."
 npm install --legacy-peer-deps 2>&1 | tail -3
 
-echo -e "${GREEN}[3/6]${NC} Setting up Prisma client..."
-if [ -d "prisma/prebuilt/.prisma" ]; then
-    cp -r prisma/prebuilt/.prisma node_modules/.prisma
-else
-    npx prisma generate
-fi
+echo -e "${GREEN}[3/7]${NC} Generating PostgreSQL Prisma client..."
+npx prisma generate
 
-echo -e "${GREEN}[4/6]${NC} Building Next.js..."
+echo -e "${GREEN}[4/7]${NC} Applying committed database migrations..."
+npx prisma migrate deploy
+
+echo -e "${GREEN}[5/7]${NC} Building Next.js..."
 export NEXT_TELEMETRY_DISABLED=1
 npx next build 2>&1 | tail -5
 
-echo -e "${GREEN}[5/6]${NC} Copying assets..."
+echo -e "${GREEN}[6/7]${NC} Copying assets..."
 cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
 cp -r node_modules/@prisma/adapter-pg .next/standalone/node_modules/@prisma/adapter-pg 2>/dev/null || true
 cp -r node_modules/pg .next/standalone/node_modules/pg 2>/dev/null || true
@@ -54,7 +53,7 @@ cp -r public .next/standalone/
 
 [ -f "patch-server.js" ] && node patch-server.js
 
-echo -e "${GREEN}[6/6]${NC} Restarting..."
+echo -e "${GREEN}[7/7]${NC} Restarting..."
 pm2 restart eam-system 2>/dev/null || pm2 start npm --name eam-system -- start
 pm2 save
 

@@ -8,23 +8,19 @@ set -e
 echo "===== iAssetsPro VPS Rebuild ====="
 
 # 1. Generate fresh Prisma client
-echo "[1/5] Generating Prisma client..."
+echo "[1/4] Generating Prisma client..."
 npx prisma generate
 
-# 2. Update prebuilt copy (used by production build)
-echo "[2/5] Updating prebuilt Prisma client..."
-cp -r node_modules/.prisma prisma/prebuilt/.prisma
+# 2. Apply committed migrations safely
+echo "[2/4] Applying Prisma migrations..."
+npx prisma migrate deploy
 
-# 3. Push schema to database (creates missing tables)
-echo "[3/5] Syncing database schema..."
-npx prisma db push
-
-# 4. Build production app
-echo "[4/5] Building production app..."
+# 3. Build production app (embeds the freshly generated PostgreSQL client)
+echo "[3/4] Building production app..."
 npm run build
 
-# 5. Restart
-echo "[5/5] Restarting application..."
+# 4. Restart
+echo "[4/4] Restarting application..."
 pm2 restart all 2>/dev/null || true
 # If not using pm2, try: systemctl restart iassetspro
 

@@ -447,7 +447,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   const [mode, setMode] = useState('diagram');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; dragging: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
@@ -484,21 +484,28 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
       if (event.button !== 0) return;
       const target = event.target as HTMLElement;
       if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         originX: pan.x,
         originY: pan.y,
+        dragging: false,
       };
     },
     onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
+      const deltaX = event.clientX - drag.startX;
+      const deltaY = event.clientY - drag.startY;
+      if (!drag.dragging) {
+        if (Math.hypot(deltaX, deltaY) < 5) return;
+        drag.dragging = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       setPan({
-        x: drag.originX + event.clientX - drag.startX,
-        y: drag.originY + event.clientY - drag.startY,
+        x: drag.originX + deltaX,
+        y: drag.originY + deltaY,
       });
     },
     onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {

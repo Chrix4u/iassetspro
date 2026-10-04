@@ -4,8 +4,9 @@ import { useRef, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import type {
-  DigitalTwinAnnotation,
+import {
+  useDigitalTwinStore,
+  type DigitalTwinAnnotation,
 } from '@/stores/digitalTwinStore';
 import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
@@ -31,6 +32,7 @@ function AnnotationPin({ annotation, index }: AnnotationPinProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const pinRef = useRef<HTMLDivElement>(null);
   const floatOffset = useRef(Math.random() * Math.PI * 2); // Random phase for float animation
+  const sceneAssetId = useStoreSelector((s) => s.currentScene?.assetId ?? null);
 
   // 3D line from annotation position to the label position (offset upward)
   const targetPosition: [number, number, number] = [
@@ -55,11 +57,16 @@ function AnnotationPin({ annotation, index }: AnnotationPinProps) {
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    // Double-click could open a detail view (placeholder)
-    console.log(
-      `[DigitalTwin] Annotation detail: "${annotation.text}" by ${annotation.author ?? 'unknown'}`,
-    );
-  }, [annotation.text, annotation.author]);
+
+    if (annotation.meshName && sceneAssetId) {
+      setTimeout(() => {
+        useDigitalTwinStore.getState().selectMesh(annotation.meshName!, sceneAssetId);
+      }, 0);
+      return;
+    }
+
+    setIsExpanded(true);
+  }, [annotation.meshName, sceneAssetId]);
 
   // Determine the line endpoint including float offset
   const labelY = annotation.position[1] + 0.3 + currentYOffset.current;

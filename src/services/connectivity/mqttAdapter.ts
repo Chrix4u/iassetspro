@@ -261,6 +261,18 @@ export class MQTTAdapter extends EventEmitter {
     this.connecting = true;
     this.emit('status_change', { status: 'connecting' });
 
+    if (process.env.NODE_ENV === 'production') {
+      const error = new Error(
+        'MQTT provider is not configured for production. Wire the mqtt transport before enabling this data source.',
+      );
+      this.connected = false;
+      this.connecting = false;
+      this.errorCount++;
+      this.emit('status_change', { status: 'error', error: error.message });
+      log.error('MQTT connection refused: production transport not configured', error);
+      throw error;
+    }
+
     // Try brokers in order (failover support)
     const maxAttempts = this.totalBrokers.length;
     let lastError: Error | null = null;

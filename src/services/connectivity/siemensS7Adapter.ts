@@ -50,19 +50,14 @@ export class SiemensS7Adapter extends EventEmitter {
     if (this.connected) return;
     this.emit('status_change', { status: 'connecting' });
     log.info(`Connecting to Siemens S7: ${this.config.host}:${this.config.port || 102}`);
-    try {
-      // Production: use 'nodes7' package
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      this.connected = true;
-      this.emit('connected');
-      this.emit('status_change', { status: 'connected' });
-      log.info(`Siemens S7 connected (${this.config.plcType || 'auto'})`);
-    } catch (error) {
-      this.errorCount++;
-      this.emit('error', error);
-      this.emit('status_change', { status: 'error', error: (error as Error).message });
-      throw error;
-    }
+
+    const error = new Error(
+      'Siemens S7 provider is not configured. Install and wire a supported S7 transport before enabling this data source.',
+    );
+    this.errorCount++;
+    this.emit('status_change', { status: 'error', error: error.message });
+    log.error('Siemens S7 connection refused: provider not configured', error);
+    throw error;
   }
 
   async disconnect(): Promise<void> {
@@ -91,9 +86,7 @@ export class SiemensS7Adapter extends EventEmitter {
   private async readBlock(block: S7DataBlock): Promise<void> {
     try {
       this.readCount++;
-      // Production: use nodes7 to read DB block
-      let processedValue = 0;
-      this.emit('data', { mappingId: block.mappingId, tag: block.tag, dbNumber: block.dbNumber, startByte: block.startByte, processedValue, timestamp: new Date() });
+      throw new Error('Siemens S7 provider is not configured. Refusing to fabricate telemetry values.');
     } catch (error) {
       this.errorCount++;
       log.error(`S7 read error for DB${block.dbNumber}`, error as Error);

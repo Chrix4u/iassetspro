@@ -933,6 +933,18 @@ export class OPCUAAdapter extends EventEmitter {
     this.emit('status_change', { status: 'connecting' });
     log.info(`Connecting to OPC-UA server: ${this.config.endpoint}`);
 
+    if (process.env.NODE_ENV === 'production') {
+      const error = new Error(
+        'OPC-UA provider is not configured for production. Wire node-opcua before enabling this data source.',
+      );
+      this.connected = false;
+      this.connecting = false;
+      this.errorCount++;
+      this.emit('status_change', { status: 'error', error: error.message });
+      log.error('OPC-UA connection refused: production transport not configured', error);
+      throw error;
+    }
+
     // Validate security config — warn only in stub mode; production SDK enforces these
     const securityErrors = this.validateSecurityConfig();
     if (securityErrors.length > 0) {

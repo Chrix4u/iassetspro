@@ -61,33 +61,23 @@ export class ModbusAdapter extends EventEmitter {
 
   async connect(): Promise<void> {
     if (this.connected || this.connecting) return;
+
     this.connecting = true;
     this.emit('status_change', { status: 'connecting' });
     log.info(`Connecting to Modbus TCP: ${this.config.host}:${this.config.port}`);
 
-    try {
-      // Production: use 'modbus-serial' or 'jsmodbus'
-      // const Modbus = await import('jsmodbus');
-      // const socket = new net.Socket();
-      // this.client = new Modbus.client.TCP(socket, this.config.unitId || 1);
-      // await new Promise((resolve, reject) => { socket.connect(this.config.port, this.config.host, resolve); socket.on('error', reject); });
-      // await this.client.readHoldingRegisters(0, 1); // test connection
-
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      this.connected = true;
-      this.connecting = false;
-      this.emit('connected');
-      this.emit('status_change', { status: 'connected' });
-      log.info('Modbus TCP connected');
-    } catch (error) {
-      this.connected = false;
-      this.connecting = false;
-      this.errorCount++;
-      this.emit('error', error);
-      this.emit('status_change', { status: 'error', error: (error as Error).message });
-      log.error('Modbus TCP connection failed', error as Error);
-      throw error;
-    }
+    // A real Modbus transport is not bundled yet. Never report a simulated
+    // connection as healthy because downstream polling would turn placeholder
+    // values into authoritative telemetry.
+    const error = new Error(
+      'Modbus TCP provider is not configured. Install and wire a supported Modbus transport before enabling this data source.',
+    );
+    this.connected = false;
+    this.connecting = false;
+    this.errorCount++;
+    this.emit('status_change', { status: 'error', error: error.message });
+    log.error('Modbus TCP connection refused: provider not configured', error);
+    throw error;
   }
 
   async disconnect(): Promise<void> {
@@ -123,10 +113,12 @@ export class ModbusAdapter extends EventEmitter {
 
   async readOnce(functionCode: 1 | 2 | 3 | 4, startAddress: number, quantity: number): Promise<number[]> {
     if (!this.connected) throw new Error('Modbus not connected');
+
     this.readCount++;
-    // Production: use modbus client to read
-    log.debug(`Modbus read: FC${functionCode} addr=${startAddress} qty=${quantity}`);
-    return new Array(quantity).fill(0); // placeholder
+    log.debug(`Modbus read requested: FC${functionCode} addr=${startAddress} qty=${quantity}`);
+    throw new Error(
+      'Modbus TCP provider is not configured. Refusing to fabricate telemetry values.',
+    );
   }
 
   private async executePoll(poll: ModbusPollDefinition): Promise<void> {

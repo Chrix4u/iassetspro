@@ -1,3 +1,5 @@
+[Reading 80 lines from start (total: 80 lines, 0 remaining)]
+
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -52,6 +54,10 @@ describe('deep machine visual explorer', () => {
 
   it('has zoom controls and part-level AI generation', () => {
     expect(explorer).toContain('Math.min(4');
+    expect(explorer).toContain('setPointerCapture');
+    expect(explorer).toContain('cursor-grab active:cursor-grabbing touch-none');
+    expect(explorer).toContain('translate(${pan.x}px, ${pan.y}px) scale(${zoom})');
+    expect(explorer).toContain('resetViewport');
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');
@@ -74,3 +80,5 @@ describe('deep machine visual explorer', () => {
     expect(generator).toContain("visualType: 'exploded'");
   });
 });
+
+[executed on device: vps.lightworldtech.com (5ce193d7-af15-4a4a-8909-478bdfb81319)]

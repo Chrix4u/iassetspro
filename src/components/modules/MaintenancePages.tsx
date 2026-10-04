@@ -183,7 +183,10 @@ export function MaintenanceRequestsPage() {
     if (pageParams?.autoOpen === 'first') {
       autoOpenRef.current = 'first';
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (pageParams?.create === 'true') {
+      setCreateOpen(true);
+    }
+  }, []);
 
   const filteredRequests = useMemo(() => {
     if (!searchText.trim()) return requests;
@@ -308,7 +311,10 @@ export function MaintenanceRequestsPage() {
           <>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
           <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Maintenance Request" footer={<Button type="submit" form="create-mr-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>}>
-            <CreateMRForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+            <CreateMRForm
+              initialAssetId={pageParams?.assetId}
+              onSuccess={() => { setCreateOpen(false); handleRefresh(); }}
+            />
           </ResponsiveDialog>
           </>
         )}
@@ -430,13 +436,19 @@ export function MaintenanceRequestsPage() {
 // CREATE MR FORM
 // ============================================================================
 
-export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
+export function CreateMRForm({
+  onSuccess,
+  initialAssetId = '',
+}: {
+  onSuccess: () => void;
+  initialAssetId?: string;
+}) {
   const { user, isAdmin } = useAuthStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
   const [assetMode, setAssetMode] = useState<'registered' | 'manual'>('registered');
-  const [assetId, setAssetId] = useState('');
+  const [assetId, setAssetId] = useState(initialAssetId);
   const [manualAssetName, setManualAssetName] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [departmentLabel, setDepartmentLabel] = useState('');
@@ -2167,7 +2179,10 @@ export function WorkOrdersPage() {
     if (pageParams.id) {
       setDetailId(pageParams.id);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (pageParams.create === 'true') {
+      setCreateOpen(true);
+    }
+  }, []);
 
   const filteredWOs = useMemo(() => {
     if (!searchText.trim()) return workOrders;
@@ -2247,7 +2262,10 @@ export function WorkOrdersPage() {
           <>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
           <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} large desktopMaxWidth="sm:max-w-4xl" title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
-            <CreateWOForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+            <CreateWOForm
+              initialAssetId={pageParams?.assetId}
+              onSuccess={() => { setCreateOpen(false); handleRefresh(); }}
+            />
           </ResponsiveDialog>
           </>
         )}
@@ -2437,7 +2455,13 @@ export function WorkOrdersPage() {
 // CREATE WO FORM
 // ============================================================================
 
-export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
+export function CreateWOForm({
+  onSuccess,
+  initialAssetId = '',
+}: {
+  onSuccess: () => void;
+  initialAssetId?: string;
+}) {
   const { user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
@@ -2449,7 +2473,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     // Basic
     title: '',
     description: '',
-    assetId: '',
+    assetId: initialAssetId,
     // Section: WO Details
     type: 'corrective' as string,
     priority: 'medium' as string,

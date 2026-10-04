@@ -157,6 +157,16 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
 
   // ── Event handlers ────────────────────────────────────────────────────────
 
+  const openComponentDetails = useCallback(() => {
+    if (!isClickable) return;
+    // Defer Zustand setState via setTimeout(0) to prevent Error #185.
+    // R3F pointer events can fire during React's concurrent render phase,
+    // and Zustand set() bypasses React's scheduler (not wrapped by startTransition).
+    setTimeout(() => {
+      useDigitalTwinStore.getState().selectMesh(binding.meshName, binding.assetId);
+    }, 0);
+  }, [isClickable, binding.meshName, binding.assetId]);
+
   const handleClick = useCallback(
     (e: THREE.Event) => {
       e.stopPropagation();
@@ -165,13 +175,9 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         isLongPressRef.current = false;
         return;
       }
-      if (!isClickable) return;
-      // Defer Zustand setState via setTimeout(0) to prevent Error #185.
-      // R3F pointer events can fire during React's concurrent render phase,
-      // and Zustand set() bypasses React's scheduler (not wrapped by startTransition).
-      setTimeout(() => useDigitalTwinStore.getState().selectMesh(binding.meshName, binding.assetId), 0);
+      openComponentDetails();
     },
-    [isClickable, binding.meshName, binding.assetId],
+    [openComponentDetails],
   );
 
   const handleDoubleClick = useCallback(
@@ -203,13 +209,10 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       clearLongPress();
       longPressTimerRef.current = setTimeout(() => {
         isLongPressRef.current = true;
-        // Long-press = right-click context placeholder
-        console.log(
-          `[DigitalTwin] Context menu placeholder for: ${binding.meshName} (${binding.assetName})`,
-        );
+        openComponentDetails();
       }, 500);
     },
-    [isClickable, binding.meshName, binding.assetName, clearLongPress],
+    [isClickable, binding.meshName, clearLongPress, openComponentDetails],
   );
 
   const handlePointerOut = useCallback(
@@ -228,12 +231,9 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const handleContextMenu = useCallback(
     (e: THREE.Event) => {
       e.stopPropagation();
-      // Right-click context menu placeholder
-      console.log(
-        `[DigitalTwin] Context menu placeholder for: ${binding.meshName} (${binding.assetName})`,
-      );
+      openComponentDetails();
     },
-    [binding.meshName, binding.assetName],
+    [openComponentDetails],
   );
 
   // ── Per-frame material updates with spring-based transitions ──────────────

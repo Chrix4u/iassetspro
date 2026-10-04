@@ -29,4 +29,23 @@ describe('PostgreSQL deployment safety', () => {
     expect(read('scripts/vm-deploy.sh')).not.toContain('node_modules/mariadb');
     expect(read('scripts/start-production.sh')).toContain('bunx prisma migrate deploy');
   });
+  it('keeps live diagnostics and executable maintenance utilities PostgreSQL-native', () => {
+    const statusRoute = read('src/app/api/v1/status/route.ts');
+    const backfill = read('scripts/backfill-tool-request-numbers.ts');
+    const rebuild = read('scripts/rebuild-vps.sh');
+
+    expect(statusRoute).toContain("'postgresql'");
+    expect(statusRoute).not.toContain("'mariadb'");
+    expect(statusRoute).not.toContain("'sqlite'");
+
+    expect(backfill).toContain("create-postgres-adapter");
+    expect(backfill).toContain('PostgreSQL');
+    expect(backfill).not.toContain('@prisma/adapter-mariadb');
+    expect(backfill).not.toContain('PrismaMariaDb');
+
+    expect(rebuild).toContain('retired legacy deployment path');
+    expect(rebuild).toContain('deploy-production-artifact.sh');
+    expect(rebuild).not.toMatch(/(?:mysql|mariadb|postgres(?:ql)?):\/\/[^\s"']+/i);
+  });
+
 });

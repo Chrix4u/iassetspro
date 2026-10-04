@@ -630,16 +630,16 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_290px]">
-      <Card className="border-0 shadow-sm">
+    <div className="grid gap-4 xl:h-[calc(100dvh-5rem)] xl:min-h-0 xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch">
+      <Card className="border-0 shadow-sm xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
         <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Network className="h-4 w-4" />Machine hierarchy</CardTitle></CardHeader>
-        <CardContent className="p-2">
+        <CardContent className="p-2 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
           <button type="button" onClick={() => setSelectedId(null)}
             className={'w-full rounded-lg border px-3 py-2 text-left cursor-pointer hover:bg-muted/60 ' + (selectedId === null ? 'border-primary bg-primary/5' : 'border-transparent')}>
             <div className="text-xs font-semibold">{asset.name}</div>
             <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
-          <ScrollArea className="mt-1 h-[560px] pr-1">
+          <ScrollArea className="mt-1 h-[560px] pr-1 xl:h-auto xl:min-h-0 xl:flex-1">
             {roots.map((root) => (
               <HierarchyNode key={root.id} node={root} childrenByParent={childrenByParent}
                 selectedId={selectedId} onSelect={setSelectedId}
@@ -649,7 +649,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm overflow-hidden">
+      <Card className="border-0 shadow-sm overflow-hidden xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
         <CardHeader className="pb-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -754,7 +754,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
+      <div className="space-y-4 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Target className="h-4 w-4" />Selected item</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-xs">

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -192,12 +192,20 @@ function HierarchyNode({
 }
 
 function EngineeringSchematic({
-  asset, components, selectedId, onSelect,
+  asset, components, selectedId, onSelect, zoom, pan, panHandlers,
 }: {
   asset: AssetSummary;
   components: MachineComponent[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  zoom: number;
+  pan: { x: number; y: number };
+  panHandlers: {
+    onPointerDown: React.PointerEventHandler<HTMLDivElement>;
+    onPointerMove: React.PointerEventHandler<HTMLDivElement>;
+    onPointerUp: React.PointerEventHandler<HTMLDivElement>;
+    onPointerCancel: React.PointerEventHandler<HTMLDivElement>;
+  };
 }) {
   const layout = useMemo(() => {
     const byParent = new Map<string, MachineComponent[]>();
@@ -228,8 +236,18 @@ function EngineeringSchematic({
   });
 
   return (
-    <div className="h-full min-h-[460px] overflow-auto rounded-xl border bg-slate-950">
-      <svg width={width} height={height} role="img" aria-label="Machine component engineering schematic">
+    <div
+      className="h-full min-h-[460px] overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none"
+      {...panHandlers}
+    >
+      <svg
+        width={width}
+        height={height}
+        role="img"
+        aria-label="Machine component engineering schematic"
+        className="origin-top-left select-none transition-transform duration-75"
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+      >
         <defs>
           <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.09)" strokeWidth="1" />
@@ -276,13 +294,14 @@ function EngineeringSchematic({
 
 
 function ProgrammaticEngineeringView({
-  asset, selected, childNodes, exploded, zoom, onSelect,
+  asset, selected, childNodes, exploded, zoom, pan, onSelect,
 }: {
   asset: AssetSummary;
   selected: MachineComponent | null;
   childNodes: MachineComponent[];
   exploded: boolean;
   zoom: number;
+  pan: { x: number; y: number };
   onSelect: (id: string) => void;
 }) {
   const subjectName = selected?.name || asset.name;
@@ -297,10 +316,10 @@ function ProgrammaticEngineeringView({
   const bodyHeight = selected?.componentType === 'part' ? 150 : 220;
 
   return (
-    <div className="relative min-h-[500px] overflow-auto rounded-xl border bg-slate-950">
+    <div className="relative min-h-[500px] overflow-hidden rounded-xl border bg-slate-950">
       <div
-        className="origin-center transition-transform duration-200"
-        style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'center center' }}
+        className="origin-center select-none transition-transform duration-75"
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
       >
         <svg
           viewBox={'0 0 ' + width + ' ' + height}
@@ -427,6 +446,8 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState('diagram');
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
@@ -448,7 +469,48 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
-  useEffect(() => { setZoom(1); }, [selectedId, mode]);
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [selectedId, mode]);
+
+  const resetViewport = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const panHandlers = useMemo(() => ({
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: pan.x,
+        originY: pan.y,
+      };
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      setPan({
+        x: drag.originX + event.clientX - drag.startX,
+        y: drag.originY + event.clientY - drag.startY,
+      });
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+    },
+  }), [pan.x, pan.y]);
 
   useEffect(() => {
     let cancelled = false;
@@ -601,7 +663,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
               <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.max(0.6, +(v - 0.2).toFixed(2)))}><ZoomOut className="h-3.5 w-3.5" /></Button>
               <span className="min-w-12 text-center text-[11px] text-muted-foreground">{Math.round(zoom * 100)}%</span>
               <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.min(4, +(v + 0.2).toFixed(2)))}><ZoomIn className="h-3.5 w-3.5" /></Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom(1)}><RefreshCw className="h-3.5 w-3.5" /></Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={resetViewport} title="Reset zoom and pan"><RefreshCw className="h-3.5 w-3.5" /></Button>
             </div>
           </div>
         </CardHeader>
@@ -615,7 +677,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
             </TabsList>
 
             <TabsContent value="diagram" className="mt-3">
-              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} />
+              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
             </TabsContent>
 
             {['realistic', 'technical2d', 'exploded'].map((tabMode) => (
@@ -625,12 +687,16 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
                     AI-generated reference visualization — not an OEM drawing or verified as-built photograph. Verify geometry, dimensions, clearances and procedures against approved engineering documents and the physical machine before maintenance.
                   </div>
                 )}
-                <div className="relative min-h-[500px] overflow-auto rounded-xl border bg-slate-950">
+                <div
+                  className="relative min-h-[500px] overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none"
+                  {...panHandlers}
+                >
                   <div className="flex min-h-[500px] items-center justify-center p-6">
                     {imageUrl ? (
                       <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
-                        className="max-h-[760px] origin-center object-contain transition-transform duration-200"
-                        style={{ transform: 'scale(' + zoom + ')' }} />
+                        className="max-h-[760px] origin-center select-none object-contain transition-transform duration-75"
+                        draggable={false}
+                        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} />
                     ) : tabMode === 'realistic' ? (
                       <div className="flex max-w-sm flex-col items-center gap-3 p-8 text-center text-slate-400">
                         <Sparkles className="h-10 w-10 text-cyan-400" />
@@ -644,6 +710,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
                         childNodes={drillChildren}
                         exploded={tabMode === 'exploded'}
                         zoom={zoom}
+                        pan={pan}
                         onSelect={setSelectedId}
                       />
                     )}

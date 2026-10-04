@@ -52,6 +52,10 @@ describe('deep machine visual explorer', () => {
 
   it('has zoom controls and part-level AI generation', () => {
     expect(explorer).toContain('Math.min(4');
+    expect(explorer).toContain('setPointerCapture');
+    expect(explorer).toContain('cursor-grab active:cursor-grabbing touch-none');
+    expect(explorer).toContain('translate(${pan.x}px, ${pan.y}px) scale(${zoom})');
+    expect(explorer).toContain('resetViewport');
     expect(explorer).toContain("api.post('/api/component-visuals/generate'");
     expect(explorer).toContain('componentId: selectedId');
     expect(explorer).toContain('Generate AI visual');

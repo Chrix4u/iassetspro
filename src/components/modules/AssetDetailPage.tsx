@@ -143,7 +143,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Keep the side-sheet asset experience, but open Visual Explorer already focused
   // on the requested assembly/component/part.
   useEffect(() => {
-    if (pageParams?.id !== id) return;
+    if (!pageParams?.id || pageParams.id !== id) return;
 
     if (pageParams?.componentId) {
       setVisualFocusId(pageParams.componentId);

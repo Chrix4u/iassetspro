@@ -607,6 +607,7 @@ export async function GET(request: NextRequest) {
       && typeof wo.description === 'string'
       && wo.description.includes('GTP historical workbook')
     );
+    const legacyUnassignedBreakdownCount = legacyBreakdownOrders.filter(wo => !wo.assetId).length;
     const legacyBreakdownWeeklyMap = new Map<string, BreakdownBucket>();
     const legacyBreakdownAssetMap = new Map<string, BreakdownBucket & { assetId: string; assetName: string; assetTag?: string | null }>();
 
@@ -676,6 +677,8 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => b.breakdowns - a.breakdowns || b.recordedDowntimeMinutes - a.recordedDowntimeMinutes)
         .slice(0, 50),
       legacyParity: {
+        sourceBreakdownCount: legacyBreakdownOrders.length,
+        unassignedBreakdownCount: legacyUnassignedBreakdownCount,
         breakdownsByMachine: [...legacyBreakdownAssetMap.values()]
           .map(row => ({
             assetName: row.assetName,

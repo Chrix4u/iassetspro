@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import {
+  canAccessPlantStrict,
+  getPlantFilterWhere,
+  getPlantScope,
+} from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +18,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    const assetPlantWhere = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     let page = parseInt(searchParams.get('page') || '1', 10);
@@ -20,20 +31,22 @@ export async function GET(request: NextRequest) {
     page = Math.max(1, isNaN(page) ? 1 : page);
     limit = Math.min(100, Math.max(1, isNaN(limit) ? 50 : limit));
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      asset: { is: assetPlantWhere },
+    };
 
     if (search) {
       where.OR = [
         { name: { contains: search } },
         { description: { contains: search } },
         { type: { contains: search } },
-        { asset: { name: { contains: search } } },
+        { asset: { is: { name: { contains: search } } } },
       ];
     }
 
     const [twins, total] = await Promise.all([
       db.digitalTwin.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
+        where,
         include: {
           asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
           createdBy: { select: { id: true, fullName: true, username: true } },
@@ -42,24 +55,29 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.digitalTwin.count({
-        where: Object.keys(where).length > 0 ? where : undefined,
+      db.digitalTwin.count({ where }),
+    ]);
+
+    const scopedWhere = { asset: { is: assetPlantWhere } };
+    const [totalKpi, activeCount, inactiveCount, activeTwinAssets] = await Promise.all([
+      db.digitalTwin.count({ where: scopedWhere }),
+      db.digitalTwin.count({ where: { ...scopedWhere, isActive: true } }),
+      db.digitalTwin.count({ where: { ...scopedWhere, isActive: false } }),
+      db.digitalTwin.findMany({
+        where: { ...scopedWhere, isActive: true },
+        select: { assetId: true },
       }),
     ]);
 
-    const [totalKpi, activeCount, inactiveCount] = await Promise.all([
-      db.digitalTwin.count(),
-      db.digitalTwin.count({ where: { isActive: true } }),
-      db.digitalTwin.count({ where: { isActive: false } }),
-    ]);
-
-    // Count alerts from IoT devices linked to assets that have twins
+    // Count alerts only for assets represented by twins inside the caller's
+    // authenticated plant scope. This prevents the KPI card from leaking
+    // cross-plant alert counts even when the list itself is scoped.
     const activeAlertsCount = await db.iotAlert.count({
       where: {
         status: 'active',
         severity: { in: ['warning', 'critical'] },
         device: {
-          assetId: { in: (await db.digitalTwin.findMany({ where: { isActive: true }, select: { assetId: true } })).map(t => t.assetId) },
+          assetId: { in: activeTwinAssets.map((t) => t.assetId) },
         },
       },
     });
@@ -71,6 +89,7 @@ export async function GET(request: NextRequest) {
       kpis: {
         total: totalKpi,
         activeSync: activeCount,
+        inactive: inactiveCount,
         simulationRuns: 0,
         alerts: activeAlertsCount,
       },
@@ -111,6 +130,22 @@ export async function POST(request: NextRequest) {
 
     if (!name) {
       return NextResponse.json({ success: false, error: 'Twin name is required' }, { status: 400 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const asset = await db.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, plantId: true },
+    });
+    if (!asset) {
+      return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Check if twin already exists for this asset

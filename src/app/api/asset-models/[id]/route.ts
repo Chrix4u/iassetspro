@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -16,12 +17,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const model = await db.assetModel.findUnique({
       where: { id },
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, serialNumber: true } },
+        asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, serialNumber: true, plantId: true } },
         uploadedBy: { select: { id: true, fullName: true, username: true } },
         meshBindings: {
           include: {
@@ -34,6 +40,9 @@ export async function GET(
 
     if (!model) {
       return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: model });
@@ -57,12 +66,23 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.assetModel.findUnique({ where: { id } });
+    const existing = await db.assetModel.findUnique({
+      where: { id },
+      include: { asset: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -121,11 +141,22 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
-    const existing = await db.assetModel.findUnique({ where: { id } });
+    const existing = await db.assetModel.findUnique({
+      where: { id },
+      include: { asset: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     // Delete associated mesh bindings first

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import {
+  canAccessPlantStrict,
+  getPlantFilterWhere,
+  getPlantScope,
+} from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +18,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    const assetPlantWhere = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const assetId = searchParams.get('assetId');
@@ -22,18 +33,24 @@ export async function GET(request: NextRequest) {
     page = Math.max(1, isNaN(page) ? 1 : page);
     limit = Math.min(100, Math.max(1, isNaN(limit) ? 20 : limit));
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      asset: { is: assetPlantWhere },
+    };
 
     if (search) {
       where.OR = [
         { name: { contains: search } },
         { fileName: { contains: search } },
-        { asset: { name: { contains: search } } },
-        { asset: { assetTag: { contains: search } } },
+        { asset: { is: { name: { contains: search } } } },
+        { asset: { is: { assetTag: { contains: search } } } },
       ];
     }
 
     if (assetId) {
+      const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });
+      if (!asset || !canAccessPlantStrict(plantScope, asset.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
       where.assetId = assetId;
     }
 
@@ -43,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     const [models, total] = await Promise.all([
       db.assetModel.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
+        where,
         include: {
           asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
           uploadedBy: { select: { id: true, fullName: true, username: true } },
@@ -53,9 +70,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.assetModel.count({
-        where: Object.keys(where).length > 0 ? where : undefined,
-      }),
+      db.assetModel.count({ where }),
     ]);
 
     return NextResponse.json({
@@ -103,10 +118,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'File type is required' }, { status: 400 });
     }
 
-    // Verify asset exists
-    const asset = await db.asset.findUnique({ where: { id: assetId } });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    // Verify asset exists and belongs to the caller's plant scope.
+    const asset = await db.asset.findUnique({ where: { id: assetId }, select: { id: true, plantId: true } });
     if (!asset) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const model = await db.assetModel.create({

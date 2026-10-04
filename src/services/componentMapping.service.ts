@@ -145,8 +145,13 @@ export const componentMappingService = {
       where: { id },
       include: {
         model: {
-          select: { id: true, name: true, plantId: true, assetId: true },
-          include: { asset: { select: { plantId: true } } },
+          select: {
+            id: true,
+            name: true,
+            plantId: true,
+            assetId: true,
+            asset: { select: { plantId: true } },
+          },
         },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },

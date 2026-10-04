@@ -6,7 +6,7 @@
 # This script:
 #   1. Validates required environment variables
 #   2. Generates the Prisma client
-#   3. Pushes the Prisma schema to the database
+#   3. Applies committed Prisma migrations to PostgreSQL
 #   4. Starts the application with PM2
 #   5. Verifies application health
 # ============================================================================
@@ -118,19 +118,14 @@ else
 fi
 echo ""
 
-# ---- Step 5: Push Schema to Database ---------------------------------------
-info "Pushing database schema..."
-if bunx prisma db push --accept-data-loss 2>&1; then
-  ok "Database schema pushed successfully."
+# ---- Step 5: Apply Committed Database Migrations ---------------------------
+info "Applying committed Prisma migrations..."
+if bunx prisma migrate deploy 2>&1; then
+  ok "Database migrations applied successfully."
 else
-  warn "Database schema push encountered issues."
-  warn "Attempting without --accept-data-loss..."
-  if bunx prisma db push 2>&1; then
-    ok "Database schema pushed successfully (without data-loss flag)."
-  else
-    error "Database schema push failed. Please check your DATABASE_URL and database connectivity."
-    exit 1
-  fi
+  error "Prisma migration deploy failed. Refusing to mutate production with db push."
+  error "Check DATABASE_URL, migration history, and database connectivity."
+  exit 1
 fi
 echo ""
 

@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 
 // GET /api/v1/status — API version info and infrastructure status
 export async function GET() {
+  const databaseUrl = process.env.DATABASE_URL || '';
+  const databaseType = /^postgres(?:ql)?:\/\//i.test(databaseUrl) || (!databaseUrl && Boolean(process.env.DB_HOST))
+    ? 'postgresql'
+    : 'unknown';
+
   return NextResponse.json({
     success: true,
     data: {
@@ -10,7 +15,7 @@ export async function GET() {
       platform: 'iAssetsPro Enterprise',
       infrastructure: {
         redis: { status: process.env.REDIS_URL ? 'connected' : 'unavailable', type: 'optional' },
-        database: { type: process.env.DATABASE_URL?.includes('mysql') ? 'mariadb' : 'sqlite', status: 'connected' },
+        database: { type: databaseType, status: 'connected' },
         storage: { type: process.env.S3_ENDPOINT ? 's3' : 'local', status: 'available' },
         search: { type: 'in-memory', status: 'available' },
       },

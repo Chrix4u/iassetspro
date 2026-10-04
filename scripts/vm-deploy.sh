@@ -107,8 +107,9 @@ echo -e "${CYAN}[4/5]${NC} Building..."
 
 rm -rf .next
 
-# Copy prebuilt Prisma client if available
-[ -d prisma/prebuilt/.prisma ] && { rm -rf node_modules/.prisma; cp -r prisma/prebuilt/.prisma node_modules/.prisma; }
+# Always generate from the checked-out schema. Never inject a checked-in
+# generated client from another database provider.
+bunx prisma generate
 
 export NEXT_TELEMETRY_DISABLED=1
 
@@ -130,8 +131,8 @@ echo ""
 echo -e "${CYAN}[5/5]${NC} Copying assets & restarting..."
 
 cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
-cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb 2>/dev/null || true
-cp -r node_modules/mariadb .next/standalone/node_modules/mariadb 2>/dev/null || true
+cp -r node_modules/@prisma/adapter-pg .next/standalone/node_modules/@prisma/adapter-pg 2>/dev/null || true
+cp -r node_modules/pg .next/standalone/node_modules/pg 2>/dev/null || true
 cp -r .next/static .next/standalone/.next/
 cp -r public .next/standalone/
 

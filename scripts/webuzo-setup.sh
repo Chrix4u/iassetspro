@@ -201,18 +201,13 @@ log_step "Step 5: Installing dependencies"
 npm install --legacy-peer-deps 2>&1 | tail -5
 log_info "Dependencies installed"
 
-log_info "Copying prebuilt Prisma client..."
-if [ -d "prisma/prebuilt/.prisma" ]; then
-    cp -r prisma/prebuilt/.prisma node_modules/.prisma
-    log_info "Prebuilt Prisma client copied"
-else
-    npx prisma generate
-    log_info "Prisma client generated"
-fi
+log_info "Generating Prisma client from the current PostgreSQL schema..."
+npx prisma generate
+log_info "Prisma client generated"
 
-log_info "Pushing database schema..."
-npx prisma db push --accept-data-loss 2>&1 | tail -5
-log_info "Database schema pushed"
+log_info "Applying committed database migrations..."
+npx prisma migrate deploy 2>&1 | tail -5
+log_info "Database migrations applied"
 
 log_info "Building Next.js (this may take 2-5 minutes on small VPS)..."
 export NEXT_TELEMETRY_DISABLED=1

@@ -19,40 +19,33 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
+import { createAdapter } from '../src/lib/create-postgres-adapter';
 
-// Build Prisma client using the same MariaDB adapter as the app
+// Build Prisma client using the same PostgreSQL adapter as the app.
 function createPrismaClient(): PrismaClient {
-  const host = process.env.DB_HOST || process.env.MYSQL_HOST;
-  const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
-  const user = process.env.DB_USER || process.env.MYSQL_USER;
-  const password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
-  const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+  let connectionString = process.env.DATABASE_URL || '';
 
-  if (host && user && password && database) {
-    const adapter = new PrismaMariaDb({ host, port, user, password, database, connectionLimit: 5 });
-    console.log(`🔄 Connecting to MariaDB: ${host}:${port}/${database}...`);
-    return new PrismaClient({ adapter });
+  if (!connectionString) {
+    const host = process.env.DB_HOST;
+    const port = process.env.DB_PORT || '5432';
+    const user = process.env.DB_USER;
+    const password = process.env.DB_PASSWORD;
+    const database = process.env.DB_NAME;
+
+    if (host && user && password && database) {
+      connectionString =
+        `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
+    }
   }
 
-  // Try DATABASE_URL
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.startsWith('mysql://')) {
-    const url = new URL(dbUrl);
-    const adapter = new PrismaMariaDb({
-      host: url.hostname,
-      port: parseInt(url.port || '3306', 10),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      database: url.pathname.slice(1),
-      connectionLimit: 5,
-    });
-    console.log(`🔄 Connecting to MariaDB via DATABASE_URL: ${url.host}/${url.pathname.slice(1)}...`);
-    return new PrismaClient({ adapter });
+  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) {
+    throw new Error('DATABASE_URL must be a PostgreSQL connection string');
   }
 
-  console.error('❌ No database credentials found. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME or DATABASE_URL.');
-  process.exit(1);
+  const adapter = createAdapter(connectionString);
+  const url = new URL(connectionString);
+  console.log(`🔄 Connecting to PostgreSQL: ${url.host}/${url.pathname.slice(1)}...`);
+  return new PrismaClient({ adapter });
 }
 
 async function backfillRequestNumbers() {

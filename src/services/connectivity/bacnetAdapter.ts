@@ -45,19 +45,14 @@ export class BACnetAdapter extends EventEmitter {
     if (this.connected) return;
     this.emit('status_change', { status: 'connecting' });
     log.info('Connecting to BACnet network');
-    try {
-      // Production: use 'bacnet' package
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      this.connected = true;
-      this.emit('connected');
-      this.emit('status_change', { status: 'connected' });
-      log.info('BACnet connected');
-    } catch (error) {
-      this.errorCount++;
-      this.emit('error', error);
-      this.emit('status_change', { status: 'error', error: (error as Error).message });
-      throw error;
-    }
+
+    const error = new Error(
+      'BACnet provider is not configured. Install and wire a supported BACnet transport before enabling this data source.',
+    );
+    this.errorCount++;
+    this.emit('status_change', { status: 'error', error: error.message });
+    log.error('BACnet connection refused: provider not configured', error);
+    throw error;
   }
 
   async disconnect(): Promise<void> {
@@ -82,9 +77,8 @@ export class BACnetAdapter extends EventEmitter {
   async readObject(obj: BACnetObjectRef): Promise<{ value: unknown; status: string }> {
     if (!this.connected) throw new Error('BACnet not connected');
     this.readCount++;
-    log.debug(`Reading BACnet ${obj.objectType}-${obj.objectIdentifier}`);
-    this.emit('data', { mappingId: obj.mappingId, objectType: obj.objectType, objectIdentifier: obj.objectIdentifier, value: 0, status: 'ok', timestamp: new Date() });
-    return { value: 0, status: 'ok' };
+    log.debug(`BACnet read requested: ${obj.objectType}-${obj.objectIdentifier}`);
+    throw new Error('BACnet provider is not configured. Refusing to fabricate telemetry values.');
   }
 
   removeObject(mappingId: string): void {

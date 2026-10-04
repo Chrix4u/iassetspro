@@ -7,6 +7,8 @@ const sceneCollection = fs.readFileSync('src/app/api/digital-twin-scenes/route.t
 const sceneItem = fs.readFileSync('src/app/api/digital-twin-scenes/[id]/route.ts', 'utf8');
 const modelCollection = fs.readFileSync('src/app/api/asset-models/route.ts', 'utf8');
 const modelItem = fs.readFileSync('src/app/api/asset-models/[id]/route.ts', 'utf8');
+const bindingCollection = fs.readFileSync('src/app/api/mesh-bindings/route.ts', 'utf8');
+const bindingItem = fs.readFileSync('src/app/api/mesh-bindings/[id]/route.ts', 'utf8');
 
 describe('digital twin plant isolation contract', () => {
   it('plant-scopes twin list, KPI, and alert reads through the linked asset', () => {
@@ -50,5 +52,15 @@ describe('digital twin plant isolation contract', () => {
     expect(modelItem).toContain('getPlantScope(request, session)');
     expect(modelItem).toContain('canAccessPlantStrict(plantScope, model.asset.plantId)');
     expect(modelItem).toContain('canAccessPlantStrict(plantScope, existing.asset.plantId)');
+  });
+
+  it('keeps legacy mesh bindings inside the model plant and checks both assets before access', () => {
+    expect(bindingCollection).toContain('getPlantScope(request, session)');
+    expect(bindingCollection).toContain('canAccessPlantStrict(plantScope, model.asset.plantId)');
+    expect(bindingCollection).toContain('asset.plantId !== model.asset.plantId');
+    expect(bindingCollection).toContain('Bound asset must belong to the model plant');
+    expect(bindingItem).toContain('canAccessPlantStrict(plantScope, binding.model.asset.plantId)');
+    expect(bindingItem).toContain('canAccessPlantStrict(plantScope, binding.asset.plantId)');
+    expect(bindingItem).toContain('existing.asset.plantId !== existing.model.asset.plantId');
   });
 });

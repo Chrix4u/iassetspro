@@ -145,6 +145,8 @@ type ReportData = {
       recordedDowntimeMinutes: number;
     }>;
     legacyParity?: {
+      sourceBreakdownCount: number;
+      unassignedBreakdownCount: number;
       breakdownsByMachine: Array<{ assetName: string; assetTag?: string | null; breakdowns: number }>;
       breakdownsByWeek: Array<{ week: string; breakdowns: number }>;
       downtimeByMachine: Array<{ assetName: string; assetTag?: string | null; downtimeMinutes: number }>;
@@ -1345,6 +1347,21 @@ export default function RWOPReportingPage() {
                     <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
                       Source integrity: EAM follows the workbook&apos;s authoritative JobRecords rows rather than stale Excel pivot-cache classifications. In the uploaded workbook, WO 161418 is Corrective in JobRecords but remains cached as Breakdown in the pivot cache, inflating week 32 from 6 to 7 and the cached breakdown total from 411 to 412. EAM preserves the 411 source-row breakdown records.
                     </div>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-md border bg-background px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Workbook breakdowns in current filters</p>
+                        <p className="mt-0.5 text-lg font-semibold">{report.breakdownPerformance.legacyParity.sourceBreakdownCount}</p>
+                      </div>
+                      <div className="rounded-md border bg-background px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Machine-unassigned breakdowns</p>
+                        <p className="mt-0.5 text-lg font-semibold">{report.breakdownPerformance.legacyParity.unassignedBreakdownCount}</p>
+                      </div>
+                    </div>
+                    {report.breakdownPerformance.legacyParity.unassignedBreakdownCount > 0 && (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                        Attribution integrity: {report.breakdownPerformance.legacyParity.unassignedBreakdownCount} workbook breakdown record(s) in the active filters have no proven machine identity. They remain counted and auditable as Unassigned historical work rather than being fabricated onto an asset.
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">

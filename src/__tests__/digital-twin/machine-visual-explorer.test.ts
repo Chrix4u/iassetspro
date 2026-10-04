@@ -1,5 +1,3 @@
-[Reading 80 lines from start (total: 80 lines, 0 remaining)]
-
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -80,5 +78,3 @@ describe('deep machine visual explorer', () => {
     expect(generator).toContain("visualType: 'exploded'");
   });
 });
-
-[executed on device: vps.lightworldtech.com (5ce193d7-af15-4a4a-8909-478bdfb81319)]

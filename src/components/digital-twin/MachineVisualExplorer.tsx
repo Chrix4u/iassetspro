@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
@@ -192,13 +192,18 @@ function HierarchyNode({
 }
 
 function EngineeringSchematic({
-  asset, components, selectedId, onSelect,
+  asset, components, selectedId, onSelect, zoom, onZoomChange,
 }: {
   asset: AssetSummary;
   components: MachineComponent[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  zoom: number;
+  onZoomChange: (next: number) => void;
 }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const layout = useMemo(() => {
     const byParent = new Map<string, MachineComponent[]>();
     const roots: MachineComponent[] = [];
@@ -227,9 +232,63 @@ function EngineeringSchematic({
     row.forEach((component, index) => positions.set(component.id, { x: gap * (index + 1), y }));
   });
 
+  const panBy = (dx: number, dy: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({ left: dx, top: dy, behavior: 'smooth' });
+  };
+
   return (
-    <div className="h-full min-h-[460px] overflow-auto rounded-xl border bg-slate-950">
-      <svg width={width} height={height} role="img" aria-label="Machine component engineering schematic">
+    <div
+      ref={viewportRef}
+      role="region"
+      aria-label="Interactive machine component engineering schematic"
+      tabIndex={0}
+      className={'relative h-full min-h-[460px] overflow-auto rounded-xl border bg-slate-950 outline-none focus-visible:ring-2 focus-visible:ring-primary ' + (dragging ? 'cursor-grabbing' : 'cursor-grab')}
+      onPointerDown={(event) => {
+        const viewport = viewportRef.current;
+        if (!viewport || event.button !== 0) return;
+        dragRef.current = { x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop };
+        setDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const viewport = viewportRef.current;
+        const drag = dragRef.current;
+        if (!viewport || !drag) return;
+        viewport.scrollLeft = drag.left - (event.clientX - drag.x);
+        viewport.scrollTop = drag.top - (event.clientY - drag.y);
+      }}
+      onPointerUp={(event) => {
+        dragRef.current = null;
+        setDragging(false);
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onPointerCancel={() => {
+        dragRef.current = null;
+        setDragging(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowRight') { event.preventDefault(); panBy(80, 0); }
+        if (event.key === 'ArrowLeft') { event.preventDefault(); panBy(-80, 0); }
+        if (event.key === 'ArrowDown') { event.preventDefault(); panBy(0, 80); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); panBy(0, -80); }
+      }}
+      onWheel={(event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        const next = Math.max(0.6, Math.min(4, +(zoom + (event.deltaY < 0 ? 0.2 : -0.2)).toFixed(2)));
+        onZoomChange(next);
+      }}
+    >
+      <div style={{ width: width * zoom, height: height * zoom }}>
+        <svg
+          width={width}
+          height={height}
+          role="img"
+          aria-label="Machine component engineering schematic"
+          style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'top left' }}
+        >
         <defs>
           <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.09)" strokeWidth="1" />
@@ -269,7 +328,11 @@ function EngineeringSchematic({
             </g>
           );
         })}
-      </svg>
+        </svg>
+      </div>
+      <div className="pointer-events-none sticky bottom-2 ml-auto mr-2 w-fit rounded-md border border-white/10 bg-slate-950/85 px-2 py-1 text-[10px] text-slate-300 backdrop-blur">
+        Drag to pan · Ctrl/⌘ + wheel to zoom
+      </div>
     </div>
   );
 }
@@ -615,7 +678,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
             </TabsList>
 
             <TabsContent value="diagram" className="mt-3">
-              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} />
+              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} onZoomChange={setZoom} />
             </TabsContent>
 
             {['realistic', 'technical2d', 'exploded'].map((tabMode) => (

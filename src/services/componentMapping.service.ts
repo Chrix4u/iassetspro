@@ -7,88 +7,129 @@ import { db } from '@/lib/db';
 export interface ListMappingsParams {
   modelId: string;
   mappingType?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }
 
 export interface CreateMappingParams {
   modelId: string;
-  meshId: string;
-  componentId?: string;
-  mappingType?: string;
-  confidence?: number;
+  meshName: string;
+  meshPath?: string;
+  mappingType: string;
+  targetId: string;
+  targetName?: string;
+  color?: string;
+  opacity?: number;
+  isHighlighted?: boolean;
+  isVisible?: boolean;
   metadata?: Record<string, unknown>;
+  sortOrder?: number;
   createdById: string;
 }
 
 export const componentMappingService = {
   async listMappings(params: ListMappingsParams) {
-    const { modelId, mappingType, page = 1, limit = 50 } = params;
+    const { modelId, mappingType, search, page = 1, limit = 50 } = params;
 
     const where: Record<string, unknown> = { modelId };
     if (mappingType) where.mappingType = mappingType;
+    if (search) {
+      where.OR = [
+        { meshName: { contains: search } },
+        { meshPath: { contains: search } },
+        { targetName: { contains: search } },
+      ];
+    }
 
-    const [mappings, total] = await Promise.all([
+    const [mappings, total, grouped] = await Promise.all([
       db.meshComponentMapping.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
         include: {
           createdBy: { select: { id: true, fullName: true, username: true } },
-          component: { select: { id: true, name: true, componentTag: true } },
         },
       }),
       db.meshComponentMapping.count({ where }),
+      db.meshComponentMapping.groupBy({
+        by: ['mappingType'],
+        where: { modelId },
+        _count: { _all: true },
+      }),
     ]);
 
     return {
       data: mappings,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      typeCounts: Object.fromEntries(grouped.map((row) => [row.mappingType, row._count._all])),
     };
   },
 
   async createMapping(params: CreateMappingParams) {
-    const { modelId, meshId, componentId, mappingType, confidence, metadata, createdById } = params;
+    const {
+      modelId,
+      meshName,
+      meshPath,
+      mappingType,
+      targetId,
+      targetName,
+      color,
+      opacity,
+      isHighlighted,
+      isVisible,
+      metadata,
+      sortOrder,
+      createdById,
+    } = params;
 
-    if (!modelId || !meshId) {
-      throw new Error('Invalid: modelId and meshId are required');
+    if (!modelId || !meshName || !mappingType || !targetId) {
+      throw new Error('Invalid: modelId, meshName, mappingType and targetId are required');
     }
 
-    // Check for existing mapping conflict
     const existing = await db.meshComponentMapping.findFirst({
-      where: { modelId, meshId },
+      where: { modelId, meshName, mappingType, targetId },
     });
     if (existing) {
-      throw new Error('Conflict: Mapping already exists for this mesh');
+      throw new Error('Conflict: Mapping already exists for this mesh and target');
     }
 
     return db.meshComponentMapping.create({
       data: {
         modelId,
-        meshId,
-        componentId,
-        mappingType: mappingType || 'manual',
-        confidence: confidence ?? 1.0,
-        metadata: metadata ? JSON.stringify(metadata) : '{}',
+        meshName,
+        meshPath: meshPath || meshName,
+        mappingType,
+        targetId,
+        targetName: targetName || null,
+        color: color || '#10b981',
+        opacity: opacity ?? 1,
+        isHighlighted: isHighlighted ?? false,
+        isVisible: isVisible ?? true,
+        metadata: metadata ? JSON.stringify(metadata) : null,
+        sortOrder: sortOrder ?? 0,
         createdById,
       },
       include: {
         createdBy: { select: { id: true, fullName: true, username: true } },
-        component: { select: { id: true, name: true, componentTag: true } },
       },
     });
   },
 
-  async bulkCreateMappings(mappings: CreateMappingParams[], userId: string) {
+  async bulkCreateMappings(mappings: Omit<CreateMappingParams, 'createdById'>[], userId: string) {
     const results = await Promise.allSettled(
-      mappings.map((m) => this.createMapping({ ...m, createdById: userId })),
+      mappings.map((mapping) => this.createMapping({ ...mapping, createdById: userId })),
     );
 
-    const created = results.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<any>).value);
-    const errors = results
-      .filter((r) => r.status === 'rejected')
-      .map((r, i) => ({ index: i, error: (r as PromiseRejectedResult).reason?.message }));
+    const created = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const errors = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [{ index, error: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
+        : [],
+    );
 
     return {
       created,
@@ -99,24 +140,60 @@ export const componentMappingService = {
     };
   },
 
+  async getMappingById(id: string) {
+    const mapping = await db.meshComponentMapping.findUnique({
+      where: { id },
+      include: {
+        model: {
+          select: {
+            id: true,
+            name: true,
+            plantId: true,
+            assetId: true,
+            asset: { select: { plantId: true } },
+          },
+        },
+        createdBy: { select: { id: true, fullName: true, username: true } },
+      },
+    });
+    if (!mapping) throw new Error('Mapping not found');
+    return mapping;
+  },
+
   async updateMapping(id: string, updates: Record<string, unknown>) {
     const mapping = await db.meshComponentMapping.findUnique({ where: { id } });
     if (!mapping) {
-      throw new Error(`Mapping not found`);
+      throw new Error('Mapping not found');
     }
 
     const data: Record<string, unknown> = {};
-    if (updates.componentId !== undefined) data.componentId = updates.componentId;
-    if (updates.mappingType !== undefined) data.mappingType = updates.mappingType;
-    if (updates.confidence !== undefined) data.confidence = updates.confidence;
-    if (updates.metadata !== undefined) data.metadata = JSON.stringify(updates.metadata);
+    for (const field of [
+      'meshName',
+      'meshPath',
+      'mappingType',
+      'targetId',
+      'targetName',
+      'color',
+      'opacity',
+      'isHighlighted',
+      'isVisible',
+      'sortOrder',
+    ]) {
+      if (updates[field] !== undefined) data[field] = updates[field];
+    }
+    if (updates.metadata !== undefined) {
+      data.metadata = updates.metadata === null
+        ? null
+        : typeof updates.metadata === 'string'
+          ? updates.metadata
+          : JSON.stringify(updates.metadata);
+    }
 
     return db.meshComponentMapping.update({
       where: { id },
       data,
       include: {
         createdBy: { select: { id: true, fullName: true, username: true } },
-        component: { select: { id: true, name: true, componentTag: true } },
       },
     });
   },
@@ -124,7 +201,7 @@ export const componentMappingService = {
   async deleteMapping(id: string) {
     const mapping = await db.meshComponentMapping.findUnique({ where: { id } });
     if (!mapping) {
-      throw new Error(`Mapping not found`);
+      throw new Error('Mapping not found');
     }
 
     await db.meshComponentMapping.delete({ where: { id } });

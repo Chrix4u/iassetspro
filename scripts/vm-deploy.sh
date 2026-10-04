@@ -107,8 +107,9 @@ echo -e "${CYAN}[4/5]${NC} Building..."
 
 rm -rf .next
 
-# Copy prebuilt Prisma client if available
-[ -d prisma/prebuilt/.prisma ] && { rm -rf node_modules/.prisma; cp -r prisma/prebuilt/.prisma node_modules/.prisma; }
+# Always generate from the checked-out schema. Never inject a checked-in
+# generated client from another database provider.
+bunx prisma generate
 
 export NEXT_TELEMETRY_DISABLED=1
 

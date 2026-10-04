@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 import {
   Link2, Plus, Trash2, X, RefreshCw,
   Package, Cpu, Droplets, Wrench, BookOpen, ClipboardCheck,
@@ -46,6 +47,8 @@ interface ComponentMappingEditorProps {
 }
 
 export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappingSelect, onMappingToggle }: ComponentMappingEditorProps) {
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canManage = hasPermission('digital_twin.manage') || isAdmin();
   const [mappings, setMappings] = useState<MappingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -64,10 +67,10 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
       const params = new URLSearchParams({ modelId, limit: '100' });
       if (typeFilter !== 'all') params.set('mappingType', typeFilter);
       if (search) params.set('search', search);
-      const res = await api.get(`/api/mesh-mappings?${params}`);
+      const res = await api.get<MappingRecord[]>(`/api/mesh-mappings?${params}`);
       if (res.success) {
-        setMappings(res.data?.data || []);
-        setTypeCounts(res.data?.typeCounts || {});
+        setMappings(Array.isArray(res.data) ? res.data : []);
+        setTypeCounts((res.typeCounts as Record<string, number> | undefined) || {});
       }
     } catch (err) {
       console.error('Failed to fetch mappings:', err);
@@ -77,9 +80,9 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   };
 
   const handleCreate = async () => {
-    if (!addForm.meshName || !addForm.targetId) return;
+    if (!canManage || !addForm.meshName || !addForm.targetId) return;
     try {
-      await api.post('/api/mesh-mappings', addForm);
+      await api.post('/api/mesh-mappings', { modelId, ...addForm });
       setShowAddForm(false);
       setAddForm({ meshName: '', meshPath: '', mappingType: 'component', targetId: '', targetName: '' });
       fetchMappings();
@@ -89,6 +92,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) return;
     await api.delete(`/api/mesh-mappings/${id}`);
     fetchMappings();
   };
@@ -116,7 +120,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
       </div>
 
       {/* Add mapping button */}
-      {!showAddForm ? (
+      {canManage && (!showAddForm ? (
         <Button variant="outline" className="w-full" onClick={() => setShowAddForm(true)}>
           <Plus className="h-4 w-4 mr-2" />Add Component Mapping
         </Button>
@@ -155,7 +159,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
             <Button className="w-full" onClick={handleCreate}><Save className="h-4 w-4 mr-2" />Save Mapping</Button>
           </CardContent>
         </Card>
-      )}
+      ))}
 
       {/* Mappings list */}
       <div className="space-y-2 max-h-[400px] overflow-y-auto">
@@ -175,7 +179,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
               <Card key={mapping.id} className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer group" onClick={() => onMappingSelect?.(mapping)}>
                 <CardContent className="p-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${mapping.color}20` }}>
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${mapping.color}20` }}>
                       <TypeIcon className="h-4 w-4" style={{ color: mapping.color }} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -192,12 +196,14 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
                       style={{ backgroundColor: mapping.isVisible ? mapping.color : 'transparent', borderColor: mapping.color }}
                       onClick={e => { e.stopPropagation(); onMappingToggle?.(mapping, !mapping.isVisible); }}
                     />
-                    <Button
-                      variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 shrink-0"
-                      onClick={e => { e.stopPropagation(); handleDelete(mapping.id); }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 shrink-0"
+                        onClick={e => { e.stopPropagation(); handleDelete(mapping.id); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

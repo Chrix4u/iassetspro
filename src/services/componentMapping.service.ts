@@ -122,14 +122,14 @@ export const componentMappingService = {
       mappings.map((mapping) => this.createMapping({ ...mapping, createdById: userId })),
     );
 
-    const created = results
-      .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof this.createMapping>>> => result.status === 'fulfilled')
-      .map((result) => result.value);
-    const errors = results
-      .map((result, index) => result.status === 'rejected'
-        ? { index, error: result.reason instanceof Error ? result.reason.message : String(result.reason) }
-        : null)
-      .filter((item): item is { index: number; error: string } => item !== null);
+    const created = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const errors = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [{ index, error: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
+        : [],
+    );
 
     return {
       created,

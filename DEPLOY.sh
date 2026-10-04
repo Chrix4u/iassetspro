@@ -53,18 +53,21 @@ if [ ! -f ".next/standalone/server.js" ]; then
 fi
 echo "  Standalone server: found"
 
-# ── Step 2: Restore Prisma client into standalone ──
+# ── Step 2: Validate the build-embedded PostgreSQL Prisma client ──
 echo ""
-echo "[2/3] Restoring Prisma client..."
+echo "[2/3] Validating Prisma client..."
 
-if [ -d "prisma/prebuilt/.prisma/client" ]; then
-    rm -rf .next/standalone/node_modules/.prisma/client
-    cp -r prisma/prebuilt/.prisma/client .next/standalone/node_modules/.prisma/client
-    echo "  Prisma client restored to .next/standalone/node_modules/.prisma/client"
-else
-    echo "  WARNING: prisma/prebuilt/.prisma/client not found!"
+PRISMA_SCHEMA=".next/standalone/node_modules/.prisma/client/schema.prisma"
+if [ ! -f "$PRISMA_SCHEMA" ]; then
+    echo "ERROR: build-embedded Prisma client not found at $PRISMA_SCHEMA"
+    echo "  Rebuild with: npm run build"
     exit 1
 fi
+if ! grep -Eq 'provider[[:space:]]*=[[:space:]]*"postgresql"' "$PRISMA_SCHEMA"; then
+    echo "ERROR: standalone Prisma client is not PostgreSQL; refusing deployment"
+    exit 1
+fi
+echo "  PostgreSQL Prisma client: verified"
 
 # ── Step 3: Quick smoke test ──
 echo ""

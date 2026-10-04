@@ -1,5 +1,3 @@
-[Reading 914 lines from start (total: 914 lines, 0 remaining)]
-
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -914,5 +912,3 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
     </div>
   );
 }
-
-[executed on device: vps.lightworldtech.com (5ce193d7-af15-4a4a-8909-478bdfb81319)]

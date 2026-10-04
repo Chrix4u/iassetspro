@@ -604,6 +604,33 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
   const drillChildren = selectedId ? (childrenByParent.get(selectedId) || []) : roots;
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
+  const renderDrillOverlay = () => (
+    <div className="absolute left-3 top-3 z-10 max-w-[280px] rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
+        {selectedId && (
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-slate-300 hover:text-white"
+            onClick={() => setSelectedId(parentTarget?.id || null)}>
+            Up one level
+          </Button>
+        )}
+      </div>
+      {drillChildren.length > 0 ? (
+        <div className="space-y-1">
+          {drillChildren.map((child) => (
+            <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
+              className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
+              <span className="min-w-0 truncate">{child.name}</span>
+              <Badge variant="outline" className="border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[10px] leading-relaxed text-slate-400">Lowest registered level reached. This item can still hold spare, PM, tool and work-order history.</div>
+      )}
+    </div>
+  );
+
   const generateVisual = async () => {
     setGenerating(true);
     try {
@@ -677,7 +704,10 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
             </TabsList>
 
             <TabsContent value="diagram" className="mt-3">
-              <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
+              <div className="relative">
+                <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
+                {renderDrillOverlay()}
+              </div>
             </TabsContent>
 
             {['realistic', 'technical2d', 'exploded'].map((tabMode) => (
@@ -716,30 +746,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
                     )}
                   </div>
 
-                  <div className="absolute left-3 top-3 max-w-[280px] rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
-                      {selectedId && (
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-slate-300 hover:text-white"
-                          onClick={() => setSelectedId(parentTarget?.id || null)}>
-                          Up one level
-                        </Button>
-                      )}
-                    </div>
-                    {drillChildren.length > 0 ? (
-                      <div className="space-y-1">
-                        {drillChildren.map((child) => (
-                          <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
-                            className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
-                            <span className="min-w-0 truncate">{child.name}</span>
-                            <Badge variant="outline" className="border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[10px] leading-relaxed text-slate-400">Lowest registered level reached. This item can still hold spare, PM, tool and work-order history.</div>
-                    )}
-                  </div>
+                  {renderDrillOverlay()}
 
                   <div className="absolute bottom-3 right-3 flex gap-2">
                     <Button size="sm" onClick={generateVisual} disabled={generating} className="cursor-pointer">

@@ -31,8 +31,8 @@ interface MappingRecord {
   meshPath: string;
   mappingType: string;
   targetId: string;
-  targetName?: string;
-  color: string;
+  targetName?: string | null;
+  color?: string | null;
   opacity: number;
   isHighlighted: boolean;
   isVisible: boolean;
@@ -77,9 +77,13 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   };
 
   const handleCreate = async () => {
-    if (!addForm.meshName || !addForm.targetId) return;
+    if (!modelId || !addForm.meshName || !addForm.targetId) return;
     try {
-      await api.post('/api/mesh-mappings', addForm);
+      await api.post('/api/mesh-mappings', {
+        modelId,
+        ...addForm,
+        meshPath: addForm.meshPath.trim() || addForm.meshName,
+      });
       setShowAddForm(false);
       setAddForm({ meshName: '', meshPath: '', mappingType: 'component', targetId: '', targetName: '' });
       fetchMappings();
@@ -171,17 +175,18 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
           mappings.map(mapping => {
             const tc = getTypeConfig(mapping.mappingType);
             const TypeIcon = tc.icon;
+            const mappingColor = mapping.color || tc.color;
             return (
               <Card key={mapping.id} className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer group" onClick={() => onMappingSelect?.(mapping)}>
                 <CardContent className="p-3">
                   <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${mapping.color}20` }}>
-                      <TypeIcon className="h-4 w-4" style={{ color: mapping.color }} />
+                    <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${mappingColor}20` }}>
+                      <TypeIcon className="h-4 w-4" style={{ color: mappingColor }} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="font-medium text-sm truncate">{mapping.targetName || mapping.meshName}</p>
-                        <Badge variant="outline" className="text-[10px] shrink-0" style={{ borderColor: mapping.color, color: mapping.color }}>
+                        <Badge variant="outline" className="text-[10px] shrink-0" style={{ borderColor: mappingColor, color: mappingColor }}>
                           {tc.label}
                         </Badge>
                       </div>
@@ -189,7 +194,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
                     </div>
                     <div
                       className="h-4 w-4 rounded-full border-2 cursor-pointer shrink-0"
-                      style={{ backgroundColor: mapping.isVisible ? mapping.color : 'transparent', borderColor: mapping.color }}
+                      style={{ backgroundColor: mapping.isVisible ? mappingColor : 'transparent', borderColor: mappingColor }}
                       onClick={e => { e.stopPropagation(); onMappingToggle?.(mapping, !mapping.isVisible); }}
                     />
                     <Button

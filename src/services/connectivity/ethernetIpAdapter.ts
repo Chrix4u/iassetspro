@@ -49,19 +49,14 @@ export class EthernetIPAdapter extends EventEmitter {
     if (this.connected) return;
     this.emit('status_change', { status: 'connecting' });
     log.info(`Connecting to EtherNet/IP: ${this.config.host}:${this.config.port || 44818}`);
-    try {
-      // Production: use 'ethernet-ip' package
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      this.connected = true;
-      this.emit('connected');
-      this.emit('status_change', { status: 'connected' });
-      log.info('EtherNet/IP connected');
-    } catch (error) {
-      this.errorCount++;
-      this.emit('error', error);
-      this.emit('status_change', { status: 'error', error: (error as Error).message });
-      throw error;
-    }
+
+    const error = new Error(
+      'EtherNet/IP provider is not configured. Install and wire a supported CIP transport before enabling this data source.',
+    );
+    this.errorCount++;
+    this.emit('status_change', { status: 'error', error: error.message });
+    log.error('EtherNet/IP connection refused: provider not configured', error);
+    throw error;
   }
 
   async disconnect(): Promise<void> {
@@ -90,8 +85,7 @@ export class EthernetIPAdapter extends EventEmitter {
   private async readTag(tag: CIPTag): Promise<void> {
     try {
       this.readCount++;
-      // Production: use ethernet-ip to read CIP tag
-      this.emit('data', { mappingId: tag.mappingId, tagPath: tag.tagPath, value: 0, timestamp: new Date() });
+      throw new Error('EtherNet/IP provider is not configured. Refusing to fabricate telemetry values.');
     } catch (error) {
       this.errorCount++;
       log.error(`EtherNet/IP read error for ${tag.tagPath}`, error as Error);

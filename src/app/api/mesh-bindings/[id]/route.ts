@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const binding = await db.assetMeshBinding.findUnique({
@@ -24,18 +30,25 @@ export async function GET(
         model: {
           select: { id: true, name: true, format: true, assetId: true },
           include: {
-            asset: { select: { id: true, name: true, assetTag: true, status: true } },
+            asset: { select: { id: true, name: true, assetTag: true, status: true, plantId: true } },
           },
         },
-        asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true, location: true } },
+        asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true, location: true, plantId: true } },
       },
     });
 
     if (!binding) {
       return NextResponse.json({ success: false, error: 'Mesh binding not found' }, { status: 404 });
     }
+    if (
+      !canAccessPlantStrict(plantScope, binding.model.asset.plantId)
+      || !canAccessPlantStrict(plantScope, binding.asset.plantId)
+      || binding.asset.plantId !== binding.model.asset.plantId
+    ) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    // Get IoT device readings for the bound asset
+    // Get IoT device readings for the bound asset only after authorization.
     const iotDevices = await db.iotDevice.findMany({
       where: { assetId: binding.assetId, isActive: true },
       select: {
@@ -74,12 +87,30 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.assetMeshBinding.findUnique({ where: { id } });
+    const existing = await db.assetMeshBinding.findUnique({
+      where: { id },
+      include: {
+        model: { include: { asset: { select: { plantId: true } } } },
+        asset: { select: { plantId: true } },
+      },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Mesh binding not found' }, { status: 404 });
+    }
+    if (
+      !canAccessPlantStrict(plantScope, existing.model.asset.plantId)
+      || !canAccessPlantStrict(plantScope, existing.asset.plantId)
+      || existing.asset.plantId !== existing.model.asset.plantId
+    ) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -97,7 +128,6 @@ export async function PUT(
       }
     }
 
-    // If updating meshName, check for duplicates
     if (updateData.meshName && updateData.meshName !== existing.meshName) {
       const duplicate = await db.assetMeshBinding.findFirst({
         where: { modelId: existing.modelId, meshName: updateData.meshName as string },
@@ -107,11 +137,19 @@ export async function PUT(
       }
     }
 
-    // If updating assetId, verify asset exists
     if (updateData.assetId) {
-      const asset = await db.asset.findUnique({ where: { id: updateData.assetId as string } });
+      const asset = await db.asset.findUnique({
+        where: { id: updateData.assetId as string },
+        select: { plantId: true },
+      });
       if (!asset) {
         return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+      }
+      if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      if (asset.plantId !== existing.model.asset.plantId) {
+        return NextResponse.json({ success: false, error: 'Bound asset must belong to the model plant' }, { status: 400 });
       }
     }
 
@@ -156,11 +194,29 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
-    const existing = await db.assetMeshBinding.findUnique({ where: { id } });
+    const existing = await db.assetMeshBinding.findUnique({
+      where: { id },
+      include: {
+        model: { include: { asset: { select: { plantId: true } } } },
+        asset: { select: { plantId: true } },
+      },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Mesh binding not found' }, { status: 404 });
+    }
+    if (
+      !canAccessPlantStrict(plantScope, existing.model.asset.plantId)
+      || !canAccessPlantStrict(plantScope, existing.asset.plantId)
+      || existing.asset.plantId !== existing.model.asset.plantId
+    ) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     await db.assetMeshBinding.delete({ where: { id } });

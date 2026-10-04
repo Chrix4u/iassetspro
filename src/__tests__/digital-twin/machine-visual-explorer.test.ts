@@ -71,6 +71,20 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('not an OEM drawing or verified as-built photograph');
   });
 
+  it('keeps diagram clicks selectable while reserving pointer capture for real drag gestures', () => {
+    const pointerDownIndex = explorer.indexOf('onPointerDown:');
+    const pointerMoveIndex = explorer.indexOf('onPointerMove:');
+    const captureIndex = explorer.indexOf('setPointerCapture');
+
+    expect(explorer).toContain('<g key={component.id} onClick={() => onSelect(component.id)}');
+    expect(explorer).toContain('<g onClick={() => onSelect(null)}');
+    expect(explorer).toContain('dragging: false');
+    expect(explorer).toContain('Math.hypot(deltaX, deltaY) < 5');
+    expect(pointerDownIndex).toBeGreaterThanOrEqual(0);
+    expect(pointerMoveIndex).toBeGreaterThan(pointerDownIndex);
+    expect(captureIndex).toBeGreaterThan(pointerMoveIndex);
+  });
+
   it('uses an explicit image provider and normalizes provider image payloads', () => {
     expect(aiClient).toContain('No active AI image provider is configured');
     expect(aiClient).toContain("provider === 'custom'");

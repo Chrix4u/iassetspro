@@ -145,7 +145,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   useEffect(() => {
     if (pageParams?.id !== id) return;
 
-    if (pageParams.componentId) {
+    if (pageParams?.componentId) {
       setVisualFocusId(pageParams.componentId);
       setActiveTab('visual-explorer');
       return;

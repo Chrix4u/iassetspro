@@ -150,7 +150,7 @@ export async function closeRepairWorkOrder(
           assignedTo: true,
           teamLeaderId: true,
           repairCompletion: { select: { id: true, plannerStatus: true } },
-          maintenanceRequest: { select: { requestedBy: true } },
+          maintenanceRequest: { select: { id: true, requestedBy: true, workflowStatus: true } },
           workOrderDowntimes: { select: { durationMinutes: true } },
           workOrderComponents: {
             select: {
@@ -178,6 +178,31 @@ export async function closeRepairWorkOrder(
             error: 'Work order is marked closed but its canonical planner closure snapshot is incomplete',
           };
         }
+
+        if (wo.maintenanceRequest && wo.maintenanceRequest.workflowStatus !== 'closed') {
+          const repaired = await tx.maintenanceRequest.updateMany({
+            where: {
+              id: wo.maintenanceRequest.id,
+              workOrderId,
+              workflowStatus: { not: 'closed' },
+            },
+            data: { workflowStatus: 'closed' },
+          });
+          if (repaired.count === 1) {
+            await tx.auditLog.create({
+              data: buildAuditData(
+                'update',
+                'maintenance_request',
+                wo.maintenanceRequest.id,
+                session.userId,
+                { workflowStatus: wo.maintenanceRequest.workflowStatus },
+                { workflowStatus: 'closed', workOrderId, repairedByIdempotentClose: true },
+                options.auditCtx,
+              ),
+            });
+          }
+        }
+
         return {
           success: true as const,
           idempotent: true as const,
@@ -277,6 +302,30 @@ export async function closeRepairWorkOrder(
           closureNotes: options.notes?.trim() || null,
         },
       });
+
+      if (wo.maintenanceRequest) {
+        const mrClosed = await tx.maintenanceRequest.updateMany({
+          where: {
+            id: wo.maintenanceRequest.id,
+            workOrderId,
+            workflowStatus: { not: 'closed' },
+          },
+          data: { workflowStatus: 'closed' },
+        });
+        if (mrClosed.count === 1) {
+          await tx.auditLog.create({
+            data: buildAuditData(
+              'update',
+              'maintenance_request',
+              wo.maintenanceRequest.id,
+              session.userId,
+              { workflowStatus: wo.maintenanceRequest.workflowStatus },
+              { workflowStatus: 'closed', workOrderId },
+              options.auditCtx,
+            ),
+          });
+        }
+      }
 
       if (options.notes?.trim()) {
         await tx.workOrderComment.create({

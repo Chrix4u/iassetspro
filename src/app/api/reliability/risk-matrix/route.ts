@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
 
 function computeRiskLevel(score: number): string {
   if (score >= 80) return 'critical';
@@ -35,11 +36,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const plantId = searchParams.get('plantId');
 
-    // Build asset filter
-    const assetWhere: Record<string, unknown> = { status: 'active' };
-    if (plantId) {
-      assetWhere.plantId = plantId;
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
+    if (plantId && !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    // Assets use an `isActive` flag; lifecycle status values are operational,
+    // standby, under_maintenance, decommissioned, and disposed. Apply the
+    // canonical plant scope first, then narrow to an explicitly requested plant.
+    const assetWhere: Record<string, unknown> = {
+      ...getPlantFilterWhere(plantScope),
+      isActive: true,
+      status: { notIn: ['decommissioned', 'disposed'] },
+    };
+    if (plantId) assetWhere.plantId = plantId;
 
     const assets = await db.asset.findMany({
       where: assetWhere,
@@ -49,14 +62,8 @@ export async function GET(request: NextRequest) {
         assetTag: true,
         criticality: true,
         status: true,
-        healthScore: true,
         plantId: true,
-        _count: {
-          select: {
-            failureRecords: true,
-            workOrders: true,
-          },
-        },
+        digitalTwin: { select: { healthScore: true } },
       },
     });
 
@@ -72,8 +79,10 @@ export async function GET(request: NextRequest) {
       assets.map(async (asset) => {
         let riskScore = 0;
 
-        // Factor 1: Health score inverse (higher health = lower risk) — 0-30 pts
-        const healthRisk = Math.round((100 - (asset.healthScore ?? 100)) * 0.3);
+        // Factor 1: Health score inverse (higher health = lower risk) — 0-30 pts.
+        // Asset itself has no healthScore; the live value belongs to DigitalTwin.
+        const healthScore = asset.digitalTwin?.healthScore ?? 100;
+        const healthRisk = Math.round((100 - healthScore) * 0.3);
         riskScore += healthRisk;
 
         // Factor 2: Criticality (critical=30, high=20, medium=10, low=5) — 0-30 pts
@@ -113,7 +122,7 @@ export async function GET(request: NextRequest) {
           assetName: asset.name,
           assetTag: asset.assetTag,
           criticality: asset.criticality,
-          healthScore: asset.healthScore,
+          healthScore,
           riskScore,
           riskLevel: level,
           riskColor: getRiskColor(level),

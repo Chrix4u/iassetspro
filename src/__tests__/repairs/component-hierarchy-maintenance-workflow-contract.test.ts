@@ -31,7 +31,8 @@ describe('machine component hierarchy maintenance workflow contract', () => {
 
   it('lets work orders target exact components while preserving the machine', () => {
     expect(schema).toContain('model WorkOrderComponent');
-    expect(maintenancePages).toContain('componentIds: [] as string[]');
+    expect(maintenancePages).toContain('componentIds: initialComponentId ? [initialComponentId] : [] as string[]');
+    expect(maintenancePages).toContain('initialComponentId={pageParams?.componentId}');
     expect(maintenancePages).toContain('workOrderComponentLabel');
     expect(maintenancePages).toContain('Manage Affected Components');
     expect(maintenancePages).toContain('/api/work-orders/${id}/components');

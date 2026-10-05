@@ -24,6 +24,7 @@ import 'reactflow/dist/style.css';
 
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { toast } from 'sonner';
 import { nodeTypes, edgeTypes, type AssetNodeData, type InstrumentNodeData, type ElectricalNodeData, type ControlNodeData, type HeatExchangerNodeData, type VesselNodeData } from './DiagramNodeTypes';
 import { diagramTemplates, diagramTypeMeta, type DiagramTemplate } from './DiagramTemplates';
@@ -1556,6 +1557,7 @@ function FlowEditor(props: Parameters<typeof FlowEditorInner>[0]) {
 
 export default function SystemDiagramPage({ twinId, twinName }: { twinId?: string; twinName?: string } = {}) {
   const { hasPermission, isAdmin, user } = useAuthStore();
+  const diagramAssetId = useNavigationStore((state) => state.pageParams.assetId);
   const canEdit = hasPermission('digital_twin.manage') || hasPermission('digital_twin.manage') || isAdmin();
 
   // List state
@@ -1591,6 +1593,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
       const params = new URLSearchParams();
       if (searchQuery) params.set('search', searchQuery);
       if (typeFilter !== 'all') params.set('type', typeFilter);
+      if (diagramAssetId) params.set('assetId', diagramAssetId);
       params.set('limit', '50');
 
       const res = await api.get(`/api/system-diagrams?${params.toString()}`);
@@ -1602,7 +1605,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
       toast.error('Failed to load diagrams');
     }
     setLoading(false);
-  }, [searchQuery, typeFilter]);
+  }, [searchQuery, typeFilter, diagramAssetId]);
 
   useEffect(() => { fetchDiagrams(); }, [fetchDiagrams]);
 

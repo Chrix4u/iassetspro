@@ -39,6 +39,7 @@ export interface DigitalTwinScene {
   id: string;
   name: string;
   assetId: string;
+  modelId?: string;
   description?: string;
   modelUrl?: string;
   cameraPresets?: CameraPreset[];

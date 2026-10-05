@@ -79,7 +79,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   const handleCreate = async () => {
     if (!addForm.meshName || !addForm.targetId) return;
     try {
-      await api.post('/api/mesh-mappings', addForm);
+      await api.post('/api/mesh-mappings', { modelId, ...addForm });
       setShowAddForm(false);
       setAddForm({ meshName: '', meshPath: '', mappingType: 'component', targetId: '', targetName: '' });
       fetchMappings();

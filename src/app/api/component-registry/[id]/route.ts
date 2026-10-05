@@ -50,7 +50,7 @@ export async function GET(
         sparePartLinks: {
           include: {
             inventoryItem: {
-              select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true, unitCost: true },
+              select: { id: true, itemCode: true, name: true, currentStock: true, minStockLevel: true, unitOfMeasure: true, unitCost: true },
             },
           },
         },
@@ -101,7 +101,7 @@ export async function GET(
             notes: true,
             createdAt: true,
             workOrder: {
-              select: { id: true, woNumber: true, title: true, status: true, type: true, actualEnd: true },
+              select: { id: true, woNumber: true, title: true, status: true, type: true, priority: true, plannedEnd: true, actualEnd: true },
             },
           },
         },
@@ -251,7 +251,10 @@ export async function PUT(
         }
         if (!cursor.parentId || seen.has(cursor.parentId)) break;
         seen.add(cursor.id);
-        cursor = await db.componentRegistry.findUnique({ where: { id: cursor.parentId } });
+        cursor = await db.componentRegistry.findUnique({
+          where: { id: cursor.parentId },
+          include: { asset: { select: { plantId: true } } },
+        });
       }
     }
 

@@ -37,6 +37,7 @@ import {
   GitBranch,
   Heart,
   ShieldAlert,
+  Hammer,
   Eye,
   BarChart3,
   AlertOctagon,
@@ -61,6 +62,8 @@ import {
 } from '@/components/ui/tooltip';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { api } from '@/lib/api';
+
 import type { ComponentRegistryItem, FailureRecord, FailureAnalysisData, PredictionAlertData } from '@/types';
 
 // ============================================================================
@@ -84,6 +87,25 @@ export interface ComponentInfoPanelProps {
   isOpen?: boolean;
   /** Callback to close the panel */
   onClose?: () => void;
+}
+
+interface MeshComponentMappingRecord {
+  meshName: string;
+  mappingType: string;
+  targetId: string;
+  targetName?: string | null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return Boolean(value) && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
 }
 
 // ============================================================================
@@ -331,9 +353,20 @@ function SkeletonRow() {
 // Tab: Overview (Enhanced)
 // ============================================================================
 
-function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
+function OverviewTab({
+  asset,
+  component,
+  onCreateWO,
+  onCreateMR,
+  onViewDiagram,
+}: {
+  asset: Record<string, unknown> | null;
+  component: Record<string, unknown> | null;
+  onCreateWO: () => void;
+  onCreateMR: () => void;
+  onViewDiagram: () => void;
+}) {
   const lastInspection = (asset?.lastInspection as string | null) ?? null;
-  const navigate = useNavigationStore((s) => s.navigate);
   const assetId = asset?.id ? String(asset.id) : '';
 
   const daysSinceInspection = useMemo(() => {
@@ -454,17 +487,22 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
 
       {/* Component Registry Section */}
       <SectionCard title="Component Registry" icon={<Cpu className="h-3.5 w-3.5 text-slate-400" />}>
-        <div className="space-y-0.5">
-          <InfoField label="Component Code" value={field(asset, 'componentCode', field(asset, 'assetTag'))} icon={<Tag className="h-3 w-3" />} />
-          <InfoField label="Manufacturer" value={field(asset, 'manufacturer')} icon={<Building2 className="h-3 w-3" />} />
-          <InfoField label="Model Number" value={field(asset, 'model')} icon={<Package className="h-3 w-3" />} />
-          <InfoField label="Serial No." value={field(asset, 'serialNumber')} icon={<Tag className="h-3 w-3" />} />
-          <InfoField label="Category" value={field(asset, 'category')} icon={<Box className="h-3 w-3" />} />
-          <InfoField label="Location" value={field(asset, 'location')} icon={<MapPin className="h-3 w-3" />} />
-          <InfoField label="Plant" value={field(asset, 'plantName')} icon={<Building2 className="h-3 w-3" />} />
-          <InfoField label="Install Date" value={field(asset, 'installDate')} icon={<Clock className="h-3 w-3" />} />
-          <InfoField label="Warranty Exp." value={field(asset, 'warrantyExpiry')} icon={<Timer className="h-3 w-3" />} />
-        </div>
+        {component ? (
+          <div className="space-y-0.5">
+            <InfoField label="Component" value={field(component, 'name')} icon={<Box className="h-3 w-3" />} />
+            <InfoField label="Component Code" value={field(component, 'componentCode')} icon={<Tag className="h-3 w-3" />} />
+            <InfoField label="Type" value={field(component, 'componentType')} icon={<GitBranch className="h-3 w-3" />} />
+            <InfoField label="Manufacturer" value={field(component, 'manufacturer')} icon={<Building2 className="h-3 w-3" />} />
+            <InfoField label="Model Number" value={field(component, 'modelNumber')} icon={<Package className="h-3 w-3" />} />
+            <InfoField label="Serial No." value={field(component, 'serialNumber')} icon={<Tag className="h-3 w-3" />} />
+            <InfoField label="Criticality" value={field(component, 'criticality')} icon={<ShieldAlert className="h-3 w-3" />} />
+            <InfoField label="Lifecycle" value={field(component, 'lifecycleStatus')} icon={<Activity className="h-3 w-3" />} />
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-500 py-1">
+            This 3D mesh is not mapped to a component-registry record yet. Asset-level data remains available.
+          </div>
+        )}
       </SectionCard>
 
       {/* Description */}
@@ -483,7 +521,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
             variant="outline"
             size="sm"
             disabled={!assetId}
-            onClick={() => navigate('maintenance-work-orders', { create: 'true', assetId })}
+            onClick={onCreateWO}
+
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <PlusCircle className="h-3 w-3" />
@@ -493,7 +532,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
             variant="outline"
             size="sm"
             disabled={!assetId}
-            onClick={() => navigate('maintenance-requests', { create: 'true', assetId })}
+            onClick={onCreateMR}
+
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <PlusCircle className="h-3 w-3" />
@@ -503,7 +543,8 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
             variant="outline"
             size="sm"
             disabled={!assetId}
-            onClick={() => navigate('asset-detail', { id: assetId, tab: 'diagrams' })}
+            onClick={onViewDiagram}
+
             className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
           >
             <FileSearch className="h-3 w-3" />
@@ -524,13 +565,25 @@ function MaintenanceTab({
   pmSchedules,
   failureAnalysis,
   failureRecords,
+  component,
 }: {
   workOrders: Record<string, unknown>[];
   pmSchedules: Record<string, unknown>[];
   failureAnalysis: FailureAnalysisData | null;
   failureRecords: FailureRecord[];
+  component: Record<string, unknown> | null;
 }) {
   const navigate = useNavigationStore((s) => s.navigate);
+  const componentWorkOrders = component
+    ? asRecordArray(component.workOrderComponents)
+        .map((entry) => asRecord(entry.workOrder))
+        .filter((entry): entry is Record<string, unknown> => entry !== null)
+    : workOrders;
+  const componentPmSchedules = component ? asRecordArray(component.pmSchedules) : pmSchedules;
+  const componentSpareParts = component ? asRecordArray(component.sparePartLinks) : [];
+  const componentTools = component ? asRecordArray(component.toolRequirements) : [];
+  const componentHistory = component ? asRecordArray(component.maintenanceHistory) : [];
+
 
   return (
     <div className="space-y-3">
@@ -613,13 +666,16 @@ function MaintenanceTab({
       )}
 
       {/* Work Orders */}
-      <SectionCard title={`Work Orders (${workOrders.length})`} icon={<ClipboardList className="h-3.5 w-3.5 text-slate-400" />}>
-        {workOrders.length === 0 ? (
-          <div className="text-xs text-slate-500 py-2 text-center">No work orders found</div>
+      <SectionCard title={`Work Orders (${componentWorkOrders.length})`} icon={<ClipboardList className="h-3.5 w-3.5 text-slate-400" />}>
+        {componentWorkOrders.length === 0 ? (
+          <div className="text-xs text-slate-500 py-2 text-center">
+            {component ? 'No work orders linked to this component' : 'No work orders found'}
+          </div>
         ) : (
           <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
-            {workOrders.map((wo, i) => {
-              const isOverdue = wo.dueDate && new Date(String(wo.dueDate)) < new Date() &&
+            {componentWorkOrders.map((wo, i) => {
+              const dueDate = wo.dueDate ?? wo.plannedEnd;
+              const isOverdue = dueDate && new Date(String(dueDate)) < new Date() &&
                 !['completed', 'closed', 'cancelled'].includes(String(wo.status ?? '').toLowerCase());
 
               return (
@@ -654,12 +710,14 @@ function MaintenanceTab({
       </SectionCard>
 
       {/* PM Schedules */}
-      <SectionCard title={`PM Schedules (${pmSchedules.length})`} icon={<Timer className="h-3.5 w-3.5 text-slate-400" />}>
-        {pmSchedules.length === 0 ? (
-          <div className="text-xs text-slate-500 py-2 text-center">No PM schedules found</div>
+      <SectionCard title={`PM Schedules (${componentPmSchedules.length})`} icon={<Timer className="h-3.5 w-3.5 text-slate-400" />}>
+        {componentPmSchedules.length === 0 ? (
+          <div className="text-xs text-slate-500 py-2 text-center">
+            {component ? 'No PM schedules assigned to this component' : 'No PM schedules found'}
+          </div>
         ) : (
           <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
-            {pmSchedules.map((pm, i) => {
+            {componentPmSchedules.map((pm, i) => {
               const nextDue = field(pm, 'nextDueDate');
               const isOverdue = nextDue !== '—' && new Date(nextDue) < new Date();
 
@@ -670,11 +728,11 @@ function MaintenanceTab({
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-slate-200 truncate">
-                      {field(pm, 'name', 'PM Schedule')}
+                      {field(pm, 'title', field(pm, 'name', 'PM Schedule'))}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[10px] text-slate-500">
-                        Every {field(pm, 'frequencyValue')} {field(pm, 'frequencyUnit')}
+                        Every {field(pm, 'frequencyValue')} {field(pm, 'frequencyType', field(pm, 'frequencyUnit'))}
                       </span>
                       {isOverdue && (
                         <Badge className="bg-red-600 text-white text-[9px] px-1 py-0">OVERDUE</Badge>
@@ -695,12 +753,135 @@ function MaintenanceTab({
         )}
       </SectionCard>
 
-      <SectionCard title="Parts & tools" icon={<Package className="h-3.5 w-3.5 text-slate-400" />}>
-        <p className="text-[10px] leading-relaxed text-slate-500">
-          Live parts and tool requirements come from linked work orders and PM schedules.
-          This panel does not invent stock or availability when no authoritative resource data is linked.
-        </p>
+      <p className="text-[10px] leading-relaxed text-slate-500">
+        Live component-linked resource records only; this panel does not invent stock or availability when no authoritative data is linked.
+      </p>
+
+      {/* Spare Parts */}
+      <SectionCard title={'Spare Parts (' + componentSpareParts.length + ')'} icon={<Package className="h-3.5 w-3.5 text-slate-400" />}>
+        {!component ? (
+          <div className="text-xs text-slate-500 py-2 text-center">
+            Map this 3D mesh to a component to view linked spare-part stock.
+          </div>
+        ) : componentSpareParts.length === 0 ? (
+          <div className="text-xs text-slate-500 py-2 text-center">No spare parts linked to this component</div>
+        ) : (
+          <div className="space-y-1.5">
+            {componentSpareParts.map((part, i) => {
+              const inventory = asRecord(part.inventoryItem);
+              const stock = Number(inventory?.currentStock ?? 0);
+              const minStock = Number(inventory?.minStockLevel ?? 0);
+              const required = Number(part.quantityRequired ?? 1);
+              const targetStock = Math.max(required, minStock);
+              const inStock = stock >= targetStock;
+              const lowStock = stock > 0 && !inStock;
+              const unit = field(inventory, 'unitOfMeasure', 'ea');
+              return (
+                <div key={String(part.id ?? i)} className="flex items-center justify-between gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={'h-2 w-2 rounded-full flex-shrink-0 ' + (!inventory ? 'bg-slate-500' : inStock ? 'bg-emerald-500' : lowStock ? 'bg-amber-500' : 'bg-red-500')} />
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-300 truncate">
+                        {field(inventory, 'name', field(part, 'sparePartName', 'Spare part'))}
+                      </div>
+                      <div className="text-[9px] text-slate-600 truncate">
+                        {field(inventory, 'itemCode', field(part, 'sparePartCode'))} · Required {required} {unit}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className={'text-[10px] font-semibold ' + (!inventory ? 'text-slate-400' : inStock ? 'text-emerald-400' : lowStock ? 'text-amber-400' : 'text-red-400')}>
+                      {inventory ? stock : '—'}
+                    </span>
+                    <span className="text-[9px] text-slate-600">{inventory ? unit : 'unlinked'}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </SectionCard>
+
+      {/* Tool Requirements */}
+      <SectionCard title={'Tool Requirements (' + componentTools.length + ')'} icon={<Hammer className="h-3.5 w-3.5 text-slate-400" />}>
+        {!component ? (
+          <div className="text-xs text-slate-500 py-2 text-center">
+            Map this 3D mesh to a component to view required tools.
+          </div>
+        ) : componentTools.length === 0 ? (
+          <div className="text-xs text-slate-500 py-2 text-center">No tools linked to this component</div>
+        ) : (
+          <div className="space-y-1.5">
+            {componentTools.map((item, i) => {
+              const tool = asRecord(item.tool);
+              const status = field(tool, 'status', 'required').toLowerCase();
+              const available = status === 'available' || status === 'in_store';
+              return (
+                <div key={String(item.id ?? i)} className="flex items-center justify-between gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Wrench className="h-3 w-3 text-slate-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs text-slate-300 truncate">
+                        {field(tool, 'name', field(item, 'toolName', 'Required tool'))}
+                      </div>
+                      <div className="text-[9px] text-slate-600 truncate">
+                        {field(tool, 'toolCode', field(item, 'toolCode'))} · Qty {field(item, 'quantityRequired', '1')} · {field(item, 'taskType', 'general')}
+                      </div>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={'text-[9px] px-1.5 py-0 flex-shrink-0 ' + (
+                      available
+                        ? 'border-emerald-500/30 text-emerald-400'
+                        : tool
+                          ? 'border-amber-500/30 text-amber-400'
+                          : 'border-slate-500/30 text-slate-400'
+                    )}
+                  >
+                    {tool ? field(tool, 'status', 'Required') : 'Unlinked'}
+                  </Badge>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+      </SectionCard>
+
+      {/* Component Maintenance History */}
+      {component && (
+        <SectionCard title={'Maintenance History (' + componentHistory.length + ')'} icon={<History className="h-3.5 w-3.5 text-slate-400" />}>
+          {componentHistory.length === 0 ? (
+            <div className="text-xs text-slate-500 py-2 text-center">No component maintenance history recorded</div>
+          ) : (
+            <div className="space-y-1.5 max-h-44 overflow-y-auto custom-scrollbar">
+              {componentHistory.map((entry, i) => {
+                const wo = asRecord(entry.workOrder);
+                const performedBy = asRecord(entry.performedBy);
+                const completedAt = entry.completedAt ? new Date(String(entry.completedAt)).toLocaleDateString() : 'Open';
+                return (
+                  <div key={String(entry.id ?? i)} className="p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-slate-300 truncate">
+                        {field(entry, 'maintenanceType', 'Maintenance')}
+                      </span>
+                      <span className="text-[9px] text-slate-500 flex-shrink-0">{completedAt}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                      {field(entry, 'description', field(wo, 'title', 'No description'))}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-[9px] text-slate-600">
+                      {wo && <span>{field(wo, 'woNumber')}</span>}
+                      {performedBy && <span>· {field(performedBy, 'fullName', field(performedBy, 'username'))}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      )}
     </div>
   );
 }
@@ -1135,6 +1316,11 @@ export function ComponentInfoPanel({
   const isLoadingAssetData = useDigitalTwinStore((s) => s.isLoadingAssetData);
   const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
   const selectedAssetId = useDigitalTwinStore((s) => s.selectedAssetId);
+  const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
+  const sceneModelId = useDigitalTwinStore((s) => s.currentScene?.modelId ?? null);
+  const navigate = useNavigationStore((s) => s.navigate);
+  const [mappedComponent, setMappedComponent] = useState<Record<string, unknown> | null>(null);
+  const [isLoadingMappedComponent, setIsLoadingMappedComponent] = useState(false);
 
   // New store data
   const componentTree = useDigitalTwinStore((s) => s.componentTree);
@@ -1150,6 +1336,52 @@ export function ComponentInfoPanel({
   const pmSchedules = externalPM ?? storePmSchedules;
   const bomChildren = externalBom ?? storeBomChildren;
   const attachments = externalAttachments ?? storeAttachments;
+
+  useEffect(() => {
+    let active = true;
+    setMappedComponent(null);
+
+    if (!selectedMeshName || !sceneModelId) {
+      setIsLoadingMappedComponent(false);
+      return () => { active = false; };
+    }
+
+    const resolveMappedComponent = async () => {
+      setIsLoadingMappedComponent(true);
+      try {
+        const params = new URLSearchParams({
+          modelId: sceneModelId,
+          mappingType: 'component',
+          limit: '100',
+        });
+        const mappingRes = await api.get<{ data?: MeshComponentMappingRecord[] }>(
+          '/api/mesh-mappings?' + params.toString(),
+        );
+        const mappings = mappingRes.success && Array.isArray(mappingRes.data?.data)
+          ? mappingRes.data.data
+          : [];
+        const mapping = mappings.find((item) => item.meshName === selectedMeshName);
+        if (!mapping) {
+          if (active) setMappedComponent(null);
+          return;
+        }
+
+        const componentRes = await api.get<Record<string, unknown>>(
+          '/api/component-registry/' + encodeURIComponent(mapping.targetId),
+        );
+        if (active) {
+          setMappedComponent(componentRes.success && componentRes.data ? componentRes.data : null);
+        }
+      } catch {
+        if (active) setMappedComponent(null);
+      } finally {
+        if (active) setIsLoadingMappedComponent(false);
+      }
+    };
+
+    void resolveMappedComponent();
+    return () => { active = false; };
+  }, [selectedMeshName, sceneModelId]);
 
   // Load failure analysis & prediction alerts when asset is selected.
   // CRITICAL: React.startTransition does NOT prevent Error #185 for Zustand
@@ -1167,6 +1399,44 @@ export function ComponentInfoPanel({
       return () => clearTimeout(timer);
     }
   }, [selectedAssetId, loadFailureAnalysis, loadPredictionAlerts]);
+
+  const mappedComponentId = typeof mappedComponent?.id === 'string' ? mappedComponent.id : '';
+  const mappedComponentName = mappedComponent
+    ? field(mappedComponent, 'name', field(mappedComponent, 'componentCode', 'Component'))
+    : '';
+
+  const handleCreateWO = useCallback(() => {
+    const params: Record<string, string> = { create: 'true' };
+    if (selectedAssetId) params.assetId = selectedAssetId;
+    if (mappedComponentId) params.componentId = mappedComponentId;
+    if (mappedComponentName) params.componentName = mappedComponentName;
+    setInfoPanelOpen(false);
+    navigate('maintenance-work-orders', params);
+  }, [selectedAssetId, mappedComponentId, mappedComponentName, setInfoPanelOpen, navigate]);
+
+  const handleCreateMR = useCallback(() => {
+    const params: Record<string, string> = { create: 'true' };
+    if (selectedAssetId) params.assetId = selectedAssetId;
+    if (mappedComponentId) params.componentId = mappedComponentId;
+    if (mappedComponentName) params.componentName = mappedComponentName;
+    setInfoPanelOpen(false);
+    navigate('maintenance-requests', params);
+  }, [selectedAssetId, mappedComponentId, mappedComponentName, setInfoPanelOpen, navigate]);
+
+  const handleViewDiagram = useCallback(() => {
+    setInfoPanelOpen(false);
+
+    if (mappedComponentId) {
+      const params: Record<string, string> = { componentId: mappedComponentId };
+      if (selectedAssetId) params.assetId = selectedAssetId;
+      navigate('system-diagrams', params);
+      return;
+    }
+
+    if (selectedAssetId) {
+      navigate('asset-detail', { id: selectedAssetId, tab: 'diagrams' });
+    }
+  }, [selectedAssetId, mappedComponentId, setInfoPanelOpen, navigate]);
 
   const handleClose = useCallback(() => {
     setInfoPanelOpen(false);
@@ -1206,11 +1476,13 @@ export function ComponentInfoPanel({
       </div>
 
       {/* Loading state */}
-      {isLoadingAssetData ? (
+      {isLoadingAssetData || isLoadingMappedComponent ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-slate-500">
             <Loader2 className="h-6 w-6 animate-spin" />
-            <span className="text-xs">Loading asset data...</span>
+            <span className="text-xs">
+              {isLoadingMappedComponent ? 'Resolving component mapping...' : 'Loading asset data...'}
+            </span>
           </div>
         </div>
       ) : (
@@ -1257,7 +1529,13 @@ export function ComponentInfoPanel({
               </TabsList>
 
               <TabsContent value="overview">
-                <OverviewTab asset={asset} />
+                <OverviewTab
+                  asset={asset}
+                  component={mappedComponent}
+                  onCreateWO={handleCreateWO}
+                  onCreateMR={handleCreateMR}
+                  onViewDiagram={handleViewDiagram}
+                />
               </TabsContent>
 
               <TabsContent value="maintenance">
@@ -1266,6 +1544,7 @@ export function ComponentInfoPanel({
                   pmSchedules={pmSchedules}
                   failureAnalysis={failureAnalysis}
                   failureRecords={failureRecords}
+                  component={mappedComponent}
                 />
               </TabsContent>
 

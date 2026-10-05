@@ -16,15 +16,11 @@ const assetDetail = fs.readFileSync(
 
 describe('digital twin maintenance actions', () => {
   it('uses real EAM navigation for twin quick actions', () => {
-    expect(panel).toContain(
-      "navigate('maintenance-work-orders', { create: 'true', assetId })",
-    );
-    expect(panel).toContain(
-      "navigate('maintenance-requests', { create: 'true', assetId })",
-    );
-    expect(panel).toContain(
-      "navigate('asset-detail', { id: assetId, tab: 'diagrams' })",
-    );
+    expect(panel).toContain("navigate('maintenance-work-orders', params)");
+    expect(panel).toContain("navigate('maintenance-requests', params)");
+    expect(panel).toContain("params.assetId = selectedAssetId");
+    expect(panel).toContain("navigate('system-diagrams', params)");
+    expect(panel).toContain("navigate('asset-detail', { id: selectedAssetId, tab: 'diagrams' })");
     expect(panel).toContain(
       "navigate('maintenance-work-orders', { id: String(wo.id) })",
     );

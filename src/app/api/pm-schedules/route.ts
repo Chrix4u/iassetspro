@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       priority,
       assignedToId,
       departmentId,
+      templateId,
       autoGenerateWO,
       leadDays,
     } = body;
@@ -132,6 +133,16 @@ export async function POST(request: NextRequest) {
       componentForTrigger = component;
     }
 
+    if (templateId) {
+      const template = await db.pmTemplate.findUnique({
+        where: { id: templateId },
+        select: { id: true, isActive: true },
+      });
+      if (!template || !template.isActive) {
+        return NextResponse.json({ success: false, error: 'PM template not found or inactive' }, { status: 400 });
+      }
+    }
+
     const schedule = await db.pmSchedule.create({
       data: {
         title,
@@ -146,6 +157,7 @@ export async function POST(request: NextRequest) {
         priority: priority || 'medium',
         assignedToId: assignedToId || null,
         departmentId: departmentId || null,
+        templateId: templateId || null,
         autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
         leadDays: leadDays || 3,
         createdById: session.userId,
@@ -155,6 +167,7 @@ export async function POST(request: NextRequest) {
         component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -190,7 +203,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'pm_schedule',
         entityId: schedule.id,
-        newValues: JSON.stringify({ title, assetId, componentId: componentId || null, frequencyType, frequencyValue }),
+        newValues: JSON.stringify({ title, assetId, componentId: componentId || null, templateId: templateId || null, frequencyType, frequencyValue }),
       },
     });
 

@@ -63,7 +63,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(part?.id).toBeTruthy();
     expect(part?.parentId).toBe(assembly.id);
 
-    const createPmViaUi = async (title: string, targetCode: string) => {
+    const createPmViaUi = async (title: string, targetCode: string, useTemplate = false) => {
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
         // Asset detail is rendered as a modal sheet, so return to the authenticated
@@ -79,6 +79,16 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();
       await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(title);
+
+      if (useTemplate) {
+        const templateLabel = page.locator('label').filter({ hasText: /^PM Template$/ }).first();
+        const templateCombobox = templateLabel.locator('..').getByRole('combobox');
+        await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
+        await templateCombobox.click();
+        const templateSearch = page.getByPlaceholder('Search PM templates...');
+        await templateSearch.fill('RP-01 Drive-Side Bearing');
+        await page.getByText('RP-01 Drive-Side Bearing 500h Service · 6 tasks', { exact: true }).click();
+      }
 
       const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
       const assetCombobox = assetLabel.locator('..').getByRole('combobox');
@@ -105,16 +115,23 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await page.getByRole('button', { name: /Create Schedule/i }).click();
       await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
+      if (useTemplate) {
+        await expect(page.getByText('Template · RP-01 Drive-Side Bearing 500h Service · 6 tasks', { exact: true })).toBeVisible();
+      }
     };
 
     await createPmViaUi(assemblyPmTitle, assemblyCode);
-    await createPmViaUi(partPmTitle, partCode);
+    await createPmViaUi(partPmTitle, partCode, true);
 
     const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
     expect(schedules.status).toBe(200);
     const assemblySchedule = (schedules.data.data as any[]).find((item) => item.title === assemblyPmTitle);
     const partSchedule = (schedules.data.data as any[]).find((item) => item.title === partPmTitle);
     expect(assemblySchedule?.componentId).toBe(assembly.id);
+    expect(assemblySchedule?.templateId).toBeNull();
     expect(partSchedule?.componentId).toBe(part.id);
+    expect(partSchedule?.templateId).toBe('uat_pmt_bearing_service');
+    expect(partSchedule?.template?.title).toBe('RP-01 Drive-Side Bearing 500h Service');
+    expect(partSchedule?.template?._count?.tasks).toBe(6);
   });
 });

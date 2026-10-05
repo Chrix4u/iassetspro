@@ -102,41 +102,70 @@ export async function GET(request: NextRequest) {
         };
       }
 
+      const lookupBaseSelect = {
+        id: true,
+        username: true,
+        fullName: true,
+        staffId: true,
+        department: true,
+        status: true,
+        primaryTrade: true,
+        userRoles: {
+          select: {
+            role: { select: { id: true, name: true, slug: true } },
+          },
+        },
+        plantAccess: {
+          select: {
+            plant: { select: { id: true, name: true, code: true } },
+          },
+        },
+      } as const;
+
+      if (includeSkills) {
+        const lookupUsers = await db.user.findMany({
+          where,
+          select: {
+            ...lookupBaseSelect,
+            userSkills: {
+              select: {
+                trade: {
+                  select: { id: true, name: true, code: true, category: true, color: true },
+                },
+                proficiencyLevel: true,
+                yearsExperience: true,
+                certified: true,
+              },
+            },
+          },
+          orderBy: { fullName: 'asc' },
+          take: 100,
+        });
+
+        const safeLookupUsers = lookupUsers.map((user) => ({
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          staffId: user.staffId,
+          department: user.department,
+          status: user.status,
+          primaryTrade: user.primaryTrade,
+          roles: user.userRoles.map((ur) => ur.role),
+          plants: user.plantAccess.map((up) => up.plant),
+          skills: user.userSkills.map((us) => ({
+            ...us.trade,
+            proficiencyLevel: us.proficiencyLevel,
+            yearsExperience: us.yearsExperience,
+            certified: us.certified,
+          })),
+        }));
+
+        return NextResponse.json({ success: true, data: safeLookupUsers });
+      }
+
       const lookupUsers = await db.user.findMany({
         where,
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          staffId: true,
-          department: true,
-          status: true,
-          primaryTrade: true,
-          userRoles: {
-            select: {
-              role: { select: { id: true, name: true, slug: true } },
-            },
-          },
-          plantAccess: {
-            select: {
-              plant: { select: { id: true, name: true, code: true } },
-            },
-          },
-          ...(includeSkills
-            ? {
-                userSkills: {
-                  select: {
-                    trade: {
-                      select: { id: true, name: true, code: true, category: true, color: true },
-                    },
-                    proficiencyLevel: true,
-                    yearsExperience: true,
-                    certified: true,
-                  },
-                },
-              }
-            : {}),
-        },
+        select: lookupBaseSelect,
         orderBy: { fullName: 'asc' },
         take: 100,
       });
@@ -151,19 +180,6 @@ export async function GET(request: NextRequest) {
         primaryTrade: user.primaryTrade,
         roles: user.userRoles.map((ur) => ur.role),
         plants: user.plantAccess.map((up) => up.plant),
-        ...(includeSkills
-          ? {
-              skills:
-                'userSkills' in user && Array.isArray(user.userSkills)
-                  ? user.userSkills.map((us) => ({
-                      ...us.trade,
-                      proficiencyLevel: us.proficiencyLevel,
-                      yearsExperience: us.yearsExperience,
-                      certified: us.certified,
-                    }))
-                  : [],
-            }
-          : {}),
       }));
 
       return NextResponse.json({ success: true, data: safeLookupUsers });

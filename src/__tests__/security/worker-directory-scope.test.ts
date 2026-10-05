@@ -27,7 +27,7 @@ describe('worker and user directory plant/privacy boundaries', () => {
   });
 
   it('does not expose contact or authentication-secret fields in non-admin assignment lookup projection', () => {
-    const lookupStart = usersApi.indexOf('const lookupUsers = await db.user.findMany');
+    const lookupStart = usersApi.indexOf('const lookupBaseSelect =');
     const adminStart = usersApi.indexOf('const include: Record<string, unknown>');
     expect(lookupStart).toBeGreaterThan(-1);
     expect(adminStart).toBeGreaterThan(lookupStart);

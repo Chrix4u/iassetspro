@@ -71,6 +71,7 @@ import {
   MonitorSmartphone,
   Wrench,
   HardDrive,
+  type LucideIcon,
 } from 'lucide-react';
 
 // ============================================================================
@@ -292,7 +293,7 @@ function KpiCard({
 }: {
   label: string;
   value: number | string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   iconBg: string;
   trend?: 'up' | 'down' | 'neutral';
   badge?: { text: string; variant: 'destructive' | 'default' | 'outline' };

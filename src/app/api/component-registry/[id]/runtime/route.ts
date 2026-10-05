@@ -97,6 +97,10 @@ export async function POST(
     if (value === undefined || value === null) {
       return NextResponse.json({ success: false, error: 'value is required' }, { status: 400 });
     }
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return NextResponse.json({ success: false, error: 'value must be a finite number' }, { status: 400 });
+    }
 
     const component = await db.componentRegistry.findUnique({
       where: { id },
@@ -116,9 +120,9 @@ export async function POST(
       counter = await db.componentRuntimeCounter.update({
         where: { id: existingCounter.id },
         data: {
-          value: parseFloat(String(value)),
+          value: numericValue,
+          unit: typeof body.unit === 'string' && body.unit.trim() ? body.unit.trim() : existingCounter.unit,
           isRunning: isRunning !== undefined ? Boolean(isRunning) : existingCounter.isRunning,
-          updatedAt: new Date(),
         },
       });
     } else {
@@ -126,8 +130,8 @@ export async function POST(
         data: {
           componentId: id,
           counterType,
-          value: parseFloat(String(value)),
-          unit: body.unit || null,
+          value: numericValue,
+          unit: typeof body.unit === 'string' && body.unit.trim() ? body.unit.trim() : 'hours',
           isRunning: isRunning !== undefined ? Boolean(isRunning) : false,
         },
       });
@@ -139,7 +143,7 @@ export async function POST(
       existingCounter ? 'update' : 'create',
       counter.id,
       {
-        newValues: { componentId: id, counterType, value, isRunning },
+        newValues: { componentId: id, counterType, value: numericValue, isRunning },
       },
     );
 

@@ -1,65 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getComponentPlantAccess } from '@/lib/component-plant-access';
 import { createAuditLog } from '@/lib/audit';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+function parseNormalRange(raw: string | null): { min: number | null; max: number | null; unit: string | null } {
+  if (!raw) return { min: null, max: null, unit: null };
+  try {
+    const parsed = JSON.parse(raw) as { min?: unknown; max?: unknown; unit?: unknown };
+    const min = typeof parsed.min === 'number' && Number.isFinite(parsed.min) ? parsed.min : null;
+    const max = typeof parsed.max === 'number' && Number.isFinite(parsed.max) ? parsed.max : null;
+    const unit = typeof parsed.unit === 'string' && parsed.unit.trim() ? parsed.unit.trim() : null;
+    return { min, max, unit };
+  } catch {
+    return { min: null, max: null, unit: null };
+  }
+}
+
+async function authorizeComponent(request: NextRequest, session: NonNullable<ReturnType<typeof getSession>>, id: string) {
+  const access = await getComponentPlantAccess(request, session, id);
+  if (!access.exists) return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+  if (!access.allowed) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+  return null;
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;
+    const denied = await authorizeComponent(request, session, id);
+    if (denied) return denied;
 
-    const component = await db.componentRegistry.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!component) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-    }
-
-    // Get all distinct parameter keys
     const allReadings = await db.componentConditionReading.findMany({
       where: { componentId: id },
       orderBy: [{ parameterKey: 'asc' }, { recordedAt: 'desc' }],
     });
 
-    // Group by parameterKey
     const grouped = new Map<string, typeof allReadings>();
     for (const reading of allReadings) {
-      if (!grouped.has(reading.parameterKey)) {
-        grouped.set(reading.parameterKey, []);
-      }
-      grouped.get(reading.parameterKey)!.push(reading);
+      const readings = grouped.get(reading.parameterKey) || [];
+      readings.push(reading);
+      grouped.set(reading.parameterKey, readings);
     }
 
-    // Build result: latest value + trend (last 5 readings)
-    const result = Array.from(grouped.entries()).map(([key, readings]) => {
+    const result = Array.from(grouped.entries()).map(([parameterKey, readings]) => {
       const latest = readings[0];
-      const trend = readings.slice(0, 5).map((r) => ({
-        value: r.value,
-        recordedAt: r.recordedAt,
-        isAlarm: r.isAlarm,
-      }));
-
       return {
-        parameterKey: key,
+        parameterKey,
         latestValue: latest.value,
         unit: latest.unit,
-        isAlarm: latest.isAlarm ?? false,
+        isAlarm: latest.isAlarm,
         quality: latest.quality,
         source: latest.source,
+        minThreshold: latest.minThreshold,
+        maxThreshold: latest.maxThreshold,
         recordedAt: latest.recordedAt,
-        trend,
+        trend: readings.slice(0, 5).map((reading) => ({
+          value: reading.value,
+          recordedAt: reading.recordedAt,
+          isAlarm: reading.isAlarm,
+        })),
       };
     });
 
@@ -70,77 +75,58 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;
+    const denied = await authorizeComponent(request, session, id);
+    if (denied) return denied;
+
     const body = await request.json();
-    const { parameterKey, value, unit, quality, source } = body;
+    const parameterKey = typeof body.parameterKey === 'string' ? body.parameterKey.trim() : '';
+    const numericValue = Number(body.value);
+    if (!parameterKey) return NextResponse.json({ success: false, error: 'parameterKey is required' }, { status: 400 });
+    if (!Number.isFinite(numericValue)) return NextResponse.json({ success: false, error: 'value must be a finite number' }, { status: 400 });
 
-    if (!parameterKey) {
-      return NextResponse.json({ success: false, error: 'parameterKey is required' }, { status: 400 });
-    }
-
-    if (value === undefined || value === null) {
-      return NextResponse.json({ success: false, error: 'value is required' }, { status: 400 });
-    }
-
-    const component = await db.componentRegistry.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!component) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-    }
-
-    // Check against thresholds to determine alarm status
-    // Look for existing inspection points with thresholds for this parameter
-    let isAlarm = false;
     const inspectionPoint = await db.componentInspectionPoint.findFirst({
-      where: { componentId: id, parameterKey },
+      where: { componentId: id, parameterKey, isActive: true },
+      select: { normalRange: true },
     });
+    const range = parseNormalRange(inspectionPoint?.normalRange || null);
 
-    if (inspectionPoint && (inspectionPoint as Record<string, unknown>).alarmThreshold) {
-      const threshold = parseFloat(String((inspectionPoint as Record<string, unknown>).alarmThreshold));
-      const numericValue = parseFloat(String(value));
-      if (!isNaN(threshold) && !isNaN(numericValue)) {
-        isAlarm = numericValue >= threshold;
-      }
-    }
+    const bodyMin = body.minThreshold == null ? null : Number(body.minThreshold);
+    const bodyMax = body.maxThreshold == null ? null : Number(body.maxThreshold);
+    const minThreshold = Number.isFinite(bodyMin) ? bodyMin : range.min;
+    const maxThreshold = Number.isFinite(bodyMax) ? bodyMax : range.max;
+    const unit = (typeof body.unit === 'string' && body.unit.trim()) ? body.unit.trim() : (range.unit || 'unit');
+    const qualityValue = Number(body.quality);
+    const quality = Number.isFinite(qualityValue) ? Math.max(0, Math.min(100, Math.round(qualityValue))) : 100;
+    const isAlarm = (minThreshold != null && numericValue < minThreshold) || (maxThreshold != null && numericValue > maxThreshold);
 
     const reading = await db.componentConditionReading.create({
       data: {
         componentId: id,
         parameterKey,
-        value: parseFloat(String(value)),
-        unit: unit || null,
-        quality: quality || 'good',
-        source: source || 'manual',
+        value: numericValue,
+        unit,
+        quality,
+        minThreshold,
+        maxThreshold,
         isAlarm,
+        source: typeof body.source === 'string' && body.source.trim() ? body.source.trim() : 'manual',
         recordedAt: new Date(),
+        recordedById: session.userId,
       },
     });
 
-    await createAuditLog(
-      session.userId,
-      'component_condition_reading',
-      'create',
-      reading.id,
-      {
-        newValues: { componentId: id, parameterKey, value, isAlarm },
-      },
-    );
+    await createAuditLog(session.userId, 'component_condition_reading', 'create', reading.id, {
+      newValues: { componentId: id, parameterKey, value: numericValue, unit, quality, minThreshold, maxThreshold, isAlarm },
+    });
 
     return NextResponse.json({ success: true, data: reading }, { status: 201 });
   } catch (error: unknown) {

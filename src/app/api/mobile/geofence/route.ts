@@ -6,8 +6,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { getPlantScope, getPlantFilterWhere, canAccessPlantStrict } from '@/lib/plant-scope';
+import { Prisma } from '@prisma/client';
 
 const logger = createLogger('api:mobile:geofence');
+
+
+function jsonInput(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,8 +29,15 @@ export async function GET(req: NextRequest) {
     const plantId = url.searchParams.get('plantId');
     const activeOnly = url.searchParams.get('active') !== 'false';
 
-    const where: Record<string, unknown> = {};
-    if (plantId) where.plantId = plantId;
+    const plantScope = await getPlantScope(req, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+    if (plantId && !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    const where: Record<string, unknown> = plantId ? { plantId } : getPlantFilterWhere(plantScope);
     if (activeOnly) where.isActive = true;
 
     const zones = await db.geofenceZone.findMany({
@@ -32,7 +48,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, data: zones });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch geofence zones';
-    logger.error('Geofence GET error', error);
+    logger.error('Geofence GET error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -62,11 +78,16 @@ export async function POST(req: NextRequest) {
     // Verify zone exists
     const zone = await db.geofenceZone.findUnique({
       where: { id: zoneId },
-      select: { id: true, name: true, hazardLevel: true, requiresPermit: true },
+      select: { id: true, name: true, hazardLevel: true, requiresPermit: true, plantId: true },
     });
 
     if (!zone) {
       return NextResponse.json({ success: false, error: 'Geofence zone not found' }, { status: 404 });
+    }
+
+    const plantScope = await getPlantScope(req, session);
+    if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, zone.plantId)) {
+      return NextResponse.json({ success: false, error: 'Geofence zone access denied' }, { status: 403 });
     }
 
     // Record the event
@@ -75,7 +96,7 @@ export async function POST(req: NextRequest) {
         zoneId,
         userId: session.userId,
         eventType,
-        coordinates: coordinates ? JSON.stringify(coordinates) : null,
+        coordinates: coordinates === undefined ? undefined : jsonInput(coordinates),
       },
     });
 
@@ -100,7 +121,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to record geofence event';
-    logger.error('Geofence POST error', error);
+    logger.error('Geofence POST error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

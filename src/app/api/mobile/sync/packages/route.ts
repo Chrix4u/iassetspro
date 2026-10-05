@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere, canAccessPlantStrict } from '@/lib/plant-scope';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 
@@ -21,6 +22,24 @@ export async function GET(req: NextRequest) {
     const entityTypes = url.searchParams.get('entityTypes');
     const sinceVersion = url.searchParams.get('sinceVersion');
 
+    const plantScope = await getPlantScope(req, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+    if (plantId && !canAccessPlantStrict(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+    const plantFilter = plantId ? { plantId } : getPlantFilterWhere(plantScope);
+
+    let sinceDate: Date | undefined;
+    if (sinceVersion) {
+      const parsed = Number(sinceVersion);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return NextResponse.json({ success: false, error: 'sinceVersion must be a non-negative timestamp' }, { status: 400 });
+      }
+      sinceDate = new Date(parsed);
+    }
+
     const packages: Array<{
       entityType: string;
       priority: string;
@@ -28,10 +47,18 @@ export async function GET(req: NextRequest) {
       version: number;
     }> = [];
 
-    const types = entityTypes ? entityTypes.split(',') : [
+    const allowedEntityTypes = new Set([
       'work_orders', 'assets', 'inspection_templates',
       'geofence_zones', 'maintenance_requests',
-    ];
+    ]);
+    const types = entityTypes ? entityTypes.split(',').filter(Boolean) : [...allowedEntityTypes];
+    const unsupported = types.filter((type) => !allowedEntityTypes.has(type));
+    if (unsupported.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Unsupported offline entity type: ${unsupported.join(', ')}`,
+      }, { status: 400 });
+    }
 
     for (const entityType of types) {
       try {
@@ -40,13 +67,23 @@ export async function GET(req: NextRequest) {
         switch (entityType) {
           case 'work_orders': {
             const where: Record<string, unknown> = {
+              ...plantFilter,
+              status: { in: ['assigned', 'in_progress'] },
               OR: [
                 { assignedTo: session.userId },
                 { teamLeaderId: session.userId },
-                { status: { in: ['assigned', 'in_progress'] } },
+                {
+                  teamMembers: {
+                    some: {
+                      userId: session.userId,
+                      role: { not: 'handover_receiver' },
+                      accessLevel: { not: 'read_only' },
+                    },
+                  },
+                },
               ],
             };
-            if (plantId) where.plantId = plantId;
+            if (sinceDate) where.updatedAt = { gt: sinceDate };
 
             records = await db.workOrder.findMany({
               where,
@@ -62,8 +99,8 @@ export async function GET(req: NextRequest) {
             break;
           }
           case 'assets': {
-            const where: Record<string, unknown> = { isActive: true };
-            if (plantId) where.plantId = plantId;
+            const where: Record<string, unknown> = { isActive: true, ...plantFilter };
+            if (sinceDate) where.updatedAt = { gt: sinceDate };
             records = await db.asset.findMany({
               where,
               take: 200,
@@ -74,7 +111,7 @@ export async function GET(req: NextRequest) {
           }
           case 'inspection_templates': {
             records = await db.inspectionTemplate.findMany({
-              where: { isActive: true },
+              where: { isActive: true, ...(sinceDate ? { updatedAt: { gt: sinceDate } } : {}) },
               orderBy: { name: 'asc' },
               select: { id: true, name: true, description: true, category: true, frequency: true, estimatedMinutes: true, sectionsJson: true, passThreshold: true },
             });
@@ -82,14 +119,14 @@ export async function GET(req: NextRequest) {
           }
           case 'geofence_zones': {
             records = await db.geofenceZone.findMany({
-              where: { isActive: true },
+              where: { isActive: true, ...plantFilter, ...(sinceDate ? { updatedAt: { gt: sinceDate } } : {}) },
               select: { id: true, name: true, description: true, zoneType: true, coordinates: true, alertOnEnter: true, alertOnExit: true, requiresPermit: true, hazardLevel: true, plantId: true },
             });
             break;
           }
           case 'maintenance_requests': {
-            const where: Record<string, unknown> = { requestedBy: session.userId };
-            if (plantId) where.plantId = plantId;
+            const where: Record<string, unknown> = { requestedBy: session.userId, ...plantFilter };
+            if (sinceDate) where.updatedAt = { gt: sinceDate };
             records = await db.maintenanceRequest.findMany({
               where,
               take: 50,
@@ -128,7 +165,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to get sync packages';
-    logger.error('Sync packages GET error', error);
+    logger.error('Sync packages GET error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

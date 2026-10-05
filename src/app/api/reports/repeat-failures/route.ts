@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const failureRecords = await db.failureRecord.findMany({
       where: Object.keys(frFilter).length > 0 ? frFilter : undefined,
       include: {
-        asset: { select: { id: true, name: true, assetCode: true, criticality: true } },
+        asset: { select: { id: true, name: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true, criticality: true, expectedLifeHours: true, operatingHours: true } },
         workOrder: { select: { id: true, woNumber: true, title: true, assignedTo: true } },
       },
@@ -54,6 +54,8 @@ export async function GET(request: NextRequest) {
     // ========== ASSETS WITH N+ FAILURES ==========
     const assetFailures: Record<string, {
       assetId: string; assetName: string; assetCode: string; assetCriticality: string;
+      manufacturer: string | null; model: string | null; serialNumber: string | null;
+      category: string | null; location: string | null; building: string | null; area: string | null;
       failures: any[];
     }> = {};
     failureRecords.forEach(fr => {
@@ -62,8 +64,15 @@ export async function GET(request: NextRequest) {
         assetFailures[key] = {
           assetId: key,
           assetName: fr.asset?.name || 'Unknown',
-          assetCode: fr.asset?.assetCode || '',
+          assetCode: fr.asset?.assetTag || '',
           assetCriticality: fr.asset?.criticality || 'medium',
+          manufacturer: fr.asset?.manufacturer || null,
+          model: fr.asset?.model || null,
+          serialNumber: fr.asset?.serialNumber || null,
+          category: fr.asset?.category?.name || null,
+          location: fr.asset?.location || null,
+          building: fr.asset?.building || null,
+          area: fr.asset?.area || null,
           failures: [],
         };
       }
@@ -86,6 +95,13 @@ export async function GET(request: NextRequest) {
           assetName: a.assetName,
           assetCode: a.assetCode,
           assetCriticality: a.assetCriticality,
+          manufacturer: a.manufacturer,
+          model: a.model,
+          serialNumber: a.serialNumber,
+          category: a.category,
+          location: a.location,
+          building: a.building,
+          area: a.area,
           failureCount: a.failures.length,
           failureModes,
           totalDowntimeMinutes: totalDowntime,

@@ -1514,12 +1514,12 @@ export function InventoryPurchaseOrdersPage() {
   const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '' });
   const [lineItems, setLineItems] = useState<{ itemId: string; quantity: string; unitCost: string; description: string }[]>([]);
 
-  const addLineItem = () => setLineItems([...lineItems, { itemId: '', quantity: '1', unitCost: '0', description: '' }]);
-  const removeLineItem = (idx: number) => setLineItems(lineItems.filter((_, i) => i !== idx));
+  const addLineItem = () => setLineItems(current => [...current, { itemId: '', quantity: '1', unitCost: '0', description: '' }]);
+  const removeLineItem = (idx: number) => setLineItems(current => current.filter((_, i) => i !== idx));
   const updateLineItem = (idx: number, field: string, value: string) => {
-    const updated = [...lineItems];
-    updated[idx] = { ...updated[idx], [field]: value };
-    setLineItems(updated);
+    setLineItems(current => current.map((lineItem, i) =>
+      i === idx ? { ...lineItem, [field]: value } : lineItem
+    ));
   };
 
   const inventoryItemOptions = useMemo(() =>

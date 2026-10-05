@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
         existing.contractorCost += wo.contractorCost || 0;
         if (isFailure) existing.failureCount++;
         if (wo.actualEnd && (!existing.lastRepairDate || wo.actualEnd > existing.lastRepairDate)) {
-          existing.lastRepairDate = wo.actualEnd.toISOString();
+          existing.lastRepairDate = wo.actualEnd;
         }
       } else {
         componentCostMap.set(key, {
@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
           laborCost: wo.laborCost || 0,
           partsCost: wo.partsCost || 0,
           contractorCost: wo.contractorCost || 0,
-          lastRepairDate: wo.actualEnd?.toISOString() ?? null,
+          lastRepairDate: wo.actualEnd ?? null,
           failureCount: isFailure ? 1 : 0,
         });
       }

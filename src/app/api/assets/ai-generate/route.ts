@@ -389,8 +389,8 @@ no text overlays, no watermarks, high quality technical illustration.`;
     const imageBase64 = response.data?.[0]?.base64;
     const imageUrl = response.data?.[0]?.url;
 
-    // Save to public/generated-assets/
-    const outputDir = path.join(process.cwd(), 'public', 'generated-assets');
+    // Save to persistent generated-asset storage when configured.
+    const outputDir = process.env.GENERATED_ASSETS_DIR || path.join(process.cwd(), 'public', 'generated-assets');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -420,7 +420,7 @@ no text overlays, no watermarks, high quality technical illustration.`;
       return null;
     }
 
-    return `/generated-assets/${filename}`;
+    return `/api/generated-assets/${filename}`;
   } catch (imgError) {
     const imgErr = imgError instanceof Error ? imgError : new Error(String(imgError));
     logger.warn('Failed to generate machine image (non-fatal)', { message: imgErr.message });

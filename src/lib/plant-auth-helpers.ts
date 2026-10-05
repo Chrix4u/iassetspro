@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, type SessionData } from '@/lib/auth';
 import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
-import { getPlantScope, canAccessPlantStrict, type PlantScopeResult } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere, canAccessPlantStrict, type PlantScopeResult } from '@/lib/plant-scope';
 
 // ── Return types ──
 
@@ -96,6 +96,11 @@ export interface DigitalTwinWithPlant {
   id: string;
   assetId: string;
   asset: { plantId: string };
+}
+
+export interface AccessibleAssetSet {
+  // null means the caller is system-wide and does not need an asset filter.
+  assetIds: string[] | null;
 }
 
 // ── Public helpers ──
@@ -361,4 +366,33 @@ export async function authorizeDigitalTwinPlant(
   }
 
   return { ok: true, entity: twin, plantScope };
+}
+
+/**
+ * Resolve the exact asset IDs a user may see. System-wide users receive null,
+ * allowing callers to skip an unnecessary `IN (...)` filter. Scoped users
+ * receive a fail-closed list derived from the canonical plant filter.
+ */
+export async function resolveAccessibleAssetIds(
+  request: NextRequest,
+  session: SessionData,
+): Promise<PlantAuthResult<AccessibleAssetSet>> {
+  const scopeOrDeny = await resolveScope(request, session);
+  if (!scopeOrDeny.ok) return scopeOrDeny;
+  const plantScope = scopeOrDeny.plantScope;
+
+  if (plantScope.isSystemWide) {
+    return { ok: true, entity: { assetIds: null }, plantScope };
+  }
+
+  const assets = await db.asset.findMany({
+    where: getPlantFilterWhere(plantScope),
+    select: { id: true },
+  });
+
+  return {
+    ok: true,
+    entity: { assetIds: assets.map((asset) => asset.id) },
+    plantScope,
+  };
 }

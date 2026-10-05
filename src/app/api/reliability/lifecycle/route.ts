@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { lifecycleForecastService } from '@/services/reliability/lifecycleForecast.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { authorizeAssetPlant, resolveAccessibleAssetIds } from '@/lib/plant-auth-helpers';
+import { canAccessPlantStrict } from '@/lib/plant-scope';
 
 // GET /api/reliability/lifecycle — list forecasts, maintenance cost forecast, replacement analysis, or CAPEX plan
 export async function GET(request: NextRequest) {
@@ -22,6 +24,8 @@ export async function GET(request: NextRequest) {
       if (!assetId) {
         return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
       }
+      const plantAuth = await authorizeAssetPlant(request, session, assetId);
+      if (!plantAuth.ok) return plantAuth.response;
       const period = parseInt(searchParams.get('periodMonths') || '12');
       const result = await lifecycleForecastService.forecastMaintenanceCosts(assetId, period);
       return Response.json({ success: true, data: result });
@@ -34,6 +38,8 @@ export async function GET(request: NextRequest) {
       if (!assetId) {
         return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
       }
+      const plantAuth = await authorizeAssetPlant(request, session, assetId);
+      if (!plantAuth.ok) return plantAuth.response;
       const result = await lifecycleForecastService.analyzeReplacement(
         assetId,
         replacementCost ? parseFloat(replacementCost) : undefined,
@@ -47,21 +53,42 @@ export async function GET(request: NextRequest) {
       if (!assetId) {
         return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
       }
+      const plantAuth = await authorizeAssetPlant(request, session, assetId);
+      if (!plantAuth.ok) return plantAuth.response;
       const period = parseInt(searchParams.get('periodMonths') || '36');
-      const trajectory = await lifecycleForecastService.predictHealthTrajectory(assetId, period);
+      const trajectory = await lifecycleForecastService.predictHealthTrajectory(assetId, period, session.userId);
       return Response.json({ success: true, data: trajectory });
     }
 
     // CAPEX planning
     if (view === 'capex') {
       const plantId = searchParams.get('plantId') || undefined;
-      const result = await lifecycleForecastService.capexPlanning(plantId);
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      if (plantId && !canAccessPlantStrict(assetScope.plantScope, plantId)) {
+        return handleApiError(new ForbiddenError('Plant access denied'));
+      }
+      const result = await lifecycleForecastService.capexPlanning(
+        plantId,
+        plantId ? undefined : assetScope.entity.assetIds,
+      );
       return Response.json({ success: true, data: result });
     }
 
     // Default: list forecasts
+    const listAssetId = searchParams.get('assetId') || undefined;
+    let scopedAssetIds: string[] | undefined;
+    if (listAssetId) {
+      const plantAuth = await authorizeAssetPlant(request, session, listAssetId);
+      if (!plantAuth.ok) return plantAuth.response;
+    } else {
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      scopedAssetIds = assetScope.entity.assetIds ?? undefined;
+    }
     const result = await lifecycleForecastService.listForecasts({
-      assetId: searchParams.get('assetId') || undefined,
+      assetId: listAssetId,
+      assetIds: scopedAssetIds,
       forecastType: searchParams.get('forecastType') || undefined,
       page: parseInt(searchParams.get('page') || '1'),
       limit: parseInt(searchParams.get('limit') || '20'),
@@ -91,8 +118,12 @@ export async function POST(request: NextRequest) {
       return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
     }
 
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
+
     const result = await lifecycleForecastService.computeTCO({
       assetId,
+      createdById: session.userId,
       forecastPeriodMonths,
       acquisitionCost,
       annualOperatingCost,

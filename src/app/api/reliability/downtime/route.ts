@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { reliabilityEngineeringService } from '@/services/reliabilityEngineering.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { authorizeAssetPlant } from '@/lib/plant-auth-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +21,9 @@ export async function GET(request: NextRequest) {
     if (!assetId) {
       return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
     }
+
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const analyses = await reliabilityEngineeringService.listDowntimeAnalyses(assetId);
     return Response.json({ success: true, data: analyses });
@@ -49,6 +53,9 @@ export async function POST(request: NextRequest) {
       if (!periodEnd) fields.periodEnd = 'periodEnd is required';
       return handleApiError(new ValidationError(fields));
     }
+
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const startDate = new Date(periodStart);
     const endDate = new Date(periodEnd);

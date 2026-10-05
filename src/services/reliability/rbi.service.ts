@@ -6,6 +6,7 @@
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { NotFoundError, ValidationError } from '@/lib/errors';
+import type { Prisma } from '@prisma/client';
 
 const log = createLogger('RBIService');
 
@@ -43,10 +44,12 @@ export interface CreateRbiAssessmentData {
   notes?: string;
   assessedById: string;
   approvedById?: string;
+  status?: string;
 }
 
 export interface ListRbiParams {
   assetId?: string;
+  assetIds?: string[];
   riskCategory?: string;
   corrosionCircuit?: string;
   status?: string;
@@ -160,11 +163,12 @@ export const rbiService = {
    */
   async listAssessments(params: ListRbiParams) {
     const timer = log.timer('listAssessments');
-    const { assetId, riskCategory, corrosionCircuit, status, page = 1, limit = 20 } = params;
+    const { assetId, assetIds, riskCategory, corrosionCircuit, status, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (assetId) where.assetId = assetId;
+    else if (assetIds) where.assetId = { in: assetIds };
     if (riskCategory) where.riskCategory = riskCategory;
     if (corrosionCircuit) where.corrosionCircuit = corrosionCircuit;
     if (status) where.status = status;
@@ -189,11 +193,14 @@ export const rbiService = {
   /**
    * Get full RBI summary by plant, equipment type, or corrosion circuit
    */
-  async getSummary(groupBy?: string) {
+  async getSummary(groupBy?: string, assetIds?: string[] | null) {
     const timer = log.timer('getSummary');
 
     const assessments = await db.rbiAssessment.findMany({
-      where: { status: 'active' },
+      where: {
+        status: 'active',
+        ...(assetIds ? { assetId: { in: assetIds } } : {}),
+      },
     });
 
     const summary: Record<string, { count: number; avgRiskScore: number; categories: Record<string, number> }> = {};
@@ -278,8 +285,12 @@ export const rbiService = {
         assetId: data.assetId,
         equipmentType: data.equipmentType,
         corrosionCircuit: data.corrosionCircuit,
-        operatingConditions: data.operatingConditions ?? undefined,
-        degradationMechanisms: mechanisms.length > 0 ? mechanisms : undefined,
+        operatingConditions: data.operatingConditions === undefined
+          ? undefined
+          : data.operatingConditions as unknown as Prisma.InputJsonValue,
+        degradationMechanisms: mechanisms.length > 0
+          ? mechanisms as unknown as Prisma.InputJsonValue
+          : undefined,
         probabilityOfFailure: data.probabilityOfFailure,
         consequenceOfFailure: data.consequenceOfFailure,
         riskCategory,
@@ -346,8 +357,14 @@ export const rbiService = {
       nextInspectionDate = calculateNextInspection(remainingLifeYears, effectiveness);
     }
 
-    const updateData: Record<string, unknown> = {
+    const updateData: Prisma.RbiAssessmentUncheckedUpdateInput = {
       ...data,
+      operatingConditions: data.operatingConditions === undefined
+        ? undefined
+        : data.operatingConditions as unknown as Prisma.InputJsonValue,
+      degradationMechanisms: data.degradationMechanisms === undefined
+        ? undefined
+        : data.degradationMechanisms as unknown as Prisma.InputJsonValue,
       riskScore,
       riskCategory,
       remainingLifeYears,

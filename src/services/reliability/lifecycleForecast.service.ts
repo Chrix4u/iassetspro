@@ -6,6 +6,7 @@
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { NotFoundError, ValidationError } from '@/lib/errors';
+import type { Prisma } from '@prisma/client';
 
 const log = createLogger('LifecycleForecastService');
 
@@ -13,6 +14,7 @@ const log = createLogger('LifecycleForecastService');
 
 export interface ComputeTcoRequest {
   assetId: string;
+  createdById: string;
   forecastPeriodMonths?: number;
   acquisitionCost?: number;
   annualOperatingCost?: number;
@@ -81,6 +83,7 @@ export interface LifecycleForecastResult {
 
 export interface ListForecastParams {
   assetId?: string;
+  assetIds?: string[];
   forecastType?: string;
   page?: number;
   limit?: number;
@@ -110,14 +113,14 @@ function calculateNPV(
 async function getHistoricalMaintenanceCosts(assetId: string): Promise<Array<{ month: string; cost: number }>> {
   const workOrders = await db.workOrder.findMany({
     where: { assetId, totalCost: { gt: 0 }, status: { in: ['completed', 'closed'] } },
-    select: { totalCost: true, completedAt: true, createdAt: true },
+    select: { totalCost: true, actualEnd: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   });
 
   // Group by month
   const monthly: Record<string, number> = {};
   for (const wo of workOrders) {
-    const date = wo.completedAt ?? wo.createdAt;
+    const date = wo.actualEnd ?? wo.createdAt;
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     monthly[key] = (monthly[key] ?? 0) + wo.totalCost;
   }
@@ -150,8 +153,6 @@ async function getAssetHealthHistory(assetId: string): Promise<Array<{ date: Dat
   const asset = await db.asset.findUnique({
     where: { id: assetId },
     select: {
-      healthScore: true,
-      purchaseCost: true,
       expectedLifeYears: true,
       purchaseDate: true,
       digitalTwin: { select: { healthScore: true } },
@@ -159,8 +160,8 @@ async function getAssetHealthHistory(assetId: string): Promise<Array<{ date: Dat
   });
   if (!asset) throw new NotFoundError('Asset', assetId);
 
-  // Combine asset health score with digital twin if available
-  const currentHealth = asset.digitalTwin?.healthScore ?? asset.healthScore ?? 50;
+  // Digital Twin is the canonical live health source; fall back to a neutral estimate.
+  const currentHealth = asset.digitalTwin?.healthScore ?? 50;
   const points: Array<{ date: Date; healthIndex: number }> = [];
 
   if (asset.purchaseDate) {
@@ -188,11 +189,12 @@ export const lifecycleForecastService = {
    */
   async listForecasts(params: ListForecastParams) {
     const timer = log.timer('listForecasts');
-    const { assetId, forecastType, page = 1, limit = 20 } = params;
+    const { assetId, assetIds, forecastType, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (assetId) where.assetId = assetId;
+    else if (assetIds) where.assetId = { in: assetIds };
     if (forecastType) where.forecastType = forecastType;
 
     const [items, total] = await Promise.all([
@@ -223,7 +225,6 @@ export const lifecycleForecastService = {
       select: {
         id: true, name: true, purchaseCost: true, expectedLifeYears: true,
         purchaseDate: true, currentValue: true,
-        _count: { select: { workOrders: true, failureRecords: true } },
       },
     });
     if (!asset) throw new NotFoundError('Asset', data.assetId);
@@ -315,7 +316,7 @@ export const lifecycleForecastService = {
           discountRate,
           historicalMonthsUsed: historicalCosts.length,
         },
-        createdById: data.assetId, // Use assetId as createdById for system-generated forecasts
+        createdById: data.createdById,
       },
     });
 
@@ -407,10 +408,7 @@ export const lifecycleForecastService = {
       select: {
         id: true, name: true, purchaseCost: true, expectedLifeYears: true,
         currentValue: true, purchaseDate: true, condition: true, status: true,
-        healthScore: true,
-        _count: {
-          select: { workOrders: true, failureRecords: true },
-        },
+        digitalTwin: { select: { healthScore: true } },
       },
     });
     if (!asset) throw new NotFoundError('Asset', assetId);
@@ -450,7 +448,7 @@ export const lifecycleForecastService = {
       : 0;
 
     // Health-based decision
-    const healthScore = asset.healthScore ?? 50;
+    const healthScore = asset.digitalTwin?.healthScore ?? 50;
     const conditionFactor: Record<string, number> = {
       new: 1.0, good: 0.9, fair: 0.6, poor: 0.3, out_of_service: 0.1,
     };
@@ -506,6 +504,7 @@ export const lifecycleForecastService = {
   async predictHealthTrajectory(
     assetId: string,
     periodMonths: number = 36,
+    createdById: string,
   ): Promise<HealthTrajectoryPoint[]> {
     const timer = log.timer('predictHealthTrajectory');
 
@@ -553,12 +552,12 @@ export const lifecycleForecastService = {
         assetId,
         forecastType: 'health_trajectory',
         forecastPeriodMonths: periodMonths,
-        healthTrajectory: trajectory,
+        healthTrajectory: trajectory as unknown as Prisma.InputJsonValue,
         recommendedAction: trajectory[trajectory.length - 1].healthIndex < 30
           ? 'replace'
           : 'continue_maintenance',
         confidence: degradationProfiles.length > 0 ? 0.7 : 0.4,
-        createdById: assetId,
+        createdById,
       },
     });
 
@@ -569,18 +568,20 @@ export const lifecycleForecastService = {
   /**
    * Capital expenditure planning — summary of replacement needs
    */
-  async capexPlanning(plantId?: string) {
+  async capexPlanning(plantId?: string, assetIds?: string[] | null) {
     const timer = log.timer('capexPlanning');
 
     const where: Record<string, unknown> = { isActive: true };
     if (plantId) where.plantId = plantId;
+    else if (assetIds) where.id = { in: assetIds };
 
     const assets = await db.asset.findMany({
       where,
       select: {
         id: true, name: true, assetTag: true, criticality: true,
-        healthScore: true, expectedLifeYears: true, purchaseDate: true,
+        expectedLifeYears: true, purchaseDate: true,
         purchaseCost: true, currentValue: true,
+        digitalTwin: { select: { healthScore: true } },
       },
     });
 
@@ -595,7 +596,7 @@ export const lifecycleForecastService = {
     }> = [];
 
     for (const asset of assets) {
-      const health = asset.healthScore ?? 50;
+      const health = asset.digitalTwin?.healthScore ?? 50;
       let ageYears = 0;
       if (asset.purchaseDate) {
         ageYears = (Date.now() - asset.purchaseDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25);

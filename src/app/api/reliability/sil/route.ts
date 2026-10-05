@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { silService } from '@/services/reliability/sil.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { authorizeAssetPlant, resolveAccessibleAssetIds } from '@/lib/plant-auth-helpers';
 
 // GET /api/reliability/sil — list SIL assessments or get reference data
 export async function GET(request: NextRequest) {
@@ -27,8 +28,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const listAssetId = searchParams.get('assetId') || undefined;
+    let scopedAssetIds: string[] | undefined;
+    if (listAssetId) {
+      const plantAuth = await authorizeAssetPlant(request, session, listAssetId);
+      if (!plantAuth.ok) return plantAuth.response;
+    } else {
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      scopedAssetIds = assetScope.entity.assetIds ?? undefined;
+    }
+
     const result = await silService.listAssessments({
-      assetId: searchParams.get('assetId') || undefined,
+      assetId: listAssetId,
+      assetIds: scopedAssetIds,
       silTarget: searchParams.get('silTarget') ? parseInt(searchParams.get('silTarget')!) : undefined,
       status: searchParams.get('status') || undefined,
       page: parseInt(searchParams.get('page') || '1'),
@@ -64,6 +77,9 @@ export async function POST(request: NextRequest) {
     if (!silTarget || silTarget < 1 || silTarget > 4) {
       return handleApiError(new ValidationError({ silTarget: 'silTarget must be 1, 2, 3, or 4' }));
     }
+
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const result = await silService.createAssessment({
       assetId, sifName, sifDescription, silTarget, architecture,

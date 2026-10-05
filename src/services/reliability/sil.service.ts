@@ -6,6 +6,7 @@
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { NotFoundError, ValidationError } from '@/lib/errors';
+import type { Prisma } from '@prisma/client';
 
 const log = createLogger('SILService');
 
@@ -42,10 +43,12 @@ export interface CreateSilAssessmentData {
   notes?: string;
   assessedById: string;
   approvedById?: string;
+  status?: string;
 }
 
 export interface ListSilParams {
   assetId?: string;
+  assetIds?: string[];
   silTarget?: number;
   status?: string;
   page?: number;
@@ -257,11 +260,12 @@ export const silService = {
    */
   async listAssessments(params: ListSilParams) {
     const timer = log.timer('listAssessments');
-    const { assetId, silTarget, status, page = 1, limit = 20 } = params;
+    const { assetId, assetIds, silTarget, status, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (assetId) where.assetId = assetId;
+    else if (assetIds) where.assetId = { in: assetIds };
     if (silTarget) where.silTarget = silTarget;
     if (status) where.status = status;
 
@@ -336,8 +340,12 @@ export const silService = {
         architecture,
         proofTestIntervalMonths: proofTestInterval,
         demandRate: data.demandRate,
-        lopaLayers: data.lopaLayers?.length ? data.lopaLayers : undefined,
-        components: components.length > 0 ? components : undefined,
+        lopaLayers: data.lopaLayers?.length
+          ? data.lopaLayers as unknown as Prisma.InputJsonValue
+          : undefined,
+        components: components.length > 0
+          ? components as unknown as Prisma.InputJsonValue
+          : undefined,
         status: verification?.meetsTarget ? 'active' : 'draft',
         notes: data.notes,
         assessedById: data.assessedById,
@@ -366,7 +374,7 @@ export const silService = {
 
     // Re-run verification if we have components
     let verification: SilVerificationResult | null = null;
-    const components = assessment.components as SisComponent[] | null;
+    const components = assessment.components as unknown as SisComponent[] | null;
     if (components && components.length > 0 && assessment.architecture) {
       verification = verifySil(components, assessment.architecture, assessment.proofTestIntervalMonths, assessment.silTarget);
     }
@@ -388,7 +396,9 @@ export const silService = {
       throw new ValidationError({ status: `Must be one of: ${VALID_STATUSES.join(', ')}` });
     }
 
-    const components = (data.components ?? existing.components ?? []) as SisComponent[];
+    const components = data.components
+      ?? (existing.components as unknown as SisComponent[] | null)
+      ?? [];
     const architecture = data.architecture ?? existing.architecture ?? '1oo1';
     const proofTestInterval = data.proofTestIntervalMonths ?? existing.proofTestIntervalMonths;
     const silTarget = data.silTarget ?? existing.silTarget;
@@ -412,8 +422,14 @@ export const silService = {
     const pfdRequired = SIL_PFD_RANGES[silTarget]?.max ?? 0.1;
     const sffRequired = SIL_SFF_REQUIREMENTS[architecture]?.typeB ?? 0.9;
 
-    const updateData: Record<string, unknown> = {
+    const updateData: Prisma.SilAssessmentUncheckedUpdateInput = {
       ...data,
+      lopaLayers: data.lopaLayers === undefined
+        ? undefined
+        : data.lopaLayers as unknown as Prisma.InputJsonValue,
+      components: data.components === undefined
+        ? undefined
+        : data.components as unknown as Prisma.InputJsonValue,
       silAchieved,
       pfdRequired,
       pfdCalculated,
@@ -460,7 +476,7 @@ export const silService = {
     const existing = await db.silAssessment.findUnique({ where: { id } });
     if (!existing) throw new NotFoundError('SilAssessment', id);
 
-    const components = (existing.components ?? []) as SisComponent[];
+    const components = (existing.components ?? []) as unknown as SisComponent[];
     if (components.length === 0 || !existing.architecture) {
       throw new ValidationError({ components: 'Component data required for proof test optimization' });
     }

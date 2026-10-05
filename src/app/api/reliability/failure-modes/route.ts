@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
     const { name, code, description, category, severity, detectionMethod, iso14224Code } = body;
 
     if (!name || !category) {
-      return handleApiError(new ValidationError({
-        name: !name ? 'Name is required' : undefined,
-        category: !category ? 'Category is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!name) fields.name = 'Name is required';
+      if (!category) fields.category = 'Category is required';
+      return handleApiError(new ValidationError(fields));
     }
 
     const failureMode = await reliabilityEngineeringService.createFailureMode({

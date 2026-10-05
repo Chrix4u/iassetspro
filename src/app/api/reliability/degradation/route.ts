@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { degradationService } from '@/services/reliability/degradation.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { authorizeAssetPlant, resolveAccessibleAssetIds } from '@/lib/plant-auth-helpers';
 
 // GET /api/reliability/degradation — list profiles, get multi-param analysis, or get stage alerts
 export async function GET(request: NextRequest) {
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
       if (!assetId) {
         return handleApiError(new ValidationError({ assetId: 'assetId is required' }));
       }
+      const plantAuth = await authorizeAssetPlant(request, session, assetId);
+      if (!plantAuth.ok) return plantAuth.response;
       const result = await degradationService.computeMultiParameter(assetId);
       return Response.json({ success: true, data: result });
     }
@@ -29,7 +32,9 @@ export async function GET(request: NextRequest) {
     // Stage-based alert view
     if (view === 'alerts') {
       const stage = searchParams.get('stage') || undefined;
-      const profiles = await degradationService.getProfilesByStage(stage);
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      const profiles = await degradationService.getProfilesByStage(stage, assetScope.entity.assetIds);
       return Response.json({ success: true, data: profiles });
     }
 
@@ -43,13 +48,26 @@ export async function GET(request: NextRequest) {
           parameterName: 'parameterName is required',
         }));
       }
+      const plantAuth = await authorizeAssetPlant(request, session, assetId);
+      if (!plantAuth.ok) return plantAuth.response;
       const result = await degradationService.detectRateChange(assetId, parameterName);
       return Response.json({ success: true, data: result });
     }
 
     // Default: list profiles
+    const listAssetId = searchParams.get('assetId') || undefined;
+    let scopedAssetIds: string[] | undefined;
+    if (listAssetId) {
+      const plantAuth = await authorizeAssetPlant(request, session, listAssetId);
+      if (!plantAuth.ok) return plantAuth.response;
+    } else {
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      scopedAssetIds = assetScope.entity.assetIds ?? undefined;
+    }
     const result = await degradationService.listProfiles({
-      assetId: searchParams.get('assetId') || undefined,
+      assetId: listAssetId,
+      assetIds: scopedAssetIds,
       degradationStage: searchParams.get('degradationStage') || undefined,
       page: parseInt(searchParams.get('page') || '1'),
       limit: parseInt(searchParams.get('limit') || '20'),
@@ -76,12 +94,15 @@ export async function POST(request: NextRequest) {
             alertThreshold, alarmThreshold, criticalThreshold, unit } = body;
 
     if (!assetId || !parameterName || !dataPoints?.length) {
-      return handleApiError(new ValidationError({
-        assetId: !assetId ? 'assetId is required' : undefined,
-        parameterName: !parameterName ? 'parameterName is required' : undefined,
-        dataPoints: !dataPoints?.length ? 'dataPoints array is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!assetId) fields.assetId = 'assetId is required';
+      if (!parameterName) fields.parameterName = 'parameterName is required';
+      if (!dataPoints?.length) fields.dataPoints = 'dataPoints array is required';
+      return handleApiError(new ValidationError(fields));
     }
+
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const result = await degradationService.computeDegradation({
       assetId,

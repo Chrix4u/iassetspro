@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { authorizeAssetPlant, authorizeDigitalTwinPlant } from '@/lib/plant-auth-helpers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,6 +24,11 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    const plantAuth = twinId
+      ? await authorizeDigitalTwinPlant(request, session, twinId)
+      : await authorizeAssetPlant(request, session, assetId!);
+    if (!plantAuth.ok) return plantAuth.response;
 
     // Get components
     const componentWhere: Record<string, unknown> = {};

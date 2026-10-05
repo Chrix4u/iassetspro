@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { rbiService } from '@/services/reliability/rbi.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { handleApiError, UnauthorizedError, ForbiddenError } from '@/lib/errors';
+import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
+import { authorizeAssetPlant, resolveAccessibleAssetIds } from '@/lib/plant-auth-helpers';
 
 // GET /api/reliability/rbi — list assessments or get summary
 export async function GET(request: NextRequest) {
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
 
     if (view === 'summary') {
       const groupBy = searchParams.get('groupBy') || undefined;
-      const summary = await rbiService.getSummary(groupBy);
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      const summary = await rbiService.getSummary(groupBy, assetScope.entity.assetIds);
       return Response.json({ success: true, data: summary });
     }
 
@@ -33,8 +36,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const listAssetId = searchParams.get('assetId') || undefined;
+    let scopedAssetIds: string[] | undefined;
+    if (listAssetId) {
+      const plantAuth = await authorizeAssetPlant(request, session, listAssetId);
+      if (!plantAuth.ok) return plantAuth.response;
+    } else {
+      const assetScope = await resolveAccessibleAssetIds(request, session);
+      if (!assetScope.ok) return assetScope.response;
+      scopedAssetIds = assetScope.entity.assetIds ?? undefined;
+    }
+
     const result = await rbiService.listAssessments({
-      assetId: searchParams.get('assetId') || undefined,
+      assetId: listAssetId,
+      assetIds: scopedAssetIds,
       riskCategory: searchParams.get('riskCategory') || undefined,
       corrosionCircuit: searchParams.get('corrosionCircuit') || undefined,
       status: searchParams.get('status') || undefined,
@@ -72,6 +87,9 @@ export async function POST(request: NextRequest) {
         consequenceOfFailure: 'consequenceOfFailure is required',
       }));
     }
+
+    const plantAuth = await authorizeAssetPlant(request, session, assetId);
+    if (!plantAuth.ok) return plantAuth.response;
 
     const assessment = await rbiService.createAssessment({
       assetId, equipmentType, corrosionCircuit, operatingConditions,

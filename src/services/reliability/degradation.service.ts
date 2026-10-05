@@ -6,6 +6,7 @@
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { NotFoundError, ValidationError } from '@/lib/errors';
+import type { Prisma } from '@prisma/client';
 
 const log = createLogger('DegradationService');
 
@@ -40,6 +41,7 @@ export interface CreateDegradationProfileData {
 export interface ComputeDegradationRequest {
   assetId: string;
   parameterName: string;
+  unit?: string;
   dataPoints: DataPoint[];
   modelType?: 'linear' | 'exponential' | 'power_law' | 'logarithmic';
   alertThreshold?: number;
@@ -69,6 +71,7 @@ export interface MultiParamDegradationResult {
 
 export interface ListDegradationParams {
   assetId?: string;
+  assetIds?: string[];
   degradationStage?: string;
   page?: number;
   limit?: number;
@@ -158,40 +161,39 @@ function fitLogarithmic(points: { x: number; y: number }[]): { amplitude: number
 function selectBestModel(
   points: { x: number; y: number }[],
 ): { modelType: string; params: DegradationModelParams; r2: number } {
-  const models = [
+  const linear = fitLinear(points);
+  const exponential = fitExponential(points);
+  const powerLaw = fitPowerLaw(points);
+  const logarithmic = fitLogarithmic(points);
+
+  const models: Array<{ modelType: string; params: DegradationModelParams; r2: number }> = [
     {
       modelType: 'linear',
-      fit: fitLinear(points),
-      toParams: (f: ReturnType<typeof fitLinear>) => ({ slope: f.slope, intercept: f.intercept }),
+      params: { slope: linear.slope, intercept: linear.intercept },
+      r2: linear.r2,
     },
     {
       modelType: 'exponential',
-      fit: fitExponential(points),
-      toParams: (f: ReturnType<typeof fitExponential>) => ({ baseValue: f.baseValue, rate: f.rate }),
+      params: { baseValue: exponential.baseValue, rate: exponential.rate },
+      r2: exponential.r2,
     },
     {
       modelType: 'power_law',
-      fit: fitPowerLaw(points),
-      toParams: (f: ReturnType<typeof fitPowerLaw>) => ({ amplitude: f.amplitude, exponent: f.exponent }),
+      params: { amplitude: powerLaw.amplitude, exponent: powerLaw.exponent },
+      r2: powerLaw.r2,
     },
     {
       modelType: 'logarithmic',
-      fit: fitLogarithmic(points),
-      toParams: (f: ReturnType<typeof fitLogarithmic>) => ({ amplitude: f.amplitude, offset: f.offset }),
+      params: { amplitude: logarithmic.amplitude, offset: logarithmic.offset },
+      r2: logarithmic.r2,
     },
   ];
 
-  // Pick model with highest R²
   let best = models[0];
-  for (const m of models) {
-    if (m.fit.r2 > best.fit.r2) best = m;
+  for (const candidate of models) {
+    if (candidate.r2 > best.r2) best = candidate;
   }
-
-  return {
-    modelType: best.modelType,
-    params: best.toParams(best.fit as ReturnType<typeof fitLinear>),
-    r2: best.fit.r2,
-  };
+  return best;
 }
 
 /** Predict future value using a fitted model */
@@ -266,11 +268,12 @@ export const degradationService = {
    */
   async listProfiles(params: ListDegradationParams) {
     const timer = log.timer('listProfiles');
-    const { assetId, degradationStage, page = 1, limit = 20 } = params;
+    const { assetId, assetIds, degradationStage, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (assetId) where.assetId = assetId;
+    else if (assetIds) where.assetId = { in: assetIds };
     if (degradationStage) where.degradationStage = degradationStage;
 
     const [items, total] = await Promise.all([
@@ -396,7 +399,7 @@ export const degradationService = {
       parameterName: data.parameterName,
       unit: data.unit,
       modelType,
-      modelParams: modelParams as Record<string, unknown>,
+      modelParams: modelParams as Prisma.InputJsonValue,
       currentValue,
       healthIndex,
       degradationStage,
@@ -569,8 +572,9 @@ export const degradationService = {
   /**
    * Get profiles by stage for dashboard/alerting
    */
-  async getProfilesByStage(stage?: string) {
+  async getProfilesByStage(stage?: string, assetIds?: string[] | null) {
     const where: Record<string, unknown> = {};
+    if (assetIds) where.assetId = { in: assetIds };
     if (stage) where.degradationStage = stage;
 
     return db.degradationProfile.findMany({

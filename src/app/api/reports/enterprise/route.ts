@@ -280,7 +280,7 @@ export async function GET(request: NextRequest) {
     const failureRecords = await db.failureRecord.findMany({
       where: frEnterpriseFilter,
       include: {
-        asset: { select: { id: true, name: true, assetCode: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, condition: true, location: true, building: true, area: true, category: { select: { name: true } } } },
+        asset: { select: { id: true, name: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, condition: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true } },
       },
     });

@@ -103,6 +103,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  let errorContext: { componentCode?: unknown; name?: unknown; assetId?: unknown } = {};
+
   try {
     const session = getSession(request);
     if (!session) {
@@ -114,6 +116,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    errorContext = {
+      componentCode: body?.componentCode,
+      name: body?.name,
+      assetId: body?.assetId,
+    };
     const {
       componentCode,
       name,
@@ -260,9 +267,7 @@ export async function POST(request: NextRequest) {
     // Log full details for debugging
     console.error('[API /api/component-registry POST] Failed:', {
       message,
-      componentCode,
-      name,
-      assetId,
+      ...errorContext,
       errorStack: error instanceof Error ? error.stack : undefined,
     });
     return NextResponse.json({ success: false, error: message }, { status: 500 });

@@ -22,15 +22,23 @@ export async function GET(
       where: { id },
       include: {
         twin: {
-          select: { id: true, name: true, type: true, assetId: true, healthScore: true },
-          include: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            assetId: true,
+            healthScore: true,
             asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true } },
           },
         },
         model: {
-          select: { id: true, name: true, format: true, filePath: true, fileName: true },
-          include: {
-            meshBindings: {
+          select: {
+            id: true,
+            name: true,
+            format: true,
+            filePath: true,
+            fileName: true,
+            bindings: {
               include: {
                 asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true } },
               },
@@ -61,7 +69,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Digital twin scene not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: scene });
+    const { bindings, ...model } = scene.model;
+    return NextResponse.json({
+      success: true,
+      data: { ...scene, model: { ...model, meshBindings: bindings } },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load digital twin scene';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

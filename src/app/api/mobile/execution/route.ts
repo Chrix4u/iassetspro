@@ -3,9 +3,11 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 
 const logger = createLogger('api:mobile:execution');
 
@@ -31,19 +33,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'workOrderId and action are required' }, { status: 400 });
     }
 
-    // Verify work order exists and user has access
-    const wo = await db.workOrder.findFirst({
-      where: {
-        id: workOrderId,
-        OR: [
-          { assignedTo: session.userId },
-          { teamLeaderId: session.userId },
-        ],
-      },
-    });
+    // Reuse the canonical plant + execution-member boundary. This keeps the
+    // mobile execution surface aligned with the Repairs/RWOP authorization model.
+    const workOrderAuth = await authorizeWorkOrderExecutionAccess(req, session, workOrderId);
+    if (!workOrderAuth.ok) return workOrderAuth.response;
+    if (!isAdmin(session) && !isWorkOrderExecutionMember(session, workOrderAuth.entity)) {
+      return NextResponse.json({ success: false, error: 'Work order execution access denied' }, { status: 403 });
+    }
 
+    const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found or access denied' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
     let result: Record<string, unknown> = {};
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Execution update failed';
-    logger.error('Execution POST error', error);
+    logger.error('Execution POST error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

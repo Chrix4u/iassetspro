@@ -6,8 +6,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
+import { isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
+import { Prisma } from '@prisma/client';
 
 const logger = createLogger('api:mobile:inspections');
+
+function jsonInput(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonValue;
+}
+
+async function authorizeAssetReference(req: NextRequest, session: NonNullable<ReturnType<typeof getSession>>, assetId: string) {
+  const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });
+  if (!asset) return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
+  const scope = await getPlantScope(req, session);
+  if (scope.denyAccess || !canAccessPlantStrict(scope, asset.plantId)) {
+    return NextResponse.json({ success: false, error: 'Asset access denied' }, { status: 403 });
+  }
+  return null;
+}
+
+async function authorizeWorkOrderReference(req: NextRequest, session: NonNullable<ReturnType<typeof getSession>>, workOrderId: string) {
+  const auth = await authorizeWorkOrderExecutionAccess(req, session, workOrderId);
+  if (!auth.ok) return auth.response;
+  if (!isAdmin(session) && !isWorkOrderExecutionMember(session, auth.entity)) {
+    return NextResponse.json({ success: false, error: 'Work order execution access denied' }, { status: 403 });
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,6 +52,14 @@ export async function GET(req: NextRequest) {
     const inspectorId = url.searchParams.get('inspectorId') || session.userId;
     const limit = parseInt(url.searchParams.get('limit') || '50', 10);
     const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+
+    if (inspectorId !== session.userId && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Cannot view another inspector’s records' }, { status: 403 });
+    }
+    if (assetId) {
+      const assetDeny = await authorizeAssetReference(req, session, assetId);
+      if (assetDeny) return assetDeny;
+    }
 
     const where: Record<string, unknown> = {};
     if (status && status !== 'all') where.status = status;
@@ -50,7 +87,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch inspections';
-    logger.error('Inspections GET error', error);
+    logger.error('Inspections GET error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -84,6 +121,15 @@ export async function POST(req: NextRequest) {
 
     if (!template) {
       return NextResponse.json({ success: false, error: 'Inspection template not found' }, { status: 404 });
+    }
+
+    if (assetId) {
+      const assetDeny = await authorizeAssetReference(req, session, String(assetId));
+      if (assetDeny) return assetDeny;
+    }
+    if (workOrderId) {
+      const workOrderDeny = await authorizeWorkOrderReference(req, session, String(workOrderId));
+      if (workOrderDeny) return workOrderDeny;
     }
 
     // Calculate score if results provided
@@ -123,11 +169,11 @@ export async function POST(req: NextRequest) {
         conditionalCount,
         naCount,
         totalItems,
-        resultsJson: resultsJson || undefined,
-        findingsJson: findingsJson || undefined,
-        photosJson: photosJson || undefined,
+        resultsJson: jsonInput(resultsJson),
+        findingsJson: jsonInput(findingsJson),
+        photosJson: jsonInput(photosJson),
         signatureData: signatureData || undefined,
-        gpsCoordinates: gpsCoordinates ? JSON.stringify(gpsCoordinates) : undefined,
+        gpsCoordinates: jsonInput(gpsCoordinates),
         notes: notes || undefined,
       },
     });
@@ -142,7 +188,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: inspection }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create inspection';
-    logger.error('Inspections POST error', error);
+    logger.error('Inspections POST error', error instanceof Error ? error : { error: message });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

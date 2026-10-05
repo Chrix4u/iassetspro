@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
     const { assetId, name, description, methodology, analysisDate, nextReviewDate, resultSummary, riskMatrix } = body;
 
     if (!assetId || !name) {
-      return handleApiError(new ValidationError({
-        assetId: !assetId ? 'assetId is required' : undefined,
-        name: !name ? 'name is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!assetId) fields.assetId = 'assetId is required';
+      if (!name) fields.name = 'name is required';
+      return handleApiError(new ValidationError(fields));
     }
 
     const analysis = await reliabilityEngineeringService.createRcmAnalysis({

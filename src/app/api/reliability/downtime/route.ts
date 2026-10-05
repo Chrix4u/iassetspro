@@ -43,11 +43,11 @@ export async function POST(request: NextRequest) {
     const { assetId, periodStart, periodEnd } = body;
 
     if (!assetId || !periodStart || !periodEnd) {
-      return handleApiError(new ValidationError({
-        assetId: !assetId ? 'assetId is required' : undefined,
-        periodStart: !periodStart ? 'periodStart is required' : undefined,
-        periodEnd: !periodEnd ? 'periodEnd is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!assetId) fields.assetId = 'assetId is required';
+      if (!periodStart) fields.periodStart = 'periodStart is required';
+      if (!periodEnd) fields.periodEnd = 'periodEnd is required';
+      return handleApiError(new ValidationError(fields));
     }
 
     const startDate = new Date(periodStart);

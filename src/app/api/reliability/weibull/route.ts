@@ -25,7 +25,7 @@ function weibullMLE(timeBetweenFailures: number[]): { beta: number; eta: number 
     const fBeta = (sumTPowBeta / m) * (1 / beta) - sumLnT / m + sumTPowBetaLnT / sumTPowBeta;
     const dfBeta = (sumTPowBeta / m) * (-1 / (beta * beta)) + (sumTPowBetaLnT * sumTPowBetaLnT) / (sumTPowBeta * sumTPowBeta);
 
-    if (Math.abs(dFBeta) < 1e-12) break;
+    if (Math.abs(dfBeta) < 1e-12) break;
     const delta = fBeta / dfBeta;
     beta = beta - delta;
     if (beta <= 0.1) beta = 0.1;

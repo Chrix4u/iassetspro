@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useDigitalTwinStore, type LiveReading, type MeshHealthEntry } from '@/stores/digitalTwinStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
+import { parseIoTHealthUpdate, parseIoTReadingUpdate } from './digital-twin-realtime-payloads';
 
 // ============================================================================
 // Types
@@ -229,7 +230,9 @@ export function useDigitalTwinScene(
 
     const assetId = useDigitalTwinStore.getState().currentScene?.assetId;
 
-    const handleIoTUpdate = (data: { deviceId: string; assetId?: string; value: number; unit: string; timestamp: string }) => {
+    const handleIoTUpdate = (...args: unknown[]) => {
+      const data = parseIoTReadingUpdate(args[0]);
+      if (!data) return;
       // Only process updates for our asset
       if (data.assetId && data.assetId !== assetId) return;
 
@@ -246,7 +249,9 @@ export function useDigitalTwinScene(
       }, 0);
     };
 
-    const handleHealthUpdate = (data: { assetId?: string; healthMap: Record<string, MeshHealthEntry> }) => {
+    const handleHealthUpdate = (...args: unknown[]) => {
+      const data = parseIoTHealthUpdate(args[0]);
+      if (!data) return;
       if (data.assetId && data.assetId !== assetId) return;
       // CRITICAL: React.startTransition does NOT prevent Error #185 for
       // Zustand set() calls. Use setTimeout(0) to defer outside any

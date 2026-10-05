@@ -21,6 +21,20 @@ type AuditResult = {
   importLocked: boolean;
   source: { fileName: string; sizeBytes: number; sha256?: string; sheets: string[]; hasVba: boolean };
   workbook: { jobRecords: number; machineMasterRows: number; uniqueMachineCodes: number };
+  legacyParityBaseline?: {
+    available: boolean;
+    expectedSheetCount: number;
+    extractedSheetCount: number;
+    sheets: Array<{
+      sheetName: string;
+      chartFamily: 'bar' | 'line';
+      metric: string;
+      filters: Record<string, string | number>;
+      cachedGrandTotal: string | number | null;
+      computedSeriesTotal: number;
+      points: Array<{ category: string; value: number; order?: number }>;
+    }>;
+  };
   workbookParity?: {
     authoritativeJobRecords: number;
     authoritativeBreakdowns: number;
@@ -541,6 +555,46 @@ export function GtpMigrationPage() {
             </div>}
 
             {result.workbookParity.warnings.map((warning) => <p key={warning} className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{warning}</p>)}
+          </CardContent>
+        </Card>}
+
+
+        {result.legacyParityBaseline && <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Workbook Parity Baseline</CardTitle>
+                <CardDescription>Frozen acceptance values extracted directly from the five saved GTP workbook pivots before import.</CardDescription>
+              </div>
+              <Badge variant="outline">
+                {result.legacyParityBaseline.extractedSheetCount}/{result.legacyParityBaseline.expectedSheetCount} pivot sheets
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Pivot sheet</TableHead><TableHead>Metric</TableHead><TableHead className="text-right">Points</TableHead><TableHead className="text-right">Cached total</TableHead><TableHead className="text-right">Independent total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableBody>{result.legacyParityBaseline.sheets.map((sheet) => {
+                const cachedNumeric = typeof sheet.cachedGrandTotal === 'number' ? sheet.cachedGrandTotal : null;
+                const reconciles = cachedNumeric !== null && Math.abs(cachedNumeric - sheet.computedSeriesTotal) < 0.000001;
+                const cachedLabel = sheet.cachedGrandTotal === null ? '—' : typeof sheet.cachedGrandTotal === 'number'
+                  ? sheet.cachedGrandTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                  : sheet.cachedGrandTotal;
+                return <TableRow key={sheet.sheetName}>
+                  <TableCell><div className="font-mono font-semibold">{sheet.sheetName}</div><div className="text-xs text-muted-foreground">{sheet.chartFamily} chart</div></TableCell>
+                  <TableCell className="max-w-[420px] whitespace-normal">{sheet.metric}</TableCell>
+                  <TableCell className="text-right">{sheet.points.length.toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">{cachedLabel}</TableCell>
+                  <TableCell className="text-right font-mono">{sheet.computedSeriesTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })}</TableCell>
+                  <TableCell>{reconciles
+                    ? <span className="text-emerald-700">Reconciled</span>
+                    : cachedNumeric === null
+                      ? <span className="text-amber-700">Cached value needs review</span>
+                      : <span className="text-amber-700">Total differs</span>}
+                  </TableCell>
+                </TableRow>;
+              })}</TableBody>
+            </Table>
           </CardContent>
         </Card>}
 

@@ -190,11 +190,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plant not found' }, { status: 400 });
     }
 
-    // Parent assets must also be visible to the current user.
+    // Parent assets must be visible and belong to the same plant as the child.
     if (parentId) {
       const parent = await db.asset.findUnique({ where: { id: parentId }, select: { plantId: true } });
       if (!parent || !canAccessPlant(plantScope, parent.plantId)) {
         return NextResponse.json({ success: false, error: 'Parent asset not found or access denied' }, { status: 403 });
+      }
+      if (parent.plantId !== plantId) {
+        return NextResponse.json({ success: false, error: 'Parent asset must belong to the same plant' }, { status: 400 });
+      }
+    }
+
+    // Department assignment is optional, but when supplied it must belong to the
+    // same plant so the asset hierarchy cannot cross plant boundaries.
+    if (departmentId) {
+      const department = await db.department.findUnique({ where: { id: departmentId }, select: { plantId: true } });
+      if (!department) {
+        return NextResponse.json({ success: false, error: 'Department not found' }, { status: 400 });
+      }
+      if (department.plantId !== plantId) {
+        return NextResponse.json({ success: false, error: 'Department must belong to the same plant' }, { status: 400 });
       }
     }
 
@@ -204,9 +219,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Asset tag already exists' }, { status: 409 });
     }
 
-    // Build relation connections
-    const categoryConnect = categoryId ? { connect: { id: categoryId } } : undefined;
-    const plantConnect = plantId ? { connect: { id: plantId } } : undefined;
+    // Required relations are connected directly after validation above. Keeping
+    // them non-optional also matches Prisma's AssetCreateInput contract.
     const departmentConnect = departmentId ? { connect: { id: departmentId } } : undefined;
     const assignedToConnect = assignedToId ? { connect: { id: assignedToId } } : undefined;
     const parentConnect = parentId ? { connect: { id: parentId } } : undefined;
@@ -216,7 +230,7 @@ export async function POST(request: NextRequest) {
         assetTag,
         name,
         description: description || null,
-        category: categoryConnect,
+        category: { connect: { id: categoryId } },
         serialNumber: serialNumber || null,
         manufacturer: manufacturer || null,
         model: model || null,
@@ -228,7 +242,7 @@ export async function POST(request: NextRequest) {
         building: building || null,
         floor: floor || null,
         area: area || null,
-        plant: plantConnect,
+        plant: { connect: { id: plantId } },
         department: departmentConnect,
         purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
         purchaseCost: purchaseCost ? parseFloat(purchaseCost) : null,

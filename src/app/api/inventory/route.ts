@@ -86,27 +86,30 @@ export async function GET(request: NextRequest) {
       Object.assign(where, getPlantFilterWhere(plantScope));
     }
 
-    const items = await db.inventoryItem.findMany({
-      where,
-      ...(isLookup
-        ? {
-            select: {
-              id: true,
-              itemCode: true,
-              name: true,
-              currentStock: true,
-              minStockLevel: true,
-              unitOfMeasure: true,
-              plantId: true,
-            },
-          }
-        : {
-            include: {
-              plant: { select: { id: true, name: true, code: true } },
-            },
-          }),
-      orderBy: { name: 'asc' },
-    });
+    // Keep lookup and workspace query shapes separate. Prisma does not permit a
+    // select/include union in one findMany argument, and the lookup projection is
+    // intentionally narrow so maintenance users never receive commercial fields.
+    const items = isLookup
+      ? await db.inventoryItem.findMany({
+          where,
+          select: {
+            id: true,
+            itemCode: true,
+            name: true,
+            currentStock: true,
+            minStockLevel: true,
+            unitOfMeasure: true,
+            plantId: true,
+          },
+          orderBy: { name: 'asc' },
+        })
+      : await db.inventoryItem.findMany({
+          where,
+          include: {
+            plant: { select: { id: true, name: true, code: true } },
+          },
+          orderBy: { name: 'asc' },
+        });
 
     // Post-filter for lowStock (compare currentStock <= minStockLevel)
     let filteredItems = items;

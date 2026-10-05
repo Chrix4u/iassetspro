@@ -81,36 +81,44 @@ export async function GET(request: NextRequest) {
 
     Object.assign(where, plantFilter);
 
+    const queryWhere = Object.keys(where).length > 1 || where.OR ? where : undefined;
+    // Keep the least-privilege lookup projection separate from the full registry
+    // include shape. This avoids an invalid Prisma select/include union and makes
+    // the data boundary explicit for repair-execution users.
+    const toolsPromise = isLookup
+      ? db.tool.findMany({
+          where: queryWhere,
+          select: {
+            id: true,
+            toolCode: true,
+            name: true,
+            category: true,
+            status: true,
+            condition: true,
+            quantity: true,
+            assignedToId: true,
+            plantId: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        })
+      : db.tool.findMany({
+          where: queryWhere,
+          include: {
+            assignedTo: { select: { id: true, fullName: true, username: true } },
+            createdBy: { select: { id: true, fullName: true, username: true } },
+            _count: { select: { transactions: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        });
+
     const [tools, total] = await Promise.all([
-      db.tool.findMany({
-        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
-        ...(isLookup
-          ? {
-              select: {
-                id: true,
-                toolCode: true,
-                name: true,
-                category: true,
-                status: true,
-                condition: true,
-                quantity: true,
-                assignedToId: true,
-                plantId: true,
-              },
-            }
-          : {
-              include: {
-                assignedTo: { select: { id: true, fullName: true, username: true } },
-                createdBy: { select: { id: true, fullName: true, username: true } },
-                _count: { select: { transactions: true } },
-              },
-            }),
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
+      toolsPromise,
       db.tool.count({
-        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
+        where: queryWhere ?? { isActive: true },
       }),
     ]);
 

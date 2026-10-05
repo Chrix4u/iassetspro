@@ -10,8 +10,8 @@ import {
   lookupUserByKey,
 } from './helpers/api';
 
-async function chooseSearchable(page: Page, buttonName: RegExp, searchPlaceholder: RegExp, optionText: string) {
-  await page.getByRole('button', { name: buttonName }).click();
+async function chooseSearchable(page: Page, comboboxName: RegExp, searchPlaceholder: RegExp, optionText: string) {
+  await page.getByRole('combobox', { name: comboboxName }).click();
   const search = page.getByPlaceholder(searchPlaceholder);
   await expect(search).toBeVisible();
   await search.fill(optionText);

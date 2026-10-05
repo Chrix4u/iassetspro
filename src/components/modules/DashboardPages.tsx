@@ -26,6 +26,7 @@ import {
   Timer, Users, LayoutDashboard, Bell, Settings, FileText,
   Hammer, HardHat, ClipboardCheck, PieChartIcon, ChevronRight,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { EmptyState, StatusBadge, MiniBarChart, ProgressRing, LoadingSkeleton } from '@/components/shared/helpers';
 
 const CHART_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
@@ -91,7 +92,7 @@ function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, 
   borderColor: string;
   iconBg: string;
   iconColor: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   barData?: number[];
   showRing?: boolean;
   ringValue?: number;
@@ -666,7 +667,7 @@ export function DashboardPage() {
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
       {(isManager || isPlanner || isSupervisor) && (() => {
-        const enhancedCards = [];
+        const enhancedCards: React.ReactElement[] = [];
         if (analyticsEnabled) {
           enhancedCards.push(
             <KPICard
@@ -742,7 +743,7 @@ export function DashboardPage() {
 
       {/* ===== PM Alerts & Compliance Row ===== */}
       {(isManager || isPlanner) && (() => {
-        const pmComplianceCards = [];
+        const pmComplianceCards: React.ReactElement[] = [];
         if (pmEnabled) {
           pmComplianceCards.push(
             <KPICard

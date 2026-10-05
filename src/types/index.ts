@@ -412,6 +412,7 @@ export interface DashboardStats {
   completedWorkOrders: number;
   overdueWorkOrders: number;
   createdTodayMR: number;
+  newTodayPending: number;
   createdTodayWO: number;
   completedTodayWO: number;
   pendingMR: number;
@@ -437,7 +438,7 @@ export interface DashboardStats {
   recentRequests: MaintenanceRequest[];
   recentWorkOrders: WorkOrder[];
   // Cross-module KPIs
-  assetHealth: { poor: number; critical: number; total: number; byCondition: Record<string, number> };
+  assetHealth: { atRisk: number; poor: number; critical: number; total: number; byCondition: Record<string, number> };
   safetyAlerts: { openIncidents: number; overdueInspections: number };
   production: { activeOrders: number; overdueOrders: number; completionRate: number };
   iotStatus: { totalDevices: number; offlineCount: number; alertCount: number };
@@ -484,7 +485,14 @@ export interface DashboardStats {
   plannerKPIs: {
     planningQueue: number;
     pmSchedulesDue: number;
+    pendingTeamRequests: number;
   };
+  pendingTeamRequestsDetail: Array<{
+    id: string;
+    requestedTrade?: string | null;
+    workOrder: { id: string; woNumber: string; title: string };
+    requestedByUser: { id: string; fullName: string };
+  }>;
   userRoles: string[];
 }
 

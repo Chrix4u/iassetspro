@@ -1286,7 +1286,15 @@ export function AssetDetailPage({ id }: { id: string }) {
 
             {/* ==================== VISUAL EXPLORER TAB ==================== */}
             <TabsContent value="visual-explorer" className="mt-4 space-y-4">
-              <MachineVisualExplorer asset={asset} initialComponentId={visualFocusId} />
+              <MachineVisualExplorer
+                asset={asset}
+                initialComponentId={visualFocusId}
+                onCommissionHierarchy={canCreateComponent ? () => {
+                  setShowComponentForm(false);
+                  setShowHierarchyCommissioning(true);
+                  setActiveTab('components');
+                } : undefined}
+              />
             </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}

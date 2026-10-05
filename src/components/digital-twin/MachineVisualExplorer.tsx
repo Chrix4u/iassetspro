@@ -437,7 +437,7 @@ async function loadAllMachineComponents(assetId: string): Promise<MachineCompone
   return all;
 }
 
-export function MachineVisualExplorer({ asset, initialComponentId = null }: { asset: AssetSummary; initialComponentId?: string | null }) {
+export function MachineVisualExplorer({ asset, initialComponentId = null, onCommissionHierarchy }: { asset: AssetSummary; initialComponentId?: string | null; onCommissionHierarchy?: () => void }) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialComponentId);
@@ -640,11 +640,24 @@ export function MachineVisualExplorer({ asset, initialComponentId = null }: { as
             <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
           <ScrollArea className="mt-1 h-[560px] pr-1 xl:h-auto xl:min-h-0 xl:flex-1">
-            {roots.map((root) => (
+            {roots.length > 0 ? roots.map((root) => (
               <HierarchyNode key={root.id} node={root} childrenByParent={childrenByParent}
                 selectedId={selectedId} onSelect={setSelectedId}
                 expandedIds={expandedIds} onToggle={toggleExpanded} />
-            ))}
+            )) : (
+              <div className="mx-1 mt-3 rounded-lg border border-dashed p-4 text-center">
+                <Network className="mx-auto h-7 w-7 text-muted-foreground" />
+                <div className="mt-2 text-xs font-semibold">No component hierarchy yet</div>
+                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                  Register verified assemblies, components and parts before drilling below the machine level. The asset-level Diagram, Engineering 2D and Exploded views remain available.
+                </p>
+                {onCommissionHierarchy && (
+                  <Button type="button" variant="outline" size="sm" className="mt-3 h-7 text-[11px]" onClick={onCommissionHierarchy}>
+                    <Layers3 className="mr-1.5 h-3.5 w-3.5" />Commission hierarchy
+                  </Button>
+                )}
+              </div>
+            )}
           </ScrollArea>
         </CardContent>
       </Card>

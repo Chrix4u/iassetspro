@@ -59,6 +59,13 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('space-y-4 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain xl:pr-1');
   });
 
+  it('guides uncommissioned machines into the existing hierarchy workflow', () => {
+    expect(explorer).toContain('No component hierarchy yet');
+    expect(explorer).toContain('Commission hierarchy');
+    expect(explorer).toContain('onCommissionHierarchy');
+    expect(explorer).toContain('The asset-level Diagram, Engineering 2D and Exploded views remain available.');
+  });
+
   it('has zoom controls and part-level AI generation', () => {
     expect(explorer).toContain('Math.min(4');
     expect(explorer).toContain('setPointerCapture');

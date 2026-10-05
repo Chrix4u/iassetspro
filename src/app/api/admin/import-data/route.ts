@@ -45,7 +45,7 @@ function validateRequiredFields(record: Record<string, unknown>, requiredFields:
   return null;
 }
 
-async function importAssets(records: Record<string, unknown>[]): Promise<ImportRecord> {
+async function importAssets(records: Record<string, unknown>[], currentUserId: string): Promise<ImportRecord> {
   const result: ImportRecord = { total: records.length, imported: 0, skipped: 0, errors: [] };
 
   for (let i = 0; i < records.length; i++) {
@@ -67,13 +67,42 @@ async function importAssets(records: Record<string, unknown>[]): Promise<ImportR
         continue;
       }
 
-      // Look up or create category (skip if categoryId not provided and no category)
-      let categoryId = record.categoryId as string | undefined;
-      if (!categoryId) {
-        // Try to find a default category or skip
-        const defaultCategory = await db.assetCategory.findFirst();
-        if (defaultCategory) {
-          categoryId = defaultCategory.id;
+      // Asset.category is required. Use an explicit category when supplied,
+      // otherwise resolve a default category and fail this row if none exists.
+      let categoryId = record.categoryId ? String(record.categoryId) : undefined;
+      if (categoryId) {
+        const category = await db.assetCategory.findUnique({ where: { id: categoryId }, select: { id: true } });
+        if (!category) {
+          result.errors.push(`Asset #${i + 1}: Category not found`);
+          continue;
+        }
+      } else {
+        const defaultCategory = await db.assetCategory.findFirst({ select: { id: true } });
+        if (!defaultCategory) {
+          result.errors.push(`Asset #${i + 1}: No asset category is available`);
+          continue;
+        }
+        categoryId = defaultCategory.id;
+      }
+
+      const plantId = String(record.plantId);
+      const plant = await db.plant.findUnique({ where: { id: plantId }, select: { id: true } });
+      if (!plant) {
+        result.errors.push(`Asset #${i + 1}: Plant not found`);
+        continue;
+      }
+
+      let departmentId: string | undefined;
+      if (record.departmentId) {
+        departmentId = String(record.departmentId);
+        const department = await db.department.findUnique({ where: { id: departmentId }, select: { plantId: true } });
+        if (!department) {
+          result.errors.push(`Asset #${i + 1}: Department not found`);
+          continue;
+        }
+        if (department.plantId !== plantId) {
+          result.errors.push(`Asset #${i + 1}: Department must belong to the same plant`);
+          continue;
         }
       }
 
@@ -82,7 +111,7 @@ async function importAssets(records: Record<string, unknown>[]): Promise<ImportR
           name: String(record.name),
           assetTag: String(record.assetTag),
           description: record.description ? String(record.description) : null,
-          category: categoryId ? { connect: { id: categoryId } } : undefined,
+          category: { connect: { id: categoryId } },
           serialNumber: record.serialNumber ? String(record.serialNumber) : null,
           manufacturer: record.manufacturer ? String(record.manufacturer) : null,
           model: record.model ? String(record.model) : null,
@@ -93,8 +122,8 @@ async function importAssets(records: Record<string, unknown>[]): Promise<ImportR
           building: record.building ? String(record.building) : null,
           floor: record.floor ? String(record.floor) : null,
           area: record.area ? String(record.area) : null,
-          plant: { connect: { id: String(record.plantId) } },
-          department: record.departmentId ? { connect: { id: String(record.departmentId) } } : undefined,
+          plant: { connect: { id: plantId } },
+          department: departmentId ? { connect: { id: departmentId } } : undefined,
           purchaseDate: record.purchaseDate ? new Date(String(record.purchaseDate)) : null,
           purchaseCost: record.purchaseCost ? Number(record.purchaseCost) : null,
           warrantyExpiry: record.warrantyExpiry ? new Date(String(record.warrantyExpiry)) : null,
@@ -102,7 +131,7 @@ async function importAssets(records: Record<string, unknown>[]): Promise<ImportR
           expectedLifeYears: record.expectedLifeYears ? Number(record.expectedLifeYears) : null,
           currentValue: record.currentValue ? Number(record.currentValue) : null,
           depreciationRate: record.depreciationRate ? Number(record.depreciationRate) : null,
-          createdBy: { connect: { id: record.createdById ? String(record.createdById) : '' } },
+          createdBy: { connect: { id: currentUserId } },
           isActive: record.isActive !== false,
           specification: record.specification ? String(record.specification) : '{}',
         },
@@ -117,7 +146,7 @@ async function importAssets(records: Record<string, unknown>[]): Promise<ImportR
   return result;
 }
 
-async function importInventory(records: Record<string, unknown>[]): Promise<ImportRecord> {
+async function importInventory(records: Record<string, unknown>[], currentUserId: string): Promise<ImportRecord> {
   const result: ImportRecord = { total: records.length, imported: 0, skipped: 0, errors: [] };
 
   for (let i = 0; i < records.length; i++) {
@@ -139,6 +168,13 @@ async function importInventory(records: Record<string, unknown>[]): Promise<Impo
         continue;
       }
 
+      const plantId = String(record.plantId);
+      const plant = await db.plant.findUnique({ where: { id: plantId }, select: { id: true } });
+      if (!plant) {
+        result.errors.push(`Inventory #${i + 1}: Plant not found`);
+        continue;
+      }
+
       await db.inventoryItem.create({
         data: {
           itemCode: String(record.itemCode),
@@ -156,13 +192,13 @@ async function importInventory(records: Record<string, unknown>[]): Promise<Impo
           location: record.location ? String(record.location) : null,
           binLocation: record.binLocation ? String(record.binLocation) : null,
           shelfLocation: record.shelfLocation ? String(record.shelfLocation) : null,
-          plantId: String(record.plantId),
+          plantId,
           locationId: record.locationId ? String(record.locationId) : null,
           supplierId: record.supplierId ? String(record.supplierId) : null,
           isActive: record.isActive !== false,
           specification: record.specification ? String(record.specification) : '{}',
           imageUrls: record.imageUrls ? String(record.imageUrls) : '[]',
-          createdById: record.createdById ? String(record.createdById) : '',
+          createdById: currentUserId,
         },
       });
       result.imported++;
@@ -390,10 +426,10 @@ export async function POST(req: NextRequest) {
       let moduleResult: ImportRecord;
       switch (modKey) {
         case 'assets':
-          moduleResult = await importAssets(typedRecords);
+          moduleResult = await importAssets(typedRecords, session.userId);
           break;
         case 'inventory':
-          moduleResult = await importInventory(typedRecords);
+          moduleResult = await importInventory(typedRecords, session.userId);
           break;
         case 'users':
           moduleResult = await importUsers(typedRecords, session.userId);

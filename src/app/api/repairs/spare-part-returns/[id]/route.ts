@@ -284,6 +284,14 @@ export async function POST(
       if (existing.status !== 'refurbishing') {
         return NextResponse.json({ success: false, error: `Cannot complete refurbishment: current status is '${existing.status}'` }, { status: 400 });
       }
+      const canCompleteRefurbishment = isAdmin(session)
+        || existing.refurbisherId === session.userId
+        || hasRole(session, 'maintenance_supervisor')
+        || hasRole(session, 'maintenance_manager')
+        || hasRole(session, 'plant_manager');
+      if (!canCompleteRefurbishment) {
+        return NextResponse.json({ success: false, error: 'Only the assigned refurbisher or authorized maintenance management can complete refurbishment' }, { status: 403 });
+      }
 
       const { actualRefurbCost } = body;
 

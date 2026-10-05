@@ -36,7 +36,7 @@ import {
   ChevronRight,
   MapPin, ArrowRightLeft, FileText, Truck, Download, RefreshCw, Eye,
   CheckCircle2, Check, ClipboardCheck, ClipboardList, Clock, Filter, DollarSign, Box, Star,
-  XCircle, Loader2,
+  XCircle, Loader2, Wrench,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { AsyncSearchableSelect, SearchableSelect } from '@/components/ui/searchable-select';
@@ -64,6 +64,11 @@ export function InventoryPage() {
   const [selectedMovItemId, setSelectedMovItemId] = useState<string | null>(null);
   const [movementsSheetOpen, setMovementsSheetOpen] = useState(false);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
+  // Purchased reusable tools: receive into inventory first, then commission into the Tool Registry.
+  const [commissionItem, setCommissionItem] = useState<any | null>(null);
+  const [commissionQty, setCommissionQty] = useState('1');
+  const [commissionCategory, setCommissionCategory] = useState('General');
+  const [commissioning, setCommissioning] = useState(false);
   // KPI data from API
   const [kpi, setKpi] = useState<{
     total: number;
@@ -146,6 +151,28 @@ export function InventoryPage() {
     });
   }, []);
 
+  const handleCommissionTools = async () => {
+    if (!commissionItem) return;
+    const quantity = Number.parseInt(commissionQty, 10);
+    if (!Number.isInteger(quantity) || quantity <= 0) { toast.error('Enter a positive whole-number quantity'); return; }
+    if (quantity > commissionItem.currentStock) { toast.error(`Only ${commissionItem.currentStock} received units are available to commission`); return; }
+    setCommissioning(true);
+    try {
+      const res = await api.post(`/api/inventory/${commissionItem.id}/commission-tools`, {
+        quantity,
+        toolCategory: commissionCategory.trim() || 'General',
+        condition: 'new',
+      });
+      if (res.success) {
+        toast.success(`${quantity} purchased tool${quantity === 1 ? '' : 's'} commissioned to the Tool Registry`);
+        setCommissionItem(null);
+        setCommissionQty('1');
+        setCommissionCategory('General');
+        loadData();
+      } else toast.error(res.error || 'Failed to commission tools');
+    } catch { toast.error('Failed to commission tools'); } finally { setCommissioning(false); }
+  };
+
   if (loading) return <LoadingSkeleton />;
 
   return (
@@ -156,7 +183,7 @@ export function InventoryPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage spare parts, consumables, and supplies</p>
         </div>
         <div className="flex gap-2">
-          {(hasPermission('inventory.manage') || isAdmin()) && <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>}
+          {(hasPermission('inventory.manage') || hasPermission('inventory.stock_in') || hasPermission('inventory.stock_out') || isAdmin()) && <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>}
           {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>}
         </div>
       </div>
@@ -299,6 +326,11 @@ export function InventoryPage() {
                         <DropdownMenuContent align="end">
                           {(hasPermission('inventory.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(i)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
                           <DropdownMenuItem onClick={() => loadMovements(i.id)}><History className="h-3.5 w-3.5 mr-2" />Movements</DropdownMenuItem>
+                          {i.category === 'tool' && i.currentStock > 0 && (hasPermission('inventory.stock_out') || hasPermission('inventory.manage') || isAdmin()) && (
+                            <DropdownMenuItem onClick={() => { setCommissionItem(i); setCommissionQty('1'); setCommissionCategory('General'); }}>
+                              <Wrench className="h-3.5 w-3.5 mr-2" />Commission to Tools
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           {(hasPermission('inventory.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(i.id)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
                         </DropdownMenuContent>
@@ -454,6 +486,28 @@ export function InventoryPage() {
             </Button>
           </div>
         
+      </ResponsiveDialog>
+
+      <ResponsiveDialog open={!!commissionItem} onOpenChange={(open) => { if (!open) setCommissionItem(null); }}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Commission Purchased Tools</h2>
+          <p className="text-sm text-muted-foreground">Move received tool stock from Inventory into the reusable company Tool Registry for repair issue, custody, transfer and return.</p>
+        </div>
+        {commissionItem && <div className="space-y-4">
+          <div className="rounded-md border bg-muted/30 p-3 text-sm">
+            <p className="font-medium">{commissionItem.name} <span className="font-mono text-xs text-muted-foreground">[{commissionItem.itemCode}]</span></p>
+            <p className="text-xs text-muted-foreground mt-1">Received inventory available: {commissionItem.currentStock} {commissionItem.unitOfMeasure || 'each'}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Quantity *</Label><Input type="number" min="1" step="1" max={Math.floor(commissionItem.currentStock)} value={commissionQty} onChange={e => setCommissionQty(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Tool Category</Label><Input value={commissionCategory} onChange={e => setCommissionCategory(e.target.value)} placeholder="e.g. Hand Tool" /></div>
+          </div>
+          <p className="text-xs text-muted-foreground">Commissioning removes the quantity from ordinary inventory stock and creates an available TL-NNNN company-tool batch, so the same units are never counted twice.</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setCommissionItem(null)}>Cancel</Button>
+            <Button onClick={handleCommissionTools} disabled={commissioning} className="bg-emerald-600 hover:bg-emerald-700 text-white">{commissioning ? 'Commissioning...' : 'Commission to Tool Registry'}</Button>
+          </div>
+        </div>}
       </ResponsiveDialog>
 
       {/* Stock Movements Sheet */}
@@ -1588,7 +1642,7 @@ export function InventoryPurchaseOrdersPage() {
                 {expandedPo === po.id && po.items?.length > 0 && po.items.map((item: any, i: number) => (
                   <TableRow key={`${po.id}-item-${i}`} className="bg-muted/20 hover:bg-muted/30">
                     <TableCell className="pl-12 text-xs text-muted-foreground" colSpan={3}>
-                      <div className="flex items-center gap-2"><Box className="h-3 w-3" /><span className="font-medium text-foreground">{item.inventoryItem?.name || item.description || 'Item'}</span>{item.inventoryItem?.itemCode && <span className="text-muted-foreground">({item.inventoryItem.itemCode})</span>}</div>
+                      <div className="flex items-center gap-2"><Box className="h-3 w-3" /><span className="font-medium text-foreground">{item.item?.name || item.description || 'Item'}</span>{item.item?.itemCode && <span className="text-muted-foreground">({item.item.itemCode})</span>}</div>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-xs">
                       <span className="text-muted-foreground">{item.quantity} × {formatCurrency(item.unitCost)}</span>
@@ -1732,7 +1786,14 @@ export function InventoryReceivingPage() {
         condition: form.condition,
         notes: form.notes || null,
       });
-      if (res.success) { toast.success('Items received successfully'); setCreateOpen(false); setForm({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' }); fetchRecords(); }
+      if (res.success) {
+        toast.success(form.condition === 'good'
+          ? 'Items received and usable inventory updated'
+          : `Items received as ${form.condition}; usable stock was not increased`);
+        setCreateOpen(false);
+        setForm({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' });
+        fetchRecords();
+      }
       else toast.error(res.error || 'Failed to receive items');
     } catch { toast.error('Failed to receive items'); } finally { setCreating(false); }
   };
@@ -1788,19 +1849,22 @@ export function InventoryReceivingPage() {
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>PO *</Label>
               <SearchableSelect
-                value={form.purchaseOrder || ''}
-                onValueChange={v => { const [poId, itemId] = v.split('-'); setForm({ ...form, purchaseOrder: poId, itemId }); }}
-                options={purchaseOrders.filter((po: any) => ['approved', 'partially_received'].includes(po.status)).map((po: any) => ({
-                  value: po.id,
-                  label: `${po.poNumber} — ${po.supplier?.name || ''}`,
+                value={form.purchaseOrder && form.itemId ? `${form.purchaseOrder}::${form.itemId}` : ''}
+                onValueChange={v => {
+                  const [poId, itemId] = v.split('::');
+                  setForm({ ...form, purchaseOrder: poId || '', itemId: itemId || '', quantity: '' });
+                }}
+                options={availablePOItems.map((pi: any) => ({
+                  value: `${pi.poId}::${pi.itemId}`,
+                  label: `${pi.poNumber} — ${pi.item?.name || 'Item'} (${pi.item?.itemCode || 'no code'}) · remaining ${pi.remaining}`,
                 }))}
-                placeholder="Select PO..."
-                searchPlaceholder="Search POs..."
+                placeholder="Select PO item..."
+                searchPlaceholder="Search PO or item..."
               />
             </div>
-            {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
+            {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" min="0.001" step="0.001" max={availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.remaining || undefined} placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
               <div className="space-y-2"><Label>Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="good">Good</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="defective">Defective</SelectItem></SelectContent></Select></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Any observations, discrepancies, or special instructions..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>

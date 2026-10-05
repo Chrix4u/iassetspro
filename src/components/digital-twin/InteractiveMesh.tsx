@@ -168,7 +168,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   }, [isClickable, binding.meshName, binding.assetId]);
 
   const handleClick = useCallback(
-    (e: THREE.Event) => {
+    (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
       // Ignore clicks that were actually long-press starts
       if (isLongPressRef.current) {
@@ -181,7 +181,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   );
 
   const handleDoubleClick = useCallback(
-    (e: THREE.Event) => {
+    (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
       if (!isClickable) return;
       // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
@@ -197,7 +197,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   );
 
   const handlePointerOver = useCallback(
-    (e: THREE.Event) => {
+    (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       setHovered(true);
       setIsTooltipVisible(true);
@@ -232,7 +232,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   );
 
   const handlePointerOut = useCallback(
-    (e: THREE.Event) => {
+    (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       setHovered(false);
       setIsTooltipVisible(false);
@@ -245,7 +245,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   );
 
   const handleContextMenu = useCallback(
-    (e: THREE.Event) => {
+    (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
       openComponentDetails();
     },

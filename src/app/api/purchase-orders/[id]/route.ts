@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasAnyPermission, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
+import { canAccessPurchaseOrderLines } from '@/lib/purchase-order-access';
 
 export async function GET(
   request: NextRequest,
@@ -9,13 +11,16 @@ export async function GET(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['inventory.view_all', 'inventory.manage', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.export']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { id } = await params;
     const po = await db.purchaseOrder.findUnique({
       where: { id },
       include: {
         supplier: { select: { id: true, name: true, code: true } },
-        items: { include: { item: { select: { id: true, name: true, itemCode: true } } } },
+        items: { include: { item: { select: { id: true, name: true, itemCode: true, plantId: true } } } },
         createdBy: { select: { id: true, fullName: true } },
         approvedBy: { select: { id: true, fullName: true } },
         receivingRecords: {
@@ -29,6 +34,10 @@ export async function GET(
     });
 
     if (!po) return NextResponse.json({ success: false, error: 'Purchase order not found' }, { status: 404 });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPurchaseOrderLines(plantScope, po.items)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
     return NextResponse.json({ success: true, data: po });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load purchase order';
@@ -49,8 +58,15 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const existing = await db.purchaseOrder.findUnique({ where: { id } });
+    const existing = await db.purchaseOrder.findUnique({
+      where: { id },
+      include: { items: { include: { item: { select: { plantId: true } } } } },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Purchase order not found' }, { status: 404 });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPurchaseOrderLines(plantScope, existing.items)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     const updateData: Record<string, unknown> = {};
     for (const field of ['priority', 'notes', 'status', 'expectedDelivery']) {

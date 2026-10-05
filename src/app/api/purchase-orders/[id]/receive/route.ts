@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { canAccessPurchaseOrderLines } from '@/lib/purchase-order-access';
 
 const EPSILON = 0.001;
 const VALID_CONDITIONS = ['good', 'damaged', 'defective'] as const;
@@ -46,7 +47,7 @@ export async function POST(
       if (!['approved', 'partially_received'].includes(po.status)) {
         throw new Error('VALIDATION:Only approved/partially_received POs can receive items');
       }
-      if (po.items.length === 0 || po.items.some((line) => !canAccessPlantStrict(plantScope, line.item.plantId))) {
+      if (!canAccessPurchaseOrderLines(plantScope, po.items)) {
         throw new Error('FORBIDDEN:Purchase order contains inventory outside your plant scope');
       }
 

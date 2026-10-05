@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope } from '@/lib/plant-scope';
+import { canAccessPurchaseOrderLines } from '@/lib/purchase-order-access';
 
 export async function POST(
   request: NextRequest,
@@ -16,8 +18,15 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const existing = await db.purchaseOrder.findUnique({ where: { id } });
+    const existing = await db.purchaseOrder.findUnique({
+      where: { id },
+      include: { items: { include: { item: { select: { plantId: true } } } } },
+    });
     if (!existing) return NextResponse.json({ success: false, error: 'Purchase order not found' }, { status: 404 });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPurchaseOrderLines(plantScope, existing.items)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
     if (!['draft', 'submitted'].includes(existing.status)) return NextResponse.json({ success: false, error: 'Only draft/submitted POs can be approved' }, { status: 400 });
 
     const updated = await db.purchaseOrder.update({

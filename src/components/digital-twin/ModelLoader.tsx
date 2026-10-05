@@ -152,7 +152,10 @@ function useGLTFLoader(
           onProgressRef.current?.(100);
         }
       }, 0);
-      return;
+      return () => {
+        cancelled = true;
+        releaseToCache(modelUrl);
+      };
     }
 
     // Dynamic import of GLTFLoader to avoid SSR issues
@@ -166,7 +169,7 @@ function useGLTFLoader(
       }
     }, 0);
 
-    let loader: THREE.Loader | null = null;
+    let progressInterval: ReturnType<typeof setInterval> | undefined;
 
     const loadModel = async () => {
       try {
@@ -177,11 +180,10 @@ function useGLTFLoader(
 
         if (cancelled) return;
 
-        loader = new GLTFLoader();
-        loaderRef.current = loader;
+        const gltfLoader = new GLTFLoader();
+        loaderRef.current = gltfLoader;
 
         // Progress simulation for single-file models where total=0
-        let progressInterval: ReturnType<typeof setInterval> | undefined;
         let reportedProgress = 0;
 
         // Fallback progress ticker for when server doesn't send content-length
@@ -196,7 +198,7 @@ function useGLTFLoader(
           }
         }, 200);
 
-        loader.load(
+        gltfLoader.load(
           modelUrl,
           (gltf) => {
             if (cancelled) return;
@@ -266,17 +268,12 @@ function useGLTFLoader(
 
     return () => {
       cancelled = true;
-      if (loaderRef.current) {
-        // Abort ongoing load
-        try {
-          loaderRef.current.manager?.forEach((item) => {
-            item.url = '';
-          });
-        } catch {
-          // Ignore abort errors
-        }
-        loaderRef.current = null;
+      if (progressInterval) {
+        clearInterval(progressInterval);
       }
+      // GLTFLoader does not expose a supported abort API here. The cancelled flag
+      // prevents late loader callbacks from mutating React state after unmount.
+      loaderRef.current = null;
       // Release cache reference on unmount
       releaseToCache(modelUrl);
     };

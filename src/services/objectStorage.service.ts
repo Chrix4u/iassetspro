@@ -44,6 +44,40 @@ const STORAGE_DIR = process.env.STORAGE_PATH || pjoin(process.cwd(), 'data', 'st
 const CDN_BASE = process.env.CDN_BASE_URL || '/api/files';
 const MAX_FILE_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE || '52428800', 10); // 50MB
 
+export class InvalidStorageKeyError extends Error {
+  constructor(message = 'Invalid storage key') {
+    super(message);
+    this.name = 'InvalidStorageKeyError';
+  }
+}
+
+function normalizeStorageKey(key: string, allowEmpty = false): string {
+  if (typeof key !== 'string' || key.includes('\0')) {
+    throw new InvalidStorageKeyError();
+  }
+
+  const normalized = key.replace(/\\/g, '/');
+  if (!normalized) {
+    if (allowEmpty) return '';
+    throw new InvalidStorageKeyError();
+  }
+  if (normalized.startsWith('/')) {
+    throw new InvalidStorageKeyError();
+  }
+
+  const segments = normalized.split('/');
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) {
+    throw new InvalidStorageKeyError();
+  }
+
+  return segments.join('/');
+}
+
+function storagePathForKey(key: string): { key: string; path: string } {
+  const safeKey = normalizeStorageKey(key);
+  return { key: safeKey, path: pjoin(STORAGE_DIR, safeKey) };
+}
+
 // Allowed MIME types
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
@@ -70,10 +104,12 @@ export class ObjectStorageService {
    * Generate a storage key from filename
    */
   static generateKey(prefix: string, filename: string): string {
-    const ext = filename.split('.').pop() || '';
+    const safePrefix = normalizeStorageKey(prefix);
+    const rawExt = filename.includes('.') ? filename.split('.').pop() || '' : '';
+    const ext = rawExt.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16).toLowerCase() || 'bin';
     const hash = crypto.randomBytes(8).toString('hex');
     const date = new Date().toISOString().split('T')[0].replace(/-/g, '/');
-    return `${prefix}/${date}/${hash}.${ext}`;
+    return `${safePrefix}/${date}/${hash}.${ext}`;
   }
 
   /**
@@ -105,18 +141,18 @@ export class ObjectStorageService {
       throw new Error(validation.error);
     }
 
-    const filePath = pjoin(STORAGE_DIR, key);
+    const { key: safeKey, path: filePath } = storagePathForKey(key);
     await this.ensureDir(filePath.substring(0, filePath.lastIndexOf('/')));
 
     await writeFile(filePath, buffer);
 
     const etag = crypto.createHash('md5').update(buffer).digest('hex');
 
-    logger.info('File uploaded', { key, size: buffer.length, mimeType });
+    logger.info('File uploaded', { key: safeKey, size: buffer.length, mimeType });
 
     return {
-      key,
-      url: `${CDN_BASE}/${key}`,
+      key: safeKey,
+      url: `${CDN_BASE}/${safeKey}`,
       size: buffer.length,
       mimeType,
       etag,
@@ -128,11 +164,11 @@ export class ObjectStorageService {
    * Download a file
    */
   static async download(key: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
-    const filePath = pjoin(STORAGE_DIR, key);
+    const { key: safeKey, path: filePath } = storagePathForKey(key);
 
     try {
       const buffer = await readFile(filePath);
-      const ext = key.split('.').pop() || '';
+      const ext = safeKey.split('.').pop() || '';
       const mimeMap: Record<string, string> = {
         jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
         webp: 'image/webp', svg: 'image/svg+xml', glb: 'model/gltf-binary',
@@ -153,11 +189,11 @@ export class ObjectStorageService {
    * Delete a file
    */
   static async delete(key: string): Promise<boolean> {
-    const filePath = pjoin(STORAGE_DIR, key);
+    const { key: safeKey, path: filePath } = storagePathForKey(key);
 
     try {
       await unlink(filePath);
-      logger.info('File deleted', { key });
+      logger.info('File deleted', { key: safeKey });
       return true;
     } catch {
       return false;
@@ -168,7 +204,7 @@ export class ObjectStorageService {
    * Check if file exists
    */
   static async exists(key: string): Promise<boolean> {
-    const filePath = pjoin(STORAGE_DIR, key);
+    const { path: filePath } = storagePathForKey(key);
     try {
       await stat(filePath);
       return true;
@@ -181,19 +217,19 @@ export class ObjectStorageService {
    * Get file metadata
    */
   static async getMetadata(key: string): Promise<StorageObject | null> {
-    const filePath = pjoin(STORAGE_DIR, key);
+    const { key: safeKey, path: filePath } = storagePathForKey(key);
 
     try {
       const stats = await stat(filePath);
-      const ext = key.split('.').pop() || '';
+      const ext = safeKey.split('.').pop() || '';
 
       return {
-        key,
+        key: safeKey,
         size: stats.size,
         mimeType: `application/${ext}`,
         lastModified: stats.mtime.toISOString(),
         etag: '',
-        url: `${CDN_BASE}/${key}`,
+        url: `${CDN_BASE}/${safeKey}`,
       };
     } catch {
       return null;
@@ -204,7 +240,8 @@ export class ObjectStorageService {
    * List objects with prefix
    */
   static async list(prefix: string, limit = 100): Promise<StorageObject[]> {
-    const dirPath = pjoin(STORAGE_DIR, prefix);
+    const safePrefix = normalizeStorageKey(prefix, true);
+    const dirPath = safePrefix ? pjoin(STORAGE_DIR, safePrefix) : STORAGE_DIR;
 
     try {
       if (!existsSync(dirPath)) return [];
@@ -219,7 +256,7 @@ export class ObjectStorageService {
         try {
           const stats = await stat(fullPath);
           if (stats.isFile()) {
-            const relativeKey = `${prefix}/${file}`;
+            const relativeKey = safePrefix ? `${safePrefix}/${file}` : String(file);
             objects.push({
               key: relativeKey,
               size: stats.size,
@@ -265,7 +302,8 @@ export class ObjectStorageService {
     totalSize: number;
     byPrefix: Record<string, { files: number; size: number }>;
   }> {
-    const baseDir = prefix ? pjoin(STORAGE_DIR, prefix) : STORAGE_DIR;
+    const safePrefix = prefix ? normalizeStorageKey(prefix) : '';
+    const baseDir = safePrefix ? pjoin(STORAGE_DIR, safePrefix) : STORAGE_DIR;
 
     const stats = {
       totalFiles: 0,

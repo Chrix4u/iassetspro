@@ -10,11 +10,11 @@ import {
   lookupUserByKey,
 } from './helpers/api';
 
-async function chooseSearchable(page: Page, buttonName: RegExp, searchPlaceholder: RegExp, optionText: RegExp) {
+async function chooseSearchable(page: Page, buttonName: RegExp, searchPlaceholder: RegExp, optionText: string) {
   await page.getByRole('button', { name: buttonName }).click();
   const search = page.getByPlaceholder(searchPlaceholder);
   await expect(search).toBeVisible();
-  await search.fill(optionText.source.replace(/\\/g, ''));
+  await search.fill(optionText);
   await page.getByRole('option').filter({ hasText: optionText }).first().click();
 }
 
@@ -78,15 +78,15 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     await inventoryPage.goto('/#/inventory-purchase-orders');
     await expect(inventoryPage.getByRole('heading', { name: 'Purchase Orders' })).toBeVisible();
     await inventoryPage.getByRole('button', { name: /New PO/i }).click();
-    const dialog = inventoryPage.getByText('New Purchase Order').locator('..').locator('..');
-    await chooseSearchable(inventoryPage, /Select supplier/i, /Search suppliers/i, new RegExp(supplierName));
+    const dialog = inventoryPage.getByRole('dialog');
+    await chooseSearchable(inventoryPage, /Select supplier/i, /Search suppliers/i, supplierName);
 
-    const comboButtons = inventoryPage.locator('button[role="combobox"]');
-    await comboButtons.filter({ hasText: 'Select' }).first().click();
-    await inventoryPage.getByRole('option', { name: 'High' }).click();
+    const priorityField = dialog.getByText('Priority *').locator('..');
+    await priorityField.getByRole('combobox').click();
+    await inventoryPage.getByRole('option', { name: 'High', exact: true }).click();
 
-    await inventoryPage.getByRole('button', { name: /Add Item/i }).click();
-    await chooseSearchable(inventoryPage, /Select item/i, /Search items/i, new RegExp(toolCode));
+    await dialog.getByRole('button', { name: /Add Item/i }).click();
+    await chooseSearchable(inventoryPage, /Select item/i, /Search items/i, toolCode);
 
     const quantityInput = dialog.locator('input[type="number"]').first();
     await quantityInput.fill('2');
@@ -103,8 +103,8 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     await inventoryPage.goto('/#/inventory-receiving');
     await expect(inventoryPage.getByRole('heading', { name: 'Receiving' })).toBeVisible();
     await inventoryPage.getByRole('button', { name: /New GRN/i }).click();
-    await chooseSearchable(inventoryPage, /Select PO item/i, /Search PO or item/i, new RegExp(toolCode));
-    const receiptDialog = inventoryPage.getByText('New Goods Receipt Note').locator('..').locator('..');
+    await chooseSearchable(inventoryPage, /Select PO item/i, /Search PO or item/i, toolCode);
+    const receiptDialog = inventoryPage.getByRole('dialog');
     await receiptDialog.locator('input[type="number"]').first().fill('2');
     await inventoryPage.getByRole('button', { name: 'Receive Items' }).click();
     await expect(inventoryPage.getByText('Items received and usable inventory updated')).toBeVisible();
@@ -123,7 +123,7 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     await row.locator('button').last().click();
     await inventoryPage.getByText('Commission to Tools').click();
     await expect(inventoryPage.getByText('Commission Purchased Tools')).toBeVisible();
-    const commissionDialog = inventoryPage.getByText('Commission Purchased Tools').locator('..').locator('..');
+    const commissionDialog = inventoryPage.getByRole('dialog');
     await commissionDialog.locator('input[type="number"]').fill('1');
     await inventoryPage.getByRole('button', { name: 'Commission to Tool Registry' }).click();
     await expect(inventoryPage.getByText(/commissioned to the Tool Registry/i)).toBeVisible();
@@ -174,9 +174,9 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     let row = supervisorPage.locator('tbody tr').filter({ hasText: reusableName }).first();
     await expect(row).toBeVisible();
     await row.getByRole('button', { name: /Inspect/i }).click();
-    const inspectDialog = supervisorPage.getByText('Inspect Spare Part Return').locator('..').locator('..');
+    const inspectDialog = supervisorPage.getByRole('dialog');
     await expect(inspectDialog.locator('#refurbNeeded')).toBeChecked();
-    await inspectDialog.getByRole('button').last().click();
+    await inspectDialog.getByRole('button', { name: 'Submit Inspection' }).click();
 
     row = supervisorPage.locator('tbody tr').filter({ hasText: reusableName }).first();
     await expect(row.getByRole('button', { name: /Start Refurb/i })).toBeVisible();

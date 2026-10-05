@@ -35,7 +35,7 @@ interface ModelRecord {
   _count: { scenes: number; versions: number };
 }
 
-interface ModelManagerPanelProps {
+export interface ModelManagerPanelProps {
   onSelectModel?: (model: ModelRecord) => void;
   onClose?: () => void;
 }

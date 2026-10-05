@@ -35,7 +35,7 @@ import {
   ChevronLeft, ChevronRight, Cpu, Thermometer, GitBranch, CircleDot,
   Droplets, Zap, Wind, FlaskConical, Settings, Shield, X,
   Layers, Info, MoreVertical, ArrowLeft, Lock, Unlock, Grid3X3,
-  Map, AlertTriangle, FileImage, Users, Clock, RotateCcw, ChevronUp,
+  Map as MapIcon, AlertTriangle, FileImage, Users, Clock, RotateCcw, ChevronUp,
   ArrowLeftRight,
   type LucideIcon,
 } from 'lucide-react';
@@ -1415,7 +1415,7 @@ function FlowEditorInner({
                       className={`h-7 w-7 ${minimapVisible ? 'text-emerald-400 bg-emerald-500/10' : toolbarBtnStyle}`}
                       onClick={() => setMinimapVisible(!minimapVisible)}
                     >
-                      <Map className="h-3.5 w-3.5" />
+                      <MapIcon className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Minimap</TooltipContent>

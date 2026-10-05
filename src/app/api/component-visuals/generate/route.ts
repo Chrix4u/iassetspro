@@ -16,7 +16,8 @@ async function saveImage(prompt: string, filename: string): Promise<{ imageUrl: 
   const response = await aiImageGeneration({ prompt, size: '1024x1024' });
   const imageBase64 = response.data?.[0]?.base64;
   const remoteUrl = response.data?.[0]?.url;
-  const outDir = path.join(process.cwd(), 'public', 'generated-assets', 'component-visuals');
+  const generatedRoot = process.env.GENERATED_ASSETS_DIR || path.join(process.cwd(), 'public', 'generated-assets');
+  const outDir = path.join(generatedRoot, 'component-visuals');
   fs.mkdirSync(outDir, { recursive: true });
   const filePath = path.join(outDir, filename);
 
@@ -31,7 +32,7 @@ async function saveImage(prompt: string, filename: string): Promise<{ imageUrl: 
   }
 
   return {
-    imageUrl: '/generated-assets/component-visuals/' + filename,
+    imageUrl: '/api/generated-assets/component-visuals/' + filename,
     provider: 'configured_ai',
   };
 }

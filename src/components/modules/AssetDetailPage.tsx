@@ -72,6 +72,9 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [visualFocusId, setVisualFocusId] = useState<string | null>(null);
   const [componentSpareParts, setComponentSpareParts] = useState<any[]>([]);
   const [sparePartForm, setSparePartForm] = useState({ inventoryItemId: '', quantityRequired: '1', leadTimeDays: '', criticality: 'medium', notes: '' });
+  const [componentTools, setComponentTools] = useState<any[]>([]);
+  const [toolOptions, setToolOptions] = useState<any[]>([]);
+  const [toolForm, setToolForm] = useState({ toolId: '', quantityRequired: '1', taskType: 'repair', notes: '' });
   const [installedParts, setInstalledParts] = useState<any[]>([]);
   const [replacementHistory, setReplacementHistory] = useState<any[]>([]);
   const [installPartForm, setInstallPartForm] = useState({ inventoryItemId: '', serialNumber: '', lotNumber: '', quantity: '1', notes: '' });
@@ -114,6 +117,9 @@ export function AssetDetailPage({ id }: { id: string }) {
     setShowComponentForm(false);
     setShowHierarchyCommissioning(false);
     setComponentSpareParts([]);
+    setComponentTools([]);
+    setToolOptions([]);
+    setToolForm({ toolId: '', quantityRequired: '1', taskType: 'repair', notes: '' });
     setInstalledParts([]);
     setReplacementHistory([]);
     setRemovalReasons({});
@@ -178,19 +184,29 @@ export function AssetDetailPage({ id }: { id: string }) {
     }).catch(() => {});
   }, []);
 
+  const reloadToolOptions = useCallback(() => {
+    api.get('/api/tools?mode=lookup&limit=100').then(res => {
+      if (res.success && res.data) setToolOptions(Array.isArray(res.data) ? res.data : []);
+      else setToolOptions([]);
+    }).catch(() => setToolOptions([]));
+  }, []);
+
   const loadComponentSpareParts = useCallback((componentId: string) => {
     setSelectedComponentId(componentId);
     setActiveTab('bom');
     Promise.all([
       api.get(`/api/component-registry/${componentId}/spare-parts`),
+      api.get(`/api/component-registry/${componentId}/tools`),
       api.get(`/api/component-registry/${componentId}/installed-parts`),
       api.get(`/api/component-registry/${componentId}/replacements`),
-    ]).then(([sparesRes, installedRes, replacementsRes]) => {
+    ]).then(([sparesRes, toolsRes, installedRes, replacementsRes]) => {
       setComponentSpareParts(sparesRes.success && Array.isArray(sparesRes.data) ? sparesRes.data : []);
+      setComponentTools(toolsRes.success && Array.isArray(toolsRes.data) ? toolsRes.data : []);
       setInstalledParts(installedRes.success && Array.isArray(installedRes.data) ? installedRes.data : []);
       setReplacementHistory(replacementsRes.success && Array.isArray(replacementsRes.data) ? replacementsRes.data : []);
     }).catch(() => {
       setComponentSpareParts([]);
+      setComponentTools([]);
       setInstalledParts([]);
       setReplacementHistory([]);
     }).finally(() => {
@@ -244,7 +260,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       loadedTabsRef.current.add('bom');
     }
     if (activeTab === 'components') {
-      promises.push(reloadComponents(), reloadInventoryItems());
+      promises.push(reloadComponents(), reloadInventoryItems(), reloadToolOptions());
       loadedTabsRef.current.add('components');
     }
     if (activeTab === 'digital-twin' && !twin) {
@@ -260,7 +276,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       tabDataLoadingRef.current = false;
       setTabDataLoading(false);
     });
-  }, [activeTab, asset, id, twin, reloadComponents, reloadInventoryItems, reloadTwin, reloadDiagrams]);
+  }, [activeTab, asset, id, twin, reloadComponents, reloadInventoryItems, reloadToolOptions, reloadTwin, reloadDiagrams]);
 
   // Handlers
   const printComponentLabel = (component: any) => {
@@ -385,6 +401,56 @@ export function AssetDetailPage({ id }: { id: string }) {
         return;
       }
       toast.success('Store part unlinked from component');
+      loadComponentSpareParts(selectedComponentId);
+      reloadComponents();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLinkToolRequirement = async () => {
+    if (!selectedComponentId || !toolForm.toolId) {
+      toast.error('Select a component and tool');
+      return;
+    }
+    const tool = toolOptions.find((entry: any) => entry.id === toolForm.toolId);
+    if (!tool) {
+      toast.error('Tool not found');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.post(`/api/component-registry/${selectedComponentId}/tools`, {
+        toolId: tool.id,
+        toolName: tool.name,
+        toolCode: tool.toolCode || '',
+        quantityRequired: Number(toolForm.quantityRequired || 1),
+        taskType: toolForm.taskType || 'repair',
+        notes: toolForm.notes || null,
+      });
+      if (!res.success) {
+        toast.error(res.error || 'Failed to link required tool');
+        return;
+      }
+      toast.success('Required tool linked to component');
+      setToolForm({ toolId: '', quantityRequired: '1', taskType: 'repair', notes: '' });
+      loadComponentSpareParts(selectedComponentId);
+      reloadComponents();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUnlinkToolRequirement = async (toolRequirementId: string) => {
+    if (!selectedComponentId) return;
+    setSaving(true);
+    try {
+      const res = await api.delete(`/api/component-registry/${selectedComponentId}/tools?toolRequirementId=${encodeURIComponent(toolRequirementId)}`);
+      if (!res.success) {
+        toast.error(res.error || 'Failed to remove required tool');
+        return;
+      }
+      toast.success('Required tool removed from component');
       loadComponentSpareParts(selectedComponentId);
       reloadComponents();
     } finally {
@@ -903,6 +969,75 @@ export function AssetDetailPage({ id }: { id: string }) {
                                       Remove
                                     </Button>
                                   </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {selectedComponentId && (
+                    <Card id="component-tool-linkage" className="border-0 shadow-sm scroll-mt-4">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Required Tools & Tool Registry Linkage</CardTitle>
+                        <CardDescription>Link the exact plant-scoped tools needed to service this component. Current custody and status stay authoritative in the Tool Registry.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {toolOptions.length > 0 ? (
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-[2fr_110px_150px_auto] md:items-end">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Tool</Label>
+                              <Select value={toolForm.toolId} onValueChange={v => setToolForm(f => ({ ...f, toolId: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select plant tool" /></SelectTrigger>
+                                <SelectContent>
+                                  {toolOptions.map((tool: any) => (
+                                    <SelectItem key={tool.id} value={tool.id}>
+                                      {tool.toolCode || '—'} · {tool.name} · {tool.status || 'unknown'}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Qty Required</Label>
+                              <Input type="number" min="1" value={toolForm.quantityRequired} onChange={e => setToolForm(f => ({ ...f, quantityRequired: e.target.value }))} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Task</Label>
+                              <Select value={toolForm.taskType} onValueChange={v => setToolForm(f => ({ ...f, taskType: v }))}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="repair">Repair</SelectItem>
+                                  <SelectItem value="inspection">Inspection</SelectItem>
+                                  <SelectItem value="preventive">Preventive</SelectItem>
+                                  <SelectItem value="installation">Installation</SelectItem>
+                                  <SelectItem value="general">General</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button size="sm" onClick={handleLinkToolRequirement} disabled={saving || !toolForm.toolId}>Link Required Tool</Button>
+                          </div>
+                        ) : (
+                          <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                            No plant-scoped tool candidates are available for linking. Existing requirements remain visible below.
+                          </p>
+                        )}
+                        <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
+                          <Table>
+                            <TableHeader><TableRow><TableHead>Tool</TableHead><TableHead>Required</TableHead><TableHead>Status</TableHead><TableHead>Condition</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                            <TableBody>
+                              {componentTools.length === 0 ? (
+                                <TableRow><TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No tools linked to this component yet.</TableCell></TableRow>
+                              ) : componentTools.map((requirement: any) => (
+                                <TableRow key={requirement.id}>
+                                  <TableCell><div className="font-medium">{requirement.tool?.name || requirement.toolName}</div><div className="text-xs text-muted-foreground">{requirement.tool?.toolCode || requirement.toolCode || '—'}</div></TableCell>
+                                  <TableCell>{requirement.quantityRequired || 1}</TableCell>
+                                  <TableCell><Badge variant="outline" className="capitalize">{requirement.tool?.status || 'unassigned'}</Badge></TableCell>
+                                  <TableCell className="capitalize">{requirement.tool?.condition || '—'}</TableCell>
+                                  <TableCell>{requirement.tool?.location || '—'}</TableCell>
+                                  <TableCell className="text-right"><Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={() => handleUnlinkToolRequirement(requirement.id)} disabled={saving}>Remove</Button></TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>

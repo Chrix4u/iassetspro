@@ -38,6 +38,12 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('Math.min(reportedTotalPages, 1000)');
   });
 
+  it('keeps drill controls available in Diagram and the other visual modes', () => {
+    expect(explorer).toContain('const renderDrillOverlay = () => (');
+    expect(explorer).toMatch(/<TabsContent value="diagram"[\s\S]*?\{renderDrillOverlay\(\)\}/);
+    expect((explorer.match(/\{renderDrillOverlay\(\)\}/g) || []).length).toBe(2);
+  });
+
   it('surfaces component maintenance intelligence inside the drill-down', () => {
     expect(explorer).toContain("api.get('/api/component-registry/' + encodeURIComponent(selectedId))");
     expect(explorer).toContain('Maintenance intelligence');

@@ -4700,7 +4700,7 @@ export function SparePartReturnsPage() {
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
                           )}
-                          {r.status === 'refurbished' && canApproveAsStore(user) && (
+                          {(r.status === 'refurbished' || (r.status === 'inspected' && !r.refurbishmentNeeded)) && canApproveAsStore(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(r.id, 'return_to_store')}>
                               <Warehouse className="h-3.5 w-3.5" /> To Store
                             </Button>

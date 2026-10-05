@@ -73,7 +73,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'name', 'description', 'category', 'serialNumber', 'condition',
-      'status', 'location', 'purchaseCost', 'currentValue', 'manufacturer',
+      'status', 'location', 'purchaseDate', 'purchaseCost', 'currentValue', 'manufacturer',
       'model', 'assignedToId', 'expectedReturn', 'isActive', 'quantity',
     ];
 

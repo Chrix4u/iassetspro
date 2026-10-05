@@ -416,12 +416,21 @@ export async function returnSparePartToStore(sparePartReturnId: string, actorId:
     if (record.item && operationalPlantId && record.item.plantId !== operationalPlantId) {
       throw new MaterialCustodyValidationError('Spare part inventory item belongs to a different plant');
     }
-    if (record.status !== 'refurbished') {
-      throw new MaterialCustodyConflictError(`Cannot return to store: current status is '${record.status}'`);
+    const readyWithoutRefurbishment = record.status === 'inspected' && !record.refurbishmentNeeded;
+    const readyAfterRefurbishment = record.status === 'refurbished';
+    if (!readyWithoutRefurbishment && !readyAfterRefurbishment) {
+      throw new MaterialCustodyConflictError(
+        `Cannot return to store: current status is '${record.status}'${record.status === 'inspected' && record.refurbishmentNeeded ? ' and refurbishment is still required' : ''}`,
+      );
     }
 
     const claim = await tx.sparePartReturn.updateMany({
-      where: { id: sparePartReturnId, status: 'refurbished', returnedToStoreAt: null },
+      where: {
+        id: sparePartReturnId,
+        status: record.status,
+        refurbishmentNeeded: record.refurbishmentNeeded,
+        returnedToStoreAt: null,
+      },
       data: { status: 'returned_to_store', returnedToStoreById: actorId, returnedToStoreAt: now },
     });
     if (claim.count !== 1) throw new MaterialCustodyConflictError('Spare part return was claimed concurrently');

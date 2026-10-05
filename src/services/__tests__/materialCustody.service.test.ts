@@ -212,6 +212,25 @@ describe('spare-part custody accounting', () => {
     expect(tx.stockMovement.create).not.toHaveBeenCalled();
   });
 
+  it('returns inspected reusable spare directly to store when refurbishment is not needed', async () => {
+    tx.sparePartReturn.findUnique.mockResolvedValue({
+      id: 'spr-ready', returnNumber: 'SPR-READY', status: 'inspected', refurbishmentNeeded: false, returnedToStoreAt: null,
+      itemId: 'inv-1', quantity: 1, plantId: 'plant-1',
+      workOrder: { woNumber: 'WO-1', plantId: 'plant-1' }, item: { id: 'inv-1', currentStock: 4, plantId: 'plant-1' },
+    });
+    tx.inventoryItem.findUnique.mockResolvedValue({ id: 'inv-1', currentStock: 4 });
+    tx.sparePartReturn.findUniqueOrThrow.mockResolvedValue({ id: 'spr-ready', status: 'returned_to_store' });
+
+    await returnSparePartToStore('spr-ready', 'store-1');
+
+    expect(tx.sparePartReturn.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ status: 'inspected', refurbishmentNeeded: false }),
+      data: expect.objectContaining({ status: 'returned_to_store' }),
+    }));
+    expect(tx.inventoryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'inv-1', currentStock: 4 }, data: { currentStock: 5 } });
+    expect(tx.stockMovement.create).toHaveBeenCalledTimes(1);
+  });
+
   it('returns refurbished spare to store exactly once', async () => {
     tx.sparePartReturn.findUnique.mockResolvedValue({
       id: 'spr-1', returnNumber: 'SPR-1', status: 'refurbished', returnedToStoreAt: null, itemId: 'inv-1', quantity: 2,

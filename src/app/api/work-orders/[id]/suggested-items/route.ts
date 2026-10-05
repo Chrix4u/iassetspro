@@ -503,7 +503,7 @@ export async function PUT(
               itemType,
               itemId,
               decision: 'removed',
-              priorRequestId: activeRequest?.id || null,
+              priorRequestId: null,
             }),
           },
         });

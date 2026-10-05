@@ -69,17 +69,14 @@ export async function GET(
       }
     }
 
-    // IDOR protection: ensure user has access to this MR's plant
+    // IDOR protection: fail closed on the canonical plant-scope decision.
+    // Do not re-query UserPlant here: getPlantScope() already resolves those
+    // assignments, and a fallback lookup could accidentally override denyAccess
+    // from an explicitly unauthorized X-Plant-ID header.
     if (!isAdmin(session)) {
       const plantScope = await getPlantScope(request, session);
       if (plantScope.denyAccess || !canAccessPlantStrict(plantScope, mr.plantId)) {
-        // Check if user has access to the MR's plant via their userPlant records
-        const hasPlantAccess = await db.userPlant.findFirst({
-          where: { userId: session.userId, plantId: mr.plantId },
-        });
-        if (!hasPlantAccess) {
-          return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
-        }
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
       }
     }
 

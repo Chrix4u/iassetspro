@@ -163,7 +163,7 @@ export const digitalTwinService = {
     return sceneRepo.findByIdOrFail(id, {
       include: {
         twin: { include: { asset: true } },
-        model: { include: { meshBindings: { include: { asset: true } } } },
+        model: { include: { bindings: { include: { asset: true } } } },
         hotspots: { include: { asset: true } },
         annotations: { include: { author: { select: { id: true, name: true, fullName: true } } } },
         cameraPresets: true,

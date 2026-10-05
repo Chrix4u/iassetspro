@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+function parseNonNegativeInt(value: unknown, fallback = 0): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -47,7 +53,7 @@ export async function GET(request: NextRequest) {
         include: {
           asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
           uploadedBy: { select: { id: true, fullName: true, username: true } },
-          _count: { select: { meshBindings: true } },
+          _count: { select: { bindings: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -60,7 +66,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: models,
+      data: models.map(({ _count, ...model }) => ({
+        ...model,
+        _count: { meshBindings: _count.bindings },
+      })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error: unknown) {
@@ -114,12 +123,12 @@ export async function POST(request: NextRequest) {
         assetId,
         name,
         fileName,
-        fileSize: fileSize !== undefined ? parseInt(String(fileSize), 10) : 0,
+        fileSize: parseNonNegativeInt(fileSize),
         fileType,
         filePath,
         format: format || 'gltf',
-        meshCount: meshCount ? parseInt(String(meshCount), 10) : null,
-        vertexCount: vertexCount ? parseInt(String(vertexCount), 10) : null,
+        meshCount: parseNonNegativeInt(meshCount),
+        vertexCount: parseNonNegativeInt(vertexCount),
         uploadedById: session.userId,
       },
       include: {

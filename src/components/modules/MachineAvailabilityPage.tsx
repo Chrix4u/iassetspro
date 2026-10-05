@@ -389,7 +389,7 @@ export function MachineAvailabilityPage() {
                 { label: 'Efficient (≥97%)', value: String(selectedKPI.efficientMachines), icon: Gauge, color: 'text-emerald-600', targetTab: 'efficiency' as const },
                 { label: 'Weighted Avg Eff.', value: fmt(selectedKPI.weightedAvgEfficiency) + '%', icon: Target, color: selectedKPI.weightedAvgEfficiency >= 97 ? 'text-emerald-600' : selectedKPI.weightedAvgEfficiency >= 90 ? 'text-amber-600' : 'text-red-600', targetTab: 'efficiency' as const },
                 repairsEnabled ? { label: 'Total Breakdowns', value: String(selectedKPI.totalBreakdowns), icon: AlertTriangle, color: selectedKPI.totalBreakdowns <= (data.targets.breakdownsWeekly ?? 2) ? 'text-emerald-600' : 'text-red-600', targetTab: 'breakdown' as const } : null,
-              ].filter(Boolean).map((item) => (
+              ].filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => (
                 <Card key={item.label} className="border border-border/60 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => setTab(item.targetTab)}>
                   <CardContent className="flex items-center gap-3 p-4">
                     <item.icon className={`h-5 w-5 shrink-0 ${item.color}`} />
@@ -1005,7 +1005,7 @@ export function MachineAvailabilityPage() {
                   higherIsGood: false,
                   targetTab: 'pareto' as const,
                 } : null,
-              ].filter(Boolean).map((item) => {
+              ].filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => {
                 const direction = trendVal(item.cur, item.prev);
                 const trendIsGood =
                   direction === 'flat' ? item.met :

@@ -764,7 +764,7 @@ class DomainEventBus {
         eventType: event.eventType,
         entityName: event.entityName || null,
         entityId: event.entityId || null,
-        payload: event.payload as Prisma.InputJsonValue,
+        payload: event.payload as unknown as Prisma.InputJsonValue,
         correlationId: event.correlationId,
         causationId: event.causationId || null,
         source: event.source,
@@ -825,7 +825,7 @@ class DomainEventBus {
     return {
       id: record.id,
       eventType: record.eventType as DomainEventType,
-      payload: (record.payload as DomainEventPayload) || ({} as DomainEventPayload),
+      payload: (record.payload as unknown as DomainEventPayload) || ({} as DomainEventPayload),
       entityName: record.entityName || undefined,
       entityId: record.entityId || undefined,
       correlationId: record.correlationId || '',
@@ -875,7 +875,7 @@ class DomainEventBus {
               where: {
                 assetId,
                 status: 'completed',
-                completedAt: { not: null },
+                actualEnd: { not: null },
                 createdAt: { gte: new Date(Date.now() - 365 * 86400_000) },
               },
               select: {
@@ -935,7 +935,7 @@ class DomainEventBus {
             const recentFailures = await db.failureRecord.count({
               where: {
                 assetId,
-                createdAt: { gte: new Date(Date.now() - 90 * 86400_000) },
+                detectedAt: { gte: new Date(Date.now() - 90 * 86400_000) },
               },
             });
 
@@ -1147,7 +1147,7 @@ class DomainEventBus {
           if (assetId) {
             const twin = await db.digitalTwin.findUnique({
               where: { assetId },
-              select: { id: true, lastRefreshedAt: true },
+              select: { id: true },
             });
 
             if (twin) {

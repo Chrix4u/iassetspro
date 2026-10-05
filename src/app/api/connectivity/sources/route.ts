@@ -3,12 +3,23 @@ import { db } from '@/lib/db';
 import { industrialPollingEngine } from '@/services/connectivity';
 import { createLogger } from '@/lib/logger';
 import { getSession, isAdmin } from '@/lib/auth';
+import { getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
 
 const log = createLogger('API:ConnectivitySources');
 
 // GET /api/connectivity/sources — List all data sources with connection status
 export async function GET(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ error: 'Plant access denied' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const sourceType = searchParams.get('sourceType');
     const status = searchParams.get('status');
@@ -16,20 +27,43 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
 
-    const where: Record<string, unknown> = { isActive: true };
+    const where: Record<string, unknown> = {
+      isActive: true,
+      ...getPlantFilterWhere(plantScope),
+    };
     if (sourceType) where.sourceType = sourceType;
     if (status) where.status = status;
-    if (plantId) where.plantId = plantId;
+    if (plantId) {
+      const plantAllowed = plantScope.isSystemWide || plantScope.accessiblePlantIds.includes(plantId);
+      const matchesExplicitScope = !plantScope.isScoped || !plantScope.plantId || plantScope.plantId === plantId;
+      if (!plantAllowed || !matchesExplicitScope) {
+        return NextResponse.json({ error: 'Plant access denied' }, { status: 403 });
+      }
+      where.plantId = plantId;
+    }
 
     const [sources, total] = await Promise.all([
       db.telemetryDataSource.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          name: true,
+          sourceType: true,
+          status: true,
+          lastConnectionAt: true,
+          lastError: true,
+          isActive: true,
           plant: { select: { id: true, name: true, code: true } },
           gateway: { select: { id: true, name: true, gatewayCode: true, status: true } },
           createdBy: { select: { id: true, fullName: true } },
-          sessions: { where: { status: 'connected' }, select: { id: true, protocol, connectedAt, messagesIn, messagesOut } },
-          mappings: { where: { isActive: true }, select: { id: true, parameterName, externalId, dataType } },
+          sessions: {
+            where: { status: 'connected' },
+            select: { id: true, protocol: true, connectedAt: true, messagesIn: true, messagesOut: true },
+          },
+          mappings: {
+            where: { isActve: true },
+            select: { id: true, parameterName: true, externalId: true, dataType: true },
+          },
           _count: { select: { mappings: true, streams: true, sessions: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -89,7 +123,7 @@ export async function POST(request: NextRequest) {
       data: {
         name, sourceType, connectionConfig: configStr, plantId: plantId || null, gatewayId: gatewayId || null,
         metadata: metadata ? (typeof metadata === 'string' ? metadata : JSON.stringify(metadata)) : null,
-        createdById: body.userId || 'system', status: 'disconnected',
+        createdById: session.userId, status: 'disconnected',
       },
     });
 

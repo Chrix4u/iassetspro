@@ -7779,6 +7779,7 @@ export function PmSchedulesPage() {
   // Form state
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  const [formTemplateId, setFormTemplateId] = useState('');
   const [formAssetId, setFormAssetId] = useState('');
   const [formComponentId, setFormComponentId] = useState('');
   const [pmComponentOptions, setPmComponentOptions] = useState<any[]>([]);
@@ -7860,7 +7861,7 @@ export function PmSchedulesPage() {
   }, []);
 
   const resetForm = () => {
-    setFormTitle(''); setFormDesc(''); setFormAssetId(''); setFormComponentId('');
+    setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormAssetId(''); setFormComponentId('');
     setFormFreqType('monthly'); setFormFreqValue('1');
     setFormPriority('medium'); setFormEstDuration('');
     setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
@@ -7871,6 +7872,7 @@ export function PmSchedulesPage() {
   const openEdit = (item: any) => {
     setFormTitle(item.title || '');
     setFormDesc(item.description || '');
+    setFormTemplateId(item.templateId || '');
     setFormAssetId(item.assetId || '');
     setFormComponentId(item.componentId || '');
     setFormFreqType(item.frequencyType || 'monthly');
@@ -7897,6 +7899,7 @@ export function PmSchedulesPage() {
         estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
         assignedToId: formAssignedToId || null,
         departmentId: formDepartmentId || null,
+        templateId: formTemplateId || null,
         autoGenerateWO: formAutoGenWO,
         leadDays: parseInt(formLeadDays, 10) || 3,
         nextDueDate: formNextDueDate || null,
@@ -8103,6 +8106,11 @@ export function PmSchedulesPage() {
                     <div>
                       <p className="font-medium text-sm">{s.title}</p>
                       {s.description && <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{s.description}</p>}
+                      {s.template && (
+                        <Badge variant="secondary" className="mt-1 text-[9px] font-normal">
+                          Template · {s.template.title} · {s.template._count?.tasks ?? 0} task{s.template._count?.tasks === 1 ? '' : 's'}
+                        </Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -8178,6 +8186,27 @@ export function PmSchedulesPage() {
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Description</Label>
               <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance tasks..." rows={2} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">PM Template</Label>
+              <AsyncSearchableSelect
+                value={formTemplateId}
+                onValueChange={setFormTemplateId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/pm-templates?active=true');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((template: any) => ({
+                      value: template.id,
+                      label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
+                      badge: template.type,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Optional — select PM template..."
+                searchPlaceholder="Search PM templates..."
+              />
+              <p className="text-[11px] text-muted-foreground">When this schedule generates a work order, the selected template&apos;s task checklist is carried into the work order.</p>
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Asset *</Label>

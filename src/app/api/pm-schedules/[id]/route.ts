@@ -25,6 +25,7 @@ export async function GET(
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -73,7 +74,7 @@ export async function PUT(
       'title', 'description', 'frequencyType', 'frequencyValue',
       'lastCompletedDate', 'nextDueDate', 'estimatedDuration', 'priority',
       'assignedToId', 'departmentId', 'isActive', 'autoGenerateWO',
-      'leadDays', 'woTypeId', 'componentId',
+      'leadDays', 'woTypeId', 'componentId', 'templateId',
     ];
 
     for (const field of allowedFields) {
@@ -83,6 +84,16 @@ export async function PUT(
         } else {
           updateData[field] = body[field];
         }
+      }
+    }
+
+    if (body.templateId !== undefined && body.templateId) {
+      const template = await db.pmTemplate.findUnique({
+        where: { id: body.templateId },
+        select: { id: true, isActive: true },
+      });
+      if (!template || !template.isActive) {
+        return NextResponse.json({ success: false, error: 'PM template not found or inactive' }, { status: 400 });
       }
     }
 
@@ -110,6 +121,7 @@ export async function PUT(
         component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });

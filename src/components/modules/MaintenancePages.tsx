@@ -188,6 +188,7 @@ export function MaintenanceRequestsPage() {
     }
   }, []);
 
+
   const filteredRequests = useMemo(() => {
     if (!searchText.trim()) return requests;
     const q = searchText.toLowerCase();
@@ -313,7 +314,9 @@ export function MaintenanceRequestsPage() {
           <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Maintenance Request" footer={<Button type="submit" form="create-mr-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>}>
             <CreateMRForm
               initialAssetId={pageParams?.assetId}
+              initialComponentName={pageParams?.componentName}
               onSuccess={() => { setCreateOpen(false); handleRefresh(); }}
+
             />
           </ResponsiveDialog>
           </>
@@ -439,13 +442,18 @@ export function MaintenanceRequestsPage() {
 export function CreateMRForm({
   onSuccess,
   initialAssetId = '',
+  initialComponentName = '',
 }: {
   onSuccess: () => void;
   initialAssetId?: string;
+  initialComponentName?: string;
+
 }) {
   const { user, isAdmin } = useAuthStore();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(
+    initialComponentName ? 'Component: ' + initialComponentName : '',
+  );
   const [priority, setPriority] = useState('medium');
   const [assetMode, setAssetMode] = useState<'registered' | 'manual'>('registered');
   const [assetId, setAssetId] = useState(initialAssetId);
@@ -1041,7 +1049,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       autoConvertTriggered.current = true;
       openConvertDialog();
     }
-  }, [autoOpenConvert, mr, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoOpenConvert, mr, loading]);
 
   const handleConvert = async () => {
     if (!mr) return;
@@ -2184,6 +2192,7 @@ export function WorkOrdersPage() {
     }
   }, []);
 
+
   const filteredWOs = useMemo(() => {
     if (!searchText.trim()) return workOrders;
     const q = searchText.toLowerCase();
@@ -2264,7 +2273,9 @@ export function WorkOrdersPage() {
           <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} large desktopMaxWidth="sm:max-w-4xl" title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
             <CreateWOForm
               initialAssetId={pageParams?.assetId}
+              initialComponentId={pageParams?.componentId}
               onSuccess={() => { setCreateOpen(false); handleRefresh(); }}
+
             />
           </ResponsiveDialog>
           </>
@@ -2458,9 +2469,12 @@ export function WorkOrdersPage() {
 export function CreateWOForm({
   onSuccess,
   initialAssetId = '',
+  initialComponentId = '',
 }: {
   onSuccess: () => void;
   initialAssetId?: string;
+  initialComponentId?: string;
+
 }) {
   const { user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
@@ -2495,8 +2509,9 @@ export function CreateWOForm({
     safetyNotes: '',
     ppeRequired: '',
     notes: '',
-    componentIds: [] as string[],
+    componentIds: initialComponentId ? [initialComponentId] : [] as string[],
   });
+  const initialComponentAppliedRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [departmentLabel, setDepartmentLabel] = useState('');
 
@@ -2550,26 +2565,44 @@ export function CreateWOForm({
       api.get(`/api/component-registry?assetId=${form.assetId}`)
         .then((res: any) => {
           if (res.success && Array.isArray(res.data)) {
-            setAvailableComponents(res.data.map((c: any) => ({
+            const normalized = res.data.map((c: any) => ({
               id: c.id,
               name: c.name || c.componentName,
               componentCode: c.componentCode,
               componentType: c.componentType,
               criticality: c.criticality,
               parentId: c.parentId || null,
-            })));
+            }));
+            setAvailableComponents(normalized);
+
+            if (
+              !initialComponentAppliedRef.current &&
+              initialComponentId &&
+              form.assetId === initialAssetId &&
+              normalized.some((component: any) => component.id === initialComponentId)
+            ) {
+              initialComponentAppliedRef.current = true;
+              setForm(f => ({ ...f, componentIds: [initialComponentId] }));
+            }
           } else {
             setAvailableComponents([]);
           }
         })
         .catch(() => setAvailableComponents([]))
         .finally(() => setComponentsLoading(false));
-      // Reset selection when asset changes
-      setForm(f => ({ ...f, componentIds: [] }));
+      // Reset stale component selections when the user changes asset, but keep
+      // the launch-context component until the initial hierarchy load resolves.
+      if (
+        initialComponentAppliedRef.current ||
+        !initialComponentId ||
+        form.assetId !== initialAssetId
+      ) {
+        setForm(f => ({ ...f, componentIds: [] }));
+      }
     } else {
       setAvailableComponents([]);
     }
-  }, [assetsEnabled, form.assetId]);
+  }, [assetsEnabled, form.assetId, initialAssetId, initialComponentId]);
 
   // Load dropdown data when form opens
   useEffect(() => {

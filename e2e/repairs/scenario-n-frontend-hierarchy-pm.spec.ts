@@ -11,6 +11,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const partCode = `UAT-FE-PRT-${suffix}`;
     const assemblyPmTitle = `UAT Frontend Assembly PM ${suffix}`;
     const partPmTitle = `UAT Frontend Part PM ${suffix}`;
+    const templateTitle = `UAT Frontend Bearing 500h Service ${suffix}`;
     const cycleA = `UAT-FE-CYCLE-A-${suffix}`;
     const cycleB = `UAT-FE-CYCLE-B-${suffix}`;
 
@@ -63,6 +64,48 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(part?.id).toBeTruthy();
     expect(part?.parentId).toBe(assembly.id);
 
+    // This browser scenario must be self-contained. The historical RP-01 PM
+    // commissioning migrations intentionally run only in the named staging DB,
+    // while CI uses an isolated repairs_uat database. Create the template through
+    // the same authenticated APIs a planner uses instead of depending on staging seed data.
+    const templateCreate = await apiCall(plannerToken, 'POST', '/api/pm-templates', {
+      title: templateTitle,
+      description: 'Browser-created six-step bearing service template for PM schedule linkage UAT.',
+      type: 'preventive',
+      category: 'mechanical',
+      estimatedDuration: 1,
+      priority: 'high',
+    });
+    expect(templateCreate.status).toBe(201);
+    expect(templateCreate.data.success).toBe(true);
+    const templateId = String(templateCreate.data.data?.id || '');
+    expect(templateId).toBeTruthy();
+
+    const templateTasks = [
+      ['Inspect bearing housing and seals', 'inspect'],
+      ['Measure bearing temperature and vibration', 'measure'],
+      ['Check shaft runout and alignment', 'measure'],
+      ['Lubricate bearing to specification', 'lubricate'],
+      ['Verify fastener torque', 'check'],
+      ['Record readings and recommendations', 'record'],
+    ] as const;
+    for (const [index, [description, taskType]] of templateTasks.entries()) {
+      const taskCreate = await apiCall(plannerToken, 'POST', `/api/pm-templates/${encodeURIComponent(templateId)}/tasks`, {
+        taskNumber: index + 1,
+        description,
+        taskType,
+        estimatedMinutes: 10,
+      });
+      expect(taskCreate.status).toBe(201);
+      expect(taskCreate.data.success).toBe(true);
+    }
+
+    const templateState = await apiCall(plannerToken, 'GET', '/api/pm-templates?active=true');
+    expect(templateState.status).toBe(200);
+    const seededTemplate = (templateState.data.data as any[]).find((item) => item.id === templateId);
+    expect(seededTemplate?.title).toBe(templateTitle);
+    expect(seededTemplate?._count?.tasks).toBe(6);
+
     const createPmViaUi = async (title: string, targetCode: string, useTemplate = false) => {
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
@@ -86,8 +129,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
         await templateCombobox.click();
         const templateSearch = page.getByPlaceholder('Search PM templates...');
-        await templateSearch.fill('RP-01 Drive-Side Bearing');
-        await page.getByText('RP-01 Drive-Side Bearing 500h Service · 6 tasks', { exact: true }).click();
+        await templateSearch.fill(templateTitle);
+        await page.getByText(`${templateTitle} · 6 tasks`, { exact: true }).click();
       }
 
       const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
@@ -116,7 +159,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
       if (useTemplate) {
-        await expect(page.getByText('Template · RP-01 Drive-Side Bearing 500h Service · 6 tasks', { exact: true })).toBeVisible();
+        await expect(page.getByText(`Template · ${templateTitle} · 6 tasks`, { exact: true })).toBeVisible();
       }
     };
 
@@ -130,8 +173,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(assemblySchedule?.componentId).toBe(assembly.id);
     expect(assemblySchedule?.templateId).toBeNull();
     expect(partSchedule?.componentId).toBe(part.id);
-    expect(partSchedule?.templateId).toBe('uat_pmt_bearing_service');
-    expect(partSchedule?.template?.title).toBe('RP-01 Drive-Side Bearing 500h Service');
+    expect(partSchedule?.templateId).toBe(templateId);
+    expect(partSchedule?.template?.title).toBe(templateTitle);
     expect(partSchedule?.template?._count?.tasks).toBe(6);
   });
 });

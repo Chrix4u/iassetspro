@@ -38,7 +38,7 @@ interface MappingRecord {
   isVisible: boolean;
 }
 
-interface ComponentMappingEditorProps {
+export interface ComponentMappingEditorProps {
   modelId: string;
   availableMeshes?: string[];
   onMappingSelect?: (mapping: MappingRecord) => void;

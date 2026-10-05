@@ -23,7 +23,7 @@ export async function GET(
       include: {
         asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, serialNumber: true } },
         uploadedBy: { select: { id: true, fullName: true, username: true } },
-        meshBindings: {
+        bindings: {
           include: {
             asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
           },
@@ -36,7 +36,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, data: model });
+    const { bindings, ...modelData } = model;
+    return NextResponse.json({ success: true, data: { ...modelData, meshBindings: bindings } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load asset model';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

@@ -401,6 +401,8 @@ function OverviewTab({
 
   const operatingHours = typeof asset.operatingHours === 'number' ? asset.operatingHours : 0;
   const expectedLifeHours = typeof asset.expectedLifeHours === 'number' ? asset.expectedLifeHours : null;
+  const showOperatingMetrics = operatingHours > 0 || daysSinceInspection !== null;
+  const description = typeof asset.description === 'string' ? asset.description.trim() : '';
 
   const lifecycleStatus = String(asset.lifecycleStatus ?? field(asset, 'status', 'unknown'));
 
@@ -456,7 +458,7 @@ function OverviewTab({
       </div>
 
       {/* Operating Metrics */}
-      {(operatingHours > 0 || daysSinceInspection !== null) && (
+      {showOperatingMetrics ? (
         <SectionCard title="Operating Metrics" icon={<Activity className="h-3.5 w-3.5 text-slate-400" />}>
           <div className="space-y-2">
             {operatingHours > 0 && expectedLifeHours && (
@@ -481,7 +483,7 @@ function OverviewTab({
             )}
           </div>
         </SectionCard>
-      )}
+      ) : null}
 
       <Separator className="bg-white/[0.06]" />
 
@@ -506,13 +508,13 @@ function OverviewTab({
       </SectionCard>
 
       {/* Description */}
-      {asset.description && String(asset.description).length > 0 && (
+      {description ? (
         <SectionCard title="Description" icon={<FileText className="h-3.5 w-3.5 text-slate-400" />}>
           <p className="text-xs text-slate-300 leading-relaxed">
-            {String(asset.description)}
+            {description}
           </p>
         </SectionCard>
-      )}
+      ) : null}
 
       {/* Quick Actions */}
       <SectionCard title="Quick Actions" icon={<Zap className="h-3.5 w-3.5 text-slate-400" />}>
@@ -675,7 +677,7 @@ function MaintenanceTab({
           <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
             {componentWorkOrders.map((wo, i) => {
               const dueDate = wo.dueDate ?? wo.plannedEnd;
-              const isOverdue = dueDate && new Date(String(dueDate)) < new Date() &&
+              const isOverdue = Boolean(dueDate) && new Date(String(dueDate)) < new Date() &&
                 !['completed', 'closed', 'cancelled'].includes(String(wo.status ?? '').toLowerCase());
 
               return (
@@ -1065,7 +1067,7 @@ function IoTSensorsTab({
                     </div>
                   ) : null}
 
-                  {device.lastReadingAt && (
+                  {device.lastReadingAt != null && (
                     <div className="flex items-center gap-1 mt-1.5">
                       <Clock className="h-2.5 w-2.5 text-slate-600" />
                       <span className="text-[9px] text-slate-500">

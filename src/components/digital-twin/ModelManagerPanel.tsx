@@ -5,7 +5,8 @@ import { api } from '@/lib/api';
 import {
   Upload, Search, MoreVertical, Eye, Trash2, RefreshCw,
   CheckCircle2, XCircle, Loader2, HardDrive, Box,
-  Download
+  Download,
+  type LucideIcon,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,7 @@ interface ModelRecord {
   _count: { scenes: number; versions: number };
 }
 
-interface ModelManagerPanelProps {
+export interface ModelManagerPanelProps {
   onSelectModel?: (model: ModelRecord) => void;
   onClose?: () => void;
 }
@@ -88,7 +89,7 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
     return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
-  const statusConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  const statusConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
     ready: { icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
     processing: { icon: Loader2, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30' },
     failed: { icon: XCircle, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30' },

@@ -27,7 +27,7 @@ interface InspectionTour {
   isPublished: boolean;
 }
 
-interface CameraTourPlayerProps {
+export interface CameraTourPlayerProps {
   tour: InspectionTour;
   isActive: boolean;
   onStepChange?: (step: TourStep, index: number) => void;

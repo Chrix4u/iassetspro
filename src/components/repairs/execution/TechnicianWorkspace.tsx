@@ -34,6 +34,7 @@ import {
   MapPin, Building2, Cpu, Layers, AlertCircle, CircleDot, BadgeCheck,
   ArrowRight, UserPlus, Factory, StopCircle, Hourglass, HardHat,
   Search, ChevronRight, Tag, Trash2, PlayCircle, Square, FileImage, FileAudio, FileVideo, Type as IconType,
+  type LucideIcon,
 } from 'lucide-react';
 
 import { useWorkOrderExecution, type WODetail, type WOTask, type ReadinessItem } from './hooks/useWorkOrderExecution';
@@ -128,7 +129,7 @@ function isLeadRole(roles: string[]): boolean {
 // ─── Collapsible Section ─────────────────────────────────────────────────────
 
 function CollapsibleSection({ title, children, defaultOpen = false, icon: Icon }: {
-  title: string; children: React.ReactNode; defaultOpen?: boolean; icon?: React.ElementType;
+  title: string; children: React.ReactNode; defaultOpen?: boolean; icon?: LucideIcon;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -1897,7 +1898,7 @@ export default function TechnicianWorkspace({
 
 // ─── Sub-Components ──────────────────────────────────────────────────────────
 
-function TabTrigger({ value, icon: Icon, label }: { value: string; icon: React.ElementType; label: string }) {
+function TabTrigger({ value, icon: Icon, label }: { value: string; icon: LucideIcon; label: string }) {
   return (
     <TabsTrigger
       value={value}
@@ -1910,7 +1911,7 @@ function TabTrigger({ value, icon: Icon, label }: { value: string; icon: React.E
 }
 
 function InfoCard({ title, icon: Icon, warning, children }: {
-  title: string; icon: React.ElementType; warning?: boolean; children: React.ReactNode;
+  title: string; icon: LucideIcon; warning?: boolean; children: React.ReactNode;
 }) {
   return (
     <Card className={warning ? 'border-amber-200 bg-amber-50/30' : ''}>
@@ -1925,7 +1926,7 @@ function InfoCard({ title, icon: Icon, warning, children }: {
   );
 }
 
-function EmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+function EmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mb-3">

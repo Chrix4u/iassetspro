@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { AlertTriangle, AlertCircle, Users, Wrench, Package, Timer, ShieldCheck, Camera } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Users, Wrench, Package, Timer, ShieldCheck, Camera, type LucideIcon } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,7 +24,7 @@ interface ReadinessDisplayProps {
 // Category → icon mapping
 // ---------------------------------------------------------------------------
 
-const CATEGORY_ICON: Record<string, React.ElementType> = {
+const CATEGORY_ICON: Record<string, LucideIcon> = {
   team: Users,
   tool: Wrench,
   material: Package,
@@ -33,7 +33,7 @@ const CATEGORY_ICON: Record<string, React.ElementType> = {
   evidence: Camera,
 };
 
-function getCategoryIcon(category: string): React.ElementType {
+function getCategoryIcon(category: string): LucideIcon {
   return CATEGORY_ICON[category] || AlertCircle;
 }
 

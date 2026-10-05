@@ -38,6 +38,7 @@ export interface MobileStepperSheetProps {
   onAction?: () => void;
   /** Called when the sheet is closed — use to reset state if needed */
   onClose?: () => void;
+  headerExtra?: React.ReactNode;
   className?: string;
   /** Optional: disable dragging to dismiss (default: false) */
   dismissible?: boolean;
@@ -57,6 +58,7 @@ export function MobileStepperSheet({
   actionLoading = false,
   onAction,
   onClose,
+  headerExtra,
   className,
   dismissible = true,
 }: MobileStepperSheetProps) {
@@ -149,6 +151,7 @@ export function MobileStepperSheet({
             {title}
           </DrawerTitle>
           {description && <DrawerDescription className="text-sm">{description}</DrawerDescription>}
+          {headerExtra}
         </DrawerHeader>
 
         {/* Step content — scrollable */}

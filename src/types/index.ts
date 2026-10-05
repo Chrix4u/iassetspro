@@ -260,6 +260,7 @@ export interface WOComment {
   userName?: string;
   content: string;
   createdAt: string;
+  user?: { id: string; fullName: string; username: string } | null;
 }
 
 export interface WOStatusHistory {

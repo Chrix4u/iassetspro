@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api, hasClientAuthToken } from '@/lib/api';
-import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
+import type { MaintenanceRequest as BaseMaintenanceRequest, WorkOrder as BaseWorkOrder, WOTimeLog as BaseWOTimeLog, WOComment as BaseWOComment, WOTeamMember, PersonalTool, User, PageName, DashboardStats } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -47,6 +47,7 @@ import {
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX, Undo2, StopCircle, Printer,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
   PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, ReferenceLine,
@@ -96,6 +97,40 @@ const EMPTY_WORK_ORDER_DEFAULTS: WorkOrderDefaults = {
   ppeRequired: '',
   notes: '',
 };
+
+type MaintenanceAssetSummary = {
+  id: string;
+  name: string;
+  assetTag?: string | null;
+  location?: string | null;
+  criticality?: string | null;
+};
+
+type MaintenanceRequest = BaseMaintenanceRequest & {
+  asset?: MaintenanceAssetSummary | null;
+};
+
+type WorkOrder = BaseWorkOrder & {
+  plantId?: string | null;
+  assignedSupervisorId?: string | null;
+  assignedTo?: { id: string; fullName: string; username?: string | null } | null;
+  assignee?: { id: string; fullName: string; username?: string | null; department?: string | null } | null;
+  assigner?: { id: string; fullName: string; username?: string | null } | null;
+  asset?: MaintenanceAssetSummary | null;
+  workOrderComponents?: Array<{
+    id: string;
+    componentRegistryId: string;
+    componentRegistry?: { id: string; name: string; componentCode?: string | null } | null;
+  }>;
+  repairMaterialRequests?: Array<Record<string, unknown>>;
+  repairToolRequests?: Array<Record<string, unknown>>;
+  maintenanceRequest?: (BaseMaintenanceRequest & { asset?: MaintenanceAssetSummary | null }) | null;
+  timeLogs?: WOTimeLog[];
+  comments?: WOComment[];
+};
+
+type WOTimeLog = BaseWOTimeLog & { timestamp?: string };
+type WOComment = BaseWOComment & { user?: { id: string; fullName: string; username?: string | null } | null };
 
 async function loadWorkOrderDefaults(): Promise<WorkOrderDefaults> {
   try {
@@ -558,21 +593,6 @@ export function CreateMRForm({
     setAssetId('');
     lastAutoLocationRef.current = '';
     lastAutoPriorityRef.current = '';
-  };
-
-  const workOrderComponentLabel = (component: { id: string; name: string; componentCode?: string; parentId?: string | null }) => {
-    const byId = new Map(availableComponents.map((item) => [item.id, item]));
-    let depth = 0;
-    let cursor: typeof component | undefined = component;
-    const seen = new Set<string>();
-    while (cursor?.parentId && depth < 8 && !seen.has(cursor.parentId)) {
-      seen.add(cursor.parentId);
-      const parent = byId.get(cursor.parentId);
-      if (!parent) break;
-      depth += 1;
-      cursor = parent;
-    }
-    return `${depth > 0 ? '— '.repeat(depth) : ''}${component.componentCode ? `${component.componentCode} · ` : ''}${component.name}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2352,7 +2372,7 @@ export function WorkOrdersPage() {
             key={s.label}
             onClick={() => {
               if (s.overdue) { setOverdueOnly(!overdueOnly); setFilterStatus('all'); }
-              else { setFilterStatus(s.status); setOverdueOnly(false); }
+              else { setFilterStatus(s.status || 'all'); setOverdueOnly(false); }
             }}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors cursor-pointer hover:opacity-80 ${(s.overdue ? overdueOnly : filterStatus === s.status) ? 'ring-2 ring-offset-1 ring-primary/30' : ''}`}
           >
@@ -2440,7 +2460,7 @@ export function WorkOrdersPage() {
                   <TableCell className="text-xs capitalize hidden md:table-cell">{wo.type.replace('_', ' ')}</TableCell>
                   <TableCell className="hidden sm:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                   <TableCell><StatusBadge status={wo.status} /></TableCell>
-                  <TableCell className="text-sm hidden lg:table-cell">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? <span className="text-muted-foreground">Team ({wo.teamMembers.length})</span> : <span className="text-muted-foreground">Unassigned</span>)}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{wo.assignee?.fullName || ((wo.teamMembers?.length ?? 0) > 0 ? <span className="text-muted-foreground">Team ({(wo.teamMembers?.length ?? 0)})</span> : <span className="text-muted-foreground">Unassigned</span>)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(wo.createdAt)}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); navigate('wo-detail', { id: wo.id }); }}>Open Work Order</Button>
@@ -2686,8 +2706,8 @@ export function CreateWOForm({
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (form.assignType === 'technician' && form.selectedWorkerIds.length > 0 && !form.responsibleSupervisorId) {
       toast.error('Select the responsible supervisor who will verify this work order');
       return;
@@ -2756,7 +2776,7 @@ export function CreateWOForm({
         ]}
         actionLabel="Create Work Order"
         actionLoading={loading}
-        onAction={handleSubmit}
+        onAction={() => { void handleSubmit(); }}
       >
         {(stepKey) => stepKey === 'details' ? (
           <div className="space-y-3">
@@ -5301,7 +5321,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         ]}
         actionLabel="Save Changes"
         actionLoading={actionLoading}
-        onAction={handleEditWO}
+        onAction={() => { void handleEditWO(); }}
         headerExtra={wo?.maintenanceRequest ? (
           <div className="bg-blue-50 rounded-xl p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -5537,7 +5557,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
             {/* Team member selector — only team leader or admin */}
-            {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
+            {canLogForOthers && ((wo?.teamMembers?.length ?? 0) > 0 || wo?.assignedToId) && (
               <div className="space-y-1.5">
                 <Label>Log For</Label>
                 <Select value={tlLoggedForUserId || undefined} onValueChange={(v) => setTlLoggedForUserId(v === '__self__' ? '' : v)}>
@@ -6192,7 +6212,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <div>
                       <p className="text-sm font-semibold text-amber-800">Active Session on Another Work Order</p>
                       <p className="text-xs text-amber-700 mt-0.5">
-                        You are currently working on <button onClick={() => navigate('wo-detail', { id: globalActiveSession?.workOrderId })} className="underline font-medium hover:text-amber-900">WO #{globalActiveSession?.workOrderNumber}</button> since {globalActiveSession?.startedAt ? formatDateTime(globalActiveSession?.startedAt) : 'unknown'}.
+                        You are currently working on <button onClick={() => globalActiveSession?.workOrderId && navigate('wo-detail', { id: globalActiveSession.workOrderId })} className="underline font-medium hover:text-amber-900">WO #{globalActiveSession?.workOrderNumber}</button> since {globalActiveSession?.startedAt ? formatDateTime(globalActiveSession?.startedAt) : 'unknown'}.
                         Pause that work order first before starting work here.
                       </p>
                     </div>
@@ -6242,14 +6262,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       standby: 'bg-slate-100 text-slate-700',
                       other: 'bg-gray-100 text-gray-700',
                     };
-                    const actIcons: Record<string, React.ElementType> = {
+                    const actIcons: Record<string, LucideIcon> = {
                       maintenance: Wrench, inspection: Search, testing: FlaskConical,
                       travel: MapPin, standby: Hourglass, other: MoreHorizontal,
                     };
                     const ActIcon = actIcons[actType] || MoreHorizontal;
 
                     // Action icon + color for session state
-                    const actionStyles: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+                    const actionStyles: Record<string, { icon: LucideIcon; color: string; label: string }> = {
                       start: { icon: Play, color: 'bg-emerald-100 text-emerald-700', label: 'Started' },
                       pause: { icon: Pause, color: 'bg-amber-100 text-amber-700', label: 'Paused' },
                       resume: { icon: Play, color: 'bg-sky-100 text-sky-700', label: 'Resumed' },
@@ -7407,7 +7427,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <Separator />
               {assetsEnabled && <><div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
               <Separator /></>}
-              <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || ((wo.teamMembers?.length ?? 0) > 0 ? `Team (${(wo.teamMembers?.length ?? 0)} member${(wo.teamMembers?.length ?? 0) !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
               <Separator />
@@ -7722,7 +7742,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               })()}
 
               {/* Team Members List */}
-              {(!wo.teamMembers || wo.teamMembers.length === 0) ? (
+              {(!wo.teamMembers || (wo.teamMembers?.length ?? 0) === 0) ? (
                 <p className="text-sm text-muted-foreground">No team members assigned.</p>
               ) : (
                 wo.teamMembers.map(tm => {
@@ -9717,7 +9737,7 @@ interface PmTemplateTaskItem {
   isActive: boolean;
 }
 
-const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   preventive: { label: 'Preventive', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40', icon: CheckCircle2 },
   predictive: { label: 'Predictive', color: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-900/40', icon: TrendingUp },
   inspection: { label: 'Inspection', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40', icon: Eye },
@@ -9725,7 +9745,7 @@ const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon:
   lubrication: { label: 'Lubrication', color: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/30 dark:text-teal-400 dark:border-teal-900/40', icon: Droplets },
 };
 
-const TASK_TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+const TASK_TYPE_CONFIG: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   check: { label: 'Check', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400', icon: CheckSquare },
   measure: { label: 'Measure', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400', icon: Ruler },
   inspect: { label: 'Inspect', color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400', icon: Eye },

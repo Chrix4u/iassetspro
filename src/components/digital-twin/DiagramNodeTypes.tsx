@@ -2,11 +2,13 @@
 
 import React, { memo } from 'react';
 import { Handle, Position, type NodeProps, type EdgeProps, getBezierPath, getSmoothStepPath } from 'reactflow';
+import { isInstrumentAlarm } from './diagram-node-logic';
 import {
   Cpu, Thermometer, Gauge, Activity, GitBranch,
   ChevronDown, ChevronUp, Droplets, Zap, Wind, FlaskConical,
   Settings, Shield, CircleDot, Filter, Fuel, Warehouse,
   Radio, Cog, Box, Layers, AlertTriangle,
+  type LucideIcon,
 } from 'lucide-react';
 
 // ============================================================================
@@ -37,7 +39,7 @@ const criticalityColors: Record<string, string> = {
   critical: '#ef4444',
 };
 
-const assetTypeIcons: Record<string, React.ElementType> = {
+const assetTypeIcons: Record<string, LucideIcon> = {
   chiller: Wind,
   pump: Droplets,
   transformer: Zap,
@@ -902,7 +904,7 @@ function InstrumentNodeComponent({ data, selected }: NodeProps<InstrumentNodeDat
   const unit = data.unit || 'bar';
   const alarmHigh = data.alarmHigh ?? null;
   const alarmLow = data.alarmLow ?? null;
-  const isAlarmed = alarmHigh !== null && value !== null && (value > alarmHigh || value < alarmLow);
+  const isAlarmed = isInstrumentAlarm(value, alarmHigh, alarmLow);
 
   return (
     <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>

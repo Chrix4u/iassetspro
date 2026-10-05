@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
-import { getPlantScope } from '@/lib/plant-scope';
+import { getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
 
 // GET /api/work-orders/active-enforcement
 // For a given technician (session user), check if they have any WO in 'in_progress'
@@ -19,14 +19,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    // Get all work orders assigned to this user that are 'in_progress'
-    const inProgressWorkOrders = await db.workOrder.findMany({
+    const workOrderPlantFilter = getPlantFilterWhere(plantScope);
+
+    // Resolve direct assignments and team membership into one canonical,
+    // plant-scoped WorkOrder query. This avoids relation-shape drift between
+    // two different WorkOrder fetch paths.
+    const teamMemberships = await db.workOrderTeamMember.findMany({
+      where: { userId: session.userId },
+      select: { workOrderId: true },
+    });
+    const teamWorkOrderIds = teamMemberships.map((membership) => membership.workOrderId);
+    const assignmentWhere = teamWorkOrderIds.length > 0
+      ? { OR: [{ assignedTo: session.userId }, { id: { in: teamWorkOrderIds } }] }
+      : { assignedTo: session.userId };
+
+    const activeWos = await db.workOrder.findMany({
       where: {
-        assignedTo: session.userId,
         status: 'in_progress',
+        ...workOrderPlantFilter,
+        ...assignmentWhere,
       },
       include: {
-        asset: { select: { id: true, name: true, assetTag: true } },
         teamLeader: { select: { id: true, fullName: true } },
         assignedSupervisor: { select: { id: true, fullName: true } },
         _count: {
@@ -39,35 +52,21 @@ export async function GET(request: NextRequest) {
       orderBy: { actualStart: 'asc' },
     });
 
-    // Also check WOs where user is a team member
-    const teamMemberWorkOrders = await db.workOrderTeamMember.findMany({
-      where: {
-        userId: session.userId,
-        workOrder: { status: 'in_progress' },
-      },
-      include: {
-        workOrder: {
-          include: {
-            assignee: { select: { id: true, fullName: true } },
-            asset: { select: { id: true, name: true, assetTag: true } },
-            teamLeader: { select: { id: true, fullName: true } },
-          },
-        },
-      },
-    });
-
-    // Combine unique WOs
-    const allActiveWos = new Map<string, typeof inProgressWorkOrders[0]>();
-    for (const wo of inProgressWorkOrders) {
-      allActiveWos.set(wo.id, wo);
-    }
-    for (const tm of teamMemberWorkOrders) {
-      if (!allActiveWos.has(tm.workOrder.id)) {
-        allActiveWos.set(tm.workOrder.id, tm.workOrder as unknown as typeof inProgressWorkOrders[0]);
-      }
-    }
-
-    const activeWos = [...allActiveWos.values()];
+    // WorkOrder intentionally stores assetId/assetName without a Prisma asset
+    // relation. Enrich the response in one scoped asset lookup instead of using
+    // a stale `include.asset` relation.
+    const assetIds = [...new Set(
+      activeWos
+        .map((workOrder) => workOrder.assetId)
+        .filter((assetId): assetId is string => Boolean(assetId)),
+    )];
+    const assets = assetIds.length > 0
+      ? await db.asset.findMany({
+        where: { id: { in: assetIds }, ...getPlantFilterWhere(plantScope) },
+        select: { id: true, name: true, assetTag: true },
+      })
+      : [];
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
 
     // Check for unclosed time logs on each WO
     const woWithTimeStatus = await Promise.all(
@@ -83,14 +82,14 @@ export async function GET(request: NextRequest) {
 
         // Check if the user has an unclosed session (start/resume without pause/complete)
         let hasUnclosedLog = false;
-        let lastAction = null;
-        let unclosedSince = null;
+        let lastAction: string | null = null;
+        let unclosedSince: Date | null = null;
 
         if (latestLog) {
           lastAction = latestLog.action;
-          if (latestLog.action === 'start' || latestLog.action === 'resume') {
+          if ((latestLog.action === 'start' || latestLog.action === 'resume') && latestLog.endTime === null) {
             hasUnclosedLog = true;
-            unclosedSince = latestLog.timestamp;
+            unclosedSince = latestLog.startTime || latestLog.timestamp;
           }
         }
 
@@ -108,7 +107,7 @@ export async function GET(request: NextRequest) {
           priority: wo.priority,
           actualStart: wo.actualStart,
           estimatedHours: wo.estimatedHours,
-          asset: wo.asset,
+          asset: wo.assetId ? (assetById.get(wo.assetId) ?? { id: wo.assetId, name: wo.assetName || 'Unknown asset', assetTag: null }) : null,
           teamLeader: wo.teamLeader,
           _count: wo._count,
           timeTracking: {

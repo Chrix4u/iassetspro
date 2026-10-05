@@ -143,9 +143,26 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Keep the side-sheet asset experience, but open Visual Explorer already focused
   // on the requested assembly/component/part.
   useEffect(() => {
-    if (!pageParams?.componentId || pageParams.id !== id) return;
-    setVisualFocusId(pageParams.componentId);
-    setActiveTab('visual-explorer');
+    if (!pageParams?.id || pageParams.id !== id) return;
+
+    if (pageParams?.componentId) {
+      setVisualFocusId(pageParams.componentId);
+      setActiveTab('visual-explorer');
+      return;
+    }
+
+    const requestedTab = pageParams.tab;
+    if (requestedTab && [
+      'overview',
+      'hierarchy',
+      'visual-explorer',
+      'bom',
+      'components',
+      'digital-twin',
+      'diagrams',
+    ].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
   }, [id, pageParams]);
 
   // Reload components
@@ -1379,7 +1396,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                       height="460px"
                       showToolbar
                       showSceneTree={false}
-                      showInfoPanel={false}
+                      showInfoPanel
                     />
                   </CardContent>
                 </Card>

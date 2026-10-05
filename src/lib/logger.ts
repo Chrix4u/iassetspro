@@ -49,11 +49,24 @@ class Logger {
     this.log('warn', message, data);
   }
 
-  error(message: string, error?: Error | Record<string, unknown>) {
+  error(
+    message: string,
+    error?: Error | Record<string, unknown>,
+    data?: Record<string, unknown>,
+  ) {
     const errData = error instanceof Error
       ? { message: error.message, stack: error.stack, code: (error as unknown as Record<string, unknown>).code }
       : error;
-    this.log('error', message, errData as Record<string, unknown>);
+
+    if (data) {
+      this.log('error', message, {
+        ...data,
+        ...(errData ? { error: errData } : {}),
+      });
+      return;
+    }
+
+    this.log('error', message, errData as Record<string, unknown> | undefined);
   }
 
   fatal(message: string, error?: Error) {

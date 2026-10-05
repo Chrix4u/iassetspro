@@ -10,4 +10,9 @@ describe('purchase order line item state', () => {
     expect(source).toContain("updateLineItem(idx, 'unitCost', String(selectedItem.unitCost || 0))");
     expect(source).not.toContain('const updated = [...lineItems]');
   });
+
+  it('shows GRN remaining quantity using the inventory item id used by the selected PO item', () => {
+    expect(source).toContain('pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0');
+    expect(source).not.toContain('pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0');
+  });
 });

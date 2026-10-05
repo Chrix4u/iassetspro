@@ -1042,7 +1042,7 @@ export async function GET(request: NextRequest) {
           }},
         ],
       });
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': 'attachment; filename="work-order-report.pdf"',

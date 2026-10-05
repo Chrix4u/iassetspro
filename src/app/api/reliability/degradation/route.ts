@@ -76,11 +76,11 @@ export async function POST(request: NextRequest) {
             alertThreshold, alarmThreshold, criticalThreshold, unit } = body;
 
     if (!assetId || !parameterName || !dataPoints?.length) {
-      return handleApiError(new ValidationError({
-        assetId: !assetId ? 'assetId is required' : undefined,
-        parameterName: !parameterName ? 'parameterName is required' : undefined,
-        dataPoints: !dataPoints?.length ? 'dataPoints array is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!assetId) fields.assetId = 'assetId is required';
+      if (!parameterName) fields.parameterName = 'parameterName is required';
+      if (!dataPoints?.length) fields.dataPoints = 'dataPoints array is required';
+      return handleApiError(new ValidationError(fields));
     }
 
     const result = await degradationService.computeDegradation({

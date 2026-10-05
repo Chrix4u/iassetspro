@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { rbiService } from '@/services/reliability/rbi.service';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { handleApiError, UnauthorizedError, ForbiddenError } from '@/lib/errors';
+import { handleApiError, UnauthorizedError, ForbiddenError, ValidationError } from '@/lib/errors';
 
 // GET /api/reliability/rbi — list assessments or get summary
 export async function GET(request: NextRequest) {

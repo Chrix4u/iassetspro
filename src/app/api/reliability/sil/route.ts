@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
             proofTestIntervalMonths, demandRate, components, lopaLayers, notes } = body;
 
     if (!assetId || !sifName) {
-      return handleApiError(new ValidationError({
-        assetId: !assetId ? 'assetId is required' : undefined,
-        sifName: !sifName ? 'sifName is required' : undefined,
-      }));
+      const fields: Record<string, string> = {};
+      if (!assetId) fields.assetId = 'assetId is required';
+      if (!sifName) fields.sifName = 'sifName is required';
+      return handleApiError(new ValidationError(fields));
     }
     if (!silTarget || silTarget < 1 || silTarget > 4) {
       return handleApiError(new ValidationError({ silTarget: 'silTarget must be 1, 2, 3, or 4' }));

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ObjectStorageService } from '@/services/objectStorage.service';
+import { InvalidStorageKeyError, ObjectStorageService } from '@/services/objectStorage.service';
 import { getSession, isAdmin } from '@/lib/auth';
 
 // GET /api/files/[...path] — download a file
@@ -16,7 +16,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
     }
 
-    return new NextResponse(result.buffer, {
+    return new NextResponse(new Uint8Array(result.buffer), {
       headers: {
         'Content-Type': result.mimeType,
         'Content-Length': String(result.buffer.length),
@@ -24,6 +24,9 @@ export async function GET(
       },
     });
   } catch (error: unknown) {
+    if (error instanceof InvalidStorageKeyError) {
+      return NextResponse.json({ success: false, error: 'Invalid file path' }, { status: 400 });
+    }
     return NextResponse.json({ success: false, error: 'Download failed' }, { status: 500 });
   }
 }
@@ -52,6 +55,9 @@ export async function DELETE(
 
     return NextResponse.json({ success: true, data: { deleted: true } });
   } catch (error: unknown) {
+    if (error instanceof InvalidStorageKeyError) {
+      return NextResponse.json({ success: false, error: 'Invalid file path' }, { status: 400 });
+    }
     return NextResponse.json({ success: false, error: 'Delete failed' }, { status: 500 });
   }
 }

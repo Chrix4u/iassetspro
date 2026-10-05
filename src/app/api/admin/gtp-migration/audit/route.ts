@@ -261,19 +261,21 @@ function extractLegacyParitySheet(
     header: 1,
     defval: null,
     raw: true,
+    blankrows: false,
   });
+  const metricRowIndex = rows.findIndex((row) => {
+    const first = asText(row?.[0]);
+    return first.startsWith('Count of ') || first.startsWith('Sum of ');
+  });
+  const metricRow = metricRowIndex >= 0 ? rows[metricRowIndex] : undefined;
   const filters: Record<string, string | number> = {};
-  for (const row of rows.slice(0, 8)) {
+  for (const row of rows.slice(0, metricRowIndex >= 0 ? metricRowIndex : 8)) {
     const key = asText(row?.[0]);
     const value = row?.[1];
     if (!key || value === null || value === undefined || value === '') continue;
     filters[key] = typeof value === 'number' ? value : asText(value);
   }
 
-  const metricRow = rows.find((row) => {
-    const first = asText(row?.[0]);
-    return first.startsWith('Count of ') || first.startsWith('Sum of ');
-  });
   const metric = asText(metricRow?.[0]) || sheetName;
 
   const machinePivot = sheetName === 'BD_MC_Wk' || sheetName === 'No_BD_MC' || sheetName === 'Rpons_MC';
@@ -324,9 +326,6 @@ function extractLegacyParityBaseline(workbook: XLSX.WorkBook) {
     expectedSheetCount: 5,
     extractedSheetCount: sheets.length,
     sheets,
-  };
-}
-
   };
 }
 
@@ -451,6 +450,7 @@ export async function POST(request: NextRequest) {
       reportedAt: string;
       reason: string;
     }> = [];
+    const registeredOverrideAssetCodes = new Set<string>();
 
     const jobs = rawJobs.map((sourceJob) => {
       const rowNumber = Number(sourceJob.rowNumber || 0);
@@ -477,12 +477,15 @@ export async function POST(request: NextRequest) {
         const asset = assetById.get(override.assetId!);
         if (!asset) return job;
         const syntheticCode = `APP-ASSET:${asset.id}`;
-        machines.push({
-          code: syntheticCode,
-          name: asset.name,
-          priority: criticalityToLegacyPriority(asset.criticality),
-          order: null,
-        });
+        if (!registeredOverrideAssetCodes.has(syntheticCode)) {
+          machines.push({
+            code: syntheticCode,
+            name: asset.name,
+            priority: criticalityToLegacyPriority(asset.criticality),
+            order: null,
+          });
+          registeredOverrideAssetCodes.add(syntheticCode);
+        }
         reconciliation.push({
           rowNumber,
           workOrderNo: String(job.workOrderNo ?? ''),

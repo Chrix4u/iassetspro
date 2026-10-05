@@ -401,7 +401,7 @@ export async function POST(request: NextRequest) {
               itemName: invItem?.name || part.itemName || 'Unknown Part',
               itemCode: invItem?.itemCode || part.itemCode || '',
               quantity: part.quantity || 1,
-              unit: part.unit || invItem?.unit || 'each',
+              unit: part.unit || invItem?.unitOfMeasure || 'each',
               notes: part.notes || '',
             };
             suggestedPartsArr.push(entry);
@@ -437,7 +437,7 @@ export async function POST(request: NextRequest) {
                 itemName: invItem.name,
                 itemCode: invItem.itemCode || '',
                 quantity: 1,
-                unit: invItem.unit || 'each',
+                unit: invItem.unitOfMeasure || 'each',
                 notes: '',
               };
               suggestedPartsArr.push(entry);
@@ -448,7 +448,7 @@ export async function POST(request: NextRequest) {
                   itemId: invItem.id,
                   itemName: invItem.name,
                   quantityRequested: 1,
-                  unit: invItem.unit || 'each',
+                  unit: invItem.unitOfMeasure || 'each',
                   unitCost: invItem.unitCost || 0,
                   estimatedCost: invItem.unitCost || 0,
                   reason: 'Planner suggested material for work order',

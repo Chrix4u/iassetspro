@@ -112,21 +112,20 @@ export async function GET(
       }
     }
 
-    // ── Fetch Asset separately (no Prisma relation) ──
-    let asset = null;
-    let assetCategory = null;
-    if (wo.assetId) {
-      asset = await db.asset.findUnique({
-        where: { id: wo.assetId },
-        include: { category: { select: { id: true, name: true } } },
-      });
-      if (asset) {
-        assetCategory = asset.category;
-        // Remove category from asset object for flat structure (we expose it separately)
-        const { category: _cat, ...assetWithoutCat } = asset;
-        asset = assetWithoutCat as typeof asset;
-      }
-    }
+    // ── Fetch Asset separately (no WorkOrder Prisma relation) ──
+    const assetRecord = wo.assetId
+      ? await db.asset.findUnique({
+          where: { id: wo.assetId },
+          include: { category: { select: { id: true, name: true } } },
+        })
+      : null;
+    const assetCategory = assetRecord?.category ?? null;
+    const asset = assetRecord
+      ? (() => {
+          const { category: _category, ...assetWithoutCategory } = assetRecord;
+          return assetWithoutCategory;
+        })()
+      : null;
 
     // ── Fetch InventoryItems for materials ──
     const materialItemIds = wo.materials
@@ -232,10 +231,10 @@ export async function GET(
             address: [companyProfile.address, companyProfile.city, companyProfile.region, companyProfile.postalCode, companyProfile.country]
               .filter(Boolean)
               .join(', '),
-            phone: companyProfile.phone,
-            email: companyProfile.email,
-            website: companyProfile.website,
-            currency: companyProfile.currency,
+            phone: companyProfile.phone ?? '',
+            email: companyProfile.email ?? '',
+            website: companyProfile.website ?? '',
+            currency: companyProfile.currency || 'GHS',
           }
         : {
             name: 'iAssetsPro',
@@ -252,7 +251,7 @@ export async function GET(
     if (format === 'pdf') {
       const pdfBuffer = await generateWODetailPDF(data);
       const filename = `${wo.woNumber || 'work-order'}-print.pdf`;
-      return new NextResponse(pdfBuffer, {
+      return new NextResponse(new Uint8Array(pdfBuffer), {
         status: 200,
         headers: {
           'Content-Type': 'application/pdf',

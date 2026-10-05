@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
@@ -204,15 +204,31 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
       setTimeout(() => useDigitalTwinStore.getState().hoverMesh(binding.meshName), 0);
       document.body.style.cursor = isClickable ? 'pointer' : 'default';
+    },
+    [isClickable, binding.meshName],
+  );
 
-      // Start long-press timer for touch devices
+  const handlePointerDown = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      if (!isClickable || e.pointerType !== 'touch') return;
+
       clearLongPress();
+      isLongPressRef.current = false;
       longPressTimerRef.current = setTimeout(() => {
         isLongPressRef.current = true;
         openComponentDetails();
       }, 500);
     },
-    [isClickable, binding.meshName, clearLongPress, openComponentDetails],
+    [isClickable, clearLongPress, openComponentDetails],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      clearLongPress();
+    },
+    [clearLongPress],
   );
 
   const handlePointerOut = useCallback(
@@ -370,6 +386,8 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onPointerOver={handlePointerOver}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
         onPointerOut={handlePointerOut}
         onContextMenu={handleContextMenu}
         castShadow

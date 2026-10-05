@@ -81,6 +81,23 @@ export interface ToolRequestWithPlant {
   workOrder: { plantId: string | null } | null;
 }
 
+export interface AssetWithPlant {
+  id: string;
+  plantId: string;
+}
+
+export interface ComponentWithPlant {
+  id: string;
+  assetId: string | null;
+  asset: { plantId: string } | null;
+}
+
+export interface DigitalTwinWithPlant {
+  id: string;
+  assetId: string;
+  asset: { plantId: string };
+}
+
 // ── Public helpers ──
 
 /**
@@ -260,4 +277,88 @@ export async function authorizeToolRequestPlant(
   }
 
   return { ok: true, entity: toolReq, plantScope };
+}
+
+/**
+ * Authorize access to an Asset by plant.
+ */
+export async function authorizeAssetPlant(
+  request: NextRequest,
+  session: SessionData,
+  assetId: string,
+): Promise<PlantAuthResult<AssetWithPlant>> {
+  const asset = await db.asset.findUnique({
+    where: { id: assetId },
+    select: { id: true, plantId: true },
+  });
+  if (!asset) return fail(404, 'Asset not found');
+
+  const scopeOrDeny = await resolveScope(request, session);
+  if (!scopeOrDeny.ok) return scopeOrDeny;
+  const plantScope = scopeOrDeny.plantScope;
+
+  if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+    return fail(403, 'Access denied');
+  }
+
+  return { ok: true, entity: asset, plantScope };
+}
+
+/**
+ * Authorize access to a Component Registry entry through its owning Asset plant.
+ * Components without an Asset are denied for plant-scoped users.
+ */
+export async function authorizeComponentPlant(
+  request: NextRequest,
+  session: SessionData,
+  componentId: string,
+): Promise<PlantAuthResult<ComponentWithPlant>> {
+  const component = await db.componentRegistry.findUnique({
+    where: { id: componentId },
+    select: {
+      id: true,
+      assetId: true,
+      asset: { select: { plantId: true } },
+    },
+  });
+  if (!component) return fail(404, 'Component not found');
+
+  const scopeOrDeny = await resolveScope(request, session);
+  if (!scopeOrDeny.ok) return scopeOrDeny;
+  const plantScope = scopeOrDeny.plantScope;
+
+  if (!canAccessPlantStrict(plantScope, component.asset?.plantId)) {
+    return fail(403, 'Access denied');
+  }
+
+  return { ok: true, entity: component, plantScope };
+}
+
+/**
+ * Authorize access to a Digital Twin through its owning Asset plant.
+ */
+export async function authorizeDigitalTwinPlant(
+  request: NextRequest,
+  session: SessionData,
+  twinId: string,
+): Promise<PlantAuthResult<DigitalTwinWithPlant>> {
+  const twin = await db.digitalTwin.findUnique({
+    where: { id: twinId },
+    select: {
+      id: true,
+      assetId: true,
+      asset: { select: { plantId: true } },
+    },
+  });
+  if (!twin) return fail(404, 'Digital twin not found');
+
+  const scopeOrDeny = await resolveScope(request, session);
+  if (!scopeOrDeny.ok) return scopeOrDeny;
+  const plantScope = scopeOrDeny.plantScope;
+
+  if (!canAccessPlantStrict(plantScope, twin.asset.plantId)) {
+    return fail(403, 'Access denied');
+  }
+
+  return { ok: true, entity: twin, plantScope };
 }

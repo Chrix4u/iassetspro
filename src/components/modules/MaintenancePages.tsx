@@ -9895,7 +9895,7 @@ export function PmTemplatesPage() {
           type: formType,
           category: formCategory || null,
           priority: formPriority,
-          estimatedDuration: parseInt(formDuration, 10) || 0,
+          estimatedDuration: parseFloat(formDuration) || 0,
           requiredSkills: skillsArray,
           requiredTools: toolsArray,
         });
@@ -9911,7 +9911,7 @@ export function PmTemplatesPage() {
           type: formType,
           category: formCategory || null,
           priority: formPriority,
-          estimatedDuration: parseInt(formDuration, 10) || 0,
+          estimatedDuration: parseFloat(formDuration) || 0,
           requiredSkills: skillsArray.length > 0 ? skillsArray : undefined,
           requiredTools: toolsArray.length > 0 ? toolsArray : undefined,
         });
@@ -10238,8 +10238,8 @@ export function PmTemplatesPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-semibold">Est. Duration (min) *</Label>
-              <Input type="number" min="1" value={formDuration} onChange={e => setFormDuration(e.target.value)} placeholder="60" />
+              <Label className="text-sm font-semibold">Est. Duration (hours) *</Label>
+              <Input type="number" min="0.25" step="0.25" value={formDuration} onChange={e => setFormDuration(e.target.value)} placeholder="1.5" />
             </div>
           </div>
           <div className="space-y-2">

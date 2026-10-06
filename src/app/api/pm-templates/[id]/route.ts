@@ -84,7 +84,16 @@ export async function PUT(
 
     for (const field of allowedFields) {
       if (body[field] === undefined) continue;
-      if (field === 'requiredSkills' || field === 'requiredTools') {
+      if (field === 'estimatedDuration') {
+        const normalizedDuration = Number(body[field]);
+        if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+          return NextResponse.json(
+            { success: false, error: 'Estimated duration must be a positive number of hours' },
+            { status: 400 },
+          );
+        }
+        updateData[field] = normalizedDuration;
+      } else if (field === 'requiredSkills' || field === 'requiredTools') {
         const value = body[field];
         if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
           return NextResponse.json(

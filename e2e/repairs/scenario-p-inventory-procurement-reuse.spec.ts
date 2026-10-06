@@ -122,7 +122,7 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
 
   await test.step('Commissioning removes inventory stock exactly once and creates reusable tool custody', async () => {
     await inventoryPage.goto('/#/inventory');
-    await expect(inventoryPage.getByRole('heading', { name: 'Inventory Management' })).toBeVisible();
+    await expect(inventoryPage.getByRole('main').getByRole('heading', { name: 'Inventory', level: 1, exact: true })).toBeVisible();
     await inventoryPage.getByPlaceholder('Search inventory...').fill(toolCode);
     const row = inventoryPage.locator('tbody tr').filter({ hasText: toolCode }).first();
     await expect(row).toBeVisible();
@@ -131,7 +131,13 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     await expect(inventoryPage.getByText('Commission Purchased Tools')).toBeVisible();
     const commissionDialog = inventoryPage.getByRole('dialog');
     await commissionDialog.locator('input[type="number"]').fill('1');
+    const commissionResponsePromise = inventoryPage.waitForResponse((response) =>
+      response.request().method() === 'POST' && /\/api\/inventory\/[^/]+\/commission-tools(?:\?|$)/.test(response.url()),
+    );
     await inventoryPage.getByRole('button', { name: 'Commission to Tool Registry' }).click();
+    const commissionResponse = await commissionResponsePromise;
+    const commissionBody = await commissionResponse.json().catch(() => null);
+    expect(commissionResponse.status(), `Tool commissioning failed: ${JSON.stringify(commissionBody)}`).toBe(201);
     await expect(inventoryPage.getByText(/commissioned to the Tool Registry/i)).toBeVisible();
 
     const stock = await apiCall(inventoryToken, 'GET', `/api/inventory?search=${encodeURIComponent(toolCode)}&plantId=${encodeURIComponent(plantId)}`);

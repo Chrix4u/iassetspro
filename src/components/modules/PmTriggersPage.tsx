@@ -105,6 +105,23 @@ interface TriggerConfig {
   metric?: string;
   operator?: string;
   value?: number;
+  sourceType?: 'component_condition' | 'iot_device' | 'component_counter' | 'work_center_output';
+  deviceId?: string;
+  componentId?: string;
+  counterId?: string;
+  workCenterId?: string;
+  sourceLabel?: string;
+  unit?: string;
+  baselineCount?: number;
+  baselineHours?: number;
+}
+
+interface TriggerSourceOption {
+  value: string;
+  label: string;
+  sourceType: NonNullable<TriggerConfig['sourceType']>;
+  currentValue: number | null;
+  unit: string | null;
 }
 
 const TRIGGER_TYPE_CONFIG: Record<
@@ -231,7 +248,7 @@ function renderConfigDetails(type: TriggerType, config: TriggerConfig | null): R
       return (
         <div className="flex items-center gap-1.5 flex-wrap">
           <Activity className="h-3.5 w-3.5 text-violet-500" />
-          <span className="text-xs font-medium">{config.metric}</span>
+          <span className="text-xs font-medium">{config.sourceLabel || config.metric}</span>
           <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200 font-mono px-1.5">
             {config.operator} {config.value}
           </Badge>
@@ -241,7 +258,7 @@ function renderConfigDetails(type: TriggerType, config: TriggerConfig | null): R
       return (
         <div className="flex items-center gap-1.5 flex-wrap">
           <Factory className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="text-xs text-muted-foreground">Threshold</span>
+          <span className="text-xs font-medium">{config.sourceLabel || 'Production source'}</span>
           <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
             ≥ {config.threshold?.toLocaleString()} items
           </Badge>
@@ -394,6 +411,26 @@ interface TriggerFormData {
   isActive: boolean;
 }
 
+function sourceValueFromConfig(type: TriggerType, config: TriggerConfig): string {
+  if (type === 'condition') {
+    if (config.sourceType === 'component_condition' && config.metric) {
+      return `component_condition|${encodeURIComponent(config.metric)}`;
+    }
+    if (config.sourceType === 'iot_device' && config.deviceId) {
+      return `iot_device|${config.deviceId}`;
+    }
+  }
+  if (type === 'production_count') {
+    if (config.sourceType === 'component_counter' && config.counterId) {
+      return `component_counter|${config.counterId}`;
+    }
+    if (config.sourceType === 'work_center_output' && config.workCenterId) {
+      return `work_center_output|${config.workCenterId}`;
+    }
+  }
+  return '';
+}
+
 function TriggerForm({
   initialData,
   schedules,
@@ -407,62 +444,117 @@ function TriggerForm({
   onSubmit: (data: TriggerFormData) => void;
   onCancel: () => void;
 }) {
+  const initialConfig = initialData ? parseTriggerConfig(initialData.triggerConfig) || {} : {};
+  const initialType = initialData?.triggerType as TriggerType | undefined;
+  const safeInitialType: TriggerType = initialType && initialType !== 'time' ? initialType : 'meter';
+
   const [scheduleId, setScheduleId] = useState(initialData?.scheduleId || '');
-  const [triggerType, setTriggerType] = useState<TriggerType>(initialData?.triggerType as TriggerType || 'time');
+  const [triggerType, setTriggerType] = useState<TriggerType>(safeInitialType);
   const [triggerValue, setTriggerValue] = useState(initialData ? String(initialData.triggerValue) : '');
   const [isActive, setIsActive] = useState(initialData ? initialData.isActive : true);
+  const [conditionOperator, setConditionOperator] = useState(initialConfig.operator || '>');
+  const [conditionValue, setConditionValue] = useState(initialConfig.value != null ? String(initialConfig.value) : '');
+  const [sourceValue, setSourceValue] = useState(sourceValueFromConfig(safeInitialType, initialConfig));
+  const [sources, setSources] = useState<TriggerSourceOption[]>([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [legacyTypeConverted, setLegacyTypeConverted] = useState(initialType !== 'time');
 
-  // Dynamic config fields
-  const initialConfig = initialData ? parseTriggerConfig(initialData.triggerConfig) || {} : {};
-  const [cron, setCron] = useState((initialConfig as TriggerConfig).cron || '');
-  const [meterName, setMeterName] = useState((initialConfig as TriggerConfig).meterName || '');
-  const [meterThreshold, setMeterThreshold] = useState((initialConfig as TriggerConfig).threshold ? String((initialConfig as TriggerConfig).threshold) : '');
-  const [conditionMetric, setConditionMetric] = useState((initialConfig as TriggerConfig).metric || '');
-  const [conditionOperator, setConditionOperator] = useState((initialConfig as TriggerConfig).operator || '>');
-  const [conditionValue, setConditionValue] = useState((initialConfig as TriggerConfig).value != null ? String((initialConfig as TriggerConfig).value) : '');
-  const [productionThreshold, setProductionThreshold] = useState((initialConfig as TriggerConfig).threshold ? String((initialConfig as TriggerConfig).threshold) : '');
+  const availableSchedules = useMemo(() => schedules.filter((s) => {
+    if (initialData && s.id === initialData.scheduleId) return true;
+    return s.isActive;
+  }), [schedules, initialData]);
 
-  // Filter out schedules that already have a trigger (unless editing that same trigger)
-  const availableSchedules = useMemo(() => {
-    return schedules.filter((s) => {
-      // For editing: allow the current schedule
-      if (initialData && s.id === initialData.scheduleId) return true;
-      // For creating: we can't easily know which schedules have triggers without fetching.
-      // The API will return a 409 if there's a duplicate, so we allow all and let the API handle it.
-      return true;
-    });
-  }, [schedules, initialData]);
+  useEffect(() => {
+    if (!scheduleId || (triggerType !== 'condition' && triggerType !== 'production_count')) {
+      setSources([]);
+      setSourceError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadSources = async () => {
+      setSourceLoading(true);
+      setSourceError(null);
+      const params = new URLSearchParams({ scheduleId, triggerType });
+      const res = await api.get<TriggerSourceOption[]>(`/api/pm-triggers/sources?${params}`);
+      if (cancelled) return;
+      if (res.success && Array.isArray(res.data)) {
+        setSources(res.data);
+        setSourceError(res.data.length === 0 ? 'No authoritative source is available for this schedule yet.' : null);
+      } else {
+        setSources([]);
+        setSourceError(res.error || 'Failed to load authoritative trigger sources');
+      }
+      setSourceLoading(false);
+    };
+    void loadSources();
+    return () => { cancelled = true; };
+  }, [scheduleId, triggerType]);
+
+  const selectedSource = useMemo(
+    () => sources.find((source) => source.value === sourceValue) || null,
+    [sources, sourceValue],
+  );
+
+  const changeSchedule = (value: string) => {
+    setScheduleId(value);
+    if (value !== initialData?.scheduleId) setSourceValue('');
+  };
+
+  const changeTriggerType = (value: TriggerType) => {
+    setTriggerType(value);
+    setLegacyTypeConverted(true);
+    setSourceValue('');
+    if (value === 'condition' && !conditionValue && initialConfig.value != null) {
+      setConditionValue(String(initialConfig.value));
+    }
+  };
 
   const buildConfig = (): TriggerConfig => {
-    switch (triggerType) {
-      case 'time':
-        return { cron: cron.trim() };
-      case 'meter':
-        return { meterName: meterName.trim(), threshold: parseFloat(meterThreshold) || 0 };
-      case 'condition':
-        return { metric: conditionMetric.trim(), operator: conditionOperator, value: parseFloat(conditionValue) || 0 };
-      case 'production_count':
-        return { threshold: parseFloat(productionThreshold) || 0 };
-      default:
-        return {};
+    if (triggerType === 'meter') return {};
+    if (!sourceValue) return {};
+    const separator = sourceValue.indexOf('|');
+    if (separator < 1) return {};
+    const sourceType = sourceValue.slice(0, separator) as NonNullable<TriggerConfig['sourceType']>;
+    const sourceId = sourceValue.slice(separator + 1);
+
+    if (triggerType === 'condition') {
+      const base = {
+        sourceType,
+        operator: conditionOperator,
+        value: Number(conditionValue),
+      } as TriggerConfig;
+      if (sourceType === 'component_condition') {
+        return { ...base, metric: decodeURIComponent(sourceId) };
+      }
+      return { ...base, deviceId: sourceId };
     }
+
+    if (sourceType === 'component_counter') {
+      return { sourceType, counterId: sourceId };
+    }
+    return { sourceType, workCenterId: sourceId };
+  };
+
+  const effectiveTriggerValue = (): string => {
+    if (triggerType !== 'condition') return triggerValue;
+    const threshold = Number(conditionValue);
+    if (!Number.isFinite(threshold)) return '';
+    return String(Math.max(Math.abs(threshold), 1));
   };
 
   const isFormValid = (): boolean => {
     if (!scheduleId) return false;
-    if (!triggerValue || parseFloat(triggerValue) <= 0) return false;
-    switch (triggerType) {
-      case 'time':
-        return cron.trim().length > 0;
-      case 'meter':
-        return meterName.trim().length > 0 && meterThreshold !== '' && parseFloat(meterThreshold) > 0;
-      case 'condition':
-        return conditionMetric.trim().length > 0 && conditionValue !== '';
-      case 'production_count':
-        return productionThreshold !== '' && parseFloat(productionThreshold) > 0;
-      default:
-        return false;
+    if (initialType === 'time' && !legacyTypeConverted) return false;
+    if (triggerType === 'meter' || triggerType === 'production_count') {
+      if (!triggerValue || Number(triggerValue) <= 0) return false;
     }
+    if (triggerType === 'condition') {
+      return Boolean(sourceValue) && conditionValue !== '' && Number.isFinite(Number(conditionValue));
+    }
+    if (triggerType === 'production_count') return Boolean(sourceValue);
+    return triggerType === 'meter';
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -471,49 +563,51 @@ function TriggerForm({
     onSubmit({
       scheduleId,
       triggerType,
-      triggerValue,
+      triggerValue: effectiveTriggerValue(),
       triggerConfig: buildConfig(),
       isActive,
     });
   };
 
+  const sourceLabel = triggerType === 'condition' ? 'Authoritative condition source' : 'Authoritative production source';
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Schedule selector */}
+      {initialType === 'time' && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          This legacy time trigger is no longer a second PM clock. Time-based maintenance is controlled by the PM schedule cadence. Choose a runtime trigger below only if this schedule also needs meter, condition, or production-count activation. You must explicitly select a runtime trigger before this record can be updated.
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label className="text-sm font-medium">PM Schedule *</Label>
         <AsyncSearchableSelect
           value={scheduleId}
-          onValueChange={setScheduleId}
-          fetchOptions={async () => {
-            const res = await api.get('/api/pm-schedules');
-            if (res.success && res.data) {
-              return (Array.isArray(res.data) ? res.data : [])
-                .filter((s: PmScheduleRef) => s.isActive)
-                .map((s: PmScheduleRef) => ({
-                  value: s.id,
-                  label: `${s.title} — ${s.asset.name} [${s.asset.assetTag}]`,
-                }));
-            }
-            return [];
-          }}
+          onValueChange={changeSchedule}
+          fetchOptions={async () => availableSchedules.map((s) => ({
+            value: s.id,
+            label: `${s.title} — ${s.asset.name} [${s.asset.assetTag}]`,
+          }))}
           placeholder="Select PM schedule..."
           searchPlaceholder="Search by schedule title or asset..."
+          disabled={Boolean(initialData)}
         />
+        {initialData && (
+          <p className="text-[11px] text-muted-foreground">The owning schedule is fixed when editing an existing trigger.</p>
+        )}
       </div>
 
-      {/* Trigger Type */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Trigger Type *</Label>
-        <div className="grid grid-cols-2 gap-2">
-          {TRIGGER_TYPES.map((t) => {
+        <Label className="text-sm font-medium">Runtime Trigger *</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {(['meter', 'condition', 'production_count'] as TriggerType[]).map((t) => {
             const conf = TRIGGER_TYPE_CONFIG[t];
             const TypeIcon = conf.icon;
             return (
               <button
                 key={t}
                 type="button"
-                onClick={() => setTriggerType(t)}
+                onClick={() => changeTriggerType(t)}
                 className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all flex items-center gap-1.5 ${
                   triggerType === t
                     ? `${conf.border} ${conf.bg} ${conf.color}`
@@ -527,76 +621,75 @@ function TriggerForm({
           })}
         </div>
         <p className="text-[11px] text-muted-foreground">{TRIGGER_TYPE_CONFIG[triggerType].description}</p>
+        <p className="text-[11px] text-slate-500">Time cadence remains configured on the PM schedule so two competing clocks cannot generate duplicate work orders.</p>
       </div>
 
-      {/* Dynamic config fields based on type */}
-      {triggerType === 'time' && (
+      {triggerType === 'meter' && (
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Cron Expression *</Label>
+          <Label className="text-sm font-medium">Operating-hours interval *</Label>
           <Input
-            value={cron}
-            onChange={(e) => setCron(e.target.value)}
-            placeholder="0 6 * * *"
-            className="font-mono"
+            type="number"
+            min="0.000001"
+            step="any"
+            value={triggerValue}
+            onChange={(e) => setTriggerValue(e.target.value)}
+            placeholder="e.g. 500"
           />
-          <p className="text-[11px] text-muted-foreground">
-            e.g. <code className="bg-slate-100 px-1 rounded">0 6 * * *</code> for daily at 6:00 AM
-            &middot; <code className="bg-slate-100 px-1 rounded">0 0 * * 1</code> for every Monday at midnight
-          </p>
+          <div className="rounded-lg border bg-slate-50 p-3 text-[11px] text-slate-600">
+            The runtime uses the selected schedule component&apos;s authoritative operating-hours counter. The current reading becomes the baseline when the trigger is first configured, preventing retroactive work orders.
+          </div>
         </div>
       )}
 
-      {triggerType === 'meter' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Meter Name *</Label>
-            <Input
-              value={meterName}
-              onChange={(e) => setMeterName(e.target.value)}
-              placeholder="e.g. Operating Hours, Vibration Level"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Threshold *</Label>
-            <Input
-              type="number"
-              min="0"
-              step="any"
-              value={meterThreshold}
-              onChange={(e) => setMeterThreshold(e.target.value)}
-              placeholder="e.g. 10000"
-            />
-          </div>
+      {(triggerType === 'condition' || triggerType === 'production_count') && (
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">{sourceLabel} *</Label>
+          <Select value={sourceValue} onValueChange={setSourceValue} disabled={!scheduleId || sourceLoading}>
+            <SelectTrigger>
+              <SelectValue placeholder={sourceLoading ? 'Loading authoritative sources...' : `Select ${triggerType === 'condition' ? 'condition' : 'production'} source...`} />
+            </SelectTrigger>
+            <SelectContent>
+              {sources.map((source) => (
+                <SelectItem key={source.value} value={source.value}>{source.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {sourceLoading && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading plant-scoped sources…
+            </div>
+          )}
+          {sourceError && !sourceLoading && (
+            <div className="flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" /> {sourceError}
+            </div>
+          )}
+          {selectedSource && (
+            <div className="rounded-lg border bg-slate-50 p-2.5 text-[11px] text-slate-600 flex items-center justify-between gap-3">
+              <span>{selectedSource.sourceType.replace(/_/g, ' ')}</span>
+              <span className="font-semibold text-slate-800">
+                Current: {selectedSource.currentValue == null ? 'No reading yet' : `${selectedSource.currentValue.toLocaleString()}${selectedSource.unit ? ` ${selectedSource.unit}` : ''}`}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
       {triggerType === 'condition' && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Metric *</Label>
-            <Input
-              value={conditionMetric}
-              onChange={(e) => setConditionMetric(e.target.value)}
-              placeholder="e.g. Temperature, Pressure"
-            />
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label className="text-sm font-medium">Operator *</Label>
             <Select value={conditionOperator} onValueChange={setConditionOperator}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {CONDITION_OPERATORS.map((op) => (
-                  <SelectItem key={op} value={op} className="font-mono">
-                    {op}
-                  </SelectItem>
+                  <SelectItem key={op} value={op} className="font-mono">{op}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Value *</Label>
+            <Label className="text-sm font-medium">Condition threshold *</Label>
             <Input
               type="number"
               step="any"
@@ -605,72 +698,47 @@ function TriggerForm({
               placeholder="e.g. 85"
             />
           </div>
+          <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+            A condition work order is generated only when the rule changes from not-matched to matched. A persistent alarm will not keep creating duplicate work orders; it must recover before it can trigger again.
+          </p>
         </div>
       )}
 
       {triggerType === 'production_count' && (
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Production Threshold *</Label>
+          <Label className="text-sm font-medium">Production interval *</Label>
           <Input
             type="number"
-            min="0"
-            step="1"
-            value={productionThreshold}
-            onChange={(e) => setProductionThreshold(e.target.value)}
+            min="0.000001"
+            step="any"
+            value={triggerValue}
+            onChange={(e) => setTriggerValue(e.target.value)}
             placeholder="e.g. 5000"
           />
           <p className="text-[11px] text-muted-foreground">
-            Work order will be generated when this production count is reached
+            The current authoritative count becomes the baseline. A work order is generated each time the selected source advances by this interval.
           </p>
         </div>
       )}
 
-      {/* Trigger Value */}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">Trigger Value *</Label>
-        <Input
-          type="number"
-          min="0"
-          step="any"
-          value={triggerValue}
-          onChange={(e) => setTriggerValue(e.target.value)}
-          placeholder="Numeric trigger value"
-        />
-        <p className="text-[11px] text-muted-foreground">
-          {triggerType === 'time' && 'Hours between maintenance triggers'}
-          {triggerType === 'meter' && 'Base meter value for this trigger'}
-          {triggerType === 'condition' && 'Reference value for condition evaluation'}
-          {triggerType === 'production_count' && 'Base production count for this trigger'}
-        </p>
-      </div>
-
-      {/* Active toggle */}
       <div className="flex items-center justify-between rounded-lg border p-3">
         <div className="space-y-0.5">
           <Label className="text-sm font-medium">Active</Label>
-          <p className="text-[11px] text-muted-foreground">Enable this trigger to automatically generate work orders</p>
+          <p className="text-[11px] text-muted-foreground">Enable this trigger to automatically generate preventive work orders.</p>
         </div>
         <Switch checked={isActive} onCheckedChange={setIsActive} />
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2 pt-2">
-        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
-          Cancel
-        </Button>
+        <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Cancel</Button>
         <Button
           type="submit"
           className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-          disabled={loading || !isFormValid()}
+          disabled={loading || sourceLoading || !isFormValid()}
         >
           {loading ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {initialData ? 'Updating...' : 'Creating...'}
-            </span>
-          ) : (
-            initialData ? 'Update Trigger' : 'Create Trigger'
-          )}
+            <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{initialData ? 'Updating...' : 'Creating...'}</span>
+          ) : initialData ? 'Update Trigger' : 'Create Trigger'}
         </Button>
       </div>
     </form>
@@ -730,6 +798,7 @@ export default function PmTriggersPage() {
   const [deleteTarget, setDeleteTarget] = useState<PmTrigger | null>(null);
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<PmScheduleRef[]>([]);
+  const [formLoading, setFormLoading] = useState(false);
 
   const { hasPermission, isAdmin } = useAuthStore();
   const canCreate = hasPermission('pm_triggers.create');
@@ -795,37 +864,41 @@ export default function PmTriggersPage() {
 
   // ─── Handle form submit (create or update) ────────────────────────────
   const handleFormSubmit = async (data: TriggerFormData) => {
-    if (editingTrigger) {
-      // Update
-      const res = await api.put(`/api/pm-triggers/${editingTrigger.id}`, {
-        triggerType: data.triggerType,
-        triggerValue: parseFloat(data.triggerValue),
-        triggerConfig: data.triggerConfig,
-        isActive: data.isActive,
-      });
-      if (res.success) {
-        toast.success('Trigger updated successfully');
-        setFormDialogOpen(false);
-        setRefreshKey((k) => k + 1);
+    if (formLoading) return;
+    setFormLoading(true);
+    try {
+      if (editingTrigger) {
+        const res = await api.put(`/api/pm-triggers/${editingTrigger.id}`, {
+          triggerType: data.triggerType,
+          triggerValue: parseFloat(data.triggerValue),
+          triggerConfig: data.triggerConfig,
+          isActive: data.isActive,
+        });
+        if (res.success) {
+          toast.success('Trigger updated successfully');
+          setFormDialogOpen(false);
+          setRefreshKey((k) => k + 1);
+        } else {
+          toast.error(res.error || 'Failed to update trigger');
+        }
       } else {
-        toast.error(res.error || 'Failed to update trigger');
+        const res = await api.post('/api/pm-triggers', {
+          scheduleId: data.scheduleId,
+          triggerType: data.triggerType,
+          triggerValue: parseFloat(data.triggerValue),
+          triggerConfig: data.triggerConfig,
+          isActive: data.isActive,
+        });
+        if (res.success) {
+          toast.success('Trigger created successfully');
+          setFormDialogOpen(false);
+          setRefreshKey((k) => k + 1);
+        } else {
+          toast.error(res.error || 'Failed to create trigger');
+        }
       }
-    } else {
-      // Create
-      const res = await api.post('/api/pm-triggers', {
-        scheduleId: data.scheduleId,
-        triggerType: data.triggerType,
-        triggerValue: parseFloat(data.triggerValue),
-        triggerConfig: data.triggerConfig,
-        isActive: data.isActive,
-      });
-      if (res.success) {
-        toast.success('Trigger created successfully');
-        setFormDialogOpen(false);
-        setRefreshKey((k) => k + 1);
-      } else {
-        toast.error(res.error || 'Failed to create trigger');
-      }
+    } finally {
+      setFormLoading(false);
     }
   };
 
@@ -987,7 +1060,7 @@ export default function PmTriggersPage() {
             }
             description={
               triggers.length === 0
-                ? 'Create your first trigger to automatically generate work orders based on time, meter readings, conditions, or production counts.'
+                ? 'Create a runtime trigger for meter readings, equipment conditions, or production counts. Time cadence is configured on the PM schedule itself.'
                 : 'Try adjusting your search or filter criteria to find what you are looking for.'
             }
           />
@@ -1032,8 +1105,8 @@ export default function PmTriggersPage() {
       >
         <TriggerForm
           initialData={editingTrigger}
-          schedules={schedules}
-          loading={false}
+          schedules={editingTrigger ? schedules : schedules.filter((schedule) => !triggers.some((trigger) => trigger.scheduleId === schedule.id))}
+          loading={formLoading}
           onSubmit={handleFormSubmit}
           onCancel={() => setFormDialogOpen(false)}
         />

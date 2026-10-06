@@ -12,7 +12,6 @@ import { executeTransition } from '@/lib/state-machine';
 import { checkReadiness, type ReadinessCheckResult } from '@/services/workOrderReadiness.service';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
-import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import {
   calculateAuthoritativeWorkOrderCost,
   type AuthoritativeWorkOrderCostResult,
@@ -775,31 +774,9 @@ export async function submitCompletion(
       ),
     });
 
-    if (wo.pmScheduleId) {
-      const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
-      if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
-        const newNextDueDate = calculateNextDueDate(now, pmSchedule.frequencyType, pmSchedule.frequencyValue);
-        await tx.pmSchedule.update({
-          where: { id: pmSchedule.id },
-          data: { lastCompletedDate: now, nextDueDate: newNextDueDate },
-        });
-        await tx.auditLog.create({
-          data: buildAuditData(
-            'update',
-            'pm_schedule',
-            pmSchedule.id,
-            session.userId,
-            { lastCompletedDate: pmSchedule.lastCompletedDate, nextDueDate: pmSchedule.nextDueDate },
-            {
-              lastCompletedDate: now.toISOString(),
-              nextDueDate: newNextDueDate?.toISOString() ?? null,
-              reason: `PM WO ${wo.woNumber} completed`,
-            },
-            completionData.auditCtx,
-          ),
-        });
-      }
-    }
+    // PM cadence intentionally does not advance at technician completion.
+    // Planner closure is the single recurrence authority after supervisor
+    // verification, closeout evidence and final costing are accepted.
 
     return { costs };
   });

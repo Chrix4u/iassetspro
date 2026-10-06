@@ -83,11 +83,26 @@ export async function POST(request: NextRequest) {
       requiredTools,
     } = body;
 
-    if (!title || !estimatedDuration) {
+    if (!title || estimatedDuration === undefined || estimatedDuration === null || estimatedDuration === '') {
       return NextResponse.json(
         { success: false, error: 'Title and estimated duration are required' },
         { status: 400 }
       );
+    }
+    const normalizedDuration = Number(estimatedDuration);
+    if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+      return NextResponse.json(
+        { success: false, error: 'Estimated duration must be a positive number of hours' },
+        { status: 400 },
+      );
+    }
+    for (const [field, value] of [['requiredSkills', requiredSkills], ['requiredTools', requiredTools]] as const) {
+      if (value !== undefined && value !== null && (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))) {
+        return NextResponse.json(
+          { success: false, error: `${field} must be an array of strings` },
+          { status: 400 },
+        );
+      }
     }
 
     const template = await db.pmTemplate.create({
@@ -96,10 +111,10 @@ export async function POST(request: NextRequest) {
         description: description || null,
         type: type || 'preventive',
         category: category || null,
-        estimatedDuration: Number(estimatedDuration),
+        estimatedDuration: normalizedDuration,
         priority: priority || 'medium',
-        requiredSkills: requiredSkills ? JSON.stringify(requiredSkills) : null,
-        requiredTools: requiredTools ? JSON.stringify(requiredTools) : null,
+        requiredSkills: Array.isArray(requiredSkills) && requiredSkills.length > 0 ? JSON.stringify(requiredSkills) : null,
+        requiredTools: Array.isArray(requiredTools) && requiredTools.length > 0 ? JSON.stringify(requiredTools) : null,
         createdById: session.userId,
       },
       include: {

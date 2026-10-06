@@ -3,6 +3,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { evaluateMeterPmTriggers } from '@/services/pm/meterTriggerEngine';
+import { evaluateConditionProductionPmTriggers } from '@/services/pm/conditionProductionTriggerEngine';
 
 const CRON_SECRET = process.env.PM_CRON_SECRET || '';
 
@@ -42,7 +43,14 @@ export async function POST(request: NextRequest) {
       cronAuthorized ? undefined : session?.userId,
     );
 
-    const data = await evaluateMeterPmTriggers({ plantIds, actorId });
+    const meter = await evaluateMeterPmTriggers({ plantIds, actorId });
+    const signals = await evaluateConditionProductionPmTriggers({ plantIds, actorId });
+    const data = {
+      evaluated: meter.evaluated + signals.evaluated,
+      generated: meter.generated + signals.generated,
+      results: [...meter.results, ...signals.results],
+      engines: { meter, conditionProduction: signals },
+    };
     return NextResponse.json({ success: true, data, timestamp: new Date().toISOString() });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'PM trigger evaluation failed';

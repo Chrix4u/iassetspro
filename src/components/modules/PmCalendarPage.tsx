@@ -31,12 +31,11 @@ import type { PmSchedule } from "@/types";
 // Types
 // ---------------------------------------------------------------------------
 
-interface PmScheduleWithRelations extends PmSchedule {
+interface PmScheduleWithRelations extends Omit<PmSchedule, 'template'> {
   department?: { id: string; name: string; code: string } | null;
   createdBy?: { id: string; fullName: string; username: string } | null;
   template?: { id: string; title: string; type: string; _count: { tasks: number } } | null;
   component?: { id: string; name: string; componentCode: string; componentType: string; parentId?: string | null; assetId?: string | null } | null;
-  assignedTo?: { id: string; fullName: string; username: string }[];
 }
 
 type CalendarView = "month" | "week";
@@ -1026,13 +1025,11 @@ function PmScheduleDetail({ schedule }: { schedule: PmScheduleWithRelations }) {
             <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
               Assigned To
             </p>
-            {schedule.assignedTo && schedule.assignedTo.length > 0 ? (
+            {schedule.assignedTo ? (
               <div className="mt-0.5 flex flex-wrap gap-1">
-                {schedule.assignedTo.map((u) => (
-                  <Badge key={u.id} variant="outline" className="text-xs font-normal">
-                    {u.fullName}
-                  </Badge>
-                ))}
+                <Badge variant="outline" className="text-xs font-normal">
+                  {schedule.assignedTo.fullName}
+                </Badge>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground mt-0.5">Not assigned</p>

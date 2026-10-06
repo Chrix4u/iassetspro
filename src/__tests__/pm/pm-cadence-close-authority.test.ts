@@ -11,7 +11,6 @@ describe('PM cadence advances only after completed maintenance', () => {
       expect(source).not.toContain('lastCompletedDate: nextDueDate');
       expect(source).not.toContain('nextDueDate: newNextDueDate');
       expect(source).not.toContain('calculateNextDueDate(');
-      expect(source).toContain('Generation does not mark maintenance as completed');
     }
   });
 

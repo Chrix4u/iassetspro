@@ -9,7 +9,8 @@ describe('PM automation actor persistence contract', () => {
   it('never uses a synthetic system foreign key for cron-owned writes', () => {
     expect(checkDue).not.toContain("session?.userId || 'system'");
     expect(checkDueCron).not.toContain("session?.userId || 'system'");
-    expect(checkDue).toContain('resolvePmAutomationActorId(session?.userId)');
+    expect(checkDue).toContain('hasValidCronSecret ? undefined : session?.userId');
+    expect(checkDue).toContain('resolvePmAutomationActorId(');
     expect(checkDueCron).toContain('resolvePmAutomationActorId(session?.userId)');
   });
 
@@ -21,8 +22,8 @@ describe('PM automation actor persistence contract', () => {
   });
 
   it('uses the resolved actor for PM task comments and audit rows', () => {
-    expect(checkDue).toContain('userId: auditUserId');
-    expect(checkDue).toContain('const auditUserId = automationActorId');
+    expect(checkDue).toContain('userId: automationActorId');
     expect(checkDueCron).toContain('const auditUserId = automationActorId');
+    expect(checkDueCron).toContain('userId: auditUserId');
   });
 });

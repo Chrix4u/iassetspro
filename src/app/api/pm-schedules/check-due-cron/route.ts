@@ -1,73 +1,108 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
-import { isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, type PlantScopeResult } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
-import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
+import { POST as generateDueWorkOrders } from '../check-due/route';
 
 /**
  * POST /api/pm-schedules/check-due-cron
  *
- * Extended version of check-due that also:
- * 1. Generates WOs for due schedules (same as check-due)
- * 2. Detects overdue PM schedules (nextDueDate < now AND no open WO)
- * 3. Sends notifications for overdue PMs
- * 4. Returns a comprehensive summary of all actions taken
+ * Runs the canonical, atomic PM due-generation endpoint and then performs the
+ * additional overdue-without-open-WO notification scan. This route deliberately
+ * does not maintain a second work-order generator: all WO creation, component
+ * linkage, numbering, idempotency, audit and automation-actor behavior lives in
+ * check-due/route.ts.
  *
- * Auth: Requires session OR internal secret header (same as check-due).
+ * Auth:
+ * - a valid X-PM-Cron-Secret is trusted system automation and may run system-wide;
+ * - a manual caller must be authenticated and hold pm_schedules.run (or admin),
+ *   and the overdue scan is restricted to that caller's plant scope.
  */
 
-// Internal cron secret
 const CRON_SECRET = process.env.PM_CRON_SECRET || '';
+const DENY_ACCESS_SENTINEL = '__ACCESS_DENIED__';
 
-// Helper: generate WO number WO-YYYYMM-NNNN
-async function generateWoNumber(): Promise<string> {
-  const now = new Date();
-  const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+type GenerationResult = {
+  scheduleId: string;
+  scheduleTitle: string;
+  workOrderId: string;
+  woNumber: string;
+  skipped: boolean;
+  reason?: string;
+};
 
-  const latest = await db.workOrder.findFirst({
-    where: { woNumber: { startsWith: prefix } },
-    orderBy: { woNumber: 'desc' },
-    select: { woNumber: true },
-  });
+type GenerationPayload = {
+  success: boolean;
+  error?: string;
+  data?: {
+    checked: number;
+    generated: number;
+    skipped: number;
+    results: GenerationResult[];
+  };
+};
 
-  let nextNum = 1;
-  if (latest) {
-    const parts = latest.woNumber.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    nextNum = lastNum + 1;
-  }
-
-  return `${prefix}-${String(nextNum).padStart(4, '0')}`;
+function manualAssetPlantFilter(plantScope: PlantScopeResult | null) {
+  if (!plantScope || plantScope.isSystemWide) return {};
+  if (plantScope.isScoped && plantScope.plantId) return { plantId: plantScope.plantId };
+  return {
+    plantId: {
+      in: plantScope.accessiblePlantIds.length > 0
+        ? plantScope.accessiblePlantIds
+        : [DENY_ACCESS_SENTINEL],
+    },
+  };
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth: either session or internal cron secret
     const session = getSession(request);
     const cronSecret = request.headers.get('x-pm-cron-secret');
+    const hasValidCronSecret = Boolean(CRON_SECRET && cronSecret === CRON_SECRET);
 
-    if (!session && (!CRON_SECRET || cronSecret !== CRON_SECRET)) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    let plantScope: PlantScopeResult | null = null;
+    if (!hasValidCronSecret) {
+      if (!session) {
+        return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+      }
+      if (!hasPermission(session, 'pm_schedules.run') && !isAdmin(session)) {
+        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+      }
+
+      plantScope = await getPlantScope(request, session);
+      if (plantScope.denyAccess) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
-    // Resolve a persisted actor before any PM mutation so cron execution fails
-    // cleanly instead of leaving records with invalid User foreign keys.
-    const automationActorId = await resolvePmAutomationActorId(session?.userId);
+    // Phase 1: delegate every mutation to the canonical atomic/idempotent path.
+    const generationResponse = await generateDueWorkOrders(request);
+    const generationPayload = await generationResponse.json() as GenerationPayload;
+    if (!generationResponse.ok || !generationPayload.success || !generationPayload.data) {
+      return NextResponse.json(
+        generationPayload,
+        { status: generationResponse.status || 500 },
+      );
+    }
 
     const now = new Date();
+    const generatedDetails = generationPayload.data.results
+      .filter((result) => !result.skipped)
+      .map((result) => ({
+        scheduleId: result.scheduleId,
+        scheduleTitle: result.scheduleTitle,
+        workOrderId: result.workOrderId,
+        woNumber: result.woNumber,
+      }));
+
     const results = {
-      dueSchedulesChecked: 0,
-      workOrdersGenerated: 0,
-      skipped: 0,
+      dueSchedulesChecked: generationPayload.data.checked,
+      workOrdersGenerated: generationPayload.data.generated,
+      skipped: generationPayload.data.skipped,
       overdueSchedulesFound: 0,
       overdueAlertsSent: 0,
-      generatedDetails: [] as Array<{
-        scheduleId: string;
-        scheduleTitle: string;
-        workOrderId: string;
-        woNumber: string;
-      }>,
+      generatedDetails,
       overdueDetails: [] as Array<{
         scheduleId: string;
         scheduleTitle: string;
@@ -77,152 +112,18 @@ export async function POST(request: NextRequest) {
       }>,
     };
 
-    // ── PHASE 1: Generate WOs for due schedules (same logic as check-due) ──
-    const dueSchedules = await db.pmSchedule.findMany({
-      where: {
-        isActive: true,
-        autoGenerateWO: true,
-        nextDueDate: { not: null },
-      },
-      include: {
-        asset: {
-          select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true },
-        },
-        component: {
-          select: { id: true, name: true, componentCode: true, componentType: true, assetId: true },
-        },
-        assignedTo: { select: { id: true, fullName: true, username: true } },
-        department: { select: { id: true, name: true, code: true } },
-      },
-    });
-
-    results.dueSchedulesChecked = dueSchedules.length;
-
-    for (const schedule of dueSchedules) {
-      // Skip non-auto-calculable frequencies
-      if (!isAutoCalculableFrequency(schedule.frequencyType)) {
-        results.skipped++;
-        continue;
-      }
-
-      const nextDueDate = new Date(schedule.nextDueDate!);
-      const leadWindow = new Date(now.getTime() + schedule.leadDays * 24 * 60 * 60 * 1000);
-
-      // Check if within lead window
-      if (nextDueDate > leadWindow) {
-        results.skipped++;
-        continue;
-      }
-
-      // Check if a WO was already generated for this cycle
-      const existingWo = await db.workOrder.findFirst({
-        where: {
-          pmScheduleId: schedule.id,
-          type: 'preventive',
-          status: { not: 'cancelled' },
-          createdAt: { gte: new Date(nextDueDate.getTime() - 24 * 60 * 60 * 1000) },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (existingWo) {
-        results.skipped++;
-        continue;
-      }
-
-      // Generate the WO
-      const woNumber = await generateWoNumber();
-      const wo = await db.workOrder.create({
-        data: {
-          woNumber,
-          title: `PM: ${schedule.title}`,
-          description: `Preventive maintenance scheduled for asset: ${schedule.asset.name || schedule.asset.assetTag}${schedule.component ? ` | Component: ${schedule.component.componentCode} - ${schedule.component.name}` : ''}`,
-          type: 'preventive',
-          priority: schedule.priority,
-          status: 'draft',
-          assetId: schedule.assetId,
-          assetName: schedule.asset.name,
-          assignedTo: schedule.assignedToId,
-          departmentId: schedule.asset.departmentId || schedule.departmentId || null,
-          plantId: schedule.asset.plantId || null,
-          estimatedHours: schedule.estimatedDuration || null,
-          pmScheduleId: schedule.id,
-          plannedStart: nextDueDate,
-          notes: `Auto-generated from PM schedule "${schedule.title}" (${schedule.frequencyType}: ${schedule.frequencyValue})`,
-        },
-      });
-
-      if (schedule.componentId) {
-        await db.workOrderComponent.upsert({
-          where: {
-            workOrderId_componentRegistryId: {
-              workOrderId: wo.id,
-              componentRegistryId: schedule.componentId,
-            },
-          },
-          create: {
-            workOrderId: wo.id,
-            componentRegistryId: schedule.componentId,
-            notes: 'Inherited from component-targeted PM schedule',
-          },
-          update: {},
-        });
-      }
-      // Generation does not mark maintenance as completed and must not advance the cadence.
-      // The canonical planner-close service advances lastCompletedDate/nextDueDate only after
-      // the preventive work order is verified and irreversibly closed.
-
-      // Notify assigned user
-      if (schedule.assignedToId) {
-        await notifyUser(
-          schedule.assignedToId,
-          'wo_assigned',
-          'PM Work Order Generated',
-          `A preventive maintenance WO (${woNumber}) has been auto-generated for "${schedule.title}" on ${schedule.asset.name}. Due: ${nextDueDate.toLocaleDateString()}.`,
-          'work_order',
-          wo.id,
-          `wo-detail?id=${wo.id}`,
-        );
-      }
-
-      // Audit log
-      const auditUserId = automationActorId;
-      await db.auditLog.create({
-        data: {
-          userId: auditUserId,
-          action: 'create',
-          entityType: 'work_order',
-          entityId: wo.id,
-          newValues: JSON.stringify({
-            woNumber,
-            title: wo.title,
-            type: 'preventive',
-            pmScheduleId: schedule.id,
-            componentId: schedule.componentId || null,
-            autoGenerated: true,
-          }),
-        },
-      });
-
-      results.workOrdersGenerated++;
-      results.generatedDetails.push({
-        scheduleId: schedule.id,
-        scheduleTitle: schedule.title,
-        workOrderId: wo.id,
-        woNumber,
-      });
-    }
-
-    // ── PHASE 2: Detect and alert overdue PM schedules ──
-    // Find schedules that are overdue (nextDueDate < now) and have no open WO
+    // Phase 2: identify overdue schedules that still have no open preventive WO.
+    // Manual runs use the exact same plant boundary as check-due; trusted cron is
+    // intentionally system-wide.
     const overdueSchedules = await db.pmSchedule.findMany({
       where: {
         isActive: true,
         nextDueDate: { not: null, lt: now },
+        asset: manualAssetPlantFilter(plantScope),
       },
       include: {
         asset: {
-          select: { id: true, name: true, assetTag: true },
+          select: { id: true, name: true, assetTag: true, plantId: true },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
       },
@@ -230,9 +131,8 @@ export async function POST(request: NextRequest) {
 
     for (const schedule of overdueSchedules) {
       const nextDueDate = new Date(schedule.nextDueDate!);
-      const daysOverdue = Math.floor((now.getTime() - nextDueDate.getTime()) / (1000 * 60 * 60 * 24));
+      const daysOverdue = Math.floor((now.getTime() - nextDueDate.getTime()) / 86400000);
 
-      // Check if there is already an open (non-cancelled) WO for this schedule
       const openWo = await db.workOrder.findFirst({
         where: {
           pmScheduleId: schedule.id,
@@ -242,12 +142,9 @@ export async function POST(request: NextRequest) {
           },
         },
         orderBy: { createdAt: 'desc' },
+        select: { id: true },
       });
-
-      if (openWo) {
-        // There's already an open WO — skip alert
-        continue;
-      }
+      if (openWo) continue;
 
       results.overdueSchedulesFound++;
       results.overdueDetails.push({
@@ -258,9 +155,10 @@ export async function POST(request: NextRequest) {
         assetName: schedule.asset.name,
       });
 
-      // Send overdue notification to the assigned user (or admin)
-      const notifyTargetId = schedule.assignedToId || session?.userId;
-      if (notifyTargetId) {
+      const notifyTargetId = schedule.assignedToId || (!hasValidCronSecret ? session?.userId : undefined);
+      if (!notifyTargetId) continue;
+
+      try {
         await notifyUser(
           notifyTargetId,
           'pm_overdue',
@@ -268,13 +166,16 @@ export async function POST(request: NextRequest) {
           `PM schedule "${schedule.title}" for asset ${schedule.asset.name} is ${daysOverdue} day(s) overdue (was due ${nextDueDate.toLocaleDateString()}). No open work order exists.`,
           'pm_schedule',
           schedule.id,
-          `pm-schedules`,
+          'pm-schedules',
         );
         results.overdueAlertsSent++;
+      } catch (notificationError) {
+        // Notification delivery is secondary to the already-completed generation
+        // and overdue scan. Do not make cron retries look like generation failures.
+        console.error('[PM Overdue Notification Error]', notificationError);
       }
     }
 
-    // ── PHASE 3: Return summary ──
     return NextResponse.json({
       success: true,
       data: results,

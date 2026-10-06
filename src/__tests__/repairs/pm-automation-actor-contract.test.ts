@@ -11,7 +11,7 @@ describe('PM automation actor persistence contract', () => {
     expect(checkDueCron).not.toContain("session?.userId || 'system'");
     expect(checkDue).toContain('hasValidCronSecret ? undefined : session?.userId');
     expect(checkDue).toContain('resolvePmAutomationActorId(');
-    expect(checkDueCron).toContain('resolvePmAutomationActorId(session?.userId)');
+    expect(checkDueCron).toContain('generateDueWorkOrders(request)');
   });
 
   it('resolves cron execution to a persisted active user before mutations', () => {
@@ -23,7 +23,7 @@ describe('PM automation actor persistence contract', () => {
 
   it('uses the resolved actor for PM task comments and audit rows', () => {
     expect(checkDue).toContain('userId: automationActorId');
-    expect(checkDueCron).toContain('const auditUserId = automationActorId');
-    expect(checkDueCron).toContain('userId: auditUserId');
+    expect(checkDueCron).not.toContain('db.workOrder.create');
+    expect(checkDueCron).toContain('generateDueWorkOrders(request)');
   });
 });

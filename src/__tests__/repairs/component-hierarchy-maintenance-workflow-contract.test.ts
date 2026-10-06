@@ -55,7 +55,7 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(maintenancePages).toContain('assembly, subassembly, component, part, auxiliary or instrument');
     expect(maintenancePages).toContain('componentId: formComponentId || null');
     expect(checkDue).toContain('Inherited from component-targeted PM schedule');
-    expect(checkDueCron).toContain('Inherited from component-targeted PM schedule');
+    expect(checkDueCron).toContain('generateDueWorkOrders(request)');
     expect(checkDue).toContain('componentRegistryId: schedule.componentId');
   });
 

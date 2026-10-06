@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const dueSoon = searchParams.get('dueSoon');
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
-    // PmSchedule has no direct plantId — scope through the related Asset's plantId
+    // PmSchedule has no direct plantId — scope through the related Asset's plantId.
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
@@ -31,15 +31,20 @@ export async function GET(request: NextRequest) {
       where.isActive = isActive === 'true';
     }
     if (dueSoon === 'true') {
-      // Schedules due within the next 7 days
       const now = new Date();
       const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       where.nextDueDate = { lte: weekFromNow };
     }
 
-    // Apply plant scoping via nested Asset relation filter
-    if (plantScope.isScoped && plantScope.plantId) {
-      where.asset = { plantId: plantScope.plantId };
+    // Regular users must never fall through to an unrestricted schedule query.
+    // Explicit plant selection narrows to one plant; otherwise scope to all plants
+    // assigned to the user. An empty assignment list intentionally matches nothing.
+    if (!plantScope.isSystemWide) {
+      where.asset = {
+        plantId: plantScope.isScoped && plantScope.plantId
+          ? plantScope.plantId
+          : { in: plantScope.accessiblePlantIds },
+      };
     }
 
     const schedules = await db.pmSchedule.findMany({
@@ -76,6 +81,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       title,
@@ -109,10 +119,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate asset exists
-    const assetExists = await db.asset.findUnique({ where: { id: assetId } });
+    // Validate asset exists and belongs to the caller's active/assigned plant scope.
+    const assetExists = await db.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, plantId: true },
+    });
     if (!assetExists) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 400 });
+    }
+    if (!canAccessPlantStrict(plantScope, assetExists.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     let componentForTrigger: { id: string; assetId: string | null; name: string; componentCode: string; operatingHours: number } | null = null;
@@ -172,9 +188,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Hour/meter based component PMs require an executable meter trigger.
-    // Use the component's current operating hours as baseline so a newly-created
-    // schedule starts counting from now instead of firing immediately on old hours.
     if (
       componentForTrigger
       && ['custom_hours', 'meter_based'].includes(frequencyType)
@@ -196,7 +209,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,

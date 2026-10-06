@@ -11,6 +11,12 @@ export interface TriggerScheduleTarget {
   asset: { plantId: string };
 }
 
+export interface OpenRuntimeGeneratedWorkOrder {
+  id: string;
+  woNumber: string;
+  status: string;
+}
+
 export function parsePmTriggerConfig(raw: string | null | undefined): Record<string, unknown> {
   if (!raw) return {};
   try {
@@ -31,6 +37,23 @@ function asObject(value: unknown): Record<string, unknown> | null {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export async function findOpenRuntimeGeneratedWorkOrder(
+  triggerConfig: Record<string, unknown>,
+  scheduleId: string,
+): Promise<OpenRuntimeGeneratedWorkOrder | null> {
+  const workOrderId = text(triggerConfig.lastGeneratedWorkOrderId);
+  if (!workOrderId) return null;
+
+  const workOrder = await db.workOrder.findUnique({
+    where: { id: workOrderId },
+    select: { id: true, woNumber: true, status: true, pmScheduleId: true },
+  });
+  if (!workOrder || workOrder.pmScheduleId !== scheduleId || ['closed', 'cancelled'].includes(workOrder.status)) {
+    return null;
+  }
+  return { id: workOrder.id, woNumber: workOrder.woNumber, status: workOrder.status };
 }
 
 export function validatePmTriggerConfigShape(triggerType: string, triggerConfig: unknown): string | null {

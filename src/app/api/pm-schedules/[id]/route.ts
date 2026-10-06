@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 
 export async function GET(
   request: NextRequest,
@@ -76,7 +77,12 @@ export async function PUT(
 
     const existing = await db.pmSchedule.findUnique({
       where: { id },
-      include: { asset: { select: { plantId: true } } },
+      include: {
+        asset: { select: { plantId: true } },
+        trigger: {
+          select: { id: true, triggerType: true, triggerValue: true, triggerConfig: true, isActive: true },
+        },
+      },
     });
     if (!existing) {
       return NextResponse.json(
@@ -100,6 +106,8 @@ export async function PUT(
       if (body[field] !== undefined) {
         if (field === 'lastCompletedDate' || field === 'nextDueDate') {
           updateData[field] = body[field] ? new Date(body[field]) : null;
+        } else if (field === 'componentId' || field === 'templateId' || field === 'assignedToId' || field === 'departmentId' || field === 'woTypeId') {
+          updateData[field] = body[field] || null;
         } else {
           updateData[field] = body[field];
         }
@@ -132,28 +140,114 @@ export async function PUT(
       }
     }
 
-    const updated = await db.pmSchedule.update({
-      where: { id },
-      data: updateData,
-      include: {
-        asset: { select: { id: true, name: true, assetTag: true, status: true } },
-        component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
-        assignedTo: { select: { id: true, fullName: true, username: true } },
-        department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
+    let reconciledTriggerConfig: string | undefined;
+    let reconciledTriggerValue: number | undefined;
+    const triggerTargetChanged = body.componentId !== undefined
+      || body.frequencyType !== undefined
+      || (existing.trigger?.triggerType === 'meter' && body.frequencyValue !== undefined);
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'pm_schedule',
-        entityId: id,
-        oldValues: JSON.stringify({ title: existing.title, frequencyType: existing.frequencyType }),
-        newValues: JSON.stringify(updateData),
-      },
+    if (existing.trigger?.isActive && triggerTargetChanged) {
+      const existingTriggerConfig = parsePmTriggerConfig(existing.trigger.triggerConfig);
+      const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(existingTriggerConfig, existing.id);
+      if (openGeneratedWork) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot change this PM schedule target while runtime-generated work order ${openGeneratedWork.woNumber} is still ${openGeneratedWork.status}. Complete or cancel that work order first.`,
+          },
+          { status: 409 },
+        );
+      }
+
+      const prospectiveFrequencyType = body.frequencyType !== undefined
+        ? String(body.frequencyType)
+        : existing.frequencyType;
+      const prospectiveFrequencyValue = body.frequencyValue !== undefined
+        ? Number(body.frequencyValue)
+        : Number(existing.frequencyValue);
+      const prospectiveComponentId = body.componentId !== undefined
+        ? (body.componentId || null)
+        : existing.componentId;
+      const effectiveTriggerValue = existing.trigger.triggerType === 'meter'
+        ? prospectiveFrequencyValue
+        : existing.trigger.triggerValue;
+
+      if (!Number.isFinite(effectiveTriggerValue) || effectiveTriggerValue <= 0) {
+        return NextResponse.json({ success: false, error: 'PM trigger interval must remain a positive number' }, { status: 400 });
+      }
+
+      const normalized = await normalizePmTriggerConfig({
+        triggerType: existing.trigger.triggerType,
+        triggerValue: effectiveTriggerValue,
+        triggerConfig: existingTriggerConfig,
+        schedule: {
+          id: existing.id,
+          assetId: existing.assetId,
+          componentId: prospectiveComponentId,
+          frequencyType: prospectiveFrequencyType,
+          asset: { plantId: existing.asset.plantId },
+        },
+        existingConfig: existingTriggerConfig,
+      });
+      if (normalized.error || !normalized.config) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Schedule change conflicts with the active PM trigger: ${normalized.error || 'invalid trigger configuration'}. Reconfigure or deactivate the trigger first.`,
+          },
+          { status: 409 },
+        );
+      }
+      reconciledTriggerConfig = JSON.stringify(normalized.config);
+      reconciledTriggerValue = effectiveTriggerValue;
+    }
+
+    const updated = await db.$transaction(async (tx) => {
+      const nextSchedule = await tx.pmSchedule.update({
+        where: { id },
+        data: updateData,
+        include: {
+          asset: { select: { id: true, name: true, assetTag: true, status: true } },
+          component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
+          assignedTo: { select: { id: true, fullName: true, username: true } },
+          department: { select: { id: true, name: true, code: true } },
+          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
+          createdBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+
+      if (existing.trigger && reconciledTriggerConfig !== undefined) {
+        await tx.pmTrigger.update({
+          where: { id: existing.trigger.id },
+          data: {
+            triggerConfig: reconciledTriggerConfig,
+            ...(reconciledTriggerValue !== undefined ? { triggerValue: reconciledTriggerValue } : {}),
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_schedule',
+          entityId: id,
+          oldValues: JSON.stringify({
+            title: existing.title,
+            componentId: existing.componentId,
+            frequencyType: existing.frequencyType,
+            frequencyValue: existing.frequencyValue,
+          }),
+          newValues: JSON.stringify({
+            ...updateData,
+            ...(reconciledTriggerConfig !== undefined
+              ? { reconciledTriggerId: existing.trigger?.id, reconciledTriggerValue }
+              : {}),
+          }),
+        },
+      });
+
+      return nextSchedule;
     });
 
     return NextResponse.json({ success: true, data: updated });

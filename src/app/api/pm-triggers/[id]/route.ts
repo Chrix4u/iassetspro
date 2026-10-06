@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { normalizePmTriggerConfig, parsePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
+import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
 
 const VALID_TRIGGER_TYPES: string[] = [...VALID_PM_TRIGGER_TYPES];
 
@@ -107,18 +107,35 @@ export async function PUT(
       updateData.triggerValue = body.triggerValue;
     }
 
-    if (body.triggerConfig !== undefined || body.triggerType !== undefined || body.triggerValue !== undefined) {
+    const configurationChanging = body.triggerConfig !== undefined
+      || body.triggerType !== undefined
+      || body.triggerValue !== undefined;
+    const reactivating = body.isActive === true && !existing.isActive;
+
+    if (configurationChanging || reactivating) {
+      const currentConfig = parsePmTriggerConfig(existing.triggerConfig);
+      const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(currentConfig, existing.scheduleId);
+      if (openGeneratedWork) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Cannot reconfigure or reactivate this PM trigger while generated work order ${openGeneratedWork.woNumber} is still ${openGeneratedWork.status}. Complete or cancel that work order first.`,
+          },
+          { status: 409 },
+        );
+      }
+
       const effectiveType = body.triggerType || existing.triggerType;
       const effectiveValue = body.triggerValue !== undefined ? body.triggerValue : existing.triggerValue;
       const effectiveConfig = body.triggerConfig !== undefined
         ? body.triggerConfig
-        : parsePmTriggerConfig(existing.triggerConfig);
+        : currentConfig;
       const normalized = await normalizePmTriggerConfig({
         triggerType: effectiveType,
         triggerValue: effectiveValue,
         triggerConfig: effectiveConfig,
         schedule: existing.schedule,
-        existingConfig: parsePmTriggerConfig(existing.triggerConfig),
+        existingConfig: currentConfig,
       });
       if (normalized.error || !normalized.config) {
         return NextResponse.json({ success: false, error: normalized.error || 'Invalid trigger configuration' }, { status: 400 });

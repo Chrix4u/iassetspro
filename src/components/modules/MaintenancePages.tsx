@@ -9808,7 +9808,10 @@ export function PmTemplatesPage() {
   const [newTaskParts, setNewTaskParts] = useState('');
   const [addTaskLoading, setAddTaskLoading] = useState(false);
 
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canCreateTemplate = isAdmin() || hasPermission('pm_templates.create');
+  const canUpdateTemplate = isAdmin() || hasPermission('pm_templates.update');
+  const canDeleteTemplate = isAdmin() || hasPermission('pm_templates.delete');
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -9893,6 +9896,8 @@ export function PmTemplatesPage() {
           category: formCategory || null,
           priority: formPriority,
           estimatedDuration: parseInt(formDuration, 10) || 0,
+          requiredSkills: skillsArray,
+          requiredTools: toolsArray,
         });
         if (res.success) {
           toast.success('Template updated');
@@ -9989,7 +9994,7 @@ export function PmTemplatesPage() {
           <h1 className="text-2xl font-bold tracking-tight">PM Templates</h1>
           <p className="text-sm text-muted-foreground mt-1">Define reusable maintenance task checklists for preventive work orders</p>
         </div>
-        {hasPermission('work_orders.create') && (
+        {canCreateTemplate && (
           <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             <Plus className="h-3.5 w-3.5 mr-1.5" /> New Template
           </Button>
@@ -10106,24 +10111,28 @@ export function PmTemplatesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <DropdownMenu>
+                    {(canUpdateTemplate || canDeleteTemplate) && <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
                           <MoreHorizontal className="h-3.5 w-3.5" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleToggleActive(t)}>
-                          {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
-                        </DropdownMenuItem>
-                        {t.isActive && (
+                        {canUpdateTemplate && (
+                          <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        )}
+                        {canUpdateTemplate && (
+                          <DropdownMenuItem onClick={() => handleToggleActive(t)}>
+                            {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
+                          </DropdownMenuItem>
+                        )}
+                        {!canUpdateTemplate && canDeleteTemplate && t.isActive && (
                           <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
                             <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenu>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -10166,7 +10175,7 @@ export function PmTemplatesPage() {
         footer={(
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button onClick={handleSave} disabled={saving || (editItem ? !canUpdateTemplate : !canCreateTemplate)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <RefreshCw className="h-4 w-4 animate-spin mr-1.5" />}
               {editItem ? 'Update Template' : 'Create Template'}
             </Button>
@@ -10233,20 +10242,16 @@ export function PmTemplatesPage() {
               <Input type="number" min="1" value={formDuration} onChange={e => setFormDuration(e.target.value)} placeholder="60" />
             </div>
           </div>
-          {!editItem && (
-            <>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Required Skills</Label>
-                <Input value={formSkills} onChange={e => setFormSkills(e.target.value)} placeholder="Welding, Electrical, PLC (comma-separated)" />
-                <p className="text-[11px] text-muted-foreground">Comma-separated list of required skills</p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Required Tools</Label>
-                <Input value={formTools} onChange={e => setFormTools(e.target.value)} placeholder="Multimeter, Torque Wrench (comma-separated)" />
-                <p className="text-[11px] text-muted-foreground">Comma-separated list of required tools</p>
-              </div>
-            </>
-          )}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Required Skills</Label>
+            <Input value={formSkills} onChange={e => setFormSkills(e.target.value)} placeholder="Welding, Electrical, PLC (comma-separated)" />
+            <p className="text-[11px] text-muted-foreground">Comma-separated list of required skills</p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Required Tools</Label>
+            <Input value={formTools} onChange={e => setFormTools(e.target.value)} placeholder="Multimeter, Torque Wrench (comma-separated)" />
+            <p className="text-[11px] text-muted-foreground">Comma-separated list of required tools</p>
+          </div>
 
           {/* Task Checklist Builder — only visible when editing */}
           {editItem && (
@@ -10334,7 +10339,7 @@ export function PmTemplatesPage() {
                   </div>
 
                   {/* Add Task form */}
-                  <div className="p-3 rounded-lg border-2 border-dashed border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/10">
+                  {canUpdateTemplate && <div className="p-3 rounded-lg border-2 border-dashed border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/10">
                     <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
                       <Plus className="h-3.5 w-3.5" />
                       Add Task
@@ -10381,7 +10386,7 @@ export function PmTemplatesPage() {
                         Add Task to Checklist
                       </Button>
                     </div>
-                  </div>
+                  </div>}
                 </div>
               )}
             </div>

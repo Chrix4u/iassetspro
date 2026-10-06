@@ -79,11 +79,21 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'type', 'category', 'priority',
-      'estimatedDuration', 'isActive',
+      'estimatedDuration', 'isActive', 'requiredSkills', 'requiredTools',
     ];
 
     for (const field of allowedFields) {
-      if (body[field] !== undefined) {
+      if (body[field] === undefined) continue;
+      if (field === 'requiredSkills' || field === 'requiredTools') {
+        const value = body[field];
+        if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+          return NextResponse.json(
+            { success: false, error: `${field} must be an array of strings` },
+            { status: 400 },
+          );
+        }
+        updateData[field] = value.length > 0 ? JSON.stringify(value) : null;
+      } else {
         updateData[field] = body[field];
       }
     }

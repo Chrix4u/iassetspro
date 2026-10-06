@@ -58,6 +58,7 @@ const TYPE_TO_PREF_KEY: Record<string, keyof NonNullable<NotificationPreferences
   mr_cancelled: 'mrApprovedRejected',
   mr_converted: 'mrApprovedRejected',
   pm_due: 'pmDue',
+  pm_overdue: 'pmDue',
   low_stock_alert: 'lowStockAlert',
   asset_condition: 'assetConditionAlert',
   safety_incident: 'safetyAlerts',

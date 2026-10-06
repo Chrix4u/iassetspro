@@ -176,5 +176,36 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(partSchedule?.templateId).toBe(templateId);
     expect(partSchedule?.template?.title).toBe(templateTitle);
     expect(partSchedule?.template?._count?.tasks).toBe(6);
+
+    // Prove the targeted PM survives automation: force only this newly-created
+    // part schedule due, execute the real PM check-due endpoint, then verify the
+    // generated preventive WO links back to the exact part while retaining the
+    // parent machine asset.
+    const dueAt = new Date(Date.now() - 60_000).toISOString();
+    const dueUpdate = await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${partSchedule.id}`, {
+      nextDueDate: dueAt,
+      autoGenerateWO: true,
+      leadDays: 0,
+      isActive: true,
+    });
+    expect(dueUpdate.status).toBe(200);
+
+    const generation = await apiCall(plannerToken, 'POST', '/api/pm-schedules/check-due', {});
+    expect(generation.status).toBe(200);
+    const generatedResult = (generation.data.data?.results as any[] | undefined)?.find(
+      (item) => item.scheduleId === partSchedule.id && item.skipped === false,
+    );
+    expect(generatedResult?.workOrderId).toBeTruthy();
+
+    const generatedWo = await apiCall(plannerToken, 'GET', `/api/work-orders/${generatedResult.workOrderId}`);
+    expect(generatedWo.status).toBe(200);
+    expect(generatedWo.data.data?.assetId).toBe(assetId);
+    expect(generatedWo.data.data?.pmSchedule?.id).toBe(partSchedule.id);
+    expect(
+      (generatedWo.data.data?.workOrderComponents as any[] | undefined)?.some(
+        (link) => link.componentRegistry?.id === part.id
+          && link.componentRegistry?.componentCode === partCode,
+      ),
+    ).toBe(true);
   });
 });

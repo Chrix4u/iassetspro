@@ -105,9 +105,31 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
       // trigger lock. A concurrent worker that already generated will have
       // advanced baselineHours before this worker reaches this point.
       const config = parseConfig(trigger.triggerConfig);
-      const baseline = Number(config.baselineHours ?? 0);
       const current = Number(component.operatingHours ?? 0);
       const interval = Number(trigger.triggerValue || schedule.frequencyValue || 0);
+      const configuredBaseline = config.baselineHours;
+      if (configuredBaseline === undefined || configuredBaseline === null || !Number.isFinite(Number(configuredBaseline))) {
+        const initializedConfig = {
+          ...config,
+          source: config.source || 'component_operating_hours',
+          componentId: component.id,
+          baselineHours: current,
+          unit: config.unit || 'hours',
+        };
+        await tx.pmTrigger.update({
+          where: { id: trigger.id },
+          data: { triggerConfig: JSON.stringify(initializedConfig) },
+        });
+        return {
+          triggerId: trigger.id,
+          scheduleId: schedule.id,
+          skipped: true,
+          reason: 'Meter baseline initialized',
+          current,
+          nextThreshold: current + interval,
+        };
+      }
+      const baseline = Number(configuredBaseline);
       const threshold = evaluateMeterThreshold(current, baseline, interval);
 
       if (!threshold.due || threshold.crossedThreshold == null) {

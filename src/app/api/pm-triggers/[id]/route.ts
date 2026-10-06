@@ -2,61 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { normalizePmTriggerConfig, parsePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
 
-const VALID_TRIGGER_TYPES = ['time', 'meter', 'condition', 'production_count'];
-
-function validateTriggerConfig(triggerType: string, triggerConfig: unknown): string | null {
-  if (!triggerConfig || typeof triggerConfig !== 'object') {
-    return `triggerConfig is required and must be an object for ${triggerType}`;
-  }
-
-  const config = triggerConfig as Record<string, unknown>;
-
-  switch (triggerType) {
-    case 'time': {
-      if (typeof config.cron !== 'string' || config.cron.trim().length === 0) {
-        return 'time trigger requires a "cron" field in triggerConfig (e.g. {"cron": "0 6 * * *"})';
-      }
-      const parts = config.cron.trim().split(/\s+/);
-      if (parts.length < 5 || parts.length > 6) {
-        return 'Invalid cron expression: must have 5 or 6 space-separated fields';
-      }
-      break;
-    }
-    case 'meter': {
-      if (typeof config.meterName !== 'string' || config.meterName.trim().length === 0) {
-        return 'meter trigger requires a "meterName" field in triggerConfig';
-      }
-      if (typeof config.threshold !== 'number' || config.threshold <= 0) {
-        return 'meter trigger requires a positive numeric "threshold" field in triggerConfig';
-      }
-      break;
-    }
-    case 'condition': {
-      if (typeof config.metric !== 'string' || config.metric.trim().length === 0) {
-        return 'condition trigger requires a "metric" field in triggerConfig';
-      }
-      const validOperators = ['>', '<', '>=', '<=', '=', '==', '!='];
-      if (typeof config.operator !== 'string' || !validOperators.includes(config.operator)) {
-        return `condition trigger requires a valid "operator" field: one of ${validOperators.join(', ')}`;
-      }
-      if (typeof config.value !== 'number') {
-        return 'condition trigger requires a numeric "value" field in triggerConfig';
-      }
-      break;
-    }
-    case 'production_count': {
-      if (typeof config.threshold !== 'number' || config.threshold <= 0) {
-        return 'production_count trigger requires a positive numeric "threshold" field in triggerConfig';
-      }
-      break;
-    }
-    default:
-      return `Unknown triggerType: ${triggerType}`;
-  }
-
-  return null;
-}
+const VALID_TRIGGER_TYPES: string[] = [...VALID_PM_TRIGGER_TYPES];
 
 export async function GET(
   request: NextRequest,
@@ -159,13 +107,23 @@ export async function PUT(
       updateData.triggerValue = body.triggerValue;
     }
 
-    if (body.triggerConfig !== undefined) {
+    if (body.triggerConfig !== undefined || body.triggerType !== undefined || body.triggerValue !== undefined) {
       const effectiveType = body.triggerType || existing.triggerType;
-      const configError = validateTriggerConfig(effectiveType, body.triggerConfig);
-      if (configError) {
-        return NextResponse.json({ success: false, error: configError }, { status: 400 });
+      const effectiveValue = body.triggerValue !== undefined ? body.triggerValue : existing.triggerValue;
+      const effectiveConfig = body.triggerConfig !== undefined
+        ? body.triggerConfig
+        : parsePmTriggerConfig(existing.triggerConfig);
+      const normalized = await normalizePmTriggerConfig({
+        triggerType: effectiveType,
+        triggerValue: effectiveValue,
+        triggerConfig: effectiveConfig,
+        schedule: existing.schedule,
+        existingConfig: parsePmTriggerConfig(existing.triggerConfig),
+      });
+      if (normalized.error || !normalized.config) {
+        return NextResponse.json({ success: false, error: normalized.error || 'Invalid trigger configuration' }, { status: 400 });
       }
-      updateData.triggerConfig = JSON.stringify(body.triggerConfig);
+      updateData.triggerConfig = JSON.stringify(normalized.config);
     }
 
     if (body.isActive !== undefined) {

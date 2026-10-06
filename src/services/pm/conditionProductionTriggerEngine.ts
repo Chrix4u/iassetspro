@@ -3,6 +3,7 @@ import { notifyUser } from '@/lib/notifications';
 import { evaluateMeterThreshold } from '@/services/pm/meterTriggerEngine';
 import { parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
+import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 
 export function conditionMatches(current: number, operator: string, target: number): boolean {
   switch (operator) {
@@ -308,6 +309,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
       }, 0);
       const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
 
+      const plannedEnd = calculatePmPlannedEnd(woDate, schedule.estimatedDuration);
       const wo = await tx.workOrder.create({
         data: {
           woNumber,
@@ -324,6 +326,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
           estimatedHours: schedule.estimatedDuration,
           pmScheduleId: schedule.id,
           plannedStart: woDate,
+          plannedEnd,
           notes,
           suggestedParts: JSON.stringify(suggestedParts),
           suggestedTools: JSON.stringify(suggestedTools),

@@ -106,15 +106,15 @@ export async function GET(request: NextRequest) {
     const completedPmWos = pmWorkOrders.filter(
       (wo) => wo.status === 'completed' || wo.status === 'closed',
     );
-    const completedOnTime = completedPmWos.filter((wo) => {
-      if (!wo.actualEnd || !wo.plannedEnd) return true; // if no planned end, consider on time
-      return new Date(wo.actualEnd) <= new Date(wo.plannedEnd);
-    }).length;
+    const complianceEligibleWos = completedPmWos.filter((wo) => wo.actualEnd && wo.plannedEnd);
+    const completedOnTime = complianceEligibleWos.filter(
+      (wo) => new Date(wo.actualEnd!).getTime() <= new Date(wo.plannedEnd!).getTime(),
+    ).length;
+    const unplannedCompletedCount = completedPmWos.length - complianceEligibleWos.length;
 
-    const complianceRate =
-      completedPmWos.length > 0
-        ? Math.round((completedOnTime / completedPmWos.length) * 100)
-        : 100; // No completed WOs = 100% compliance (nothing late)
+    const complianceRate = complianceEligibleWos.length > 0
+      ? Math.round((completedOnTime / complianceEligibleWos.length) * 100)
+      : null;
 
     // ── Compute avg completion days ──
     const wosWithCompletion = completedPmWos.filter((wo) => wo.actualEnd);
@@ -141,12 +141,12 @@ export async function GET(request: NextRequest) {
 
     // Compute per-department compliance
     const deptComplianceMap = new Map<string, { total: number; onTime: number }>();
-    for (const wo of completedPmWos) {
+    for (const wo of complianceEligibleWos) {
       const dId = wo.departmentId;
       if (!dId) continue;
       const entry = deptComplianceMap.get(dId) || { total: 0, onTime: 0 };
       entry.total++;
-      if (!wo.actualEnd || !wo.plannedEnd || new Date(wo.actualEnd) <= new Date(wo.plannedEnd)) {
+      if (new Date(wo.actualEnd!).getTime() <= new Date(wo.plannedEnd!).getTime()) {
         entry.onTime++;
       }
       deptComplianceMap.set(dId, entry);
@@ -198,6 +198,8 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         complianceRate,
+        complianceEvaluatedCount: complianceEligibleWos.length,
+        unplannedCompletedCount,
         overdueCount: overdueSchedules,
         upcomingCount: upcomingSchedules,
         totalSchedules,

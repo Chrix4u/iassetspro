@@ -6,6 +6,7 @@ import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
+import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -181,6 +182,7 @@ export async function POST(request: NextRequest) {
             type: 'preventive',
             status: { not: 'cancelled' },
             plannedStart: nextDueDate,
+            plannedEnd,
           },
           orderBy: { createdAt: 'desc' },
           select: { id: true, woNumber: true },
@@ -251,6 +253,7 @@ export async function POST(request: NextRequest) {
         }, 0);
         const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
 
+        const plannedEnd = calculatePmPlannedEnd(nextDueDate, estimatedHours);
         const wo = await tx.workOrder.create({
           data: {
             woNumber,

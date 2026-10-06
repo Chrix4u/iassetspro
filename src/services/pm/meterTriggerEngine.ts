@@ -256,6 +256,8 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         componentId: component.id,
         baselineHours: threshold.crossedThreshold,
         unit: config.unit || 'hours',
+        lastGeneratedWorkOrderId: wo.id,
+        lastGeneratedPreviousBaselineHours: baseline,
       };
       await tx.pmTrigger.update({
         where: { id: trigger.id },

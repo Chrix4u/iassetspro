@@ -351,6 +351,19 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
         });
       }
 
+      nextConfig = trigger.triggerType === 'condition'
+        ? {
+            ...nextConfig,
+            lastGeneratedWorkOrderId: wo.id,
+            lastGeneratedPreviousReadingId: config.lastReadingId ?? null,
+            lastGeneratedPreviousConditionMatched: config.lastConditionMatched === true,
+          }
+        : {
+            ...nextConfig,
+            lastGeneratedWorkOrderId: wo.id,
+            lastGeneratedPreviousBaselineCount: Number(config.baselineCount),
+          };
+
       await tx.pmTrigger.update({
         where: { id: trigger.id },
         data: { lastTriggeredAt: woDate, triggerConfig: JSON.stringify(nextConfig) },

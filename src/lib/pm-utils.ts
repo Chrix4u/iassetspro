@@ -3,6 +3,25 @@
  * and determining if meter-based/custom_hours schedules need readings.
  */
 
+export const PM_FREQUENCY_TYPES = [
+  'daily',
+  'weekly',
+  'biweekly',
+  'monthly',
+  'quarterly',
+  'semiannual',
+  'annual',
+  'custom_hours',
+  'custom_days',
+  'meter_based',
+] as const;
+
+export type PmFrequencyType = (typeof PM_FREQUENCY_TYPES)[number];
+
+export function isPmFrequencyType(value: unknown): value is PmFrequencyType {
+  return typeof value === 'string' && (PM_FREQUENCY_TYPES as readonly string[]).includes(value);
+}
+
 /**
  * Calculate the next due date from a given date based on frequency type and value.
  * Returns null for meter_based and custom_hours (these need external triggers).
@@ -12,6 +31,8 @@ export function calculateNextDueDate(
   frequencyType: string,
   frequencyValue: number,
 ): Date | null {
+  if (!isPmFrequencyType(frequencyType)) return null;
+
   // meter_based and custom_hours need meter/time readings — skip auto-calculation
   if (frequencyType === 'meter_based' || frequencyType === 'custom_hours') {
     return null;
@@ -46,9 +67,7 @@ export function calculateNextDueDate(
       next.setDate(next.getDate() + val);
       break;
     default:
-      // Fallback: treat as monthly
-      next.setMonth(next.getMonth() + val);
-      break;
+      return null;
   }
 
   return next;
@@ -58,7 +77,7 @@ export function calculateNextDueDate(
  * Check if a frequency type can be auto-calculated (doesn't need meter readings).
  */
 export function isAutoCalculableFrequency(frequencyType: string): boolean {
-  return frequencyType !== 'meter_based' && frequencyType !== 'custom_hours';
+  return isPmFrequencyType(frequencyType) && frequencyType !== 'meter_based' && frequencyType !== 'custom_hours';
 }
 
 /**

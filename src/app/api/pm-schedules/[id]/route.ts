@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
+import { isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(
   request: NextRequest,
@@ -112,6 +113,17 @@ export async function PUT(
           updateData[field] = body[field];
         }
       }
+    }
+
+    if (body.frequencyType !== undefined && !isPmFrequencyType(body.frequencyType)) {
+      return NextResponse.json({ success: false, error: 'Invalid PM frequency type' }, { status: 400 });
+    }
+    if (body.frequencyValue !== undefined) {
+      const normalizedFrequencyValue = Number(body.frequencyValue);
+      if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
+        return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
+      }
+      updateData.frequencyValue = normalizedFrequencyValue;
     }
 
     if (body.templateId !== undefined && body.templateId) {

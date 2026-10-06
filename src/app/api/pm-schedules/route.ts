@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -119,6 +120,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!isPmFrequencyType(frequencyType)) {
+      return NextResponse.json({ success: false, error: 'Invalid PM frequency type' }, { status: 400 });
+    }
+    const normalizedFrequencyValue = Number(frequencyValue);
+    if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
+      return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
+    }
+
     // Validate asset exists and belongs to the caller's active/assigned plant scope.
     const assetExists = await db.asset.findUnique({
       where: { id: assetId },
@@ -166,7 +175,7 @@ export async function POST(request: NextRequest) {
         assetId,
         componentId: componentId || null,
         frequencyType,
-        frequencyValue,
+        frequencyValue: normalizedFrequencyValue,
         lastCompletedDate: lastCompletedDate ? new Date(lastCompletedDate) : null,
         nextDueDate: nextDueDate ? new Date(nextDueDate) : null,
         estimatedDuration: estimatedDuration || null,
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest) {
         data: {
           scheduleId: schedule.id,
           triggerType: 'meter',
-          triggerValue: Number(frequencyValue),
+          triggerValue: normalizedFrequencyValue,
           triggerConfig: JSON.stringify({
             source: 'component_operating_hours',
             componentId: componentForTrigger.id,

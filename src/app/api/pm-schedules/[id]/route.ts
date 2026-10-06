@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -12,13 +13,18 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const schedule = await db.pmSchedule.findUnique({
       where: { id },
       include: {
         asset: {
-          select: { id: true, name: true, assetTag: true, status: true, criticality: true },
+          select: { id: true, name: true, assetTag: true, status: true, criticality: true, plantId: true },
         },
         component: {
           select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true },
@@ -35,6 +41,9 @@ export async function GET(
         { success: false, error: 'PM schedule not found' },
         { status: 404 }
       );
+    }
+    if (!canAccessPlantStrict(plantScope, schedule.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     return NextResponse.json({ success: true, data: schedule });
@@ -57,18 +66,28 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.pmSchedule.findUnique({ where: { id } });
+    const existing = await db.pmSchedule.findUnique({
+      where: { id },
+      include: { asset: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'PM schedule not found' },
         { status: 404 }
       );
     }
+    if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'frequencyType', 'frequencyValue',
@@ -126,7 +145,6 @@ export async function PUT(
       },
     });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -159,23 +177,32 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
-    const existing = await db.pmSchedule.findUnique({ where: { id } });
+    const existing = await db.pmSchedule.findUnique({
+      where: { id },
+      include: { asset: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: 'PM schedule not found' },
         { status: 404 }
       );
     }
+    if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    // Soft delete (isActive=false)
     const deactivated = await db.pmSchedule.update({
       where: { id },
       data: { isActive: false },
     });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,

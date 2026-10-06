@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
-import { isPmFrequencyType } from '@/lib/pm-utils';
+import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(
   request: NextRequest,
@@ -124,6 +124,13 @@ export async function PUT(
         return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
       }
       updateData.frequencyValue = normalizedFrequencyValue;
+    }
+
+    const prospectiveScheduleFrequency = body.frequencyType !== undefined
+      ? String(body.frequencyType)
+      : existing.frequencyType;
+    if (!isAutoCalculableFrequency(prospectiveScheduleFrequency)) {
+      updateData.nextDueDate = null;
     }
 
     if (body.templateId !== undefined && body.templateId) {

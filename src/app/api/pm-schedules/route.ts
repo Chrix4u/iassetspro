@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { isPmFrequencyType } from '@/lib/pm-utils';
+import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
     if (dueSoon === 'true') {
       const now = new Date();
       const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      where.nextDueDate = { lte: weekFromNow };
+      where.frequencyType = { notIn: ['meter_based', 'custom_hours'] };
+      where.nextDueDate = { gte: now, lte: weekFromNow };
     }
 
     // Regular users must never fall through to an unrestricted schedule query.
@@ -128,6 +129,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
     }
 
+    const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
+      ? (nextDueDate ? new Date(nextDueDate) : null)
+      : null;
+
     // Validate asset exists and belongs to the caller's active/assigned plant scope.
     const assetExists = await db.asset.findUnique({
       where: { id: assetId },
@@ -177,7 +182,7 @@ export async function POST(request: NextRequest) {
         frequencyType,
         frequencyValue: normalizedFrequencyValue,
         lastCompletedDate: lastCompletedDate ? new Date(lastCompletedDate) : null,
-        nextDueDate: nextDueDate ? new Date(nextDueDate) : null,
+        nextDueDate: canonicalNextDueDate,
         estimatedDuration: estimatedDuration || null,
         priority: priority || 'medium',
         assignedToId: assignedToId || null,

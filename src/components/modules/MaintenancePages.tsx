@@ -61,6 +61,7 @@ import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -7813,6 +7814,7 @@ export function PmSchedulesPage() {
   const [formAutoGenWO, setFormAutoGenWO] = useState(true);
   const [formLeadDays, setFormLeadDays] = useState('3');
   const [formNextDueDate, setFormNextDueDate] = useState('');
+  const formUsesCalendarCadence = isAutoCalculableFrequency(formFreqType);
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
 
@@ -7921,8 +7923,8 @@ export function PmSchedulesPage() {
         departmentId: formDepartmentId || null,
         templateId: formTemplateId || null,
         autoGenerateWO: formAutoGenWO,
-        leadDays: parseInt(formLeadDays, 10) || 3,
-        nextDueDate: formNextDueDate || null,
+        leadDays: formUsesCalendarCadence ? (parseInt(formLeadDays, 10) || 3) : 0,
+        nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
       };
 
       if (editItem) {
@@ -7965,8 +7967,9 @@ export function PmSchedulesPage() {
   const isDueSoon = (d?: string) => {
     if (!d) return false;
     const due = new Date(d);
-    const week = new Date(Date.now() + 7 * 86400000);
-    return due <= week;
+    const now = new Date();
+    const week = new Date(now.getTime() + 7 * 86400000);
+    return due >= now && due <= week;
   };
 
   const isOverdue = (d?: string) => {
@@ -7975,8 +7978,8 @@ export function PmSchedulesPage() {
   };
 
   const activeSchedules = schedules.filter(s => s.isActive);
-  const dueSoonCount = activeSchedules.filter(s => isDueSoon(s.nextDueDate)).length;
-  const overdueCount = activeSchedules.filter(s => isOverdue(s.nextDueDate)).length;
+  const dueSoonCount = activeSchedules.filter(s => isAutoCalculableFrequency(s.frequencyType) && isDueSoon(s.nextDueDate)).length;
+  const overdueCount = activeSchedules.filter(s => isAutoCalculableFrequency(s.frequencyType) && isOverdue(s.nextDueDate)).length;
 
   return (
     <div className="page-content">
@@ -8346,18 +8349,27 @@ export function PmSchedulesPage() {
                 searchPlaceholder="Search departments..."
               />
             </div>
-            <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
+            {formUsesCalendarCadence && (
+              <>
+                <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Lead Days</Label>
+                  <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
+                  <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
+                </div>
+              </>
+            )}
+            {!formUsesCalendarCadence && (
+              <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600">
+                Usage-based PM is governed by its runtime meter trigger. Calendar due dates and lead days do not apply.
+              </div>
+            )}
             <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
               <div>
                 <p className="text-sm font-medium">Auto-generate Work Order</p>
-                <p className="text-[11px] text-muted-foreground">Automatically create WO when schedule is due</p>
+                <p className="text-[11px] text-muted-foreground">Automatically create WO when the schedule or runtime trigger is due</p>
               </div>
               <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Lead Days</Label>
-              <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
-              <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
             </div>
           </div>
       </ResponsiveDialog>

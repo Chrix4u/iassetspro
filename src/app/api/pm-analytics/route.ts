@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
         where: {
           isActive: true,
           ...assetScopeWhere,
+          frequencyType: { notIn: ['meter_based', 'custom_hours'] },
           nextDueDate: { not: null, lt: now },
         },
       }),
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
         where: {
           isActive: true,
           ...assetScopeWhere,
+          frequencyType: { notIn: ['meter_based', 'custom_hours'] },
           nextDueDate: { not: null, gte: now, lte: weekFromNow },
         },
       }),

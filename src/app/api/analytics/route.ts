@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       : 0;
 
     const pmOverdue = hasModel(db, 'pmSchedule')
-      ? await db.pmSchedule.count({ where: { asset: { ...pf }, isActive: true, nextDueDate: { lte: new Date() } } }).catch(() => 0)
+      ? await db.pmSchedule.count({ where: { asset: { ...pf }, isActive: true, frequencyType: { notIn: ['meter_based', 'custom_hours'] }, nextDueDate: { lte: new Date() } } }).catch(() => 0)
       : 0;
 
     const woByStatus = hasModel(db, 'workOrder')

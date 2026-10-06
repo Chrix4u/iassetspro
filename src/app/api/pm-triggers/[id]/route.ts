@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 
 const VALID_TRIGGER_TYPES = ['time', 'meter', 'condition', 'production_count'];
-
-// ============================================================================
-// Validation helpers
-// ============================================================================
 
 function validateTriggerConfig(triggerType: string, triggerConfig: unknown): string | null {
   if (!triggerConfig || typeof triggerConfig !== 'object') {
@@ -61,10 +58,6 @@ function validateTriggerConfig(triggerType: string, triggerConfig: unknown): str
   return null;
 }
 
-// ============================================================================
-// GET /api/pm-triggers/[id] — Get single trigger with schedule
-// ============================================================================
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -79,6 +72,11 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
     const trigger = await db.pmTrigger.findUnique({
@@ -86,7 +84,7 @@ export async function GET(
       include: {
         schedule: {
           include: {
-            asset: { select: { id: true, name: true, assetTag: true, status: true, criticality: true } },
+            asset: { select: { id: true, name: true, assetTag: true, status: true, criticality: true, plantId: true } },
             assignedTo: { select: { id: true, fullName: true, username: true } },
             department: { select: { id: true, name: true, code: true } },
             createdBy: { select: { id: true, fullName: true, username: true } },
@@ -98,6 +96,9 @@ export async function GET(
     if (!trigger) {
       return NextResponse.json({ success: false, error: 'PM trigger not found' }, { status: 404 });
     }
+    if (!canAccessPlantStrict(plantScope, trigger.schedule.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     return NextResponse.json({ success: true, data: trigger });
   } catch (error: unknown) {
@@ -105,10 +106,6 @@ export async function GET(
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
-
-// ============================================================================
-// PUT /api/pm-triggers/[id] — Update trigger
-// ============================================================================
 
 export async function PUT(
   request: NextRequest,
@@ -124,16 +121,25 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
-    // --- Find existing trigger ---
-    const existing = await db.pmTrigger.findUnique({ where: { id } });
+    const existing = await db.pmTrigger.findUnique({
+      where: { id },
+      include: { schedule: { include: { asset: { select: { plantId: true } } } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'PM trigger not found' }, { status: 404 });
     }
+    if (!canAccessPlantStrict(plantScope, existing.schedule.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    // --- Build update data ---
     const updateData: Record<string, unknown> = {};
 
     if (body.triggerType !== undefined) {
@@ -154,7 +160,6 @@ export async function PUT(
     }
 
     if (body.triggerConfig !== undefined) {
-      // Validate config against the trigger type (use existing or incoming type)
       const effectiveType = body.triggerType || existing.triggerType;
       const configError = validateTriggerConfig(effectiveType, body.triggerConfig);
       if (configError) {
@@ -171,7 +176,6 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
     }
 
-    // --- Perform update ---
     const updated = await db.pmTrigger.update({
       where: { id },
       data: updateData,
@@ -186,7 +190,6 @@ export async function PUT(
       },
     });
 
-    // --- Create audit log ---
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -209,10 +212,6 @@ export async function PUT(
   }
 }
 
-// ============================================================================
-// DELETE /api/pm-triggers/[id] — Deactivate trigger (soft delete)
-// ============================================================================
-
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -223,29 +222,37 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Admin only for deletion
     if (!isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { id } = await params;
 
-    const existing = await db.pmTrigger.findUnique({ where: { id } });
+    const existing = await db.pmTrigger.findUnique({
+      where: { id },
+      include: { schedule: { include: { asset: { select: { plantId: true } } } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'PM trigger not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, existing.schedule.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     if (!existing.isActive) {
       return NextResponse.json({ success: false, error: 'Trigger is already deactivated' }, { status: 400 });
     }
 
-    // Soft delete
     const deactivated = await db.pmTrigger.update({
       where: { id },
       data: { isActive: false },
     });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,

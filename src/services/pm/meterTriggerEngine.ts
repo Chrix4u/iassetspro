@@ -47,12 +47,18 @@ async function generateWoNumber(): Promise<string> {
   return `${prefix}-${String(Number.isFinite(n) ? n : 1).padStart(4, '0')}`;
 }
 
-export async function evaluateMeterPmTriggers() {
+export async function evaluateMeterPmTriggers(options: { plantIds?: string[] } = {}) {
   const triggers = await db.pmTrigger.findMany({
     where: {
       isActive: true,
       triggerType: 'meter',
-      schedule: { isActive: true, autoGenerateWO: true },
+      schedule: {
+        isActive: true,
+        autoGenerateWO: true,
+        ...(options.plantIds
+          ? { asset: { plantId: { in: options.plantIds } } }
+          : {}),
+      },
     },
     include: {
       schedule: {

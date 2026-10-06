@@ -340,16 +340,21 @@ export async function closeRepairWorkOrder(
       let pmScheduleAdvanced = false;
       if (wo.pmScheduleId) {
         const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
-        if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
+        if (pmSchedule && pmSchedule.isActive) {
           const pmCompletedAt = wo.actualEnd || closedAt;
-          const nextDueDate = calculateNextDueDate(
-            pmCompletedAt,
-            pmSchedule.frequencyType,
-            pmSchedule.frequencyValue,
-          );
+          const usesCalendarCadence = isAutoCalculableFrequency(pmSchedule.frequencyType);
+          const nextDueDate = usesCalendarCadence
+            ? calculateNextDueDate(
+                pmCompletedAt,
+                pmSchedule.frequencyType,
+                pmSchedule.frequencyValue,
+              )
+            : null;
           await tx.pmSchedule.update({
             where: { id: pmSchedule.id },
-            data: { lastCompletedDate: pmCompletedAt, nextDueDate },
+            data: usesCalendarCadence
+              ? { lastCompletedDate: pmCompletedAt, nextDueDate }
+              : { lastCompletedDate: pmCompletedAt },
           });
           await tx.auditLog.create({
             data: buildAuditData(
@@ -363,14 +368,16 @@ export async function closeRepairWorkOrder(
               },
               {
                 lastCompletedDate: pmCompletedAt.toISOString(),
-                nextDueDate: nextDueDate?.toISOString() ?? null,
-                reason: `PM WO ${wo.woNumber} planner-closed after verification`,
+                ...(usesCalendarCadence ? { nextDueDate: nextDueDate?.toISOString() ?? null } : {}),
+                reason: usesCalendarCadence
+                  ? `PM WO ${wo.woNumber} planner-closed after verification`
+                  : `Usage-based PM WO ${wo.woNumber} planner-closed; completion history recorded without calendar cadence`,
                 workOrderId,
               },
               options.auditCtx,
             ),
           });
-          pmScheduleAdvanced = true;
+          pmScheduleAdvanced = usesCalendarCadence;
         }
       }
 

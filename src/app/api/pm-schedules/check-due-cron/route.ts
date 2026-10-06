@@ -4,6 +4,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, type PlantScopeResult } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { POST as generateDueWorkOrders } from '../check-due/route';
+import { POST as evaluateRuntimeTriggers } from '../../pm-triggers/evaluate/route';
 
 /**
  * POST /api/pm-schedules/check-due-cron
@@ -40,6 +41,17 @@ type GenerationPayload = {
     generated: number;
     skipped: number;
     results: GenerationResult[];
+  };
+};
+
+type TriggerEvaluationPayload = {
+  success: boolean;
+  error?: string;
+  data?: {
+    evaluated: number;
+    generated: number;
+    results: unknown[];
+    engines: unknown;
   };
 };
 
@@ -86,6 +98,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Phase 2: run meter, condition and production-count PM triggers through
+    // their canonical evaluator. Keeping this inside the same cron entrypoint
+    // guarantees that installing one scheduler activates every PM automation
+    // mode instead of leaving runtime triggers dependent on a separate job.
+    const triggerResponse = await evaluateRuntimeTriggers(request);
+    const triggerPayload = await triggerResponse.json() as TriggerEvaluationPayload;
+    if (!triggerResponse.ok || !triggerPayload.success || !triggerPayload.data) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: triggerPayload.error || 'PM runtime trigger evaluation failed',
+          data: {
+            calendarGeneration: generationPayload.data,
+          },
+        },
+        { status: triggerResponse.status || 500 },
+      );
+    }
+
     const now = new Date();
     const generatedDetails = generationPayload.data.results
       .filter((result) => !result.skipped)
@@ -103,6 +134,7 @@ export async function POST(request: NextRequest) {
       overdueSchedulesFound: 0,
       overdueAlertsSent: 0,
       generatedDetails,
+      runtimeTriggers: triggerPayload.data,
       overdueDetails: [] as Array<{
         scheduleId: string;
         scheduleTitle: string;
@@ -112,7 +144,7 @@ export async function POST(request: NextRequest) {
       }>,
     };
 
-    // Phase 2: identify overdue schedules that still have no open preventive WO.
+    // Phase 3: identify overdue schedules that still have no open preventive WO.
     // Manual runs use the exact same plant boundary as check-due; trusted cron is
     // intentionally system-wide.
     const overdueSchedules = await db.pmSchedule.findMany({
@@ -157,6 +189,21 @@ export async function POST(request: NextRequest) {
 
       const notifyTargetId = schedule.assignedToId || (!hasValidCronSecret ? session?.userId : undefined);
       if (!notifyTargetId) continue;
+
+      // This route is intended to run frequently enough for condition/meter
+      // triggers to feel responsive. Do not turn that cadence into alert spam:
+      // send at most one overdue alert per schedule/recipient in a rolling day.
+      const recentOverdueAlert = await db.notification.findFirst({
+        where: {
+          userId: notifyTargetId,
+          type: 'pm_overdue',
+          entityType: 'pm_schedule',
+          entityId: schedule.id,
+          createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+        },
+        select: { id: true },
+      });
+      if (recentOverdueAlert) continue;
 
       try {
         await notifyUser(

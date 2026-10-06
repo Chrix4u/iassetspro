@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
+import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { evaluateMeterPmTriggers } from '@/services/pm/meterTriggerEngine';
 
 const CRON_SECRET = process.env.PM_CRON_SECRET || '';
@@ -35,7 +36,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const data = await evaluateMeterPmTriggers({ plantIds });
+    // Trusted cron must never accidentally inherit an unrelated browser actor.
+    // Manual runs retain the initiating user as the audit actor.
+    const actorId = await resolvePmAutomationActorId(
+      cronAuthorized ? undefined : session?.userId,
+    );
+
+    const data = await evaluateMeterPmTriggers({ plantIds, actorId });
     return NextResponse.json({ success: true, data, timestamp: new Date().toISOString() });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'PM trigger evaluation failed';

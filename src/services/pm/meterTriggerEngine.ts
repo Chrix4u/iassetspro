@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { notifyUser } from '@/lib/notifications';
 
 export interface MeterThresholdResult {
   due: boolean;
@@ -35,20 +36,10 @@ function parseConfig(raw: string | null): Record<string, unknown> {
   }
 }
 
-async function generateWoNumber(): Promise<string> {
-  const now = new Date();
-  const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const latest = await db.workOrder.findFirst({
-    where: { woNumber: { startsWith: prefix } },
-    orderBy: { woNumber: 'desc' },
-    select: { woNumber: true },
-  });
-  const n = latest ? Number.parseInt(latest.woNumber.split('-').pop() || '0', 10) + 1 : 1;
-  return `${prefix}-${String(Number.isFinite(n) ? n : 1).padStart(4, '0')}`;
-}
-
-export async function evaluateMeterPmTriggers(options: { plantIds?: string[] } = {}) {
-  const triggers = await db.pmTrigger.findMany({
+export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; actorId: string }) {
+  // Discovery is intentionally lightweight. Every due decision is re-read under
+  // an advisory transaction lock before any mutation is allowed.
+  const candidates = await db.pmTrigger.findMany({
     where: {
       isActive: true,
       triggerType: 'meter',
@@ -60,137 +51,254 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[] } =
           : {}),
       },
     },
-    include: {
-      schedule: {
-        include: {
-          asset: { select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true } },
-          component: {
-            include: {
-              sparePartLinks: { include: { inventoryItem: true } },
-              toolRequirements: { include: { tool: true } },
-            },
-          },
-          template: { include: { tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } } } },
-        },
-      },
-    },
+    select: { id: true },
   });
 
   const results: Array<Record<string, unknown>> = [];
 
-  for (const trigger of triggers) {
-    const schedule = trigger.schedule;
-    const component = schedule.component;
-    if (!component || !['meter_based', 'custom_hours'].includes(schedule.frequencyType)) {
-      results.push({ triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is not an active component usage-based PM' });
-      continue;
-    }
+  for (const candidate of candidates) {
+    const result = await db.$transaction(async (tx) => {
+      // One trigger = one meter baseline. Serializing on trigger ID makes the
+      // baseline itself the stable cycle identity and eliminates check/create races.
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-meter:${candidate.id}`,
+      );
 
-    const config = parseConfig(trigger.triggerConfig);
-    const baseline = Number(config.baselineHours ?? 0);
-    const current = Number(component.operatingHours ?? 0);
-    const interval = Number(trigger.triggerValue || schedule.frequencyValue || 0);
-    const threshold = evaluateMeterThreshold(current, baseline, interval);
+      const trigger = await tx.pmTrigger.findUnique({
+        where: { id: candidate.id },
+        include: {
+          schedule: {
+            include: {
+              asset: { select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true } },
+              component: {
+                include: {
+                  sparePartLinks: { include: { inventoryItem: true } },
+                  toolRequirements: { include: { tool: true } },
+                },
+              },
+              template: { include: { tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } } } },
+            },
+          },
+        },
+      });
 
-    if (!threshold.due || threshold.crossedThreshold == null) {
-      results.push({ triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Meter threshold not reached', current, nextThreshold: baseline + interval });
-      continue;
-    }
+      if (!trigger || !trigger.isActive || trigger.triggerType !== 'meter') {
+        return { triggerId: candidate.id, scheduleId: '', skipped: true, reason: 'Trigger is no longer active' };
+      }
 
-    const existingOpen = await db.workOrder.findFirst({
-      where: {
-        pmScheduleId: schedule.id,
-        status: { notIn: ['closed', 'cancelled'] },
-      },
-      select: { id: true, woNumber: true, status: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existingOpen) {
-      results.push({ triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Existing PM work order still open', workOrder: existingOpen });
-      continue;
-    }
+      const schedule = trigger.schedule;
+      if (!schedule.isActive || !schedule.autoGenerateWO) {
+        return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is no longer active for automatic generation' };
+      }
 
-    const tasks = schedule.template?.tasks || [];
-    const taskText = tasks.length
-      ? '\n\nTask Checklist:\n' + tasks.map((t) => `${t.taskNumber}. [${t.taskType}] ${t.description}`).join('\n')
-      : '';
+      if (options.plantIds && !options.plantIds.includes(schedule.asset.plantId || '')) {
+        return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule moved outside caller plant scope' };
+      }
 
-    const suggestedParts = (component.sparePartLinks || []).map((s) => ({
-      itemId: s.inventoryItemId,
-      itemName: s.inventoryItem?.name || s.sparePartName,
-      itemCode: s.inventoryItem?.itemCode || s.sparePartCode,
-      quantity: s.quantityRequired,
-      unit: s.inventoryItem?.unitOfMeasure || 'each',
-      notes: s.notes || '',
-      status: 'recommended',
-    }));
-    const suggestedTools = (component.toolRequirements || []).map((t) => ({
-      toolId: t.toolId,
-      toolName: t.tool?.name || t.toolName,
-      toolCode: t.tool?.toolCode || t.toolCode,
-      quantity: t.quantityRequired,
-      notes: t.notes || '',
-      status: 'recommended',
-    }));
+      const component = schedule.component;
+      if (!component || !['meter_based', 'custom_hours'].includes(schedule.frequencyType)) {
+        return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is not an active component usage-based PM' };
+      }
 
-    const woNumber = await generateWoNumber();
-    const wo = await db.workOrder.create({
-      data: {
-        woNumber,
-        title: `PM: ${schedule.title}`,
-        description: `Meter-triggered preventive maintenance for ${component.componentCode} - ${component.name}. Current operating hours: ${current}. Trigger threshold reached: ${threshold.crossedThreshold}.${taskText}`,
-        type: 'preventive',
-        priority: schedule.priority,
-        status: 'draft',
-        assetId: schedule.assetId,
+      // Re-read baseline and component operating hours only after acquiring the
+      // trigger lock. A concurrent worker that already generated will have
+      // advanced baselineHours before this worker reaches this point.
+      const config = parseConfig(trigger.triggerConfig);
+      const baseline = Number(config.baselineHours ?? 0);
+      const current = Number(component.operatingHours ?? 0);
+      const interval = Number(trigger.triggerValue || schedule.frequencyValue || 0);
+      const threshold = evaluateMeterThreshold(current, baseline, interval);
+
+      if (!threshold.due || threshold.crossedThreshold == null) {
+        return {
+          triggerId: trigger.id,
+          scheduleId: schedule.id,
+          skipped: true,
+          reason: 'Meter threshold not reached',
+          current,
+          nextThreshold: baseline + interval,
+        };
+      }
+
+      const existingOpen = await tx.workOrder.findFirst({
+        where: {
+          pmScheduleId: schedule.id,
+          status: { notIn: ['closed', 'cancelled'] },
+        },
+        select: { id: true, woNumber: true, status: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existingOpen) {
+        return {
+          triggerId: trigger.id,
+          scheduleId: schedule.id,
+          skipped: true,
+          reason: 'Existing PM work order still open',
+          workOrder: existingOpen,
+        };
+      }
+
+      const tasks = schedule.template?.tasks || [];
+      const taskText = tasks.length
+        ? '\n\nTask Checklist:\n' + tasks.map((task) => `${task.taskNumber}. [${task.taskType}] ${task.description}`).join('\n')
+        : '';
+
+      const suggestedParts = (component.sparePartLinks || []).map((spare) => ({
+        itemId: spare.inventoryItemId,
+        itemName: spare.inventoryItem?.name || spare.sparePartName,
+        itemCode: spare.inventoryItem?.itemCode || spare.sparePartCode,
+        quantity: spare.quantityRequired,
+        unit: spare.inventoryItem?.unitOfMeasure || 'each',
+        notes: spare.notes || '',
+        status: 'recommended',
+      }));
+      const suggestedTools = (component.toolRequirements || []).map((tool) => ({
+        toolId: tool.toolId,
+        toolName: tool.tool?.name || tool.toolName,
+        toolCode: tool.tool?.toolCode || tool.toolCode,
+        quantity: tool.quantityRequired,
+        notes: tool.notes || '',
+        status: 'recommended',
+      }));
+
+      const woDate = new Date();
+      const prefix = `WO-${woDate.getFullYear()}${String(woDate.getMonth() + 1).padStart(2, '0')}`;
+
+      // Share the exact monthly allocation lock with time-based PM generation so
+      // meter and calendar workers can never select the same work-order number.
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-wo-number:${prefix}`,
+      );
+      const monthlyNumbers = await tx.workOrder.findMany({
+        where: { woNumber: { startsWith: prefix } },
+        select: { woNumber: true },
+      });
+      const highestNumber = monthlyNumbers.reduce((max, row) => {
+        const suffix = Number.parseInt(row.woNumber.slice(prefix.length + 1), 10);
+        return Number.isFinite(suffix) ? Math.max(max, suffix) : max;
+      }, 0);
+      const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
+
+      const wo = await tx.workOrder.create({
+        data: {
+          woNumber,
+          title: `PM: ${schedule.title}`,
+          description: `Meter-triggered preventive maintenance for ${component.componentCode} - ${component.name}. Current operating hours: ${current}. Trigger threshold reached: ${threshold.crossedThreshold}.${taskText}`,
+          type: 'preventive',
+          priority: schedule.priority,
+          status: 'draft',
+          assetId: schedule.assetId,
+          assetName: schedule.asset.name,
+          departmentId: schedule.asset.departmentId || schedule.departmentId || null,
+          assignedTo: schedule.assignedToId,
+          plantId: schedule.asset.plantId,
+          estimatedHours: schedule.estimatedDuration,
+          pmScheduleId: schedule.id,
+          plannedStart: woDate,
+          notes: `Auto-generated by meter trigger ${trigger.id}; baseline ${baseline}, interval ${interval}, current ${current}`,
+          suggestedParts: JSON.stringify(suggestedParts),
+          suggestedTools: JSON.stringify(suggestedTools),
+        },
+      });
+
+      await tx.workOrderComponent.upsert({
+        where: {
+          workOrderId_componentRegistryId: {
+            workOrderId: wo.id,
+            componentRegistryId: component.id,
+          },
+        },
+        create: {
+          workOrderId: wo.id,
+          componentRegistryId: component.id,
+          notes: 'Inherited from meter-triggered component PM schedule',
+        },
+        update: {},
+      });
+
+      for (const task of tasks) {
+        await tx.workOrderComment.create({
+          data: {
+            workOrderId: wo.id,
+            userId: options.actorId,
+            content: `[PM Task #${task.taskNumber}] [${task.taskType.toUpperCase()}] ${task.description}`,
+          },
+        });
+      }
+
+      const nextConfig = {
+        ...config,
+        source: config.source || 'component_operating_hours',
+        componentId: component.id,
+        baselineHours: threshold.crossedThreshold,
+        unit: config.unit || 'hours',
+      };
+      await tx.pmTrigger.update({
+        where: { id: trigger.id },
+        data: { lastTriggeredAt: woDate, triggerConfig: JSON.stringify(nextConfig) },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: options.actorId,
+          action: 'create',
+          entityType: 'work_order',
+          entityId: wo.id,
+          newValues: JSON.stringify({
+            woNumber: wo.woNumber,
+            type: 'preventive',
+            pmScheduleId: schedule.id,
+            componentId: component.id,
+            meterTriggerId: trigger.id,
+            previousBaselineHours: baseline,
+            crossedThreshold: threshold.crossedThreshold,
+            currentOperatingHours: current,
+            autoGenerated: true,
+          }),
+        },
+      });
+
+      return {
+        triggerId: trigger.id,
+        scheduleId: schedule.id,
+        scheduleTitle: schedule.title,
         assetName: schedule.asset.name,
-        departmentId: schedule.asset.departmentId || schedule.departmentId || null,
-        assignedTo: schedule.assignedToId,
-        plantId: schedule.asset.plantId,
-        estimatedHours: schedule.estimatedDuration,
-        pmScheduleId: schedule.id,
-        plannedStart: new Date(),
-        notes: `Auto-generated by meter trigger ${trigger.id}; baseline ${baseline}, interval ${interval}, current ${current}`,
-        suggestedParts: JSON.stringify(suggestedParts),
-        suggestedTools: JSON.stringify(suggestedTools),
-      },
-    });
-
-    await db.workOrderComponent.create({
-      data: {
+        assignedToId: schedule.assignedToId,
+        skipped: false,
         workOrderId: wo.id,
-        componentRegistryId: component.id,
-        notes: 'Inherited from meter-triggered component PM schedule',
-      },
+        woNumber: wo.woNumber,
+        current,
+        crossedThreshold: threshold.crossedThreshold,
+        nextThreshold: threshold.crossedThreshold + interval,
+      };
     });
 
-    const nextConfig = {
-      ...config,
-      source: config.source || 'component_operating_hours',
-      componentId: component.id,
-      baselineHours: threshold.crossedThreshold,
-      unit: config.unit || 'hours',
-    };
-    await db.pmTrigger.update({
-      where: { id: trigger.id },
-      data: { lastTriggeredAt: new Date(), triggerConfig: JSON.stringify(nextConfig) },
-    });
+    results.push(result);
 
-    results.push({
-      triggerId: trigger.id,
-      scheduleId: schedule.id,
-      skipped: false,
-      workOrderId: wo.id,
-      woNumber: wo.woNumber,
-      current,
-      crossedThreshold: threshold.crossedThreshold,
-      nextThreshold: threshold.crossedThreshold + interval,
-    });
+    if (result.skipped === false && typeof result.assignedToId === 'string' && result.assignedToId) {
+      try {
+        await notifyUser(
+          result.assignedToId,
+          'wo_assigned',
+          'Meter PM Work Order Generated',
+          `A meter-triggered preventive maintenance WO (${result.woNumber}) has been generated for "${result.scheduleTitle}" on ${result.assetName}.`,
+          'work_order',
+          String(result.workOrderId),
+          `wo-detail?id=${result.workOrderId}`,
+        );
+      } catch (notificationError) {
+        // Generation is already committed. Notification outages must not create
+        // retry behavior that could look like a failed meter generation.
+        console.error('[PM Meter Notification Error]', notificationError);
+      }
+    }
   }
 
   return {
-    evaluated: triggers.length,
-    generated: results.filter((r) => r.skipped === false).length,
+    evaluated: candidates.length,
+    generated: results.filter((result) => result.skipped === false).length,
     results,
   };
 }

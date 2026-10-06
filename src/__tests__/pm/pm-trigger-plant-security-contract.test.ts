@@ -26,7 +26,7 @@ describe('PM trigger plant and execution security contract', () => {
   });
 
   it('passes the manual plant boundary into the meter engine query', () => {
-    expect(engine).toContain('evaluateMeterPmTriggers(options: { plantIds?: string[] } = {})');
+    expect(engine).toContain('evaluateMeterPmTriggers(options: { plantIds?: string[]; actorId: string })');
     expect(engine).toContain("asset: { plantId: { in: options.plantIds } }");
   });
 });

@@ -182,7 +182,6 @@ export async function POST(request: NextRequest) {
             type: 'preventive',
             status: { not: 'cancelled' },
             plannedStart: nextDueDate,
-            plannedEnd,
           },
           orderBy: { createdAt: 'desc' },
           select: { id: true, woNumber: true },
@@ -270,6 +269,7 @@ export async function POST(request: NextRequest) {
             estimatedHours,
             pmScheduleId: schedule.id,
             plannedStart: nextDueDate,
+            plannedEnd,
             notes: `Auto-generated from PM schedule "${schedule.title}" (${schedule.frequencyType}: ${schedule.frequencyValue})${schedule.template ? ` | Template: ${schedule.template.title} (${tasks.length} tasks)` : ''}`,
           },
         });

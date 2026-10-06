@@ -92,6 +92,7 @@ describe('POST /api/work-orders/[id]/cancel', () => {
       closedUserIds: ['tech-1', 'tech-2'],
       closedHours: 2.5,
       actualHours: 5.75,
+      pmTriggerRearmed: false,
     });
     mockBuildAuditData.mockReturnValue({
       userId: 'manager-1',
@@ -117,6 +118,7 @@ describe('POST /api/work-orders/[id]/cancel', () => {
       closedTimers: 2,
       closedTimerUsers: ['tech-1', 'tech-2'],
       actualHours: 5.75,
+      pmTriggerRearmed: false,
     });
 
     expect(mockCloseAllActiveWorkSessions).toHaveBeenCalledWith(

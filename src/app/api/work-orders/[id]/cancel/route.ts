@@ -7,6 +7,7 @@ import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { closeAllActiveWorkSessions } from '@/services/workOrderActiveSession.service';
 import { canCancelWorkOrderForActor } from '@/services/workOrderAccess.service';
 import { buildAuditData } from '@/lib/audit-helpers';
+import { rearmRuntimePmTriggerAfterCancellation, type PmTriggerRearmResult } from '@/services/pm/triggerCancellationRearm.service';
 
 const CANCELLABLE_STATES = [
   'draft',
@@ -78,6 +79,7 @@ export async function POST(
         plannerId: true,
         assignedBy: true,
         maintenanceRequestId: true,
+        pmScheduleId: true,
       },
     });
     if (!wo) {
@@ -107,6 +109,7 @@ export async function POST(
       closedTimerIds: string[];
       closedTimerUsers: string[];
       actualHours: number | undefined;
+      pmTriggerRearm: PmTriggerRearmResult;
     };
 
     try {
@@ -143,6 +146,11 @@ export async function POST(
           throw new CancellationTransitionError(result.error || 'Failed to cancel work order');
         }
 
+        const pmTriggerRearm = await rearmRuntimePmTriggerAfterCancellation(tx, {
+          id: wo.id,
+          pmScheduleId: wo.pmScheduleId,
+        });
+
         // Cancellation is lifecycle/audit evidence, not technician labor. Do not
         // create a fake WorkOrderTimeLog row with action=cancel.
         await tx.auditLog.create({
@@ -159,6 +167,7 @@ export async function POST(
               closedTimerIds,
               closedTimerUsers,
               ...(actualHours !== undefined ? { actualHours } : {}),
+              ...(pmTriggerRearm.rearmed ? { pmTriggerRearmed: { triggerId: pmTriggerRearm.triggerId, triggerType: pmTriggerRearm.triggerType } } : {}),
             },
             {
               ipAddress: request.headers.get('x-forwarded-for') || undefined,
@@ -171,6 +180,7 @@ export async function POST(
           closedTimerIds,
           closedTimerUsers,
           actualHours,
+          pmTriggerRearm,
         };
       });
     } catch (error: unknown) {
@@ -235,6 +245,8 @@ export async function POST(
         closedTimers: outcome.closedTimerIds.length,
         closedTimerUsers: outcome.closedTimerUsers,
         actualHours: outcome.actualHours,
+        pmTriggerRearmed: outcome.pmTriggerRearm.rearmed,
+        ...(outcome.pmTriggerRearm.rearmed ? { pmTriggerType: outcome.pmTriggerRearm.triggerType } : {}),
       },
     });
   } catch (error: unknown) {

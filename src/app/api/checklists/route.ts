@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
+import { buildChecklistScopeWhere, validateChecklistTargets } from '@/lib/pm-checklist-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,45 +11,48 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+    if (!hasPermission(session, 'pm_checklists.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const type = searchParams.get('type');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
 
-    const where: Record<string, unknown> = {};
-
-    if (type) where.type = type;
+    const checklistScopeWhere = await buildChecklistScopeWhere(plantScope);
+    const filters: Prisma.ChecklistWhereInput[] = [checklistScopeWhere];
+    if (type) filters.push({ type });
     if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { description: { contains: search } },
-      ];
+      filters.push({
+        OR: [
+          { title: { contains: search } },
+          { description: { contains: search } },
+        ],
+      });
     }
+    const where: Prisma.ChecklistWhereInput = { AND: filters };
 
-    const [checklists, total] = await Promise.all([
+    const [checklists, total, totalCount, activeCount, totalItems] = await Promise.all([
       db.checklist.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
+        where,
         include: {
-          items: {
-            orderBy: { sortOrder: 'asc' },
-          },
+          items: { orderBy: { sortOrder: 'asc' } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      db.checklist.count({
-        where: Object.keys(where).length > 0 ? where : undefined,
-      }),
-    ]);
-
-    // KPI counts
-    const [totalCount, activeCount, totalItems] = await Promise.all([
-      db.checklist.count({ where: { isActive: true } }),
-      db.checklist.count({ where: { isActive: true } }),
-      db.checklistItem.count(),
+      db.checklist.count({ where }),
+      db.checklist.count({ where: checklistScopeWhere }),
+      db.checklist.count({ where: { AND: [checklistScopeWhere, { isActive: true }] } }),
+      db.checklistItem.count({ where: { checklist: checklistScopeWhere } }),
     ]);
 
     return NextResponse.json({
@@ -75,6 +81,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { title, description, type, frequency, departmentId, assetId, items } = body;
 
@@ -88,12 +99,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Frequency is required' }, { status: 400 });
     }
 
-    // Parse items from textarea (one per line) or accept JSON array
+    const normalizedAssetId = assetId || null;
+    const normalizedDepartmentId = departmentId || null;
+    const targetValidation = await validateChecklistTargets(
+      plantScope,
+      normalizedAssetId,
+      normalizedDepartmentId,
+    );
+    if (!targetValidation.ok) {
+      return NextResponse.json(
+        { success: false, error: targetValidation.error },
+        { status: targetValidation.status },
+      );
+    }
+
     let parsedItems: string[];
     if (Array.isArray(items)) {
-      parsedItems = items.filter(Boolean);
+      parsedItems = items.map((item) => String(item).trim()).filter(Boolean);
     } else if (typeof items === 'string') {
-      parsedItems = items.split('\n').map(s => s.trim()).filter(Boolean);
+      parsedItems = items.split('\n').map((item) => item.trim()).filter(Boolean);
     } else {
       parsedItems = [];
     }
@@ -104,8 +128,8 @@ export async function POST(request: NextRequest) {
         description: description || null,
         type,
         frequency,
-        departmentId: departmentId || null,
-        assetId: assetId || null,
+        departmentId: normalizedDepartmentId,
+        assetId: normalizedAssetId,
         createdById: session.userId,
         items: {
           create: parsedItems.map((item, index) => ({
@@ -116,9 +140,7 @@ export async function POST(request: NextRequest) {
         },
       },
       include: {
-        items: {
-          orderBy: { sortOrder: 'asc' },
-        },
+        items: { orderBy: { sortOrder: 'asc' } },
       },
     });
 
@@ -128,7 +150,14 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'checklist',
         entityId: checklist.id,
-        newValues: JSON.stringify({ title, type, frequency, itemCount: parsedItems.length }),
+        newValues: JSON.stringify({
+          title,
+          type,
+          frequency,
+          assetId: normalizedAssetId,
+          departmentId: normalizedDepartmentId,
+          itemCount: parsedItems.length,
+        }),
       },
     });
 

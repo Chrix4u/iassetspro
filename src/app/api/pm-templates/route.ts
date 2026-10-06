@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+    if (!hasPermission(session, 'pm_templates.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');

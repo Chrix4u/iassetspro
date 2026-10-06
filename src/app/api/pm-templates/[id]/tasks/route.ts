@@ -30,41 +30,61 @@ export async function POST(
       );
     }
 
-    // Verify template exists
-    const template = await db.pmTemplate.findUnique({ where: { id } });
-    if (!template) {
+    const requestedNumber = taskNumber !== undefined ? Number(taskNumber) : null;
+    if (requestedNumber !== null && (!Number.isInteger(requestedNumber) || requestedNumber <= 0)) {
       return NextResponse.json(
-        { success: false, error: 'PM template not found' },
-        { status: 404 }
+        { success: false, error: 'Task number must be a positive integer' },
+        { status: 400 },
       );
     }
 
-    // Auto-increment taskNumber if not provided
-    let nextNumber: number;
-    if (taskNumber !== undefined) {
-      nextNumber = Number(taskNumber);
-    } else {
-      const maxTask = await db.pmTemplateTask.findFirst({
-        where: { templateId: id },
-        orderBy: { taskNumber: 'desc' },
-        select: { taskNumber: true },
-      });
-      nextNumber = (maxTask?.taskNumber ?? 0) + 1;
-    }
+    const result = await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-template-task-order:${id}`,
+      );
 
-    const task = await db.pmTemplateTask.create({
-      data: {
-        templateId: id,
-        taskNumber: nextNumber,
-        description,
-        taskType,
-        requiredParts: requiredParts ? JSON.stringify(requiredParts) : null,
-        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
-        sortOrder: nextNumber,
-      },
+      const template = await tx.pmTemplate.findUnique({ where: { id }, select: { id: true } });
+      if (!template) return { kind: 'missing' as const };
+
+      let nextNumber = requestedNumber;
+      if (nextNumber === null) {
+        const maxTask = await tx.pmTemplateTask.findFirst({
+          where: { templateId: id },
+          orderBy: { taskNumber: 'desc' },
+          select: { taskNumber: true },
+        });
+        nextNumber = (maxTask?.taskNumber ?? 0) + 1;
+      } else {
+        const collision = await tx.pmTemplateTask.findFirst({
+          where: { templateId: id, taskNumber: nextNumber, isActive: true },
+          select: { id: true },
+        });
+        if (collision) return { kind: 'duplicate' as const };
+      }
+
+      const task = await tx.pmTemplateTask.create({
+        data: {
+          templateId: id,
+          taskNumber: nextNumber,
+          description,
+          taskType,
+          requiredParts: requiredParts ? JSON.stringify(requiredParts) : null,
+          estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+          sortOrder: nextNumber,
+        },
+      });
+      return { kind: 'created' as const, task };
     });
 
-    return NextResponse.json({ success: true, data: task }, { status: 201 });
+    if (result.kind === 'missing') {
+      return NextResponse.json({ success: false, error: 'PM template not found' }, { status: 404 });
+    }
+    if (result.kind === 'duplicate') {
+      return NextResponse.json({ success: false, error: 'Task number already exists in this template' }, { status: 409 });
+    }
+
+    return NextResponse.json({ success: true, data: result.task }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to add task';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -100,29 +120,50 @@ export async function PUT(
       );
     }
 
-    // Verify template exists
-    const template = await db.pmTemplate.findUnique({ where: { id } });
+    const template = await db.pmTemplate.findUnique({ where: { id }, select: { id: true } });
     if (!template) {
       return NextResponse.json(
         { success: false, error: 'PM template not found' },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
-    // Update taskNumber and sortOrder for each task based on array position
+    const normalizedTaskIds = taskIds.map((taskId: unknown) => String(taskId));
+    const uniqueTaskIds = new Set(normalizedTaskIds);
+    if (uniqueTaskIds.size !== normalizedTaskIds.length) {
+      return NextResponse.json(
+        { success: false, error: 'taskIds must not contain duplicates' },
+        { status: 400 },
+      );
+    }
+
+    const activeTasks = await db.pmTemplateTask.findMany({
+      where: { templateId: id, isActive: true },
+      select: { id: true },
+    });
+    const activeTaskIds = new Set(activeTasks.map((task) => task.id));
+    const isExactTaskSet =
+      activeTasks.length === normalizedTaskIds.length
+      && normalizedTaskIds.every((taskId) => activeTaskIds.has(taskId));
+    if (!isExactTaskSet) {
+      return NextResponse.json(
+        { success: false, error: 'Every active task must belong to this template before reordering' },
+        { status: 400 },
+      );
+    }
+
     await db.$transaction(
-      taskIds.map((taskId: string, index: number) =>
-        db.pmTemplateTask.update({
-          where: { id: taskId },
+      normalizedTaskIds.map((taskId, index) =>
+        db.pmTemplateTask.updateMany({
+          where: { id: taskId, templateId: id, isActive: true },
           data: {
             taskNumber: index + 1,
             sortOrder: index + 1,
           },
-        })
-      )
+        }),
+      ),
     );
 
-    // Return updated tasks in new order
     const updatedTasks = await db.pmTemplateTask.findMany({
       where: { templateId: id, isActive: true },
       orderBy: { taskNumber: 'asc' },

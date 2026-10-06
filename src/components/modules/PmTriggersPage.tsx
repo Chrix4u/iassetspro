@@ -455,11 +455,11 @@ function TriggerForm({
       case 'time':
         return cron.trim().length > 0;
       case 'meter':
-        return meterName.trim().length > 0 && meterThreshold && parseFloat(meterThreshold) > 0;
+        return meterName.trim().length > 0 && meterThreshold !== '' && parseFloat(meterThreshold) > 0;
       case 'condition':
         return conditionMetric.trim().length > 0 && conditionValue !== '';
       case 'production_count':
-        return productionThreshold && parseFloat(productionThreshold) > 0;
+        return productionThreshold !== '' && parseFloat(productionThreshold) > 0;
       default:
         return false;
     }

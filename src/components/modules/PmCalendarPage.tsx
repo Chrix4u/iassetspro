@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { cn } from "@/lib/utils";
+import { isAutoCalculableFrequency } from "@/lib/pm-utils";
 import type { PmSchedule } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -220,7 +221,7 @@ export default function PmCalendarPage() {
       try {
         const res = await api.get<PmScheduleWithRelations[]>("/api/pm-schedules?isActive=true");
         if (res.success && res.data) {
-          setSchedules(res.data.filter((s) => s.nextDueDate));
+          setSchedules(res.data.filter((s) => isAutoCalculableFrequency(s.frequencyType) && s.nextDueDate));
         }
       } catch {
         // silent fail
@@ -258,7 +259,7 @@ export default function PmCalendarPage() {
     for (let day = 1; day <= totalDays; day++) {
       const date = new Date(currentYear, currentMonth, day);
       const daySchedules = schedules.filter((s) => {
-        if (!s.nextDueDate) return false;
+        if (!isAutoCalculableFrequency(s.frequencyType) || !s.nextDueDate) return false;
         const dueDate = new Date(s.nextDueDate);
         return isSameDay(dueDate, date);
       });
@@ -308,7 +309,7 @@ export default function PmCalendarPage() {
       const date = new Date(monday);
       date.setDate(monday.getDate() + i);
       const daySchedules = schedules.filter((s) => {
-        if (!s.nextDueDate) return false;
+        if (!isAutoCalculableFrequency(s.frequencyType) || !s.nextDueDate) return false;
         return isSameDay(new Date(s.nextDueDate), date);
       });
       days.push({
@@ -396,7 +397,9 @@ export default function PmCalendarPage() {
     let totalScheduled = 0;
 
     displayDays.forEach((day) => {
-      day.schedules.forEach((s) => {
+      day.schedules.forEach((schedule) => {
+        if (!isAutoCalculableFrequency(schedule.frequencyType)) return;
+        const s = schedule;
         totalScheduled++;
         if (isOverdue(s.nextDueDate)) overdueCount++;
         else if (isDueSoon(s.nextDueDate, s.leadDays)) dueSoonCount++;

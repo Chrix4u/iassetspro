@@ -534,6 +534,7 @@ export async function GET(request: NextRequest) {
             where: {
               asset: { ...plantFilter },
               isActive: true,
+              frequencyType: { notIn: ['meter_based', 'custom_hours'] },
               nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
             },
           }), 0)
@@ -544,6 +545,7 @@ export async function GET(request: NextRequest) {
             where: {
               asset: { ...plantFilter },
               isActive: true,
+              frequencyType: { notIn: ['meter_based', 'custom_hours'] },
               nextDueDate: { lt: new Date() },
             },
           }), 0)

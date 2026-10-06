@@ -1514,12 +1514,12 @@ export function InventoryPurchaseOrdersPage() {
   const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '' });
   const [lineItems, setLineItems] = useState<{ itemId: string; quantity: string; unitCost: string; description: string }[]>([]);
 
-  const addLineItem = () => setLineItems([...lineItems, { itemId: '', quantity: '1', unitCost: '0', description: '' }]);
-  const removeLineItem = (idx: number) => setLineItems(lineItems.filter((_, i) => i !== idx));
+  const addLineItem = () => setLineItems(current => [...current, { itemId: '', quantity: '1', unitCost: '0', description: '' }]);
+  const removeLineItem = (idx: number) => setLineItems(current => current.filter((_, i) => i !== idx));
   const updateLineItem = (idx: number, field: string, value: string) => {
-    const updated = [...lineItems];
-    updated[idx] = { ...updated[idx], [field]: value };
-    setLineItems(updated);
+    setLineItems(current => current.map((lineItem, i) =>
+      i === idx ? { ...lineItem, [field]: value } : lineItem
+    ));
   };
 
   const inventoryItemOptions = useMemo(() =>
@@ -1862,7 +1862,7 @@ export function InventoryReceivingPage() {
                 searchPlaceholder="Search PO or item..."
               />
             </div>
-            {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
+            {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" min="0.001" step="0.001" max={availablePOItems.find((pi: any) => pi.itemId === form.itemId && pi.poId === form.purchaseOrder)?.remaining || undefined} placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
               <div className="space-y-2"><Label>Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="good">Good</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="defective">Defective</SelectItem></SelectContent></Select></div>

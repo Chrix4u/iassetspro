@@ -1365,13 +1365,14 @@ export function AssetDetailPage({ id }: { id: string }) {
                           <p className="text-sm font-semibold">Replacement Records</p>
                           <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
                             <Table className="min-w-[760px]">
-                              <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Old Serial</TableHead><TableHead>New Serial</TableHead><TableHead>Reason</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
+                              <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Work Order</TableHead><TableHead>Old Serial</TableHead><TableHead>New Serial</TableHead><TableHead>Reason</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {replacementHistory.length === 0 ? (
-                                  <TableRow><TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">No replacement records for this component.</TableCell></TableRow>
+                                  <TableRow><TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No replacement records for this component.</TableCell></TableRow>
                                 ) : replacementHistory.map((record: any) => (
                                   <TableRow key={record.id}>
                                     <TableCell><div className="font-medium">{record.partName}</div><div className="text-xs text-muted-foreground">{record.partCode || '—'}</div></TableCell>
+                                    <TableCell className="text-xs font-mono">{record.workOrder?.woNumber || '—'}</TableCell>
                                     <TableCell className="text-xs">{record.serialNumberOld || '—'}</TableCell>
                                     <TableCell className="text-xs">{record.serialNumberNew || '—'}</TableCell>
                                     <TableCell className="text-xs capitalize">{String(record.reason || '').replace(/_/g, ' ') || '—'}</TableCell>

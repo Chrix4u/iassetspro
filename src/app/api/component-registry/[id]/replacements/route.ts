@@ -2,6 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
+import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+
+function canView(session: ReturnType<typeof getSession>) {
+  if (!session) return false;
+  return isAdmin(session)
+    || hasPermission(session, 'digital_twin.view')
+    || hasPermission(session, 'work_orders.view')
+    || hasPermission(session, 'work_orders.view_own');
+}
+
+function canManage(session: ReturnType<typeof getSession>) {
+  if (!session) return false;
+  return isAdmin(session)
+    || hasPermission(session, 'digital_twin.manage')
+    || hasPermission(session, 'work_orders.update')
+    || hasPermission(session, 'work_orders.start')
+    || hasPermission(session, 'work_orders.complete');
+}
 
 export async function GET(
   request: NextRequest,
@@ -13,7 +31,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    if (!canView(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -21,15 +39,21 @@ export async function GET(
 
     const component = await db.componentRegistry.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, assetId: true, asset: { select: { plantId: true } } },
     });
     if (!component) {
       return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (!canAccessPlant(plantScope, component.asset?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
     const replacements = await db.componentReplacementHistory.findMany({
       where: { componentId: id },
       orderBy: { replacedAt: 'desc' },
+      include: { workOrder: { select: { id: true, woNumber: true, title: true, status: true } } },
     });
 
     return NextResponse.json({ success: true, data: replacements });
@@ -49,7 +73,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+    if (!canManage(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -64,6 +88,7 @@ export async function POST(
       cost,
       vendor,
       expectedNextReplacement,
+      workOrderId,
     } = body;
 
     if (!partName) {
@@ -83,15 +108,34 @@ export async function POST(
 
     const component = await db.componentRegistry.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, assetId: true, asset: { select: { plantId: true } } },
     });
     if (!component) {
       return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (!canAccessPlant(plantScope, component.asset?.plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+
+    if (workOrderId) {
+      const workOrder = await db.workOrder.findUnique({
+        where: { id: String(workOrderId) },
+        select: { id: true, assetId: true },
+      });
+      if (!workOrder) {
+        return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+      }
+      if (component.assetId && workOrder.assetId && component.assetId !== workOrder.assetId) {
+        return NextResponse.json({ success: false, error: 'Work order belongs to a different asset' }, { status: 400 });
+      }
+    }
+
     const record = await db.componentReplacementHistory.create({
       data: {
         componentId: id,
+        workOrderId: workOrderId ? String(workOrderId) : null,
         partName,
         partCode: partCode || null,
         serialNumberOld: serialNumberOld || null,
@@ -111,7 +155,7 @@ export async function POST(
       'create',
       record.id,
       {
-        newValues: { componentId: id, partName, partCode, reason },
+        newValues: { componentId: id, workOrderId: workOrderId ? String(workOrderId) : null, partName, partCode, reason },
       },
     );
 

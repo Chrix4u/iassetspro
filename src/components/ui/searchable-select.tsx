@@ -32,6 +32,8 @@ interface SearchableSelectProps {
   onValueChange: (value: string) => void;
   options: SearchableOption[];
   placeholder?: string;
+  /** Stable accessible name for the combobox trigger. Defaults to the placeholder text. */
+  ariaLabel?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
   disabled?: boolean;
@@ -53,6 +55,7 @@ export function SearchableSelect({
   onValueChange,
   options,
   placeholder = 'Select an option...',
+  ariaLabel,
   searchPlaceholder = 'Search...',
   emptyMessage = 'No options found.',
   disabled = false,
@@ -92,6 +95,7 @@ export function SearchableSelect({
         <Button
           variant="outline"
           role="combobox"
+          aria-label={ariaLabel ?? placeholder.replace(/\.\.\.$/, '')}
           aria-expanded={open}
           disabled={disabled || loading}
           className={cn(

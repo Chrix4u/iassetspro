@@ -34,7 +34,7 @@ export async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Preserve the canonical TL-NNNN contract under concurrent commissioning.
-      await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('iassetspro:tool-code'))");
+      await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('iassetspro:tool-code'))");
 
       const item = await tx.inventoryItem.findUnique({ where: { id } });
       if (!item) throw new Error('NOT_FOUND:Inventory item not found');

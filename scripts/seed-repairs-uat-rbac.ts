@@ -152,6 +152,32 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'damaged_tool_reports.create',
   ],
 
+  inventory_manager: [
+    'dashboard.view', 'dashboard.stats', 'chat.view',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'inventory.view', 'inventory.view_all', 'inventory.create', 'inventory.update',
+    'inventory.delete', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve',
+    'inventory.consume', 'inventory.export', 'inventory.manage', 'inventory.forecast',
+    'parts.view', 'parts.create', 'parts.update', 'parts.delete',
+    'parts_categories.view', 'parts_categories.create', 'parts_categories.update',
+    'material_requisitions.view', 'material_requisitions.create', 'material_requisitions.update', 'material_requisitions.approve',
+    'material_requisitions.issue', 'material_requisitions.reject',
+    'vendors.view', 'vendors.create', 'vendors.update', 'vendors.delete', 'vendors.manage',
+    'stock_transactions.view',
+    'purchase_orders.view', 'purchase_orders.create', 'purchase_orders.update',
+    'purchase_orders.approve', 'purchase_orders.receive', 'purchase_orders.manage',
+    'inventory_locations.view', 'inventory_locations.create', 'inventory_locations.update',
+    'inventory_locations.delete',
+    'inventory_adjustments.view', 'inventory_adjustments.create', 'inventory_adjustments.update', 'inventory_adjustments.approve',
+    'inventory_transfers.view', 'inventory_transfers.create', 'inventory_transfers.update', 'inventory_transfers.approve',
+    'assets.view', 'work_orders.view', 'work_orders.view_all',
+    'maintenance_requests.view',
+    'spare_part_returns.view_all', 'spare_part_returns.update',
+    'reports.view', 'reports.export', 'reports.generate',
+    'analytics.view',
+  ],
+
   store_keeper: [
     'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
@@ -248,6 +274,9 @@ async function main() {
     ['maintenance_planner', 'maintenance_requests.convert_to_wo'],
     ['maintenance_supervisor', 'maintenance_requests.approve'],
     ['maintenance_technician', 'work_orders.start'],
+    ['inventory_manager', 'vendors.create'],
+    ['inventory_manager', 'purchase_orders.approve'],
+    ['inventory_manager', 'spare_part_returns.update'],
     ['store_keeper', 'repair_material_requests.update'],
   ] as const;
 

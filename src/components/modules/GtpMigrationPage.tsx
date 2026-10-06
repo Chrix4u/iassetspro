@@ -21,6 +21,20 @@ type AuditResult = {
   importLocked: boolean;
   source: { fileName: string; sizeBytes: number; sha256?: string; sheets: string[]; hasVba: boolean };
   workbook: { jobRecords: number; machineMasterRows: number; uniqueMachineCodes: number };
+  legacyParityBaseline?: {
+    available: boolean;
+    expectedSheetCount: number;
+    extractedSheetCount: number;
+    sheets: Array<{
+      sheetName: string;
+      chartFamily: 'bar' | 'line';
+      metric: string;
+      filters: Record<string, string | number>;
+      cachedGrandTotal: string | number | null;
+      computedSeriesTotal: number;
+      points: Array<{ category: string; value: number; order?: number }>;
+    }>;
+  };
   workbookParity?: {
     authoritativeJobRecords: number;
     authoritativeBreakdowns: number;
@@ -151,6 +165,32 @@ type AuditResult = {
 };
 
 
+type PostImportParity = {
+  sourceSha256: string;
+  migrationPlantId: string | null;
+  baseline: {
+    sourceRows: number;
+    breakdowns: number;
+    priorityOne2025: number;
+    priorityOneResponseMinutes: number;
+    week32Breakdowns: number;
+    staleCachedPivotBreakdowns: number;
+  } | null;
+  metrics: {
+    importedWorkOrders: number;
+    importedMaintenanceRequests: number;
+    auditRows: number;
+    linkedPairs: number;
+    breakdowns: number;
+    priorityOne2025: number;
+    priorityOneResponseMinutes: number;
+    week32Breakdowns: number;
+  };
+  checks: Record<string, boolean> | null;
+  allPass: boolean;
+  note: string;
+};
+
 type ReconciliationBundle = {
   schemaVersion: 'gtp-reconciliation-bundle/v1';
   source: {
@@ -214,6 +254,8 @@ export function GtpMigrationPage() {
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [importConfirmation, setImportConfirmation] = useState('');
   const [importing, setImporting] = useState(false);
+  const [parityLoading, setParityLoading] = useState(false);
+  const [databaseParity, setDatabaseParity] = useState<PostImportParity | null>(null);
   const [lastImport, setLastImport] = useState<{
     imported: number;
     fingerprint: string;
@@ -377,6 +419,28 @@ export function GtpMigrationPage() {
     URL.revokeObjectURL(url);
   };
 
+  const verifyPostImportParity = async (sourceSha?: string) => {
+    const sha = sourceSha || lastImport?.sourceSha256;
+    if (!sha) return toast.error('No imported workbook SHA-256 is available for verification');
+    setParityLoading(true);
+    try {
+      const response = await api.get<PostImportParity>(
+        `/api/admin/gtp-migration/parity?sourceSha256=${encodeURIComponent(sha)}`,
+        { timeout: 30000 },
+      );
+      if (!response.success || !response.data) {
+        return toast.error(response.error || 'Post-import PostgreSQL parity verification failed');
+      }
+      setDatabaseParity(response.data);
+      if (response.data.allPass) toast.success('Source ↔ PostgreSQL parity certificate passed');
+      else toast.error('Post-import parity requires review');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Post-import PostgreSQL parity verification failed');
+    } finally {
+      setParityLoading(false);
+    }
+  };
+
   const executeHistoricalImport = async () => {
     const preview = result?.importPreview;
     const manifest = preview?.manifest;
@@ -407,7 +471,9 @@ export function GtpMigrationPage() {
         sourceSha256: response.data.sourceSha256,
         completedAt: new Date().toISOString(),
       });
+      setDatabaseParity(null);
       toast.success(`Historical import completed · ${response.data.imported.toLocaleString()} work order(s) created`);
+      if (response.data.sourceSha256) await verifyPostImportParity(response.data.sourceSha256);
       setImportConfirmOpen(false);
       setImportConfirmation('');
       await runAudit(true);
@@ -472,10 +538,52 @@ export function GtpMigrationPage() {
         </CardContent>
       </Card>}
 
+      {lastImport && <Card className={databaseParity?.allPass ? 'border-emerald-300' : 'border-border'}>
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-5 w-5" />Source ↔ PostgreSQL Parity Certificate</CardTitle>
+              <CardDescription>Verifies the committed historical records against the authoritative JobRecords baseline and the transactional MR/WO/audit links.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" disabled={parityLoading || !lastImport.sourceSha256} onClick={() => void verifyPostImportParity()}>
+              {parityLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {parityLoading ? 'Verifying…' : 'Verify Again'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!databaseParity ? <p className="text-sm text-muted-foreground">Run verification to compare PostgreSQL with the signed workbook baseline.</p> : <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={databaseParity.allPass ? 'secondary' : 'destructive'}>{databaseParity.allPass ? 'PASS' : 'CHECK'}</Badge>
+              <span className="break-all font-mono text-[11px] text-muted-foreground">{databaseParity.sourceSha256}</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ['Imported jobs', databaseParity.metrics.importedWorkOrders, databaseParity.baseline?.sourceRows],
+                ['Breakdowns', databaseParity.metrics.breakdowns, databaseParity.baseline?.breakdowns],
+                ['Priority-1 · 2025', databaseParity.metrics.priorityOne2025, databaseParity.baseline?.priorityOne2025],
+                ['Response minutes', databaseParity.metrics.priorityOneResponseMinutes, databaseParity.baseline?.priorityOneResponseMinutes],
+                ['Week 32 breakdowns', databaseParity.metrics.week32Breakdowns, databaseParity.baseline?.week32Breakdowns],
+                ['Maintenance requests', databaseParity.metrics.importedMaintenanceRequests, databaseParity.baseline?.sourceRows],
+                ['Audit rows', databaseParity.metrics.auditRows, databaseParity.baseline?.sourceRows],
+                ['Linked MR ↔ WO pairs', databaseParity.metrics.linkedPairs, databaseParity.baseline?.sourceRows],
+              ].map(([label, actual, expected]) => (
+                <div key={String(label)} className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-1 text-lg font-semibold">{Number(actual).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                  <p className="text-[11px] text-muted-foreground">Expected {expected === undefined || expected === null ? '—' : Number(expected).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{databaseParity.note}</p>
+          </>}
+        </CardContent>
+      </Card>}
+
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSpreadsheet className="h-5 w-5" />GTP Workbook</CardTitle><CardDescription>Expected sheets: JobRecords, NewOder, Machines and Trade. .xlsm and .xlsx are accepted.</CardDescription></CardHeader>
         <CardContent>
-          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); setLoadedBundle(null); }} />
+          <Input ref={inputRef} type="file" accept=".xlsm,.xlsx" className="hidden" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setOverrides({}); setReportedTimeCorrections({}); setEquipmentMappings({}); setLastImport(null); setDatabaseParity(null); setLoadedBundle(null); }} />
           <Input ref={bundleInputRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const bundleFile = e.target.files?.[0]; if (bundleFile) void loadReconciliationBundle(bundleFile); }} />
           <div className="space-y-3 rounded-xl border border-dashed p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -541,6 +649,46 @@ export function GtpMigrationPage() {
             </div>}
 
             {result.workbookParity.warnings.map((warning) => <p key={warning} className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{warning}</p>)}
+          </CardContent>
+        </Card>}
+
+
+        {result.legacyParityBaseline && <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Workbook Parity Baseline</CardTitle>
+                <CardDescription>Frozen acceptance values extracted directly from the five saved GTP workbook pivots before import.</CardDescription>
+              </div>
+              <Badge variant="outline">
+                {result.legacyParityBaseline.extractedSheetCount}/{result.legacyParityBaseline.expectedSheetCount} pivot sheets
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Pivot sheet</TableHead><TableHead>Metric</TableHead><TableHead className="text-right">Points</TableHead><TableHead className="text-right">Cached total</TableHead><TableHead className="text-right">Independent total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableBody>{result.legacyParityBaseline.sheets.map((sheet) => {
+                const cachedNumeric = typeof sheet.cachedGrandTotal === 'number' ? sheet.cachedGrandTotal : null;
+                const reconciles = cachedNumeric !== null && Math.abs(cachedNumeric - sheet.computedSeriesTotal) < 0.000001;
+                const cachedLabel = sheet.cachedGrandTotal === null ? '—' : typeof sheet.cachedGrandTotal === 'number'
+                  ? sheet.cachedGrandTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                  : sheet.cachedGrandTotal;
+                return <TableRow key={sheet.sheetName}>
+                  <TableCell><div className="font-mono font-semibold">{sheet.sheetName}</div><div className="text-xs text-muted-foreground">{sheet.chartFamily} chart</div></TableCell>
+                  <TableCell className="max-w-[420px] whitespace-normal">{sheet.metric}</TableCell>
+                  <TableCell className="text-right">{sheet.points.length.toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-mono">{cachedLabel}</TableCell>
+                  <TableCell className="text-right font-mono">{sheet.computedSeriesTotal.toLocaleString(undefined, { maximumFractionDigits: 6 })}</TableCell>
+                  <TableCell>{reconciles
+                    ? <span className="text-emerald-700">Reconciled</span>
+                    : cachedNumeric === null
+                      ? <span className="text-amber-700">Cached value needs review</span>
+                      : <span className="text-amber-700">Total differs</span>}
+                  </TableCell>
+                </TableRow>;
+              })}</TableBody>
+            </Table>
           </CardContent>
         </Card>}
 

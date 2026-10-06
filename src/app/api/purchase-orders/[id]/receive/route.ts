@@ -37,7 +37,7 @@ export async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Serialize receipts for one PO so separate lines cannot race the final PO status.
-      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `iassetspro:po-receive:${id}`);
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `iassetspro:po-receive:${id}`);
 
       const po = await tx.purchaseOrder.findUnique({
         where: { id },

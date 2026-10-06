@@ -453,6 +453,8 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory_transfers.view', 'inventory_transfers.create', 'inventory_transfers.update', 'inventory_transfers.approve',
     'assets.view', 'work_orders.view', 'work_orders.view_all',
     'maintenance_requests.view',
+    // Inventory owns final store custody for reusable/refurbished repair parts.
+    'spare_part_returns.view_all', 'spare_part_returns.update',
     'reports.view', 'reports.export', 'reports.generate',
     'analytics.view',
   ],

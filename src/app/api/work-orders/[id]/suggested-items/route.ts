@@ -833,6 +833,28 @@ export async function PUT(
           if (!item || item.plantId !== wo.plantId || !Number.isFinite(quantity) || quantity <= 0) continue;
 
           const unitCost = item.unitCost ?? 0;
+
+          let componentRegistryId =
+            typeof part.componentRegistryId === 'string' && part.componentRegistryId
+              ? part.componentRegistryId
+              : null;
+
+          if (!componentRegistryId) {
+            const linkedComponent = await tx.workOrderComponent.findFirst({
+              where: {
+                workOrderId: id,
+                componentRegistry: {
+                  sparePartLinks: {
+                    some: { inventoryItemId: item.id },
+                  },
+                },
+              },
+              select: { componentRegistryId: true },
+              orderBy: { createdAt: 'asc' },
+            });
+            componentRegistryId = linkedComponent?.componentRegistryId ?? null;
+          }
+
           await tx.repairMaterialRequest.updateMany({
             where: {
               workOrderId: id,
@@ -848,6 +870,7 @@ export async function PUT(
           await tx.repairMaterialRequest.create({
             data: {
               workOrderId: id,
+              componentRegistryId,
               itemId: item.id,
               itemName: item.name,
               quantityRequested: quantity,

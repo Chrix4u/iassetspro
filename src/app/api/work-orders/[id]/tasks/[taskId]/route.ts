@@ -33,6 +33,13 @@ export async function PATCH(
       );
     }
 
+    if (status === 'skipped' && (typeof notes !== 'string' || !notes.trim())) {
+      return NextResponse.json(
+        { success: false, error: 'A reason is required when skipping a work-order task' },
+        { status: 400 },
+      );
+    }
+
     const task = await db.workOrderTaskExecution.findUnique({
       where: { id: taskId },
       include: {

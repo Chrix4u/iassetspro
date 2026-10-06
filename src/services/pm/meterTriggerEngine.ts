@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { notifyUser } from '@/lib/notifications';
+import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 
 export interface MeterThresholdResult {
   due: boolean;
@@ -239,6 +240,8 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         },
         update: {},
       });
+
+      await materializePmTemplateTasks(tx, wo.id, tasks);
 
       for (const task of tasks) {
         await tx.workOrderComment.create({

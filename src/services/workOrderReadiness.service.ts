@@ -65,6 +65,10 @@ type WoReadinessData = {
   }[]
   repairCompletion: { id: string; reworkCount: number } | null
   shiftHandovers: { id: string; status: string }[]
+  taskExecutions: { id: string; templateTaskId: string | null; taskNumber: number; status: string }[]
+  pmSchedule: {
+    template: { tasks: { id: string }[] } | null
+  } | null
   assignee?: {
     id: string
     status: string | null
@@ -135,6 +139,16 @@ export async function checkReadiness(
       },
       repairCompletion: { select: { id: true, reworkCount: true } },
       shiftHandovers: { select: { id: true, status: true } },
+      taskExecutions: { select: { id: true, templateTaskId: true, taskNumber: true, status: true } },
+      pmSchedule: {
+        select: {
+          template: {
+            select: {
+              tasks: { where: { isActive: true }, select: { id: true } },
+            },
+          },
+        },
+      },
       assignee: {
         select: {
           id: true,
@@ -327,12 +341,40 @@ function checkCompletionReadiness(
   }
 
   checkUnresolvedHandover(wo, blockers)
+  checkTaskChecklistReadiness(wo, blockers)
   checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
 }
 
 function checkUnresolvedHandover(wo: WoReadinessData, blockers: ReadinessItem[]): void {
   const pendingHandovers = wo.shiftHandovers.filter((sh) => sh.status === 'pending')
   if (pendingHandovers.length > 0) blockers.push({ code: 'UNRESOLVED_HANDOVER', category: 'safety', message: `${pendingHandovers.length} shift handover(s) still pending — all handovers must be confirmed before completion`, severity: 'blocker' })
+}
+
+function checkTaskChecklistReadiness(wo: WoReadinessData, blockers: ReadinessItem[]): void {
+  const templateRequiresSnapshot = (wo.pmSchedule?.template?.tasks.length ?? 0) > 0
+  const taskExecutions = wo.taskExecutions || []
+  const hasTemplateSnapshot = taskExecutions.some((task) => Boolean(task.templateTaskId))
+
+  if (templateRequiresSnapshot && !hasTemplateSnapshot) {
+    blockers.push({
+      code: 'PM_CHECKLIST_NOT_MATERIALIZED',
+      category: 'task',
+      message: 'This preventive work order has a PM template checklist that has not been materialized. Open the Task Checklist before completing the work.',
+      severity: 'blocker',
+    })
+  }
+
+  const unresolved = taskExecutions.filter((task) => ['pending', 'in_progress', 'failed'].includes(task.status))
+  if (unresolved.length > 0) {
+    const failed = unresolved.filter((task) => task.status === 'failed').length
+    const active = unresolved.length - failed
+    blockers.push({
+      code: 'TASK_CHECKLIST_INCOMPLETE',
+      category: 'task',
+      message: `${unresolved.length} checklist task(s) remain unresolved${failed > 0 ? ` (${failed} failed)` : ''}${active > 0 ? ` (${active} pending/in progress)` : ''}. Complete, resolve, or formally skip each required task before completion.`,
+      severity: 'blocker',
+    })
+  }
 }
 
 function checkRequiredRepairEvidence(
@@ -373,6 +415,7 @@ function checkVerificationReadiness(
   warnings: ReadinessItem[],
 ): void {
   if (!wo.repairCompletion) blockers.push({ code: 'NO_COMPLETION_REPORT', category: 'evidence', message: 'No completion report has been submitted for this work order', severity: 'blocker' })
+  checkTaskChecklistReadiness(wo, blockers)
   checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
   checkToolCustody(wo, blockers)
   checkMaterialReconciliation(wo, blockers)
@@ -392,6 +435,7 @@ function checkClosureReadiness(
   warnings: ReadinessItem[],
 ): void {
   if (wo.status !== 'verified') blockers.push({ code: 'NOT_VERIFIED', category: 'task', message: `Work order status is '${wo.status}', must be 'verified' before closure`, severity: 'blocker' })
+  checkTaskChecklistReadiness(wo, blockers)
   checkRequiredRepairEvidence(wo, evidenceAttachmentCount, blockers)
   checkToolCustody(wo, blockers)
   checkMaterialReconciliation(wo, blockers)

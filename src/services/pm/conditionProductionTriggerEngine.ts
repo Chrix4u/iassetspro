@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { notifyUser } from '@/lib/notifications';
 import { evaluateMeterThreshold } from '@/services/pm/meterTriggerEngine';
 import { parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
+import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 
 export function conditionMatches(current: number, operator: string, target: number): boolean {
   switch (operator) {
@@ -340,6 +341,8 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
           update: {},
         });
       }
+
+      await materializePmTemplateTasks(tx, wo.id, tasks);
 
       for (const task of tasks) {
         await tx.workOrderComment.create({

@@ -58,8 +58,10 @@ export async function GET(
     });
 
     // Template task materialization is deterministic and limited to a user who
-    // has already passed strict plant + workflow-relationship authorization.
-    if (existingTasks.length === 0 && wo.pmSchedule?.template?.tasks && wo.pmSchedule.template.tasks.length > 0) {
+    // has already passed strict plant + workflow-relationship authorization. A
+    // manually-added task must not suppress the PM template snapshot for legacy WOs.
+    const hasTemplateSnapshot = existingTasks.some((task) => Boolean(task.templateTaskId));
+    if (!hasTemplateSnapshot && wo.pmSchedule?.template?.tasks && wo.pmSchedule.template.tasks.length > 0) {
       const templateTasks = wo.pmSchedule.template.tasks;
       const createData = templateTasks.map((tt) => ({
         workOrderId: id,

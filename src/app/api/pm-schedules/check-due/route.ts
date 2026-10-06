@@ -5,6 +5,7 @@ import { getPlantScope, type PlantScopeResult } from '@/lib/plant-scope';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
+import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
                   where: { isActive: true },
                   orderBy: { taskNumber: 'asc' },
                   select: {
+                    id: true,
                     taskNumber: true,
                     description: true,
                     taskType: true,
@@ -285,6 +287,8 @@ export async function POST(request: NextRequest) {
             update: {},
           });
         }
+
+        await materializePmTemplateTasks(tx, wo.id, tasks);
 
         for (const task of tasks) {
           await tx.workOrderComment.create({

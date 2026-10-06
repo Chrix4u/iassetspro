@@ -1896,9 +1896,25 @@ export default function RWOPReportingPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="max-h-[620px] overflow-auto print:max-h-none print:overflow-visible">
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-background print:static">
+              <div className="max-h-[620px] w-full overflow-auto print:max-h-none print:overflow-visible">
+                <table
+                  data-testid="maintenance-work-order-detail-table"
+                  className="w-full min-w-[1480px] table-fixed caption-bottom text-sm"
+                >
+                  <colgroup>
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '260px' }} />
+                    <col style={{ width: '190px' }} />
+                    <col style={{ width: '110px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '160px' }} />
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '90px' }} />
+                  </colgroup>
+                  <TableHeader className="bg-background print:static [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-background">
                     <TableRow>
                       <TableHead>WO</TableHead>
                       <TableHead>Title</TableHead>
@@ -1906,10 +1922,10 @@ export default function RWOPReportingPage() {
                       <TableHead>Type</TableHead>
                       <TableHead>Priority</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="hidden lg:table-cell">Assigned To</TableHead>
+                      <TableHead>Assigned To</TableHead>
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">Cost</TableHead>
-                      <TableHead className="hidden xl:table-cell">Created</TableHead>
+                      <TableHead>Created</TableHead>
                       <TableHead className="text-right print:hidden">Action</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1921,18 +1937,18 @@ export default function RWOPReportingPage() {
                     ) : workOrders.map(wo => (
                       <TableRow key={wo.id}>
                         <TableCell className="font-mono text-xs">{wo.woNumber || '—'}</TableCell>
-                        <TableCell className="max-w-[280px] font-medium"><span className="line-clamp-2">{wo.title || 'Untitled work order'}</span></TableCell>
-                        <TableCell>
-                          <div>{wo.assetName || 'Unassigned'}</div>
+                        <TableCell className="whitespace-normal font-medium"><span className="line-clamp-2">{wo.title || 'Untitled work order'}</span></TableCell>
+                        <TableCell className="whitespace-normal">
+                          <div className="line-clamp-2">{wo.assetName || 'Unassigned'}</div>
                           {wo.assetTag && <div className="font-mono text-[10px] text-muted-foreground">{wo.assetTag}</div>}
                         </TableCell>
                         <TableCell className="text-xs">{prettify(wo.type)}</TableCell>
                         <TableCell className="text-xs">{prettify(wo.priority)}</TableCell>
                         <TableCell><Badge variant={statusBadge(wo.status)} className="text-[10px]">{prettify(wo.status)}</Badge></TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm">{wo.assigneeName || wo.teamLeaderName || '—'}</TableCell>
+                        <TableCell className="truncate text-sm" title={wo.assigneeName || wo.teamLeaderName || undefined}>{wo.assigneeName || wo.teamLeaderName || '—'}</TableCell>
                         <TableCell className="text-right font-mono text-xs">{wo.actualHours ?? wo.estimatedHours ?? '—'}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{formatCurrency(wo.totalCost ?? 0)}</TableCell>
-                        <TableCell className="hidden xl:table-cell text-xs text-muted-foreground">{wo.createdAt ? formatDate(wo.createdAt) : '—'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{wo.createdAt ? formatDate(wo.createdAt) : '—'}</TableCell>
                         <TableCell className="text-right print:hidden">
                           <Button asChild variant="ghost" size="sm">
                             <Link href={`/work-orders/${wo.id}`} aria-label={`Open work order ${wo.woNumber || wo.id}`}>
@@ -1943,7 +1959,7 @@ export default function RWOPReportingPage() {
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </table>
               </div>
             </CardContent>
           </Card>

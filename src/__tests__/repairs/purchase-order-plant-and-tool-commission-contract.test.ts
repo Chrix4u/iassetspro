@@ -19,6 +19,8 @@ describe('Repairs procurement and reusable tool closure contracts', () => {
   it('makes receiving concurrency-safe and never promotes bad receipts into usable stock', () => {
     const receive = read('src/app/api/purchase-orders/[id]/receive/route.ts');
     expect(receive).toContain('pg_advisory_xact_lock');
+    expect(receive).toContain('tx.$executeRawUnsafe');
+    expect(receive).not.toContain('tx.$queryRawUnsafe');
     expect(receive).toContain('PO line was received concurrently');
     expect(receive).toContain("const stockCredited = condition === 'good'");
     expect(receive).toContain('Invalid receiving condition');
@@ -28,6 +30,8 @@ describe('Repairs procurement and reusable tool closure contracts', () => {
     const commission = read('src/app/api/inventory/[id]/commission-tools/route.ts');
     const toolEdit = read('src/app/api/tools/[id]/route.ts');
     expect(commission).toContain("hasAnyPermission(session, ['inventory.stock_out', 'inventory.manage'])");
+    expect(commission).toContain('tx.$executeRawUnsafe');
+    expect(commission).not.toContain('tx.$queryRawUnsafe');
     expect(commission).toContain("type: 'purchase_commission'");
     expect(toolEdit).toContain("'status', 'location', 'purchaseDate', 'purchaseCost'");
   });

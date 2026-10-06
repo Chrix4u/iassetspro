@@ -101,12 +101,18 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
 
   await test.step('Receiving the approved PO increases usable inventory through the frontend', async () => {
     await inventoryPage.goto('/#/inventory-receiving');
-    await expect(inventoryPage.getByRole('heading', { name: 'Receiving' })).toBeVisible();
+    await expect(inventoryPage.getByRole('main').getByRole('heading', { name: 'Receiving', level: 1 })).toBeVisible();
     await inventoryPage.getByRole('button', { name: /New GRN/i }).click();
     await chooseSearchable(inventoryPage, /Select PO item/i, /Search PO or item/i, toolCode);
     const receiptDialog = inventoryPage.getByRole('dialog');
     await receiptDialog.locator('input[type="number"]').first().fill('2');
+    const receiptResponsePromise = inventoryPage.waitForResponse((response) =>
+      response.request().method() === 'POST' && /\/api\/purchase-orders\/[^/]+\/receive(?:\?|$)/.test(response.url()),
+    );
     await inventoryPage.getByRole('button', { name: 'Receive Items' }).click();
+    const receiptResponse = await receiptResponsePromise;
+    const receiptBody = await receiptResponse.json().catch(() => null);
+    expect(receiptResponse.status(), `GRN receive failed: ${JSON.stringify(receiptBody)}`).toBe(200);
     await expect(inventoryPage.getByText('Items received and usable inventory updated')).toBeVisible();
 
     const stock = await apiCall(inventoryToken, 'GET', `/api/inventory?search=${encodeURIComponent(toolCode)}&plantId=${encodeURIComponent(plantId)}`);

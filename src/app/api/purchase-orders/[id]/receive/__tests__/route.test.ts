@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const { mockDb, mockTx, mockGetSession, mockHasAnyPermission, mockIsAdmin, mockGetPlantScope, mockCanAccessPlantStrict } = vi.hoisted(() => {
   const tx = {
-    $queryRawUnsafe: vi.fn(),
+    $executeRawUnsafe: vi.fn(),
     purchaseOrder: { findUnique: vi.fn(), updateMany: vi.fn() },
     purchaseOrderItem: { updateMany: vi.fn(), findMany: vi.fn() },
     inventoryItem: { updateMany: vi.fn() },
@@ -81,7 +81,7 @@ describe('POST /api/purchase-orders/[id]/receive', () => {
     mockGetPlantScope.mockResolvedValue(plantScope);
     mockCanAccessPlantStrict.mockReturnValue(true);
     mockDb.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => callback(mockTx));
-    mockTx.$queryRawUnsafe.mockResolvedValue([]);
+    mockTx.$executeRawUnsafe.mockResolvedValue(1);
     mockTx.receivingRecord.create.mockResolvedValue({ id: 'grn-1' });
     mockTx.stockMovement.create.mockResolvedValue({ id: 'mov-1' });
     mockTx.auditLog.create.mockResolvedValue({ id: 'audit-1' });

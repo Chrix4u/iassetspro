@@ -607,7 +607,7 @@ describe('submitCompletion', () => {
     );
   });
 
-  it('should advance PM schedule when WO has pmScheduleId', async () => {
+  it('should NOT advance PM schedule at technician completion even when WO has pmScheduleId', async () => {
     mockFetchEnrichedWO(makeEnrichedWO({
       pmScheduleId: 'pms-1',
       laborCost: 0,
@@ -631,7 +631,8 @@ describe('submitCompletion', () => {
 
     const result = await submitCompletion('wo-1', techSession, {});
     expect(result.success).toBe(true);
-    expect(mockDb.pmSchedule.update).toHaveBeenCalled();
+    expect(mockDb.pmSchedule.findUnique).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
   });
 
   it('should NOT advance PM schedule when frequency is not auto-calculable', async () => {

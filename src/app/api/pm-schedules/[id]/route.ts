@@ -4,7 +4,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
-import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export async function GET(
   request: NextRequest,
@@ -174,12 +174,6 @@ export async function PUT(
     const prospectiveScheduleFrequency = body.frequencyType !== undefined
       ? String(body.frequencyType)
       : existing.frequencyType;
-    const prospectiveIsActive = body.isActive !== undefined
-      ? body.isActive === true
-      : existing.isActive;
-    const prospectiveTemplateId = body.templateId !== undefined
-      ? (body.templateId || null)
-      : existing.templateId;
     if (!isAutoCalculableFrequency(prospectiveScheduleFrequency)) {
       updateData.nextDueDate = null;
     }
@@ -263,10 +257,26 @@ export async function PUT(
     }
 
     const updateResult = await db.$transaction(async (tx) => {
-      if (prospectiveIsActive && prospectiveTemplateId) {
-        await lockPmTemplateLifecycle(tx, prospectiveTemplateId);
+      await lockPmScheduleLifecycle(tx, id);
+      const lockedSchedule = await tx.pmSchedule.findUnique({
+        where: { id },
+        select: { isActive: true, templateId: true },
+      });
+      if (!lockedSchedule) {
+        return { kind: 'not_found' as const };
+      }
+
+      const effectiveIsActive = body.isActive !== undefined
+        ? body.isActive === true
+        : lockedSchedule.isActive;
+      const effectiveTemplateId = body.templateId !== undefined
+        ? (body.templateId || null)
+        : lockedSchedule.templateId;
+
+      if (effectiveIsActive && effectiveTemplateId) {
+        await lockPmTemplateLifecycle(tx, effectiveTemplateId);
         const template = await tx.pmTemplate.findUnique({
-          where: { id: prospectiveTemplateId },
+          where: { id: effectiveTemplateId },
           select: {
             id: true,
             isActive: true,
@@ -325,6 +335,9 @@ export async function PUT(
       return { kind: 'updated' as const, nextSchedule };
     });
 
+    if (updateResult.kind === 'not_found') {
+      return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 404 });
+    }
     if (updateResult.kind === 'invalid_template') {
       return NextResponse.json(
         { success: false, error: 'PM template must be active and contain at least one active task' },
@@ -375,6 +388,7 @@ export async function DELETE(
     }
 
     const deactivated = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, id);
       const updatedSchedule = await tx.pmSchedule.update({
       where: { id },
       data: { isActive: false },

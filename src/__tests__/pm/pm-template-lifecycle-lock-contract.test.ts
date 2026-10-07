@@ -17,15 +17,15 @@ describe('PM template lifecycle serialization contract', () => {
     expect(lifecycle).toContain('pg_advisory_xact_lock');
 
     expect(scheduleCollection).toContain(`${LOCK_CALL} templateId)`);
-    expect(scheduleDetail).toContain(`${LOCK_CALL} prospectiveTemplateId)`);
+    expect(scheduleDetail).toContain(`${LOCK_CALL} effectiveTemplateId)`);
     expect(templateDetail.match(/lockPmTemplateLifecycle\(tx, id\)/g)?.length).toBeGreaterThanOrEqual(2);
     expect(taskDetail).toContain(`${LOCK_CALL} id)`);
   });
 
   it('revalidates the effective retained template whenever an existing schedule becomes or remains active', () => {
-    expect(scheduleDetail).toContain('const prospectiveIsActive =');
-    expect(scheduleDetail).toContain('const prospectiveTemplateId =');
-    expect(scheduleDetail).toContain('if (prospectiveIsActive && prospectiveTemplateId)');
+    expect(scheduleDetail).toContain('const effectiveIsActive =');
+    expect(scheduleDetail).toContain('const effectiveTemplateId =');
+    expect(scheduleDetail).toContain('if (effectiveIsActive && effectiveTemplateId)');
     expect(scheduleDetail).toContain('tasks: { where: { isActive: true }, take: 1');
     expect(scheduleDetail).toContain(RUNNABLE_ERROR);
   });

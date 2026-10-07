@@ -56,10 +56,10 @@ describe('PM template/schedule lifecycle lock contract', () => {
 
   it('validates the effective retained template when an active schedule is updated or reactivated', () => {
     const put = section(detail, 'export async function PUT(', 'export async function DELETE(');
-    expect(put).toContain('const prospectiveIsActive = body.isActive !== undefined');
-    expect(put).toContain('const prospectiveTemplateId = body.templateId !== undefined');
-    expect(put).toContain('if (prospectiveIsActive && prospectiveTemplateId)');
-    expect(put).toContain('lockPmTemplateLifecycle(tx, prospectiveTemplateId)');
+    expect(put).toContain('const effectiveIsActive = body.isActive !== undefined');
+    expect(put).toContain('const effectiveTemplateId = body.templateId !== undefined');
+    expect(put).toContain('if (effectiveIsActive && effectiveTemplateId)');
+    expect(put).toContain('lockPmTemplateLifecycle(tx, effectiveTemplateId)');
     expect(put).toContain('tx.pmTemplate.findUnique');
     expect(put).toContain('tasks: { where: { isActive: true }, take: 1, select: { id: true } }');
     expect(put).toContain("kind: 'invalid_template'");

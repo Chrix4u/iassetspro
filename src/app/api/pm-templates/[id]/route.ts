@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 // ============================================================================
 // GET /api/pm-templates/[id] — Get single template with tasks
@@ -114,16 +115,62 @@ export async function PUT(
       );
     }
 
-    const updated = await db.pmTemplate.update({
-      where: { id },
-      data: updateData,
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-        _count: { select: { tasks: true } },
-      },
+    const result = await db.$transaction(async (tx) => {
+      if (body.isActive === false) {
+        await lockPmTemplateLifecycle(tx, id);
+        const activeSchedule = await tx.pmSchedule.findFirst({
+          where: { templateId: id, isActive: true },
+          select: { id: true, title: true },
+        });
+        if (activeSchedule) {
+          return { kind: 'in_use' as const, activeSchedule };
+        }
+      }
+
+      const updatedTemplate = await tx.pmTemplate.update({
+        where: { id },
+        data: updateData,
+        include: {
+          createdBy: { select: { id: true, fullName: true, username: true } },
+          _count: { select: { tasks: { where: { isActive: true } } } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_template',
+          entityId: id,
+          oldValues: JSON.stringify({
+            title: existing.title,
+            description: existing.description,
+            type: existing.type,
+            category: existing.category,
+            estimatedDuration: existing.estimatedDuration,
+            priority: existing.priority,
+            requiredSkills: existing.requiredSkills,
+            requiredTools: existing.requiredTools,
+            isActive: existing.isActive,
+          }),
+          newValues: JSON.stringify(updateData),
+        },
+      });
+
+      return { kind: 'updated' as const, updatedTemplate };
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    if (result.kind === 'in_use') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot deactivate this PM template while active PM schedule "${result.activeSchedule.title}" uses it. Reassign or deactivate that schedule first.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: result.updatedTemplate });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update PM template';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -157,12 +204,46 @@ export async function DELETE(
       );
     }
 
-    const deactivated = await db.pmTemplate.update({
-      where: { id },
-      data: { isActive: false },
+    const result = await db.$transaction(async (tx) => {
+      await lockPmTemplateLifecycle(tx, id);
+      const activeSchedule = await tx.pmSchedule.findFirst({
+        where: { templateId: id, isActive: true },
+        select: { id: true, title: true },
+      });
+      if (activeSchedule) {
+        return { kind: 'in_use' as const, activeSchedule };
+      }
+
+      const deactivatedTemplate = await tx.pmTemplate.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'pm_template',
+          entityId: id,
+          oldValues: JSON.stringify({ title: existing.title, isActive: existing.isActive }),
+          newValues: JSON.stringify({ isActive: false }),
+        },
+      });
+
+      return { kind: 'deactivated' as const, deactivatedTemplate };
     });
 
-    return NextResponse.json({ success: true, data: deactivated });
+    if (result.kind === 'in_use') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot deactivate this PM template while active PM schedule "${result.activeSchedule.title}" uses it. Reassign or deactivate that schedule first.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: result.deactivatedTemplate });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to deactivate PM template';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

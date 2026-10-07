@@ -23,11 +23,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const type = searchParams.get('type');
+    const active = searchParams.get('active');
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50));
 
     const checklistScopeWhere = await buildChecklistScopeWhere(plantScope);
     const filters: Prisma.ChecklistWhereInput[] = [checklistScopeWhere];
+    if (active === null) filters.push({ isActive: true });
+    else if (active === 'true' || active === 'false') filters.push({ isActive: active === 'true' });
     if (type) filters.push({ type });
     if (search) {
       filters.push({
@@ -122,43 +125,47 @@ export async function POST(request: NextRequest) {
       parsedItems = [];
     }
 
-    const checklist = await db.checklist.create({
-      data: {
-        title,
-        description: description || null,
-        type,
-        frequency,
-        departmentId: normalizedDepartmentId,
-        assetId: normalizedAssetId,
-        createdById: session.userId,
-        items: {
-          create: parsedItems.map((item, index) => ({
-            item,
-            sortOrder: index,
-            isRequired: true,
-          })),
-        },
-      },
-      include: {
-        items: { orderBy: { sortOrder: 'asc' } },
-      },
-    });
-
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'checklist',
-        entityId: checklist.id,
-        newValues: JSON.stringify({
+    const checklist = await db.$transaction(async (tx) => {
+      const createdChecklist = await tx.checklist.create({
+        data: {
           title,
+          description: description || null,
           type,
           frequency,
-          assetId: normalizedAssetId,
           departmentId: normalizedDepartmentId,
-          itemCount: parsedItems.length,
-        }),
-      },
+          assetId: normalizedAssetId,
+          createdById: session.userId,
+          items: {
+            create: parsedItems.map((item, index) => ({
+              item,
+              sortOrder: index,
+              isRequired: true,
+            })),
+          },
+        },
+        include: {
+          items: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'checklist',
+          entityId: createdChecklist.id,
+          newValues: JSON.stringify({
+            title,
+            type,
+            frequency,
+            assetId: normalizedAssetId,
+            departmentId: normalizedDepartmentId,
+            itemCount: parsedItems.length,
+          }),
+        },
+      });
+
+      return createdChecklist;
     });
 
     return NextResponse.json({ success: true, data: checklist }, { status: 201 });

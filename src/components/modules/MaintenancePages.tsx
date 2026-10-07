@@ -10336,14 +10336,16 @@ export function PmTemplatesPage() {
                               </div>
                             </div>
                             {/* Delete task button */}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 opacity-0 group-hover/task:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
-                              onClick={() => setDeleteTaskConfirmId(task.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {canUpdateTemplate && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover/task:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                                onClick={() => setDeleteTaskConfirmId(task.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </div>
                         );
                       })

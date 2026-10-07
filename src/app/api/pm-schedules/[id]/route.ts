@@ -4,6 +4,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export async function GET(
   request: NextRequest,
@@ -33,7 +34,7 @@ export async function GET(
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -177,16 +178,6 @@ export async function PUT(
       updateData.nextDueDate = null;
     }
 
-    if (body.templateId !== undefined && body.templateId) {
-      const template = await db.pmTemplate.findUnique({
-        where: { id: body.templateId },
-        select: { id: true, isActive: true },
-      });
-      if (!template || !template.isActive) {
-        return NextResponse.json({ success: false, error: 'PM template not found or inactive' }, { status: 400 });
-      }
-    }
-
     if (body.componentId !== undefined && body.componentId) {
       const component = await db.componentRegistry.findUnique({
         where: { id: body.componentId },
@@ -265,7 +256,38 @@ export async function PUT(
       reconciledTriggerValue = effectiveTriggerValue;
     }
 
-    const updated = await db.$transaction(async (tx) => {
+    const updateResult = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, id);
+      const lockedSchedule = await tx.pmSchedule.findUnique({
+        where: { id },
+        select: { isActive: true, templateId: true },
+      });
+      if (!lockedSchedule) {
+        return { kind: 'not_found' as const };
+      }
+
+      const effectiveIsActive = body.isActive !== undefined
+        ? body.isActive === true
+        : lockedSchedule.isActive;
+      const effectiveTemplateId = body.templateId !== undefined
+        ? (body.templateId || null)
+        : lockedSchedule.templateId;
+
+      if (effectiveIsActive && effectiveTemplateId) {
+        await lockPmTemplateLifecycle(tx, effectiveTemplateId);
+        const template = await tx.pmTemplate.findUnique({
+          where: { id: effectiveTemplateId },
+          select: {
+            id: true,
+            isActive: true,
+            tasks: { where: { isActive: true }, take: 1, select: { id: true } },
+          },
+        });
+        if (!template || !template.isActive || template.tasks.length === 0) {
+          return { kind: 'invalid_template' as const };
+        }
+      }
+
       const nextSchedule = await tx.pmSchedule.update({
         where: { id },
         data: updateData,
@@ -274,7 +296,7 @@ export async function PUT(
           component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
           assignedTo: { select: { id: true, fullName: true, username: true } },
           department: { select: { id: true, name: true, code: true } },
-          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
+          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
           createdBy: { select: { id: true, fullName: true, username: true } },
         },
       });
@@ -310,10 +332,20 @@ export async function PUT(
         },
       });
 
-      return nextSchedule;
+      return { kind: 'updated' as const, nextSchedule };
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    if (updateResult.kind === 'not_found') {
+      return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 404 });
+    }
+    if (updateResult.kind === 'invalid_template') {
+      return NextResponse.json(
+        { success: false, error: 'PM template must be active and contain at least one active task' },
+        { status: 400 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: updateResult.nextSchedule });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update PM schedule';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -356,6 +388,7 @@ export async function DELETE(
     }
 
     const deactivated = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, id);
       const updatedSchedule = await tx.pmSchedule.update({
       where: { id },
       data: { isActive: false },

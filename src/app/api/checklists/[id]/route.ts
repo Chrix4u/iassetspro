@@ -100,28 +100,32 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = await db.checklist.update({
-      where: { id },
-      data: updateData,
-      include: {
-        items: { orderBy: { sortOrder: 'asc' } },
-      },
-    });
+    const updated = await db.$transaction(async (tx) => {
+      const updatedChecklist = await tx.checklist.update({
+        where: { id },
+        data: updateData,
+        include: {
+          items: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'checklist',
-        entityId: id,
-        oldValues: JSON.stringify({
-          title: existing.title,
-          isActive: existing.isActive,
-          assetId: existing.assetId,
-          departmentId: existing.departmentId,
-        }),
-        newValues: JSON.stringify(updateData),
-      },
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'checklist',
+          entityId: id,
+          oldValues: JSON.stringify({
+            title: existing.title,
+            isActive: existing.isActive,
+            assetId: existing.assetId,
+            departmentId: existing.departmentId,
+          }),
+          newValues: JSON.stringify(updateData),
+        },
+      });
+
+      return updatedChecklist;
     });
 
     return NextResponse.json({ success: true, data: updated });
@@ -159,8 +163,10 @@ export async function DELETE(
     }
 
     await db.$transaction(async (tx) => {
-      await tx.checklistItem.deleteMany({ where: { checklistId: id } });
-      await tx.checklist.delete({ where: { id } });
+      await tx.checklist.update({
+        where: { id },
+        data: { isActive: false },
+      });
       await tx.auditLog.create({
         data: {
           userId: session.userId,
@@ -171,12 +177,14 @@ export async function DELETE(
             title: existing.title,
             assetId: existing.assetId,
             departmentId: existing.departmentId,
+            isActive: existing.isActive,
           }),
+          newValues: JSON.stringify({ isActive: false }),
         },
       });
     });
 
-    return NextResponse.json({ success: true, message: 'Checklist deleted' });
+    return NextResponse.json({ success: true, message: 'Checklist deactivated' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete checklist';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

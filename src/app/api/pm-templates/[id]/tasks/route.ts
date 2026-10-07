@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+const VALID_TASK_TYPES = new Set(['check', 'measure', 'inspect', 'lubricate', 'replace', 'record']);
+
 // ============================================================================
 // POST /api/pm-templates/[id]/tasks — Add a task to a template
 // ============================================================================
@@ -23,12 +25,36 @@ export async function POST(
     const body = await request.json();
     const { description, taskType, requiredParts, estimatedMinutes, taskNumber } = body;
 
-    if (!description || !taskType) {
+    if (typeof description !== 'string' || !description.trim() || typeof taskType !== 'string') {
       return NextResponse.json(
         { success: false, error: 'Description and task type are required' },
         { status: 400 }
       );
     }
+    if (!VALID_TASK_TYPES.has(taskType)) {
+      return NextResponse.json({ success: false, error: 'Invalid task type' }, { status: 400 });
+    }
+
+    let normalizedEstimatedMinutes: number | null = null;
+    if (estimatedMinutes !== undefined && estimatedMinutes !== null && estimatedMinutes !== '') {
+      normalizedEstimatedMinutes = Number(estimatedMinutes);
+      if (!Number.isInteger(normalizedEstimatedMinutes) || normalizedEstimatedMinutes <= 0) {
+        return NextResponse.json(
+          { success: false, error: 'Estimated minutes must be a positive whole number' },
+          { status: 400 },
+        );
+      }
+    }
+    if (requiredParts !== undefined && requiredParts !== null
+      && (!Array.isArray(requiredParts) || !requiredParts.every((part) => typeof part === 'string' && part.trim().length > 0))) {
+      return NextResponse.json(
+        { success: false, error: 'Required parts must be an array of non-empty strings' },
+        { status: 400 },
+      );
+    }
+    const normalizedRequiredParts = Array.isArray(requiredParts)
+      ? requiredParts.map((part: string) => part.trim())
+      : null;
 
     const requestedNumber = taskNumber !== undefined ? Number(taskNumber) : null;
     if (requestedNumber !== null && (!Number.isInteger(requestedNumber) || requestedNumber <= 0)) {
@@ -67,13 +93,31 @@ export async function POST(
         data: {
           templateId: id,
           taskNumber: nextNumber,
-          description,
+          description: description.trim(),
           taskType,
-          requiredParts: requiredParts ? JSON.stringify(requiredParts) : null,
-          estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+          requiredParts: normalizedRequiredParts && normalizedRequiredParts.length > 0 ? JSON.stringify(normalizedRequiredParts) : null,
+          estimatedMinutes: normalizedEstimatedMinutes,
           sortOrder: nextNumber,
         },
       });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'pm_template_task',
+          entityId: task.id,
+          newValues: JSON.stringify({
+            templateId: id,
+            taskNumber: task.taskNumber,
+            description: task.description,
+            taskType: task.taskType,
+            requiredParts: task.requiredParts,
+            estimatedMinutes: task.estimatedMinutes,
+          }),
+        },
+      });
+
       return { kind: 'created' as const, task };
     });
 
@@ -137,32 +181,55 @@ export async function PUT(
       );
     }
 
-    const activeTasks = await db.pmTemplateTask.findMany({
-      where: { templateId: id, isActive: true },
-      select: { id: true },
-    });
-    const activeTaskIds = new Set(activeTasks.map((task) => task.id));
-    const isExactTaskSet =
-      activeTasks.length === normalizedTaskIds.length
-      && normalizedTaskIds.every((taskId) => activeTaskIds.has(taskId));
-    if (!isExactTaskSet) {
-      return NextResponse.json(
-        { success: false, error: 'Every active task must belong to this template before reordering' },
-        { status: 400 },
+    const reorderResult = await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-template-task-order:${id}`,
       );
-    }
 
-    await db.$transaction(
-      normalizedTaskIds.map((taskId, index) =>
-        db.pmTemplateTask.updateMany({
+      const lockedActiveTasks = await tx.pmTemplateTask.findMany({
+        where: { templateId: id, isActive: true },
+        select: { id: true },
+        orderBy: [{ taskNumber: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+      });
+      const lockedActiveTaskIds = new Set(lockedActiveTasks.map((task) => task.id));
+      const isExactTaskSet =
+        lockedActiveTasks.length === normalizedTaskIds.length
+        && normalizedTaskIds.every((taskId) => lockedActiveTaskIds.has(taskId));
+      if (!isExactTaskSet) {
+        return { kind: 'invalid_task_set' as const };
+      }
+
+      for (const [index, taskId] of normalizedTaskIds.entries()) {
+        await tx.pmTemplateTask.updateMany({
           where: { id: taskId, templateId: id, isActive: true },
           data: {
             taskNumber: index + 1,
             sortOrder: index + 1,
           },
-        }),
-      ),
-    );
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_template_task',
+          entityId: id,
+          oldValues: JSON.stringify({ order: lockedActiveTasks.map((task) => task.id) }),
+          newValues: JSON.stringify({ order: normalizedTaskIds }),
+        },
+      });
+
+      return { kind: 'reordered' as const };
+    });
+
+    if (reorderResult.kind === 'invalid_task_set') {
+      return NextResponse.json(
+        { success: false, error: 'Every active task must belong to this template before reordering' },
+        { status: 400 },
+      );
+    }
 
     const updatedTasks = await db.pmTemplateTask.findMany({
       where: { templateId: id, isActive: true },

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, fullName: true, username: true },
         },
         _count: {
-          select: { tasks: true },
+          select: { tasks: { where: { isActive: true } } },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -105,22 +105,45 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const template = await db.pmTemplate.create({
-      data: {
-        title,
-        description: description || null,
-        type: type || 'preventive',
-        category: category || null,
-        estimatedDuration: normalizedDuration,
-        priority: priority || 'medium',
-        requiredSkills: Array.isArray(requiredSkills) && requiredSkills.length > 0 ? JSON.stringify(requiredSkills) : null,
-        requiredTools: Array.isArray(requiredTools) && requiredTools.length > 0 ? JSON.stringify(requiredTools) : null,
-        createdById: session.userId,
-      },
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-        _count: { select: { tasks: true } },
-      },
+    const template = await db.$transaction(async (tx) => {
+      const createdTemplate = await tx.pmTemplate.create({
+        data: {
+          title,
+          description: description || null,
+          type: type || 'preventive',
+          category: category || null,
+          estimatedDuration: normalizedDuration,
+          priority: priority || 'medium',
+          requiredSkills: Array.isArray(requiredSkills) && requiredSkills.length > 0 ? JSON.stringify(requiredSkills) : null,
+          requiredTools: Array.isArray(requiredTools) && requiredTools.length > 0 ? JSON.stringify(requiredTools) : null,
+          createdById: session.userId,
+        },
+        include: {
+          createdBy: { select: { id: true, fullName: true, username: true } },
+          _count: { select: { tasks: { where: { isActive: true } } } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'pm_template',
+          entityId: createdTemplate.id,
+          newValues: JSON.stringify({
+            title: createdTemplate.title,
+            type: createdTemplate.type,
+            category: createdTemplate.category,
+            estimatedDuration: createdTemplate.estimatedDuration,
+            priority: createdTemplate.priority,
+            requiredSkills: createdTemplate.requiredSkills,
+            requiredTools: createdTemplate.requiredTools,
+            isActive: createdTemplate.isActive,
+          }),
+        },
+      });
+
+      return createdTemplate;
     });
 
     return NextResponse.json({ success: true, data: template }, { status: 201 });

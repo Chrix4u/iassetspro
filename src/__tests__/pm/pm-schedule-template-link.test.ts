@@ -12,14 +12,14 @@ describe('PM schedule template linkage', () => {
     expect(listRoute).toContain("where: { id: templateId }");
     expect(listRoute).toContain("error: 'PM template not found or inactive'");
     expect(listRoute).toContain('templateId: templateId || null');
-    expect(listRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } }");
+    expect(listRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
 
   it('allows template assignment changes on schedule update', () => {
     expect(itemRoute).toContain("'templateId'");
     expect(itemRoute).toContain('body.templateId !== undefined');
     expect(itemRoute).toContain("error: 'PM template not found or inactive'");
-    expect(itemRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } }");
+    expect(itemRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
 
   it('exposes templates in the planner schedule form and list', () => {

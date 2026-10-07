@@ -33,7 +33,7 @@ export async function GET(
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -274,7 +274,7 @@ export async function PUT(
           component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
           assignedTo: { select: { id: true, fullName: true, username: true } },
           department: { select: { id: true, name: true, code: true } },
-          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
+          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
           createdBy: { select: { id: true, fullName: true, username: true } },
         },
       });

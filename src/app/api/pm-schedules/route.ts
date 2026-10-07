@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { calculateNextDueDate, isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -182,7 +182,11 @@ export async function POST(request: NextRequest) {
     }
 
     const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
-      ? normalizedNextDueDate
+      ? (normalizedNextDueDate ?? calculateNextDueDate(
+          normalizedLastCompletedDate ?? new Date(),
+          frequencyType,
+          normalizedFrequencyValue,
+        ))
       : null;
 
     // Validate asset exists and belongs to the caller's active/assigned plant scope.

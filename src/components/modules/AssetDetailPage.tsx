@@ -1069,10 +1069,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm">Register New Component</CardTitle>
+                      <CardTitle className="text-sm">Register New Hierarchy Item</CardTitle>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowComponentForm(false)}><X className="h-3.5 w-3.5" /></Button>
                     </div>
-                    <CardDescription>Track this part&apos;s lifecycle, health, and maintenance history</CardDescription>
+                    <CardDescription>Add an assembly, sub-assembly, maintainable component, part, auxiliary or instrument. Parts may be nested under other parts when the machine structure requires it.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1135,7 +1135,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                       <Button variant="outline" size="sm" onClick={() => setShowComponentForm(false)}>Cancel</Button>
                       <Button size="sm" onClick={handleCreateComponent} disabled={saving || !compForm.componentCode.trim() || !compForm.name.trim()}>
                         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
-                        Register Component
+                        Register Item
                       </Button>
                     </div>
                   </CardContent>
@@ -1174,7 +1174,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                       setShowComponentForm(true);
                     }}
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1.5" />Add Component
+                    <Plus className="h-3.5 w-3.5 mr-1.5" />Add Hierarchy Item
                   </Button>
                 </div>
               )}

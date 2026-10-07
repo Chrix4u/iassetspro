@@ -124,8 +124,32 @@ export function AssetsPage() {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
     setSaving(true);
     const payload: any = { ...form, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
-    const res = editId ? await api.put(`/api/assets/${editId}`, payload) : await api.post('/api/assets', payload);
-    if (res.success) { toast.success(editId ? 'Asset updated' : 'Asset created'); setDialogOpen(false); loadData(); } else { toast.error(res.error || 'Failed'); }
+    const res = editId
+      ? await api.put(`/api/assets/${editId}`, payload)
+      : await api.post('/api/assets', payload, { headers: { 'x-plant-id': form.plantId } });
+
+    if (res.success) {
+      toast.success(editId ? 'Asset updated' : 'Asset created');
+      setDialogOpen(false);
+
+      if (!editId && res.data?.id) {
+        const createdAssetId = String(res.data.id);
+        const currentPlantId = localStorage.getItem('user_plant_id') || '';
+        navigate('assets-machines', { id: createdAssetId, tab: 'components' });
+
+        if (form.plantId && currentPlantId !== form.plantId) {
+          localStorage.setItem('user_plant_id', form.plantId);
+          window.location.reload();
+          return;
+        }
+
+        setDetailId(createdAssetId);
+      } else {
+        loadData();
+      }
+    } else {
+      toast.error(res.error || 'Failed');
+    }
     setSaving(false);
   };
 

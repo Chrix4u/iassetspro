@@ -144,6 +144,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizedEstimatedDuration = estimatedDuration === undefined
+      || estimatedDuration === null
+      || (typeof estimatedDuration === 'string' && estimatedDuration.trim() === '')
+      ? 0
+      : Number(estimatedDuration);
+    if (!Number.isFinite(normalizedEstimatedDuration) || normalizedEstimatedDuration < 0) {
+      return NextResponse.json(
+        { success: false, error: 'Estimated duration must be a non-negative number of hours' },
+        { status: 400 },
+      );
+    }
+
     const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
       ? (nextDueDate ? new Date(nextDueDate) : null)
       : null;
@@ -198,7 +210,7 @@ export async function POST(request: NextRequest) {
         frequencyValue: normalizedFrequencyValue,
         lastCompletedDate: lastCompletedDate ? new Date(lastCompletedDate) : null,
         nextDueDate: canonicalNextDueDate,
-        estimatedDuration: estimatedDuration || null,
+        estimatedDuration: normalizedEstimatedDuration,
         priority: priority || 'medium',
         assignedToId: assignedToId || null,
         departmentId: departmentId || null,

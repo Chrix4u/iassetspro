@@ -139,6 +139,27 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     });
   });
 
+  it('records completion history for usage-based PM without advancing a calendar due date', async () => {
+    mockDb.pmSchedule.findUnique.mockResolvedValue({
+      id: 'pm-usage-1',
+      isActive: true,
+      frequencyType: 'custom_hours',
+      frequencyValue: 2000,
+      lastCompletedDate: null,
+      nextDueDate: null,
+    });
+    mockIsAutoCalculableFrequency.mockReturnValue(false);
+
+    const result = await closeRepairWorkOrder('wo-1', plannerSession, {});
+
+    expect(result.success).toBe(true);
+    expect(mockCalculateNextDueDate).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).toHaveBeenCalledWith({
+      where: { id: 'pm-usage-1' },
+      data: { lastCompletedDate: actualEnd },
+    });
+  });
+
   it('rejects a different planner even when that user has generic close permission', async () => {
     const otherPlanner: ClosureSessionContext = {
       ...plannerSession,

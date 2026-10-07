@@ -125,6 +125,19 @@ export async function PUT(
       }
       updateData.frequencyValue = normalizedFrequencyValue;
     }
+    if (body.leadDays !== undefined) {
+      const normalizedLeadDays = typeof body.leadDays === 'number' || typeof body.leadDays === 'string'
+        ? Number(body.leadDays)
+        : Number.NaN;
+      const isBlankLeadDays = typeof body.leadDays === 'string' && body.leadDays.trim() === '';
+      if (isBlankLeadDays || !Number.isInteger(normalizedLeadDays) || normalizedLeadDays < 0) {
+        return NextResponse.json(
+          { success: false, error: 'Lead days must be a non-negative whole number' },
+          { status: 400 },
+        );
+      }
+      updateData.leadDays = normalizedLeadDays;
+    }
 
     const prospectiveScheduleFrequency = body.frequencyType !== undefined
       ? String(body.frequencyType)

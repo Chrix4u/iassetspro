@@ -102,7 +102,33 @@ export async function POST(request: NextRequest) {
               select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true },
             },
             component: {
-              select: { id: true, name: true, componentCode: true, componentType: true, assetId: true },
+              select: {
+                id: true,
+                name: true,
+                componentCode: true,
+                componentType: true,
+                assetId: true,
+                sparePartLinks: {
+                  select: {
+                    inventoryItemId: true,
+                    sparePartName: true,
+                    sparePartCode: true,
+                    quantityRequired: true,
+                    notes: true,
+                    inventoryItem: { select: { name: true, itemCode: true, unitOfMeasure: true } },
+                  },
+                },
+                toolRequirements: {
+                  select: {
+                    toolId: true,
+                    toolName: true,
+                    toolCode: true,
+                    quantityRequired: true,
+                    notes: true,
+                    tool: { select: { name: true, toolCode: true } },
+                  },
+                },
+              },
             },
             assignedTo: { select: { id: true, fullName: true, username: true } },
             department: { select: { id: true, name: true, code: true } },
@@ -231,6 +257,24 @@ export async function POST(request: NextRequest) {
           if (allParts.length > 0) woDescription += `\n\nRequired Parts: ${allParts.join(', ')}`;
         }
 
+        const suggestedParts = (schedule.component?.sparePartLinks || []).map((spare) => ({
+          itemId: spare.inventoryItemId,
+          itemName: spare.inventoryItem?.name || spare.sparePartName,
+          itemCode: spare.inventoryItem?.itemCode || spare.sparePartCode,
+          quantity: spare.quantityRequired,
+          unit: spare.inventoryItem?.unitOfMeasure || 'each',
+          notes: spare.notes || '',
+          status: 'recommended',
+        }));
+        const suggestedTools = (schedule.component?.toolRequirements || []).map((tool) => ({
+          toolId: tool.toolId,
+          toolName: tool.tool?.name || tool.toolName,
+          toolCode: tool.tool?.toolCode || tool.toolCode,
+          quantity: tool.quantityRequired,
+          notes: tool.notes || '',
+          status: 'recommended',
+        }));
+
         const woDate = new Date();
         const prefix = `WO-${woDate.getFullYear()}${String(woDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -271,6 +315,8 @@ export async function POST(request: NextRequest) {
             plannedStart: nextDueDate,
             plannedEnd,
             notes: `Auto-generated from PM schedule "${schedule.title}" (${schedule.frequencyType}: ${schedule.frequencyValue})${schedule.template ? ` | Template: ${schedule.template.title} (${tasks.length} tasks)` : ''}`,
+            suggestedParts: JSON.stringify(suggestedParts),
+            suggestedTools: JSON.stringify(suggestedTools),
           },
         });
 

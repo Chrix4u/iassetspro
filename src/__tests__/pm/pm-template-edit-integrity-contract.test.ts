@@ -18,6 +18,8 @@ describe('PM template edit integrity', () => {
     expect(page).toContain('min="0.25" step="0.25"');
     expect(page).toContain('estimatedDuration: parseFloat(formDuration) || 0');
     expect(page).not.toContain('estimatedDuration: parseInt(formDuration, 10) || 0');
+    expect(page).toContain('{t.estimatedDuration} h');
+    expect(page).not.toContain('{t.estimatedDuration} min');
     expect(createRoute).toContain('Estimated duration must be a positive number of hours');
     expect(route).toContain('Estimated duration must be a positive number of hours');
   });

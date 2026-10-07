@@ -10114,7 +10114,7 @@ export function PmTemplatesPage() {
                   <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {t.estimatedDuration} min
+                      {t.estimatedDuration} h
                     </div>
                   </TableCell>
                   <TableCell>

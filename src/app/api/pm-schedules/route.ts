@@ -129,6 +129,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
     }
 
+    const rawLeadDays = leadDays === undefined
+      || leadDays === null
+      || (typeof leadDays === 'string' && leadDays.trim() === '')
+      ? 3
+      : leadDays;
+    const normalizedLeadDays = typeof rawLeadDays === 'number' || typeof rawLeadDays === 'string'
+      ? Number(rawLeadDays)
+      : Number.NaN;
+    if (!Number.isInteger(normalizedLeadDays) || normalizedLeadDays < 0) {
+      return NextResponse.json(
+        { success: false, error: 'Lead days must be a non-negative whole number' },
+        { status: 400 },
+      );
+    }
+
     const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
       ? (nextDueDate ? new Date(nextDueDate) : null)
       : null;
@@ -189,7 +204,7 @@ export async function POST(request: NextRequest) {
         departmentId: departmentId || null,
         templateId: templateId || null,
         autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
-        leadDays: leadDays || 3,
+        leadDays: normalizedLeadDays,
         createdById: session.userId,
       },
       include: {

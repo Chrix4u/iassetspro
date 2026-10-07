@@ -42,7 +42,25 @@ export async function DELETE(
       );
     }
 
-    await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-template-task-order:${id}`,
+      );
+
+      const activeSchedule = await tx.pmSchedule.findFirst({
+        where: { templateId: id, isActive: true },
+        select: { id: true, title: true },
+      });
+      if (activeSchedule && task.isActive) {
+        const activeTaskCount = await tx.pmTemplateTask.count({
+          where: { templateId: id, isActive: true },
+        });
+        if (activeTaskCount <= 1) {
+          return { kind: 'last_active_task' as const, activeSchedule };
+        }
+      }
+
       await tx.pmTemplateTask.update({
         where: { id: taskId },
         data: { isActive: false },
@@ -66,7 +84,19 @@ export async function DELETE(
           newValues: JSON.stringify({ isActive: false }),
         },
       });
+
+      return { kind: 'removed' as const };
     });
+
+    if (result.kind === 'last_active_task') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot remove the last active task while active PM schedule "${result.activeSchedule.title}" uses this template. Add a replacement task or reassign/deactivate the schedule first.`,
+        },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({ success: true, data: { id: taskId } });
   } catch (error: unknown) {

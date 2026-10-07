@@ -7904,7 +7904,7 @@ export function PmSchedulesPage() {
     setFormAssignedToId(item.assignedToId || '');
     setFormDepartmentId(item.departmentId || '');
     setFormAutoGenWO(item.autoGenerateWO !== false);
-    setFormLeadDays(String(item.leadDays || 3));
+    setFormLeadDays(String(item.leadDays ?? 3));
     setFormNextDueDate(item.nextDueDate ? item.nextDueDate.split('T')[0] : '');
     setEditItem(item);
   };
@@ -7923,7 +7923,7 @@ export function PmSchedulesPage() {
         departmentId: formDepartmentId || null,
         templateId: formTemplateId || null,
         autoGenerateWO: formAutoGenWO,
-        leadDays: formUsesCalendarCadence ? (parseInt(formLeadDays, 10) || 3) : 0,
+        leadDays: formUsesCalendarCadence ? (formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)) : 0,
         nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
       };
 

@@ -138,6 +138,22 @@ export async function PUT(
       }
       updateData.leadDays = normalizedLeadDays;
     }
+    if (body.estimatedDuration !== undefined) {
+      const rawEstimatedDuration = body.estimatedDuration === null
+        || (typeof body.estimatedDuration === 'string' && body.estimatedDuration.trim() === '')
+        ? 0
+        : body.estimatedDuration;
+      const normalizedEstimatedDuration = typeof rawEstimatedDuration === 'number' || typeof rawEstimatedDuration === 'string'
+        ? Number(rawEstimatedDuration)
+        : Number.NaN;
+      if (!Number.isFinite(normalizedEstimatedDuration) || normalizedEstimatedDuration < 0) {
+        return NextResponse.json(
+          { success: false, error: 'Estimated duration must be a non-negative number of hours' },
+          { status: 400 },
+        );
+      }
+      updateData.estimatedDuration = normalizedEstimatedDuration;
+    }
 
     const prospectiveScheduleFrequency = body.frequencyType !== undefined
       ? String(body.frequencyType)

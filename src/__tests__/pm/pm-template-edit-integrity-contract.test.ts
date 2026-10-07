@@ -60,6 +60,7 @@ describe('PM template edit integrity', () => {
     expect(templatePage).toContain('const [showInactive, setShowInactive] = useState(false);');
     expect(templatePage).toContain("if (!showInactive) params.set('active', 'true');");
     expect(templatePage).not.toContain("params.set('active', String(filterActive));");
+    expect(templatePage).not.toContain('filterActive');
     expect(templatePage).toContain('checked={showInactive}');
     expect(templatePage).toContain('onCheckedChange={setShowInactive}');
   });

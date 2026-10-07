@@ -125,6 +125,19 @@ export async function PUT(
       }
       updateData.frequencyValue = normalizedFrequencyValue;
     }
+    if (body.estimatedDuration !== undefined) {
+      const normalizedEstimatedDuration = body.estimatedDuration === null
+        || (typeof body.estimatedDuration === 'string' && body.estimatedDuration.trim() === '')
+        ? 0
+        : Number(body.estimatedDuration);
+      if (!Number.isFinite(normalizedEstimatedDuration) || normalizedEstimatedDuration < 0) {
+        return NextResponse.json(
+          { success: false, error: 'Estimated duration must be a non-negative number of hours' },
+          { status: 400 },
+        );
+      }
+      updateData.estimatedDuration = normalizedEstimatedDuration;
+    }
     if (body.leadDays !== undefined) {
       const normalizedLeadDays = typeof body.leadDays === 'number' || typeof body.leadDays === 'string'
         ? Number(body.leadDays)

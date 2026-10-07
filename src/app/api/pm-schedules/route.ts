@@ -159,8 +159,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const isBlankLastCompletedDate = lastCompletedDate === undefined
+      || lastCompletedDate === null
+      || (typeof lastCompletedDate === 'string' && lastCompletedDate.trim() === '');
+    const normalizedLastCompletedDate = isBlankLastCompletedDate ? null : new Date(lastCompletedDate);
+    if (normalizedLastCompletedDate && Number.isNaN(normalizedLastCompletedDate.getTime())) {
+      return NextResponse.json(
+        { success: false, error: 'Last completed date must be a valid date' },
+        { status: 400 },
+      );
+    }
+
+    const isBlankNextDueDate = nextDueDate === undefined
+      || nextDueDate === null
+      || (typeof nextDueDate === 'string' && nextDueDate.trim() === '');
+    const normalizedNextDueDate = isBlankNextDueDate ? null : new Date(nextDueDate);
+    if (normalizedNextDueDate && Number.isNaN(normalizedNextDueDate.getTime())) {
+      return NextResponse.json(
+        { success: false, error: 'Next due date must be a valid date' },
+        { status: 400 },
+      );
+    }
+
     const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
-      ? (nextDueDate ? new Date(nextDueDate) : null)
+      ? normalizedNextDueDate
       : null;
 
     // Validate asset exists and belongs to the caller's active/assigned plant scope.
@@ -211,7 +233,7 @@ export async function POST(request: NextRequest) {
         componentId: componentId || null,
         frequencyType,
         frequencyValue: normalizedFrequencyValue,
-        lastCompletedDate: lastCompletedDate ? new Date(lastCompletedDate) : null,
+        lastCompletedDate: normalizedLastCompletedDate,
         nextDueDate: canonicalNextDueDate,
         estimatedDuration: normalizedEstimatedDuration,
         priority: priority || 'medium',

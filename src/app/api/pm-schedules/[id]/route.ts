@@ -106,7 +106,22 @@ export async function PUT(
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'lastCompletedDate' || field === 'nextDueDate') {
-          updateData[field] = body[field] ? new Date(body[field]) : null;
+          const rawDate = body[field];
+          const isBlankDate = rawDate === null
+            || (typeof rawDate === 'string' && rawDate.trim() === '');
+          if (isBlankDate) {
+            updateData[field] = null;
+          } else {
+            const normalizedDate = new Date(rawDate);
+            if (Number.isNaN(normalizedDate.getTime())) {
+              const label = field === 'lastCompletedDate' ? 'Last completed date' : 'Next due date';
+              return NextResponse.json(
+                { success: false, error: `${label} must be a valid date` },
+                { status: 400 },
+              );
+            }
+            updateData[field] = normalizedDate;
+          }
         } else if (field === 'componentId' || field === 'templateId' || field === 'assignedToId' || field === 'departmentId' || field === 'woTypeId') {
           updateData[field] = body[field] || null;
         } else {

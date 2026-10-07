@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { calculateNextDueDate, isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 
 export async function GET(request: NextRequest) {
   try {
@@ -182,7 +182,11 @@ export async function POST(request: NextRequest) {
     }
 
     const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
-      ? normalizedNextDueDate
+      ? (normalizedNextDueDate ?? calculateNextDueDate(
+          normalizedLastCompletedDate ?? new Date(),
+          frequencyType,
+          normalizedFrequencyValue,
+        ))
       : null;
 
     // Validate asset exists and belongs to the caller's active/assigned plant scope.
@@ -225,7 +229,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const schedule = await db.pmSchedule.create({
+    const schedule = await db.$transaction(async (tx) => {
+      const createdSchedule = await tx.pmSchedule.create({
       data: {
         title,
         description: description || null,
@@ -259,9 +264,9 @@ export async function POST(request: NextRequest) {
       && ['custom_hours', 'meter_based'].includes(frequencyType)
       && Number(frequencyValue) > 0
     ) {
-      await db.pmTrigger.create({
+      await tx.pmTrigger.create({
         data: {
-          scheduleId: schedule.id,
+          scheduleId: createdSchedule.id,
           triggerType: 'meter',
           triggerValue: normalizedFrequencyValue,
           triggerConfig: JSON.stringify({
@@ -275,14 +280,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await db.auditLog.create({
+    await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
         entityType: 'pm_schedule',
-        entityId: schedule.id,
+        entityId: createdSchedule.id,
         newValues: JSON.stringify({ title, assetId, componentId: componentId || null, templateId: templateId || null, frequencyType, frequencyValue }),
       },
+    });
+
+      return createdSchedule;
     });
 
     return NextResponse.json({ success: true, data: schedule }, { status: 201 });

@@ -355,12 +355,13 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const deactivated = await db.pmSchedule.update({
+    const deactivated = await db.$transaction(async (tx) => {
+      const updatedSchedule = await tx.pmSchedule.update({
       where: { id },
       data: { isActive: false },
     });
 
-    await db.auditLog.create({
+    await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'delete',
@@ -369,6 +370,9 @@ export async function DELETE(
         oldValues: JSON.stringify({ title: existing.title, isActive: existing.isActive }),
         newValues: JSON.stringify({ isActive: false }),
       },
+    });
+
+      return updatedSchedule;
     });
 
     return NextResponse.json({ success: true, data: deactivated });

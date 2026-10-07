@@ -100,28 +100,32 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = await db.checklist.update({
-      where: { id },
-      data: updateData,
-      include: {
-        items: { orderBy: { sortOrder: 'asc' } },
-      },
-    });
+    const updated = await db.$transaction(async (tx) => {
+      const updatedChecklist = await tx.checklist.update({
+        where: { id },
+        data: updateData,
+        include: {
+          items: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
 
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'checklist',
-        entityId: id,
-        oldValues: JSON.stringify({
-          title: existing.title,
-          isActive: existing.isActive,
-          assetId: existing.assetId,
-          departmentId: existing.departmentId,
-        }),
-        newValues: JSON.stringify(updateData),
-      },
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'checklist',
+          entityId: id,
+          oldValues: JSON.stringify({
+            title: existing.title,
+            isActive: existing.isActive,
+            assetId: existing.assetId,
+            departmentId: existing.departmentId,
+          }),
+          newValues: JSON.stringify(updateData),
+        },
+      });
+
+      return updatedChecklist;
     });
 
     return NextResponse.json({ success: true, data: updated });

@@ -9798,7 +9798,7 @@ export function PmTemplatesPage() {
   // Filters
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('all');
-  const [filterActive, setFilterActive] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
 
   // Template form state
   const [formTitle, setFormTitle] = useState('');
@@ -9830,12 +9830,12 @@ export function PmTemplatesPage() {
     try {
       const params = new URLSearchParams();
       if (filterType !== 'all') params.set('type', filterType);
-      params.set('active', String(filterActive));
+      if (!showInactive) params.set('active', 'true');
       const res = await api.get<PmTemplateItem[]>(`/api/pm-templates?${params.toString()}`);
       if (res.success && res.data) setTemplates(res.data);
     } catch { /* ignore */ }
     setLoading(false);
-  }, [filterType, filterActive]);
+  }, [filterType, showInactive]);
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
@@ -10057,8 +10057,8 @@ export function PmTemplatesPage() {
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-card">
           <span className="text-xs text-muted-foreground">Active</span>
           <Switch
-            checked={filterActive}
-            onCheckedChange={setFilterActive}
+            checked={showInactive}
+            onCheckedChange={setShowInactive}
           />
           <span className="text-xs text-muted-foreground">Show Inactive</span>
         </div>

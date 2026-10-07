@@ -86,6 +86,29 @@ describe('component-targeted PM work-order generation', () => {
         componentCode: 'RP01-INS-GUARDSW',
         componentType: 'instrument',
         assetId: 'uat_asset_rotary_printer_01',
+        sparePartLinks: [{
+          inventoryItemId: 'spare-guard-contact',
+          sparePartName: 'Guard switch contact block',
+          sparePartCode: 'GS-CB-01',
+          quantityRequired: 1,
+          notes: 'Keep one safety-rated replacement available',
+          inventoryItem: {
+            name: 'Safety Guard Contact Block',
+            itemCode: 'INV-GS-CB-01',
+            unitOfMeasure: 'each',
+          },
+        }],
+        toolRequirements: [{
+          toolId: 'tool-multimeter',
+          toolName: 'Digital Multimeter',
+          toolCode: 'DMM-01',
+          quantityRequired: 1,
+          notes: 'Verify switch continuity',
+          tool: {
+            name: 'Calibrated Digital Multimeter',
+            toolCode: 'TOOL-DMM-01',
+          },
+        }],
       },
       assignedTo: null,
       department: null,
@@ -112,6 +135,37 @@ describe('component-targeted PM work-order generation', () => {
     mocks.auditCreate.mockResolvedValue({});
     mocks.executeRawUnsafe.mockResolvedValue([]);
     mocks.userFindUnique.mockResolvedValue({ id: 'uat_planner', status: 'active' });
+  });
+
+  it('inherits component-linked spare parts and tools into planner-visible suggestions', async () => {
+    const request = new Request('http://localhost/api/pm-schedules/check-due', {
+      method: 'POST',
+    });
+
+    const response = await POST(request as never);
+
+    expect(response.status).toBe(200);
+    expect(mocks.woCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        suggestedParts: JSON.stringify([{
+          itemId: 'spare-guard-contact',
+          itemName: 'Safety Guard Contact Block',
+          itemCode: 'INV-GS-CB-01',
+          quantity: 1,
+          unit: 'each',
+          notes: 'Keep one safety-rated replacement available',
+          status: 'recommended',
+        }]),
+        suggestedTools: JSON.stringify([{
+          toolId: 'tool-multimeter',
+          toolName: 'Calibrated Digital Multimeter',
+          toolCode: 'TOOL-DMM-01',
+          quantity: 1,
+          notes: 'Verify switch continuity',
+          status: 'recommended',
+        }]),
+      }),
+    }));
   });
 
   it('keeps the parent asset and exact component context on the generated WO', async () => {

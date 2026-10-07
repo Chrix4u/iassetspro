@@ -52,4 +52,15 @@ describe('PM template edit integrity', () => {
   it('does not show two separate Deactivate actions to users who can update templates', () => {
     expect(page).toContain('!canUpdateTemplate && canDeleteTemplate && t.isActive');
   });
+
+  it('shows active templates by default and includes inactive templates only when requested', () => {
+    const templatePageStart = page.indexOf('export function PmTemplatesPage()');
+    const templatePageEnd = page.indexOf('// INVENTORY SUBPAGES', templatePageStart);
+    const templatePage = page.slice(templatePageStart, templatePageEnd);
+    expect(templatePage).toContain('const [showInactive, setShowInactive] = useState(false);');
+    expect(templatePage).toContain("if (!showInactive) params.set('active', 'true');");
+    expect(templatePage).not.toContain("params.set('active', String(filterActive));");
+    expect(templatePage).toContain('checked={showInactive}');
+    expect(templatePage).toContain('onCheckedChange={setShowInactive}');
+  });
 });

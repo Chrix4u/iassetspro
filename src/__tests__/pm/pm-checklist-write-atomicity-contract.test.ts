@@ -31,7 +31,8 @@ describe('PM checklist write atomicity contract', () => {
   it('keeps checklist deletion atomic with its audit record', () => {
     const del = section(detail, 'export async function DELETE(');
     expect(del).toContain('db.$transaction(async (tx) =>');
-    expect(del).toContain('tx.checklist.delete');
+    expect(del).toContain('tx.checklist.update');
+    expect(del).toContain('data: { isActive: false }');
     expect(del).toContain('tx.auditLog.create');
   });
 });

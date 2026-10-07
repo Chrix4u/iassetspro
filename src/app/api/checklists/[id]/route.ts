@@ -163,8 +163,10 @@ export async function DELETE(
     }
 
     await db.$transaction(async (tx) => {
-      await tx.checklistItem.deleteMany({ where: { checklistId: id } });
-      await tx.checklist.delete({ where: { id } });
+      await tx.checklist.update({
+        where: { id },
+        data: { isActive: false },
+      });
       await tx.auditLog.create({
         data: {
           userId: session.userId,
@@ -175,12 +177,14 @@ export async function DELETE(
             title: existing.title,
             assetId: existing.assetId,
             departmentId: existing.departmentId,
+            isActive: existing.isActive,
           }),
+          newValues: JSON.stringify({ isActive: false }),
         },
       });
     });
 
-    return NextResponse.json({ success: true, message: 'Checklist deleted' });
+    return NextResponse.json({ success: true, message: 'Checklist deactivated' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete checklist';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

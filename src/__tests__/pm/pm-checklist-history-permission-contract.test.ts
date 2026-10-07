@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+const collection = fs.readFileSync('src/app/api/checklists/route.ts', 'utf8');
 const detail = fs.readFileSync('src/app/api/checklists/[id]/route.ts', 'utf8');
 const operations = fs.readFileSync('src/components/modules/OperationsPages.tsx', 'utf8');
 
@@ -15,6 +16,12 @@ describe('PM checklist history and UI permission contract', () => {
     expect(del).not.toContain('tx.checklist.delete');
     expect(del).toContain("entityType: 'checklist'");
     expect(del).toContain('newValues: JSON.stringify({ isActive: false })');
+  });
+
+  it('hides soft-deactivated checklists by default while allowing explicit active filtering', () => {
+    expect(collection).toContain("const active = searchParams.get('active')");
+    expect(collection).toContain("if (active === null) filters.push({ isActive: true })");
+    expect(collection).toContain("else if (active === 'true' || active === 'false') filters.push({ isActive: active === 'true' })");
   });
 
   it('uses checklist creation permission in the checklist UI', () => {

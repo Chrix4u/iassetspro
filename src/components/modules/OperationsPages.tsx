@@ -911,7 +911,7 @@ export function OperationsChecklistsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search checklists..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
           </div>
-          {(hasPermission('pm_schedules.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Checklist</Button>}
+          {(hasPermission('pm_checklists.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Checklist</Button>}
         </div>
       </div>
 

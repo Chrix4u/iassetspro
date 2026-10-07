@@ -114,13 +114,38 @@ export async function PUT(
       );
     }
 
-    const updated = await db.pmTemplate.update({
-      where: { id },
-      data: updateData,
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-        _count: { select: { tasks: true } },
-      },
+    const updated = await db.$transaction(async (tx) => {
+      const updatedTemplate = await tx.pmTemplate.update({
+        where: { id },
+        data: updateData,
+        include: {
+          createdBy: { select: { id: true, fullName: true, username: true } },
+          _count: { select: { tasks: true } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_template',
+          entityId: id,
+          oldValues: JSON.stringify({
+            title: existing.title,
+            description: existing.description,
+            type: existing.type,
+            category: existing.category,
+            estimatedDuration: existing.estimatedDuration,
+            priority: existing.priority,
+            requiredSkills: existing.requiredSkills,
+            requiredTools: existing.requiredTools,
+            isActive: existing.isActive,
+          }),
+          newValues: JSON.stringify(updateData),
+        },
+      });
+
+      return updatedTemplate;
     });
 
     return NextResponse.json({ success: true, data: updated });
@@ -157,9 +182,24 @@ export async function DELETE(
       );
     }
 
-    const deactivated = await db.pmTemplate.update({
-      where: { id },
-      data: { isActive: false },
+    const deactivated = await db.$transaction(async (tx) => {
+      const deactivatedTemplate = await tx.pmTemplate.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'pm_template',
+          entityId: id,
+          oldValues: JSON.stringify({ title: existing.title, isActive: existing.isActive }),
+          newValues: JSON.stringify({ isActive: false }),
+        },
+      });
+
+      return deactivatedTemplate;
     });
 
     return NextResponse.json({ success: true, data: deactivated });

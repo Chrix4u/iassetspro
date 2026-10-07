@@ -42,8 +42,27 @@ export async function DELETE(
       );
     }
 
-    await db.pmTemplateTask.delete({
-      where: { id: taskId },
+    await db.$transaction(async (tx) => {
+      await tx.pmTemplateTask.delete({
+        where: { id: taskId },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'pm_template_task',
+          entityId: taskId,
+          oldValues: JSON.stringify({
+            templateId: id,
+            taskNumber: task.taskNumber,
+            description: task.description,
+            taskType: task.taskType,
+            requiredParts: task.requiredParts,
+            estimatedMinutes: task.estimatedMinutes,
+          }),
+        },
+      });
     });
 
     return NextResponse.json({ success: true, data: { id: taskId } });

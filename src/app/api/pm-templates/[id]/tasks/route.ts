@@ -74,6 +74,24 @@ export async function POST(
           sortOrder: nextNumber,
         },
       });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'pm_template_task',
+          entityId: task.id,
+          newValues: JSON.stringify({
+            templateId: id,
+            taskNumber: task.taskNumber,
+            description: task.description,
+            taskType: task.taskType,
+            requiredParts: task.requiredParts,
+            estimatedMinutes: task.estimatedMinutes,
+          }),
+        },
+      });
+
       return { kind: 'created' as const, task };
     });
 
@@ -152,17 +170,33 @@ export async function PUT(
       );
     }
 
-    await db.$transaction(
-      normalizedTaskIds.map((taskId, index) =>
-        db.pmTemplateTask.updateMany({
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        `iassetspro:pm-template-task-order:${id}`,
+      );
+
+      for (const [index, taskId] of normalizedTaskIds.entries()) {
+        await tx.pmTemplateTask.updateMany({
           where: { id: taskId, templateId: id, isActive: true },
           data: {
             taskNumber: index + 1,
             sortOrder: index + 1,
           },
-        }),
-      ),
-    );
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_template_task',
+          entityId: id,
+          oldValues: JSON.stringify({ order: activeTasks.map((task) => task.id) }),
+          newValues: JSON.stringify({ order: normalizedTaskIds }),
+        },
+      });
+    });
 
     const updatedTasks = await db.pmTemplateTask.findMany({
       where: { templateId: id, isActive: true },

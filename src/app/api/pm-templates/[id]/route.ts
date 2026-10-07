@@ -130,7 +130,7 @@ export async function PUT(
         data: updateData,
         include: {
           createdBy: { select: { id: true, fullName: true, username: true } },
-          _count: { select: { tasks: true } },
+          _count: { select: { tasks: { where: { isActive: true } } } },
         },
       });
 

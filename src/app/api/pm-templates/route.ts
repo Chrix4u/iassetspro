@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, fullName: true, username: true },
         },
         _count: {
-          select: { tasks: true },
+          select: { tasks: { where: { isActive: true } } },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         },
         include: {
           createdBy: { select: { id: true, fullName: true, username: true } },
-          _count: { select: { tasks: true } },
+          _count: { select: { tasks: { where: { isActive: true } } } },
         },
       });
 

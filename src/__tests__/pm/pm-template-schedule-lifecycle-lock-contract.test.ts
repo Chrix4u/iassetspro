@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const collection = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
 const detail = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8');
 const templateDetail = fs.readFileSync('src/app/api/pm-templates/[id]/route.ts', 'utf8');
+const taskDetail = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/[taskId]/route.ts', 'utf8');
 const helperPath = 'src/services/pm/templateLifecycle.service.ts';
 const helper = fs.existsSync(helperPath) ? fs.readFileSync(helperPath, 'utf8') : '';
 
@@ -30,6 +31,15 @@ describe('PM template/schedule lifecycle lock contract', () => {
       expect(lockAt).toBeGreaterThan(0);
       expect(scheduleCheckAt).toBeGreaterThan(lockAt);
     }
+  });
+
+
+  it('serializes template task removal with schedule assignment before checking active schedules', () => {
+    const del = section(taskDetail, 'export async function DELETE(');
+    const lifecycleLockAt = del.indexOf('lockPmTemplateLifecycle(tx, id)');
+    const scheduleCheckAt = del.indexOf('tx.pmSchedule.findFirst');
+    expect(lifecycleLockAt).toBeGreaterThan(0);
+    expect(scheduleCheckAt).toBeGreaterThan(lifecycleLockAt);
   });
 
   it('revalidates a selected template under the shared lock before creating an active schedule', () => {

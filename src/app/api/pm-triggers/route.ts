@@ -136,7 +136,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: normalized.error || 'Invalid trigger configuration' }, { status: 400 });
     }
 
-    const trigger = await db.pmTrigger.create({
+    const trigger = await db.$transaction(async (tx) => {
+      const createdTrigger = await tx.pmTrigger.create({
       data: {
         scheduleId,
         triggerType,
@@ -155,12 +156,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await db.auditLog.create({
+      await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
         entityType: 'pm_trigger',
-        entityId: trigger.id,
+        entityId: createdTrigger.id,
         newValues: JSON.stringify({
           scheduleId,
           triggerType,
@@ -169,6 +170,9 @@ export async function POST(request: NextRequest) {
           isActive: isActive !== undefined ? isActive : true,
         }),
       },
+    });
+
+      return createdTrigger;
     });
 
     return NextResponse.json({ success: true, data: trigger }, { status: 201 });

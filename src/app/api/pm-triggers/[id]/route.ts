@@ -151,7 +151,8 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
     }
 
-    const updated = await db.pmTrigger.update({
+    const updated = await db.$transaction(async (tx) => {
+      const updatedTrigger = await tx.pmTrigger.update({
       where: { id },
       data: updateData,
       include: {
@@ -165,7 +166,7 @@ export async function PUT(
       },
     });
 
-    await db.auditLog.create({
+      await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
@@ -178,6 +179,9 @@ export async function PUT(
         }),
         newValues: JSON.stringify(updateData),
       },
+    });
+
+      return updatedTrigger;
     });
 
     return NextResponse.json({ success: true, data: updated });
@@ -223,12 +227,13 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Trigger is already deactivated' }, { status: 400 });
     }
 
-    const deactivated = await db.pmTrigger.update({
+    const deactivated = await db.$transaction(async (tx) => {
+      const deactivatedTrigger = await tx.pmTrigger.update({
       where: { id },
       data: { isActive: false },
     });
 
-    await db.auditLog.create({
+      await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'delete',
@@ -241,6 +246,9 @@ export async function DELETE(
         }),
         newValues: JSON.stringify({ isActive: false }),
       },
+    });
+
+      return deactivatedTrigger;
     });
 
     return NextResponse.json({ success: true, data: deactivated });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 // ============================================================================
 // GET /api/pm-templates/[id] — Get single template with tasks
@@ -116,6 +117,7 @@ export async function PUT(
 
     const result = await db.$transaction(async (tx) => {
       if (body.isActive === false) {
+        await lockPmTemplateLifecycle(tx, id);
         const activeSchedule = await tx.pmSchedule.findFirst({
           where: { templateId: id, isActive: true },
           select: { id: true, title: true },
@@ -203,6 +205,7 @@ export async function DELETE(
     }
 
     const result = await db.$transaction(async (tx) => {
+      await lockPmTemplateLifecycle(tx, id);
       const activeSchedule = await tx.pmSchedule.findFirst({
         where: { templateId: id, isActive: true },
         select: { id: true, title: true },

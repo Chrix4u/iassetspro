@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 // ============================================================================
 // DELETE /api/pm-templates/[id]/tasks/[taskId] — Remove a specific task from future use
@@ -47,6 +48,7 @@ export async function DELETE(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         `iassetspro:pm-template-task-order:${id}`,
       );
+      await lockPmTemplateLifecycle(tx, id);
 
       const activeSchedule = await tx.pmSchedule.findFirst({
         where: { templateId: id, isActive: true },

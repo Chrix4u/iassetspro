@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { calculateNextDueDate, isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -219,17 +220,22 @@ export async function POST(request: NextRequest) {
       componentForTrigger = component;
     }
 
-    if (templateId) {
-      const template = await db.pmTemplate.findUnique({
-        where: { id: templateId },
-        select: { id: true, isActive: true },
-      });
-      if (!template || !template.isActive) {
-        return NextResponse.json({ success: false, error: 'PM template not found or inactive' }, { status: 400 });
+    const scheduleResult = await db.$transaction(async (tx) => {
+      if (templateId) {
+        await lockPmTemplateLifecycle(tx, templateId);
+        const template = await tx.pmTemplate.findUnique({
+          where: { id: templateId },
+          select: {
+            id: true,
+            isActive: true,
+            tasks: { where: { isActive: true }, take: 1, select: { id: true } },
+          },
+        });
+        if (!template || !template.isActive || template.tasks.length === 0) {
+          return { kind: 'invalid_template' as const };
+        }
       }
-    }
 
-    const schedule = await db.$transaction(async (tx) => {
       const createdSchedule = await tx.pmSchedule.create({
       data: {
         title,
@@ -290,10 +296,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-      return createdSchedule;
+      return { kind: 'created' as const, createdSchedule };
     });
 
-    return NextResponse.json({ success: true, data: schedule }, { status: 201 });
+    if (scheduleResult.kind === 'invalid_template') {
+      return NextResponse.json(
+        { success: false, error: 'PM template must be active and contain at least one active task' },
+        { status: 400 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: scheduleResult.createdSchedule }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create PM schedule';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

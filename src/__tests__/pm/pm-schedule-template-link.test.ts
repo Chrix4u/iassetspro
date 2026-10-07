@@ -10,7 +10,7 @@ describe('PM schedule template linkage', () => {
   it('accepts, validates, persists and returns templateId on create', () => {
     expect(listRoute).toContain('templateId,');
     expect(listRoute).toContain("where: { id: templateId }");
-    expect(listRoute).toContain("error: 'PM template not found or inactive'");
+    expect(listRoute).toContain("error: 'PM template must be active and contain at least one active task'");
     expect(listRoute).toContain('templateId: templateId || null');
     expect(listRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
@@ -18,7 +18,7 @@ describe('PM schedule template linkage', () => {
   it('allows template assignment changes on schedule update', () => {
     expect(itemRoute).toContain("'templateId'");
     expect(itemRoute).toContain('body.templateId !== undefined');
-    expect(itemRoute).toContain("error: 'PM template not found or inactive'");
+    expect(itemRoute).toContain("error: 'PM template must be active and contain at least one active task'");
     expect(itemRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+const VALID_TASK_TYPES = new Set(['check', 'measure', 'inspect', 'lubricate', 'replace', 'record']);
+
 // ============================================================================
 // POST /api/pm-templates/[id]/tasks — Add a task to a template
 // ============================================================================
@@ -23,12 +25,36 @@ export async function POST(
     const body = await request.json();
     const { description, taskType, requiredParts, estimatedMinutes, taskNumber } = body;
 
-    if (!description || !taskType) {
+    if (typeof description !== 'string' || !description.trim() || typeof taskType !== 'string') {
       return NextResponse.json(
         { success: false, error: 'Description and task type are required' },
         { status: 400 }
       );
     }
+    if (!VALID_TASK_TYPES.has(taskType)) {
+      return NextResponse.json({ success: false, error: 'Invalid task type' }, { status: 400 });
+    }
+
+    let normalizedEstimatedMinutes: number | null = null;
+    if (estimatedMinutes !== undefined && estimatedMinutes !== null && estimatedMinutes !== '') {
+      normalizedEstimatedMinutes = Number(estimatedMinutes);
+      if (!Number.isInteger(normalizedEstimatedMinutes) || normalizedEstimatedMinutes <= 0) {
+        return NextResponse.json(
+          { success: false, error: 'Estimated minutes must be a positive whole number' },
+          { status: 400 },
+        );
+      }
+    }
+    if (requiredParts !== undefined && requiredParts !== null
+      && (!Array.isArray(requiredParts) || !requiredParts.every((part) => typeof part === 'string' && part.trim().length > 0))) {
+      return NextResponse.json(
+        { success: false, error: 'Required parts must be an array of non-empty strings' },
+        { status: 400 },
+      );
+    }
+    const normalizedRequiredParts = Array.isArray(requiredParts)
+      ? requiredParts.map((part: string) => part.trim())
+      : null;
 
     const requestedNumber = taskNumber !== undefined ? Number(taskNumber) : null;
     if (requestedNumber !== null && (!Number.isInteger(requestedNumber) || requestedNumber <= 0)) {
@@ -67,10 +93,10 @@ export async function POST(
         data: {
           templateId: id,
           taskNumber: nextNumber,
-          description,
+          description: description.trim(),
           taskType,
-          requiredParts: requiredParts ? JSON.stringify(requiredParts) : null,
-          estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+          requiredParts: normalizedRequiredParts && normalizedRequiredParts.length > 0 ? JSON.stringify(normalizedRequiredParts) : null,
+          estimatedMinutes: normalizedEstimatedMinutes,
           sortOrder: nextNumber,
         },
       });

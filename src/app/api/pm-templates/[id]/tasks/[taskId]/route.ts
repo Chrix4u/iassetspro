@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
 // ============================================================================
-// DELETE /api/pm-templates/[id]/tasks/[taskId] — Delete a specific task
+// DELETE /api/pm-templates/[id]/tasks/[taskId] — Remove a specific task from future use
 // ============================================================================
 export async function DELETE(
   request: NextRequest,
@@ -15,7 +15,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'pm_templates.delete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -29,4 +29,23 @@ describe('PM frequency validation contract', () => {
     expect(detail).toContain('Number.isInteger(normalizedFrequencyValue)');
     expect(detail).toContain('updateData.frequencyValue = normalizedFrequencyValue');
   });
+
+  it('preserves zero lead days, defaults blank create input to three, and rejects invalid create values', () => {
+    expect(collection).toContain('const normalizedLeadDays');
+    expect(collection).toContain("leadDays === ''");
+    expect(collection).toContain('? 3');
+    expect(collection).toContain('Number.isInteger(normalizedLeadDays)');
+    expect(collection).toContain('normalizedLeadDays < 0');
+    expect(collection).toContain('Lead days must be a non-negative whole number');
+    expect(collection).toContain('leadDays: normalizedLeadDays');
+    expect(collection).not.toContain('leadDays: leadDays || 3');
+  });
+
+  it('applies the same non-negative whole-number lead-days contract to schedule edits', () => {
+    expect(detail).toContain('body.leadDays !== undefined');
+    expect(detail).toContain('Number.isInteger(normalizedLeadDays)');
+    expect(detail).toContain('normalizedLeadDays < 0');
+    expect(detail).toContain('Lead days must be a non-negative whole number');
+    expect(detail).toContain('updateData.leadDays = normalizedLeadDays');
+  });
 });

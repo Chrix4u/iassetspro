@@ -181,26 +181,24 @@ export async function PUT(
       );
     }
 
-    const activeTasks = await db.pmTemplateTask.findMany({
-      where: { templateId: id, isActive: true },
-      select: { id: true },
-    });
-    const activeTaskIds = new Set(activeTasks.map((task) => task.id));
-    const isExactTaskSet =
-      activeTasks.length === normalizedTaskIds.length
-      && normalizedTaskIds.every((taskId) => activeTaskIds.has(taskId));
-    if (!isExactTaskSet) {
-      return NextResponse.json(
-        { success: false, error: 'Every active task must belong to this template before reordering' },
-        { status: 400 },
-      );
-    }
-
-    await db.$transaction(async (tx) => {
+    const reorderResult = await db.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         `iassetspro:pm-template-task-order:${id}`,
       );
+
+      const lockedActiveTasks = await tx.pmTemplateTask.findMany({
+        where: { templateId: id, isActive: true },
+        select: { id: true },
+        orderBy: [{ taskNumber: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
+      });
+      const lockedActiveTaskIds = new Set(lockedActiveTasks.map((task) => task.id));
+      const isExactTaskSet =
+        lockedActiveTasks.length === normalizedTaskIds.length
+        && normalizedTaskIds.every((taskId) => lockedActiveTaskIds.has(taskId));
+      if (!isExactTaskSet) {
+        return { kind: 'invalid_task_set' as const };
+      }
 
       for (const [index, taskId] of normalizedTaskIds.entries()) {
         await tx.pmTemplateTask.updateMany({
@@ -218,11 +216,20 @@ export async function PUT(
           action: 'update',
           entityType: 'pm_template_task',
           entityId: id,
-          oldValues: JSON.stringify({ order: activeTasks.map((task) => task.id) }),
+          oldValues: JSON.stringify({ order: lockedActiveTasks.map((task) => task.id) }),
           newValues: JSON.stringify({ order: normalizedTaskIds }),
         },
       });
+
+      return { kind: 'reordered' as const };
     });
+
+    if (reorderResult.kind === 'invalid_task_set') {
+      return NextResponse.json(
+        { success: false, error: 'Every active task must belong to this template before reordering' },
+        { status: 400 },
+      );
+    }
 
     const updatedTasks = await db.pmTemplateTask.findMany({
       where: { templateId: id, isActive: true },

@@ -96,9 +96,23 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
+    if (body.estimatedDuration !== undefined) {
+      const normalizedEstimatedDuration =
+        body.estimatedDuration === null || body.estimatedDuration === ''
+          ? 0
+          : Number(body.estimatedDuration);
+      if (!Number.isFinite(normalizedEstimatedDuration) || normalizedEstimatedDuration < 0) {
+        return NextResponse.json(
+          { success: false, error: 'Estimated duration must be a non-negative number of hours' },
+          { status: 400 },
+        );
+      }
+      updateData.estimatedDuration = normalizedEstimatedDuration;
+    }
+
     const allowedFields = [
       'title', 'description', 'frequencyType', 'frequencyValue',
-      'lastCompletedDate', 'nextDueDate', 'estimatedDuration', 'priority',
+      'lastCompletedDate', 'nextDueDate', 'priority',
       'assignedToId', 'departmentId', 'isActive', 'autoGenerateWO',
       'leadDays', 'woTypeId', 'componentId', 'templateId',
     ];
@@ -296,7 +310,6 @@ export async function DELETE(
     }
 
     const { id } = await params;
-
     const existing = await db.pmSchedule.findUnique({
       where: { id },
       include: { asset: { select: { plantId: true } } },

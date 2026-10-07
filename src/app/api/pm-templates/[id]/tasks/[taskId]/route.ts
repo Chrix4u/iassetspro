@@ -43,8 +43,9 @@ export async function DELETE(
     }
 
     await db.$transaction(async (tx) => {
-      await tx.pmTemplateTask.delete({
+      await tx.pmTemplateTask.update({
         where: { id: taskId },
+        data: { isActive: false },
       });
 
       await tx.auditLog.create({
@@ -60,7 +61,9 @@ export async function DELETE(
             taskType: task.taskType,
             requiredParts: task.requiredParts,
             estimatedMinutes: task.estimatedMinutes,
+            isActive: task.isActive,
           }),
+          newValues: JSON.stringify({ isActive: false }),
         },
       });
     });

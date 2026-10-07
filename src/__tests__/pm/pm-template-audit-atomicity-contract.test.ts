@@ -46,7 +46,7 @@ describe('PM template audit atomicity contract', () => {
   it('deletes a template task atomically with its audit record', () => {
     const del = section(taskDetail, 'export async function DELETE(');
     expect(del).toContain('db.$transaction(async (tx) =>');
-    expect(del).toContain('tx.pmTemplateTask.delete');
+    expect(del).toContain('tx.pmTemplateTask.update');
     expect(del).toContain('tx.auditLog.create');
     expect(del).toContain("entityType: 'pm_template_task'");
   });

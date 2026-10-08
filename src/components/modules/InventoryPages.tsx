@@ -1013,7 +1013,7 @@ export function InventoryAdjustmentsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Adjustments</h1><p className="text-muted-foreground mt-1">Record stock adjustments, write-offs, and corrections</p></div>
-        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>}
+        {(hasPermission('inventory_adjustments.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1026,9 +1026,9 @@ export function InventoryAdjustmentsPage() {
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Adj #</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden sm:table-cell">Qty Change</TableHead><TableHead className="hidden md:table-cell">Reason</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Created By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
-            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ArrowUpDown} title="No adjustments found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+          <Table><TableHeader><TableRow><TableHead>Adj #</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden sm:table-cell">Qty Change</TableHead><TableHead className="hidden md:table-cell">Reason</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Created By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={9} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={ArrowUpDown} title="No adjustments found" description="Try adjusting your search or filters." /></TableCell></TableRow>
             ) : filtered.map(a => (
               <TableRow key={a.id} className="hover:bg-muted/30">
                 <TableCell className="font-mono text-sm font-medium">{a.adjustmentNumber}</TableCell>
@@ -1039,6 +1039,12 @@ export function InventoryAdjustmentsPage() {
                 <TableCell><Badge variant="outline" className={adjStatusColors[a.status]}>{a.status?.replace('_', ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{a.createdBy?.fullName || '-'}</TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(a.createdAt)}</TableCell>
+                <TableCell className="text-right whitespace-nowrap">
+                  {a.status === 'pending' && (hasPermission('inventory_adjustments.update') || isAdmin()) && <>
+                    <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(a.id, 'approve')}>Approve</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(a.id, 'reject')}>Reject</Button>
+                  </>}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -1131,7 +1137,7 @@ export function InventoryRequestsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Requests</h1><p className="text-muted-foreground mt-1">Submit and track material requisitions from work orders</p></div>
-        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>}
+        {(hasPermission('material_requisitions.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1272,7 +1278,7 @@ export function InventoryTransfersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transfers</h1><p className="text-muted-foreground mt-1">Transfer inventory items between locations</p></div>
-        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>}
+        {(hasPermission('inventory_transfers.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1298,9 +1304,9 @@ export function InventoryTransfersPage() {
                 <TableCell><Badge variant="outline" className={transferStatusColors[t.status]}>{t.status?.replace('_', ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  {(hasPermission('inventory.update') || isAdmin()) && t.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'approve')}>Approve</Button>}
-                  {(hasPermission('inventory.update') || isAdmin()) && t.status === 'in_transit' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'complete')}>Complete</Button>}
-                  {(hasPermission('inventory.delete') || isAdmin()) && (t.status === 'pending' || t.status === 'in_transit') && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(t.id, 'cancel')}>Cancel</Button>}
+                  {(hasPermission('inventory_transfers.update') || isAdmin()) && t.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'approve')}>Approve</Button>}
+                  {(hasPermission('inventory_transfers.update') || isAdmin()) && t.status === 'in_transit' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'complete')}>Complete</Button>}
+                  {(hasPermission('inventory_transfers.update') || isAdmin()) && (t.status === 'pending' || t.status === 'in_transit') && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(t.id, 'cancel')}>Cancel</Button>}
                 </TableCell>
               </TableRow>
             ))}

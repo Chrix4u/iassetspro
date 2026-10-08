@@ -201,23 +201,27 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     const dialog = techPage.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Return Spare Part' })).toBeVisible();
 
-    const fillOpenSearch = async (value: string) => {
+    const chooseOpenSearch = async (value: string, optionText: string) => {
       const searchInput = techPage.locator('input[cmdk-input][placeholder="Search..."]:visible');
       await expect(searchInput).toHaveCount(1);
       await searchInput.fill(value);
+      const option = techPage.getByRole('option').filter({ hasText: optionText }).first();
+      await expect(option).toBeVisible();
+      // AsyncSearchableSelect refreshes option nodes after its debounced fetch.
+      // cmdk keeps the first matching option selected, so keyboard Enter avoids
+      // racing a pointer click against an option node that can be replaced.
+      await searchInput.press('Enter');
+      await expect(searchInput).toBeHidden();
     };
 
     await dialog.getByRole('combobox', { name: 'Search work order' }).click();
-    await fillOpenSearch(wo.title);
-    await techPage.getByRole('option').filter({ hasText: wo.woNumber }).first().click();
+    await chooseOpenSearch(wo.title, wo.woNumber);
 
     await dialog.getByRole('combobox', { name: 'Search components' }).click();
-    await fillOpenSearch('UAT-PUMP-BRG-DE');
-    await techPage.getByRole('option').filter({ hasText: 'UAT-PUMP-BRG-DE' }).first().click();
+    await chooseOpenSearch('UAT-PUMP-BRG-DE', 'UAT-PUMP-BRG-DE');
 
     await dialog.getByRole('combobox', { name: 'Select installed part' }).click();
-    await fillOpenSearch(serialNumber);
-    await techPage.getByRole('option').filter({ hasText: serialNumber }).first().click();
+    await chooseOpenSearch(serialNumber, serialNumber);
 
     await dialog.getByPlaceholder('Why is this installed part being removed?').fill('UAT bearing wear requires refurbishment');
     await dialog.locator('#createRefurb').check();

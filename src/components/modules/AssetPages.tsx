@@ -144,6 +144,7 @@ export function AssetsPage() {
         }
 
         setDetailId(createdAssetId);
+        loadData();
       } else {
         loadData();
       }

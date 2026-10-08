@@ -4575,7 +4575,7 @@ export function SparePartReturnsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
-    workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
+    workOrderId: '', componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
     conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false,
     refurbishmentNotes: '', estimatedRefurbCost: '', notes: '',
   });
@@ -4604,7 +4604,7 @@ export function SparePartReturnsPage() {
     if (!createForm.workOrderId || !createForm.itemName) { toast.error('Work Order and Item Name are required'); return; }
     setSubmitting(true);
     const res = await api.post('/api/repairs/spare-part-returns', {
-      workOrderId: createForm.workOrderId, componentId: createForm.componentId || undefined, itemId: createForm.itemId || undefined,
+      workOrderId: createForm.workOrderId, componentId: createForm.componentId || undefined, installedSparePartId: createForm.installedSparePartId || undefined, itemId: createForm.itemId || undefined,
       itemName: createForm.itemName, partSerialNumber: createForm.partSerialNumber || undefined,
       quantity: parseFloat(createForm.quantity) || 1, conditionOnReturn: createForm.conditionOnReturn,
       damageDescription: createForm.damageDescription || undefined,
@@ -4616,7 +4616,7 @@ export function SparePartReturnsPage() {
     });
     if (res.success) {
       toast.success('Spare part return created'); setCreateOpen(false);
-      setCreateForm({ workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
+      setCreateForm({ workOrderId: '', componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
       fetchReturns();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -4814,7 +4814,7 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/work-orders?search=${q}&status=in_progress,assigned,planned&limit=20`);
               if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
               return [];
-            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '' }))} />
+            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1' }))} />
           </div>
           <div className="space-y-2">
             <Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label>
@@ -4827,22 +4827,42 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/component-registry?${params}`);
               if (res.success) return (res.data || []).map((c: any) => ({ value: c.id, label: `${c.componentCode} - ${c.name}${c.criticality ? ` [${c.criticality}]` : ''}` }));
               return [];
-            }} deps={[createForm.workOrderId]} value={createForm.componentId} onValueChange={v => setCreateForm(p => ({ ...p, componentId: v }))} />
+            }} deps={[createForm.workOrderId]} value={createForm.componentId} onValueChange={v => setCreateForm(p => ({ ...p, componentId: v, installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1' }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Removed installed part <span className="text-xs text-muted-foreground">(recommended for serialized/reusable parts)</span></Label>
+            <AsyncSearchableSelect placeholder={createForm.componentId ? 'Select removed installed part...' : 'Select a Component first'} fetchOptions={async (q) => {
+              if (!createForm.componentId) return [];
+              const res = await api.get(`/api/component-registry/${createForm.componentId}/installed-parts`);
+              if (!res.success) return [];
+              const query = q.toLowerCase();
+              return (res.data || []).filter((part: any) => part.status === 'removed' && (!query || part.partName?.toLowerCase().includes(query) || part.partCode?.toLowerCase().includes(query) || part.serialNumber?.toLowerCase().includes(query))).map((part: any) => ({
+                value: part.id,
+                label: `${part.partName}${part.partCode ? ` (${part.partCode})` : ''}${part.serialNumber ? ` · SN ${part.serialNumber}` : ''} · qty ${part.quantity}`,
+              }));
+            }} deps={[createForm.componentId]} value={createForm.installedSparePartId} onValueChange={async v => {
+              if (!v || !createForm.componentId) { setCreateForm(p => ({ ...p, installedSparePartId: '' })); return; }
+              const res = await api.get(`/api/component-registry/${createForm.componentId}/installed-parts`);
+              const part = (res.data || []).find((row: any) => row.id === v);
+              if (!part) { toast.error('Removed installed part could not be loaded'); return; }
+              setCreateForm(p => ({ ...p, installedSparePartId: v, itemId: part.inventoryItemId || '', itemName: part.partName || '', partSerialNumber: part.serialNumber || '', quantity: String(part.quantity || 1) }));
+            }} />
+            {createForm.installedSparePartId && <p className="text-xs text-teal-700">Physical identity locked to the selected installed-part history record.</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Item Name *</Label>
-              <Input value={createForm.itemName} onChange={e => setCreateForm(p => ({ ...p, itemName: e.target.value }))} placeholder="Part name" />
+              <Input value={createForm.itemName} onChange={e => setCreateForm(p => ({ ...p, itemName: e.target.value }))} placeholder="Part name" readOnly={Boolean(createForm.installedSparePartId)} />
             </div>
             <div className="space-y-2">
               <Label>Quantity</Label>
-              <Input type="number" value={createForm.quantity} onChange={e => setCreateForm(p => ({ ...p, quantity: e.target.value }))} min="1" />
+              <Input type="number" value={createForm.quantity} onChange={e => setCreateForm(p => ({ ...p, quantity: e.target.value }))} min="1" readOnly={Boolean(createForm.installedSparePartId)} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Serial Number</Label>
-              <Input value={createForm.partSerialNumber} onChange={e => setCreateForm(p => ({ ...p, partSerialNumber: e.target.value }))} placeholder="If available" />
+              <Input value={createForm.partSerialNumber} onChange={e => setCreateForm(p => ({ ...p, partSerialNumber: e.target.value }))} placeholder="If available" readOnly={Boolean(createForm.installedSparePartId)} />
             </div>
             <div className="space-y-2">
               <Label>Condition on Return</Label>
@@ -4897,6 +4917,7 @@ export function SparePartReturnsPage() {
                     <div><Label className="text-xs text-muted-foreground">Quantity</Label><p className="text-sm mt-1 font-medium">{detailItem.quantity}</p></div>
                     <div><Label className="text-xs text-muted-foreground">WO #</Label><p className="text-sm mt-1 font-mono">{detailItem.workOrder?.woNumber}</p></div>
                     {detailItem.component && <div><Label className="text-xs text-muted-foreground">Component</Label><p className="text-sm mt-1">{detailItem.component.name} <span className="text-muted-foreground">({detailItem.component.componentCode})</span></p></div>}
+                    {detailItem.installedSparePart && <div className="col-span-2"><Label className="text-xs text-muted-foreground">Physical source</Label><p className="text-sm mt-1">Installed part history · {detailItem.installedSparePart.partName}{detailItem.installedSparePart.serialNumber ? ` · SN ${detailItem.installedSparePart.serialNumber}` : ''}</p></div>}
                   </div>
                   <Separator />
                   <div className="space-y-2">

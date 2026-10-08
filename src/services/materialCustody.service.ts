@@ -436,6 +436,14 @@ export async function returnSparePartToStore(sparePartReturnId: string, actorId:
     });
     if (claim.count !== 1) throw new MaterialCustodyConflictError('Spare part return was claimed concurrently');
 
+    if (record.installedSparePartId) {
+      const installedClaim = await tx.installedSparePart.updateMany({
+        where: { id: record.installedSparePartId, status: 'removed' },
+        data: { status: 'returned_to_store' },
+      });
+      if (installedClaim.count !== 1) throw new MaterialCustodyConflictError('Installed spare custody changed concurrently');
+    }
+
     if (record.itemId) {
       await mutateInventory(tx, {
         itemId: record.itemId,
@@ -465,6 +473,7 @@ type CreateSparePartReturnInput = {
   workOrderId: string;
   componentId?: string | null;
   materialRequestId?: string | null;
+  installedSparePartId?: string | null;
   itemId?: string | null;
   itemName: string;
   partSerialNumber?: string | null;
@@ -484,9 +493,51 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
   const now = new Date();
 
   return db.$transaction(async (tx) => {
+    if (input.installedSparePartId && input.materialRequestId) {
+      throw new MaterialCustodyValidationError('A removed installed spare cannot also be re-accounted against material request custody');
+    }
     let materialAccounting: Record<string, unknown> | null = null;
     let authoritativeItemId = input.itemId || null;
     let authoritativeComponentId = input.componentId || null;
+    let authoritativeItemName = input.itemName;
+    let authoritativeSerialNumber = input.partSerialNumber || null;
+
+    if (input.installedSparePartId) {
+      const installedPart = await tx.installedSparePart.findUnique({
+        where: { id: input.installedSparePartId },
+        include: {
+          component: { select: { id: true, assetId: true, asset: { select: { plantId: true } } } },
+          inventoryItem: { select: { id: true, name: true, itemCode: true, plantId: true } },
+        },
+      });
+      if (!installedPart) throw new MaterialCustodyNotFoundError('Installed spare part not found');
+      if (installedPart.status !== 'removed') {
+        throw new MaterialCustodyConflictError(`Installed spare part must be removed before return processing; current status is '${installedPart.status}'`);
+      }
+      if (input.componentId && input.componentId !== installedPart.componentId) {
+        throw new MaterialCustodyValidationError('Installed spare part belongs to a different component');
+      }
+      if (input.itemId && installedPart.inventoryItemId && input.itemId !== installedPart.inventoryItemId) {
+        throw new MaterialCustodyValidationError('Installed spare part references a different inventory item');
+      }
+      if (input.plantId && installedPart.component.asset?.plantId && input.plantId !== installedPart.component.asset.plantId) {
+        throw new MaterialCustodyValidationError('Installed spare part belongs to a different plant');
+      }
+      if (Math.abs(qty - installedPart.quantity) > EPSILON) {
+        throw new MaterialCustodyValidationError(`Return quantity (${qty}) must match the removed installed quantity (${installedPart.quantity})`);
+      }
+      const existingReturn = await tx.sparePartReturn.findUnique({
+        where: { installedSparePartId: installedPart.id },
+        select: { id: true, returnNumber: true },
+      });
+      if (existingReturn) {
+        throw new MaterialCustodyConflictError(`Installed spare part is already linked to return ${existingReturn.returnNumber}`);
+      }
+      authoritativeItemId = installedPart.inventoryItemId || authoritativeItemId;
+      authoritativeComponentId = installedPart.componentId;
+      authoritativeItemName = installedPart.partName;
+      authoritativeSerialNumber = installedPart.serialNumber || authoritativeSerialNumber;
+    }
 
     if (input.materialRequestId) {
       const material = await tx.repairMaterialRequest.findUnique({ where: { id: input.materialRequestId } });
@@ -579,9 +630,10 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
         workOrderId: input.workOrderId,
         componentId: authoritativeComponentId,
         materialRequestId: input.materialRequestId || null,
+        installedSparePartId: input.installedSparePartId || null,
         itemId: authoritativeItemId,
-        itemName: input.itemName,
-        partSerialNumber: input.partSerialNumber || null,
+        itemName: authoritativeItemName,
+        partSerialNumber: authoritativeSerialNumber,
         quantity: qty,
         conditionOnReturn: input.conditionOnReturn || 'used',
         damageDescription: input.damageDescription || null,
@@ -604,6 +656,14 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
         requestedBy: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    if (input.installedSparePartId && input.isConsumed) {
+      const installedClaim = await tx.installedSparePart.updateMany({
+        where: { id: input.installedSparePartId, status: 'removed' },
+        data: { status: 'scrapped' },
+      });
+      if (installedClaim.count !== 1) throw new MaterialCustodyConflictError('Installed spare custody changed concurrently');
+    }
 
     return { sparePartReturn, materialAccounting };
   });

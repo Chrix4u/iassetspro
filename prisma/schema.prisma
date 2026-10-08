@@ -2795,6 +2795,7 @@ model InstalledSparePart {
   workOrder       WorkOrder?             @relation("InstalledSpareWorkOrder", fields: [workOrderId], references: [id], onDelete: SetNull)
   installedBy     User                   @relation("InstalledSpareInstalledBy", fields: [installedById], references: [id])
   removedBy       User?                  @relation("InstalledSpareRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  sparePartReturn SparePartReturn?       @relation("InstalledSpareReturn")
 
   @@index([componentId, status])
   @@index([inventoryItemId])
@@ -2810,6 +2811,7 @@ model SparePartReturn {
   workOrderId         String    // → WorkOrder
   componentId         String?   // → ComponentRegistry
   materialRequestId   String?   // → RepairMaterialRequest
+  installedSparePartId String?   @unique // → InstalledSparePart physical identity
   itemId              String?   // → InventoryItem
   itemName            String
   partSerialNumber    String?
@@ -2840,6 +2842,7 @@ model SparePartReturn {
   workOrder       WorkOrder?             @relation(fields: [workOrderId], references: [id])
   component       ComponentRegistry?     @relation("SparePartReturnComponent", fields: [componentId], references: [id])
   materialRequest RepairMaterialRequest? @relation("SparePartReturnMatReq", fields: [materialRequestId], references: [id])
+  installedSparePart InstalledSparePart? @relation("InstalledSpareReturn", fields: [installedSparePartId], references: [id], onDelete: SetNull)
   item            InventoryItem?         @relation("SparePartReturnItem", fields: [itemId], references: [id])
   requestedBy     User                   @relation("SparePartReturnRequested", fields: [requestedById], references: [id])
   inspectedBy     User?                  @relation("SparePartReturnInspected", fields: [inspectedById], references: [id])

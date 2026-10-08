@@ -18,6 +18,10 @@ const { db, tx } = vi.hoisted(() => {
       updateMany: vi.fn(),
       create: vi.fn(),
     },
+    installedSparePart: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn(),
+    },
   };
   return {
     tx,
@@ -57,6 +61,7 @@ beforeEach(() => {
   tx.repairMaterialRequest.updateMany.mockResolvedValue({ count: 1 });
   tx.inventoryItem.updateMany.mockResolvedValue({ count: 1 });
   tx.sparePartReturn.updateMany.mockResolvedValue({ count: 1 });
+  tx.installedSparePart.updateMany.mockResolvedValue({ count: 1 });
   tx.stockMovement.create.mockResolvedValue({});
 });
 
@@ -180,6 +185,48 @@ describe('material reconciliation delta', () => {
 });
 
 describe('spare-part custody accounting', () => {
+  it('derives serialized return identity from the removed installed spare', async () => {
+    tx.installedSparePart.findUnique.mockResolvedValue({
+      id: 'installed-1', componentId: 'component-1', inventoryItemId: 'inv-1', partName: 'Bearing 6205',
+      serialNumber: 'SN-6205-A', quantity: 1, status: 'removed',
+      component: { id: 'component-1', assetId: 'asset-1', asset: { plantId: 'plant-1' } },
+      inventoryItem: { id: 'inv-1', name: 'Bearing 6205', itemCode: 'BR-6205', plantId: 'plant-1' },
+    });
+    tx.sparePartReturn.findUnique.mockResolvedValue(null);
+    tx.sparePartReturn.create.mockResolvedValue({ id: 'spr-linked', status: 'pending', installedSparePartId: 'installed-1' });
+
+    await createSparePartReturnWithCustody({
+      returnNumber: 'SPR-LINKED', workOrderId: 'wo-2', installedSparePartId: 'installed-1',
+      itemName: 'typed text ignored', quantity: 1, plantId: 'plant-1', requestedById: 'tech-1',
+      refurbishmentNeeded: true, isConsumed: false,
+    });
+
+    expect(tx.sparePartReturn.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        installedSparePartId: 'installed-1', componentId: 'component-1', itemId: 'inv-1',
+        itemName: 'Bearing 6205', partSerialNumber: 'SN-6205-A', quantity: 1,
+      }),
+    }));
+    expect(tx.inventoryItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moves the linked installed spare to returned_to_store in the same store-return transaction', async () => {
+    tx.sparePartReturn.findUnique.mockResolvedValue({
+      id: 'spr-linked', returnNumber: 'SPR-LINKED', status: 'refurbished', refurbishmentNeeded: true, returnedToStoreAt: null,
+      installedSparePartId: 'installed-1', itemId: 'inv-1', quantity: 1, plantId: 'plant-1',
+      workOrder: { woNumber: 'WO-2', plantId: 'plant-1' }, item: { id: 'inv-1', currentStock: 3, plantId: 'plant-1' },
+    });
+    tx.inventoryItem.findUnique.mockResolvedValue({ id: 'inv-1', currentStock: 3 });
+    tx.sparePartReturn.findUniqueOrThrow.mockResolvedValue({ id: 'spr-linked', status: 'returned_to_store' });
+
+    await returnSparePartToStore('spr-linked', 'store-1');
+
+    expect(tx.installedSparePart.updateMany).toHaveBeenCalledWith({
+      where: { id: 'installed-1', status: 'removed' }, data: { status: 'returned_to_store' },
+    });
+    expect(tx.inventoryItem.updateMany).toHaveBeenCalledWith({ where: { id: 'inv-1', currentStock: 3 }, data: { currentStock: 4 } });
+  });
+
   it('consumed spare increments consumedQty without fabricating quantityReturned', async () => {
     const req = material({ consumedQty: 2, quantityReturned: 1, quantityIssued: 10 });
     tx.repairMaterialRequest.findUnique.mockResolvedValue(req);

@@ -32,7 +32,7 @@ export async function PATCH(
     if (!removalReason) {
       return NextResponse.json({ success: false, error: 'removalReason is required' }, { status: 400 });
     }
-    if (!['removed', 'returned_to_store', 'scrapped'].includes(status)) {
+    if (!['removed', 'scrapped'].includes(status)) {
       return NextResponse.json({ success: false, error: 'Invalid removal status' }, { status: 400 });
     }
 
@@ -81,9 +81,9 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       data: updated,
-      message: status === 'returned_to_store'
-        ? 'Part marked removed. Complete the spare-part return workflow to restore store stock.'
-        : 'Part removal recorded.',
+      message: status === 'scrapped'
+        ? 'Part removal and scrap disposition recorded.'
+        : 'Part removed. Use the Spare Part Return workflow to inspect, refurbish, and restore it to store stock.',
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to remove installed spare part';

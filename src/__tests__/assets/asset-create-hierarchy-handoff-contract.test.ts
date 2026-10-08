@@ -13,6 +13,7 @@ describe('asset creation to hierarchy commissioning handoff', () => {
     expect(assetPages).toContain("navigate('assets-machines', { id: createdAssetId, tab: 'components' })");
     expect(assetPages).toContain("localStorage.setItem('user_plant_id', form.plantId)");
     expect(assetPages).toContain('window.location.reload()');
+    expect(assetPages).toContain('setDetailId(createdAssetId);\n        loadData();');
   });
 
   it('uses hierarchy language rather than calling every node a component', () => {

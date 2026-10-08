@@ -76,14 +76,20 @@ export async function atomicIssueTools(
 
   try {
     const updatedRequest = await db.$transaction(async (tx) => {
-      const claim = await tx.repairToolRequest.updateMany({
-        where: { id: toolRequestId, status: 'storekeeper_approved' },
-        data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+      const currentRequest = await tx.repairToolRequest.findUnique({
+        where: { id: toolRequestId },
+        select: { status: true },
       });
-      if (claim.count !== 1) {
-        const current = await tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, select: { status: true } });
-        if (!current) throw new Error('Tool request not found');
-        throw new ToolOperationConflictError(`Cannot issue: status is ${current.status}`);
+      if (!currentRequest) throw new Error('Tool request not found');
+      if (!['storekeeper_approved', 'issued'].includes(currentRequest.status)) {
+        throw new ToolOperationConflictError(`Cannot issue: status is ${currentRequest.status}`);
+      }
+      if (currentRequest.status === 'storekeeper_approved') {
+        const claim = await tx.repairToolRequest.updateMany({
+          where: { id: toolRequestId, status: 'storekeeper_approved' },
+          data: { status: 'issued', issuedById: session.userId, issuedAt: now },
+        });
+        if (claim.count !== 1) throw new ToolOperationConflictError('Tool request issue state changed concurrently');
       }
 
       const toolReq = await tx.repairToolRequest.findUnique({
@@ -91,6 +97,9 @@ export async function atomicIssueTools(
         include: { items: { include: { tool: true } }, tool: true, workOrder: { select: { woNumber: true, plannerId: true } }, requestedBy: { select: { id: true, fullName: true } } },
       });
       if (!toolReq) throw new Error('Tool request not found');
+      if (currentRequest.status === 'issued' && toolReq.items.length === 0) {
+        throw new ToolOperationConflictError('Single-tool request has already been issued');
+      }
 
       let actualIssuedTotal = 0;
 
@@ -106,9 +115,12 @@ export async function atomicIssueTools(
             continue;
           }
 
+          const approvedTotal = lineItem.quantityApproved ?? lineItem.quantityRequested;
+          const alreadyIssued = lineItem.quantityIssued ?? 0;
+          const remainingApproved = Math.max(0, approvedTotal - alreadyIssued);
           const qtyToIssue = Math.max(0, Math.min(
             Number.parseInt(String(issuedItem.quantityIssued), 10) || 0,
-            lineItem.quantityApproved ?? lineItem.quantityRequested,
+            remainingApproved,
           ));
 
           if (qtyToIssue === 0) {
@@ -120,15 +132,17 @@ export async function atomicIssueTools(
           }
 
           if (!lineItem.toolId) {
-            actualIssuedTotal += qtyToIssue;
-            await tx.repairToolRequestItem.update({
-              where: { id: lineItem.id },
+            const nextIssued = alreadyIssued + qtyToIssue;
+            const lineClaim = await tx.repairToolRequestItem.updateMany({
+              where: { id: lineItem.id, quantityIssued: lineItem.quantityIssued },
               data: {
-                quantityIssued: qtyToIssue,
-                availabilityStatus: qtyToIssue >= lineItem.quantityRequested ? 'available' : 'limited',
+                quantityIssued: nextIssued,
+                availabilityStatus: nextIssued >= approvedTotal ? 'available' : 'limited',
                 issueNotes: issuedItem.issueNotes || null,
               },
             });
+            if (lineClaim.count !== 1) throw new ToolOperationConflictError(`Issue quantity for "${lineItem.toolName}" changed concurrently`);
+            actualIssuedTotal += qtyToIssue;
             continue;
           }
 
@@ -177,26 +191,28 @@ export async function atomicIssueTools(
             throw new ToolOperationConflictError(`Tool "${lineItem.toolName}" stock/custody changed concurrently`);
           }
 
-          actualIssuedTotal += actualIssued;
+          const nextIssued = alreadyIssued + actualIssued;
           await tx.toolTransaction.create({
             data: {
               toolId: lineItem.toolId,
               type: 'checkout',
               toUserId: toolReq.requestedById,
-              notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${tool.condition})${actualIssued < lineItem.quantityRequested ? ' [PARTIAL]' : ''}`,
+              notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${tool.condition})${nextIssued < approvedTotal ? ' [PARTIAL]' : ''}`,
               performedById: session.userId,
               workOrderId: toolReq.workOrderId,
             },
           });
-          await tx.repairToolRequestItem.update({
-            where: { id: lineItem.id },
+          const lineClaim = await tx.repairToolRequestItem.updateMany({
+            where: { id: lineItem.id, quantityIssued: lineItem.quantityIssued },
             data: {
-              quantityIssued: actualIssued,
+              quantityIssued: nextIssued,
               conditionAtIssue: tool.condition,
-              availabilityStatus: actualIssued >= lineItem.quantityRequested ? 'available' : 'limited',
+              availabilityStatus: nextIssued >= approvedTotal ? 'available' : 'limited',
               issueNotes: issuedItem.issueNotes || (actualIssued < qtyToIssue ? `Only ${actualIssued} available in stock` : null),
             },
           });
+          if (lineClaim.count !== 1) throw new ToolOperationConflictError(`Issue quantity for "${lineItem.toolName}" changed concurrently`);
+          actualIssuedTotal += actualIssued;
         }
       } else if (toolReq.toolId) {
         const tool = toolReq.tool;
@@ -237,12 +253,14 @@ export async function atomicIssueTools(
         }
       }
 
-      if (actualIssuedTotal === 0) {
+      if (actualIssuedTotal === 0 && currentRequest.status === 'storekeeper_approved') {
         await tx.repairToolRequest.update({
           where: { id: toolRequestId },
           data: { status: 'storekeeper_approved', issuedById: null, issuedAt: null },
         });
         warnings.push('No items were actually issued. Request status remains storekeeper_approved.');
+      } else if (actualIssuedTotal === 0) {
+        warnings.push('No additional items were issued. Existing issued custody remains unchanged.');
       }
 
       return tx.repairToolRequest.findUnique({ where: { id: toolRequestId }, include: detailedInclude });

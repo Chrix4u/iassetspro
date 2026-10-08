@@ -18,9 +18,15 @@ describe('asset installed-parts lifecycle UI', () => {
     expect(source).toContain('Store issue/return quantities remain controlled by work-order material reconciliation');
   });
 
-  it('records removal through the installed-part lifecycle endpoint', () => {
-    expect(source).toContain('handleRemoveInstalledPart');
-    expect(source).toContain('removalReason');
-    expect(source).toContain("status: 'removed'");
+  it('routes repair removals into the spare-return custody workflow', () => {
+    expect(source).toContain('handleStartSpareReturn');
+    expect(source).toContain("navigate('repairs-spare-part-returns'");
+    expect(source).toContain('installedSparePartId');
+    expect(source).not.toContain("status: 'removed'");
+  });
+
+  it('does not retain state writes from the removed two-step removal form', () => {
+    expect(source).not.toContain('setRemovalReasons');
+    expect(source).not.toContain('removalReasons[');
   });
 });

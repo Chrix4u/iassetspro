@@ -185,6 +185,31 @@ describe('material reconciliation delta', () => {
 });
 
 describe('spare-part custody accounting', () => {
+  it('atomically removes an installed spare when opening return custody', async () => {
+    tx.installedSparePart.findUnique.mockResolvedValue({
+      id: 'installed-live', componentId: 'component-1', inventoryItemId: 'inv-1', partName: 'Gearbox',
+      serialNumber: 'GBX-01', quantity: 1, status: 'installed', removedAt: null,
+      component: { id: 'component-1', assetId: 'asset-1', asset: { plantId: 'plant-1' } },
+      inventoryItem: { id: 'inv-1', name: 'Gearbox', itemCode: 'GBX', plantId: 'plant-1' },
+    });
+    tx.sparePartReturn.findUnique.mockResolvedValue(null);
+    tx.sparePartReturn.create.mockResolvedValue({ id: 'spr-live', status: 'pending', installedSparePartId: 'installed-live' });
+
+    await createSparePartReturnWithCustody({
+      returnNumber: 'SPR-LIVE', workOrderId: 'wo-2', installedSparePartId: 'installed-live',
+      itemName: 'ignored', quantity: 1, plantId: 'plant-1', requestedById: 'tech-1',
+      refurbishmentNeeded: true, isConsumed: false, removalReason: 'Bearing seizure', conditionOnReturn: 'damaged',
+    });
+
+    expect(tx.installedSparePart.updateMany).toHaveBeenCalledWith({
+      where: { id: 'installed-live', status: 'installed' },
+      data: expect.objectContaining({
+        status: 'removed', removedById: 'tech-1', removalReason: 'Bearing seizure', conditionOnRemoval: 'damaged',
+      }),
+    });
+    expect(tx.sparePartReturn.create).toHaveBeenCalled();
+  });
+
   it('derives serialized return identity from the removed installed spare', async () => {
     tx.installedSparePart.findUnique.mockResolvedValue({
       id: 'installed-1', componentId: 'component-1', inventoryItemId: 'inv-1', partName: 'Bearing 6205',

@@ -7,6 +7,7 @@ import {
   createMR,
   getToken,
   lookupPlantId,
+  lookupAssetId,
   lookupUserByKey,
 } from './helpers/api';
 
@@ -26,6 +27,15 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
   const supervisorToken = await getToken('supervisor');
   const plannerToken = await getToken('planner');
   const plantId = await lookupPlantId(inventoryToken, 'PLANT-A');
+  const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const componentLookup = await apiCall(
+    plannerToken,
+    'GET',
+    `/api/component-registry?assetId=${encodeURIComponent(assetId)}&search=${encodeURIComponent('UAT-PUMP-BRG-DE')}&limit=20`,
+  );
+  expect(componentLookup.status).toBe(200);
+  const component = (componentLookup.data.data as Array<any>).find((row: any) => row.componentCode === 'UAT-PUMP-BRG-DE');
+  expect(component).toBeTruthy();
   const suffix = `${Date.now()}`.slice(-8);
   const supplierName = `UAT Procurement Supplier ${suffix}`;
   const supplierCode = `UAT-SUP-${suffix}`;
@@ -146,33 +156,86 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
   });
 
   let returnId = '';
-  await test.step('Create a deterministic repair return linked to a real work order', async () => {
-    const mr = await createMR(requesterToken, {
-      title: `UAT reusable-return ${suffix}`,
-      description: 'Browser UAT for reusable spare refurbishment and store return.',
-      priority: 'medium',
-      plantId,
-    });
-    await approveMR(supervisorToken, mr.id);
-    const technicianId = await lookupUserByKey(plannerToken, 'tech_single');
-    const wo = await convertMR(plannerToken, mr.id, {
-      assignedTo: technicianId,
-      assignmentType: 'direct',
-      tradeActivity: 'Mechanical',
-      workOrderType: 'corrective',
-      priority: 'medium',
-    });
-    const created = await apiCall(supervisorToken, 'POST', '/api/repairs/spare-part-returns', {
+  const serialNumber = `UAT-RET-SN-${suffix}`;
+  const mr = await createMR(requesterToken, {
+    title: `UAT reusable-return ${suffix}`,
+    description: 'Browser UAT for reusable spare refurbishment and store return.',
+    assetId,
+    priority: 'medium',
+    plantId,
+  });
+  await approveMR(supervisorToken, mr.id);
+  const technicianId = await lookupUserByKey(plannerToken, 'tech_single');
+  const wo = await convertMR(plannerToken, mr.id, {
+    assignedTo: technicianId,
+    assignmentType: 'direct',
+    tradeActivity: 'Mechanical',
+    workOrderType: 'corrective',
+    priority: 'medium',
+  });
+
+  let installedPartId = '';
+  await test.step('Create an installed serialized spare as deterministic browser-UAT setup', async () => {
+    const installed = await apiCall(supervisorToken, 'POST', `/api/component-registry/${component.id}/installed-parts`, {
+      inventoryItemId: reusableItem.id,
       workOrderId: wo.id,
-      itemId: reusableItem.id,
-      itemName: reusableName,
+      partName: reusableName,
+      partCode: reusableCode,
+      serialNumber,
       quantity: 1,
-      conditionOnReturn: 'worn',
-      refurbishmentNeeded: true,
-      isConsumed: false,
+      sourceType: 'manual',
+      notes: 'UAT physical spare installed before atomic repair return.',
     });
-    expect(created.status).toBe(201);
-    returnId = created.data.data.id;
+    expect(installed.status).toBe(201);
+    installedPartId = installed.data.data.id;
+  });
+
+  const techContext = await browser.newContext();
+  await authenticateAs(techContext, 'tech_single');
+  const techPage = await techContext.newPage();
+
+  await test.step('Technician removes the installed spare and opens custody atomically through the frontend', async () => {
+    await techPage.goto('/#/repairs-spare-part-returns');
+    await expect(techPage.getByRole('heading', { name: 'Spare Part Returns' })).toBeVisible();
+    await techPage.getByRole('button', { name: /New Return/i }).click();
+    const dialog = techPage.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: 'Return Spare Part' })).toBeVisible();
+
+    const fillOpenSearch = async (value: string) => {
+      const searchInput = techPage.locator('input[cmdk-input][placeholder="Search..."]:visible');
+      await expect(searchInput).toHaveCount(1);
+      await searchInput.fill(value);
+    };
+
+    await dialog.getByRole('combobox', { name: 'Search work order' }).click();
+    await fillOpenSearch(wo.title);
+    await techPage.getByRole('option').filter({ hasText: wo.woNumber }).first().click();
+
+    await dialog.getByRole('combobox', { name: 'Search components' }).click();
+    await fillOpenSearch('UAT-PUMP-BRG-DE');
+    await techPage.getByRole('option').filter({ hasText: 'UAT-PUMP-BRG-DE' }).first().click();
+
+    await dialog.getByRole('combobox', { name: 'Select installed part' }).click();
+    await fillOpenSearch(serialNumber);
+    await techPage.getByRole('option').filter({ hasText: serialNumber }).first().click();
+
+    await dialog.getByPlaceholder('Why is this installed part being removed?').fill('UAT bearing wear requires refurbishment');
+    await dialog.locator('#createRefurb').check();
+
+    const createResponsePromise = techPage.waitForResponse((response) =>
+      response.request().method() === 'POST' && /\/api\/repairs\/spare-part-returns(?:\?|$)/.test(response.url()),
+    );
+    await dialog.getByRole('button', { name: 'Submit Return' }).click();
+    const createResponse = await createResponsePromise;
+    const createBody = await createResponse.json().catch(() => null);
+    expect(createResponse.status(), `Atomic spare return failed: ${JSON.stringify(createBody)}`).toBe(201);
+    expect(createBody?.data?.installedSparePartId).toBe(installedPartId);
+    returnId = createBody.data.id;
+    await expect(techPage.getByText('Spare part return created')).toBeVisible();
+
+    const installedState = await apiCall(supervisorToken, 'GET', `/api/component-registry/${component.id}/installed-parts`);
+    expect(installedState.status).toBe(200);
+    expect(installedState.data.data.find((part: any) => part.id === installedPartId)?.status).toBe('removed');
   });
 
   const supervisorContext = await browser.newContext();
@@ -216,6 +279,7 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
     expect(stockAfterRetry.data.data.find((item: any) => item.id === reusableItem.id)?.currentStock).toBe(1);
   });
 
+  await techContext.close();
   await supervisorContext.close();
   await inventoryContext.close();
 });

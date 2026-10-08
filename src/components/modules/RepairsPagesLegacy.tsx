@@ -4562,6 +4562,7 @@ const SPARE_RETURN_STAGES: PipelineStage[] = [
 
 export function SparePartReturnsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -4575,7 +4576,7 @@ export function SparePartReturnsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
-    workOrderId: '', componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
+    workOrderId: '', componentId: '', installedSparePartId: '', installedSparePartStatus: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', removalReason: '',
     conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false,
     refurbishmentNotes: '', estimatedRefurbCost: '', notes: '',
   });
@@ -4600,13 +4601,28 @@ export function SparePartReturnsPage() {
 
   useEffect(() => { fetchReturns(); }, [fetchReturns]);
 
+  useEffect(() => {
+    if (!pageParams?.installedSparePartId) return;
+    setCreateForm((current) => ({
+      ...current,
+      componentId: pageParams.componentId || current.componentId,
+      installedSparePartId: pageParams.installedSparePartId,
+      installedSparePartStatus: pageParams.installedSparePartStatus || 'installed',
+      itemName: pageParams.itemName || current.itemName,
+      partSerialNumber: pageParams.partSerialNumber || current.partSerialNumber,
+      quantity: pageParams.quantity || current.quantity,
+    }));
+    setCreateOpen(true);
+  }, [pageParams?.componentId, pageParams?.installedSparePartId, pageParams?.installedSparePartStatus, pageParams?.itemName, pageParams?.partSerialNumber, pageParams?.quantity]);
+
   const handleCreate = async () => {
     if (!createForm.workOrderId || !createForm.itemName) { toast.error('Work Order and Item Name are required'); return; }
+    if (createForm.installedSparePartId && createForm.installedSparePartStatus === 'installed' && !createForm.removalReason.trim()) { toast.error('Removal reason is required for an installed part'); return; }
     setSubmitting(true);
     const res = await api.post('/api/repairs/spare-part-returns', {
       workOrderId: createForm.workOrderId, componentId: createForm.componentId || undefined, installedSparePartId: createForm.installedSparePartId || undefined, itemId: createForm.itemId || undefined,
       itemName: createForm.itemName, partSerialNumber: createForm.partSerialNumber || undefined,
-      quantity: parseFloat(createForm.quantity) || 1, conditionOnReturn: createForm.conditionOnReturn,
+      quantity: parseFloat(createForm.quantity) || 1, removalReason: createForm.removalReason || undefined, conditionOnReturn: createForm.conditionOnReturn,
       damageDescription: createForm.damageDescription || undefined,
       refurbishmentNeeded: createForm.refurbishmentNeeded,
       isConsumed: createForm.isConsumed,
@@ -4616,7 +4632,7 @@ export function SparePartReturnsPage() {
     });
     if (res.success) {
       toast.success('Spare part return created'); setCreateOpen(false);
-      setCreateForm({ workOrderId: '', componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
+      setCreateForm({ workOrderId: '', componentId: '', installedSparePartId: '', installedSparePartStatus: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', removalReason: '', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
       fetchReturns();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -4811,10 +4827,10 @@ export function SparePartReturnsPage() {
           <div className="space-y-2">
             <Label>Work Order *</Label>
             <AsyncSearchableSelect placeholder="Search work order..." fetchOptions={async (q) => {
-              const res = await api.get(`/api/work-orders?search=${q}&status=in_progress,assigned,planned&limit=20`);
+              const res = await api.get(`/api/work-orders?search=${q}&status=planned,assigned,in_progress,on_hold,waiting_parts,waiting_tools,waiting_shutdown,waiting_permit,pending_handover,completed&limit=20`);
               if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
               return [];
-            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '', installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1' }))} />
+            }} value={createForm.workOrderId} onValueChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '', installedSparePartId: '', installedSparePartStatus: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', removalReason: '' }))} />
           </div>
           <div className="space-y-2">
             <Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label>
@@ -4827,28 +4843,34 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/component-registry?${params}`);
               if (res.success) return (res.data || []).map((c: any) => ({ value: c.id, label: `${c.componentCode} - ${c.name}${c.criticality ? ` [${c.criticality}]` : ''}` }));
               return [];
-            }} deps={[createForm.workOrderId]} value={createForm.componentId} onValueChange={v => setCreateForm(p => ({ ...p, componentId: v, installedSparePartId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1' }))} />
+            }} deps={[createForm.workOrderId]} value={createForm.componentId} onValueChange={v => setCreateForm(p => ({ ...p, componentId: v, installedSparePartId: '', installedSparePartStatus: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', removalReason: '' }))} />
           </div>
           <div className="space-y-2">
-            <Label>Removed installed part <span className="text-xs text-muted-foreground">(recommended for serialized/reusable parts)</span></Label>
-            <AsyncSearchableSelect placeholder={createForm.componentId ? 'Select removed installed part...' : 'Select a Component first'} fetchOptions={async (q) => {
+            <Label>Installed part to remove <span className="text-xs text-muted-foreground">(recommended for serialized/reusable parts)</span></Label>
+            <AsyncSearchableSelect placeholder={createForm.componentId ? 'Select installed part...' : 'Select a Component first'} fetchOptions={async (q) => {
               if (!createForm.componentId) return [];
               const res = await api.get(`/api/component-registry/${createForm.componentId}/installed-parts`);
               if (!res.success) return [];
               const query = q.toLowerCase();
-              return (res.data || []).filter((part: any) => part.status === 'removed' && (!query || part.partName?.toLowerCase().includes(query) || part.partCode?.toLowerCase().includes(query) || part.serialNumber?.toLowerCase().includes(query))).map((part: any) => ({
+              return (res.data || []).filter((part: any) => (part.status === 'installed' || part.status === 'removed') && (!query || part.partName?.toLowerCase().includes(query) || part.partCode?.toLowerCase().includes(query) || part.serialNumber?.toLowerCase().includes(query))).map((part: any) => ({
                 value: part.id,
-                label: `${part.partName}${part.partCode ? ` (${part.partCode})` : ''}${part.serialNumber ? ` · SN ${part.serialNumber}` : ''} · qty ${part.quantity}`,
+                label: `${part.partName}${part.partCode ? ` (${part.partCode})` : ''}${part.serialNumber ? ` · SN ${part.serialNumber}` : ''} · qty ${part.quantity} · ${part.status === 'removed' ? 'already removed' : 'installed'}`,
               }));
             }} deps={[createForm.componentId]} value={createForm.installedSparePartId} onValueChange={async v => {
-              if (!v || !createForm.componentId) { setCreateForm(p => ({ ...p, installedSparePartId: '' })); return; }
+              if (!v || !createForm.componentId) { setCreateForm(p => ({ ...p, installedSparePartId: '', installedSparePartStatus: '', removalReason: '' })); return; }
               const res = await api.get(`/api/component-registry/${createForm.componentId}/installed-parts`);
               const part = (res.data || []).find((row: any) => row.id === v);
-              if (!part) { toast.error('Removed installed part could not be loaded'); return; }
-              setCreateForm(p => ({ ...p, installedSparePartId: v, itemId: part.inventoryItemId || '', itemName: part.partName || '', partSerialNumber: part.serialNumber || '', quantity: String(part.quantity || 1) }));
+              if (!part) { toast.error('Installed part could not be loaded'); return; }
+              setCreateForm(p => ({ ...p, installedSparePartId: v, installedSparePartStatus: part.status || '', itemId: part.inventoryItemId || '', itemName: part.partName || '', partSerialNumber: part.serialNumber || '', quantity: String(part.quantity || 1), removalReason: '' }));
             }} />
-            {createForm.installedSparePartId && <p className="text-xs text-teal-700">Physical identity locked to the selected installed-part history record.</p>}
+            {createForm.installedSparePartId && <p className="text-xs text-teal-700">{createForm.installedSparePartStatus === 'removed' ? 'Legacy removed part selected. Submitting will attach its existing removal history to return custody.' : 'Physical identity is locked. Submitting this return will remove the part and open custody in one transaction.'}</p>}
           </div>
+          {createForm.installedSparePartId && createForm.installedSparePartStatus === 'installed' && (
+            <div className="space-y-2">
+              <Label>Removal Reason *</Label>
+              <Textarea value={createForm.removalReason} onChange={e => setCreateForm(p => ({ ...p, removalReason: e.target.value }))} placeholder="Why is this installed part being removed?" rows={2} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Item Name *</Label>

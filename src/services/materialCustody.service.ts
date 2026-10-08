@@ -474,6 +474,7 @@ type CreateSparePartReturnInput = {
   componentId?: string | null;
   materialRequestId?: string | null;
   installedSparePartId?: string | null;
+  removalReason?: string | null;
   itemId?: string | null;
   itemName: string;
   partSerialNumber?: string | null;
@@ -511,8 +512,11 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
         },
       });
       if (!installedPart) throw new MaterialCustodyNotFoundError('Installed spare part not found');
-      if (installedPart.status !== 'removed') {
-        throw new MaterialCustodyConflictError(`Installed spare part must be removed before return processing; current status is '${installedPart.status}'`);
+      if (!['installed', 'removed'].includes(installedPart.status)) {
+        throw new MaterialCustodyConflictError(`Installed spare part cannot enter return custody from status '${installedPart.status}'`);
+      }
+      if (installedPart.status === 'installed' && !input.removalReason?.trim()) {
+        throw new MaterialCustodyValidationError('Removal reason is required when removing an installed spare part');
       }
       if (input.componentId && input.componentId !== installedPart.componentId) {
         throw new MaterialCustodyValidationError('Installed spare part belongs to a different component');
@@ -537,6 +541,20 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
       authoritativeComponentId = installedPart.componentId;
       authoritativeItemName = installedPart.partName;
       authoritativeSerialNumber = installedPart.serialNumber || authoritativeSerialNumber;
+
+      if (installedPart.status === 'installed') {
+        const removalClaim = await tx.installedSparePart.updateMany({
+          where: { id: input.installedSparePartId, status: 'installed' },
+          data: {
+            status: 'removed',
+            removedAt: now,
+            removedById: input.requestedById,
+            removalReason: input.removalReason!.trim(),
+            conditionOnRemoval: input.conditionOnReturn || null,
+          },
+        });
+        if (removalClaim.count !== 1) throw new MaterialCustodyConflictError('Installed spare removal was claimed concurrently');
+      }
     }
 
     if (input.materialRequestId) {

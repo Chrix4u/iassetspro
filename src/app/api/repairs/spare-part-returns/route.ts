@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
         include: {
           workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
           component: { select: { id: true, componentCode: true, name: true, criticality: true } },
+          installedSparePart: { select: { id: true, partName: true, partCode: true, serialNumber: true, quantity: true, status: true, installedAt: true, removedAt: true, removalReason: true, conditionOnRemoval: true } },
           item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
           requestedBy: { select: { id: true, fullName: true, username: true, avatar: true } },
           inspectedBy: { select: { id: true, fullName: true } },
@@ -162,6 +163,7 @@ export async function POST(request: NextRequest) {
       workOrderId,
       componentId,
       materialRequestId,
+      installedSparePartId,
       itemId,
       itemName,
       partSerialNumber,
@@ -180,9 +182,16 @@ export async function POST(request: NextRequest) {
       if (!plantAuth.ok) return plantAuth.response;
     }
 
-    if (!workOrderId || !itemName) {
+    if (installedSparePartId && materialRequestId) {
       return NextResponse.json(
-        { success: false, error: 'workOrderId and itemName are required' },
+        { success: false, error: 'A removed installed spare cannot also be re-accounted against material request custody' },
+        { status: 400 },
+      );
+    }
+
+    if (!workOrderId || (!itemName && !installedSparePartId)) {
+      return NextResponse.json(
+        { success: false, error: 'workOrderId and either itemName or installedSparePartId are required' },
         { status: 400 },
       );
     }
@@ -196,10 +205,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
+    let resolvedComponentId = componentId || null;
+    let resolvedItemId = itemId || null;
+    let resolvedItemName = String(itemName || '').trim();
+    let resolvedPartSerialNumber = partSerialNumber ? String(partSerialNumber).trim() : null;
+    let resolvedQuantity = Number(quantity ?? 1);
+
+    if (installedSparePartId) {
+      const installedPart = await db.installedSparePart.findUnique({
+        where: { id: String(installedSparePartId) },
+        include: {
+          component: { select: { id: true, assetId: true, asset: { select: { plantId: true } } } },
+        },
+      });
+      if (!installedPart) {
+        return NextResponse.json({ success: false, error: 'Installed spare part not found' }, { status: 404 });
+      }
+      if (installedPart.status !== 'removed') {
+        return NextResponse.json({ success: false, error: `Installed spare part must be removed before return processing; current status is '${installedPart.status}'` }, { status: 409 });
+      }
+      if (!wo.assetId || installedPart.component.assetId !== wo.assetId) {
+        return NextResponse.json({ success: false, error: 'Installed spare part belongs to a different asset than the work order' }, { status: 400 });
+      }
+      if (componentId && componentId !== installedPart.componentId) {
+        return NextResponse.json({ success: false, error: 'Installed spare part belongs to a different component' }, { status: 400 });
+      }
+      if (itemId && installedPart.inventoryItemId && itemId !== installedPart.inventoryItemId) {
+        return NextResponse.json({ success: false, error: 'Installed spare part references a different inventory item' }, { status: 400 });
+      }
+      if (partSerialNumber && installedPart.serialNumber && String(partSerialNumber).trim() !== installedPart.serialNumber) {
+        return NextResponse.json({ success: false, error: 'Serial number does not match the selected installed spare part' }, { status: 400 });
+      }
+      if (quantity !== undefined && Math.abs(Number(quantity) - installedPart.quantity) > 1e-9) {
+        return NextResponse.json({ success: false, error: 'Return quantity must match the selected installed spare quantity' }, { status: 400 });
+      }
+      resolvedComponentId = installedPart.componentId;
+      resolvedItemId = installedPart.inventoryItemId || null;
+      resolvedItemName = installedPart.partName;
+      resolvedPartSerialNumber = installedPart.serialNumber || null;
+      resolvedQuantity = installedPart.quantity;
+    }
+
     // A returned machine part must stay on the same asset as the work order.
-    if (componentId) {
+    if (resolvedComponentId) {
       const component = await db.componentRegistry.findUnique({
-        where: { id: componentId },
+        where: { id: resolvedComponentId },
         select: { id: true, assetId: true },
       });
       if (!component) {
@@ -217,8 +267,8 @@ export async function POST(request: NextRequest) {
     const resolvedPlantId = wo.plantId || null;
 
     // Verify item exists if itemId provided
-    if (itemId) {
-      const item = await db.inventoryItem.findUnique({ where: { id: itemId } });
+    if (resolvedItemId) {
+      const item = await db.inventoryItem.findUnique({ where: { id: resolvedItemId } });
       if (!item) {
         return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 404 });
       }
@@ -238,12 +288,13 @@ export async function POST(request: NextRequest) {
     const result = await createSparePartReturnWithCustody({
       returnNumber,
       workOrderId,
-      componentId: componentId || null,
+      componentId: resolvedComponentId,
       materialRequestId: materialRequestId || null,
-      itemId: itemId || null,
-      itemName,
-      partSerialNumber: partSerialNumber || null,
-      quantity: quantity ?? 1,
+      installedSparePartId: installedSparePartId || null,
+      itemId: resolvedItemId,
+      itemName: resolvedItemName,
+      partSerialNumber: resolvedPartSerialNumber,
+      quantity: resolvedQuantity,
       conditionOnReturn: conditionOnReturn || 'used',
       damageDescription: damageDescription || null,
       refurbishmentNeeded: resolvedRefurbishmentNeeded,
@@ -269,8 +320,10 @@ export async function POST(request: NextRequest) {
       newValues: {
         returnNumber,
         workOrderId,
-        itemName,
-        quantity,
+        itemName: resolvedItemName,
+        installedSparePartId: installedSparePartId || null,
+        partSerialNumber: resolvedPartSerialNumber,
+        quantity: resolvedQuantity,
         conditionOnReturn,
         isConsumed: resolvedIsConsumed,
         refurbishmentNeeded: resolvedRefurbishmentNeeded,
@@ -281,8 +334,8 @@ export async function POST(request: NextRequest) {
     // Notify relevant users (planner, storekeeper)
     if (wo) {
       const notificationMessage = resolvedIsConsumed
-        ? `${returnNumber} for WO ${wo.woNumber}: ${itemName} recorded as consumed`
-        : `${returnNumber} for WO ${wo.woNumber}: ${itemName} returned for refurbishment`;
+        ? `${returnNumber} for WO ${wo.woNumber}: ${resolvedItemName} recorded as consumed`
+        : `${returnNumber} for WO ${wo.woNumber}: ${resolvedItemName} returned for refurbishment`;
       notifyUser(session.userId, 'spare_part_returned', resolvedIsConsumed ? 'Material Recorded as Consumed' : 'Spare Part Return Created', notificationMessage, 'spare_part_return', sparePartReturn.id, 'spare-part-returns').catch(() => {});
     }
 

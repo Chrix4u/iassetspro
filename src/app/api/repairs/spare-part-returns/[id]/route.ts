@@ -40,6 +40,7 @@ export async function GET(
         },
         component: { select: { id: true, componentCode: true, name: true, criticality: true, assetId: true } },
         materialRequest: { select: { id: true, itemName: true, quantityIssued: true } },
+        installedSparePart: { select: { id: true, partName: true, partCode: true, serialNumber: true, quantity: true, status: true, installedAt: true, removedAt: true, removalReason: true, conditionOnRemoval: true } },
         item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true, binLocation: true } },
         requestedBy: { select: { id: true, fullName: true, username: true, avatar: true } },
         inspectedBy: { select: { id: true, fullName: true, username: true } },
@@ -129,6 +130,14 @@ export async function PUT(
 
     if (!canEditSparePartReturn(actor, existing.requestedById)) {
       return NextResponse.json({ success: false, error: 'You can only edit your own spare part returns' }, { status: 403 });
+    }
+
+    const identityFields = ['itemName', 'partSerialNumber', 'quantity', 'componentId'];
+    if (existing.installedSparePartId && identityFields.some((field) => body[field] !== undefined)) {
+      return NextResponse.json(
+        { success: false, error: 'Installed-spare identity is locked; edit the installed-part record instead' },
+        { status: 400 },
+      );
     }
 
     const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost', 'componentId'];
@@ -393,18 +402,28 @@ export async function POST(
         return NextResponse.json({ success: false, error: 'disposalReason is required' }, { status: 400 });
       }
 
-      const updated = await db.sparePartReturn.update({
-        where: { id },
-        data: {
-          status: 'disposed',
-          disposedById: session.userId,
-          disposedAt: now,
-          disposalReason,
-        },
-        include: {
-          workOrder: { select: { id: true, woNumber: true, title: true } },
-          disposedByUser: { select: { id: true, fullName: true } },
-        },
+      const updated = await db.$transaction(async (tx) => {
+        const disposed = await tx.sparePartReturn.update({
+          where: { id },
+          data: {
+            status: 'disposed',
+            disposedById: session.userId,
+            disposedAt: now,
+            disposalReason,
+          },
+          include: {
+            workOrder: { select: { id: true, woNumber: true, title: true } },
+            disposedByUser: { select: { id: true, fullName: true } },
+          },
+        });
+        if (existing.installedSparePartId) {
+          const installedClaim = await tx.installedSparePart.updateMany({
+            where: { id: existing.installedSparePartId, status: 'removed' },
+            data: { status: 'scrapped' },
+          });
+          if (installedClaim.count !== 1) throw new MaterialCustodyConflictError('Installed spare custody changed concurrently');
+        }
+        return disposed;
       });
 
       await createAuditLog(session.userId, 'SparePartReturn', 'dispose', id, {
@@ -415,6 +434,12 @@ export async function POST(
     }
 
     if (action === 'reject') {
+      if (existing.installedSparePartId) {
+        return NextResponse.json(
+          { success: false, error: 'Linked installed spare returns cannot be rejected; inspect the part or dispose it to preserve physical custody history' },
+          { status: 400 },
+        );
+      }
       if (existing.status !== 'pending') {
         return NextResponse.json({ success: false, error: `Cannot reject: current status is '${existing.status}'` }, { status: 400 });
       }

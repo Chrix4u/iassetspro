@@ -17,6 +17,8 @@ describe('planner recommended tool immediate selection', () => {
   it('does not block a selected planner tool on the live lookup loading flag', () => {
     expect(panel).toContain("disabled={busy !== null || !toolRequest.toolId}");
     expect(panel).not.toContain("!toolRequest.toolId || (!editingToolRequestId && resourcesLoading)");
-    expect(panel).toContain("if (selectedTool?.availabilityVerified)");
+    expect(panel).not.toContain("toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`)");
+    expect(panel).not.toContain("max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined}");
+    expect(panel).toContain("Availability shortfall:");
   });
 });

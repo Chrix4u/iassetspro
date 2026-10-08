@@ -60,7 +60,7 @@ describe('MR → WO planner material visibility', () => {
 
   it('keeps technician WO resource lookups scoped and projects planner-tool snapshots', () => {
     expect(technicianPanels).toContain('/api/work-orders/${workOrderId}/inventory-candidates?limit=100');
-    expect(technicianPanels).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100');
+    expect(technicianPanels).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=all&limit=100');
     expect(technicianPanels).not.toContain("api.get<InventoryOption[]>('/api/inventory?mode=lookup");
     expect(technicianPanels).not.toContain("api.get<ToolOption[]>('/api/tools?mode=lookup");
     expect(technicianPanels).toContain('const plannerToolSnapshot = (() => {');

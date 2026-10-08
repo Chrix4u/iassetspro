@@ -403,7 +403,7 @@ describe('atomicIssueTools - multi-item issue', () => {
     // Should have updated the line item directly (no tool deduction)
     expect(mockTxItemUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'tri-1' },
+        where: { id: 'tri-1', quantityIssued: 0 },
         data: expect.objectContaining({
           quantityIssued: 3,
           availabilityStatus: 'available',
@@ -414,7 +414,7 @@ describe('atomicIssueTools - multi-item issue', () => {
 
   it('should mark item as limited when partially issued', async () => {
     const items = [
-      makeToolRequestItem({ id: 'tri-1', toolId: null, toolName: 'Bolts', quantityRequested: 10 }),
+      makeToolRequestItem({ id: 'tri-1', toolId: null, toolName: 'Bolts', quantityRequested: 10, quantityApproved: 10 }),
     ];
 
     setupTransactionWithMockTx(
@@ -668,7 +668,7 @@ describe('atomicIssueTools - tool quantity and status logic', () => {
     ).pop();
     if (lastItemUpdate) {
       expect(lastItemUpdate[0].data.quantityIssued).toBe(2);
-      expect(lastItemUpdate[0].data.availabilityStatus).toBe('limited');
+      expect(lastItemUpdate[0].data.availabilityStatus).toBe('available');
     }
   });
 });
@@ -709,7 +709,7 @@ describe('atomicIssueTools - tool transaction notes', () => {
 
   it('should mark partial issue in transaction notes', async () => {
     const items = [
-      makeToolRequestItem({ id: 'tri-1', toolId: 'tool-1', toolName: 'Partial Tool', quantityRequested: 5 }),
+      makeToolRequestItem({ id: 'tri-1', toolId: 'tool-1', toolName: 'Partial Tool', quantityRequested: 5, quantityApproved: 5 }),
     ];
 
     const mockTx = setupTransactionWithMockTx(

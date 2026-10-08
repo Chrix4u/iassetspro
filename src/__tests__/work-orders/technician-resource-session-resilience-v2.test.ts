@@ -43,7 +43,7 @@ describe('technician resource session resilience', () => {
     expect(ui).toContain('Planner recommended');
 
     expect(technicianPanels).toContain('plannerToolOptionsFromWorkOrder');
-    expect(technicianPanels).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100');
+    expect(technicianPanels).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=all&limit=100');
     expect(technicianPanels).toContain('availabilityVerified');
   });
 

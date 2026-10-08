@@ -134,6 +134,7 @@ test -f "$NEW_RELEASE/prisma/schema.prisma"
 test -d "$NEW_RELEASE/prisma/migrations"
 test -f "$NEW_RELEASE/scripts/seed-transitions.ts"
 test -f "$NEW_RELEASE/scripts/bootstrap-postgresql-staging.sh"
+test -f "$NEW_RELEASE/scripts/production-redis-preflight.mjs"
 test -f "$NEW_RELEASE/prisma/seed-constants.ts"
 test -f "$NEW_RELEASE/prisma/seed-permissions-only.ts"
 test -f "$NEW_RELEASE/prisma/seed-trades.ts"
@@ -210,6 +211,9 @@ health_check "http://127.0.0.1:${PROD_PORT}/api/health" /tmp/iassetspro-old-post
   echo "STOP: current active runtime became unhealthy before cutover"; exit 1;
 }
 OLD_RUNTIME_POST_MIGRATION_OK=1
+
+echo "[pre-canary] Production Redis/BullMQ durability preflight"
+NODE_ENV=production node --env-file=.env scripts/production-redis-preflight.mjs
 
 echo "[4/10] Canary"
 for p in $(seq 3100 3199); do

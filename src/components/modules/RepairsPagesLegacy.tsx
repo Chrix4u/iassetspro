@@ -857,7 +857,7 @@ export function RepairMaterialRequestsPage() {
                             </Button>
                           )}
                           {r.status === 'picking' && canApproveAsStore(user, 'repair_material_requests.update') && (
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'issue', max: r.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }}>
+                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); handleAction(r.id, 'issue', { approvedQuantity: r.quantityApproved }); }} disabled={submitting}>
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
                           )}
@@ -872,7 +872,7 @@ export function RepairMaterialRequestsPage() {
                                 <PackageCheck className="h-3.5 w-3.5" /> Verify & Reconcile
                               </Button>
                               {(r.quantityReturned ?? 0) < (r.quantityIssued ?? 0) && (
-                                <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'record_return', max: Math.max(0, (r.quantityIssued || 0) - (r.quantityReturned || 0)), field: 'quantityToReturn' }); setQtyOpen(true); }}>
+                                <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'record_return', max: Math.max(0, (r.quantityIssued || 0) - (r.quantityReturned || 0)), field: 'quantityReturned' }); setQtyOpen(true); }}>
                                   <RotateCcw className="h-3.5 w-3.5" /> Record Return
                                 </Button>
                               )}
@@ -983,7 +983,7 @@ export function RepairMaterialRequestsPage() {
                           <Button size="sm" className="gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handlePick(detailItem.id)} disabled={submitting}><PackageOpen className="h-3.5 w-3.5" /> Pick Items</Button>
                         )}
                         {detailItem.status === 'picking' && (
-                          <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'issue', max: detailItem.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Issue</Button>
+                          <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'issue', { approvedQuantity: detailItem.quantityApproved })} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Issue</Button>
                         )}
                         {['issued', 'partially_returned', 'fully_returned'].includes(detailItem.status) && canDeclareMaterialUsage(detailItem, user) && (
                           <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700" onClick={() => openUsageDeclaration(detailItem)} disabled={submitting}><ClipboardList className="h-3.5 w-3.5" /> Record Usage / Return</Button>
@@ -992,7 +992,7 @@ export function RepairMaterialRequestsPage() {
                           <>
                             <Button size="sm" variant="outline" className="gap-1 border-violet-400 text-violet-700" onClick={() => openStoreReconcile(detailItem)} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Verify Return & Reconcile</Button>
                             {(detailItem.quantityReturned ?? 0) < (detailItem.quantityIssued ?? 0) && (
-                              <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: Math.max(0, (detailItem.quantityIssued || 0) - (detailItem.quantityReturned || 0)), field: 'quantityToReturn' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Record Return</Button>
+                              <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: Math.max(0, (detailItem.quantityIssued || 0) - (detailItem.quantityReturned || 0)), field: 'quantityReturned' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Record Return</Button>
                             )}
                           </>
                         )}
@@ -1041,7 +1041,7 @@ export function RepairMaterialRequestsPage() {
       </ResponsiveDialog>
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Material Request" />
-      <QuantityDialog open={qtyOpen} onClose={() => { setQtyOpen(false); setQtyTarget(null); }} onConfirm={(qty) => { if (qtyTarget) handleAction(qtyTarget.id, qtyTarget.action, { [qtyTarget.field]: qty }); }} title={qtyTarget?.action === 'issue' ? 'Issue Quantity' : 'Return Quantity'} description={qtyTarget?.action === 'issue' ? `Enter quantity to issue (max ${qtyTarget?.max || 0})` : `Enter quantity to return (max ${qtyTarget?.max || 0})`} max={qtyTarget?.max || 0} fieldLabel={qtyTarget?.action === 'issue' ? 'Quantity to Issue' : 'Quantity to Return'} />
+      <QuantityDialog open={qtyOpen} onClose={() => { setQtyOpen(false); setQtyTarget(null); }} onConfirm={(qty) => { if (qtyTarget) handleAction(qtyTarget.id, qtyTarget.action, { [qtyTarget.field]: qty }); }} title="Return Quantity" description={`Enter quantity to return (max ${qtyTarget?.max || 0})`} max={qtyTarget?.max || 0} fieldLabel="Quantity to Return" />
 
       {/* Technician Material Usage Declaration */}
       <ResponsiveDialog open={usageDeclarationOpen} onOpenChange={(v) => { if (!v) { setUsageDeclarationOpen(false); setUsageDeclarationTarget(null); setUsageDeclarationForm({ consumedQty: '', wastedQty: '0', returnQty: '', notes: '' }); } }}>

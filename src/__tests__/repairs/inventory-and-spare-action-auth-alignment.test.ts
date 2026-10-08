@@ -17,6 +17,18 @@ describe('Repairs inventory and spare-action UI authorization alignment', () => 
     expect(ui).not.toContain("(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className=\"bg-emerald-600 hover:bg-emerald-700 text-white\"><Plus className=\"h-4 w-4 mr-2\" />New GRN</Button>");
   });
 
+  it('shows reusable-tool commissioning to the same store/tool-shop roles as the API', () => {
+    const ui = read('src/components/modules/InventoryPages.tsx');
+    const route = read('src/app/api/inventory/[id]/commission-tools/route.ts');
+
+    expect(route).toContain("const ALLOWED_ROLES = ['inventory_manager', 'store_keeper', 'tools_shop_attendant']");
+    expect(ui).toContain('const canCommissionTools =');
+    expect(ui).toContain("'inventory_manager'");
+    expect(ui).toContain("'store_keeper'");
+    expect(ui).toContain("'tools_shop_attendant'");
+    expect(ui).toContain('canCommissionTools &&');
+  });
+
   it('gates spare-return workflow buttons with the same operational authority as the API', () => {
     const ui = read('src/components/modules/RepairsPagesLegacy.tsx');
     const route = read('src/app/api/repairs/spare-part-returns/[id]/route.ts');

@@ -7,6 +7,9 @@ const ui = read('src/components/modules/InventoryPages.tsx');
 const adjustmentCreateRoute = read('src/app/api/inventory/adjustments/route.ts');
 const adjustmentUpdateRoute = read('src/app/api/inventory/adjustments/[id]/route.ts');
 const requestCreateRoute = read('src/app/api/inventory/requests/route.ts');
+const requestUpdateRoute = read('src/app/api/inventory/requests/[id]/route.ts');
+const requestApproveRoute = read('src/app/api/inventory/requests/[id]/approve/route.ts');
+const requestRejectRoute = read('src/app/api/inventory/requests/[id]/reject/route.ts');
 const transferCreateRoute = read('src/app/api/inventory/transfers/route.ts');
 const transferUpdateRoute = read('src/app/api/inventory/transfers/[id]/route.ts');
 
@@ -20,9 +23,17 @@ describe('inventory workflow UI permission alignment', () => {
     expect(ui).toContain("handleAction(a.id, 'reject')");
   });
 
-  it('uses material requisition create authority for inventory requests', () => {
+  it('uses material requisition authority for request creation and decisions', () => {
     expect(requestCreateRoute).toContain("hasPermission(session, 'material_requisitions.create')");
+    expect(requestApproveRoute).toContain("hasPermission(session, 'material_requisitions.approve')");
+    expect(requestRejectRoute).toContain("hasPermission(session, 'material_requisitions.reject')");
+    expect(requestUpdateRoute).toContain('Request status must be changed through the approval or rejection workflow');
+    expect(requestUpdateRoute).not.toContain("['title', 'description', 'priority', 'notes', 'status']");
     expect(ui).toContain("hasPermission('material_requisitions.create')");
+    expect(ui).toContain("hasPermission('material_requisitions.approve')");
+    expect(ui).toContain("hasPermission('material_requisitions.reject')");
+    expect(ui).toContain("handleRequestAction(r.id, 'approve')");
+    expect(ui).toContain("handleRequestAction(r.id, 'reject')");
   });
 
   it('uses transfer-specific create/update authority for transfer workflow actions', () => {

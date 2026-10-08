@@ -70,7 +70,7 @@ describe('technician resource auth resilience', () => {
   it('uses exact-WO candidate endpoints rather than broad registries', () => {
     const panel = read('src/components/modules/TechnicianWorkOrderV11Panels.tsx');
 
-    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100');
+    expect(panel).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=all&limit=100');
     expect(panel).toContain('/api/work-orders/${workOrderId}/inventory-candidates?limit=100');
     expect(panel).not.toContain('/api/tools?mode=lookup&status=available&limit=100');
   });

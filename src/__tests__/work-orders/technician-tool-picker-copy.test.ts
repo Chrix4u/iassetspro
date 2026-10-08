@@ -9,6 +9,6 @@ describe('technician tool picker copy', () => {
       'utf8',
     );
     expect(source).not.toContain('Availability pending');
-    expect(source).toContain('Planner-recommended tools are shown first. Search or select any other available tool for this work order.');
+    expect(source).toContain('Planner-recommended tools are shown first. Search or select any other tool for this work order; current availability is shown but does not block a request.');
   });
 });

@@ -71,13 +71,13 @@ describe('technician exact-WO tool access contract', () => {
     expect(toolSlice).not.toContain('/api/tools?mode=lookup');
 
     expect(ui).toContain('/api/work-orders/${id}/inventory-candidates?limit=100');
-    expect(v11).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100');
+    expect(v11).toContain('/api/work-orders/${workOrderId}/tool-candidates?status=all&limit=100');
     expect(v11).toContain('/api/work-orders/${workOrderId}/inventory-candidates?limit=100');
     expect(v11).not.toContain('/api/tools?mode=lookup&status=available&limit=100');
     expect(v11).not.toContain('/api/inventory?mode=lookup&limit=100');
     expect(v11).toContain('toolCandidatesError');
     expect(v11).toContain('additional store tools may be missing until the live catalogue loads');
-    expect(v11).toContain('Search or select any other available tool for this work order.');
+    expect(v11).toContain('Search or select any other tool for this work order; current availability is shown but does not block a request.');
     expect(v11).not.toContain('Availability pending');
     expect(v11).not.toContain('Planner recommendation · availability pending');
     expect(v11).not.toContain('Planner recommendation · live availability will be verified');

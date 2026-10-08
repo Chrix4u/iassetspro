@@ -43,9 +43,15 @@ export async function PUT(
     const body = await request.json();
     const existing = await db.inventoryRequest.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
+    if (body.status !== undefined) {
+      return NextResponse.json(
+        { success: false, error: 'Request status must be changed through the approval or rejection workflow' },
+        { status: 400 },
+      );
+    }
 
     const updateData: Record<string, unknown> = {};
-    for (const field of ['title', 'description', 'priority', 'notes', 'status']) {
+    for (const field of ['title', 'description', 'priority', 'notes']) {
       if (body[field] !== undefined) updateData[field] = body[field];
     }
 

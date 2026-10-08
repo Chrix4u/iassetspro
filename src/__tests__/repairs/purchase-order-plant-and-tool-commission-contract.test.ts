@@ -16,6 +16,14 @@ describe('Repairs procurement and reusable tool closure contracts', () => {
     expect(receive).toContain('canAccessPurchaseOrderLines');
   });
 
+  it('forces PO status transitions through dedicated workflow routes', () => {
+    const detail = read('src/app/api/purchase-orders/[id]/route.ts');
+    const approve = read('src/app/api/purchase-orders/[id]/approve/route.ts');
+    expect(approve).toContain("data: { status: 'approved'");
+    expect(detail).toContain('Purchase order status must be changed through the approval/receiving workflow');
+    expect(detail).not.toContain("['priority', 'notes', 'status', 'expectedDelivery']");
+  });
+
   it('makes receiving concurrency-safe and never promotes bad receipts into usable stock', () => {
     const receive = read('src/app/api/purchase-orders/[id]/receive/route.ts');
     expect(receive).toContain('pg_advisory_xact_lock');

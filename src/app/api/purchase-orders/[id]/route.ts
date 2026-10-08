@@ -67,9 +67,15 @@ export async function PUT(
     if (plantScope.denyAccess || !canAccessPurchaseOrderLines(plantScope, existing.items)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
+    if (body.status !== undefined) {
+      return NextResponse.json(
+        { success: false, error: 'Purchase order status must be changed through the approval/receiving workflow' },
+        { status: 400 },
+      );
+    }
 
     const updateData: Record<string, unknown> = {};
-    for (const field of ['priority', 'notes', 'status', 'expectedDelivery']) {
+    for (const field of ['priority', 'notes', 'expectedDelivery']) {
       if (body[field] !== undefined) {
         updateData[field] = field === 'expectedDelivery' ? (body[field] ? new Date(body[field]) : null) : body[field];
       }

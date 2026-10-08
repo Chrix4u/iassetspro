@@ -41,7 +41,7 @@ describe('RWOP direct-id scope hardening', () => {
 
   it('keeps spare-part detail and edits within list ownership and plant boundaries', () => {
     expect(spareList).toContain('where.requestedById = session.userId');
-    expect(spareDetail).toContain('canViewAllReturns');
+    expect(spareDetail).toContain('canViewAllSparePartReturns(actor)');
     expect(spareDetail).toContain('sparePartReturn.requestedById !== session.userId');
     expect(spareDetail).toContain('this spare part return is outside your scope');
     expect(spareDetail).toContain('const recordPlantId = existing.plantId || existing.workOrder?.plantId');

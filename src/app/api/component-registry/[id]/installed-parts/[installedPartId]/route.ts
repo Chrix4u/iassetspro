@@ -29,11 +29,14 @@ export async function PATCH(
     const notes = body.notes ? String(body.notes).trim() : null;
     const status = body.status ? String(body.status).trim() : 'removed';
 
+    if (status !== 'scrapped') {
+      return NextResponse.json({
+        success: false,
+        error: 'Direct removal is disabled. Use Spare Part Returns so removal and physical custody are recorded atomically.',
+      }, { status: 400 });
+    }
     if (!removalReason) {
       return NextResponse.json({ success: false, error: 'removalReason is required' }, { status: 400 });
-    }
-    if (!['removed', 'scrapped'].includes(status)) {
-      return NextResponse.json({ success: false, error: 'Invalid removal status' }, { status: 400 });
     }
 
     const existing = await db.installedSparePart.findFirst({
@@ -81,9 +84,7 @@ export async function PATCH(
     return NextResponse.json({
       success: true,
       data: updated,
-      message: status === 'scrapped'
-        ? 'Part removal and scrap disposition recorded.'
-        : 'Part removed. Use the Spare Part Return workflow to inspect, refurbish, and restore it to store stock.',
+      message: 'Part removal and scrap disposition recorded.',
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to remove installed spare part';

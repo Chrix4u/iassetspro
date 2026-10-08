@@ -33,9 +33,9 @@ describe('installed spare lifecycle contract', () => {
     expect(route).not.toContain('db.inventoryItem.updateMany');
     expect(route).not.toContain('db.stockMovement.create');
 
-    expect(removal).not.toContain("['removed', 'returned_to_store', 'scrapped']");
-    expect(removal).toContain("['removed', 'scrapped']");
-    expect(removal).toContain('Use the Spare Part Return workflow to inspect, refurbish, and restore it to store stock');
+    expect(removal).toContain('Direct removal is disabled');
+    expect(removal).toContain("status !== 'scrapped'");
+    expect(removal).not.toContain("status: 'removed'");
     expect(removal).not.toContain('db.inventoryItem.update');
     expect(removal).not.toContain('db.inventoryItem.updateMany');
     expect(removal).not.toContain('db.stockMovement.create');

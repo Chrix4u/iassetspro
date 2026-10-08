@@ -78,7 +78,6 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [installedParts, setInstalledParts] = useState<any[]>([]);
   const [replacementHistory, setReplacementHistory] = useState<any[]>([]);
   const [installPartForm, setInstallPartForm] = useState({ inventoryItemId: '', serialNumber: '', lotNumber: '', quantity: '1', notes: '' });
-  const [removalReasons, setRemovalReasons] = useState<Record<string, string>>({});
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
@@ -122,7 +121,6 @@ export function AssetDetailPage({ id }: { id: string }) {
     setToolForm({ toolId: '', quantityRequired: '1', taskType: 'repair', notes: '' });
     setInstalledParts([]);
     setReplacementHistory([]);
-    setRemovalReasons({});
     setTwin(null);
     setDiagrams([]);
     setTabDataLoading(false);
@@ -500,40 +498,16 @@ export function AssetDetailPage({ id }: { id: string }) {
     }
   };
 
-  const handleRemoveInstalledPart = async (installedPartId: string) => {
+  const handleStartSpareReturn = (part: any) => {
     if (!selectedComponentId) return;
-    const removalReason = (removalReasons[installedPartId] || '').trim();
-    if (!removalReason) {
-      toast.error('Enter a removal reason first');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const res = await api.patch(
-        `/api/component-registry/${selectedComponentId}/installed-parts/${installedPartId}`,
-        {
-          removalReason,
-          conditionOnRemoval: 'used',
-          status: 'removed',
-        },
-      );
-      if (!res.success) {
-        toast.error(res.error || 'Failed to remove installed part');
-        return;
-      }
-      toast.success('Part removal recorded');
-      setRemovalReasons(current => {
-        const next = { ...current };
-        delete next[installedPartId];
-        return next;
-      });
-      loadComponentSpareParts(selectedComponentId);
-    } catch {
-      toast.error('Failed to remove installed part');
-    } finally {
-      setSaving(false);
-    }
+    useNavigationStore.getState().navigate('repairs-spare-part-returns', {
+      componentId: selectedComponentId,
+      installedSparePartId: part.id,
+      installedSparePartStatus: 'installed',
+      itemName: part.partName || '',
+      partSerialNumber: part.serialNumber || '',
+      quantity: String(part.quantity || 1),
+    });
   };
 
   const componentDepth = (component: any) => {
@@ -1308,7 +1282,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                           </div>
                           <div className="w-full max-w-full overflow-x-auto rounded-md border pb-2">
                             <Table className="min-w-[900px]">
-                              <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Serial / Lot</TableHead><TableHead>Qty</TableHead><TableHead>Installed</TableHead><TableHead>Source</TableHead><TableHead className="min-w-[260px]">Remove</TableHead></TableRow></TableHeader>
+                              <TableHeader><TableRow><TableHead>Part</TableHead><TableHead>Serial / Lot</TableHead><TableHead>Qty</TableHead><TableHead>Installed</TableHead><TableHead>Source</TableHead><TableHead className="min-w-[180px]">Repair Return</TableHead></TableRow></TableHeader>
                               <TableBody>
                                 {installedParts.filter((part: any) => part.status === 'installed').length === 0 ? (
                                   <TableRow><TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">No installed parts recorded for this component.</TableCell></TableRow>
@@ -1320,17 +1294,9 @@ export function AssetDetailPage({ id }: { id: string }) {
                                     <TableCell className="text-xs">{part.installedAt ? formatDate(part.installedAt) : '—'}</TableCell>
                                     <TableCell><Badge variant="outline" className="capitalize">{String(part.sourceType || 'manual').replace(/_/g, ' ')}</Badge></TableCell>
                                     <TableCell>
-                                      <div className="flex gap-2">
-                                        <Input
-                                          className="h-8"
-                                          placeholder="Removal reason"
-                                          value={removalReasons[part.id] || ''}
-                                          onChange={event => setRemovalReasons(current => ({ ...current, [part.id]: event.target.value }))}
-                                        />
-                                        <Button variant="outline" size="sm" onClick={() => handleRemoveInstalledPart(part.id)} disabled={saving}>
-                                          Remove
-                                        </Button>
-                                      </div>
+                                      <Button variant="outline" size="sm" onClick={() => handleStartSpareReturn(part)} disabled={saving}>
+                                        Start Repair Return
+                                      </Button>
                                     </TableCell>
                                   </TableRow>
                                 ))}

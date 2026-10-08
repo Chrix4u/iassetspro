@@ -17,9 +17,9 @@ describe('serialized installed spare custody linkage', () => {
     expect(schema).toContain('sparePartReturn');
   });
 
-  it('derives identity from a removed installed spare instead of trusting typed serial text', () => {
+  it('derives identity from an installed or removed spare instead of trusting typed serial text', () => {
     expect(createRoute).toContain('installedSparePartId');
-    expect(createRoute).toContain("status !== 'removed'");
+    expect(createRoute).toContain("installedPart.status !== 'installed' && installedPart.status !== 'removed'");
     expect(createRoute).toContain('installedPart.serialNumber');
     expect(createRoute).toContain('installedPart.componentId');
     expect(createRoute).toContain('installedPart.inventoryItemId');
@@ -34,9 +34,10 @@ describe('serialized installed spare custody linkage', () => {
     expect(actionRoute).toContain('Linked installed spare returns cannot be rejected');
   });
 
-  it('lets the operator select a removed installed spare and submits its id', () => {
+  it('lets the operator select an installed spare and submits its id', () => {
     expect(ui).toContain('installedSparePartId');
-    expect(ui).toContain('Removed installed part');
+    expect(ui).toContain('Installed part to remove');
     expect(ui).toContain('/installed-parts');
+    expect(ui).toContain("part.status === 'installed'");
   });
 });

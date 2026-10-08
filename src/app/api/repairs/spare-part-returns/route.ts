@@ -4,6 +4,7 @@ import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { canManageWorkOrder, isWorkOrderExecutionMember } from '@/services/workOrderAccess.service';
 import { applyPlantScope, canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import {
   createSparePartReturnWithCustody,
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
       componentId,
       materialRequestId,
       installedSparePartId,
+      removalReason,
       itemId,
       itemName,
       partSerialNumber,
@@ -199,10 +201,41 @@ export async function POST(request: NextRequest) {
     // Verify work order exists
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      select: { id: true, assetId: true, woNumber: true, title: true, plantId: true },
+      select: {
+        id: true,
+        assetId: true,
+        woNumber: true,
+        title: true,
+        plantId: true,
+        status: true,
+        assignedTo: true,
+        teamLeaderId: true,
+        assignedSupervisorId: true,
+        plannerId: true,
+        teamMembers: { select: { userId: true, role: true, accessLevel: true } },
+      },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    const returnableWorkOrderStatuses = new Set([
+      'planned',
+      'assigned',
+      'in_progress',
+      'on_hold',
+      'waiting_parts',
+      'waiting_tools',
+      'waiting_shutdown',
+      'waiting_permit',
+      'pending_handover',
+      'completed',
+    ]);
+    if (!returnableWorkOrderStatuses.has(wo.status)) {
+      return NextResponse.json(
+        { success: false, error: `Spare return custody cannot be opened while work order ${wo.woNumber} is '${wo.status}'` },
+        { status: 409 },
+      );
     }
 
     let resolvedComponentId = componentId || null;
@@ -221,8 +254,21 @@ export async function POST(request: NextRequest) {
       if (!installedPart) {
         return NextResponse.json({ success: false, error: 'Installed spare part not found' }, { status: 404 });
       }
-      if (installedPart.status !== 'removed') {
-        return NextResponse.json({ success: false, error: `Installed spare part must be removed before return processing; current status is '${installedPart.status}'` }, { status: 409 });
+      if (installedPart.status !== 'installed' && installedPart.status !== 'removed') {
+        return NextResponse.json({ success: false, error: `Installed spare part cannot enter return custody from status '${installedPart.status}'` }, { status: 409 });
+      }
+      if (
+        installedPart.status === 'installed'
+        && !isWorkOrderExecutionMember(session, wo)
+        && !canManageWorkOrder(session, wo)
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'You are not authorized to remove installed parts for this work order' },
+          { status: 403 },
+        );
+      }
+      if (installedPart.status === 'installed' && !String(removalReason || '').trim()) {
+        return NextResponse.json({ success: false, error: 'Removal reason is required when removing an installed spare part' }, { status: 400 });
       }
       if (!wo.assetId || installedPart.component.assetId !== wo.assetId) {
         return NextResponse.json({ success: false, error: 'Installed spare part belongs to a different asset than the work order' }, { status: 400 });
@@ -291,6 +337,7 @@ export async function POST(request: NextRequest) {
       componentId: resolvedComponentId,
       materialRequestId: materialRequestId || null,
       installedSparePartId: installedSparePartId || null,
+      removalReason: removalReason ? String(removalReason).trim() : null,
       itemId: resolvedItemId,
       itemName: resolvedItemName,
       partSerialNumber: resolvedPartSerialNumber,
@@ -322,6 +369,7 @@ export async function POST(request: NextRequest) {
         workOrderId,
         itemName: resolvedItemName,
         installedSparePartId: installedSparePartId || null,
+        removalReason: removalReason ? String(removalReason).trim() : null,
         partSerialNumber: resolvedPartSerialNumber,
         quantity: resolvedQuantity,
         conditionOnReturn,

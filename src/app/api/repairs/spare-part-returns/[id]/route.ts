@@ -104,7 +104,7 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.sparePartReturn.findUnique({ where: { id }, include: { workOrder: { select: { plantId: true } } } });
+    const existing = await db.sparePartReturn.findUnique({ where: { id }, include: { workOrder: { select: { plantId: true, assetId: true } }, materialRequest: { select: { componentRegistryId: true } } } });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Spare part return not found' }, { status: 404 });
     }
@@ -131,12 +131,57 @@ export async function PUT(
 
     const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost', 'componentId'];
     const updateData: Record<string, unknown> = {};
+    const oldValues: Record<string, unknown> = {};
+    const existingRecord = existing as unknown as Record<string, unknown>;
     for (const field of allowedFields) {
-      if (body[field] !== undefined) updateData[field] = body[field];
+      if (body[field] !== undefined) {
+        updateData[field] = body[field];
+        oldValues[field] = existingRecord[field];
+      }
     }
 
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
+    }
+
+    if (body.quantity !== undefined && existing.materialRequestId) {
+      return NextResponse.json(
+        { success: false, error: 'Quantity cannot be changed after material custody has been accounted' },
+        { status: 400 },
+      );
+    }
+    if (updateData.quantity !== undefined) {
+      const nextQuantity = Number(updateData.quantity);
+      if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+        return NextResponse.json({ success: false, error: 'quantity must be greater than zero' }, { status: 400 });
+      }
+      updateData.quantity = nextQuantity;
+    }
+
+    if (updateData.componentId !== undefined) {
+      const nextComponentId = updateData.componentId ? String(updateData.componentId) : null;
+      updateData.componentId = nextComponentId;
+      if (existing.materialRequest?.componentRegistryId && nextComponentId !== existing.materialRequest.componentRegistryId) {
+        return NextResponse.json(
+          { success: false, error: 'Component does not match the linked material request' },
+          { status: 400 },
+        );
+      }
+      if (nextComponentId) {
+        const component = await db.componentRegistry.findUnique({
+          where: { id: nextComponentId },
+          select: { id: true, assetId: true },
+        });
+        if (!component) {
+          return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+        }
+        if (!existing.workOrder?.assetId || component.assetId !== existing.workOrder?.assetId) {
+          return NextResponse.json(
+            { success: false, error: 'Component belongs to a different asset than the work order' },
+            { status: 400 },
+          );
+        }
+      }
     }
 
     const updated = await db.sparePartReturn.update({
@@ -151,7 +196,7 @@ export async function PUT(
     });
 
     await createAuditLog(session.userId, 'SparePartReturn', 'update', id, {
-      oldValues: { ...updateData } as Record<string, unknown>,
+      oldValues,
       newValues: updateData,
     });
 

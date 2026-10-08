@@ -416,6 +416,7 @@ export async function returnSparePartToStore(sparePartReturnId: string, actorId:
     if (record.item && operationalPlantId && record.item.plantId !== operationalPlantId) {
       throw new MaterialCustodyValidationError('Spare part inventory item belongs to a different plant');
     }
+    const returnQuantity = positiveQuantity(record.quantity, 'Spare part quantity');
     const readyWithoutRefurbishment = record.status === 'inspected' && !record.refurbishmentNeeded;
     const readyAfterRefurbishment = record.status === 'refurbished';
     if (!readyWithoutRefurbishment && !readyAfterRefurbishment) {
@@ -438,7 +439,7 @@ export async function returnSparePartToStore(sparePartReturnId: string, actorId:
     if (record.itemId) {
       await mutateInventory(tx, {
         itemId: record.itemId,
-        delta: record.quantity || 1,
+        delta: returnQuantity,
         movementType: 'in',
         reason: `Spare part return ${record.returnNumber} - returned to store`,
         referenceType: 'return',
@@ -471,6 +472,8 @@ type CreateSparePartReturnInput = {
   conditionOnReturn?: string | null;
   damageDescription?: string | null;
   refurbishmentNeeded: boolean;
+  refurbishmentNotes?: string | null;
+  estimatedRefurbCost?: number | null;
   plantId?: string | null;
   requestedById: string;
   isConsumed: boolean;
@@ -483,6 +486,7 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
   return db.$transaction(async (tx) => {
     let materialAccounting: Record<string, unknown> | null = null;
     let authoritativeItemId = input.itemId || null;
+    let authoritativeComponentId = input.componentId || null;
 
     if (input.materialRequestId) {
       const material = await tx.repairMaterialRequest.findUnique({ where: { id: input.materialRequestId } });
@@ -496,7 +500,11 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
       if (input.itemId && material.itemId && input.itemId !== material.itemId) {
         throw new MaterialCustodyValidationError('Linked material request references a different inventory item');
       }
+      if (input.componentId && material.componentRegistryId && input.componentId !== material.componentRegistryId) {
+        throw new MaterialCustodyValidationError('Linked material request references a different component');
+      }
       authoritativeItemId = material.itemId || input.itemId || null;
+      authoritativeComponentId = material.componentRegistryId || input.componentId || null;
 
       if (!['issued', 'partially_returned'].includes(material.status)) {
         throw new MaterialCustodyConflictError(`Cannot account spare part against material request in status '${material.status}'`);
@@ -569,7 +577,7 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
       data: {
         returnNumber: input.returnNumber,
         workOrderId: input.workOrderId,
-        componentId: input.componentId || null,
+        componentId: authoritativeComponentId,
         materialRequestId: input.materialRequestId || null,
         itemId: authoritativeItemId,
         itemName: input.itemName,
@@ -578,6 +586,8 @@ export async function createSparePartReturnWithCustody(input: CreateSparePartRet
         conditionOnReturn: input.conditionOnReturn || 'used',
         damageDescription: input.damageDescription || null,
         refurbishmentNeeded: input.refurbishmentNeeded && !input.isConsumed,
+        refurbishmentNotes: input.refurbishmentNotes || null,
+        estimatedRefurbCost: input.estimatedRefurbCost ?? null,
         plantId: input.plantId || null,
         requestedById: input.requestedById,
         status: input.isConsumed ? 'disposed' : 'pending',

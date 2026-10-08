@@ -169,6 +169,8 @@ export async function POST(request: NextRequest) {
       conditionOnReturn,
       damageDescription,
       refurbishmentNeeded,
+      refurbishmentNotes,
+      estimatedRefurbCost,
       isConsumed,
     } = body;
 
@@ -185,21 +187,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate componentId if provided
-    if (componentId) {
-      const comp = await db.componentRegistry.findUnique({ where: { id: componentId } });
-      if (!comp) {
-        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-      }
-    }
-
     // Verify work order exists
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      select: { id: true, woNumber: true, title: true, plantId: true },
+      select: { id: true, assetId: true, woNumber: true, title: true, plantId: true },
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // A returned machine part must stay on the same asset as the work order.
+    if (componentId) {
+      const component = await db.componentRegistry.findUnique({
+        where: { id: componentId },
+        select: { id: true, assetId: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+      }
+      if (!wo.assetId || component.assetId !== wo.assetId) {
+        return NextResponse.json(
+          { success: false, error: 'Component belongs to a different asset than the work order' },
+          { status: 400 },
+        );
+      }
     }
 
     // Plant identity is server-authoritative from the linked work order.
@@ -236,6 +247,8 @@ export async function POST(request: NextRequest) {
       conditionOnReturn: conditionOnReturn || 'used',
       damageDescription: damageDescription || null,
       refurbishmentNeeded: resolvedRefurbishmentNeeded,
+      refurbishmentNotes: refurbishmentNotes || null,
+      estimatedRefurbCost: estimatedRefurbCost ?? null,
       plantId: resolvedPlantId,
       requestedById: session.userId,
       isConsumed: resolvedIsConsumed,

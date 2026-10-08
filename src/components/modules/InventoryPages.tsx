@@ -1747,6 +1747,10 @@ export function InventoryReceivingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' });
+  const canReceiveInventory = isAdmin()
+    || hasPermission('inventory.update')
+    || hasPermission('inventory.stock_in')
+    || hasPermission('inventory.manage');
 
   const fetchRecords = useCallback(async () => {
     try {
@@ -1813,7 +1817,7 @@ export function InventoryReceivingPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Receiving</h1><p className="text-muted-foreground mt-1">Receive delivered items and update inventory stock levels</p></div>
-        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>}
+        {canReceiveInventory && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (

@@ -43,6 +43,13 @@ import {
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration, formatDurationFromMinutes } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
+import {
+  canCompleteSpareRefurbishment as canCompleteSpareRefurbishmentPolicy,
+  canDisposeSparePartReturn as canDisposeSparePartReturnPolicy,
+  canInspectSparePartReturn as canInspectSparePartReturnPolicy,
+  canReturnSparePartToStore as canReturnSparePartToStorePolicy,
+  canStartSpareRefurbishment as canStartSpareRefurbishmentPolicy,
+} from '@/lib/spare-part-return-authorization';
 
 // ============================================================================
 // SHARED HELPERS
@@ -340,15 +347,48 @@ function canApproveAsSupervisor(
     && request.workOrder.assignedSupervisorId === userId;
 }
 
+function roleSlugsFor(user: any): string[] {
+  const authUser = useAuthStore.getState().user;
+  const actor = authUser || user;
+  return (actor?.roles || [])
+    .map((role: any) => typeof role === 'string' ? role : role?.slug)
+    .filter(Boolean);
+}
+
+function sparePartReturnActor(user: any) {
+  const authUser = useAuthStore.getState().user;
+  const actor = authUser || user;
+  return { userId: actor?.id, roles: roleSlugsFor(user) };
+}
+
 function canApproveAsStore(user: any, requiredPermission?: string): boolean {
   if (!user) return false;
-  const { isAdmin, user: authUser, hasPermission } = useAuthStore.getState();
+  const { isAdmin, hasPermission } = useAuthStore.getState();
   // Keep physical store custody actions aligned with server authorization.
   if (isAdmin()) return true;
   if (requiredPermission && !hasPermission(requiredPermission)) return false;
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
-  const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return userRoles.some((slug: string) => storeRoles.includes(slug));
+  return roleSlugsFor(user).some((slug: string) => storeRoles.includes(slug));
+}
+
+function canInspectSparePartReturn(user: any): boolean {
+  return Boolean(user) && canInspectSparePartReturnPolicy(sparePartReturnActor(user));
+}
+
+function canStartSpareRefurbishment(user: any): boolean {
+  return Boolean(user) && canStartSpareRefurbishmentPolicy(sparePartReturnActor(user));
+}
+
+function canCompleteSpareRefurbishment(record: any, user: any): boolean {
+  return Boolean(user && record) && canCompleteSpareRefurbishmentPolicy(sparePartReturnActor(user), record);
+}
+
+function canReturnSparePartToStore(user: any): boolean {
+  return Boolean(user) && canReturnSparePartToStorePolicy(sparePartReturnActor(user));
+}
+
+function canDisposeSparePartReturn(user: any): boolean {
+  return Boolean(user) && canDisposeSparePartReturnPolicy(sparePartReturnActor(user));
 }
 
 function canActAsToolCustodian(request: any, user: any): boolean {
@@ -4685,22 +4725,22 @@ export function SparePartReturnsPage() {
                       <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
+                          {r.status === 'pending' && canInspectSparePartReturn(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'inspect' }); setActionForm({ notes: '', refurbishmentNeeded: true, estimatedCost: '', disposalReason: '' }); setActionOpen(true); }}>
                               <Eye className="h-3.5 w-3.5" /> Inspect
                             </Button>
                           )}
-                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('spare_part_returns.update')) && (
+                          {r.status === 'inspected' && r.refurbishmentNeeded && canStartSpareRefurbishment(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handleAction(r.id, 'start_refurbishment')}>
                               <Wrench className="h-3.5 w-3.5" /> Start Refurb
                             </Button>
                           )}
-                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
+                          {r.status === 'refurbishing' && canCompleteSpareRefurbishment(r, user) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_refurbishment')}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
                           )}
-                          {(r.status === 'refurbished' || (r.status === 'inspected' && !r.refurbishmentNeeded)) && canApproveAsStore(user) && (
+                          {(r.status === 'refurbished' || (r.status === 'inspected' && !r.refurbishmentNeeded)) && canReturnSparePartToStore(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(r.id, 'return_to_store')}>
                               <Warehouse className="h-3.5 w-3.5" /> To Store
                             </Button>
@@ -4709,7 +4749,7 @@ export function SparePartReturnsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {(isAdmin() || hasPermission('spare_part_returns.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
+                              {canDisposeSparePartReturn(user) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
                                 <DropdownMenuItem className="text-red-600" onClick={() => handleAction(r.id, 'dispose', { disposalReason: 'Disposed as unusable' })}><Ban className="h-4 w-4 mr-2" /> Dispose</DropdownMenuItem>
                               )}
                             </DropdownMenuContent>

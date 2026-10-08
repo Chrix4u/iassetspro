@@ -69,9 +69,12 @@ export function InventoryPage() {
   const [commissionQty, setCommissionQty] = useState('1');
   const [commissionCategory, setCommissionCategory] = useState('General');
   const [commissioning, setCommissioning] = useState(false);
-  const canCommissionTools = isAdmin() || (user?.roles || []).some((role: any) =>
-    ['inventory_manager', 'store_keeper', 'tools_shop_attendant'].includes(role.slug),
-  );
+  const canCommissionTools = isAdmin()
+    || hasPermission('inventory.stock_out')
+    || hasPermission('inventory.manage')
+    || (user?.roles || []).some((role: any) =>
+      ['inventory_manager', 'store_keeper', 'tools_shop_attendant'].includes(role.slug),
+    );
   // KPI data from API
   const [kpi, setKpi] = useState<{
     total: number;

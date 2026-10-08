@@ -22,7 +22,8 @@ describe('Repairs inventory and spare-action UI authorization alignment', () => 
     const route = read('src/app/api/inventory/[id]/commission-tools/route.ts');
 
     expect(route).toContain("const ALLOWED_ROLES = ['inventory_manager', 'store_keeper', 'tools_shop_attendant']");
-    expect(ui).toContain('const canCommissionTools =');
+    expect(route).toContain("hasAnyPermission(session, ['inventory.stock_out', 'inventory.manage'])");
+    expect(ui).toContain("const canCommissionTools = isAdmin()\n    || hasPermission('inventory.stock_out')\n    || hasPermission('inventory.manage')");
     expect(ui).toContain("'inventory_manager'");
     expect(ui).toContain("'store_keeper'");
     expect(ui).toContain("'tools_shop_attendant'");

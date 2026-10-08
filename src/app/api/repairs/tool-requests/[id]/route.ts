@@ -147,10 +147,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot approve: status is ${toolReq.status}` }, { status: 400 });
         if (toolReq.items.length > 0) {
           for (const item of toolReq.items) {
-            let approveQty = item.quantityRequested;
-            if (item.toolId && item.tool) approveQty = Math.min(item.quantityRequested, item.tool.quantity);
-            await db.repairToolRequestItem.update({ where: { id: item.id }, data: { quantityApproved: approveQty } });
-            if (item.toolId && item.tool && item.tool.quantity < item.quantityRequested) warnings.push(`"${item.toolName}": only ${item.tool.quantity} of ${item.quantityRequested} requested can be approved (limited stock)`);
+            await db.repairToolRequestItem.update({ where: { id: item.id }, data: { quantityApproved: item.quantityRequested } });
+            if (item.toolId && item.tool && item.tool.quantity < item.quantityRequested) {
+              warnings.push(`"${item.toolName}": ${item.quantityRequested} approved, but only ${item.tool.quantity} currently available; the remainder can be fulfilled after replenishment`);
+            }
           }
         } else if (toolReq.toolId && toolReq.tool) {
           if (toolReq.tool.status !== 'available') return NextResponse.json({ success: false, error: `Tool "${toolReq.tool.name}" is not available (status: ${toolReq.tool.status}). Cannot approve.` }, { status: 400 });

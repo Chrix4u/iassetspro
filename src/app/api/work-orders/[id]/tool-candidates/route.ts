@@ -49,7 +49,8 @@ export async function GET(
     }
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status') || 'available';
+    const rawStatus = searchParams.get('status');
+    const status = rawStatus === 'all' ? null : (rawStatus || 'available');
     const search = searchParams.get('search')?.trim() || '';
     const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 200);
 

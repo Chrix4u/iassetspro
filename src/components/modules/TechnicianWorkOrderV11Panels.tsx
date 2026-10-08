@@ -303,7 +303,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
         ? api.get<InventoryOption[]>(`/api/work-orders/${workOrderId}/inventory-candidates?limit=100`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as InventoryOption[] }),
       capabilities?.canRequestTools
-        ? api.get<ToolOption[]>(`/api/work-orders/${workOrderId}/tool-candidates?status=available&limit=100`, workOrderPlantHeaders)
+        ? api.get<ToolOption[]>(`/api/work-orders/${workOrderId}/tool-candidates?status=all&limit=100`, workOrderPlantHeaders)
         : Promise.resolve({ success: true, data: [] as ToolOption[] }),
     ]);
     if (downRes.success && Array.isArray(downRes.data)) {
@@ -321,7 +321,6 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     if (inventoryRes.success && Array.isArray(inventoryRes.data)) {
       setInventoryOptions(
         inventoryRes.data
-          .filter((item) => Number(item.currentStock ?? 0) > 0)
           .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
       );
     } else {
@@ -331,8 +330,7 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       setToolCandidatesError(null);
       const merged = new Map<string, ToolOption>();
       for (const tool of plannerToolFallbacks) merged.set(tool.id, tool);
-      for (const tool of toolsRes.data
-        .filter((candidate) => candidate.status === 'available' && Number(candidate.quantity ?? 1) > 0)) {
+      for (const tool of toolsRes.data) {
         merged.set(tool.id, {
           ...merged.get(tool.id),
           ...tool,
@@ -387,6 +385,16 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
   const selectedTool = useMemo(
     () => toolOptions.find((tool) => tool.id === toolRequest.toolId) || null,
     [toolOptions, toolRequest.toolId],
+  );
+  const materialStockShortfall = selectedMaterial
+    ? Math.max(0, (Number(material.quantity) || 0) - Number(selectedMaterial.currentStock ?? 0))
+    : 0;
+  const toolAvailabilityShortfall = selectedTool?.availabilityVerified
+    ? Math.max(0, (Number(toolRequest.quantity) || 0) - Number(selectedTool.quantity ?? 0))
+    : 0;
+  const selectedToolUnavailable = Boolean(
+    selectedTool?.availabilityVerified
+    && (selectedTool.status !== 'available' || Number(selectedTool.quantity ?? 0) <= 0),
   );
   useEffect(() => {
     if (editingToolRequestId || toolRequest.toolId || plannerToolFallbacks.length === 0) return;
@@ -468,12 +476,6 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     });
     const quantity = Number(material.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) { toast.error('Quantity must be greater than zero'); return; }
-    if (selectedMaterial) {
-      const availableStock = Number(selectedMaterial.currentStock ?? 0);
-      if (quantity > availableStock) {
-        toast.error(`Only ${availableStock} ${selectedMaterial.unitOfMeasure || 'unit(s)'} currently available`); return;
-      }
-    }
     const ok = await run(
       'material',
       () => editingMaterialRequestId
@@ -509,12 +511,6 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
       toast.error('Select a tool'); return;
     }
     const quantity = Math.max(1, Math.floor(Number(toolRequest.quantity) || 1));
-    if (selectedTool?.availabilityVerified) {
-      const availableQuantity = Number(selectedTool.quantity ?? 1);
-      if (quantity > availableQuantity) {
-        toast.error(`Only ${availableQuantity} currently available for ${selectedTool.name}`); return;
-      }
-    }
     const item = {
       toolId: selectedTool?.id || toolRequest.toolId,
       toolName: selectedTool?.name || toolRequest.toolName,
@@ -898,8 +894,8 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                   <SearchableResourceSelect
                     selectedId={material.itemId}
                     options={materialSearchOptions}
-                    placeholder={resourcesLoading ? 'Loading available materials...' : inventoryOptions.length ? 'Search materials or item codes...' : 'No in-stock materials available'}
-                    emptyText="No matching in-stock materials"
+                    placeholder={resourcesLoading ? 'Loading materials...' : inventoryOptions.length ? 'Search materials or item codes...' : 'No materials configured for this plant'}
+                    emptyText="No matching materials"
                     disabled={resourcesLoading || inventoryOptions.length === 0}
                     onSelect={(id) => {
                       const item = inventoryOptions.find((option) => option.id === id);
@@ -912,6 +908,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       }));
                     }}
                   />
+                  {materialStockShortfall > 0 && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      Stock shortfall: {materialStockShortfall} {selectedMaterial?.unitOfMeasure || 'unit(s)'}. Request the full repair requirement; stores can fulfill it after replenishment.
+                    </p>
+                  )}
                   {toolCandidatesError && (
                     <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                       {toolCandidatesError} Planner recommendations remain selectable, but additional store tools may be missing until the live catalogue loads.
@@ -919,11 +920,11 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                   )}
                   {!resourcesLoading && !toolCandidatesError && toolOptions.length > 1 && plannerToolFallbacks.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Planner-recommended tools are shown first. Search or select any other available tool for this work order.
+                      Planner-recommended tools are shown first. Search or select any other tool for this work order; current availability is shown but does not block a request.
                     </p>
                   )}
                 </div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" max={selectedMaterial ? Number(selectedMaterial.currentStock ?? 0) : undefined} value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="0.01" step="0.01" value={material.quantity} onChange={(e) => setMaterial((v) => ({ ...v, quantity: e.target.value }))} disabled={!material.itemId} /></div>
                 <div className="min-w-0"><Label>Unit</Label><Input className="w-full min-w-0 bg-muted/40" value={material.unit} readOnly placeholder="From inventory" /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={material.urgency} onChange={(e) => setMaterial((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason</Label><Input className="w-full min-w-0" value={material.reason} onChange={(e) => setMaterial((v) => ({ ...v, reason: e.target.value }))} placeholder={materialRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, itemName: selectedMaterial?.name || material.itemName })} /></div>
@@ -964,12 +965,12 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                     options={toolSearchOptions}
                     placeholder={
                       resourcesLoading && toolOptions.length === 0
-                        ? 'Loading available tools...'
+                        ? 'Loading tools...'
                         : toolOptions.length
                           ? 'Search tools or tool codes...'
-                          : 'No tools currently available'
+                          : 'No tools configured for this plant'
                     }
-                    emptyText="No matching available tools"
+                    emptyText="No matching tools"
                     disabled={toolOptions.length === 0}
                     onSelect={(id) => {
                       const tool = toolOptions.find((option) => option.id === id);
@@ -982,8 +983,13 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
                       }));
                     }}
                   />
+                  {(toolAvailabilityShortfall > 0 || selectedToolUnavailable) && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                      Availability shortfall: {Number(selectedTool?.quantity ?? 0)} currently available{selectedTool?.status ? ` · ${pretty(selectedTool.status)}` : ''}. Request the full repair requirement; stores can fulfill it after replenishment or tool return.
+                    </p>
+                  )}
                 </div>
-                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" max={selectedTool?.availabilityVerified ? Number(selectedTool.quantity ?? 1) : undefined} value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
+                <div className="min-w-0"><Label>Quantity</Label><Input className="w-full min-w-0" type="number" min="1" step="1" value={toolRequest.quantity} onChange={(e) => setToolRequest((v) => ({ ...v, quantity: e.target.value }))} disabled={!toolRequest.toolId} /></div>
                 <div className="min-w-0"><Label>Urgency</Label><select className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm" value={toolRequest.urgency} onChange={(e) => setToolRequest((v) => ({ ...v, urgency: e.target.value }))}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select></div>
                 <div className="col-span-2 min-w-0 lg:col-span-1"><Label>Reason</Label><Input className="w-full min-w-0" value={toolRequest.reason} onChange={(e) => setToolRequest((v) => ({ ...v, reason: e.target.value }))} placeholder={toolRequestReason({ woNumber: workOrder.woNumber, title: workOrder.title, toolName: selectedTool?.name || toolRequest.toolName })} /></div>
                 <div className="col-span-2 flex gap-2 lg:col-span-1"><Button className="flex-1 whitespace-nowrap" variant="outline" onClick={requestTool} disabled={busy !== null || !toolRequest.toolId}><Plus className="h-4 w-4 mr-1" />{editingToolRequestId ? 'Update Request' : 'Request Tool'}</Button>{editingToolRequestId && <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={resetToolRequest} disabled={busy !== null}>Cancel</Button>}</div>

@@ -308,6 +308,7 @@ export async function POST(request: NextRequest) {
             assetId: schedule.assetId,
             assetName: schedule.asset.name,
             assignedTo: schedule.assignedToId,
+            plannerId: schedule.createdById,
             departmentId: schedule.asset.departmentId || schedule.departmentId || null,
             plantId: schedule.asset.plantId || null,
             estimatedHours,

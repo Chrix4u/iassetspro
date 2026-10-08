@@ -619,7 +619,7 @@ export function TechnicianWorkOrderPage() {
                 <div className="space-y-2">
                   {tasks.map((task) => (
                     <div key={task.id} className="flex items-start gap-3 rounded-lg border p-3">
-                      <button disabled={busy !== null} onClick={() => updateTask(task, task.status === 'completed' ? 'pending' : 'completed')} className={`mt-0.5 h-5 w-5 rounded border flex items-center justify-center ${task.status === 'completed' ? 'bg-emerald-600 border-emerald-600 text-white' : ''}`}>{task.status === 'completed' && <CheckCircle2 className="h-3.5 w-3.5" />}</button>
+                      <button aria-label={task.status === 'completed' ? 'Undo task' : 'Done'} title={task.status === 'completed' ? 'Reopen task' : 'Mark task as done'} disabled={busy !== null} onClick={() => updateTask(task, task.status === 'completed' ? 'pending' : 'completed')} className={`mt-0.5 h-5 w-5 rounded border flex items-center justify-center ${task.status === 'completed' ? 'bg-emerald-600 border-emerald-600 text-white' : ''}`}>{task.status === 'completed' && <CheckCircle2 className="h-3.5 w-3.5" />}</button>
                       <div className="min-w-0 flex-1"><p className={`text-sm font-medium ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>{task.taskNumber}. {task.description}</p><p className="text-xs text-muted-foreground mt-0.5">{pretty(task.taskType)} · {pretty(task.status)}</p>{task.findings && <p className="text-xs mt-1">Finding: {task.findings}</p>}</div>
                     </div>
                   ))}

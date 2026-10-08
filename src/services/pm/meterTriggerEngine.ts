@@ -218,6 +218,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
           assetName: schedule.asset.name,
           departmentId: schedule.asset.departmentId || schedule.departmentId || null,
           assignedTo: schedule.assignedToId,
+          plannerId: schedule.createdById,
           plantId: schedule.asset.plantId,
           estimatedHours: schedule.estimatedDuration,
           pmScheduleId: schedule.id,

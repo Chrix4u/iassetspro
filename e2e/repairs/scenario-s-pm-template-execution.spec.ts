@@ -189,7 +189,7 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
       await switchUser(page, context, userKey);
       await page.goto('/#/repairs-completion');
       await expect(page.getByRole('heading', { name: 'Work Order Completion & Closure', exact: true })).toBeVisible({ timeout: 20_000 });
-      await page.getByRole('combobox').first().click();
+      await page.getByRole('main').getByRole('combobox').click();
       await page.getByPlaceholder('Search by WO number or title...').fill(completed.woNumber);
       await page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true }).click();
       await expect(page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true })).toBeVisible({ timeout: 15_000 });

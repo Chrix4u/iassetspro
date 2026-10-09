@@ -6,6 +6,9 @@ const listRoute = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
 const detailRoute = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8');
 
 describe('PM schedule UI/API permission alignment', () => {
+  const workOrdersStart = page.indexOf('export function WorkOrdersPage()');
+  const workOrdersEnd = page.indexOf('export function CreateWOForm(', workOrdersStart);
+  const workOrdersPage = page.slice(workOrdersStart, workOrdersEnd > workOrdersStart ? workOrdersEnd : page.length);
   const start = page.indexOf('export function PmSchedulesPage()');
   const end = page.indexOf('export function MaintenanceDashboardPage()', start);
   const schedulePage = page.slice(start, end > start ? end : page.length);
@@ -34,4 +37,9 @@ describe('PM schedule UI/API permission alignment', () => {
     expect(schedulePage).toContain("s.isActive ? 'Deactivate' : 'Activate'");
     expect(schedulePage).not.toContain("hasPermission('roles.update')");
   });
+  it('does not leak PM schedule authority into work-order creation', () => {
+    expect(workOrdersPage).toContain("hasPermission('work_orders.create')");
+    expect(workOrdersPage).not.toContain('canCreateSchedule');
+  });
+
 });

@@ -103,6 +103,11 @@ describe('navigation, module, and action permission boundaries', () => {
     expect(dashboard).toContain("pageHasPermission('reports-financial', hasPermission, isAdmin())");
   });
 
+  it('licenses Notifications in Repairs UAT because PM/repair flows deliver user inbox alerts', () => {
+    expect(uatSeed).toContain("code: 'notifications'");
+    expect(permissionSeed).toContain("'notifications.view'");
+  });
+
   it('keeps repair UAT tool discovery on the constrained lookup endpoint', () => {
     expect(repairsUatApi).toContain("/api/tools?mode=lookup&search=");
     expect(repairsUatApi).not.toContain("/api/tools?search=");

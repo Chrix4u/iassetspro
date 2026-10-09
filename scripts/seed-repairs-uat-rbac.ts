@@ -42,6 +42,29 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'time_logs.view', 'time_logs.create',
   ],
 
+  production_manager: [
+    'dashboard.view', 'dashboard.stats', 'chat.view',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality',
+    'equipment.view', 'facilities.view',
+    'work_centers.view', 'work_centers.create', 'work_centers.update',
+    'production.view', 'production.create', 'production.update', 'production.manage',
+    'production_surveys.view', 'production_surveys.create', 'production_surveys.update', 'production_surveys.manage',
+    'oee.view', 'oee.manage',
+    'downtime.view', 'downtime.create', 'downtime.manage',
+    'quality_checks.view', 'quality_checks.create', 'quality_checks.update',
+    'energy.view', 'energy.manage',
+    'production_targets.view', 'production_targets.create', 'production_targets.update',
+    'production_batches.view', 'production_batches.create', 'production_batches.update', 'production_batches.delete',
+    'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.create',
+    'work_orders.view', 'work_orders.view_all',
+    'inventory.view', 'inventory.view_all',
+    'employees.view', 'shifts.view', 'assignments.view',
+    'reports.view', 'reports.export', 'reports.generate', 'reports.create',
+    'analytics.view', 'operations.view',
+  ],
+
   maintenance_planner: [
     'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
@@ -214,18 +237,18 @@ async function ensurePermission(slug: string) {
     throw new Error(`Invalid permission slug: ${slug}`);
   }
 
-  const module = slug.slice(0, dot);
+  const permissionModule = slug.slice(0, dot);
   const action = slug.slice(dot + 1);
   return db.permission.upsert({
     where: { slug },
     update: {
-      module,
+      module: permissionModule,
       action,
     },
     create: {
       slug,
-      name: `${titleCase(module)} - ${titleCase(action)}`,
-      module,
+      name: `${titleCase(permissionModule)} - ${titleCase(action)}`,
+      module: permissionModule,
       action,
       description: `UAT canonical permission for ${slug}`,
     },
@@ -271,6 +294,7 @@ async function main() {
 
   const required = [
     ['production_operator', 'maintenance_requests.create'],
+    ['production_manager', 'work_centers.create'],
     ['maintenance_planner', 'maintenance_requests.convert_to_wo'],
     ['maintenance_supervisor', 'maintenance_requests.approve'],
     ['maintenance_technician', 'work_orders.start'],

@@ -84,14 +84,16 @@ test('UAT-21: planner-authored condition trigger fires once per recovery edge', 
 
     await authenticateAs(context, 'planner');
     await page.goto('/#/pm-triggers');
-    await expect(page.getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'New Trigger', exact: true }).click();
     await expect(page.getByText('Create PM Trigger', { exact: true })).toBeVisible();
 
     const scheduleLabel = page.locator('label').filter({ hasText: /^PM Schedule \*/ }).first();
     await scheduleLabel.locator('..').getByRole('combobox').click();
     await page.getByPlaceholder('Search by schedule title or asset...').fill(scheduleTitle);
-    await page.getByText(`${scheduleTitle} — UAT Test Pump [UAT-PUMP-001]`, { exact: true }).click();
+    const scheduleOption = page.getByRole('option', { name: `${scheduleTitle} — UAT Test Pump [UAT-PUMP-001]`, exact: true });
+    await expect(scheduleOption).toBeVisible({ timeout: 10_000 });
+    await scheduleOption.click();
 
     await page.getByRole('button', { name: 'Condition', exact: true }).click();
     const sourceLabel = page.locator('label').filter({ hasText: /^Authoritative condition source \*/ }).first();

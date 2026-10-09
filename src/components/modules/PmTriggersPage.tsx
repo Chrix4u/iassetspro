@@ -799,6 +799,7 @@ export default function PmTriggersPage() {
   const [toggleLoading, setToggleLoading] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<PmScheduleRef[]>([]);
   const [formLoading, setFormLoading] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
   const { hasPermission, isAdmin } = useAuthStore();
   const canCreate = hasPermission('pm_triggers.create');
@@ -850,14 +851,35 @@ export default function PmTriggersPage() {
     return { total, active, byType };
   }, [triggers]);
 
+  // ─── Load schedules for create/edit ───────────────────────────────────
+  const fetchSchedules = useCallback(async (): Promise<boolean> => {
+    if (scheduleLoading) return false;
+    setScheduleLoading(true);
+    try {
+      const res = await api.get<PmScheduleRef[]>('/api/pm-schedules');
+      if (res.success && res.data) {
+        setSchedules(Array.isArray(res.data) ? res.data : []);
+        return true;
+      }
+      toast.error(res.error || 'Failed to load PM schedules');
+      return false;
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, [scheduleLoading]);
+
   // ─── Handle create ────────────────────────────────────────────────────
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    const ready = await fetchSchedules();
+    if (!ready) return;
     setEditingTrigger(null);
     setFormDialogOpen(true);
   };
 
   // ─── Handle edit ──────────────────────────────────────────────────────
-  const handleEdit = (trigger: PmTrigger) => {
+  const handleEdit = async (trigger: PmTrigger) => {
+    const ready = await fetchSchedules();
+    if (!ready) return;
     setEditingTrigger(trigger);
     setFormDialogOpen(true);
   };
@@ -959,8 +981,9 @@ export default function PmTriggersPage() {
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
               onClick={handleCreate}
+              disabled={scheduleLoading}
             >
-              <Plus className="h-4 w-4 mr-1.5" />
+              {scheduleLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
               New Trigger
             </Button>
           )}

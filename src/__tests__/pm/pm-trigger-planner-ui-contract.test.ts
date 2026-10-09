@@ -36,6 +36,14 @@ describe('PM trigger planner UI contract', () => {
     expect(page).toContain('fetchOptions={async () => availableSchedules.map');
   });
 
+  it('refreshes PM schedules before opening create/edit so the picker is never a stale empty snapshot', () => {
+    expect(page).toContain("api.get<PmScheduleRef[]>('/api/pm-schedules')");
+    expect(page).toContain('setSchedules(Array.isArray(res.data) ? res.data : [])');
+    expect(page).toContain('const ready = await fetchSchedules()');
+    expect(page).toContain('if (!ready) return');
+    expect(page).toContain('setFormDialogOpen(true)');
+  });
+
   it('prevents duplicate save submissions while the trigger mutation is in flight', () => {
     expect(page).toContain('if (formLoading) return');
     expect(page).toContain('setFormLoading(true)');

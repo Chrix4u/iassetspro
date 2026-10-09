@@ -135,6 +135,7 @@ async function main() {
   // modules; the application now requires the registry for every operational
   // domain. PM Schedules is licensed as well because Repairs UAT now includes
   // the planner frontend acceptance path for hierarchy-targeted preventive maintenance.
+  // Notifications is licensed because PM/Repairs acceptance scenarios verify user inbox alerts.
   const uatModules = [
     {
       code: 'repairs',
@@ -195,6 +196,12 @@ async function main() {
       name: 'Shift Management',
       description: 'Shift scheduling, handover logs, and workforce planning',
       version: '1.0.0',
+    },
+    {
+      code: 'notifications',
+      name: 'Notifications',
+      description: 'In-app notifications, PM alerts, and user notification preferences',
+      version: '1.5.0',
     },
   ] as const;
 

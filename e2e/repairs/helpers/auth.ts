@@ -69,9 +69,22 @@ export async function authenticateAs(
 
   const token = await loginViaApi(user, baseURL);
 
-  await context.addInitScript((tok) => {
-    localStorage.setItem('eam_token', tok);
-  }, token);
+  // Seed localStorage through the real app origin instead of a persistent
+  // context init script. Init scripts survive every later navigation and can
+  // silently restore an older actor after switchUser() reloads the SPA.
+  const bootstrapPage = await context.newPage();
+  try {
+    await bootstrapPage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+    await bootstrapPage.evaluate((tok) => {
+      localStorage.removeItem('user_permissions');
+      localStorage.removeItem('user_roles');
+      localStorage.removeItem('user_plant_id');
+      localStorage.removeItem('user_plant_access');
+      localStorage.setItem('eam_token', tok);
+    }, token);
+  } finally {
+    await bootstrapPage.close();
+  }
 }
 
 /**
@@ -126,6 +139,8 @@ export async function switchUser(
     localStorage.setItem('eam_token', tok);
   }, token);
   await page.reload();
+  const activeToken = await page.evaluate(() => localStorage.getItem('eam_token'));
+  expect(activeToken).toBe(token);
 
   // Wait for stable semantic landmarks rendered by the authenticated app shell.
   // The sidebar has no data-sidebar attribute, so selectors must follow the

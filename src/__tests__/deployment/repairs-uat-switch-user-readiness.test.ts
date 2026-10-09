@@ -10,4 +10,15 @@ describe('Repairs UAT switchUser readiness contract', () => {
     expect(source).toContain("expect(page.locator('main')).toBeVisible");
     expect(source).toContain("expect(page.getByRole('navigation')).toBeVisible");
   });
+
+  it('does not register a persistent auth init script that can overwrite later user switches', () => {
+    expect(source).not.toContain('await context.addInitScript');
+    expect(source).toContain('const bootstrapPage = await context.newPage()');
+    expect(source).toContain("localStorage.setItem('eam_token', tok)");
+  });
+
+  it('verifies the switched token survives reload before continuing', () => {
+    expect(source).toContain("await page.evaluate(() => localStorage.getItem('eam_token'))");
+    expect(source).toContain('expect(activeToken).toBe(token)');
+  });
 });

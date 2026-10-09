@@ -2288,7 +2288,7 @@ export function WorkOrdersPage() {
           <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage and execute all maintenance work orders</p>
         </div>
-        {hasPermission('work_orders.create') && (
+        {canCreateSchedule && (
           <>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
           <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} large desktopMaxWidth="sm:max-w-4xl" title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
@@ -7800,6 +7800,10 @@ export function PmSchedulesPage() {
   const [dueSoonFilter, setDueSoonFilter] = useState(false);
   const [saving, setSaving] = useState(false);
   const { hasPermission, isAdmin } = useAuthStore();
+  const canCreateSchedule = hasPermission('pm_schedules.create') || hasPermission('work_orders.create') || isAdmin();
+  const canUpdateSchedule = hasPermission('pm_schedules.update') || hasPermission('work_orders.update') || isAdmin();
+  const canDeactivateSchedule = hasPermission('pm_schedules.delete') || hasPermission('work_orders.delete') || isAdmin();
+  const canActivateSchedule = hasPermission('pm_schedules.activate') || canUpdateSchedule;
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -7944,11 +7948,15 @@ export function PmSchedulesPage() {
     setSaving(false);
   };
 
-  const handleDeactivate = async (id: string) => {
+  const handleSetScheduleActive = async (id: string, isActive: boolean) => {
     try {
-      const res = await api.delete(`/api/pm-schedules/${id}`);
-      if (res.success) { toast.success('Schedule deactivated'); fetchSchedules(); }
-      else toast.error(res.error || 'Failed');
+      const res = isActive
+        ? await api.put(`/api/pm-schedules/${id}`, { isActive: true })
+        : await api.delete(`/api/pm-schedules/${id}`);
+      if (res.success) {
+        toast.success(isActive ? 'Schedule activated' : 'Schedule deactivated');
+        fetchSchedules();
+      } else toast.error(res.error || 'Failed');
     } catch { toast.error('Failed'); }
   };
 
@@ -8000,7 +8008,7 @@ export function PmSchedulesPage() {
             <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
             Due Soon
           </Button>
-          {hasPermission('work_orders.create') && (
+          {canCreateSchedule && (
             <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               <Plus className="h-3.5 w-3.5 mr-1.5" /> New Schedule
             </Button>
@@ -8178,7 +8186,7 @@ export function PmSchedulesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {s.isActive && (
+                    {(canUpdateSchedule || (s.isActive ? canDeactivateSchedule : canActivateSchedule)) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -8186,10 +8194,16 @@ export function PmSchedulesPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                          {(hasPermission('pm_schedules.delete') || hasPermission('work_orders.delete') || isAdmin()) && (
-                            <DropdownMenuItem onClick={() => handleDeactivate(s.id)} className="text-red-600">
-                              <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
+                          {canUpdateSchedule && (
+                            <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          )}
+                          {(s.isActive ? canDeactivateSchedule : canActivateSchedule) && (
+                            <DropdownMenuItem
+                              onClick={() => handleSetScheduleActive(s.id, !s.isActive)}
+                              className={s.isActive ? 'text-red-600' : 'text-emerald-600'}
+                            >
+                              {s.isActive ? <Trash2 className="h-3.5 w-3.5 mr-2" /> : <RefreshCw className="h-3.5 w-3.5 mr-2" />}
+                              {s.isActive ? 'Deactivate' : 'Activate'}
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>

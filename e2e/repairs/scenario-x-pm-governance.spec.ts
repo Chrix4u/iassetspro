@@ -151,6 +151,30 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     expect(scheduleState.status).toBe(200);
     expect(scheduleState.data.data?.isActive).toBe(false);
 
+    // Inactive schedules remain governable: reactivate through the UI, verify, then deactivate again.
+    const inactiveScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
+    await inactiveScheduleRow.hover();
+    await inactiveScheduleRow.getByRole('button').last().click();
+    const scheduleReactivate = page.waitForResponse((response) =>
+      response.url().includes(`/api/pm-schedules/${scheduleId}`)
+      && response.request().method() === 'PUT'
+      && response.request().postDataJSON()?.isActive === true,
+    );
+    await page.getByRole('menuitem', { name: 'Activate', exact: true }).click();
+    expect((await scheduleReactivate).status()).toBe(200);
+    const reactivatedSchedule = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${scheduleId}`);
+    expect(reactivatedSchedule.data.data?.isActive).toBe(true);
+
+    const reactivatedRow = page.getByRole('row').filter({ hasText: scheduleTitle });
+    await reactivatedRow.hover();
+    await reactivatedRow.getByRole('button').last().click();
+    const secondDeactivate = page.waitForResponse((response) =>
+      response.url().includes(`/api/pm-schedules/${scheduleId}`)
+      && response.request().method() === 'DELETE',
+    );
+    await page.getByRole('menuitem', { name: 'Deactivate', exact: true }).click();
+    expect((await secondDeactivate).status()).toBe(200);
+
     await page.goto('/#/pm-templates');
     await page.getByPlaceholder('Search templates...').fill(templateTitle);
     const activeTemplateRow = page.getByRole('row').filter({ hasText: templateTitle });

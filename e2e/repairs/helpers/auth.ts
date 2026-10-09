@@ -127,9 +127,12 @@ export async function switchUser(
   }, token);
   await page.reload();
 
-  // Wait for the authenticated app shell to render.
-  await page.waitForSelector('[data-sidebar]', { timeout: 20_000 });
-  await expect(page.locator('body')).not.toHaveText('Sign in', { timeout: 20_000 });
+  // Wait for stable semantic landmarks rendered by the authenticated app shell.
+  // The sidebar has no data-sidebar attribute, so selectors must follow the
+  // actual accessibility/DOM contract rather than a test-only marker.
+  await expect(page.locator('main')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('navigation')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('body')).not.toContainText('Sign in', { timeout: 20_000 });
 }
 
 // ── Navigation helpers ─────────────────────────────────────────────────────

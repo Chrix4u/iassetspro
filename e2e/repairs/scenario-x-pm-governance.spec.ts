@@ -29,7 +29,7 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     templateId = String(templateCreate.data.data?.id || '');
     expect(templateId).toBeTruthy();
 
-    for (const [description, taskType] of [[firstTask, 'check'], [lastTask, 'lubrication']] as const) {
+    for (const [description, taskType] of [[firstTask, 'check'], [lastTask, 'lubricate']] as const) {
       const created = await apiCall(plannerToken, 'POST', `/api/pm-templates/${templateId}/tasks`, {
         description,
         taskType,

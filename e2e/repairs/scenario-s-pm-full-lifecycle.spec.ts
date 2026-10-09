@@ -241,13 +241,16 @@ test('PM-UAT-01: browser template/schedule → generated WO → checklist → cl
       await navigateToWODetail(techPage, woId);
       await expectWODetailStatus(techPage, 'in_progress');
       await expect(techPage.getByText(/^Task Checklist \d+\/\d+ · \d+%$/)).toBeVisible({ timeout: 15_000 });
-      await expect(techPage.getByText(taskOne)).toBeVisible();
-      await expect(techPage.getByText(taskTwo)).toBeVisible();
+      const checklistTask = (description: string) => techPage.getByText(new RegExp(`^\\d+\\. ${description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+      await expect(checklistTask(taskOne)).toBeVisible();
+      await expect(checklistTask(taskTwo)).toBeVisible();
 
-      const completeAll = techPage.getByRole('button', { name: /Complete All/i });
-      await expect(completeAll).toBeVisible({ timeout: 10_000 });
-      await completeAll.click();
-      await expect(techPage.getByText(/100% done.*2\/2 completed/i)).toBeVisible({ timeout: 15_000 });
+      const doneButtons = techPage.getByRole('button', { name: 'Done', exact: true });
+      await expect(doneButtons).toHaveCount(2);
+      await doneButtons.first().click();
+      await expect(techPage.getByText(/^Task Checklist 1\/2 · 50%$/)).toBeVisible({ timeout: 15_000 });
+      await techPage.getByRole('button', { name: 'Done', exact: true }).first().click();
+      await expect(techPage.getByText(/^Task Checklist 2\/2 · 100%$/)).toBeVisible({ timeout: 15_000 });
       await techPage.close();
 
       // Completion must not be blocked by the live timer started with the WO.

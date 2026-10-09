@@ -322,6 +322,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
           assetName: schedule.asset.name,
           departmentId: schedule.asset.departmentId || schedule.departmentId || null,
           assignedTo: schedule.assignedToId,
+          plannerId: schedule.createdById,
           plantId: schedule.asset.plantId,
           estimatedHours: schedule.estimatedDuration,
           pmScheduleId: schedule.id,

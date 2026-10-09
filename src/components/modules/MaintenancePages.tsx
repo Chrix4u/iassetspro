@@ -4722,6 +4722,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setTaskChecklistLoading(false);
   }, [id]);
 
+  useEffect(() => {
+    fetchTaskChecklist();
+  }, [fetchTaskChecklist]);
+
   const handleTaskAction = async (taskId: string, action: 'in_progress' | 'completed' | 'skipped' | 'failed' | 'pending', extra?: Record<string, string>) => {
     setTaskActionLoading(taskId);
     const body: Record<string, string> = { status: action };
@@ -7100,7 +7104,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 <TooltipProvider delayDuration={400}>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
+                                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" aria-label="Start task" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
                                         {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}<span className="hidden sm:inline">Start</span>
                                       </Button>
                                     </TooltipTrigger>
@@ -7113,7 +7117,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   <TooltipProvider delayDuration={400}>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }}>
+                                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" aria-label="Task notes" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }}>
                                           <MessageSquare className="h-3 w-3" /><span className="hidden sm:inline">Notes</span>
                                         </Button>
                                       </TooltipTrigger>
@@ -7123,7 +7127,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   <TooltipProvider delayDuration={400}>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
+                                        <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" aria-label="Done" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
                                           {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}<span className="hidden sm:inline">Done</span>
                                         </Button>
                                       </TooltipTrigger>
@@ -7136,7 +7140,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 <TooltipProvider delayDuration={400}>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" aria-label="Skip task" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
                                         <ArrowRight className="h-3 w-3" /><span className="hidden sm:inline">Skip</span>
                                       </Button>
                                     </TooltipTrigger>
@@ -7148,7 +7152,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 <TooltipProvider delayDuration={400}>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')}>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" aria-label="Undo task" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')}>
                                         {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}<span className="hidden sm:inline">Undo</span>
                                       </Button>
                                     </TooltipTrigger>

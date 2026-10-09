@@ -16,6 +16,10 @@ describe('PM schedule UI/API permission alignment', () => {
     expect(detailRoute).toContain("hasPermission(session, 'pm_schedules.update')");
     expect(detailRoute).toContain("hasPermission(session, 'work_orders.update')");
     expect(detailRoute).toContain("hasPermission(session, 'pm_schedules.activate')");
+    expect(detailRoute).toContain('const isActivationOnly = requestedFields.length === 1');
+    expect(detailRoute).toContain("requestedFields[0] === 'isActive'");
+    expect(detailRoute).toContain('body.isActive === true');
+    expect(detailRoute).toContain('const canActivateSchedule = isActivationOnly');
     expect(detailRoute).toContain("hasPermission(session, 'pm_schedules.delete')");
     expect(detailRoute).toContain("hasPermission(session, 'work_orders.delete')");
   });

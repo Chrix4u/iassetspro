@@ -15,4 +15,12 @@ describe('Repairs UAT locator stability', () => {
     const source = read('e2e/repairs/scenario-p-inventory-procurement-reuse.spec.ts');
     expect(source).toContain("inventoryPage.getByRole('main').getByRole('heading', { name: 'Purchase Orders', exact: true })");
   });
+
+  it('asserts the selected PM work order through the completion combobox instead of duplicate page text', () => {
+    const source = read('e2e/repairs/scenario-s-pm-template-execution.spec.ts');
+    expect(source).not.toContain("await expect(page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true })).toBeVisible");
+    expect(source).toContain("page.getByRole('combobox', { name: 'Search work orders' })");
+    expect(source).toContain("toContainText(completed.woNumber");
+  });
+
 });

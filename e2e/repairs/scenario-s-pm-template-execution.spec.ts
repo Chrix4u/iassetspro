@@ -192,7 +192,7 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
       await page.getByRole('main').getByRole('combobox').click();
       await page.getByPlaceholder('Search by WO number or title...').fill(completed.woNumber);
       await page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true }).click();
-      await expect(page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('combobox', { name: 'Search work orders' })).toContainText(completed.woNumber, { timeout: 15_000 });
     };
 
     // Supervisor approves from the real Completion & Closure screen.

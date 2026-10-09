@@ -69,9 +69,22 @@ export async function authenticateAs(
 
   const token = await loginViaApi(user, baseURL);
 
-  await context.addInitScript((tok) => {
-    localStorage.setItem('eam_token', tok);
-  }, token);
+  // Seed localStorage through the real app origin instead of a persistent
+  // context init script. Init scripts survive every later navigation and can
+  // silently restore an older actor after switchUser() reloads the SPA.
+  const bootstrapPage = await context.newPage();
+  try {
+    await bootstrapPage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+    await bootstrapPage.evaluate((tok) => {
+      localStorage.removeItem('user_permissions');
+      localStorage.removeItem('user_roles');
+      localStorage.removeItem('user_plant_id');
+      localStorage.removeItem('user_plant_access');
+      localStorage.setItem('eam_token', tok);
+    }, token);
+  } finally {
+    await bootstrapPage.close();
+  }
 }
 
 /**
@@ -102,27 +115,39 @@ export async function loginViaUI(
  */
 export async function switchUser(
   page: Page,
-  context: BrowserContext,
+  _context: BrowserContext,
   userKey: string,
   baseURL: string = DEFAULT_BASE_URL,
 ): Promise<void> {
-  // Clear existing auth
-  await page.evaluate(() => {
+  const user = USERS[userKey];
+  if (!user) throw new Error(`Unknown UAT user key: ${userKey}`);
+
+  // Fetch a fresh token without registering another persistent init script.
+  // Repeated context.addInitScript() calls accumulate and can race on the next
+  // navigation, leaving a multi-role UAT under the wrong actor.
+  const token = await loginViaApi(user, baseURL);
+
+  // Establish the target origin, replace auth atomically in localStorage, then
+  // reload so the SPA initializes once from the new actor's token.
+  await page.goto('/');
+  await page.evaluate((tok) => {
     localStorage.removeItem('eam_token');
     localStorage.removeItem('user_permissions');
     localStorage.removeItem('user_roles');
     localStorage.removeItem('user_plant_id');
     localStorage.removeItem('user_plant_access');
-  });
+    localStorage.setItem('eam_token', tok);
+  }, token);
+  await page.reload();
+  const activeToken = await page.evaluate(() => localStorage.getItem('eam_token'));
+  expect(activeToken).toBe(token);
 
-  // Re-authenticate as new user
-  await authenticateAs(context, userKey, baseURL);
-
-  // Reload so the SPA picks up the new token
-  await page.goto('/');
-  // Wait for app shell to render (sidebar indicates loaded SPA)
-  await page.waitForSelector('[data-sidebar]', { timeout: 10_000 });
-  await expect(page.locator('body')).not.toHaveText('Sign in', { timeout: 10_000 });
+  // Wait for stable semantic landmarks rendered by the authenticated app shell.
+  // The sidebar has no data-sidebar attribute, so selectors must follow the
+  // actual accessibility/DOM contract rather than a test-only marker.
+  await expect(page.locator('main')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('navigation')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('body')).not.toContainText('Sign in', { timeout: 20_000 });
 }
 
 // ── Navigation helpers ─────────────────────────────────────────────────────

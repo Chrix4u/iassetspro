@@ -1,9 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { authenticateAs, navigateToWODetail } from './helpers/auth';
+import { authenticateAs, navigateToWODetail, switchUser } from './helpers/auth';
 import {
   apiCall,
   assignWO,
-  closeWO,
   completeWO,
   getToken,
   getWO,
@@ -11,7 +10,6 @@ import {
   lookupAssetId,
   lookupUserByKey,
   startWO,
-  verifyWO,
 } from './helpers/api';
 
 test('UAT-19: Planner PM template → generated WO → technician checklist → close', async ({ page, context }) => {
@@ -101,8 +99,9 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   expect(schedule?.templateId).toBe(template.id);
 
   // Force only this schedule due, then run the real PM generation engine.
+  const forcedDueDate = new Date(Date.now() - 60_000).toISOString();
   const dueUpdate = await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${schedule.id}`, {
-    nextDueDate: new Date(Date.now() - 60_000).toISOString(),
+    nextDueDate: forcedDueDate,
     autoGenerateWO: true,
     leadDays: 0,
     isActive: true,
@@ -176,13 +175,79 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
     timerStopped = true;
     await logTime(technicianToken, woId, { action: 'start', manualHours: 1, notes: 'PM checklist execution labor' });
     await completeWO(technicianToken, woId, 'PM checklist completed and equipment condition verified.');
-    expect((await getWO(technicianToken, woId)).status).toBe('completed');
-    await verifyWO(supervisorToken, woId, 5);
-    await closeWO(plannerToken, woId);
+    const completed = await getWO(technicianToken, woId);
+    expect(completed.status).toBe('completed');
+
+    // PM cadence must NOT advance at technician completion. The irreversible
+    // recurring-schedule boundary is planner close after supervisor approval.
+    const scheduleAfterCompletion = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${schedule.id}`);
+    expect(scheduleAfterCompletion.status).toBe(200);
+    expect(scheduleAfterCompletion.data.data?.lastCompletedDate).toBeNull();
+    expect(new Date(scheduleAfterCompletion.data.data?.nextDueDate).getTime()).toBe(new Date(forcedDueDate).getTime());
+
+    const openCompletionInUi = async (userKey: 'supervisor' | 'planner') => {
+      await switchUser(page, context, userKey);
+      await page.goto('/#/repairs-completion');
+      await expect(page.getByRole('heading', { name: 'Work Order Completion & Closure', exact: true })).toBeVisible({ timeout: 20_000 });
+      await page.getByRole('main').getByRole('combobox').click();
+      await page.getByPlaceholder('Search by WO number or title...').fill(completed.woNumber);
+      await page.getByText(`${completed.woNumber} — ${completed.title}`, { exact: true }).click();
+      await expect(page.getByRole('combobox', { name: 'Search work orders' })).toContainText(completed.woNumber, { timeout: 15_000 });
+    };
+
+    // Supervisor approves from the real Completion & Closure screen.
+    await openCompletionInUi('supervisor');
+    const supervisorApproveResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/repairs/completion/${woId}`)
+      && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.action === 'supervisor_approve',
+    );
+    await page.getByRole('button', { name: 'Supervisor Approve', exact: true }).click();
+    expect((await supervisorApproveResponse).status()).toBe(200);
+    await expect(page.getByText(/^APPROVED$/i).first()).toBeVisible({ timeout: 15_000 });
+
+    // Supervisor approval is still reversible/reworkable; PM cadence must remain unchanged.
+    const scheduleAfterVerification = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${schedule.id}`);
+    expect(scheduleAfterVerification.status).toBe(200);
+    expect(scheduleAfterVerification.data.data?.lastCompletedDate).toBeNull();
+    expect(new Date(scheduleAfterVerification.data.data?.nextDueDate).getTime()).toBe(new Date(forcedDueDate).getTime());
+
+    // Assigned planner performs the irreversible final close from the real UI.
+    await openCompletionInUi('planner');
+    await page.getByText('Closure Notes', { exact: true }).locator('..').locator('textarea').fill('PM cycle verified and approved for recurring schedule advancement.');
+    const plannerCloseResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/repairs/completion/${woId}`)
+      && response.request().method() === 'POST'
+      && response.request().postDataJSON()?.action === 'planner_close',
+    );
+    await page.getByRole('button', { name: 'Planner Close WO', exact: true }).click();
+    expect((await plannerCloseResponse).status()).toBe(200);
 
     const closed = await getWO(plannerToken, woId);
     expect(closed.status).toBe('closed');
     expect(closed.pmSchedule?.id).toBe(schedule.id);
+
+    await expect.poll(async () => {
+      const state = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${schedule.id}`);
+      return state.data.data?.lastCompletedDate || null;
+    }, { timeout: 10_000 }).not.toBeNull();
+
+    const scheduleAfterClose = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${schedule.id}`);
+    expect(scheduleAfterClose.status).toBe(200);
+    const lastCompletedDate = new Date(scheduleAfterClose.data.data.lastCompletedDate);
+    const nextDueDate = new Date(scheduleAfterClose.data.data.nextDueDate);
+    expect(lastCompletedDate.getTime()).toBeGreaterThan(new Date(forcedDueDate).getTime());
+    expect(nextDueDate.getTime()).toBeGreaterThan(lastCompletedDate.getTime());
+    expect(nextDueDate.getTime()).toBeGreaterThan(new Date(forcedDueDate).getTime());
+
+    // Once the cycle is closed and advanced, the generation engine must not create
+    // another open WO for the already-completed due cycle.
+    const postCloseGeneration = await apiCall(plannerToken, 'POST', '/api/pm-schedules/check-due', {});
+    expect(postCloseGeneration.status).toBe(200);
+    const duplicateCycle = (postCloseGeneration.data.data?.results as any[] | undefined)?.find(
+      (row) => row.scheduleId === schedule.id && row.skipped === false,
+    );
+    expect(duplicateCycle).toBeUndefined();
   } finally {
     if (!timerStopped) {
       await apiCall(technicianToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});

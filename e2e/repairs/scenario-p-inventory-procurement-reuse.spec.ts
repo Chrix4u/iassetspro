@@ -86,7 +86,7 @@ test('UAT-16: purchased tools replenish inventory, commission once, and reusable
 
   await test.step('Inventory manager creates and approves a PO through the frontend', async () => {
     await inventoryPage.goto('/#/inventory-purchase-orders');
-    await expect(inventoryPage.getByRole('heading', { name: 'Purchase Orders' })).toBeVisible();
+    await expect(inventoryPage.getByRole('main').getByRole('heading', { name: 'Purchase Orders', exact: true })).toBeVisible();
     await inventoryPage.getByRole('button', { name: /New PO/i }).click();
     const dialog = inventoryPage.getByRole('dialog');
     await chooseSearchable(inventoryPage, /Select supplier/i, /Search suppliers/i, supplierName);

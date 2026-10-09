@@ -362,7 +362,11 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.delete') && !isAdmin(session)) {
+    if (
+      !hasPermission(session, 'pm_schedules.delete')
+      && !hasPermission(session, 'work_orders.delete')
+      && !isAdmin(session)
+    ) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

@@ -7799,7 +7799,7 @@ export function PmSchedulesPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [dueSoonFilter, setDueSoonFilter] = useState(false);
   const [saving, setSaving] = useState(false);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin } = useAuthStore();
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -8187,7 +8187,7 @@ export function PmSchedulesPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                          {hasPermission('roles.update') && (
+                          {(hasPermission('pm_schedules.delete') || hasPermission('work_orders.delete') || isAdmin()) && (
                             <DropdownMenuItem onClick={() => handleDeactivate(s.id)} className="text-red-600">
                               <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
                             </DropdownMenuItem>

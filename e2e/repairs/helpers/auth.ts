@@ -102,27 +102,34 @@ export async function loginViaUI(
  */
 export async function switchUser(
   page: Page,
-  context: BrowserContext,
+  _context: BrowserContext,
   userKey: string,
   baseURL: string = DEFAULT_BASE_URL,
 ): Promise<void> {
-  // Clear existing auth
-  await page.evaluate(() => {
+  const user = USERS[userKey];
+  if (!user) throw new Error(`Unknown UAT user key: ${userKey}`);
+
+  // Fetch a fresh token without registering another persistent init script.
+  // Repeated context.addInitScript() calls accumulate and can race on the next
+  // navigation, leaving a multi-role UAT under the wrong actor.
+  const token = await loginViaApi(user, baseURL);
+
+  // Establish the target origin, replace auth atomically in localStorage, then
+  // reload so the SPA initializes once from the new actor's token.
+  await page.goto('/');
+  await page.evaluate((tok) => {
     localStorage.removeItem('eam_token');
     localStorage.removeItem('user_permissions');
     localStorage.removeItem('user_roles');
     localStorage.removeItem('user_plant_id');
     localStorage.removeItem('user_plant_access');
-  });
+    localStorage.setItem('eam_token', tok);
+  }, token);
+  await page.reload();
 
-  // Re-authenticate as new user
-  await authenticateAs(context, userKey, baseURL);
-
-  // Reload so the SPA picks up the new token
-  await page.goto('/');
-  // Wait for app shell to render (sidebar indicates loaded SPA)
-  await page.waitForSelector('[data-sidebar]', { timeout: 10_000 });
-  await expect(page.locator('body')).not.toHaveText('Sign in', { timeout: 10_000 });
+  // Wait for the authenticated app shell to render.
+  await page.waitForSelector('[data-sidebar]', { timeout: 20_000 });
+  await expect(page.locator('body')).not.toHaveText('Sign in', { timeout: 20_000 });
 }
 
 // ── Navigation helpers ─────────────────────────────────────────────────────

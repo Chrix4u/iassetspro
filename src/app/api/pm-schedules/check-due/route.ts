@@ -7,6 +7,7 @@ import { notifyUser } from '@/lib/notifications';
 import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
 
     for (const candidate of dueSchedules) {
       const generation = await db.$transaction(async (tx) => {
+        await lockPmScheduleLifecycle(tx, candidate.id);
         // Serialize one PM schedule's due-cycle decision. A second worker waits,
         // then re-checks for the WO committed by the first worker.
         await tx.$executeRawUnsafe(

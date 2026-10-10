@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 const VALID_TRIGGER_TYPES: string[] = [...VALID_PM_TRIGGER_TYPES];
 
@@ -111,9 +112,9 @@ export async function PUT(
       || body.triggerType !== undefined
       || body.triggerValue !== undefined;
     const reactivating = body.isActive === true && !existing.isActive;
+    const currentConfig = parsePmTriggerConfig(existing.triggerConfig);
 
     if (configurationChanging || reactivating) {
-      const currentConfig = parsePmTriggerConfig(existing.triggerConfig);
       const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(currentConfig, existing.scheduleId);
       if (openGeneratedWork) {
         return NextResponse.json(
@@ -152,6 +153,28 @@ export async function PUT(
     }
 
     const updated = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, existing.scheduleId);
+      if (configurationChanging || reactivating) {
+        const lockedOpenGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(currentConfig, existing.scheduleId, tx);
+        if (lockedOpenGeneratedWork) {
+          return { kind: 'open_work' as const, openGeneratedWork: lockedOpenGeneratedWork };
+        }
+      }
+
+      const effectiveType = body.triggerType || existing.triggerType;
+      const effectiveValue = body.triggerValue !== undefined ? body.triggerValue : existing.triggerValue;
+      if (
+        existing.triggerType === 'meter'
+        && effectiveType === 'meter'
+        && body.triggerValue !== undefined
+        && ['meter_based', 'custom_hours'].includes(existing.schedule.frequencyType)
+      ) {
+        await tx.pmSchedule.update({
+          where: { id: existing.scheduleId },
+          data: { frequencyValue: effectiveValue },
+        });
+      }
+
       const updatedTrigger = await tx.pmTrigger.update({
       where: { id },
       data: updateData,
@@ -181,10 +204,20 @@ export async function PUT(
       },
     });
 
-      return updatedTrigger;
+      return { kind: 'updated' as const, updatedTrigger };
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    if (updated.kind === 'open_work') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot reconfigure or reactivate this PM trigger while generated work order ${updated.openGeneratedWork.woNumber} is still ${updated.openGeneratedWork.status}. Complete or cancel that work order first.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: updated.updatedTrigger });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update PM trigger';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

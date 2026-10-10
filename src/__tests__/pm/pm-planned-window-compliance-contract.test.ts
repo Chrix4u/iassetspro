@@ -32,4 +32,22 @@ describe('PM planned window and compliance contract', () => {
   it('shows unavailable compliance as N/A rather than a false 0 or 100 percent', () => {
     expect(ui).toContain("pmAnalytics.complianceRate == null ? 'N/A'");
   });
+
+  it('does not relabel the planned-vs-reactive ratio as PM compliance', () => {
+    expect(ui).not.toContain('const pmCompliance = stats?.maintenanceKPIs?.plannedRatio ?? 0;');
+    expect(ui).toContain('const plannedRatio = stats?.maintenanceKPIs?.plannedRatio ?? 0;');
+    expect(ui).toContain('>Planned Ratio</p>');
+    expect(ui).toContain('{plannedRatio}%');
+    expect(ui).toContain('planned vs reactive');
+  });
+
+  it('sources the Maintenance Analytics PM Compliance KPI from canonical PM analytics', () => {
+    const start = ui.indexOf('export function MaintenanceAnalyticsPage()');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const analyticsPage = ui.slice(start);
+    expect(analyticsPage).not.toContain('const pmCompliance = totalWOs > 0 ? Math.round((preventiveWOs / totalWOs) * 100) : 0;');
+    expect(analyticsPage).toContain("'/api/pm-analytics'");
+    expect(analyticsPage).toContain("pmAnalytics?.complianceRate == null ? 'N/A'");
+    expect(analyticsPage).toContain("label: 'PM Compliance'");
+  });
 });

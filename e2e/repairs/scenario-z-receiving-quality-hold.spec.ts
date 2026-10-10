@@ -194,7 +194,21 @@ test('UAT-25: defective receipts stay quarantined until repair release; supplier
     const replacementOption = page.getByRole('option').filter({ hasText: supplierReturnCase.itemCode }).first();
     await expect(replacementOption).toBeVisible();
     await expect(replacementOption).toContainText('remaining 1');
-    await page.keyboard.press('Escape');
+    await replacementOption.click();
+
+    const replacementDialog = page.getByRole('dialog');
+    await replacementDialog.locator('input[type="number"]').first().fill('1');
+    const replacementResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'POST' && /\/api\/purchase-orders\/[^/]+\/receive(?:\?|$)/.test(response.url()),
+    );
+    await replacementDialog.getByRole('button', { name: 'Receive Items' }).click();
+    const replacementResponse = await replacementResponsePromise;
+    const replacementBody = await replacementResponse.json().catch(() => null);
+    expect(replacementResponse.status(), `Replacement GRN failed: ${JSON.stringify(replacementBody)}`).toBe(200);
+    expect(replacementBody?.receipt?.stockCredited).toBe(true);
+    expect(replacementBody?.receipt?.custodyStatus).toBe('stocked');
+    await expect(page.getByText('Items received and usable inventory updated')).toBeVisible();
+    expect(await inventoryStock(inventoryToken, plantId, supplierReturnCase.itemCode, supplierReturnCase.item.id)).toBe(1);
   });
 
   await context.close();

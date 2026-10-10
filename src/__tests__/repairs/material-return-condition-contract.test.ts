@@ -11,6 +11,8 @@ describe('material return condition custody contract', () => {
     expect(source).toMatch(/reconcileMaterialRequest\([\s\S]*returnCondition/);
     expect(source).toContain('additionalReturnedToHold');
     expect(source).toContain('additionalReturnedToStock');
+    expect(source).toContain('quantityApproved: true');
+    expect(source).toMatch(/quantityIssued\s*\|\|\s*declaration\.quantityApproved/);
   });
 
   it('requires direct record_return to pass return condition into custody service', () => {

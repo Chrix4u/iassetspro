@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
         usageDeclaredAt: true,
         usageDeclaredById: true,
         quantityIssued: true,
+        quantityApproved: true,
         quantityReturned: true,
       },
     });
@@ -62,7 +63,8 @@ export async function POST(request: NextRequest) {
       Math.abs((declaration.declaredWastedQty ?? 0) - resolvedWastedQty) > 0.001
     );
     const normalizedNotes = typeof notes === 'string' ? notes.trim() : '';
-    const targetReturned = Math.max(0, Number(declaration.quantityIssued || 0) - consumedQty - resolvedWastedQty);
+    const issuedForCondition = Number(declaration.quantityIssued || declaration.quantityApproved || 0);
+    const targetReturned = Math.max(0, issuedForCondition - consumedQty - resolvedWastedQty);
     const additionalReturn = Math.max(0, targetReturned - Number(declaration.quantityReturned || 0));
     const validReturnConditions = ['serviceable', 'damaged', 'defective'];
     if (additionalReturn > 0.001 && !validReturnConditions.includes(returnCondition)) {

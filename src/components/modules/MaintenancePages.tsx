@@ -8434,7 +8434,7 @@ export function MaintenanceDashboardPage() {
   const activeWOs = stats?.activeWorkOrders ?? woKpi?.byStatus?.in_progress ?? 0;
   const completedThisWeek = stats?.myKPIs?.completedThisWeek ?? stats?.completedTodayWO ?? 0;
   const overdueWOs = stats?.overdueWorkOrders ?? woKpi?.overdue ?? 0;
-  const pmCompliance = stats?.maintenanceKPIs?.plannedRatio ?? 0;
+  const plannedRatio = stats?.maintenanceKPIs?.plannedRatio ?? 0;
   const avgMTTR = stats?.maintenanceKPIs?.mttr ?? woKpi?.completionMetrics?.avgHours ?? 0;
   const pendingMRs = stats?.pendingRequests ?? 0;
   const monthTrend = woKpi?.trend?.changePercent ?? 0;
@@ -8588,7 +8588,7 @@ export function MaintenanceDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* PM Compliance — only when the PM module is licensed and enabled */}
+        {/* Planned Ratio — preventive vs reactive mix; distinct from on-time PM compliance */}
         {pmEnabled && <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
           <CardContent className="p-4 relative">
@@ -8597,8 +8597,8 @@ export function MaintenanceDashboardPage() {
                 <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
               </div>
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
-            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Planned Ratio</p>
+            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{plannedRatio}%</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
           </CardContent>
         </Card>}
@@ -8870,6 +8870,7 @@ export function MaintenanceAnalyticsPage() {
   const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [pmAnalytics, setPmAnalytics] = useState<{ complianceRate: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -8889,13 +8890,26 @@ export function MaintenanceAnalyticsPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!pmEnabled) {
+      setPmAnalytics(null);
+      return;
+    }
+    let active = true;
+    api.get<{ complianceRate: number | null }>('/api/pm-analytics').then((res) => {
+      if (active && res.success && res.data) setPmAnalytics(res.data);
+    }).catch(() => {
+      if (active) setPmAnalytics(null);
+    });
+    return () => { active = false; };
+  }, [pmEnabled]);
+
   const completedWOs = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed');
   const mttr = completedWOs.length > 0 ? (completedWOs.reduce((sum, wo) => sum + (wo.actualHours || 0), 0) / completedWOs.length).toFixed(1) : '0.0';
   const totalHours = completedWOs.reduce((sum, wo) => sum + (wo.actualHours || 0), 0);
   const mtbf = completedWOs.length > 1 ? (totalHours / Math.max(completedWOs.length - 1, 1)).toFixed(1) : totalHours.toFixed(1);
   const totalWOs = stats?.totalWorkOrders || 0;
-  const preventiveWOs = stats?.preventiveWO || 0;
-  const pmCompliance = totalWOs > 0 ? Math.round((preventiveWOs / totalWOs) * 100) : 0;
+  const pmComplianceDisplay = pmAnalytics?.complianceRate == null ? 'N/A' : `${pmAnalytics.complianceRate}%`;
   const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
 
   const typeBreakdown = [
@@ -8916,7 +8930,7 @@ export function MaintenanceAnalyticsPage() {
   const kpis = [
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    ...(pmEnabled ? [{ label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
+    ...(pmEnabled ? [{ label: 'PM Compliance', value: pmComplianceDisplay, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' }] : []),
     { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 

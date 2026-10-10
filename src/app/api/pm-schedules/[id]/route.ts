@@ -65,7 +65,16 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
+    const body = await request.json();
+    const requestedFields = Object.keys(body).filter((field) => body[field] !== undefined);
+    const isActivationOnly = requestedFields.length === 1
+      && requestedFields[0] === 'isActive'
+      && body.isActive === true;
+    const canUpdateSchedule = hasPermission(session, 'pm_schedules.update')
+      || hasPermission(session, 'work_orders.update')
+      || isAdmin(session);
+    const canActivateSchedule = isActivationOnly && hasPermission(session, 'pm_schedules.activate');
+    if (!canUpdateSchedule && !canActivateSchedule) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -75,7 +84,6 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const body = await request.json();
 
     const existing = await db.pmSchedule.findUnique({
       where: { id },
@@ -362,7 +370,11 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'work_orders.delete') && !isAdmin(session)) {
+    if (
+      !hasPermission(session, 'pm_schedules.delete')
+      && !hasPermission(session, 'work_orders.delete')
+      && !isAdmin(session)
+    ) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

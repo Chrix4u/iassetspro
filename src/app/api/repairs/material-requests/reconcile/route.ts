@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, consumedQty, wastedQty, notes } = body;
+    const { id, consumedQty, wastedQty, notes, returnCondition } = body;
     if (!id) return NextResponse.json({ success: false, error: 'Material request ID is required' }, { status: 400 });
     if (typeof consumedQty !== 'number' || consumedQty < 0) {
       return NextResponse.json({ success: false, error: 'consumedQty must be a non-negative number' }, { status: 400 });
@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
         declaredReturnQty: true,
         usageDeclaredAt: true,
         usageDeclaredById: true,
+        quantityIssued: true,
+        quantityReturned: true,
       },
     });
     if (!declaration) {
@@ -60,6 +62,15 @@ export async function POST(request: NextRequest) {
       Math.abs((declaration.declaredWastedQty ?? 0) - resolvedWastedQty) > 0.001
     );
     const normalizedNotes = typeof notes === 'string' ? notes.trim() : '';
+    const targetReturned = Math.max(0, Number(declaration.quantityIssued || 0) - consumedQty - resolvedWastedQty);
+    const additionalReturn = Math.max(0, targetReturned - Number(declaration.quantityReturned || 0));
+    const validReturnConditions = ['serviceable', 'damaged', 'defective'];
+    if (additionalReturn > 0.001 && !validReturnConditions.includes(returnCondition)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Return condition is required when physical material is returned to store',
+      }, { status: 400 });
+    }
     if ((!hasTechnicianDeclaration || storeAdjustedDeclaration) && normalizedNotes.length < 5) {
       return NextResponse.json({
         success: false,
@@ -69,7 +80,10 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const result = await reconcileMaterialRequest(id, session.userId, consumedQty, resolvedWastedQty, normalizedNotes || undefined);
+    const result = await reconcileMaterialRequest(
+      id, session.userId, consumedQty, resolvedWastedQty, normalizedNotes || undefined,
+      additionalReturn > 0.001 ? returnCondition : 'serviceable',
+    );
     const matReq = result.updated;
     const reconciliationRate = result.issuedQty > 0 ? (consumedQty / result.issuedQty) * 100 : 0;
     const wasteRate = result.issuedQty > 0 ? (resolvedWastedQty / result.issuedQty) * 100 : 0;
@@ -89,7 +103,10 @@ export async function POST(request: NextRequest) {
             wastedQty: resolvedWastedQty,
             previousReturned: result.existingReturned,
             targetReturned: result.targetReturned,
-            additionalReturnedToStock: result.additionalReturn,
+            additionalReturnedToStock: result.additionalReturnedToStock,
+            additionalReturnedToHold: result.additionalReturnedToHold,
+            returnCondition: result.returnCondition,
+            returnHoldId: result.returnHold?.id ?? null,
             reconciliationRate: `${reconciliationRate.toFixed(1)}%`,
             wasteRate: `${wasteRate.toFixed(1)}%`,
             itemId: matReq.itemId || null,
@@ -142,7 +159,10 @@ export async function POST(request: NextRequest) {
           wastedQty: resolvedWastedQty,
           returnedQty: result.targetReturned,
           previousReturnedQty: result.existingReturned,
-          additionalReturnedToStock: result.additionalReturn,
+          additionalReturnedToStock: result.additionalReturnedToStock,
+          additionalReturnedToHold: result.additionalReturnedToHold,
+          returnCondition: result.returnCondition,
+          returnHoldId: result.returnHold?.id ?? null,
           reconciliationRate: Number(reconciliationRate.toFixed(1)),
           wasteRate: Number(wasteRate.toFixed(1)),
           status: matReq.status,

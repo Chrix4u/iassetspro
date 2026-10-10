@@ -44,6 +44,8 @@ describe('GTP legacy workbook report parity', () => {
   it('renders all five workbook graphs with matching chart families', () => {
     const maintenanceRoute = fs.readFileSync('src/app/api/reports/maintenance/route.ts', 'utf8');
     expect(maintenanceRoute).toContain('legacyParity');
+    expect(maintenanceRoute).toContain('sourceBreakdownCount: legacyBreakdownOrders.length');
+    expect(maintenanceRoute).toContain('unassignedBreakdownCount: legacyUnassignedBreakdownCount');
     expect(maintenanceRoute).toContain('breakdownsByMachine');
     expect(maintenanceRoute).toContain('breakdownsByWeek');
     expect(maintenanceRoute).toContain('downtimeByMachine');
@@ -51,6 +53,9 @@ describe('GTP legacy workbook report parity', () => {
     expect(maintenanceRoute).toContain('responseByMachine');
 
     expect(page).toContain('GTP Workbook Graph Parity');
+    expect(page).toContain('Workbook breakdowns in current filters');
+    expect(page).toContain('Machine-unassigned breakdowns');
+    expect(page).toContain('Attribution integrity:');
     expect(page).toContain('Machine repair downtime per week');
     expect(page).toContain('BD_MC_Wk semantics');
     expect(page).toContain('date range or This Week shortcut');

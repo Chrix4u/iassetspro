@@ -1934,7 +1934,7 @@ export function InventoryReceivingPage() {
                 <TableCell><div className="space-y-1"><Badge variant="outline" className={custodyColors[r.custodyStatus] || ''}>{custodyLabels[r.custodyStatus] || r.custodyStatus || '-'}</Badge>{r.resolution && <div className="text-[11px] text-muted-foreground" title={[resolutionLabels[r.resolution], r.dispositionedBy?.fullName, r.dispositionNotes].filter(Boolean).join(' · ')}>{resolutionLabels[r.resolution] || r.resolution}</div>}</div></TableCell>
                 <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{r.receivedBy?.fullName || '-'}</TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
-                <TableCell className="text-right">{canReceiveInventory && ['quarantined', 'in_repair'].includes(r.custodyStatus) ? <Button size="sm" variant="outline" onClick={() => openDisposition(r)}>Disposition</Button> : <span className="text-xs text-muted-foreground">{r.resolution ? custodyLabels[r.custodyStatus] || 'Resolved' : '-'}</span>}</TableCell>
+                <TableCell className="text-right">{canReceiveInventory && ['quarantined', 'in_repair'].includes(r.custodyStatus) ? <Button size="sm" variant="outline" onClick={() => openDisposition(r)}>Disposition</Button> : <span className="text-xs text-muted-foreground">{r.resolution ? 'Resolved' : '-'}</span>}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>

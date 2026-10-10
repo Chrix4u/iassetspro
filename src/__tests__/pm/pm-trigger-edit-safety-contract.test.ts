@@ -31,6 +31,13 @@ describe('PM trigger edit safety contract', () => {
     expect(scheduleRoute).toContain('Reconfigure or deactivate the trigger first');
   });
 
+  it('keeps meter trigger interval and owning schedule frequency in one transaction', () => {
+    expect(triggerRoute).toContain("existing.triggerType === 'meter'");
+    expect(triggerRoute).toContain('tx.pmSchedule.update');
+    expect(triggerRoute).toContain('frequencyValue: effectiveValue');
+    expect(triggerRoute).toContain('tx.pmTrigger.update');
+  });
+
   it('revalidates an inactive trigger before reactivation', () => {
     expect(triggerRoute).toContain("const reactivating = body.isActive === true && !existing.isActive");
     expect(triggerRoute).toContain('if (configurationChanging || reactivating)');

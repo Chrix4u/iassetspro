@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { notifyUser } from '@/lib/notifications';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export interface MeterThresholdResult {
   due: boolean;
@@ -53,13 +54,14 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
           : {}),
       },
     },
-    select: { id: true },
+    select: { id: true, scheduleId: true },
   });
 
   const results: Array<Record<string, unknown>> = [];
 
   for (const candidate of candidates) {
     const result = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, candidate.scheduleId);
       // One trigger = one meter baseline. Serializing on trigger ID makes the
       // baseline itself the stable cycle identity and eliminates check/create races.
       await tx.$executeRawUnsafe(

@@ -204,12 +204,12 @@ export async function PUT(
 
     let reconciledTriggerConfig: string | undefined;
     let reconciledTriggerValue: number | undefined;
+    const existingTriggerConfig = existing.trigger ? parsePmTriggerConfig(existing.trigger.triggerConfig) : {};
     const triggerTargetChanged = body.componentId !== undefined
       || body.frequencyType !== undefined
       || (existing.trigger?.triggerType === 'meter' && body.frequencyValue !== undefined);
 
     if (existing.trigger?.isActive && triggerTargetChanged) {
-      const existingTriggerConfig = parsePmTriggerConfig(existing.trigger.triggerConfig);
       const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(existingTriggerConfig, existing.id);
       if (openGeneratedWork) {
         return NextResponse.json(
@@ -266,6 +266,12 @@ export async function PUT(
 
     const updateResult = await db.$transaction(async (tx) => {
       await lockPmScheduleLifecycle(tx, id);
+      if (existing.trigger?.isActive && triggerTargetChanged) {
+        const lockedOpenGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(existingTriggerConfig, existing.id, tx);
+        if (lockedOpenGeneratedWork) {
+          return { kind: 'open_work' as const, openGeneratedWork: lockedOpenGeneratedWork };
+        }
+      }
       const lockedSchedule = await tx.pmSchedule.findUnique({
         where: { id },
         select: { isActive: true, templateId: true },
@@ -343,6 +349,15 @@ export async function PUT(
       return { kind: 'updated' as const, nextSchedule };
     });
 
+    if (updateResult.kind === 'open_work') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot change this PM schedule target while runtime-generated work order ${updateResult.openGeneratedWork.woNumber} is still ${updateResult.openGeneratedWork.status}. Complete or cancel that work order first.`,
+        },
+        { status: 409 },
+      );
+    }
     if (updateResult.kind === 'not_found') {
       return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 404 });
     }

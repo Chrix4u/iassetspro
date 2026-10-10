@@ -106,6 +106,7 @@ const UAT_USERS: UatUserDef[] = [
   { username: 'uat_tech_assistant', fullName: 'UAT Tech Assistant', email: 'uat_tech_assistant@test.com', roleSlugs: ['maintenance_technician'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A', primaryTrade: 'Electrical' },
   { username: 'uat_storekeeper', fullName: 'UAT Storekeeper', email: 'uat_storekeeper@test.com', roleSlugs: ['storekeeper', 'store_keeper'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_inventory_manager', fullName: 'UAT Inventory Manager', email: 'uat_inventory_manager@test.com', roleSlugs: ['inventory_manager'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
+  { username: 'uat_production_manager', fullName: 'UAT Production Manager', email: 'uat_production_manager@test.com', roleSlugs: ['production_manager'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_plant_a_user', fullName: 'UAT Plant A User', email: 'uat_plant_a_user@test.com', roleSlugs: ['maintenance_technician'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A', primaryTrade: 'Mechanical' },
   { username: 'uat_plant_b_user', fullName: 'UAT Plant B User', email: 'uat_plant_b_user@test.com', roleSlugs: ['maintenance_technician'], plantCodes: ['PLANT-B'], isPrimaryPlant: 'PLANT-B', primaryTrade: 'Mechanical' },
   { username: 'uat_supervisor_plant_a', fullName: 'UAT Supervisor Plant A Only', email: 'uat_supervisor_plant_a@test.com', roleSlugs: ['maintenance_supervisor'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },
@@ -184,6 +185,12 @@ async function main() {
       name: 'Analytics',
       description: 'Operational KPI and maintenance analytics',
       version: '1.0.0',
+    },
+    {
+      code: 'production',
+      name: 'Production Management',
+      description: 'Work centers, resource planning, scheduling, and capacity management',
+      version: '1.5.0',
     },
     {
       code: 'pm_schedules',

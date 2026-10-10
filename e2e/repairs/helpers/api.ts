@@ -17,6 +17,7 @@ const USERS: Record<string, string> = {
   tech_assistant: 'uat_tech_assistant',
   storekeeper: 'uat_storekeeper',
   inventory_manager: 'uat_inventory_manager',
+  production_manager: 'uat_production_manager',
   plant_a_user: 'uat_plant_a_user',
   plant_b_user: 'uat_plant_b_user',
   supervisor_plant_a: 'uat_supervisor_plant_a',

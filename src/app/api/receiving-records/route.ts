@@ -29,13 +29,14 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const [records, total, goodCount, pendingCount, rejectedCount] = await Promise.all([
+    const [records, total, goodCount, pendingCount, rejectedCount, stockedCount, quarantinedCount, inRepairCount] = await Promise.all([
       db.receivingRecord.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         include: {
           po: { select: { id: true, poNumber: true, supplier: { select: { id: true, name: true } } } },
           item: { select: { id: true, name: true, itemCode: true } },
           receivedBy: { select: { id: true, fullName: true } },
+          dispositionedBy: { select: { id: true, fullName: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -43,12 +44,15 @@ export async function GET(request: NextRequest) {
       db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), condition: 'good' } }),
       db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), condition: 'damaged' } }),
       db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), condition: 'defective' } }),
+      db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), custodyStatus: 'stocked' } }),
+      db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), custodyStatus: 'quarantined' } }),
+      db.receivingRecord.count({ where: { ...(Object.keys(itemPlantWhere).length > 0 ? { item: itemPlantWhere } : {}), custodyStatus: 'in_repair' } }),
     ]);
 
     return NextResponse.json({
       success: true,
       data: records,
-      kpis: { total, good: goodCount, pending: pendingCount, rejected: rejectedCount },
+      kpis: { total, good: goodCount, pending: pendingCount, rejected: rejectedCount, stocked: stockedCount, quarantined: quarantinedCount, inRepair: inRepairCount },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load receiving records';

@@ -63,7 +63,7 @@ async function createSupplierAndItem(token: string, plantId: string, suffix: str
 
 async function createAndApprovePo(page: Page, supplierName: string, itemCode: string, quantity: number) {
   await page.goto('/#/inventory-purchase-orders');
-  await expect(page.getByRole('heading', { name: 'Purchase Orders' })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Purchase Orders', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: /New PO/i }).click();
   const dialog = page.getByRole('dialog');
   await chooseSearchable(page, /Select supplier/i, /Search suppliers/i, supplierName);

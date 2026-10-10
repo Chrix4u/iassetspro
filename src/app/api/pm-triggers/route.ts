@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { normalizePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 const VALID_TRIGGER_TYPES: string[] = [...VALID_PM_TRIGGER_TYPES];
 
@@ -114,68 +115,94 @@ export async function POST(request: NextRequest) {
     if (!canAccessPlantStrict(plantScope, schedule.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
-    if (!schedule.isActive) {
+    const creation = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, scheduleId);
+      const lockedSchedule = await tx.pmSchedule.findUnique({
+        where: { id: scheduleId },
+        include: { asset: { select: { id: true, name: true, plantId: true } } },
+      });
+      if (!lockedSchedule) return { kind: 'schedule_not_found' as const };
+      if (!lockedSchedule.isActive) return { kind: 'inactive_schedule' as const };
+
+      const lockedExistingTrigger = await tx.pmTrigger.findUnique({ where: { scheduleId } });
+      if (lockedExistingTrigger) return { kind: 'duplicate_trigger' as const };
+
+      const normalized = await normalizePmTriggerConfig({
+        triggerType,
+        triggerValue,
+        triggerConfig,
+        schedule: lockedSchedule,
+      });
+      if (normalized.error || !normalized.config) {
+        return { kind: 'invalid_config' as const, error: normalized.error || 'Invalid trigger configuration' };
+      }
+
+      if (
+        triggerType === 'meter'
+        && ['meter_based', 'custom_hours'].includes(lockedSchedule.frequencyType)
+        && Number(lockedSchedule.frequencyValue) !== triggerValue
+      ) {
+        await tx.pmSchedule.update({
+          where: { id: scheduleId },
+          data: { frequencyValue: triggerValue },
+        });
+      }
+
+      const createdTrigger = await tx.pmTrigger.create({
+        data: {
+          scheduleId,
+          triggerType,
+          triggerValue,
+          triggerConfig: JSON.stringify(normalized.config),
+          isActive: isActive !== undefined ? isActive : true,
+        },
+        include: {
+          schedule: {
+            include: {
+              asset: { select: { id: true, name: true, assetTag: true, status: true } },
+              assignedTo: { select: { id: true, fullName: true, username: true } },
+              department: { select: { id: true, name: true, code: true } },
+            },
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'pm_trigger',
+          entityId: createdTrigger.id,
+          newValues: JSON.stringify({
+            scheduleId,
+            triggerType,
+            triggerValue,
+            triggerConfig: normalized.config,
+            isActive: isActive !== undefined ? isActive : true,
+          }),
+        },
+      });
+
+      return { kind: 'created' as const, createdTrigger };
+    });
+
+    if (creation.kind === 'schedule_not_found') {
+      return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 400 });
+    }
+    if (creation.kind === 'inactive_schedule') {
       return NextResponse.json({ success: false, error: 'Cannot create a trigger for an inactive schedule' }, { status: 400 });
     }
-
-    const existingTrigger = await db.pmTrigger.findUnique({ where: { scheduleId } });
-    if (existingTrigger) {
+    if (creation.kind === 'duplicate_trigger') {
       return NextResponse.json(
         { success: false, error: 'A trigger already exists for this schedule. Only one trigger per schedule is allowed.' },
         { status: 409 },
       );
     }
-
-    const normalized = await normalizePmTriggerConfig({
-      triggerType,
-      triggerValue,
-      triggerConfig,
-      schedule,
-    });
-    if (normalized.error || !normalized.config) {
-      return NextResponse.json({ success: false, error: normalized.error || 'Invalid trigger configuration' }, { status: 400 });
+    if (creation.kind === 'invalid_config') {
+      return NextResponse.json({ success: false, error: creation.error }, { status: 400 });
     }
 
-    const trigger = await db.$transaction(async (tx) => {
-      const createdTrigger = await tx.pmTrigger.create({
-      data: {
-        scheduleId,
-        triggerType,
-        triggerValue,
-        triggerConfig: JSON.stringify(normalized.config),
-        isActive: isActive !== undefined ? isActive : true,
-      },
-      include: {
-        schedule: {
-          include: {
-            asset: { select: { id: true, name: true, assetTag: true, status: true } },
-            assignedTo: { select: { id: true, fullName: true, username: true } },
-            department: { select: { id: true, name: true, code: true } },
-          },
-        },
-      },
-    });
-
-      await tx.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'pm_trigger',
-        entityId: createdTrigger.id,
-        newValues: JSON.stringify({
-          scheduleId,
-          triggerType,
-          triggerValue,
-          triggerConfig: normalized.config,
-          isActive: isActive !== undefined ? isActive : true,
-        }),
-      },
-    });
-
-      return createdTrigger;
-    });
-
-    return NextResponse.json({ success: true, data: trigger }, { status: 201 });
+    return NextResponse.json({ success: true, data: creation.createdTrigger }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create PM trigger';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

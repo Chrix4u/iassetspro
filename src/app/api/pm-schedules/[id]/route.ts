@@ -179,13 +179,6 @@ export async function PUT(
       updateData.estimatedDuration = normalizedEstimatedDuration;
     }
 
-    const prospectiveScheduleFrequency = body.frequencyType !== undefined
-      ? String(body.frequencyType)
-      : existing.frequencyType;
-    if (!isAutoCalculableFrequency(prospectiveScheduleFrequency)) {
-      updateData.nextDueDate = null;
-    }
-
     if (body.componentId !== undefined && body.componentId) {
       const component = await db.componentRegistry.findUnique({
         where: { id: body.componentId },
@@ -202,76 +195,92 @@ export async function PUT(
       }
     }
 
-    let reconciledTriggerConfig: string | undefined;
-    let reconciledTriggerValue: number | undefined;
-    const triggerTargetChanged = body.componentId !== undefined
-      || body.frequencyType !== undefined
-      || (existing.trigger?.triggerType === 'meter' && body.frequencyValue !== undefined);
-
-    if (existing.trigger?.isActive && triggerTargetChanged) {
-      const existingTriggerConfig = parsePmTriggerConfig(existing.trigger.triggerConfig);
-      const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(existingTriggerConfig, existing.id);
-      if (openGeneratedWork) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Cannot change this PM schedule target while runtime-generated work order ${openGeneratedWork.woNumber} is still ${openGeneratedWork.status}. Complete or cancel that work order first.`,
-          },
-          { status: 409 },
-        );
-      }
-
-      const prospectiveFrequencyType = body.frequencyType !== undefined
-        ? String(body.frequencyType)
-        : existing.frequencyType;
-      const prospectiveFrequencyValue = body.frequencyValue !== undefined
-        ? Number(body.frequencyValue)
-        : Number(existing.frequencyValue);
-      const prospectiveComponentId = body.componentId !== undefined
-        ? (body.componentId || null)
-        : existing.componentId;
-      const effectiveTriggerValue = existing.trigger.triggerType === 'meter'
-        ? prospectiveFrequencyValue
-        : existing.trigger.triggerValue;
-
-      if (!Number.isFinite(effectiveTriggerValue) || effectiveTriggerValue <= 0) {
-        return NextResponse.json({ success: false, error: 'PM trigger interval must remain a positive number' }, { status: 400 });
-      }
-
-      const normalized = await normalizePmTriggerConfig({
-        triggerType: existing.trigger.triggerType,
-        triggerValue: effectiveTriggerValue,
-        triggerConfig: existingTriggerConfig,
-        schedule: {
-          id: existing.id,
-          assetId: existing.assetId,
-          componentId: prospectiveComponentId,
-          frequencyType: prospectiveFrequencyType,
-          asset: { plantId: existing.asset.plantId },
-        },
-        existingConfig: existingTriggerConfig,
-      });
-      if (normalized.error || !normalized.config) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Schedule change conflicts with the active PM trigger: ${normalized.error || 'invalid trigger configuration'}. Reconfigure or deactivate the trigger first.`,
-          },
-          { status: 409 },
-        );
-      }
-      reconciledTriggerConfig = JSON.stringify(normalized.config);
-      reconciledTriggerValue = effectiveTriggerValue;
-    }
-
     const updateResult = await db.$transaction(async (tx) => {
       await lockPmScheduleLifecycle(tx, id);
       const lockedSchedule = await tx.pmSchedule.findUnique({
         where: { id },
-        select: { isActive: true, templateId: true },
+        select: {
+          id: true,
+          title: true,
+          isActive: true,
+          templateId: true,
+          componentId: true,
+          frequencyType: true,
+          frequencyValue: true,
+          assetId: true,
+          asset: { select: { plantId: true } },
+          trigger: {
+            select: {
+              id: true,
+              isActive: true,
+              triggerType: true,
+              triggerValue: true,
+              triggerConfig: true,
+            },
+          },
+        },
       });
-      if (!lockedSchedule) {
-        return { kind: 'not_found' as const };
+      if (!lockedSchedule) return { kind: 'not_found' as const };
+
+      const lockedUpdateData: Record<string, unknown> = { ...updateData };
+      const lockedProspectiveFrequencyType = body.frequencyType !== undefined
+        ? String(body.frequencyType)
+        : lockedSchedule.frequencyType;
+      if (!isAutoCalculableFrequency(lockedProspectiveFrequencyType)) {
+        lockedUpdateData.nextDueDate = null;
+      }
+
+      let lockedReconciledTriggerConfig: string | undefined;
+      let lockedReconciledTriggerValue: number | undefined;
+      const lockedTriggerTargetChanged = body.componentId !== undefined
+        || body.frequencyType !== undefined
+        || (lockedSchedule.trigger?.triggerType === 'meter' && body.frequencyValue !== undefined);
+
+      if (lockedSchedule.trigger?.isActive && lockedTriggerTargetChanged) {
+        const lockedTriggerConfig = parsePmTriggerConfig(lockedSchedule.trigger.triggerConfig);
+        const lockedOpenGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(
+          lockedTriggerConfig,
+          lockedSchedule.id,
+          tx,
+        );
+        if (lockedOpenGeneratedWork) {
+          return { kind: 'open_work' as const, openGeneratedWork: lockedOpenGeneratedWork };
+        }
+
+        const lockedProspectiveFrequencyValue = body.frequencyValue !== undefined
+          ? Number(body.frequencyValue)
+          : Number(lockedSchedule.frequencyValue);
+        const lockedProspectiveComponentId = body.componentId !== undefined
+          ? (body.componentId || null)
+          : lockedSchedule.componentId;
+        const effectiveTriggerValue = lockedSchedule.trigger.triggerType === 'meter'
+          ? lockedProspectiveFrequencyValue
+          : lockedSchedule.trigger.triggerValue;
+        if (!Number.isFinite(effectiveTriggerValue) || effectiveTriggerValue <= 0) {
+          return { kind: 'invalid_trigger_interval' as const };
+        }
+
+        const normalized = await normalizePmTriggerConfig({
+          triggerType: lockedSchedule.trigger.triggerType,
+          triggerValue: effectiveTriggerValue,
+          triggerConfig: lockedTriggerConfig,
+          schedule: {
+            id: lockedSchedule.id,
+            assetId: lockedSchedule.assetId,
+            componentId: lockedProspectiveComponentId,
+            frequencyType: lockedProspectiveFrequencyType,
+            asset: { plantId: lockedSchedule.asset.plantId },
+          },
+          existingConfig: lockedTriggerConfig,
+        });
+        if (normalized.error || !normalized.config) {
+          return {
+            kind: 'trigger_conflict' as const,
+            error: normalized.error || 'invalid trigger configuration',
+          };
+        }
+        lockedReconciledTriggerConfig = JSON.stringify(normalized.config);
+        lockedReconciledTriggerValue = effectiveTriggerValue;
       }
 
       const effectiveIsActive = body.isActive !== undefined
@@ -298,7 +307,7 @@ export async function PUT(
 
       const nextSchedule = await tx.pmSchedule.update({
         where: { id },
-        data: updateData,
+        data: lockedUpdateData,
         include: {
           asset: { select: { id: true, name: true, assetTag: true, status: true } },
           component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
@@ -309,12 +318,12 @@ export async function PUT(
         },
       });
 
-      if (existing.trigger && reconciledTriggerConfig !== undefined) {
+      if (lockedSchedule.trigger && lockedReconciledTriggerConfig !== undefined) {
         await tx.pmTrigger.update({
-          where: { id: existing.trigger.id },
+          where: { id: lockedSchedule.trigger.id },
           data: {
-            triggerConfig: reconciledTriggerConfig,
-            ...(reconciledTriggerValue !== undefined ? { triggerValue: reconciledTriggerValue } : {}),
+            triggerConfig: lockedReconciledTriggerConfig,
+            ...(lockedReconciledTriggerValue !== undefined ? { triggerValue: lockedReconciledTriggerValue } : {}),
           },
         });
       }
@@ -326,15 +335,15 @@ export async function PUT(
           entityType: 'pm_schedule',
           entityId: id,
           oldValues: JSON.stringify({
-            title: existing.title,
-            componentId: existing.componentId,
-            frequencyType: existing.frequencyType,
-            frequencyValue: existing.frequencyValue,
+            title: lockedSchedule.title,
+            componentId: lockedSchedule.componentId,
+            frequencyType: lockedSchedule.frequencyType,
+            frequencyValue: lockedSchedule.frequencyValue,
           }),
           newValues: JSON.stringify({
-            ...updateData,
-            ...(reconciledTriggerConfig !== undefined
-              ? { reconciledTriggerId: existing.trigger?.id, reconciledTriggerValue }
+            ...lockedUpdateData,
+            ...(lockedReconciledTriggerConfig !== undefined
+              ? { reconciledTriggerId: lockedSchedule.trigger?.id, reconciledTriggerValue: lockedReconciledTriggerValue }
               : {}),
           }),
         },
@@ -343,8 +352,29 @@ export async function PUT(
       return { kind: 'updated' as const, nextSchedule };
     });
 
+    if (updateResult.kind === 'open_work') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot change this PM schedule target while runtime-generated work order ${updateResult.openGeneratedWork.woNumber} is still ${updateResult.openGeneratedWork.status}. Complete or cancel that work order first.`,
+        },
+        { status: 409 },
+      );
+    }
     if (updateResult.kind === 'not_found') {
       return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 404 });
+    }
+    if (updateResult.kind === 'invalid_trigger_interval') {
+      return NextResponse.json({ success: false, error: 'PM trigger interval must remain a positive number' }, { status: 400 });
+    }
+    if (updateResult.kind === 'trigger_conflict') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Schedule change conflicts with the active PM trigger: ${updateResult.error}. Reconfigure or deactivate the trigger first.`,
+        },
+        { status: 409 },
+      );
     }
     if (updateResult.kind === 'invalid_template') {
       return NextResponse.json(

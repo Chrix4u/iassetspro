@@ -1766,6 +1766,7 @@ export function InventoryReceivingPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterCondition, setFilterCondition] = useState<string>('all');
+  const [filterCustody, setFilterCustody] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<any[]>([]);
   const [kpis, setKpis] = useState<any>({});
@@ -1773,6 +1774,10 @@ export function InventoryReceivingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' });
+  const [dispositionRecord, setDispositionRecord] = useState<any | null>(null);
+  const [dispositionAction, setDispositionAction] = useState('');
+  const [dispositionNotes, setDispositionNotes] = useState('');
+  const [disposing, setDisposing] = useState(false);
   const canReceiveInventory = isAdmin()
     || hasPermission('inventory.update')
     || hasPermission('inventory.stock_in')
@@ -1792,18 +1797,48 @@ export function InventoryReceivingPage() {
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
   const conditionColors: Record<string, string> = { good: 'bg-emerald-50 text-emerald-700 border-emerald-200', damaged: 'bg-amber-50 text-amber-700 border-amber-200', defective: 'bg-red-50 text-red-700 border-red-200' };
+  const custodyColors: Record<string, string> = {
+    stocked: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    quarantined: 'bg-amber-50 text-amber-700 border-amber-200',
+    in_repair: 'bg-sky-50 text-sky-700 border-sky-200',
+    returned_to_supplier: 'bg-slate-50 text-slate-700 border-slate-200',
+    scrapped: 'bg-red-50 text-red-700 border-red-200',
+  };
+  const custodyLabels: Record<string, string> = {
+    stocked: 'Stocked', quarantined: 'Quarantined', in_repair: 'In Repair',
+    returned_to_supplier: 'Supplier Return', scrapped: 'Scrapped',
+  };
+  const resolutionLabels: Record<string, string> = {
+    stock_as_is: 'Accepted after inspection', send_for_repair: 'Sent for repair',
+    return_from_repair: 'Returned from repair', return_to_supplier: 'Returned to supplier', scrap: 'Scrapped',
+  };
+  const dispositionActions = (record: any) => record?.custodyStatus === 'quarantined'
+    ? [
+        { value: 'stock_as_is', label: 'Accept to Stock' },
+        { value: 'send_for_repair', label: 'Send for Repair / Refurbishment' },
+        { value: 'return_to_supplier', label: 'Return to Supplier' },
+        { value: 'scrap', label: 'Scrap / Dispose' },
+      ]
+    : record?.custodyStatus === 'in_repair'
+      ? [
+          { value: 'return_from_repair', label: 'Return Refurbished Item to Stock' },
+          { value: 'return_to_supplier', label: 'Return to Supplier' },
+          { value: 'scrap', label: 'Scrap / Dispose' },
+        ]
+      : [];
 
   const filtered = records.filter((r: any) => {
     const matchSearch = r.po?.poNumber?.toLowerCase().includes(search.toLowerCase()) || r.item?.name?.toLowerCase().includes(search.toLowerCase()) || r.item?.itemCode?.toLowerCase().includes(search.toLowerCase());
     const matchCondition = filterCondition === 'all' || r.condition === filterCondition;
-    return matchSearch && matchCondition;
+    const matchCustody = filterCustody === 'all' || r.custodyStatus === filterCustody;
+    return matchSearch && matchCondition && matchCustody;
   });
 
   const kpiCards = [
     { label: 'Total GRNs', value: kpis.total || 0, icon: Download, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Good', value: kpis.good || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Damaged', value: kpis.pending || 0, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Defective', value: kpis.rejected || 0, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Stocked', value: kpis.stocked || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Quarantined', value: kpis.quarantined || 0, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'In Repair', value: kpis.inRepair || 0, icon: Wrench, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   const handleCreate = async () => {
@@ -1826,6 +1861,35 @@ export function InventoryReceivingPage() {
       }
       else toast.error(res.error || 'Failed to receive items');
     } catch { toast.error('Failed to receive items'); } finally { setCreating(false); }
+  };
+
+  const handleDisposition = async () => {
+    if (!dispositionRecord || !dispositionAction) { toast.error('Select a disposition action'); return; }
+    setDisposing(true);
+    try {
+      const res = await api.post(`/api/receiving-records/${dispositionRecord.id}/disposition`, {
+        action: dispositionAction,
+        notes: dispositionNotes || null,
+      });
+      if (res.success) {
+        toast.success(res.stockCredited
+          ? 'Receipt released to usable inventory'
+          : dispositionAction === 'return_to_supplier'
+            ? 'Returned to supplier; PO reopened for replacement receipt'
+            : 'Receiving custody updated');
+        setDispositionRecord(null);
+        setDispositionAction('');
+        setDispositionNotes('');
+        fetchRecords();
+      } else toast.error(res.error || 'Failed to update receiving custody');
+    } catch { toast.error('Failed to update receiving custody'); } finally { setDisposing(false); }
+  };
+
+  const openDisposition = (record: any) => {
+    const actions = dispositionActions(record);
+    setDispositionRecord(record);
+    setDispositionAction(actions[0]?.value || '');
+    setDispositionNotes('');
   };
 
   // Get available PO items (approved/partially_received) for the create form
@@ -1853,12 +1917,13 @@ export function InventoryReceivingPage() {
       <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search records..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterCondition} onValueChange={setFilterCondition}><SelectTrigger className="w-44"><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="all">All Conditions</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="defective">Defective</SelectItem></SelectContent></Select>
+        <Select value={filterCustody} onValueChange={setFilterCustody}><SelectTrigger className="w-44"><SelectValue placeholder="Custody" /></SelectTrigger><SelectContent><SelectItem value="all">All Custody</SelectItem><SelectItem value="stocked">Stocked</SelectItem><SelectItem value="quarantined">Quarantined</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="returned_to_supplier">Supplier Return</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem></SelectContent></Select>
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead className="hidden sm:table-cell">Supplier</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Qty</TableHead><TableHead>Condition</TableHead><TableHead className="hidden md:table-cell">Received By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
-            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Download} title="No receiving records found" description="Records will appear once items are received against purchase orders." /></TableCell></TableRow>
+          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead className="hidden sm:table-cell">Supplier</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Qty</TableHead><TableHead>Condition</TableHead><TableHead>Custody</TableHead><TableHead className="hidden md:table-cell">Received By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={9} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Download} title="No receiving records found" description="Records will appear once items are received against purchase orders." /></TableCell></TableRow>
             ) : filtered.map((r: any) => (
               <TableRow key={r.id} className="hover:bg-muted/30">
                 <TableCell><Badge variant="outline" className="font-mono text-xs">{r.po?.poNumber || '-'}</Badge></TableCell>
@@ -1866,8 +1931,10 @@ export function InventoryReceivingPage() {
                 <TableCell className="font-medium">{r.item?.name || '-'}</TableCell>
                 <TableCell className="hidden sm:table-cell font-medium">{r.quantityReceived}</TableCell>
                 <TableCell><Badge variant="outline" className={conditionColors[r.condition]}>{r.condition?.toUpperCase()}</Badge></TableCell>
+                <TableCell><div className="space-y-1"><Badge variant="outline" className={custodyColors[r.custodyStatus] || ''}>{custodyLabels[r.custodyStatus] || r.custodyStatus || '-'}</Badge>{r.resolution && <div className="text-[11px] text-muted-foreground" title={[resolutionLabels[r.resolution], r.dispositionedBy?.fullName, r.dispositionNotes].filter(Boolean).join(' · ')}>{resolutionLabels[r.resolution] || r.resolution}</div>}</div></TableCell>
                 <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{r.receivedBy?.fullName || '-'}</TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
+                <TableCell className="text-right">{canReceiveInventory && ['quarantined', 'in_repair'].includes(r.custodyStatus) ? <Button size="sm" variant="outline" onClick={() => openDisposition(r)}>Disposition</Button> : <span className="text-xs text-muted-foreground">{r.resolution ? custodyLabels[r.custodyStatus] || 'Resolved' : '-'}</span>}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -1904,6 +1971,36 @@ export function InventoryReceivingPage() {
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Receiving...' : 'Receive Items'}</Button>
           </div>
         
+      </ResponsiveDialog>
+
+      <ResponsiveDialog open={Boolean(dispositionRecord)} onOpenChange={(open) => { if (!open) setDispositionRecord(null); }}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Receiving Disposition</h2>
+          <p className="text-sm text-muted-foreground">Decide how quarantined or repaired stock should leave quality hold.</p>
+        </div>
+        {dispositionRecord && <div className="grid gap-4 py-2">
+          <div className="rounded-md border bg-muted/30 p-3 text-sm">
+            <div className="font-medium">{dispositionRecord.item?.name || 'Item'} · {dispositionRecord.quantityReceived}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{dispositionRecord.po?.poNumber || 'PO'} · {custodyLabels[dispositionRecord.custodyStatus] || dispositionRecord.custodyStatus}</div>
+          </div>
+          <div className="space-y-2">
+            <Label>Disposition Action</Label>
+            <Select value={dispositionAction} onValueChange={setDispositionAction}>
+              <SelectTrigger><SelectValue placeholder="Select action" /></SelectTrigger>
+              <SelectContent>{dispositionActions(dispositionRecord).map(action => <SelectItem key={action.value} value={action.value}>{action.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Inspection / Disposition Notes</Label>
+            <Textarea value={dispositionNotes} onChange={e => setDispositionNotes(e.target.value)} rows={3} placeholder="Inspection result, supplier return reference, repair vendor, scrap reason, or release justification..." />
+          </div>
+          {['stock_as_is', 'return_from_repair'].includes(dispositionAction) && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">This action will add the full received quantity to usable inventory and write a stock ledger movement.</div>}
+          {dispositionAction === 'send_for_repair' && <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800">Stock stays outside usable inventory until the repaired receipt is explicitly returned to stock.</div>}
+        </div>}
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setDispositionRecord(null)}>Cancel</Button>
+          <Button onClick={handleDisposition} disabled={disposing || !dispositionAction}>{disposing ? 'Updating...' : 'Confirm Disposition'}</Button>
+        </div>
       </ResponsiveDialog>
     </div>
   );

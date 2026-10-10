@@ -155,6 +155,7 @@ model User {
   poCreated              PurchaseOrder[]       @relation("POCreatedBy")
   poApproved             PurchaseOrder[]       @relation("POApprovedBy")
   receivingReceived      ReceivingRecord[]     @relation("ReceivingReceivedBy")
+  receivingDispositioned ReceivingRecord[]     @relation("ReceivingDispositionedBy")
 
   // Safety Module relations
   safetyIncidentsReported     SafetyIncident[] @relation("SafetyIncidentReportedBy")
@@ -1594,19 +1595,26 @@ model PurchaseOrderItem {
 }
 
 model ReceivingRecord {
-  id               String   @id @default(cuid())
-  poId             String
-  itemId           String
-  quantityReceived Float
-  condition        String   @default("good") // good, damaged, defective
-  receivedById     String
-  notes            String?
-  createdAt        DateTime @default(now())
+  id                String    @id @default(cuid())
+  poId              String
+  itemId            String
+  quantityReceived  Float
+  condition         String    @default("good") // good, damaged, defective
+  custodyStatus     String    @default("stocked") // stocked, quarantined, in_repair, returned_to_supplier, scrapped
+  resolution        String?   // stock_as_is, send_for_repair, return_from_repair, return_to_supplier, scrap
+  receivedById      String
+  dispositionedById String?
+  notes             String?
+  dispositionNotes  String?
+  dispositionedAt   DateTime?
+  createdAt         DateTime  @default(now())
 
-  po         PurchaseOrder @relation(fields: [poId], references: [id])
-  item       InventoryItem @relation(fields: [itemId], references: [id])
-  receivedBy User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
+  po              PurchaseOrder @relation(fields: [poId], references: [id])
+  item            InventoryItem @relation(fields: [itemId], references: [id])
+  receivedBy      User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
+  dispositionedBy User?         @relation("ReceivingDispositionedBy", fields: [dispositionedById], references: [id])
 
+  @@index([custodyStatus])
   @@map("receiving_records")
 }
 

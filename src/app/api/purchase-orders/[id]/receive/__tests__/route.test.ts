@@ -104,7 +104,9 @@ describe('POST /api/purchase-orders/[id]/receive', () => {
       where: { id: 'item-1', currentStock: 20, isActive: true }, data: { currentStock: 23 },
     });
     expect(mockTx.stockMovement.create).toHaveBeenCalledTimes(1);
-    expect(mockTx.receivingRecord.create).toHaveBeenCalledTimes(1);
+    expect(mockTx.receivingRecord.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ condition: 'good', custodyStatus: 'stocked' }),
+    }));
   });
 
   it.each(['damaged', 'defective'])('records %s delivery but keeps it out of usable stock', async (condition) => {
@@ -114,7 +116,9 @@ describe('POST /api/purchase-orders/[id]/receive', () => {
     expect(json.receipt.stockCredited).toBe(false);
     expect(mockTx.inventoryItem.updateMany).not.toHaveBeenCalled();
     expect(mockTx.stockMovement.create).not.toHaveBeenCalled();
-    expect(mockTx.receivingRecord.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ condition }) }));
+    expect(mockTx.receivingRecord.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ condition, custodyStatus: 'quarantined' }),
+    }));
   });
 
   it('rejects an unknown condition instead of silently treating it as good', async () => {

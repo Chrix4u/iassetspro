@@ -100,6 +100,7 @@ export async function POST(
           itemId,
           quantityReceived: qty,
           condition,
+          custodyStatus: stockCredited ? 'stocked' : 'quarantined',
           receivedById: session.userId,
           notes,
         },
@@ -127,7 +128,7 @@ export async function POST(
         },
       });
 
-      return { stockCredited, previousStock, newStock, condition, newStatus };
+      return { stockCredited, previousStock, newStock, condition, custodyStatus: stockCredited ? 'stocked' : 'quarantined', newStatus };
     });
 
     const finalPO = await db.purchaseOrder.findUnique({

@@ -23,7 +23,8 @@ describe('PM due-state consistency contract', () => {
     expect(listRoute).toContain('const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)');
     expect(listRoute).toContain('nextDueDate: canonicalNextDueDate');
     expect(detailRoute).toContain('isAutoCalculableFrequency');
-    expect(detailRoute).toContain('updateData.nextDueDate = null');
+    expect(detailRoute).toContain('lockedUpdateData.nextDueDate = null');
+    expect(detailRoute).toContain('lockedProspectiveFrequencyType');
   });
 
   it('makes the PM schedule dueSoon filter calendar-only and future-only', () => {

@@ -13,16 +13,17 @@ describe('PM trigger edit safety contract', () => {
   });
 
   it('blocks schedule target mutation while generated runtime PM work is unresolved', () => {
-    expect(scheduleRoute).toContain('triggerTargetChanged');
-    expect(scheduleRoute).toContain('findOpenRuntimeGeneratedWorkOrder(existingTriggerConfig, existing.id)');
+    expect(scheduleRoute).toContain('lockedTriggerTargetChanged');
+    expect(scheduleRoute).toContain('lockedTriggerConfig');
+    expect(scheduleRoute).toContain('lockedSchedule.id');
     expect(scheduleRoute).toContain('Complete or cancel that work order first');
   });
 
   it('reconciles active meter interval and source against the prospective schedule atomically', () => {
-    expect(scheduleRoute).toContain("existing.trigger.triggerType === 'meter'");
-    expect(scheduleRoute).toContain('prospectiveFrequencyValue');
+    expect(scheduleRoute).toContain("lockedSchedule.trigger?.triggerType === 'meter'");
+    expect(scheduleRoute).toContain('lockedProspectiveFrequencyValue');
     expect(scheduleRoute).toContain('normalizePmTriggerConfig');
-    expect(scheduleRoute).toContain('reconciledTriggerConfig');
+    expect(scheduleRoute).toContain('lockedReconciledTriggerConfig');
     expect(scheduleRoute).toContain('await db.$transaction(async (tx) =>');
   });
 
@@ -32,15 +33,16 @@ describe('PM trigger edit safety contract', () => {
   });
 
   it('keeps meter trigger interval and owning schedule frequency in one transaction', () => {
-    expect(triggerRoute).toContain("existing.triggerType === 'meter'");
+    expect(triggerRoute).toContain("effectiveType === 'meter'");
     expect(triggerRoute).toContain('tx.pmSchedule.update');
     expect(triggerRoute).toContain('frequencyValue: effectiveValue');
     expect(triggerRoute).toContain('tx.pmTrigger.update');
   });
 
   it('revalidates an inactive trigger before reactivation', () => {
-    expect(triggerRoute).toContain("const reactivating = body.isActive === true && !existing.isActive");
-    expect(triggerRoute).toContain('if (configurationChanging || reactivating)');
-    expect(triggerRoute).toContain('findOpenRuntimeGeneratedWorkOrder(currentConfig, existing.scheduleId)');
+    expect(triggerRoute).toContain("const lockedReactivating = body.isActive === true && !lockedTrigger.isActive");
+    expect(triggerRoute).toContain('if (configurationChanging || lockedReactivating)');
+    expect(triggerRoute).toContain('lockedCurrentConfig');
+    expect(triggerRoute).toContain('lockedTrigger.scheduleId');
   });
 });

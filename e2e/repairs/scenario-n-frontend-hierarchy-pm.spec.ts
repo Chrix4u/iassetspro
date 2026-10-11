@@ -106,7 +106,12 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(seededTemplate?.title).toBe(templateTitle);
     expect(seededTemplate?._count?.tasks).toBe(6);
 
-    const createPmViaUi = async (title: string, targetCode: string, useTemplate = false) => {
+    const createPmViaUi = async (
+      title: string,
+      targetCode: string,
+      useTemplate = false,
+      expandParentName?: string,
+    ) => {
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
         // Asset detail is rendered as a modal sheet, so return to the authenticated
@@ -148,6 +153,11 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
       await expect(explorerHeading).toBeVisible({ timeout: 20_000 });
       const explorerDialog = page.getByRole('dialog').filter({ has: explorerHeading });
+      if (expandParentName) {
+        const expandParent = explorerDialog.getByRole('button', { name: `Expand ${expandParentName}`, exact: true });
+        await expect(expandParent).toBeVisible({ timeout: 20_000 });
+        await expandParent.click();
+      }
       const targetNode = explorerDialog.getByRole('button').filter({ hasText: targetCode }).first();
       await expect(targetNode).toBeVisible({ timeout: 20_000 });
       await targetNode.click();
@@ -167,7 +177,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     };
 
     await createPmViaUi(assemblyPmTitle, assemblyCode);
-    await createPmViaUi(partPmTitle, partCode, true);
+    await createPmViaUi(partPmTitle, partCode, true, 'Frontend Test Drive Assembly');
 
     const partScheduleRow = page.getByRole('row').filter({ hasText: partPmTitle });
     await expect(partScheduleRow).toBeVisible();

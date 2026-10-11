@@ -69,7 +69,7 @@ export async function PUT(
       );
     }
 
-    const custodyFields = ['quantity', 'repairQuantity', 'status', 'condition', 'assignedToId', 'expectedReturn', 'isActive'];
+    const custodyFields = ['quantity', 'repairQuantity', 'status', 'condition', 'assignedToId', 'expectedReturn', 'isActive', 'plantId'];
     const attemptedCustodyFields = custodyFields.filter((field) => body[field] !== undefined);
     if (attemptedCustodyFields.length > 0) {
       return NextResponse.json({

@@ -37,7 +37,7 @@ describe('tool edit custody boundary', () => {
     (mockDb.auditLog.create as Mock).mockResolvedValue({});
   });
 
-  it.each(['quantity', 'repairQuantity', 'status', 'condition', 'assignedToId', 'expectedReturn'])('%s cannot be mutated through generic tool edit', async (field) => {
+  it.each(['quantity', 'repairQuantity', 'status', 'condition', 'assignedToId', 'expectedReturn', 'plantId'])('%s cannot be mutated through generic tool edit', async (field) => {
     const response = await PUT(request({ name: 'Torque Wrench', [field]: field.includes('Quantity') || field === 'quantity' ? 99 : 'bypass' }), params);
     const body = await response.json();
 

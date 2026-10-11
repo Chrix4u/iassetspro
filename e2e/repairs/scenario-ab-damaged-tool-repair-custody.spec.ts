@@ -26,12 +26,15 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
   let toolRequestItemId = '';
   let damageReportId = '';
   let damageReportNumber = '';
+  let woId = '';
+  let techToken = '';
+  let executionSessionActive = false;
 
   try {
     const plannerToken = await getToken('planner');
     const requesterToken = await getToken('requester');
     const supervisorToken = await getToken('supervisor');
-    const techToken = await getToken('tech_single');
+    techToken = await getToken('tech_single');
     const storeToken = await getToken('storekeeper');
     const inventoryToken = await getToken('inventory_manager');
     const toolsToken = await getToken('tools_shop_attendant');
@@ -39,8 +42,6 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
     const supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
-
-    let woId = '';
 
     await test.step('AB1: create 3-unit tool stock and issue 2 units to a work order', async () => {
       const toolCreate = await apiCall(toolsToken, 'POST', '/api/tools', {
@@ -74,6 +75,7 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
       });
       woId = wo.id;
       await startWO(techToken, woId);
+      executionSessionActive = true;
 
       const createdRequest = await apiCall(techToken, 'POST', '/api/repairs/tool-requests', {
         workOrderId: woId,
@@ -188,6 +190,15 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
       expect(reportAfterQc.data.data.qcNotes).toContain('functional ratchet test passed');
     });
   } finally {
-    await context.close();
+    try {
+      if (executionSessionActive && techToken && woId) {
+        const cleanup = await apiCall(techToken, 'POST', `/api/work-orders/${woId}/pause-session`, {
+          reason: 'UAT-27 test cleanup',
+        });
+        expect(cleanup.status).toBe(200);
+      }
+    } finally {
+      await context.close();
+    }
   }
 });

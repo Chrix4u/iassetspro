@@ -21,4 +21,10 @@ describe('Repairs UAT tool registration RBAC contract', () => {
     expect(scenario).toContain("const toolsToken = await getToken('tools_shop_attendant');");
     expect(scenario).toContain("apiCall(toolsToken, 'POST', '/api/tools'");
   });
+
+
+  it('releases the UAT-27 technician execution session during teardown', () => {
+    expect(scenario).toContain("`/api/work-orders/${woId}/pause-session`");
+    expect(scenario).toContain("reason: 'UAT-27 test cleanup'");
+  });
 });

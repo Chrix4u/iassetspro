@@ -41,8 +41,9 @@ describe('machine component maintenance hierarchy contract', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('pmSchedules              PmSchedule[] @relation("PmScheduleComponent")');
     expect(pmApi).toContain('Selected component does not belong to the selected asset');
-    expect(pmPage).toContain('PM Target — Assembly / Component / Part');
-    expect(pmPage).toContain('Generated PM work orders retain the parent machine and inherit the selected node.');
+    expect(pmPage).toContain('PM Target — Machine / Assembly / Component / Part');
+    expect(pmPage).toContain('Open the machine explorer to drill from the asset into assemblies, subassemblies, components and parts.');
+    expect(pmPage).toContain('The node is only applied after Confirm Selection.');
     expect(pmDue).toContain('Inherited from component-targeted PM schedule');
     expect(pmDue).toContain('workOrderId_componentRegistryId');
   });

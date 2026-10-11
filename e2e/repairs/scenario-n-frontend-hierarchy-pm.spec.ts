@@ -110,7 +110,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       title: string,
       targetCode: string,
       useTemplate = false,
-      expandParentName?: string,
+      expandParentCode?: string,
     ) => {
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
@@ -142,7 +142,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const assetCombobox = assetLabel.locator('..').getByRole('combobox');
       await expect(assetCombobox).toBeEnabled({ timeout: 10_000 });
       await assetCombobox.click();
-      const assetSearch = page.getByPlaceholder('Search all assets by name, tag, serial, manufacturer or model...');
+      const assetSearch = page.getByPlaceholder('Search assets by name or tag...');
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
       await expect(page.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
@@ -153,8 +153,11 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
       await expect(explorerHeading).toBeVisible({ timeout: 20_000 });
       const explorerDialog = page.getByRole('dialog').filter({ has: explorerHeading });
-      if (expandParentName) {
-        const expandParent = explorerDialog.getByRole('button', { name: `Expand ${expandParentName}`, exact: true });
+      if (expandParentCode) {
+        const parentNodeButton = explorerDialog.getByRole('button').filter({ hasText: expandParentCode }).first();
+        await expect(parentNodeButton).toBeVisible({ timeout: 20_000 });
+        const parentRow = parentNodeButton.locator('..');
+        const expandParent = parentRow.getByRole('button', { name: /^Expand / });
         await expect(expandParent).toBeVisible({ timeout: 20_000 });
         await expandParent.click();
       }
@@ -177,7 +180,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     };
 
     await createPmViaUi(assemblyPmTitle, assemblyCode);
-    await createPmViaUi(partPmTitle, partCode, true, 'Frontend Test Drive Assembly');
+    await createPmViaUi(partPmTitle, partCode, true, assemblyCode);
 
     const partScheduleRow = page.getByRole('row').filter({ hasText: partPmTitle });
     await expect(partScheduleRow).toBeVisible();
@@ -188,7 +191,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const viewDialog = page.getByRole('dialog').filter({ has: viewHeading });
     await expect(viewDialog.getByText('PM Target', { exact: true })).toBeVisible();
     await expect(viewDialog.getByText(partCode, { exact: false })).toBeVisible();
-    await viewDialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await viewDialog.getByRole('button', { name: 'Close', exact: true }).filter({ hasText: /^Close$/ }).first().click();
     await expect(viewHeading).toBeHidden();
 
     const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);

@@ -8365,7 +8365,7 @@ export function PmSchedulesPage() {
                 onValueChange={handlePmAssetChange}
                 fetchOptions={fetchPmAssetOptions}
                 placeholder="Select asset..."
-                searchPlaceholder="Search all assets by name, tag, serial, manufacturer or model..."
+                searchPlaceholder="Search assets by name or tag..."
               />
             </div>
             {formAssetId && (

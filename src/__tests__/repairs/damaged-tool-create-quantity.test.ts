@@ -91,6 +91,15 @@ describe('manual damaged tool report quantity custody', () => {
     expect(mockDb.tool.updateMany).not.toHaveBeenCalled();
   });
 
+  it.each([1.5, '2x'])('rejects non-whole damage quantity %p without mutating custody', async (quantity) => {
+    const response = await POST(request({
+      toolId: 'tool-1', quantity, damageType: 'broken', damageDescription: 'Invalid quantity attempt',
+    }));
+    expect(response.status).toBe(400);
+    expect(mockDb.damagedToolReport.create).not.toHaveBeenCalled();
+    expect(mockDb.tool.updateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects quarantine quantity above usable store stock', async () => {
     const response = await POST(request({
       toolId: 'tool-1', quantity: 4, damageType: 'broken', damageDescription: 'Batch damage',

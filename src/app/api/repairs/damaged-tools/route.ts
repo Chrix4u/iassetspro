@@ -187,8 +187,8 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const quantity = Number.parseInt(String(quantityInput ?? 1), 10);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
+    const quantity = Number(quantityInput ?? 1);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       return NextResponse.json({ success: false, error: 'quantity must be a positive whole number' }, { status: 400 });
     }
 

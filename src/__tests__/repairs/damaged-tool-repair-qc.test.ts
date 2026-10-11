@@ -107,6 +107,31 @@ describe('damaged tool repair QC custody', () => {
       }),
     }));
   });
+
+  it('accept_repair restores legacy in-repair tool status when no quantity custody exists', async () => {
+    (mockDb.damagedToolReport.findUnique as Mock)
+      .mockResolvedValueOnce({
+        ...existing,
+        status: 'awaiting_qc',
+        repairHeldQuantity: 0,
+        tool: { ...existing.tool, quantity: 1, repairQuantity: 0, status: 'in_repair', condition: 'poor' },
+      })
+      .mockResolvedValueOnce({
+        ...existing,
+        status: 'repaired',
+        repairHeldQuantity: 0,
+        tool: { ...existing.tool, quantity: 1, repairQuantity: 0, status: 'available', condition: 'good' },
+      });
+
+    const response = await POST(request('accept_repair', { qcNotes: 'Legacy tool accepted after QC' }), params);
+
+    expect(response.status).toBe(200);
+    expect(mockDb.tool.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'tool-1', repairQuantity: 0, status: 'in_repair' }),
+      data: expect.objectContaining({ status: 'available', condition: 'good' }),
+    }));
+  });
+
 });
 
 describe('damaged tool terminal quantity custody', () => {

@@ -411,6 +411,15 @@ export async function POST(
             },
           });
           if (toolClaim.count !== 1) throw new Error('Tool repair custody changed concurrently during QC acceptance');
+        } else if (toolRepairQuantity === 0 && existing.tool?.status === 'in_repair') {
+          // Legacy reports predate quantity custody. Preserve their historical
+          // single-tool behavior: QC acceptance returns the tool to service
+          // without inventing or moving aggregate stock quantity.
+          const legacyToolClaim = await tx.tool.updateMany({
+            where: { id: existing.toolId, repairQuantity: 0, status: 'in_repair' },
+            data: { status: 'available', condition: 'good' },
+          });
+          if (legacyToolClaim.count !== 1) throw new Error('Legacy tool repair status changed concurrently during QC acceptance');
         }
 
         await tx.toolTransaction.create({

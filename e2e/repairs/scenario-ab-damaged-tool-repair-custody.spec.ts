@@ -34,6 +34,7 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
     const techToken = await getToken('tech_single');
     const storeToken = await getToken('storekeeper');
     const inventoryToken = await getToken('inventory_manager');
+    const toolsToken = await getToken('tools_shop_attendant');
     const techUserId = await lookupUserByKey(plannerToken, 'tech_single');
     const supervisorUserId = await lookupUserByKey(plannerToken, 'supervisor');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
@@ -42,7 +43,7 @@ test('UAT-27: damaged tool quantity stays quarantined until store/QC acceptance'
     let woId = '';
 
     await test.step('AB1: create 3-unit tool stock and issue 2 units to a work order', async () => {
-      const toolCreate = await apiCall(inventoryToken, 'POST', '/api/tools', {
+      const toolCreate = await apiCall(toolsToken, 'POST', '/api/tools', {
         name: 'UAT Repair Custody Torque Wrench',
         description: 'UAT-27 aggregate quantity custody tool',
         category: 'hand_tools',

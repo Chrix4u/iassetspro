@@ -201,6 +201,25 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'analytics.view',
   ],
 
+  tools_shop_attendant: [
+    'dashboard.view', 'chat.view',
+    'documents.view', 'documents.download',
+    'notifications.view',
+    'tools.view', 'tools.create', 'tools.update', 'tools.delete',
+    'tools.manage', 'tools.checkout', 'tools.return', 'tools.transfer',
+    'assets.view',
+    'equipment.view',
+    'work_orders.view', 'work_orders.view_all',
+    'maintenance_requests.view', 'maintenance_requests.view_all',
+    'inventory.view',
+    'parts.view',
+    'repair_material_requests.view', 'repair_material_requests.view_all',
+    'repair_tool_requests.view', 'repair_tool_requests.view_all',
+    'repair_tool_transfers.view', 'repair_tool_transfers.view_all',
+    'reports.view', 'reports.export',
+    'employees.view',
+  ],
+
   store_keeper: [
     'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
@@ -301,6 +320,7 @@ async function main() {
     ['inventory_manager', 'vendors.create'],
     ['inventory_manager', 'purchase_orders.approve'],
     ['inventory_manager', 'spare_part_returns.update'],
+    ['tools_shop_attendant', 'tools.create'],
     ['store_keeper', 'repair_material_requests.update'],
   ] as const;
 

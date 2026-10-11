@@ -27,6 +27,7 @@ const USERS: Record<string, UatUser> = {
   tech_assistant:         { username: 'uat_tech_assistant', password: UAT_PASSWORD },
   storekeeper:            { username: 'uat_storekeeper',    password: UAT_PASSWORD },
   inventory_manager:      { username: 'uat_inventory_manager', password: UAT_PASSWORD },
+  tools_shop_attendant:    { username: 'uat_tools_shop_attendant', password: UAT_PASSWORD },
   plant_a_user:           { username: 'uat_plant_a_user',   password: UAT_PASSWORD },
   plant_b_user:           { username: 'uat_plant_b_user',   password: UAT_PASSWORD },
 };

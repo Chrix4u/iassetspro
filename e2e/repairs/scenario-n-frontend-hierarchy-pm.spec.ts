@@ -106,7 +106,12 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(seededTemplate?.title).toBe(templateTitle);
     expect(seededTemplate?._count?.tasks).toBe(6);
 
-    const createPmViaUi = async (title: string, targetCode: string, useTemplate = false) => {
+    const createPmViaUi = async (
+      title: string,
+      targetCode: string,
+      useTemplate = false,
+      expandParentCode?: string,
+    ) => {
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
       if (!(await pmHeading.isVisible().catch(() => false))) {
         // Asset detail is rendered as a modal sheet, so return to the authenticated
@@ -140,17 +145,28 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const assetSearch = page.getByPlaceholder('Search assets by name or tag...');
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
-      await expect(page.getByText('PM Target — Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
 
-      const targetLabel = page.locator('label').filter({ hasText: /PM Target/ }).first();
-      const targetCombobox = targetLabel.locator('..').getByRole('combobox');
-      await expect(targetCombobox).toBeEnabled({ timeout: 10_000 });
-      await targetCombobox.click();
-      const targetOption = page.getByRole('option').filter({
-        hasText: new RegExp(`${targetCode}\\s*·`),
-      });
-      await expect(targetOption).toHaveCount(1);
-      await targetOption.click();
+      const chooseTargetButton = page.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
+      await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
+      await chooseTargetButton.click();
+      const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
+      await expect(explorerHeading).toBeVisible({ timeout: 20_000 });
+      const explorerDialog = page.getByRole('dialog').filter({ has: explorerHeading });
+      if (expandParentCode) {
+        const parentNodeButton = explorerDialog.getByRole('button').filter({ hasText: expandParentCode }).first();
+        await expect(parentNodeButton).toBeVisible({ timeout: 20_000 });
+        const parentRow = parentNodeButton.locator('..');
+        const expandParent = parentRow.getByRole('button', { name: /^Expand / });
+        await expect(expandParent).toBeVisible({ timeout: 20_000 });
+        await expandParent.click();
+      }
+      const targetNode = explorerDialog.getByRole('button').filter({ hasText: targetCode }).first();
+      await expect(targetNode).toBeVisible({ timeout: 20_000 });
+      await targetNode.click();
+      await explorerDialog.getByRole('button', { name: 'Confirm Selection', exact: true }).click();
+      await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
+      await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
 
       const durationLabel = page.locator('label').filter({ hasText: /Est\. Duration/ }).first();
       await durationLabel.locator('..').locator('input').fill('1');
@@ -164,7 +180,19 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     };
 
     await createPmViaUi(assemblyPmTitle, assemblyCode);
-    await createPmViaUi(partPmTitle, partCode, true);
+    await createPmViaUi(partPmTitle, partCode, true, assemblyCode);
+
+    const partScheduleRow = page.getByRole('row').filter({ hasText: partPmTitle });
+    await expect(partScheduleRow).toBeVisible();
+    await partScheduleRow.getByRole('button').last().click();
+    await page.getByRole('menuitem', { name: 'View', exact: true }).click();
+    const viewHeading = page.getByRole('heading', { name: `PM Schedule · ${partPmTitle}`, exact: true });
+    await expect(viewHeading).toBeVisible({ timeout: 10_000 });
+    const viewDialog = page.getByRole('dialog').filter({ has: viewHeading });
+    await expect(viewDialog.getByText('PM Target', { exact: true })).toBeVisible();
+    await expect(viewDialog.getByText(partCode, { exact: false })).toBeVisible();
+    await viewDialog.getByRole('button', { name: 'Close', exact: true }).filter({ hasText: /^Close$/ }).first().click();
+    await expect(viewHeading).toBeHidden();
 
     const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
     expect(schedules.status).toBe(200);

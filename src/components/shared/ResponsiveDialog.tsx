@@ -39,6 +39,15 @@ function useIsMobile(breakpoint = 768) {
 
 export { useIsMobile };
 
+export type ResponsiveDialogSize = 'default' | 'wide' | 'extra-wide' | 'explorer';
+
+const RESPONSIVE_DIALOG_SIZE_CLASSES: Record<ResponsiveDialogSize, string> = {
+  default: 'sm:max-w-lg',
+  wide: 'sm:max-w-3xl',
+  'extra-wide': 'sm:max-w-5xl',
+  explorer: 'sm:max-w-[96vw] 2xl:max-w-[90rem]',
+};
+
 export interface ResponsiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,6 +57,7 @@ export interface ResponsiveDialogProps {
   footer?: React.ReactNode;
   className?: string;
   desktopMaxWidth?: string;
+  size?: ResponsiveDialogSize;
   large?: boolean;
   extraLarge?: boolean;
   showCloseButton?: boolean;
@@ -64,14 +74,15 @@ export function ResponsiveDialog({
   footer,
   className,
   desktopMaxWidth,
+  size,
   large = false,
   extraLarge = false,
   showCloseButton = true,
 }: ResponsiveDialogProps) {
   const isMobile = useIsMobile();
 
-  const resolvedMaxWidth = desktopMaxWidth
-    ?? (extraLarge ? "sm:max-w-4xl" : large ? "sm:max-w-2xl" : "sm:max-w-lg");
+  const resolvedMaxWidth = desktopMaxWidth ?? (size ? RESPONSIVE_DIALOG_SIZE_CLASSES[size]
+    : extraLarge ? "sm:max-w-4xl" : large ? "sm:max-w-2xl" : RESPONSIVE_DIALOG_SIZE_CLASSES.default);
 
   // Radix passes a PointerDownOutsideEvent (CustomEvent), not a React
   // PointerEvent. Inspect the original browser event so popover interaction
@@ -90,7 +101,7 @@ export function ResponsiveDialog({
           side="bottom"
           hideClose
           className={cn(
-            "max-h-[92vh] rounded-t-2xl",
+            "w-full min-w-0 max-h-[92vh] rounded-t-2xl",
             "flex flex-col overflow-hidden",
             className,
           )}
@@ -118,7 +129,7 @@ export function ResponsiveDialog({
             )}
           </div>
 
-          <div className="responsive-dialog-body flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
+          <div className="responsive-dialog-body flex-1 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4">
             {children}
           </div>
 
@@ -140,7 +151,14 @@ export function ResponsiveDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)} onPointerDownOutside={handlePointerDownOutside}>
+      <DialogContent
+        className={cn(
+          resolvedMaxWidth,
+          "w-[calc(100vw-2rem)] min-w-0 max-h-[90vh] overflow-hidden flex flex-col",
+          className,
+        )}
+        onPointerDownOutside={handlePointerDownOutside}
+      >
         <DialogHeader className={!(title || description) ? "sr-only" : undefined}>
           <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
           {description ? (
@@ -150,11 +168,11 @@ export function ResponsiveDialog({
           )}
         </DialogHeader>
 
-        <div className={cn("responsive-dialog-body", !footer && "pb-2")}>
+        <div className={cn("responsive-dialog-body flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden", !footer && "pb-2")}>
           {children}
         </div>
 
-        {footer && <DialogFooter>{footer}</DialogFooter>}
+        {footer && <DialogFooter className="shrink-0">{footer}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );

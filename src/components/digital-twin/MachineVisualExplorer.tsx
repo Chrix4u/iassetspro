@@ -111,6 +111,19 @@ type AssetSummary = {
   specification?: string | null;
 };
 
+export type MachineExplorerSelection = {
+  component: MachineComponent | null;
+  path: MachineComponent[];
+};
+
+type MachineVisualExplorerProps = {
+  asset: AssetSummary;
+  initialComponentId?: string | null;
+  onCommissionHierarchy?: () => void;
+  selectionMode?: boolean;
+  onSelectionChange?: (selection: MachineExplorerSelection) => void;
+};
+
 function safeJson(value?: string | null): Record<string, unknown> {
   if (!value) return {};
   try {
@@ -437,7 +450,13 @@ async function loadAllMachineComponents(assetId: string): Promise<MachineCompone
   return all;
 }
 
-export function MachineVisualExplorer({ asset, initialComponentId = null, onCommissionHierarchy }: { asset: AssetSummary; initialComponentId?: string | null; onCommissionHierarchy?: () => void }) {
+export function MachineVisualExplorer({
+  asset,
+  initialComponentId = null,
+  onCommissionHierarchy,
+  selectionMode = false,
+  onSelectionChange,
+}: MachineVisualExplorerProps) {
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialComponentId);
@@ -586,6 +605,11 @@ export function MachineVisualExplorer({ asset, initialComponentId = null, onComm
     return chain;
   }, [selected, componentMap]);
 
+  useEffect(() => {
+    if (loading) return;
+    onSelectionChange?.({ component: selected, path });
+  }, [loading, onSelectionChange, selected, path]);
+
   const desiredType = mode === 'realistic'
     ? 'ai_realistic'
     : mode === 'exploded'
@@ -657,7 +681,7 @@ export function MachineVisualExplorer({ asset, initialComponentId = null, onComm
   }
 
   return (
-    <div className="grid gap-4 xl:h-[calc(100dvh-5rem)] xl:min-h-0 xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch">
+    <div className={'grid gap-4 ' + (selectionMode ? 'xl:h-[min(72vh,760px)]' : 'xl:h-[calc(100dvh-5rem)]') + ' xl:min-h-0 xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch'}>
       <Card className="border-0 shadow-sm xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
         <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Network className="h-4 w-4" />Machine hierarchy</CardTitle></CardHeader>
         <CardContent className="p-2 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">

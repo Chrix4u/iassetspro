@@ -42,14 +42,18 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     await page.getByPlaceholder('Search assets by name or tag...').fill('UAT-PUMP-001');
     await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
 
-    const targetLabel = page.locator('label').filter({ hasText: /PM Target/ }).first();
-    const targetCombobox = targetLabel.locator('..').getByRole('combobox');
-    await expect(targetCombobox).toBeEnabled({ timeout: 10_000 });
-    await targetCombobox.click();
-    const targetOption = page.getByRole('option').filter({ hasText: componentCode }).first();
-    await expect(targetOption).toBeVisible({ timeout: 10_000 });
-    await targetOption.click();
-    await expect(targetCombobox).toContainText(componentCode);
+    const chooseTargetButton = page.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
+    await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
+    await chooseTargetButton.click();
+    const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
+    await expect(explorerHeading).toBeVisible({ timeout: 20_000 });
+    const explorerDialog = page.getByRole('dialog').filter({ has: explorerHeading });
+    const targetNode = explorerDialog.getByRole('button').filter({ hasText: componentCode }).first();
+    await expect(targetNode).toBeVisible({ timeout: 20_000 });
+    await targetNode.click();
+    await explorerDialog.getByRole('button', { name: 'Confirm Selection', exact: true }).click();
+    await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
+    await expect(page.getByText(componentCode, { exact: false }).first()).toBeVisible();
 
     const frequencyLabel = page.locator('label').filter({ hasText: /^Frequency Type \*/ }).first();
     await frequencyLabel.locator('..').getByRole('combobox').click();

@@ -9684,6 +9684,7 @@ export function MaintenanceToolsPage() {
       location: t.location || '',
       plantId: t.plantId || '',
       assignedToId: t.assignedToId || '',
+      assignedToLabel: t.assignedTo?.fullName || t.assignedTo?.username || 'Unassigned',
       quantity: String(t.quantity ?? 1),
       purchaseCost: t.purchaseCost != null ? String(t.purchaseCost) : '',
       currentValue: t.currentValue != null ? String(t.currentValue) : '',
@@ -9702,12 +9703,7 @@ export function MaintenanceToolsPage() {
         description: editForm.description || null,
         category: editForm.category,
         serialNumber: editForm.serialNumber || null,
-        condition: editForm.condition,
-        status: editForm.status,
         location: editForm.location || null,
-        plantId: editForm.plantId || null,
-        assignedToId: editForm.assignedToId || null,
-        quantity: parseInt(editForm.quantity) || 1,
         purchaseCost: editForm.purchaseCost ? parseFloat(editForm.purchaseCost) : null,
         currentValue: editForm.currentValue ? parseFloat(editForm.currentValue) : null,
         manufacturer: editForm.manufacturer || null,
@@ -9755,6 +9751,17 @@ export function MaintenanceToolsPage() {
 
   const renderToolForm = (f: any, setF: (updater: any) => void, showStatus?: boolean) => (
     <div className="grid gap-4 py-2">
+      {showStatus && (
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+          <div><p className="text-sm font-medium">Custody is workflow-managed</p><p className="text-xs text-muted-foreground">Issue, return, repair/QC, transfer, or retirement workflows control quantity, condition, status, plant, and assignment.</p></div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Usable qty</span><p className="font-semibold">{f.quantity ?? 0}</p></div>
+            <div><span className="text-muted-foreground">Status</span><p className="font-semibold capitalize">{String(f.status || 'available').replace(/_/g, ' ')}</p></div>
+            <div><span className="text-muted-foreground">Condition</span><p className="font-semibold capitalize">{f.condition || 'good'}</p></div>
+            <div><span className="text-muted-foreground">Assigned to</span><p className="font-semibold truncate">{f.assignedToLabel || 'Unassigned'}</p></div>
+          </div>
+        </div>
+      )}
       <div className="grid gap-2"><Label className="text-xs">Tool Name <span className="text-destructive">*</span></Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={f.name} onChange={e => setF((p: any) => ({ ...p, name: e.target.value }))} /></div>
       <div className="grid gap-2"><Label className="text-xs">Description</Label><Textarea placeholder="Optional description..." value={f.description || ''} onChange={e => setF((p: any) => ({ ...p, description: e.target.value }))} rows={2} /></div>
       <div className="grid grid-cols-2 gap-3">
@@ -9768,12 +9775,13 @@ export function MaintenanceToolsPage() {
             groupBy={false}
           />
         </div>
-        <div className="grid gap-2"><Label className="text-xs">Quantity</Label><Input type="number" min="1" value={f.quantity} onChange={e => setF((p: any) => ({ ...p, quantity: e.target.value }))} /></div>
+        {!showStatus && <div className="grid gap-2"><Label className="text-xs">Quantity</Label><Input type="number" min="1" value={f.quantity} onChange={e => setF((p: any) => ({ ...p, quantity: e.target.value }))} /></div>}
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={f.condition} onValueChange={v => setF((p: any) => ({ ...p, condition: v }))}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
-        {showStatus && <div className="grid gap-2"><Label className="text-xs">Status</Label><Select value={f.status} onValueChange={v => setF((p: any) => ({ ...p, status: v }))}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="transferred">Transferred</SelectItem><SelectItem value="retired">Retired</SelectItem></SelectContent></Select></div>}
-      </div>
+      {!showStatus && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={f.condition} onValueChange={v => setF((p: any) => ({ ...p, condition: v }))}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
+        </div>
+      )}
       <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={f.location || ''} onChange={e => setF((p: any) => ({ ...p, location: e.target.value }))} /></div>
       <div className="grid grid-cols-2 gap-3">
         <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={f.serialNumber || ''} onChange={e => setF((p: any) => ({ ...p, serialNumber: e.target.value }))} /></div>
@@ -9784,6 +9792,7 @@ export function MaintenanceToolsPage() {
         <div className="grid gap-2"><Label className="text-xs">Purchase Cost</Label><Input type="number" step="0.01" placeholder="0.00" value={f.purchaseCost || ''} onChange={e => setF((p: any) => ({ ...p, purchaseCost: e.target.value }))} /></div>
       </div>
       <div className="grid gap-2"><Label className="text-xs">Current Value</Label><Input type="number" step="0.01" placeholder="0.00" value={f.currentValue || ''} onChange={e => setF((p: any) => ({ ...p, currentValue: e.target.value }))} /></div>
+      {!showStatus && (
       <div className="grid gap-2"><Label className="text-xs">Plant</Label>
         <AsyncSearchableSelect
           value={f.plantId || ''}
@@ -9803,24 +9812,12 @@ export function MaintenanceToolsPage() {
           searchPlaceholder="Search plants..."
         />
       </div>
-      <div className="grid gap-2"><Label className="text-xs">Assigned To</Label>
-        <AsyncSearchableSelect
-          value={f.assignedToId || ''}
-          onValueChange={v => setF((p: any) => ({ ...p, assignedToId: v }))}
-          fetchOptions={async () => {
-            const res = await api.get('/api/workers?role=all');
-            if (res.success && res.data) {
-              return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                value: u.id,
-                label: `${u.fullName || u.username} (${u.username || ''})`,
-              }));
-            }
-            return [];
-          }}
-          placeholder="Select user..."
-          searchPlaceholder="Search users..."
-        />
-      </div>
+      )}
+      {!showStatus && (
+        <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+          New tools are registered unassigned. Use the issue or transfer workflow after registration to establish user custody.
+        </div>
+      )}
     </div>
   );
 
@@ -9901,7 +9898,7 @@ export function MaintenanceToolsPage() {
         open={!!deleteId}
         onOpenChange={(open) => { if (!open) setDeleteId(null); }}
         title="Deactivate Tool"
-        description="This will mark the tool as retired and remove any assignment. This action can be undone by editing the tool later."
+        description="This will retire the tool and clear any assignment. Retirement cannot be reversed through Edit Tool."
         confirmLabel={deleteLoading ? 'Deactivating...' : 'Deactivate'}
         variant="destructive"
         onConfirm={handleDelete}

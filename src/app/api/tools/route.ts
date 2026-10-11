@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
-import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getPlantScope, getPlantFilterWhere, canAccessPlantStrict } from '@/lib/plant-scope';
 
 // Helper: generate tool code TL-NNNN
 async function generateToolCode(): Promise<string> {
@@ -196,6 +196,23 @@ export async function POST(request: NextRequest) {
     if (!category) {
       return NextResponse.json({ success: false, error: 'Category is required' }, { status: 400 });
     }
+    if (assignedToId) {
+      return NextResponse.json({
+        success: false,
+        error: 'New tools must be registered unassigned; use the issue or transfer workflow to establish custody',
+      }, { status: 400 });
+    }
+    if (status && status !== 'available') {
+      return NextResponse.json({
+        success: false,
+        error: 'New tools must start in available status; use custody workflows for later status changes',
+      }, { status: 400 });
+    }
+
+    const resolvedPlantId = body.plantId || plantScope?.plantId || null;
+    if (plantScope?.denyAccess || (resolvedPlantId && !canAccessPlantStrict(plantScope, resolvedPlantId))) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     const toolCode = await generateToolCode();
 
@@ -207,17 +224,17 @@ export async function POST(request: NextRequest) {
         category,
         serialNumber: serialNumber || null,
         condition: condition || 'good',
-        status: status || 'available',
+        status: 'available',
         location: location || null,
         purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
         purchaseCost: purchaseCost || null,
         currentValue: currentValue || null,
         manufacturer: manufacturer || null,
         model: model || null,
-        assignedToId: assignedToId || null,
+        assignedToId: null,
         quantity: quantity || 1,
         createdById: session.userId,
-        plantId: body.plantId || plantScope?.plantId || null,
+        plantId: resolvedPlantId,
       },
       include: {
         assignedTo: { select: { id: true, fullName: true, username: true } },

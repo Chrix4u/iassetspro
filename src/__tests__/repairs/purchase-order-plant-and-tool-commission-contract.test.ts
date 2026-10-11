@@ -34,14 +34,16 @@ describe('Repairs procurement and reusable tool closure contracts', () => {
     expect(receive).toContain('Invalid receiving condition');
   });
 
-  it('aligns purchased-tool commissioning permissions and preserves the tool purchase date edit field', () => {
+  it('aligns purchased-tool commissioning permissions while keeping generic tool edits metadata-only', () => {
     const commission = read('src/app/api/inventory/[id]/commission-tools/route.ts');
     const toolEdit = read('src/app/api/tools/[id]/route.ts');
     expect(commission).toContain("hasAnyPermission(session, ['inventory.stock_out', 'inventory.manage'])");
     expect(commission).toContain('tx.$executeRawUnsafe');
     expect(commission).not.toContain('tx.$queryRawUnsafe');
     expect(commission).toContain("type: 'purchase_commission'");
-    expect(toolEdit).toContain("'status', 'location', 'purchaseDate', 'purchaseCost'");
+    expect(toolEdit).toContain("'location', 'purchaseDate', 'purchaseCost'");
+    expect(toolEdit).toContain("const custodyFields = ['quantity', 'repairQuantity', 'status', 'condition'");
+    expect(toolEdit).toContain('cannot be changed through generic edit');
   });
 
   it('scopes the receiving ledger and its KPIs to the current plant scope', () => {

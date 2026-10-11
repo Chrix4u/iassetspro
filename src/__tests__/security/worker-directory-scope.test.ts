@@ -51,8 +51,10 @@ describe('worker and user directory plant/privacy boundaries', () => {
   it('keeps operational assignment pickers off the unrestricted user-management directory', () => {
     const maintenanceUi = read('src/components/modules/MaintenancePages.tsx');
     expect(maintenanceUi).not.toContain("api.get('/api/users?limit=100')");
-    expect(maintenanceUi).toContain("api.get('/api/workers?role=all')");
     expect(maintenanceUi).toContain("api.get('/api/workers?role=technician')");
+    // Tool registration no longer needs a broad assignment picker: new tools start
+    // unassigned and custody is established through issue/transfer workflows.
+    expect(maintenanceUi).toContain('New tools are registered unassigned. Use the issue or transfer workflow');
   });
 
   it('redacts password and password-reset secrets from administrative directory output', () => {

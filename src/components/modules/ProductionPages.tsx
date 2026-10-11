@@ -183,7 +183,6 @@ export function ProductionResourcePlanningPage() {
     { label: 'Resources Planned', value: kpisData.total, icon: Layers, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'Over-Allocated', value: kpisData.overAllocated, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
     { label: 'Under-Utilized', value: kpisData.underUtilized, icon: TrendingDown, color: 'text-amber-600 bg-amber-50' },
-  Minus,
     { label: 'Utilization', value: `${kpisData.utilization}%`, icon: Gauge, color: 'text-sky-600 bg-sky-50' },
   ];
   return (
@@ -688,7 +687,6 @@ export function ProductionBottlenecksPage() {
     { label: 'Active Bottlenecks', value: activeCount, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
     { label: 'Avg Wait Time', value: avgWait, icon: Clock, color: 'text-amber-600 bg-amber-50' },
     { label: 'Impact', value: `${totalImpact.toLocaleString()} units`, icon: TrendingDown, color: 'text-sky-600 bg-sky-50' },
-  Minus,
     { label: 'Resolved This Month', value: resolvedMonth, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
   ];
   return (

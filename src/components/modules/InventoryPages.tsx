@@ -1682,7 +1682,7 @@ export function InventoryPurchaseOrdersPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <ResponsiveDialog open={createOpen} onOpenChange={handleDialogClose}>
+      <ResponsiveDialog open={createOpen} onOpenChange={handleDialogClose} size="wide">
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Purchase Order</h2><p className="text-sm text-muted-foreground">Create a new purchase order for inventory items.</p></div>
           <div className="grid gap-4 py-2">
@@ -1719,8 +1719,8 @@ export function InventoryPurchaseOrdersPage() {
               )}
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {lineItems.map((li, idx) => (
-                  <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_80px_100px_32px] gap-2 items-end">
-                    <div className="space-y-1">
+                  <div key={idx} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_80px_100px_32px] gap-2 items-end">
+                    <div className="space-y-1 min-w-0">
                       <Label className="text-xs text-muted-foreground">Item</Label>
                       <SearchableSelect
                         value={li.itemId}

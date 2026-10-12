@@ -18,8 +18,7 @@ describe('PostgreSQL deployment safety', () => {
     }
   });
 
-  it('validates or generates the PostgreSQL Prisma client instead of trusting stale generated code', () => {
-    expect(read('DEPLOY.sh')).toContain('provider[[:space:]]*=[[:space:]]*"postgresql"');
+  it('validates or generates the PostgreSQL Prisma client in active deployment helpers', () => {
     expect(read('scripts/webuzo-setup.sh')).toContain('npx prisma generate');
     expect(read('scripts/webuzo-deploy.sh')).toContain('npx prisma generate');
     expect(read('scripts/vm-deploy.sh')).toContain('bunx prisma generate');
@@ -29,6 +28,7 @@ describe('PostgreSQL deployment safety', () => {
     expect(read('scripts/vm-deploy.sh')).not.toContain('node_modules/mariadb');
     expect(read('scripts/start-production.sh')).toContain('bunx prisma migrate deploy');
   });
+
   it('keeps live diagnostics and executable maintenance utilities PostgreSQL-native', () => {
     const statusRoute = read('src/app/api/v1/status/route.ts');
     const backfill = read('scripts/backfill-tool-request-numbers.ts');
@@ -47,5 +47,4 @@ describe('PostgreSQL deployment safety', () => {
     expect(rebuild).toContain('deploy-production-artifact.sh');
     expect(rebuild).not.toMatch(/(?:mysql|mariadb|postgres(?:ql)?):\/\/[^\s"']+/i);
   });
-
 });

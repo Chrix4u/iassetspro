@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import {
+  MAINTENANCE_APPROVAL_PERMISSION,
+  hasMaintenanceApprovalPermission,
+} from '@/lib/maintenance-approvers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,12 +20,11 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const role = searchParams.get('role'); // technician | supervisor | all
 
-    // Build where clause
     const where: Record<string, unknown> = {
       status: 'active',
     };
+    const andPredicates: Record<string, unknown>[] = [];
 
-    // Filter by department names if departmentIds are provided
     if (departmentIds) {
       const deptIds = departmentIds.split(',').filter(Boolean);
       if (deptIds.length > 0) {
@@ -36,7 +39,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Search by name, staffId, or username
     if (search) {
       where.OR = [
         { fullName: { contains: search } },
@@ -45,8 +47,6 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Filter by role. Unknown values must fail closed instead of silently
-    // dropping the role predicate and broadening the worker directory.
     const allowedRoles = new Set(['all', 'technician', 'supervisor']);
     if (role && !allowedRoles.has(role)) {
       return NextResponse.json(
@@ -54,43 +54,84 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (role && role !== 'all') {
-      const roleSlugMap: Record<string, string[]> = {
-        technician: ['maintenance_technician'],
-        supervisor: ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'],
-      };
-      const targetSlugs = roleSlugMap[role]!;
+
+    if (role === 'technician') {
       where.userRoles = {
         some: {
-          role: {
-            slug: { in: targetSlugs },
-          },
+          role: { slug: 'maintenance_technician' },
         },
       };
+    } else if (role === 'supervisor') {
+      andPredicates.push({
+        OR: [
+          { userRoles: { some: { role: { slug: 'admin' } } } },
+          {
+            userRoles: {
+              some: {
+                role: {
+                  rolePermissions: {
+                    some: { permission: { slug: MAINTENANCE_APPROVAL_PERMISSION } },
+                  },
+                },
+              },
+            },
+          },
+          {
+            directPerms: {
+              some: {
+                permission: { slug: MAINTENANCE_APPROVAL_PERMISSION },
+                isGranted: true,
+              },
+            },
+          },
+        ],
+      });
     }
 
-    // Worker discovery is operational data: regular users must never receive
-    // candidates outside their authorized plant set, even when the caller omits
-    // an explicit plantId. X-Plant-ID (when present) narrows the scope further.
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    const addSupervisorPlantPredicate = (candidatePlantFilter: Record<string, unknown>) => {
+      andPredicates.push({
+        OR: [
+          { plantAccess: { some: candidatePlantFilter } },
+          { userRoles: { some: { role: { slug: 'admin' } } } },
+        ],
+      });
+    };
+
     if (plantId) {
       if (!canAccessPlant(plantScope, plantId)) {
         return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
       }
-      where.plantAccess = { some: { plantId } };
+      if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId });
+      } else {
+        where.plantAccess = { some: { plantId } };
+      }
     } else if (plantScope.isScoped && plantScope.plantId) {
-      where.plantAccess = { some: { plantId: plantScope.plantId } };
+      if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId: plantScope.plantId });
+      } else {
+        where.plantAccess = { some: { plantId: plantScope.plantId } };
+      }
     } else if (!plantScope.isSystemWide) {
-      where.plantAccess = {
-        some: {
-          plantId: { in: plantScope.accessiblePlantIds },
-        },
-      };
+      if (plantScope.accessiblePlantIds.length === 0) {
+        where.id = { in: [] };
+      } else if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId: { in: plantScope.accessiblePlantIds } });
+      } else {
+        where.plantAccess = {
+          some: {
+            plantId: { in: plantScope.accessiblePlantIds },
+          },
+        };
+      }
     }
+
+    if (andPredicates.length > 0) where.AND = andPredicates;
 
     const users = await db.user.findMany({
       where,
@@ -108,8 +149,18 @@ export async function GET(request: NextRequest) {
               select: {
                 name: true,
                 slug: true,
+                rolePermissions: {
+                  select: { permission: { select: { slug: true } } },
+                },
               },
             },
+          },
+        },
+        directPerms: {
+          select: {
+            isGranted: true,
+            expiresAt: true,
+            permission: { select: { slug: true } },
           },
         },
         userSkills: {
@@ -129,8 +180,11 @@ export async function GET(request: NextRequest) {
       take: 100,
     });
 
-    // Transform response
-    const data = users.map(user => {
+    const eligibleUsers = role === 'supervisor'
+      ? users.filter((user) => hasMaintenanceApprovalPermission(user))
+      : users;
+
+    const data = eligibleUsers.map(user => {
       const roles = (user.userRoles || []).map(ur => ({
         name: ur.role.name,
         slug: ur.role.slug,
@@ -139,7 +193,6 @@ export async function GET(request: NextRequest) {
       const primaryRoleSlug = roles.length > 0 ? roles[0].slug : null;
       const isTechnician = roles.some(r => r.slug === 'maintenance_technician');
 
-      // Build skills/trades list from userSkills
       const skills = (user.userSkills || []).map(us => ({
         name: us.trade.name,
         code: us.trade.code,

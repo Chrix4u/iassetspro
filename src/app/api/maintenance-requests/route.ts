@@ -3,6 +3,10 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
+import {
+  getMaintenanceApproverEligibility,
+  maintenanceApproverErrorMessage,
+} from '@/lib/maintenance-approvers';
 
 const MR_NUMBER_LOCK_KEY = 482030910;
 
@@ -131,6 +135,7 @@ export async function POST(request: NextRequest) {
       plannedEnd,
       notes,
     } = body;
+    const supervisorWasExplicit = Boolean(explicitSupervisorId);
 
     if (!title || !String(title).trim()) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
@@ -226,9 +231,6 @@ export async function POST(request: NextRequest) {
       }
       if (!resolvedSupervisorId) resolvedSupervisorId = department.supervisorId ?? null;
     } else {
-      // Backward-compatible bridge: User.department is currently a legacy string,
-      // while MaintenanceRequest uses Department.id. Resolve it by id/code/name
-      // inside the selected plant when possible.
       const requester = await db.user.findUnique({
         where: { id: session.userId },
         select: { department: true },
@@ -254,38 +256,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (resolvedSupervisorId) {
-      const supervisor = await db.user.findUnique({
-        where: { id: resolvedSupervisorId },
-        select: {
-          status: true,
-          userRoles: { select: { role: { select: { slug: true } } } },
-          plantAccess: { where: { plantId: resolvedPlantId }, select: { id: true } },
-        },
-      });
-      const supervisorRoles = supervisor?.userRoles.map((ur) => ur.role.slug) ?? [];
-      const isMaintenanceSupervisor = supervisorRoles.some((slug) =>
-        ['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin'].includes(slug),
+      const eligibility = await getMaintenanceApproverEligibility(
+        resolvedSupervisorId,
+        resolvedPlantId,
       );
-      if (!supervisor || supervisor.status !== 'active' || !isMaintenanceSupervisor) {
-        return NextResponse.json(
-          { success: false, error: 'Selected supervisor is not an active maintenance approver' },
-          { status: 400 },
+      if (!eligibility.eligible) {
+        if (supervisorWasExplicit) {
+          return NextResponse.json(
+            { success: false, error: maintenanceApproverErrorMessage(eligibility.reason) },
+            { status: 400 },
+          );
+        }
+
+        console.warn(
+          `[POST /api/maintenance-requests] Ignoring stale department supervisor ${resolvedSupervisorId}: ${eligibility.reason}`,
         );
+        resolvedSupervisorId = null;
       }
-      if (supervisor.plantAccess.length === 0 && !supervisorRoles.includes('admin')) {
-        return NextResponse.json(
-          { success: false, error: 'Selected supervisor does not have access to the selected plant' },
-          { status: 400 },
-        );
-      }
-    } else if (!isAdmin(session)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Supervisor assignment required. Configure the requester department supervisor or select an authorized supervisor.',
-        },
-        { status: 400 },
-      );
     }
 
     const now = new Date();

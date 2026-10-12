@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import {
+  getMaintenanceApproverEligibility,
+  maintenanceApproverErrorMessage,
+} from '@/lib/maintenance-approvers';
 
 export async function GET(
   request: NextRequest,
@@ -65,23 +69,37 @@ export async function PUT(
       );
     }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
     const allowedFields = ['name', 'code', 'plantId', 'parentId', 'supervisorId'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        // Convert empty strings to null for nullable FK fields (parentId, supervisorId)
         updateData[field] = body[field] === '' ? null : body[field];
       }
     }
 
-    // Prevent setting self as parent (circular reference)
     if (updateData.parentId === id) {
       return NextResponse.json(
         { success: false, error: 'Department cannot be its own parent' },
         { status: 400 }
       );
+    }
+
+    const effectivePlantId = typeof updateData.plantId === 'string'
+      ? updateData.plantId
+      : existing.plantId;
+    const effectiveSupervisorId = updateData.supervisorId !== undefined
+      ? (typeof updateData.supervisorId === 'string' ? updateData.supervisorId : null)
+      : existing.supervisorId;
+
+    if (effectiveSupervisorId) {
+      const eligibility = await getMaintenanceApproverEligibility(effectiveSupervisorId, effectivePlantId);
+      if (!eligibility.eligible) {
+        return NextResponse.json(
+          { success: false, error: maintenanceApproverErrorMessage(eligibility.reason) },
+          { status: 400 },
+        );
+      }
     }
 
     const updated = await db.department.update({
@@ -94,7 +112,6 @@ export async function PUT(
       },
     });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -137,7 +154,6 @@ export async function DELETE(
       );
     }
 
-    // Only allow delete if no children
     if (existing._count.children > 0) {
       return NextResponse.json(
         { success: false, error: 'Cannot delete department with child departments' },
@@ -147,7 +163,6 @@ export async function DELETE(
 
     await db.department.delete({ where: { id } });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,

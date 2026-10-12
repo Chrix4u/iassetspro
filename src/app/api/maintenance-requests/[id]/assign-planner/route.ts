@@ -20,7 +20,6 @@ export async function POST(
 
     const { id } = await params;
 
-    // Plant authorization
     const plantAuth = await authorizeMaintenanceRequestPlant(request, session, id);
     if (!plantAuth.ok) return plantAuth.response;
 
@@ -34,7 +33,6 @@ export async function POST(
       );
     }
 
-    // Fetch MR with department for access control
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
@@ -48,17 +46,10 @@ export async function POST(
       );
     }
 
-    // Access control: only admin or the requester's own department supervisor can assign planner
+    // The assign-planner permission is authoritative. Non-admin users must also
+    // be the accountable department supervisor (or explicit supervisor for a
+    // request without a department); custom permission-bearing roles are valid.
     if (!isAdmin(session)) {
-      const currentUser = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { id: true, userRoles: { select: { role: { select: { slug: true } } } } },
-      });
-      const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
-      if (!isSupervisor) {
-        return NextResponse.json({ success: false, error: 'Only admin or department supervisor can assign planners' }, { status: 403 });
-      }
-      // Verify the current user is the supervisor of the MR's department
       if (mr.departmentId) {
         const dept = await db.department.findUnique({
           where: { id: mr.departmentId },
@@ -67,15 +58,11 @@ export async function POST(
         if (!dept || dept.supervisorId !== session.userId) {
           return NextResponse.json({ success: false, error: 'You can only assign planners for requests from departments you supervise' }, { status: 403 });
         }
-      } else {
-        // No department on MR — only allow if explicitly assigned as supervisor
-        if (mr.supervisorId !== session.userId) {
-          return NextResponse.json({ success: false, error: 'You can only assign planners for requests assigned to you' }, { status: 403 });
-        }
+      } else if (mr.supervisorId !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only assign planners for requests assigned to you' }, { status: 403 });
       }
     }
 
-    // Verify the planner exists
     const planner = await db.user.findUnique({
       where: { id: plannerId },
       select: { id: true, fullName: true },
@@ -84,7 +71,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Planner user not found' }, { status: 400 });
     }
 
-    // Update the MR: set planner, change workflow status, change status to approved if not already
     const oldValues = {
       assignedPlannerId: mr.assignedPlannerId,
       workflowStatus: mr.workflowStatus,
@@ -96,7 +82,6 @@ export async function POST(
       data: {
         assignedPlannerId: plannerId,
         workflowStatus: 'assigned_to_planner',
-        // Set status to "approved" if it's not already in a terminal state
         ...(mr.status !== 'approved' && mr.status !== 'rejected' && mr.status !== 'converted'
           ? { status: 'approved' }
           : {}),
@@ -110,7 +95,6 @@ export async function POST(
       },
     });
 
-    // Create audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -126,7 +110,6 @@ export async function POST(
       },
     });
 
-    // Send notification to the planner with full details
     if (plannerId !== session.userId) {
       await notifyUser(
         plannerId,

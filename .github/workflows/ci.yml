@@ -3,7 +3,7 @@
 # =============================================================================
 # Triggers on pushes to main/develop, pull requests, and manual dispatch.
 # Jobs: lint/typecheck/unit → app build + container build → Repairs UAT + platform E2E
-# Full-repository TypeScript debt is reported separately inside the typecheck job.
+# Full-repository TypeScript debt is ratcheted inside the typecheck job.
 # =============================================================================
 
 name: CI
@@ -63,6 +63,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -89,9 +91,11 @@ jobs:
       - name: Run Repairs/RWOP TypeScript hard gate
         run: bunx tsc -p tsconfig.repairs.json --noEmit
 
-      - name: Report full-repository TypeScript debt
-        continue-on-error: true
-        run: bunx tsc --noEmit
+      - name: Ratchet full-repository TypeScript debt
+        env:
+          TYPECHECK_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          TYPECHECK_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bunx tsx scripts/check-typescript-debt-ratchet.ts
 
   unit-tests:
     name: Unit Tests (Vitest)

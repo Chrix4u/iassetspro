@@ -118,10 +118,11 @@ export function AssetsPage() {
   }), [assets]);
 
   const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
-  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
+  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition === 'new' || a.condition === 'used' ? a.condition : '', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
+    if (form.condition !== 'new' && form.condition !== 'used') { toast.error('Condition must be New or Used'); return; }
     setSaving(true);
     const payload: any = { ...form, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
     const res = editId
@@ -311,8 +312,8 @@ export function AssetsPage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Condition</Label>
                 <Select value={form.condition} onValueChange={v => setForm(f => ({ ...f, condition: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+                  <SelectTrigger><SelectValue placeholder="Select condition" /></SelectTrigger>
+                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>Status</Label>
@@ -1141,7 +1142,7 @@ export function AssetsDigitalTwinPage() {
 
   // Build specs from detail data
   const twinSpecs: Record<string, any[]> = {};
-  if (selectedTwinDetail) {
+  if (selectedTwinDetail && selectedTwin) {
     const params = selectedTwinDetail.parameters ? (() => { try { return JSON.parse(selectedTwinDetail.parameters); } catch { return []; } })() : [];
     const specs = selectedTwinDetail.specification ? (() => { try { return JSON.parse(selectedTwinDetail.specification); } catch { return []; } })() : [];
     twinSpecs[selectedTwin] = [...params, ...specs];
@@ -1219,7 +1220,7 @@ export function AssetsDigitalTwinPage() {
           </Card>
         ))}
       </div>}
-      {currentTwin && selectedTwinDetail && (
+      {currentTwin && selectedTwinDetail && selectedTwin && (
         <Card className="border border-border/60 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{currentTwin.name} — Specifications</CardTitle>

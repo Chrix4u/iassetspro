@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
+import {
+  getMaintenanceApproverEligibility,
+  maintenanceApproverErrorMessage,
+} from '@/lib/maintenance-approvers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,8 +26,6 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = { ...getPlantFilterWhere(plantScope) };
 
     if (plantId) {
-      // A query parameter may narrow the caller's allowed plant set, but it may
-      // never widen or override an explicitly selected X-Plant-ID context.
       if (
         (plantScope.isScoped && plantScope.plantId !== plantId) ||
         !canAccessPlantStrict(plantScope, plantId)
@@ -75,7 +77,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify plant exists
     const plant = await db.plant.findUnique({ where: { id: plantId } });
     if (!plant) {
       return NextResponse.json(
@@ -84,7 +85,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify parent department exists if provided
     if (parentId) {
       const parent = await db.department.findUnique({ where: { id: parentId } });
       if (!parent) {
@@ -95,13 +95,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verify supervisor exists if provided
     if (supervisorId) {
-      const supervisor = await db.user.findUnique({ where: { id: supervisorId } });
-      if (!supervisor) {
+      const eligibility = await getMaintenanceApproverEligibility(supervisorId, plantId);
+      if (!eligibility.eligible) {
         return NextResponse.json(
-          { success: false, error: 'Supervisor user not found' },
-          { status: 400 }
+          { success: false, error: maintenanceApproverErrorMessage(eligibility.reason) },
+          { status: 400 },
         );
       }
     }

@@ -91,7 +91,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
 
     // The runtime trigger must be visible/editable on the actual PM Triggers page.
     await page.goto('/#/pm-triggers');
-    await expect(page.getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByPlaceholder('Search by schedule, asset, department...').fill(scheduleTitle);
     await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 15_000 });
     await page.getByTitle('Edit').click();
@@ -157,7 +157,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
 
     // Direct meter-trigger reconfiguration is also blocked while the same generated WO is open.
     await page.goto('/#/pm-triggers');
-    await expect(page.getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByPlaceholder('Search by schedule, asset, department...').fill(scheduleTitle);
     await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 15_000 });
     await page.getByTitle('Edit').click();
@@ -225,7 +225,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
 
     // With no generated WO open, direct meter-trigger edits succeed and keep the owning schedule interval truthful.
     await page.goto('/#/pm-triggers');
-    await expect(page.getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByPlaceholder('Search by schedule, asset, department...').fill(scheduleTitle);
     await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 15_000 });
     await page.getByTitle('Edit').click();

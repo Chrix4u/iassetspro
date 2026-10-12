@@ -19,7 +19,6 @@ export async function POST(
     const auth = await authorizeMaintenanceRequestPlant(request, session, id);
     if (!auth.ok) return auth.response;
 
-    // Check permission
     if (!hasAnyPermission(session, ['maintenance_requests.reject'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
@@ -34,7 +33,6 @@ export async function POST(
       );
     }
 
-    // Fetch MR with requester department for access control
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
@@ -48,19 +46,10 @@ export async function POST(
       );
     }
 
-    // Access control: use the authoritative Department.supervisorId rule,
-    // matching approve and assign-planner. Department-name equality is not an
-    // authorization boundary.
+    // The rejection permission is authoritative. Non-admin users must also be
+    // the accountable department supervisor (or explicit supervisor when the
+    // request has no department). Avoid a second hard-coded role-slug gate.
     if (!isAdmin(session)) {
-      const currentUser = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { id: true, userRoles: { select: { role: { select: { slug: true } } } } },
-      });
-      const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
-      if (!isSupervisor) {
-        return NextResponse.json({ success: false, error: 'Only admin or department supervisor can reject requests' }, { status: 403 });
-      }
-
       if (mr.departmentId) {
         const department = await db.department.findUnique({
           where: { id: mr.departmentId },
@@ -74,7 +63,6 @@ export async function POST(
       }
     }
 
-    // Execute status transition via state machine (validates + updates + creates comment with reason)
     const result = await executeTransition(
       'maintenance_request',
       id,
@@ -94,7 +82,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Notify the requester with rejection reason
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
       await notifyUser(
         mr.requestedBy,
@@ -108,7 +95,6 @@ export async function POST(
       );
     }
 
-    // Re-fetch with includes to return full object (state machine returns plain record)
     const updated = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {

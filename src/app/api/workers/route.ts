@@ -93,32 +93,42 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const applyCandidatePlantFilter = (plantIds: string[]) => {
-      if (plantIds.length === 0) {
-        where.id = { in: [] };
-        return;
-      }
-      if (role === 'supervisor') {
-        andPredicates.push({
-          OR: [
-            { plantAccess: { some: { plantId: { in: plantIds } } } },
-            { userRoles: { some: { role: { slug: 'admin' } } } },
-          ],
-        });
-      } else {
-        where.plantAccess = { some: { plantId: { in: plantIds } } };
-      }
+    const addSupervisorPlantPredicate = (candidatePlantFilter: Record<string, unknown>) => {
+      andPredicates.push({
+        OR: [
+          { plantAccess: { some: candidatePlantFilter } },
+          { userRoles: { some: { role: { slug: 'admin' } } } },
+        ],
+      });
     };
 
     if (plantId) {
       if (!canAccessPlant(plantScope, plantId)) {
         return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
       }
-      applyCandidatePlantFilter([plantId]);
+      if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId });
+      } else {
+        where.plantAccess = { some: { plantId } };
+      }
     } else if (plantScope.isScoped && plantScope.plantId) {
-      applyCandidatePlantFilter([plantScope.plantId]);
+      if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId: plantScope.plantId });
+      } else {
+        where.plantAccess = { some: { plantId: plantScope.plantId } };
+      }
     } else if (!plantScope.isSystemWide) {
-      applyCandidatePlantFilter(plantScope.accessiblePlantIds);
+      if (plantScope.accessiblePlantIds.length === 0) {
+        where.id = { in: [] };
+      } else if (role === 'supervisor') {
+        addSupervisorPlantPredicate({ plantId: { in: plantScope.accessiblePlantIds } });
+      } else {
+        where.plantAccess = {
+          some: {
+            plantId: { in: plantScope.accessiblePlantIds },
+          },
+        };
+      }
     }
 
     if (andPredicates.length > 0) where.AND = andPredicates;

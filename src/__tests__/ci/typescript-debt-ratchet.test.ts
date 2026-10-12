@@ -129,12 +129,14 @@ describe('TypeScript debt ratchet CI contract', () => {
     expect(typecheckJob).toContain('bunx tsc -p tsconfig.repairs.json --noEmit');
   });
 
-  it('runs full tsc with a 4 GB heap and writes a GitHub Actions summary', () => {
+  it('runs full tsc through Node with a real 4 GB heap and writes a GitHub Actions summary', () => {
     expect(fs.existsSync('scripts/check-typescript-debt-ratchet.ts')).toBe(true);
     if (!fs.existsSync('scripts/check-typescript-debt-ratchet.ts')) return;
 
     const runner = fs.readFileSync('scripts/check-typescript-debt-ratchet.ts', 'utf8');
+    expect(runner).toContain("spawnSync('node'");
     expect(runner).toContain('--max-old-space-size=4096');
+    expect(runner).toContain("'node_modules/typescript/bin/tsc'");
     expect(runner).toContain("'--noEmit', '--pretty', 'false'");
     expect(runner).toContain('GITHUB_STEP_SUMMARY');
   });

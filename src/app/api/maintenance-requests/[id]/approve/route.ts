@@ -19,7 +19,6 @@ export async function POST(
     const auth = await authorizeMaintenanceRequestPlant(request, session, id);
     if (!auth.ok) return auth.response;
 
-    // Check permission: maintenance_requests.approve or admin role
     if (!hasAnyPermission(session, ['maintenance_requests.approve'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
@@ -27,7 +26,6 @@ export async function POST(
     const body = await request.json();
     const { notes } = body;
 
-    // Fetch MR with department for access control
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
@@ -41,17 +39,11 @@ export async function POST(
       );
     }
 
-    // Access control: only admin or the requester's own department supervisor can approve
+    // Permission is established above. Non-admin approvers must additionally be
+    // the accountable department supervisor (or the explicitly assigned
+    // supervisor for requests without a department). Do not re-gate by a role
+    // slug here because custom roles can legitimately carry approval authority.
     if (!isAdmin(session)) {
-      const currentUser = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { id: true, userRoles: { select: { role: { select: { slug: true } } } } },
-      });
-      const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
-      if (!isSupervisor) {
-        return NextResponse.json({ success: false, error: 'Only admin or department supervisor can approve requests' }, { status: 403 });
-      }
-      // Verify the current user is the supervisor of the MR's department
       if (mr.departmentId) {
         const dept = await db.department.findUnique({
           where: { id: mr.departmentId },
@@ -60,15 +52,11 @@ export async function POST(
         if (!dept || dept.supervisorId !== session.userId) {
           return NextResponse.json({ success: false, error: 'You can only approve requests from departments you supervise' }, { status: 403 });
         }
-      } else {
-        // No department on MR — only allow if explicitly assigned as supervisor
-        if (mr.supervisorId !== session.userId) {
-          return NextResponse.json({ success: false, error: 'You can only approve requests assigned to you' }, { status: 403 });
-        }
+      } else if (mr.supervisorId !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only approve requests assigned to you' }, { status: 403 });
       }
     }
 
-    // Execute status transition via state machine (validates + updates + creates comment)
     const result = await executeTransition(
       'maintenance_request',
       id,
@@ -84,7 +72,6 @@ export async function POST(
     );
 
     if (!result.success) {
-      // Return detailed diagnostic info for debugging
       console.error(`[approve] Transition failed for MR ${id}: status=${mr.status}, user=${session.userId}, roles=[${session.roles.join(',')}], error=${result.error}`);
       return NextResponse.json({
         success: false,
@@ -99,7 +86,6 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Notify the requester
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
       const approverName = session.fullName || session.userId;
       await notifyUser(
@@ -114,7 +100,6 @@ export async function POST(
       );
     }
 
-    // Re-fetch with includes to return full object (state machine returns plain record)
     const updated = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {

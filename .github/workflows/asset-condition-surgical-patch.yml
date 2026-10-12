@@ -1,0 +1,135 @@
+name: Asset Condition Surgical Patch
+
+on:
+  push:
+    branches:
+      - fix/asset-condition-new-used-20261012
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/asset-condition-new-used-20261012
+          fetch-depth: 0
+
+      - name: Apply asset condition contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          asset_pages = Path('src/components/modules/AssetPages.tsx')
+          text = asset_pages.read_text()
+
+          old_dropdown = '''<SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>'''
+          new_dropdown = '''<SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>'''
+          if text.count(old_dropdown) != 1:
+              raise SystemExit(f'Expected exactly one asset-form condition dropdown, found {text.count(old_dropdown)}')
+          text = text.replace(old_dropdown, new_dropdown, 1)
+
+          old_edit = "condition: a.condition || 'new',"
+          new_edit = "condition: a.condition === 'new' || a.condition === 'used' ? a.condition : '',"
+          if text.count(old_edit) != 1:
+              raise SystemExit(f'Expected exactly one edit condition initializer, found {text.count(old_edit)}')
+          text = text.replace(old_edit, new_edit, 1)
+
+          old_save = "if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }"
+          new_save = """if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
+    if (form.condition !== 'new' && form.condition !== 'used') { toast.error('Condition must be New or Used'); return; }"""
+          if text.count(old_save) != 1:
+              raise SystemExit(f'Expected exactly one asset save validation, found {text.count(old_save)}')
+          text = text.replace(old_save, new_save, 1)
+
+          old_trigger = '<SelectTrigger><SelectValue /></SelectTrigger>\n                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>'
+          new_trigger = '<SelectTrigger><SelectValue placeholder="Select condition" /></SelectTrigger>\n                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>'
+          if text.count(old_trigger) != 1:
+              raise SystemExit(f'Expected exactly one asset condition trigger, found {text.count(old_trigger)}')
+          text = text.replace(old_trigger, new_trigger, 1)
+          asset_pages.write_text(text)
+
+          post_route = Path('src/app/api/assets/route.ts')
+          text = post_route.read_text()
+          marker = """    if (!name) {
+      return NextResponse.json({ success: false, error: 'Asset name is required' }, { status: 400 });
+    }
+"""
+          insertion = marker + """
+    if (condition !== undefined && condition !== 'new' && condition !== 'used') {
+      return NextResponse.json({ success: false, error: 'Condition must be New or Used' }, { status: 400 });
+    }
+"""
+          if text.count(marker) != 1:
+              raise SystemExit('POST asset validation insertion point changed')
+          text = text.replace(marker, insertion, 1)
+          post_route.write_text(text)
+
+          put_route = Path('src/app/api/assets/[id]/route.ts')
+          text = put_route.read_text()
+          marker = """    if (body.assetTag !== undefined) {
+"""
+          insertion = """    if (body.condition !== undefined && body.condition !== 'new' && body.condition !== 'used') {
+      return NextResponse.json({ success: false, error: 'Condition must be New or Used' }, { status: 400 });
+    }
+
+""" + marker
+          if text.count(marker) != 1:
+              raise SystemExit('PUT asset validation insertion point changed')
+          text = text.replace(marker, insertion, 1)
+          put_route.write_text(text)
+
+          test_path = Path('src/__tests__/assets/assetConditionOptions.contract.test.ts')
+          test_path.parent.mkdir(parents=True, exist_ok=True)
+          test_path.write_text('''import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+describe('asset condition contract', () => {
+  it('limits the Add/Edit Asset condition field to New and Used', () => {
+    const source = read('src/components/modules/AssetPages.tsx');
+    const match = source.match(/<Label>Condition<\\/Label>[\\s\\S]*?<\\/Select>/);
+    expect(match).not.toBeNull();
+    const field = match![0];
+
+    expect(field).toContain('<SelectItem value="new">New</SelectItem>');
+    expect(field).toContain('<SelectItem value="used">Used</SelectItem>');
+    expect(field).not.toContain('<SelectItem value="good">Good</SelectItem>');
+    expect(field).not.toContain('<SelectItem value="fair">Fair</SelectItem>');
+    expect(field).not.toContain('<SelectItem value="poor">Poor</SelectItem>');
+  });
+
+  it('rejects unsupported asset conditions at create and update API boundaries', () => {
+    const createRoute = read('src/app/api/assets/route.ts');
+    const updateRoute = read('src/app/api/assets/[id]/route.ts');
+
+    for (const source of [createRoute, updateRoute]) {
+      expect(source).toContain("condition !== 'new'");
+      expect(source).toContain("condition !== 'used'");
+      expect(source).toContain('Condition must be New or Used');
+    }
+  });
+});
+''')
+          PY
+
+      - name: Verify patch is focused
+        run: |
+          git diff --check
+          git diff -- src/components/modules/AssetPages.tsx src/app/api/assets/route.ts 'src/app/api/assets/[id]/route.ts' src/__tests__/assets/assetConditionOptions.contract.test.ts
+
+      - name: Commit surgical patch and remove helper workflow
+        shell: bash
+        run: |
+          rm .github/workflows/asset-condition-surgical-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: limit asset condition to new or used"
+          git push origin HEAD:fix/asset-condition-new-used-20261012

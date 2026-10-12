@@ -94,6 +94,10 @@ export async function GET(request: NextRequest) {
     }
 
     const applyCandidatePlantFilter = (plantIds: string[]) => {
+      if (plantIds.length === 0) {
+        where.id = { in: [] };
+        return;
+      }
       if (role === 'supervisor') {
         andPredicates.push({
           OR: [

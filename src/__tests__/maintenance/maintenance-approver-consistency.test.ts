@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 const departmentsRoute = fs.readFileSync('src/app/api/departments/route.ts', 'utf8');
 const departmentRoute = fs.readFileSync('src/app/api/departments/[id]/route.ts', 'utf8');
 const maintenanceRequestsRoute = fs.readFileSync('src/app/api/maintenance-requests/route.ts', 'utf8');
+const approveRoute = fs.readFileSync('src/app/api/maintenance-requests/[id]/approve/route.ts', 'utf8');
+const rejectRoute = fs.readFileSync('src/app/api/maintenance-requests/[id]/reject/route.ts', 'utf8');
 const workersRoute = fs.readFileSync('src/app/api/workers/route.ts', 'utf8');
 const approverPolicyPath = 'src/lib/maintenance-approvers.ts';
 
@@ -33,5 +35,12 @@ describe('maintenance approver eligibility contract', () => {
 
   it('does not define maintenance approvers by a duplicated hard-coded role list', () => {
     expect(maintenanceRequestsRoute).not.toContain("['maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'admin']");
+  });
+
+  it('does not reintroduce a maintenance_supervisor-only role gate at approve or reject time', () => {
+    expect(approveRoute).toContain("hasAnyPermission(session, ['maintenance_requests.approve'])");
+    expect(rejectRoute).toContain("hasAnyPermission(session, ['maintenance_requests.reject'])");
+    expect(approveRoute).not.toContain("r.role?.slug === 'maintenance_supervisor'");
+    expect(rejectRoute).not.toContain("r.role?.slug === 'maintenance_supervisor'");
   });
 });

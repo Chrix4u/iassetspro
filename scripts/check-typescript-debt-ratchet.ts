@@ -17,6 +17,7 @@ function git(args: string[]): string {
     maxBuffer: 16 * 1024 * 1024,
   });
 
+  if (result.error) throw result.error;
   if (result.status !== 0) {
     const detail = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     throw new Error(`git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
@@ -30,7 +31,7 @@ function commitExists(sha: string): boolean {
   const result = spawnSync('git', ['cat-file', '-e', `${sha}^{commit}`], {
     encoding: 'utf8',
   });
-  return result.status === 0;
+  return !result.error && result.status === 0;
 }
 
 function resolveHeadSha(): string {
@@ -65,14 +66,6 @@ function touchedTypeScriptFiles(baseSha: string, headSha: string): string[] {
 
   if (!output) return [];
   return [...new Set(output.split(/\r?\n/).map(normalizeRepoPath).filter((file) => TYPESCRIPT_FILE_RE.test(file)))].sort();
-}
-
-function mergeNodeOptions(existing: string | undefined): string {
-  const withoutHeap = (existing ?? '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .filter((option) => !/^--max-old-space-size(?:=|$)/.test(option));
-  return [...withoutHeap, '--max-old-space-size=4096'].join(' ');
 }
 
 function appendSummary(markdown: string): void {
@@ -136,14 +129,18 @@ function main(): void {
   console.log(`[typescript-debt-ratchet] range ${baseSha}..${headSha}`);
   console.log(`[typescript-debt-ratchet] touched TypeScript files: ${touchedFiles.length}`);
 
-  const compiler = spawnSync('bunx', ['tsc', '--noEmit', '--pretty', 'false'], {
+  // Run the installed TypeScript compiler under Node directly so the 4 GB V8
+  // heap is an enforced compiler limit rather than an environment hint to bunx.
+  const compiler = spawnSync('node', [
+    '--max-old-space-size=4096',
+    'node_modules/typescript/bin/tsc',
+    '--noEmit', '--pretty', 'false',
+  ], {
     encoding: 'utf8',
-    env: {
-      ...process.env,
-      NODE_OPTIONS: mergeNodeOptions(process.env.NODE_OPTIONS),
-    },
     maxBuffer: 128 * 1024 * 1024,
   });
+
+  if (compiler.error) throw compiler.error;
 
   const output = [compiler.stdout, compiler.stderr].filter(Boolean).join('\n').trim();
   if (output) process.stdout.write(`${output}\n`);

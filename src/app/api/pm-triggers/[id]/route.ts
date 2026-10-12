@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig, VALID_PM_TRIGGER_TYPES } from '@/services/pm/triggerConfig.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 const VALID_TRIGGER_TYPES: string[] = [...VALID_PM_TRIGGER_TYPES];
 
@@ -110,81 +111,113 @@ export async function PUT(
     const configurationChanging = body.triggerConfig !== undefined
       || body.triggerType !== undefined
       || body.triggerValue !== undefined;
-    const reactivating = body.isActive === true && !existing.isActive;
-
-    if (configurationChanging || reactivating) {
-      const currentConfig = parsePmTriggerConfig(existing.triggerConfig);
-      const openGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(currentConfig, existing.scheduleId);
-      if (openGeneratedWork) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Cannot reconfigure or reactivate this PM trigger while generated work order ${openGeneratedWork.woNumber} is still ${openGeneratedWork.status}. Complete or cancel that work order first.`,
-          },
-          { status: 409 },
-        );
-      }
-
-      const effectiveType = body.triggerType || existing.triggerType;
-      const effectiveValue = body.triggerValue !== undefined ? body.triggerValue : existing.triggerValue;
-      const effectiveConfig = body.triggerConfig !== undefined
-        ? body.triggerConfig
-        : currentConfig;
-      const normalized = await normalizePmTriggerConfig({
-        triggerType: effectiveType,
-        triggerValue: effectiveValue,
-        triggerConfig: effectiveConfig,
-        schedule: existing.schedule,
-        existingConfig: currentConfig,
-      });
-      if (normalized.error || !normalized.config) {
-        return NextResponse.json({ success: false, error: normalized.error || 'Invalid trigger configuration' }, { status: 400 });
-      }
-      updateData.triggerConfig = JSON.stringify(normalized.config);
-    }
 
     if (body.isActive !== undefined) {
       updateData.isActive = Boolean(body.isActive);
     }
 
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(updateData).length === 0 && !configurationChanging) {
       return NextResponse.json({ success: false, error: 'No valid fields to update' }, { status: 400 });
     }
 
     const updated = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, existing.scheduleId);
+      const lockedTrigger = await tx.pmTrigger.findUnique({
+        where: { id },
+        include: { schedule: { include: { asset: { select: { plantId: true } } } } },
+      });
+      if (!lockedTrigger) return { kind: 'not_found' as const };
+
+      const lockedCurrentConfig = parsePmTriggerConfig(lockedTrigger.triggerConfig);
+      const lockedReactivating = body.isActive === true && !lockedTrigger.isActive;
+      const lockedUpdateData: Record<string, unknown> = { ...updateData };
+
+      if (configurationChanging || lockedReactivating) {
+        const lockedOpenGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(
+          lockedCurrentConfig,
+          lockedTrigger.scheduleId,
+          tx,
+        );
+        if (lockedOpenGeneratedWork) {
+          return { kind: 'open_work' as const, openGeneratedWork: lockedOpenGeneratedWork };
+        }
+
+        const effectiveType = body.triggerType || lockedTrigger.triggerType;
+        const effectiveValue = body.triggerValue !== undefined ? body.triggerValue : lockedTrigger.triggerValue;
+        const effectiveConfig = body.triggerConfig !== undefined ? body.triggerConfig : lockedCurrentConfig;
+        const normalized = await normalizePmTriggerConfig({
+          triggerType: effectiveType,
+          triggerValue: effectiveValue,
+          triggerConfig: effectiveConfig,
+          schedule: lockedTrigger.schedule,
+          existingConfig: lockedCurrentConfig,
+        });
+        if (normalized.error || !normalized.config) {
+          return { kind: 'invalid_config' as const, error: normalized.error || 'Invalid trigger configuration' };
+        }
+        lockedUpdateData.triggerConfig = JSON.stringify(normalized.config);
+
+        if (
+          effectiveType === 'meter'
+          && body.triggerValue !== undefined
+          && ['meter_based', 'custom_hours'].includes(lockedTrigger.schedule.frequencyType)
+        ) {
+          await tx.pmSchedule.update({
+            where: { id: lockedTrigger.scheduleId },
+            data: { frequencyValue: effectiveValue },
+          });
+        }
+      }
+
       const updatedTrigger = await tx.pmTrigger.update({
-      where: { id },
-      data: updateData,
-      include: {
-        schedule: {
-          include: {
-            asset: { select: { id: true, name: true, assetTag: true, status: true } },
-            assignedTo: { select: { id: true, fullName: true, username: true } },
-            department: { select: { id: true, name: true, code: true } },
+        where: { id },
+        data: lockedUpdateData,
+        include: {
+          schedule: {
+            include: {
+              asset: { select: { id: true, name: true, assetTag: true, status: true } },
+              assignedTo: { select: { id: true, fullName: true, username: true } },
+              department: { select: { id: true, name: true, code: true } },
+            },
           },
         },
-      },
-    });
+      });
 
       await tx.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'pm_trigger',
-        entityId: id,
-        oldValues: JSON.stringify({
-          triggerType: existing.triggerType,
-          triggerValue: existing.triggerValue,
-          isActive: existing.isActive,
-        }),
-        newValues: JSON.stringify(updateData),
-      },
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'pm_trigger',
+          entityId: id,
+          oldValues: JSON.stringify({
+            triggerType: lockedTrigger.triggerType,
+            triggerValue: lockedTrigger.triggerValue,
+            isActive: lockedTrigger.isActive,
+          }),
+          newValues: JSON.stringify(lockedUpdateData),
+        },
+      });
+
+      return { kind: 'updated' as const, updatedTrigger };
     });
 
-      return updatedTrigger;
-    });
+    if (updated.kind === 'open_work') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Cannot reconfigure or reactivate this PM trigger while generated work order ${updated.openGeneratedWork.woNumber} is still ${updated.openGeneratedWork.status}. Complete or cancel that work order first.`,
+        },
+        { status: 409 },
+      );
+    }
+    if (updated.kind === 'not_found') {
+      return NextResponse.json({ success: false, error: 'PM trigger not found' }, { status: 404 });
+    }
+    if (updated.kind === 'invalid_config') {
+      return NextResponse.json({ success: false, error: updated.error }, { status: 400 });
+    }
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: updated.updatedTrigger });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update PM trigger';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -228,30 +261,44 @@ export async function DELETE(
     }
 
     const deactivated = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, existing.scheduleId);
+      const lockedTrigger = await tx.pmTrigger.findUnique({
+        where: { id },
+        select: { id: true, triggerType: true, triggerValue: true, isActive: true },
+      });
+      if (!lockedTrigger) return { kind: 'not_found' as const };
+      if (!lockedTrigger.isActive) return { kind: 'already_inactive' as const };
+
       const deactivatedTrigger = await tx.pmTrigger.update({
-      where: { id },
-      data: { isActive: false },
-    });
+        where: { id },
+        data: { isActive: false },
+      });
 
       await tx.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'delete',
-        entityType: 'pm_trigger',
-        entityId: id,
-        oldValues: JSON.stringify({
-          triggerType: existing.triggerType,
-          triggerValue: existing.triggerValue,
-          isActive: existing.isActive,
-        }),
-        newValues: JSON.stringify({ isActive: false }),
-      },
+        data: {
+          userId: session.userId,
+          action: 'delete',
+          entityType: 'pm_trigger',
+          entityId: id,
+          oldValues: JSON.stringify({
+            triggerType: lockedTrigger.triggerType,
+            triggerValue: lockedTrigger.triggerValue,
+            isActive: lockedTrigger.isActive,
+          }),
+          newValues: JSON.stringify({ isActive: false }),
+        },
+      });
+
+      return { kind: 'deactivated' as const, deactivatedTrigger };
     });
 
-      return deactivatedTrigger;
-    });
-
-    return NextResponse.json({ success: true, data: deactivated });
+    if (deactivated.kind === 'not_found') {
+      return NextResponse.json({ success: false, error: 'PM trigger not found' }, { status: 404 });
+    }
+    if (deactivated.kind === 'already_inactive') {
+      return NextResponse.json({ success: false, error: 'Trigger is already deactivated' }, { status: 400 });
+    }
+    return NextResponse.json({ success: true, data: deactivated.deactivatedTrigger });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to deactivate PM trigger';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

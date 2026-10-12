@@ -4,6 +4,7 @@ import { evaluateMeterThreshold } from '@/services/pm/meterTriggerEngine';
 import { parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
+import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export function conditionMatches(current: number, operator: string, target: number): boolean {
   switch (operator) {
@@ -33,13 +34,14 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
         ...(options.plantIds ? { asset: { plantId: { in: options.plantIds } } } : {}),
       },
     },
-    select: { id: true },
+    select: { id: true, scheduleId: true },
   });
 
   const results: Array<Record<string, unknown>> = [];
 
   for (const candidate of candidates) {
     const result = await db.$transaction(async (tx) => {
+      await lockPmScheduleLifecycle(tx, candidate.scheduleId);
       await tx.$executeRawUnsafe(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         `iassetspro:pm-signal:${candidate.id}`,

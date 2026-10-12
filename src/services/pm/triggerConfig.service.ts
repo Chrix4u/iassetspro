@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 
 export const VALID_PM_TRIGGER_TYPES = ['time', 'meter', 'condition', 'production_count'] as const;
@@ -10,6 +11,8 @@ export interface TriggerScheduleTarget {
   frequencyType: string;
   asset: { plantId: string };
 }
+
+type WorkOrderLookupClient = Pick<Prisma.TransactionClient, 'workOrder'>;
 
 export interface OpenRuntimeGeneratedWorkOrder {
   id: string;
@@ -42,11 +45,12 @@ function text(value: unknown): string {
 export async function findOpenRuntimeGeneratedWorkOrder(
   triggerConfig: Record<string, unknown>,
   scheduleId: string,
+  client: WorkOrderLookupClient = db,
 ): Promise<OpenRuntimeGeneratedWorkOrder | null> {
   const workOrderId = text(triggerConfig.lastGeneratedWorkOrderId);
   if (!workOrderId) return null;
 
-  const workOrder = await db.workOrder.findUnique({
+  const workOrder = await client.workOrder.findUnique({
     where: { id: workOrderId },
     select: { id: true, woNumber: true, status: true, pmScheduleId: true },
   });

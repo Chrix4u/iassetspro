@@ -27,6 +27,15 @@ describe('functional location service contract', () => {
     expect(source).toContain('increment: depthDelta');
   });
 
+  it('rejects global-to-plant moves that would silently change scope semantics', () => {
+    expect(source).toContain('Global functional locations cannot be moved under plant-scoped parents');
+  });
+
+  it('revalidates immediate children when a moved node changes hierarchy level', () => {
+    expect(source).toContain('const immediateChildren = systemNodes.filter');
+    expect(source).toMatch(/immediateChildren[\s\S]*validateLevelTransition/);
+  });
+
   it('does not silently rewrite Location Codes during a move', () => {
     const moveStart = source.indexOf('export async function moveFunctionalLocation');
     const pathStart = source.indexOf('export async function getFunctionalLocationPath');

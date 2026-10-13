@@ -26,6 +26,20 @@
     width: auto !important;
     justify-self: start;
   }
+
+  /* Top-level page action groups use the available phone width rather than
+     crowding beside the title. Actions share a row when space permits and
+     wrap naturally on narrower devices. */
+  .page-content > .flex.items-center.justify-between.flex-wrap > .flex.gap-2 {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .page-content > .flex.items-center.justify-between.flex-wrap > .flex.gap-2 > * {
+    flex: 1 1 9rem;
+    min-width: 0;
+  }
 }
 
 /* Tablets and compact landscape layouts keep the same bounded two-column

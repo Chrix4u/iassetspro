@@ -12,6 +12,8 @@ import {
   FunctionalLocationDomainError,
 } from '@/lib/functional-location/service';
 
+const LOCATION_STATUSES = new Set(['active', 'inactive', 'retired']);
+
 function canView(session: ReturnType<typeof getSession>): boolean {
   return !!session && (isAdmin(session) || hasPermission(session, 'assets.functional_locations.view'));
 }
@@ -43,6 +45,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')?.trim();
     const requestedPlantId = searchParams.get('plantId');
 
+    if (status && !LOCATION_STATUSES.has(status)) {
+      return NextResponse.json({ success: false, error: 'Unsupported functional location status' }, { status: 400 });
+    }
     if (requestedPlantId && !canAccessPlant(plantScope, requestedPlantId)) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
@@ -69,7 +74,6 @@ export async function GET(request: NextRequest) {
         hierarchyLevel: { select: { id: true, label: true, order: true, allowAssetAssignment: true } },
         parent: { select: { id: true, name: true, locationCode: true, plantId: true } },
         plant: { select: { id: true, name: true, code: true } },
-        _count: { select: { children: true } },
       },
       orderBy: [{ depth: 'asc' }, { name: 'asc' }],
     });
@@ -93,6 +97,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const requestedStatus = body.status === undefined ? 'active' : String(body.status);
+    if (!LOCATION_STATUSES.has(requestedStatus)) {
+      return NextResponse.json({ success: false, error: 'Status must be active, inactive, or retired' }, { status: 400 });
+    }
+
     const parentId = typeof body.parentId === 'string' && body.parentId ? body.parentId : null;
     const parent = parentId
       ? await db.functionalLocation.findUnique({ where: { id: parentId }, select: { id: true, plantId: true } })
@@ -133,7 +142,7 @@ export async function POST(request: NextRequest) {
       codeSegment: typeof body.codeSegment === 'string' ? body.codeSegment : null,
       locationCode: typeof body.locationCode === 'string' ? body.locationCode : null,
       description: typeof body.description === 'string' ? body.description : null,
-      status: body.status,
+      status: requestedStatus as 'active' | 'inactive' | 'retired',
       plantId: effectivePlantId,
       createdById: session.userId,
     });

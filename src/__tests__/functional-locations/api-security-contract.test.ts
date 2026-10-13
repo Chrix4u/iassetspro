@@ -39,6 +39,12 @@ describe('functional location API security contract', () => {
     expect(source).toContain('db.auditLog.create');
   });
 
+  it('filters child nodes on direct detail reads so global parents cannot leak other plants', () => {
+    const source = read('src/app/api/functional-locations/[id]/route.ts');
+    expect(source).toContain('getFunctionalLocationPlantWhere');
+    expect(source).toMatch(/children:\s*{\s*where:\s*getFunctionalLocationPlantWhere\(plantScope\)/);
+  });
+
   it('routes guarded moves through plant scope and the hierarchy service', () => {
     const source = read('src/app/api/functional-locations/[id]/move/route.ts');
     expect(source).toContain('getPlantScope');

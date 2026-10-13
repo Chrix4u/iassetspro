@@ -1141,7 +1141,7 @@ export function AssetsDigitalTwinPage() {
 
   // Build specs from detail data
   const twinSpecs: Record<string, any[]> = {};
-  if (selectedTwinDetail) {
+  if (selectedTwinDetail && selectedTwin) {
     const params = selectedTwinDetail.parameters ? (() => { try { return JSON.parse(selectedTwinDetail.parameters); } catch { return []; } })() : [];
     const specs = selectedTwinDetail.specification ? (() => { try { return JSON.parse(selectedTwinDetail.specification); } catch { return []; } })() : [];
     twinSpecs[selectedTwin] = [...params, ...specs];
@@ -1219,7 +1219,7 @@ export function AssetsDigitalTwinPage() {
           </Card>
         ))}
       </div>}
-      {currentTwin && selectedTwinDetail && (
+      {currentTwin && selectedTwinDetail && selectedTwin && (
         <Card className="border border-border/60 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">{currentTwin.name} — Specifications</CardTitle>

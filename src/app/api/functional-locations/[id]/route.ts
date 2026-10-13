@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
-import { canMutateFunctionalLocationForScope } from '@/lib/functional-location/access';
+import {
+  canMutateFunctionalLocationForScope,
+  getFunctionalLocationPlantWhere,
+} from '@/lib/functional-location/access';
 import { normalizeLocationCode } from '@/lib/functional-location/location-code';
 
 function canView(session: ReturnType<typeof getSession>): boolean {
@@ -34,6 +37,7 @@ export async function GET(
         hierarchyLevel: true,
         parent: { select: { id: true, name: true, locationCode: true, plantId: true } },
         children: {
+          where: getFunctionalLocationPlantWhere(plantScope),
           select: {
             id: true,
             name: true,

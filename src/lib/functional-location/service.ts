@@ -70,7 +70,9 @@ function rethrowPrismaConflict(error: unknown, message: string): never {
   throw error;
 }
 
-function assertActiveSystem(system: { isActive: boolean } | null): asserts system is { isActive: true } {
+function assertActiveSystem<T extends { isActive: boolean }>(
+  system: T | null,
+): asserts system is T & { isActive: true } {
   if (!system) notFound('Hierarchy system not found');
   if (!system.isActive) validation('Hierarchy system is inactive');
 }
@@ -244,6 +246,9 @@ export async function moveFunctionalLocation(
     if (current.plantId && newParent?.plantId && current.plantId !== newParent.plantId) {
       validation('Functional location move cannot cross plant boundaries');
     }
+    if (!current.plantId && newParent?.plantId) {
+      validation('Global functional locations cannot be moved under plant-scoped parents without an explicit relocation migration');
+    }
 
     validateLevelTransition({
       hierarchySystemId: current.hierarchySystemId,
@@ -261,7 +266,7 @@ export async function moveFunctionalLocation(
 
     const systemNodes = await tx.functionalLocation.findMany({
       where: { hierarchySystemId: current.hierarchySystemId },
-      select: { id: true, parentId: true },
+      select: { id: true, parentId: true, hierarchyLevelId: true },
     });
     const descendantIds = descendantIdsFor(current.id, systemNodes);
     assertNoHierarchyCycle({
@@ -269,6 +274,27 @@ export async function moveFunctionalLocation(
       newParentId: newParent?.id ?? null,
       descendantIds,
     });
+
+    if (targetLevel.id !== current.hierarchyLevelId) {
+      const immediateChildren = systemNodes.filter((node) => node.parentId === current.id);
+      for (const child of immediateChildren) {
+        const childLevel = levels.find((level) => level.id === child.hierarchyLevelId);
+        if (!childLevel) {
+          validation('A child functional location belongs to an inactive or missing hierarchy level');
+        }
+        validateLevelTransition({
+          hierarchySystemId: current.hierarchySystemId,
+          parent: { hierarchySystemId: current.hierarchySystemId, order: targetLevel.order },
+          target: { hierarchySystemId: current.hierarchySystemId, order: childLevel.order },
+          levels: levels.map((level) => ({
+            hierarchySystemId: level.hierarchySystemId,
+            order: level.order,
+            isRequired: level.isRequired,
+            isActive: level.isActive,
+          })),
+        });
+      }
+    }
 
     const newDepth = newParent ? newParent.depth + 1 : 0;
     const depthDelta = newDepth - current.depth;

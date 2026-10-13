@@ -4,12 +4,18 @@ import { describe, expect, it } from 'vitest';
 const deploy = fs.readFileSync('scripts/deploy-production-artifact-core.sh', 'utf8');
 const cleanSeed = fs.readFileSync('prisma/seed-constants.ts', 'utf8');
 const referenceSeed = fs.readFileSync('prisma/seed-reference-data.ts', 'utf8');
+const ci = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
 
 describe('PostgreSQL reference-data refresh after commissioning', () => {
   it('refreshes reference/RBAC data even when users already exist', () => {
     expect(deploy).toContain('PostgreSQL staging already commissioned; refreshing non-destructive reference/RBAC data');
     expect(deploy).toContain('bun --env-file=.env run prisma/seed-reference-data.ts');
     expect(deploy).not.toContain('constants bootstrap skipped');
+  });
+
+  it('packages the reference seed explicitly and refuses incomplete production artifacts', () => {
+    expect(ci).toContain('prisma/seed-reference-data.ts');
+    expect(deploy).toContain('test -f "$NEW_RELEASE/prisma/seed-reference-data.ts"');
   });
 
   it('keeps the clean bootstrap invariant separate from non-destructive refresh', () => {

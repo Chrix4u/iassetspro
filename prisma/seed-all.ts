@@ -15,54 +15,33 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { hash } from 'bcryptjs';
 
 // ══════════════════════════════════════════════════════════════════════════
-// DATABASE CONNECTION
-// ══════════════════════════════════════════════════════════════════════════
-//
-// Prisma v7 with engineType="library" requires a driver adapter.
-// We use the MariaDB adapter for MySQL/MariaDB connections.
+// DATABASE CONNECTION — PostgreSQL (canonical iAssetsPro datastore)
 // ══════════════════════════════════════════════════════════════════════════
 
-console.log('🔧 Connecting to database...');
+console.log('🔧 Connecting to PostgreSQL...');
 
-function buildDbConfig() {
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.includes('mysql://')) {
-    try {
-      const url = new URL(dbUrl);
-      return {
-        host: url.hostname,
-        port: parseInt(url.port || '3306', 10),
-        user: decodeURIComponent(url.username),
-        password: decodeURIComponent(url.password),
-        database: url.pathname.slice(1),
-      };
-    } catch { /* fall through */ }
-  }
+if (!process.env.DATABASE_URL) {
   const host = process.env.DB_HOST || 'localhost';
-  const port = parseInt(process.env.DB_PORT || '3306', 10);
-  const user = process.env.DB_USER || 'root';
+  const port = process.env.DB_PORT || '5432';
+  const user = process.env.DB_USER || 'postgres';
   const password = process.env.DB_PASSWORD || '';
-  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
-  return { host, port, user, password, database };
+  const database = process.env.DB_NAME || 'iassetspro';
+  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public`;
 }
 
-const cfg = buildDbConfig();
-console.log(`  📡 Connecting to ${cfg.host}:${cfg.port}/${cfg.database}`);
+if (!/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)) {
+  throw new Error('seed-all requires a PostgreSQL DATABASE_URL');
+}
 
-const adapter = new PrismaMariaDb({
-  host: cfg.host,
-  port: cfg.port,
-  user: cfg.user,
-  password: cfg.password,
-  database: cfg.database,
-  connectionLimit: 5,
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createAdapter } = require('../src/lib/create-postgres-adapter');
+const db = new PrismaClient({
+  adapter: createAdapter(process.env.DATABASE_URL),
+  log: ['warn', 'error'],
 });
-
-const db = new PrismaClient({ adapter, log: ['warn', 'error'] });
 
 // ══════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
@@ -112,6 +91,8 @@ const modulePermissions: Record<string, string[]> = {
   documents: ['view', 'upload', 'download', 'delete', 'manage'],
   company: ['view', 'update'],
   assets: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'export', 'import', 'bulk_update', 'manage', 'hierarchy', 'relationships', 'health', 'criticality'],
+  'assets.hierarchy': ['view', 'manage'],
+  'assets.functional_locations': ['view', 'manage', 'assign'],
   equipment: ['view', 'create', 'update', 'delete'],
   assemblies: ['view', 'create', 'update', 'delete', 'manage'],
   bom: ['view', 'create', 'update', 'delete', 'import', 'export', 'manage'],
@@ -225,6 +206,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view', 'audit_logs.view', 'system_settings.view', 'modules.view', 'documents.view',
     'company.view', 'company.update',
     'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality', 'assets.hierarchy',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.manage', 'assets.functional_locations.assign',
     'equipment.view', 'assemblies.view', 'bom.view', 'facilities.view', 'meters.view', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.dashboard',
     'work_orders.view', 'work_orders.view_all', 'work_orders.dashboard',
@@ -251,6 +233,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view', 'notifications.manage',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.delete',
     'assets.export', 'assets.manage', 'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
     'equipment.view', 'equipment.create', 'equipment.update', 'assemblies.view', 'assemblies.create', 'assemblies.update', 'assemblies.manage',
     'bom.view', 'bom.create', 'bom.update', 'bom.manage', 'facilities.view',
     'meters.view', 'meters.create', 'meters.update', 'tools.view', 'tools.create', 'tools.update', 'tools.manage',
@@ -282,6 +265,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'dashboard.view', 'dashboard.stats', 'chat.view', 'documents.view', 'documents.upload', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
     'equipment.view', 'equipment.create', 'equipment.update', 'assemblies.view', 'assemblies.create', 'assemblies.update',
     'bom.view', 'bom.create', 'bom.update', 'facilities.view', 'meters.view', 'meters.read', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.create', 'maintenance_requests.update',
@@ -307,6 +291,7 @@ const rolePermissionBundles: Record<string, string[]> = {
   maintenance_supervisor: [
     'dashboard.view', 'chat.view', 'documents.view', 'documents.upload', 'documents.download', 'notifications.view',
     'assets.view', 'assets.view_all', 'assets.update', 'assets.health', 'assets.criticality', 'equipment.view',
+    'assets.hierarchy.view', 'assets.functional_locations.view',
     'meters.view', 'meters.read', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.update',
     'maintenance_requests.approve', 'maintenance_requests.reject', 'maintenance_requests.assign_planner',
@@ -435,6 +420,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'dashboard.view', 'chat.view', 'documents.view', 'notifications.view',
     'users.view', 'roles.view', 'permissions.view', 'departments.view', 'plants.view',
     'assets.view', 'equipment.view', 'assemblies.view', 'bom.view', 'facilities.view', 'meters.view', 'tools.view',
+    'assets.hierarchy.view', 'assets.functional_locations.view',
     'maintenance_requests.view', 'work_orders.view', 'work_order_templates.view', 'recurring_work_orders.view',
     'approvals.view', 'verifications.view', 'sla.view', 'failure_codes.view', 'rca.view', 'assistance_requests.view',
     'time_logs.view', 'pm_schedules.view', 'pm_templates.view', 'pm_checklists.view',
@@ -1017,7 +1003,7 @@ async function seedAll() {
             fromStatus: t.fromStatus,
             toStatus: t.toStatus,
             allowedRoleSlugs: t.allowedRoleSlugs,
-            requiresApproval: t.requiresApproval || false,
+            requiresApproval: 'requiresApproval' in t ? Boolean(t.requiresApproval) : false,
             requiresReason: t.requiresReason || false,
             sortOrder: t.sortOrder,
           },
@@ -1118,7 +1104,7 @@ async function seedAll() {
             name: subsystem.name, assetTag: subsystem.tag, description: subsystem.description,
             condition: 'good', status: 'operational', criticality: subsystem.criticality,
             location: MACHINE_SPECS.location, plantId: plant.id, departmentId: dept?.id,
-            parentId: mainAsset.id, categoryId: category!.id, createdById: adminUser!.id,
+            parentId: mainAsset.id, categoryId: category!.id, specification: '{}', createdById: adminUser!.id,
           },
         });
       }
@@ -1135,7 +1121,7 @@ async function seedAll() {
                 name: child.name, assetTag: child.tag, description: child.description,
                 condition: 'good', status: 'operational', criticality: child.criticality,
                 location: MACHINE_SPECS.location, plantId: plant.id, departmentId: dept?.id,
-                parentId: ssAsset.id, categoryId: category!.id, createdById: adminUser!.id,
+                parentId: ssAsset.id, categoryId: category!.id, specification: '{}', createdById: adminUser!.id,
               },
             });
           }
@@ -1249,7 +1235,7 @@ async function seedAll() {
             data: {
               templateId: pmTemplate.id, taskNumber: i + 1, description: task.description,
               taskType: task.taskType,
-              requiredParts: task.requiredParts ? JSON.stringify(task.requiredParts) : undefined,
+              requiredParts: 'requiredParts' in task && task.requiredParts ? JSON.stringify(task.requiredParts) : undefined,
               estimatedMinutes: task.estimatedMinutes, sortOrder: i + 1, isActive: true,
             },
           });

@@ -177,7 +177,7 @@ jobs:
           cp -a .next/standalone/. .release-bundle/
           cp -a prisma/migrations .release-bundle/prisma/
           cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
-          cp prisma/seed-constants.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
+          cp prisma/seed-constants.ts prisma/seed-reference-data.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
           cp prisma.config.ts package.json bun.lock .release-bundle/
           cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh scripts/production-redis-preflight.mjs .release-bundle/scripts/
           cp src/lib/create-postgres-adapter.ts .release-bundle/src/lib/create-postgres-adapter.ts

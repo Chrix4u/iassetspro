@@ -210,8 +210,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build relation connections
-    const categoryConnect = categoryId ? { connect: { id: categoryId } } : undefined;
-    const plantConnect = plantId ? { connect: { id: plantId } } : undefined;
+    const categoryConnect = { connect: { id: categoryId } };
+    const plantConnect = { connect: { id: plantId } };
     const departmentConnect = departmentId ? { connect: { id: departmentId } } : undefined;
     const assignedToConnect = assignedToId ? { connect: { id: assignedToId } } : undefined;
     const parentConnect = parentId ? { connect: { id: parentId } } : undefined;

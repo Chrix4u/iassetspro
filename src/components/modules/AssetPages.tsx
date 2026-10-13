@@ -1143,13 +1143,14 @@ export function AssetsDigitalTwinPage() {
 
   // Build specs from detail data
   const twinSpecs: Record<string, any[]> = {};
-  if (selectedTwinDetail) {
+  if (selectedTwinDetail && selectedTwin) {
     const params = selectedTwinDetail.parameters ? (() => { try { return JSON.parse(selectedTwinDetail.parameters); } catch { return []; } })() : [];
     const specs = selectedTwinDetail.specification ? (() => { try { return JSON.parse(selectedTwinDetail.specification); } catch { return []; } })() : [];
     twinSpecs[selectedTwin] = [...params, ...specs];
   }
 
   const currentTwin = twins.find(t => t.id === selectedTwin);
+  const selectedTwinSpecs = selectedTwin ? (twinSpecs[selectedTwin] || []) : [];
 
   const kpiCards = [
     { label: 'Digital Twins', value: kpis.total, icon: Box, color: 'bg-emerald-50 text-emerald-600' },
@@ -1229,7 +1230,7 @@ export function AssetsDigitalTwinPage() {
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Parameter</TableHead><TableHead>Value</TableHead><TableHead className="hidden sm:table-cell">Unit</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
-              {(twinSpecs[selectedTwin] || []).map((spec: any, i: number) => (
+              {selectedTwinSpecs.map((spec: any, i: number) => (
                 <TableRow key={i} className="hover:bg-muted/30">
                   <TableCell className="font-medium text-sm">{spec.name}</TableCell>
                   <TableCell className="font-mono">{spec.value}</TableCell>
@@ -1237,7 +1238,7 @@ export function AssetsDigitalTwinPage() {
                   <TableCell><span className={`text-xs font-medium ${statusColor(spec.status)}`}>{spec.status === 'normal' ? '● Normal' : spec.status === 'warning' ? '● Warning' : '● Critical'}</span></TableCell>
                 </TableRow>
               ))}
-              {(twinSpecs[selectedTwin] || []).length === 0 && <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground text-sm">No specification data available</TableCell></TableRow>}
+              {selectedTwinSpecs.length === 0 && <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground text-sm">No specification data available</TableCell></TableRow>}
             </TableBody></Table></div>
           </CardContent>
         </Card>

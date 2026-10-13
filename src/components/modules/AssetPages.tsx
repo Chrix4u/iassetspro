@@ -174,9 +174,9 @@ export function AssetsPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
         </div>
         {(hasPermission('assets.create') || isAdmin()) && (
-          <div className='flex gap-2'>
-            <Button onClick={openCreate} className='bg-emerald-600 hover:bg-emerald-700 text-white'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
-            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5'><Sparkles className='h-4 w-4' />AI Generate</Button>
+          <div className='flex w-full flex-wrap gap-2 sm:w-auto'>
+            <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
+            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
           </div>
         )}
       </div>
@@ -214,7 +214,7 @@ export function AssetsPage() {
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticality" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="filter-row-checkbox flex items-center gap-2 ml-auto">
           <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
         </div>

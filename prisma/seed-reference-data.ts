@@ -70,6 +70,37 @@ async function main() {
   runSeed('prisma/seed-permissions-only.ts');
   runSeed('prisma/seed-trades.ts');
 
+  // Seed a safe starter functional-location hierarchy only for fresh installations.
+  // Once any hierarchy system exists, customer configuration is authoritative and untouched.
+  const hierarchySystemCount = await db.hierarchySystem.count();
+  if (hierarchySystemCount === 0) {
+    await db.hierarchySystem.create({
+      data: {
+        name: 'Primary Functional Location',
+        code: 'PRIMARY',
+        purpose: 'functional_location',
+        description: 'Default configurable asset-path hierarchy. Rename levels to match your organisation.',
+        isPrimary: true,
+        isActive: true,
+        codeMode: 'mixed',
+        codeSeparator: '-',
+        allowCodeOverride: true,
+        levels: {
+          create: [
+            { order: 1, label: 'Company', isRequired: true, allowAssetAssignment: false, codePrefix: 'CO' },
+            { order: 2, label: 'Site / Plant', isRequired: true, allowAssetAssignment: false, codePrefix: 'PLT' },
+            { order: 3, label: 'Area', isRequired: false, allowAssetAssignment: false, codePrefix: 'AR' },
+            { order: 4, label: 'Line / System', isRequired: false, allowAssetAssignment: false, codePrefix: 'LN' },
+            { order: 5, label: 'Functional Location', isRequired: true, allowAssetAssignment: true, codePrefix: 'FL' },
+          ],
+        },
+      },
+    });
+    console.log('✅ Seeded starter functional-location hierarchy');
+  } else {
+    console.log(`ℹ️  Functional-location hierarchy already configured (${hierarchySystemCount} system(s)); leaving customer structure unchanged`);
+  }
+
   for (const mod of systemModules) {
     const systemModule = await db.systemModule.upsert({
       where: { code: mod.code },

@@ -15,11 +15,9 @@ describe('functional location API security contract', () => {
     const fullSeed = read('prisma/seed-all.ts');
 
     for (const source of [permissionSeed, fullSeed]) {
-      expect(source).toContain("assets.hierarchy.view");
-      expect(source).toContain("assets.hierarchy.manage");
-      expect(source).toContain("assets.functional_locations.view");
-      expect(source).toContain("assets.functional_locations.manage");
-      expect(source).toContain("assets.functional_locations.assign");
+      expect(source).toContain("'assets.hierarchy': ['view', 'manage']");
+      expect(source).toContain("'assets.functional_locations': ['view', 'manage', 'assign']");
+      expect(source).toContain('`${moduleName}.${action}`');
     }
   });
 

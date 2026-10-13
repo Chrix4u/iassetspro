@@ -174,9 +174,9 @@ export function AssetsPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
         </div>
         {(hasPermission('assets.create') || isAdmin()) && (
-          <div className='flex gap-2'>
-            <Button onClick={openCreate} className='bg-emerald-600 hover:bg-emerald-700 text-white'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
-            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5'><Sparkles className='h-4 w-4' />AI Generate</Button>
+          <div className='flex w-full flex-wrap gap-2 sm:w-auto'>
+            <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
+            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
           </div>
         )}
       </div>
@@ -197,29 +197,29 @@ export function AssetsPage() {
         ))}
       </div>
 
-      <div className="filter-row flex flex-wrap gap-3 items-center">
-        <div className="relative min-w-[200px] flex-1 max-w-sm">
+      <div className="filter-row grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center">
+        <div className="relative col-span-2 min-w-0 lg:col-span-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
         </Select>
         <Select value={conditionFilter} onValueChange={setConditionFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Condition" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Condition" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Condition</SelectItem><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
         </Select>
         <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticality" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="col-span-2 flex items-center gap-2 lg:col-span-1 lg:ml-auto">
           <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
         </div>
         {atRiskFilter && (
-          <Badge variant="destructive" className="gap-1.5 cursor-pointer" onClick={() => setAtRiskFilter(false)}>
+          <Badge variant="destructive" className="col-span-2 w-fit gap-1.5 cursor-pointer lg:col-span-full" onClick={() => setAtRiskFilter(false)}>
             <AlertTriangle className="h-3 w-3" />
             At Risk Filter Active
             <X className="h-3 w-3" />

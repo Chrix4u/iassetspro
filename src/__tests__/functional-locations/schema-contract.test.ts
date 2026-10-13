@@ -31,16 +31,16 @@ describe('functional location schema contract', () => {
     expect(migration).toContain('CREATE TABLE "hierarchy_systems"');
     expect(migration).toContain('CREATE TABLE "hierarchy_levels"');
     expect(migration).toContain('CREATE TABLE "functional_locations"');
-    expect(migration).toMatch(/UNIQUE[^\n]*hierarchy_system_id[^\n]*location_code/i);
-    expect(migration).toMatch(/WHERE[^;]*is_primary[^;]*is_active/i);
+    expect(migration).toMatch(/UNIQUE[^\n]*hierarchySystemId[^\n]*locationCode/i);
+    expect(migration).toMatch(/WHERE[^;]*isPrimary[^;]*isActive/i);
     expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/i);
   });
 
   it('preserves existing legacy asset location fields during phase 1', () => {
-    expect(schema).toContain('location          String?');
-    expect(schema).toContain('building          String?');
-    expect(schema).toContain('floor             String?');
-    expect(schema).toContain('area              String?');
-    expect(schema).toContain('departmentId      String?');
+    expect(schema).toMatch(/\blocation\s+String\?/);
+    expect(schema).toMatch(/\bbuilding\s+String\?/);
+    expect(schema).toMatch(/\bfloor\s+String\?/);
+    expect(schema).toMatch(/\barea\s+String\?/);
+    expect(schema).toMatch(/\bdepartmentId\s+String\?/);
   });
 });

@@ -99,16 +99,16 @@ model User {
   woLocked     WorkOrder[] @relation("WOLocker")
 
   // Work Order sub-table relations
-  woTeamMembers             WorkOrderTeamMember[]
-  woTeamMembersAdded        WorkOrderTeamMember[] @relation("TMAddedBy")
-  woTeamMemberReqsRequested WoTeamMemberRequest[] @relation("TMReqRequestedBy") // as requester
-  woTeamMemberReqsAsTarget  WoTeamMemberRequest[] // as requested user (to be added)
-  woTeamMemberReqsReviewed  WoTeamMemberRequest[] @relation("TMReqReviewedBy")
-  woTimeLogs                WorkOrderTimeLog[]
-  woComments                WorkOrderComment[]
-  woMaterialsRequested      WorkOrderMaterial[]   @relation("WOMatRequested")
-  woMaterialsApproved       WorkOrderMaterial[]   @relation("WOMatApproved")
-  woMaterialsIssued         WorkOrderMaterial[]   @relation("WOMatIssued")
+  woTeamMembers              WorkOrderTeamMember[]
+  woTeamMembersAdded         WorkOrderTeamMember[] @relation("TMAddedBy")
+  woTeamMemberReqsRequested  WoTeamMemberRequest[] @relation("TMReqRequestedBy") // as requester
+  woTeamMemberReqsAsTarget   WoTeamMemberRequest[] // as requested user (to be added)
+  woTeamMemberReqsReviewed   WoTeamMemberRequest[] @relation("TMReqReviewedBy")
+  woTimeLogs           WorkOrderTimeLog[]
+  woComments           WorkOrderComment[]
+  woMaterialsRequested WorkOrderMaterial[]   @relation("WOMatRequested")
+  woMaterialsApproved  WorkOrderMaterial[]   @relation("WOMatApproved")
+  woMaterialsIssued    WorkOrderMaterial[]   @relation("WOMatIssued")
 
   // Audit
   auditLogs     AuditLog[]
@@ -120,30 +120,30 @@ model User {
   hierarchySystemsCreated    HierarchySystem[]           @relation("HierarchySystemCreatedBy")
   functionalLocationsCreated FunctionalLocation[]        @relation("FunctionalLocationCreatedBy")
   inventoryItemsCreated      InventoryItem[]             @relation("InventoryItemCreatedBy")
-  stockMovements             StockMovement[]
-  pmSchedulesAssigned        PmSchedule[]                @relation("PmScheduleAssignedTo")
-  pmSchedulesCreated         PmSchedule[]                @relation("PmScheduleCreatedBy")
-  pmTemplatesCreated         PmTemplate[]                @relation("PmTemplateCreatedBy")
-  woStatusHistory            WorkOrderStatusHistory[]
-  mrComments                 MaintenanceRequestComment[]
+  stockMovements        StockMovement[]
+  pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
+  pmSchedulesCreated    PmSchedule[]                @relation("PmScheduleCreatedBy")
+  pmTemplatesCreated    PmTemplate[]                @relation("PmTemplateCreatedBy")
+  woStatusHistory       WorkOrderStatusHistory[]
+  mrComments            MaintenanceRequestComment[]
 
   // Tool Management relations
-  toolsAssigned             Tool[]                       @relation("ToolAssignedTo")
-  toolsCreated              Tool[]                       @relation("ToolCreatedBy")
-  toolTransactions          ToolTransaction[]            @relation("ToolTxnPerformedBy")
-  toolTxnsFrom              ToolTransaction[]            @relation("ToolTxnFromUser")
-  toolTxnsTo                ToolTransaction[]            @relation("ToolTxnToUser")
-  toolCalibrationsPerformed ToolCalibrationRequirement[] @relation("ToolCalBy")
-  toolCalibrationOverrides  ToolCalibrationRequirement[] @relation("ToolCalOverride")
+  toolsAssigned    Tool[]            @relation("ToolAssignedTo")
+  toolsCreated     Tool[]            @relation("ToolCreatedBy")
+  toolTransactions ToolTransaction[] @relation("ToolTxnPerformedBy")
+  toolTxnsFrom     ToolTransaction[] @relation("ToolTxnFromUser")
+  toolTxnsTo       ToolTransaction[] @relation("ToolTxnToUser")
+  toolCalibrationsPerformed  ToolCalibrationRequirement[] @relation("ToolCalBy")
+  toolCalibrationOverrides    ToolCalibrationRequirement[] @relation("ToolCalOverride")
 
   // IoT Management relations
   iotDevicesCreated IotDevice[]    @relation("IotDeviceCreatedBy")
   iotRulesCreated   IotAlertRule[] @relation("IotRuleCreatedBy")
 
   // Real-Time Industrial Telemetry relations (Phase C)
-  telemetrySources   TelemetryDataSource[] @relation("TelemetrySourceCreatedBy")
-  alarmRules         AlarmRule[]           @relation("AlarmRuleCreatedBy")
-  alarmsAcknowledged AlarmEvent[]          @relation("AlarmAcknowledgedBy")
+  telemetrySources     TelemetryDataSource[] @relation("TelemetrySourceCreatedBy")
+  alarmRules           AlarmRule[]           @relation("AlarmRuleCreatedBy")
+  alarmsAcknowledged   AlarmEvent[]          @relation("AlarmAcknowledgedBy")
 
   // Inventory Sub-module relations
   invLocationsCreated    InventoryLocation[]   @relation("InvLocationCreatedBy")
@@ -176,7 +176,7 @@ model User {
   assetModelsCreated    AssetModel[]       @relation("AssetModelUploadedBy")
   scenesCreated         DigitalTwinScene[] @relation("SceneCreatedBy")
   systemDiagramsCreated SystemDiagram[]    @relation("SystemDiagramCreatedBy")
-  SystemDiagramUpdates  SystemDiagram[]    @relation("SystemDiagramUpdatedBy")
+  SystemDiagramUpdates SystemDiagram[] @relation("SystemDiagramUpdatedBy")
 
   // Twin Annotation relation
   twinAnnotations TwinAnnotation[]
@@ -198,62 +198,62 @@ model User {
   userSkills   UserSkill[]
 
   // Labor Rate relation
-  laborRates LaborRate[] @relation("UserLaborRate")
+  laborRates             LaborRate[] @relation("UserLaborRate")
 
   // Repair module relations
-  downtimeLogged               WorkOrderDowntime[]     @relation("DowntimeCreatedBy")
-  repairMatReqRequested        RepairMaterialRequest[] @relation("RepairMatReqRequested")
-  repairMatReqSupApproved      RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
-  repairMatReqStoreApproved    RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
-  repairMatReqIssued           RepairMaterialRequest[] @relation("RepairMatReqIssued")
-  repairMatReqReturned         RepairMaterialRequest[] @relation("RepairMatReqReturned")
-  repairToolReqRequested       RepairToolRequest[]     @relation("RepairToolReqRequested")
-  repairToolReqSupApproved     RepairToolRequest[]     @relation("RepairToolReqSupApproved")
-  repairToolReqStoreApproved   RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
-  repairToolReqIssued          RepairToolRequest[]     @relation("RepairToolReqIssued")
-  repairToolReqReturned        RepairToolRequest[]     @relation("RepairToolReqReturned")
-  repairToolReqReturnConfirmed RepairToolRequest[]     @relation("RepairToolReqReturnConfirmed")
-  toolTransferFrom             ToolTransferRequest[]   @relation("ToolTransferFrom")
-  toolTransferTo               ToolTransferRequest[]   @relation("ToolTransferTo")
-  toolTransferRequested        ToolTransferRequest[]   @relation("ToolTransferRequested")
-  toolTransferStoreApproved    ToolTransferRequest[]   @relation("ToolTransferStoreApproved")
-  repairCompSupApproved        RepairCompletion[]      @relation("RepairCompSupApproved")
-  repairCompPlannerClosed      RepairCompletion[]      @relation("RepairCompPlannerClosed")
+  downtimeLogged      WorkOrderDowntime[]      @relation("DowntimeCreatedBy")
+  repairMatReqRequested      RepairMaterialRequest[] @relation("RepairMatReqRequested")
+  repairMatReqSupApproved    RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
+  repairMatReqStoreApproved  RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
+  repairMatReqIssued         RepairMaterialRequest[] @relation("RepairMatReqIssued")
+  repairMatReqReturned       RepairMaterialRequest[] @relation("RepairMatReqReturned")
+  repairToolReqRequested     RepairToolRequest[]     @relation("RepairToolReqRequested")
+  repairToolReqSupApproved   RepairToolRequest[]     @relation("RepairToolReqSupApproved")
+  repairToolReqStoreApproved RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
+  repairToolReqIssued        RepairToolRequest[]     @relation("RepairToolReqIssued")
+  repairToolReqReturned      RepairToolRequest[]     @relation("RepairToolReqReturned")
+  repairToolReqReturnConfirmed RepairToolRequest[] @relation("RepairToolReqReturnConfirmed")
+  toolTransferFrom           ToolTransferRequest[]   @relation("ToolTransferFrom")
+  toolTransferTo             ToolTransferRequest[]   @relation("ToolTransferTo")
+  toolTransferRequested      ToolTransferRequest[]   @relation("ToolTransferRequested")
+  toolTransferStoreApproved  ToolTransferRequest[]   @relation("ToolTransferStoreApproved")
+  repairCompSupApproved      RepairCompletion[]      @relation("RepairCompSupApproved")
+  repairCompPlannerClosed    RepairCompletion[]      @relation("RepairCompPlannerClosed")
 
   // Spare Part Return relations
-  sparePartReturnsRequested   SparePartReturn[] @relation("SparePartReturnRequested")
-  sparePartReturnsInspected   SparePartReturn[] @relation("SparePartReturnInspected")
-  sparePartReturnsRefurbished SparePartReturn[] @relation("SparePartReturnRefurbished")
-  sparePartReturnsStored      SparePartReturn[] @relation("SparePartReturnStored")
-  sparePartReturnsDisposed    SparePartReturn[] @relation("SparePartReturnDisposed")
+  sparePartReturnsRequested  SparePartReturn[]       @relation("SparePartReturnRequested")
+  sparePartReturnsInspected  SparePartReturn[]       @relation("SparePartReturnInspected")
+  sparePartReturnsRefurbished SparePartReturn[]      @relation("SparePartReturnRefurbished")
+  sparePartReturnsStored     SparePartReturn[]       @relation("SparePartReturnStored")
+  sparePartReturnsDisposed   SparePartReturn[]       @relation("SparePartReturnDisposed")
 
   // Damaged Tool Report relations
-  damagedToolReportsFiled      DamagedToolReport[] @relation("DamagedToolReported")
-  damagedToolReportsAsTech     DamagedToolReport[] @relation("DamagedToolTechnician")
-  damagedToolReportsRepaired   DamagedToolReport[] @relation("DamagedToolRepaired")
-  damagedToolReportsWrittenOff DamagedToolReport[] @relation("DamagedToolWrittenOff")
+  damagedToolReportsFiled    DamagedToolReport[]     @relation("DamagedToolReported")
+  damagedToolReportsAsTech   DamagedToolReport[]     @relation("DamagedToolTechnician")
+  damagedToolReportsRepaired DamagedToolReport[]     @relation("DamagedToolRepaired")
+  damagedToolReportsWrittenOff DamagedToolReport[]   @relation("DamagedToolWrittenOff")
 
   // Attachment relations
   attachments Attachment[]
 
   // Digital Twin Phase 1 relations
-  twinAuditLogs          TwinAuditLog[]    @relation("TwinAuditUser")
-  modelVersionUploads    ModelVersion[]    @relation("ModelVersionUploaded")
-  failureReports         FailureRecord[]   @relation("FailureReported")
-  predictiveModels       PredictiveModel[] @relation("PredictiveCreatedBy")
+  twinAuditLogs       TwinAuditLog[]     @relation("TwinAuditUser")
+  modelVersionUploads ModelVersion[]     @relation("ModelVersionUploaded")
+  failureReports      FailureRecord[]    @relation("FailureReported")
+  predictiveModels    PredictiveModel[]  @relation("PredictiveCreatedBy")
   predictionAcknowledged PredictionAlert[] @relation("PredictionAcknowledged")
 
   // Component Maintenance Intelligence relations
-  conditionRecordings  ComponentConditionReading[]   @relation("ConditionRecorded")
-  maintenancePerformed ComponentMaintenanceHistory[] @relation("MaintenancePerformed")
-  inspectionRecords    ComponentInspectionRecord[]   @relation("InspectionRecorded")
-  lubricationPerformed ComponentLubricationRecord[]  @relation("LubricationPerformed")
-  replacementPerformed ComponentReplacementHistory[] @relation("ReplacementPerformed")
-  installedSpareParts  InstalledSparePart[]          @relation("InstalledSpareInstalledBy")
-  removedSpareParts    InstalledSparePart[]          @relation("InstalledSpareRemovedBy")
+  conditionRecordings      ComponentConditionReading[]  @relation("ConditionRecorded")
+  maintenancePerformed     ComponentMaintenanceHistory[] @relation("MaintenancePerformed")
+  inspectionRecords        ComponentInspectionRecord[]   @relation("InspectionRecorded")
+  lubricationPerformed     ComponentLubricationRecord[]  @relation("LubricationPerformed")
+  replacementPerformed     ComponentReplacementHistory[] @relation("ReplacementPerformed")
+  installedSpareParts      InstalledSparePart[]          @relation("InstalledSpareInstalledBy")
+  removedSpareParts        InstalledSparePart[]          @relation("InstalledSpareRemovedBy")
 
   // Work Instruction relations
-  workInstructionsCreated WorkInstruction[] @relation("WICreatedBy")
+  workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
 
   // Work Order Task Execution relations
   woTasksCompleted WorkOrderTaskExecution[] @relation("TaskCompletedBy")
@@ -262,32 +262,32 @@ model User {
   timeLogsLoggedForOthers WorkOrderTimeLog[] @relation("TimeLogLoggedBy")
 
   // Enterprise Model Library relations (Phase A)
-  uploadedModels ModelLibrary[]         @relation("ModelUploadedBy")
-  meshMappings   MeshComponentMapping[] @relation("MappingCreatedBy")
-  tours          InspectionTour[]       @relation("TourCreatedBy")
-  bookmarks      AssetViewBookmark[]    @relation("BookmarkCreatedBy")
-  processingJobs ModelProcessingJob[]   @relation("JobQueuedBy")
+  uploadedModels  ModelLibrary[]          @relation("ModelUploadedBy")
+  meshMappings    MeshComponentMapping[]  @relation("MappingCreatedBy")
+  tours           InspectionTour[]        @relation("TourCreatedBy")
+  bookmarks       AssetViewBookmark[]     @relation("BookmarkCreatedBy")
+  processingJobs  ModelProcessingJob[]   @relation("JobQueuedBy")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
-  bomRevisionsApproved BomRevision[]              @relation("BomRevApprovedBy")
-  bomRevisionsCreated  BomRevision[]              @relation("BomRevCreatedBy")
-  altPartsApproved     AlternatePart[]            @relation("AltPartApprovedBy")
-  altPartsCreated      AlternatePart[]            @relation("AltPartCreatedBy")
-  spareAnalyses        CriticalSpareAnalysis[]    @relation("SpareAnalyzedBy")
+  bomRevisionsApproved BomRevision[]        @relation("BomRevApprovedBy")
+  bomRevisionsCreated  BomRevision[]        @relation("BomRevCreatedBy")
+  altPartsApproved     AlternatePart[]      @relation("AltPartApprovedBy")
+  altPartsCreated      AlternatePart[]      @relation("AltPartCreatedBy")
+  spareAnalyses        CriticalSpareAnalysis[] @relation("SpareAnalyzedBy")
   ecrRequested         EngineeringChangeRequest[] @relation("EcrRequestedBy")
   ecrReviewed          EngineeringChangeRequest[] @relation("EcrReviewedBy")
   ecrApproved          EngineeringChangeRequest[] @relation("EcrApprovedBy")
   ecrCreated           EngineeringChangeRequest[] @relation("EcrCreatedBy")
-  failureModesCreated  FailureMode[]              @relation("FailureModeCreatedBy")
-  rcmAnalysesApproved  RcmAnalysis[]              @relation("RcmApprovedBy")
-  rcmAnalysesCreated   RcmAnalysis[]              @relation("RcmCreatedBy")
-  weibullAnalyses      WeibullAnalysis[]          @relation("WeibullAnalyzedBy")
-  downtimeAnalyses     DowntimeAnalysis[]         @relation("DowntimeCreatedBy")
-  rulAnalyses          RemainingUsefulLife[]      @relation("RulAnalyzedBy")
+  failureModesCreated FailureMode[]           @relation("FailureModeCreatedBy")
+  rcmAnalysesApproved  RcmAnalysis[]            @relation("RcmApprovedBy")
+  rcmAnalysesCreated   RcmAnalysis[]            @relation("RcmCreatedBy")
+  weibullAnalyses       WeibullAnalysis[]        @relation("WeibullAnalyzedBy")
+  downtimeAnalyses      DowntimeAnalysis[]       @relation("DowntimeCreatedBy")
+  rulAnalyses           RemainingUsefulLife[]     @relation("RulAnalyzedBy")
 
   // Work Package relations
-  wpCreated  WorkPackage[] @relation("WPCreatedBy")
-  wpAssigned WorkPackage[] @relation("WPAssignedTo")
+  wpCreated       WorkPackage[] @relation("WPCreatedBy")
+  wpAssigned      WorkPackage[] @relation("WPAssignedTo")
 
   // Industrial Connectivity (Phase 1)
   gatewaysCreated EdgeGateway[] @relation("GatewayCreatedBy")
@@ -387,7 +387,7 @@ model Plant {
   assets              Asset[]
   functionalLocations FunctionalLocation[]
   inventoryItems      InventoryItem[]
-  models              ModelLibrary[]       @relation("ModelPlant")
+  models         ModelLibrary[] @relation("ModelPlant")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   changeRequests EngineeringChangeRequest[] @relation("EcrPlant")
@@ -506,55 +506,55 @@ model MaintenanceRequest {
 // ============================================================================
 
 model WorkOrder {
-  id                       String    @id @default(cuid())
-  woNumber                 String    @unique // format WO-YYYYMM-NNNN
-  title                    String
-  description              String?
-  type                     String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
-  priority                 String    @default("medium") // low, medium, high, critical
-  status                   String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, waiting_tools, waiting_shutdown, waiting_permit, on_hold, pending_handover, completed, verified, closed, cancelled
-  maintenanceRequestId     String?   @unique
-  pmScheduleId             String? // → PmSchedule (auto-generated WOs link back)
-  assetId                  String?
-  assetName                String?
-  departmentId             String?
-  assignedTo               String? // → User
-  teamLeaderId             String? // → User
-  assignedSupervisorId     String? // → User
-  assignedBy               String? // → User
-  assignmentType           String? // direct, via_supervisor
-  assignmentResponseStatus String    @default("pending") // pending, accepted, declined
-  assignmentRespondedBy    String?
-  assignmentRespondedAt    DateTime?
-  assignmentResponseReason String?   @db.Text
-  plannerId                String? // → User
-  estimatedHours           Float?
-  actualHours              Float?
-  plannedStart             DateTime?
-  plannedEnd               DateTime?
-  actualStart              DateTime?
-  actualEnd                DateTime?
-  totalCost                Float     @default(0)
-  laborCost                Float     @default(0)
-  partsCost                Float     @default(0)
-  contractorCost           Float     @default(0)
-  failureDescription       String?
-  causeDescription         String?
-  actionDescription        String?
-  tradeActivity            String? // mechanical, electrical, civil, facility, workshop, other
-  safetyNotes              String? // Safety precautions / LOTO requirements
-  ppeRequired              String? // PPE requirements
-  plantId                  String?
-  notes                    String?
-  personalTools            String    @default("[]") @db.Text // JSON: [{toolName, toolCode, condition, notes}]
-  suggestedParts           String    @default("[]") @db.Text // JSON: [{id, itemId, itemName, itemCode, quantity, unit, notes, status}]
-  suggestedTools           String    @default("[]") @db.Text // JSON: [{id, toolId, toolName, toolCode, quantity, notes, status}]
-  isLocked                 Boolean   @default(false)
-  lockedBy                 String? // → User
-  lockedAt                 DateTime?
-  lockReason               String?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  woNumber             String    @unique // format WO-YYYYMM-NNNN
+  title                String
+  description          String?
+  type                 String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
+  priority             String    @default("medium") // low, medium, high, critical
+  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, waiting_tools, waiting_shutdown, waiting_permit, on_hold, pending_handover, completed, verified, closed, cancelled
+  maintenanceRequestId String?   @unique
+  pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
+  assetId              String?
+  assetName            String?
+  departmentId         String?
+  assignedTo           String? // → User
+  teamLeaderId         String? // → User
+  assignedSupervisorId String? // → User
+  assignedBy           String? // → User
+  assignmentType       String? // direct, via_supervisor
+  assignmentResponseStatus String @default("pending") // pending, accepted, declined
+  assignmentRespondedBy String?
+  assignmentRespondedAt DateTime?
+  assignmentResponseReason String? @db.Text
+  plannerId            String? // → User
+  estimatedHours       Float?
+  actualHours          Float?
+  plannedStart         DateTime?
+  plannedEnd           DateTime?
+  actualStart          DateTime?
+  actualEnd            DateTime?
+  totalCost            Float     @default(0)
+  laborCost            Float     @default(0)
+  partsCost            Float     @default(0)
+  contractorCost       Float     @default(0)
+  failureDescription   String?
+  causeDescription     String?
+  actionDescription    String?
+  tradeActivity        String? // mechanical, electrical, civil, facility, workshop, other
+  safetyNotes          String? // Safety precautions / LOTO requirements
+  ppeRequired          String? // PPE requirements
+  plantId              String?
+  notes                String?
+  personalTools        String    @default("[]") @db.Text // JSON: [{toolName, toolCode, condition, notes}]
+  suggestedParts       String    @default("[]") @db.Text // JSON: [{id, itemId, itemName, itemCode, quantity, unit, notes, status}]
+  suggestedTools       String    @default("[]") @db.Text // JSON: [{id, toolId, toolName, toolCode, quantity, notes, status}]
+  isLocked             Boolean   @default(false)
+  lockedBy             String? // → User
+  lockedAt             DateTime?
+  lockReason           String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   // Maintenance Request relation
   maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
@@ -571,12 +571,12 @@ model WorkOrder {
   locker             User? @relation("WOLocker", fields: [lockedBy], references: [id])
 
   // Sub-table relations
-  teamMembers        WorkOrderTeamMember[]
+  teamMembers WorkOrderTeamMember[]
   teamMemberRequests WoTeamMemberRequest[]
-  timeLogs           WorkOrderTimeLog[]
-  materials          WorkOrderMaterial[]
-  comments           WorkOrderComment[]
-  taskExecutions     WorkOrderTaskExecution[]
+  timeLogs    WorkOrderTimeLog[]
+  materials   WorkOrderMaterial[]
+  comments    WorkOrderComment[]
+  taskExecutions WorkOrderTaskExecution[]
 
   // Status History relations
   statusHistory WorkOrderStatusHistory[]
@@ -589,16 +589,16 @@ model WorkOrder {
   repairToolRequests     RepairToolRequest[]
   workOrderDowntimes     WorkOrderDowntime[]
   repairCompletion       RepairCompletion?
-  failureRecords         FailureRecord[]         @relation("FailureWorkOrder")
+  failureRecords         FailureRecord[] @relation("FailureWorkOrder")
 
   // Work Package relation
   workPackageId String?
-  workPackage   WorkPackage? @relation(fields: [workPackageId], references: [id])
+  workPackage WorkPackage? @relation(fields: [workPackageId], references: [id])
 
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
-  installedSpareParts         InstalledSparePart[]          @relation("InstalledSpareWorkOrder")
-  componentReplacements       ComponentReplacementHistory[]
+  installedSpareParts          InstalledSparePart[]          @relation("InstalledSpareWorkOrder")
+  componentReplacements        ComponentReplacementHistory[]
 
   // Spare Part Return relations
   sparePartReturns SparePartReturn[]
@@ -609,12 +609,12 @@ model WorkOrder {
   // Work Order - Component tracking
   workOrderComponents WorkOrderComponent[]
 
-  shiftHandovers   ShiftHandover[]
+  shiftHandovers ShiftHandover[]
   toolTransactions ToolTransaction[] @relation("WOToolTransaction")
 
   // Labor rate snapshot (applied on WO close/completion)
-  laborRateApplied Float?
-  laborCurrency    String? @default("GHS")
+  laborRateApplied     Float?
+  laborCurrency        String? @default("GHS")
 
   @@index([plantId])
   @@index([workPackageId])
@@ -636,13 +636,13 @@ model WorkOrderTeamMember {
   userId      String
   role        String   @default("assistant") // team_leader, assistant, specialist
   accessLevel String   @default("full") // full (team leader), read_only (other members)
-  addedById   String? // who added this member (direct add or approved request)
+  addedById   String?  // who added this member (direct add or approved request)
   addedVia    String   @default("direct") // "direct" | "request" — tracks how they were added
   assignedAt  DateTime @default(now())
 
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  addedBy   User?     @relation("TMAddedBy", fields: [addedById], references: [id])
+  workOrder  WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedBy    User?     @relation("TMAddedBy", fields: [addedById], references: [id])
 
   @@unique([workOrderId, userId]) // prevent duplicate team membership
   @@index([workOrderId])
@@ -651,19 +651,19 @@ model WorkOrderTeamMember {
 }
 
 model WoTeamMemberRequest {
-  id              String    @id @default(cuid())
-  workOrderId     String
-  requestedBy     String // user who requested
+  id            String   @id @default(cuid())
+  workOrderId   String
+  requestedBy   String   // user who requested
   requestedUserId String? // the user they want added (set by planner on approval)
-  requestedTrade  String? // the trade/skill needed (set by technician on request, e.g. "Electrician")
-  role            String    @default("assistant")
-  reason          String? // why they need this person
-  status          String    @default("pending") // pending, approved, rejected, cancelled
-  reviewedBy      String? // who approved/rejected
-  reviewedAt      DateTime?
-  reviewNotes     String? // approver's notes
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  requestedTrade String? // the trade/skill needed (set by technician on request, e.g. "Electrician")
+  role          String   @default("assistant")
+  reason        String?  // why they need this person
+  status        String   @default("pending") // pending, approved, rejected, cancelled
+  reviewedBy    String?  // who approved/rejected
+  reviewedAt    DateTime?
+  reviewNotes   String?  // approver's notes
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   workOrder       WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   requestedByUser User      @relation("TMReqRequestedBy", fields: [requestedBy], references: [id])
@@ -674,23 +674,23 @@ model WoTeamMemberRequest {
 }
 
 model WorkOrderTimeLog {
-  id          String   @id @default(cuid())
-  workOrderId String
-  userId      String
-  action      String // start, pause, resume, complete
-  duration    Float? // hours for this log entry (auto-calculated or manual)
-  notes       String?
-  timestamp   DateTime @default(now())
-  loggedById  String? // → User (team leader who logged time on behalf of a team member)
-  isTeamLog   Boolean  @default(false) // true if logged by team leader for a team member
+  id           String   @id @default(cuid())
+  workOrderId  String
+  userId       String
+  action       String   // start, pause, resume, complete
+  duration     Float?   // hours for this log entry (auto-calculated or manual)
+  notes        String?
+  timestamp    DateTime @default(now())
+  loggedById   String?  // → User (team leader who logged time on behalf of a team member)
+  isTeamLog    Boolean  @default(false) // true if logged by team leader for a team member
 
   // Enterprise time tracking fields
   startTime    DateTime? // actual work start time (user-selected or defaults to now)
   endTime      DateTime? // actual work end time (user-selected or defaults to now)
-  activityType String    @default("maintenance") // maintenance, travel, inspection, testing, standby, other
-  breakMinutes Int       @default(0) // break/lunch minutes deducted from duration
-  pauseReason  String? // break, switch_wo, waiting_parts, other — reason for pausing
-  sessionId    String?
+  activityType String   @default("maintenance") // maintenance, travel, inspection, testing, standby, other
+  breakMinutes Int      @default(0) // break/lunch minutes deducted from duration
+  pauseReason  String?  // break, switch_wo, waiting_parts, other — reason for pausing
+  sessionId   String?
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -741,26 +741,26 @@ model WorkOrderComment {
 // ============================================================================
 
 model WorkPackage {
-  id                  String    @id @default(cuid())
-  name                String
-  description         String?   @db.Text
-  plantId             String?
-  assignedToId        String? // → User
-  scheduledDate       DateTime?
-  shift               String? // morning, afternoon, night
-  status              String    @default("planned") // planned, in_progress, completed, cancelled
-  totalEstimatedHours Float     @default(0)
-  totalActualHours    Float     @default(0)
-  notes               String?   @db.Text
-  createdById         String
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  name                 String
+  description          String?   @db.Text
+  plantId              String?
+  assignedToId         String?   // → User
+  scheduledDate        DateTime?
+  shift                String?   // morning, afternoon, night
+  status               String    @default("planned") // planned, in_progress, completed, cancelled
+  totalEstimatedHours  Float     @default(0)
+  totalActualHours     Float     @default(0)
+  notes                String?   @db.Text
+  createdById          String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   // Relations
   workOrders WorkOrder[]
-  assignee   User?       @relation("WPAssignedTo", fields: [assignedToId], references: [id])
-  plant      Plant?      @relation("WPPlant", fields: [plantId], references: [id])
-  createdBy  User        @relation("WPCreatedBy", fields: [createdById], references: [id])
+  assignee   User?      @relation("WPAssignedTo", fields: [assignedToId], references: [id])
+  plant      Plant?     @relation("WPPlant", fields: [plantId], references: [id])
+  createdBy  User       @relation("WPCreatedBy", fields: [createdById], references: [id])
 
   @@index([plantId])
   @@index([status])
@@ -771,22 +771,22 @@ model WorkPackage {
 }
 
 model WorkOrderTaskExecution {
-  id               String    @id @default(cuid())
-  workOrderId      String
-  templateTaskId   String? // → PmTemplateTask (if from template)
-  taskNumber       Int
-  description      String
-  taskType         String    @default("check") // check, measure, inspect, lubricate, replace, record
-  requiredParts    String?   @db.Text // JSON array of {partName, quantity, unit}
+  id              String    @id @default(cuid())
+  workOrderId     String
+  templateTaskId  String?   // → PmTemplateTask (if from template)
+  taskNumber      Int
+  description     String
+  taskType        String    @default("check") // check, measure, inspect, lubricate, replace, record
+  requiredParts   String?   @db.Text // JSON array of {partName, quantity, unit}
   estimatedMinutes Int?
-  status           String    @default("pending") // pending, in_progress, completed, skipped, failed
-  completedById    String? // → User
-  completedAt      DateTime?
-  notes            String?   @db.Text
-  findings         String?   @db.Text
-  photos           String?   @db.Text // JSON array of attachment URLs
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  status          String    @default("pending") // pending, in_progress, completed, skipped, failed
+  completedById   String?   // → User
+  completedAt     DateTime?
+  notes           String?   @db.Text
+  findings        String?   @db.Text
+  photos          String?   @db.Text // JSON array of attachment URLs
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   workOrder    WorkOrder       @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   completedBy  User?           @relation("TaskCompletedBy", fields: [completedById], references: [id])
@@ -816,19 +816,19 @@ model StatusTransition {
 // ============================================================================
 
 model AuditLog {
-  id           String   @id @default(cuid())
-  userId       String
-  action       String // create, update, delete, view
-  entityType   String?
-  entityId     String?
-  oldValues    String?  @db.Text // JSON string of previous field values
-  newValues    String?  @db.Text // JSON string of new field values
-  ipAddress    String?
-  userAgent    String?
-  sessionId    String?
-  plantId      String?
-  departmentId String?
-  createdAt    DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String
+  action     String // create, update, delete, view
+  entityType String?
+  entityId   String?
+  oldValues  String?  @db.Text // JSON string of previous field values
+  newValues  String?  @db.Text // JSON string of new field values
+  ipAddress     String?
+  userAgent     String?
+  sessionId     String?
+  plantId       String?
+  departmentId  String?
+  createdAt     DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1007,42 +1007,42 @@ model FunctionalLocation {
 }
 
 model Asset {
-  id                   String    @id @default(cuid())
-  name                 String
-  assetTag             String    @unique
-  description          String?   @db.Text
-  categoryId           String
-  serialNumber         String?
-  manufacturer         String?
-  model                String?
-  yearManufactured     Int?
+  id                String    @id @default(cuid())
+  name              String
+  assetTag          String    @unique
+  description       String?   @db.Text
+  categoryId        String
+  serialNumber      String?
+  manufacturer      String?
+  model             String?
+  yearManufactured  Int?
   acquisitionCondition String    @default("new") // new, used
-  condition            String    @default("new") // maintenance health: new, good, fair, poor, out_of_service
-  status               String    @default("operational") // operational, standby, under_maintenance, decommissioned, disposed
-  criticality          String    @default("medium") // low, medium, high, critical
-  location             String?
-  building             String?
-  floor                String?
-  area                 String?
-  plantId              String
-  departmentId         String?
-  purchaseDate         DateTime?
-  purchaseCost         Float?
-  warrantyExpiry       DateTime?
-  installedDate        DateTime?
-  expectedLifeYears    Int?
-  currentValue         Float?
-  depreciationRate     Float?
-  imageUrl             String?
-  drawingsUrl          String?
-  manualUrl            String?
-  specification        String    @db.Text // JSON text for flexible specs .Text
-  parentId             String?
-  isActive             Boolean   @default(true)
-  createdById          String
-  assignedToId         String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  condition         String    @default("new") // maintenance health: new, good, fair, poor, out_of_service
+  status            String    @default("operational") // operational, standby, under_maintenance, decommissioned, disposed
+  criticality       String    @default("medium") // low, medium, high, critical
+  location          String?
+  building          String?
+  floor             String?
+  area              String?
+  plantId           String
+  departmentId      String?
+  purchaseDate      DateTime?
+  purchaseCost      Float?
+  warrantyExpiry    DateTime?
+  installedDate     DateTime?
+  expectedLifeYears Int?
+  currentValue      Float?
+  depreciationRate  Float?
+  imageUrl          String?
+  drawingsUrl       String?
+  manualUrl         String?
+  specification     String    @db.Text // JSON text for flexible specs .Text
+  parentId          String?
+  isActive          Boolean   @default(true)
+  createdById       String
+  assignedToId      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   category            AssetCategory        @relation(fields: [categoryId], references: [id])
   parent              Asset?               @relation("AssetHierarchy", fields: [parentId], references: [id])
@@ -1060,9 +1060,9 @@ model Asset {
   hotspotRefs         TwinHotspot[]        @relation("HotspotAsset")
   assetModels         AssetModel[]
   maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
-  componentVisuals    ComponentVisual[]    @relation("AssetComponentVisuals")
+  componentVisuals    ComponentVisual[]     @relation("AssetComponentVisuals")
 
-  systemDiagrams SystemDiagram[]
+  systemDiagrams       SystemDiagram[]
 
   // Component Registry / Predictive Maintenance relations
   registryComponents ComponentRegistry[] @relation("RegistryAsset")
@@ -1080,7 +1080,7 @@ model Asset {
   changeRequests EngineeringChangeRequest[] @relation("EcrAsset")
 
   // Reliability Engineering relations (Phase D)
-  rcmAnalyses      RcmAnalysis[]
+  rcmAnalyses     RcmAnalysis[]
   downtimeAnalyses DowntimeAnalysis[]
 
   @@index([plantId])
@@ -1135,13 +1135,13 @@ model InventoryItem {
 
   // Repair module relations
   repairMaterialRequests RepairMaterialRequest[]
-  sparePartLinks         ComponentSparePart[]    @relation("SparePartInventory")
+  sparePartLinks         ComponentSparePart[] @relation("SparePartInventory")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems BomRevisionItem[] @relation("BomItemInventory")
 
   // Spare Part Return relations
-  sparePartReturns    SparePartReturn[]    @relation("SparePartReturnItem")
+  sparePartReturns    SparePartReturn[]   @relation("SparePartReturnItem")
   installedSpareParts InstalledSparePart[] @relation("InstalledSpareInventory")
 
   @@map("inventory_items")
@@ -1194,11 +1194,11 @@ model PmSchedule {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  asset      Asset              @relation(fields: [assetId], references: [id])
+  asset      Asset       @relation(fields: [assetId], references: [id])
   component  ComponentRegistry? @relation("PmScheduleComponent", fields: [componentId], references: [id])
-  assignedTo User?              @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
-  department Department?        @relation(fields: [departmentId], references: [id])
-  createdBy  User               @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
+  assignedTo User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  createdBy  User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
 
   templateId String?
   template   PmTemplate? @relation(fields: [templateId], references: [id])
@@ -1477,10 +1477,10 @@ model Tool {
   // Repair module relations
   repairToolRequests     RepairToolRequest[]
   repairToolTransfers    ToolTransferRequest[]
-  repairToolRequestItems RepairToolRequestItem[]     @relation("ToolReqItemTool")
-  damagedToolReports     DamagedToolReport[]
-  componentRequirements  ComponentToolRequirement[]  @relation("ToolComponentReq")
-  calibrationRequirement ToolCalibrationRequirement?
+  repairToolRequestItems RepairToolRequestItem[] @relation("ToolReqItemTool")
+  damagedToolReports      DamagedToolReport[]
+  componentRequirements   ComponentToolRequirement[] @relation("ToolComponentReq")
+  calibrationRequirement  ToolCalibrationRequirement?
 
   @@map("tools")
 }
@@ -1496,10 +1496,10 @@ model ToolTransaction {
   createdAt     DateTime @default(now())
   workOrderId   String?
 
-  tool        Tool       @relation(fields: [toolId], references: [id], onDelete: Cascade)
-  performedBy User       @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
-  fromUser    User?      @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
-  toUser      User?      @relation("ToolTxnToUser", fields: [toUserId], references: [id])
+  tool        Tool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  performedBy User  @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
+  fromUser    User? @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
+  toUser      User? @relation("ToolTxnToUser", fields: [toUserId], references: [id])
   workOrder   WorkOrder? @relation("WOToolTransaction", fields: [workOrderId], references: [id])
 
   @@index([workOrderId])
@@ -1685,7 +1685,7 @@ model ReceivingRecord {
   quantityReceived  Float
   condition         String    @default("good") // good, damaged, defective
   custodyStatus     String    @default("stocked") // stocked, quarantined, in_repair, returned_to_supplier, scrapped
-  resolution        String? // stock_as_is, send_for_repair, return_from_repair, return_to_supplier, scrap
+  resolution        String?   // stock_as_is, send_for_repair, return_from_repair, return_to_supplier, scrap
   receivedById      String
   dispositionedById String?
   notes             String?
@@ -2101,8 +2101,8 @@ model ShiftHandover {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  handedOverBy User       @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
-  receivedBy   User?      @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
+  handedOverBy User  @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
+  receivedBy   User? @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
   workOrder    WorkOrder? @relation(fields: [workOrderId], references: [id])
 
   @@index([workOrderId])
@@ -2330,11 +2330,11 @@ model DigitalTwin {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  asset             Asset               @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  createdBy         User                @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
-  scenes            DigitalTwinScene[]
+  asset     Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
+  scenes    DigitalTwinScene[]
   componentRegistry ComponentRegistry[] @relation("RegistryTwin")
-  tours             InspectionTour[]
+  tours     InspectionTour[]
 
   @@index([assetId])
   @@index([createdById])
@@ -2422,11 +2422,11 @@ model DigitalTwinScene {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  twin          DigitalTwin         @relation(fields: [twinId], references: [id], onDelete: Cascade)
-  model         AssetModel          @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  modelFile     ModelLibrary?       @relation(fields: [modelFileId], references: [id])
+  twin          DigitalTwin        @relation(fields: [twinId], references: [id], onDelete: Cascade)
+  model         AssetModel         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelFile     ModelLibrary?      @relation(fields: [modelFileId], references: [id])
   modelFileId   String?
-  createdBy     User                @relation("SceneCreatedBy", fields: [createdById], references: [id])
+  createdBy     User               @relation("SceneCreatedBy", fields: [createdById], references: [id])
   hotspots      TwinHotspot[]
   annotations   TwinAnnotation[]
   cameraPresets TwinCameraPreset[]
@@ -2528,9 +2528,9 @@ model SystemDiagram {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  asset           Asset? @relation(fields: [assetId], references: [id])
-  createdByIdUser User   @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
-  updatedByIdUser User?  @relation("SystemDiagramUpdatedBy", fields: [updatedById], references: [id])
+  asset               Asset?               @relation(fields: [assetId], references: [id])
+  createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
+  updatedByIdUser User? @relation("SystemDiagramUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([plantId])
   @@index([assetId])
@@ -2668,7 +2668,7 @@ model RepairMaterialRequest {
   returnedByUser        User? @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
 
   // Spare Part Return relations
-  sparePartReturns    SparePartReturn[]    @relation("SparePartReturnMatReq")
+  sparePartReturns    SparePartReturn[]   @relation("SparePartReturnMatReq")
   installedSpareParts InstalledSparePart[] @relation("InstalledSpareMaterialRequest")
 
   @@index([componentRegistryId])
@@ -2730,30 +2730,30 @@ model RepairToolRequest {
 
 // 2b. RepairToolRequestItem — Line items for multi-tool requests
 model RepairToolRequestItem {
-  id                     String   @id @default(cuid())
-  repairToolRequestId    String // → RepairToolRequest (header)
-  toolId                 String? // → Tool (nullable — may not have exact tool match)
-  toolName               String
-  toolCode               String? // display only, from tool.toolCode
-  category               String? // display only, from tool.category
-  quantityRequested      Int      @default(1)
-  quantityApproved       Int?
-  quantityIssued         Int      @default(0)
-  quantityReturned       Int      @default(0)
-  quantityTransferred    Int      @default(0)
-  unitCost               Float? // cost per unit at time of request
-  availabilityStatus     String? // available, limited, unavailable — set at issue time
-  issueNotes             String? // reason for partial issue or non-issue
-  conditionAtIssue       String? // condition of tool when issued
-  conditionAtReturn      String? // condition when returned (confirmed by store keeper)
-  pendingReturnQty       Int? // quantity awaiting store keeper confirmation
-  pendingReturnCondition String? // condition reported by technician (pending confirmation)
-  pendingReturnNotes     String? // technician notes about the return
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                    String    @id @default(cuid())
+  repairToolRequestId   String    // → RepairToolRequest (header)
+  toolId                String?   // → Tool (nullable — may not have exact tool match)
+  toolName              String
+  toolCode              String?   // display only, from tool.toolCode
+  category              String?   // display only, from tool.category
+  quantityRequested     Int       @default(1)
+  quantityApproved      Int?
+  quantityIssued        Int       @default(0)
+  quantityReturned      Int       @default(0)
+  quantityTransferred   Int       @default(0)
+  unitCost              Float?    // cost per unit at time of request
+  availabilityStatus    String?   // available, limited, unavailable — set at issue time
+  issueNotes            String?   // reason for partial issue or non-issue
+  conditionAtIssue      String?   // condition of tool when issued
+  conditionAtReturn     String?   // condition when returned (confirmed by store keeper)
+  pendingReturnQty      Int?      // quantity awaiting store keeper confirmation
+  pendingReturnCondition String?  // condition reported by technician (pending confirmation)
+  pendingReturnNotes    String?   // technician notes about the return
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   repairToolRequest RepairToolRequest @relation(fields: [repairToolRequestId], references: [id], onDelete: Cascade)
-  tool              Tool?             @relation("ToolReqItemTool", fields: [toolId], references: [id])
+  tool               Tool?             @relation("ToolReqItemTool", fields: [toolId], references: [id])
 
   @@index([repairToolRequestId])
   @@map("repair_tool_request_items")
@@ -2859,27 +2859,27 @@ model RepairCompletion {
 
 // 6. SparePartReturn — Reusable parts returned from machine for refurbishment
 model InstalledSparePart {
-  id                 String    @id @default(cuid())
-  componentId        String
-  inventoryItemId    String?
-  materialRequestId  String?
-  workOrderId        String?
-  partName           String
-  partCode           String?
-  serialNumber       String?
-  lotNumber          String?
-  quantity           Float     @default(1)
-  sourceType         String    @default("manual") // material_request, commissioning, manual
-  status             String    @default("installed") // installed, removed, returned_to_store, scrapped
-  installedAt        DateTime  @default(now())
-  installedById      String
-  removedAt          DateTime?
-  removedById        String?
-  removalReason      String?
+  id                String    @id @default(cuid())
+  componentId       String
+  inventoryItemId   String?
+  materialRequestId String?
+  workOrderId       String?
+  partName          String
+  partCode          String?
+  serialNumber      String?
+  lotNumber         String?
+  quantity          Float     @default(1)
+  sourceType        String    @default("manual") // material_request, commissioning, manual
+  status            String    @default("installed") // installed, removed, returned_to_store, scrapped
+  installedAt       DateTime  @default(now())
+  installedById     String
+  removedAt         DateTime?
+  removedById       String?
+  removalReason     String?
   conditionOnRemoval String?
-  notes              String?   @db.Text
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   component       ComponentRegistry      @relation("InstalledSpareComponent", fields: [componentId], references: [id], onDelete: Cascade)
   inventoryItem   InventoryItem?         @relation("InstalledSpareInventory", fields: [inventoryItemId], references: [id], onDelete: SetNull)
@@ -2898,49 +2898,49 @@ model InstalledSparePart {
 }
 
 model SparePartReturn {
-  id                   String    @id @default(cuid())
-  returnNumber         String    @unique // format SPR-YYYYMM-NNNN
-  workOrderId          String // → WorkOrder
-  componentId          String? // → ComponentRegistry
-  materialRequestId    String? // → RepairMaterialRequest
+  id                  String    @id @default(cuid())
+  returnNumber        String    @unique // format SPR-YYYYMM-NNNN
+  workOrderId         String    // → WorkOrder
+  componentId         String?   // → ComponentRegistry
+  materialRequestId   String?   // → RepairMaterialRequest
   installedSparePartId String?   @unique // → InstalledSparePart physical identity
-  itemId               String? // → InventoryItem
-  itemName             String
-  partSerialNumber     String?
-  quantity             Float     @default(1)
-  conditionOnReturn    String    @default("used") // new, good, fair, poor, damaged, worn
-  damageDescription    String?   @db.Text // description of any damage/wear
-  refurbishmentNeeded  Boolean   @default(false)
-  refurbishmentNotes   String?   @db.Text
-  estimatedRefurbCost  Float?
-  actualRefurbCost     Float?    @default(0)
-  status               String    @default("pending") // pending, inspected, refurbishing, refurbished, returned_to_store, disposed, rejected
-  inspectedById        String? // → User
-  inspectedAt          DateTime?
-  inspectionNotes      String?   @db.Text
-  refurbisherId        String? // → User (who performs refurbishment)
-  refurbishmentStart   DateTime?
-  refurbishmentEnd     DateTime?
-  returnedToStoreById  String? // → User (storekeeper who accepts back)
-  returnedToStoreAt    DateTime?
-  disposedById         String?
-  disposedAt           DateTime?
-  disposalReason       String?
-  plantId              String?
-  requestedById        String // → User (technician who returned the part)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  itemId              String?   // → InventoryItem
+  itemName            String
+  partSerialNumber    String?
+  quantity            Float     @default(1)
+  conditionOnReturn   String    @default("used") // new, good, fair, poor, damaged, worn
+  damageDescription   String?   @db.Text // description of any damage/wear
+  refurbishmentNeeded Boolean   @default(false)
+  refurbishmentNotes  String?   @db.Text
+  estimatedRefurbCost Float?
+  actualRefurbCost    Float?    @default(0)
+  status              String    @default("pending") // pending, inspected, refurbishing, refurbished, returned_to_store, disposed, rejected
+  inspectedById       String?   // → User
+  inspectedAt         DateTime?
+  inspectionNotes     String?   @db.Text
+  refurbisherId       String?   // → User (who performs refurbishment)
+  refurbishmentStart  DateTime?
+  refurbishmentEnd    DateTime?
+  returnedToStoreById String?   // → User (storekeeper who accepts back)
+  returnedToStoreAt   DateTime?
+  disposedById        String?
+  disposedAt          DateTime?
+  disposalReason      String?
+  plantId             String?
+  requestedById       String    // → User (technician who returned the part)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  workOrder          WorkOrder?             @relation(fields: [workOrderId], references: [id])
-  component          ComponentRegistry?     @relation("SparePartReturnComponent", fields: [componentId], references: [id])
-  materialRequest    RepairMaterialRequest? @relation("SparePartReturnMatReq", fields: [materialRequestId], references: [id])
-  installedSparePart InstalledSparePart?    @relation("InstalledSpareReturn", fields: [installedSparePartId], references: [id], onDelete: SetNull)
-  item               InventoryItem?         @relation("SparePartReturnItem", fields: [itemId], references: [id])
-  requestedBy        User                   @relation("SparePartReturnRequested", fields: [requestedById], references: [id])
-  inspectedBy        User?                  @relation("SparePartReturnInspected", fields: [inspectedById], references: [id])
-  refurbisher        User?                  @relation("SparePartReturnRefurbished", fields: [refurbisherId], references: [id])
-  returnedToStore    User?                  @relation("SparePartReturnStored", fields: [returnedToStoreById], references: [id])
-  disposedByUser     User?                  @relation("SparePartReturnDisposed", fields: [disposedById], references: [id])
+  workOrder       WorkOrder?             @relation(fields: [workOrderId], references: [id])
+  component       ComponentRegistry?     @relation("SparePartReturnComponent", fields: [componentId], references: [id])
+  materialRequest RepairMaterialRequest? @relation("SparePartReturnMatReq", fields: [materialRequestId], references: [id])
+  installedSparePart InstalledSparePart? @relation("InstalledSpareReturn", fields: [installedSparePartId], references: [id], onDelete: SetNull)
+  item            InventoryItem?         @relation("SparePartReturnItem", fields: [itemId], references: [id])
+  requestedBy     User                   @relation("SparePartReturnRequested", fields: [requestedById], references: [id])
+  inspectedBy     User?                  @relation("SparePartReturnInspected", fields: [inspectedById], references: [id])
+  refurbisher     User?                  @relation("SparePartReturnRefurbished", fields: [refurbisherId], references: [id])
+  returnedToStore User?                  @relation("SparePartReturnStored", fields: [returnedToStoreById], references: [id])
+  disposedByUser  User?                  @relation("SparePartReturnDisposed", fields: [disposedById], references: [id])
 
   @@index([workOrderId])
   @@index([status])
@@ -2952,47 +2952,47 @@ model SparePartReturn {
 
 // 7. DamagedToolReport — Structured damage reporting for tools
 model DamagedToolReport {
-  id                  String    @id @default(cuid())
-  reportNumber        String    @unique // format DTR-YYYYMM-NNNN
-  toolId              String // → Tool
-  workOrderId         String? // → WorkOrder
-  toolRequestId       String? // → RepairToolRequest
-  damageType          String // broken, worn, malfunctioning, missing_parts, cosmetic, other
-  damageSeverity      String    @default("medium") // low, medium, high, critical
-  damageDescription   String    @db.Text
-  damagePhotoUrls     String    @default("[]") @db.Text // JSON array of photo URLs
-  quantity            Int       @default(1) // physical damaged units represented by this report
-  repairHeldQuantity  Int       @default(0) // units currently held in Tool.repairQuantity for this report
-  occurredAt          DateTime?
-  reportedById        String // → User
-  technicianId        String? // → User (technician responsible, if different)
-  status              String    @default("reported") // reported, assessed, repair_quoted, repair_in_progress, repaired, written_off, replaced
-  assessmentNotes     String?   @db.Text
+  id              String   @id @default(cuid())
+  reportNumber    String   @unique // format DTR-YYYYMM-NNNN
+  toolId          String   // → Tool
+  workOrderId     String?  // → WorkOrder
+  toolRequestId   String?  // → RepairToolRequest
+  damageType      String   // broken, worn, malfunctioning, missing_parts, cosmetic, other
+  damageSeverity  String   @default("medium") // low, medium, high, critical
+  damageDescription String  @db.Text
+  damagePhotoUrls String   @default("[]") @db.Text // JSON array of photo URLs
+  quantity         Int      @default(1) // physical damaged units represented by this report
+  repairHeldQuantity Int    @default(0) // units currently held in Tool.repairQuantity for this report
+  occurredAt      DateTime?
+  reportedById    String   // → User
+  technicianId    String?  // → User (technician responsible, if different)
+  status          String   @default("reported") // reported, assessed, repair_quoted, repair_in_progress, repaired, written_off, replaced
+  assessmentNotes String?  @db.Text
   estimatedRepairCost Float?
   actualRepairCost    Float?
-  repairVendorId      String?
-  repairVendorName    String?
-  repairStartedAt     DateTime?
-  repairCompletedAt   DateTime?
+  repairVendorId  String?
+  repairVendorName String?
+  repairStartedAt DateTime?
+  repairCompletedAt DateTime?
   repairCompletedById String?
-  qcAcceptedById      String?
-  qcAcceptedAt        DateTime?
-  qcNotes             String?   @db.Text
-  writtenOffById      String?
-  writtenOffAt        DateTime?
-  writeOffReason      String?
-  replacedWithToolId  String?
-  plantId             String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  qcAcceptedById String?
+  qcAcceptedAt   DateTime?
+  qcNotes        String?  @db.Text
+  writtenOffById  String?
+  writtenOffAt    DateTime?
+  writeOffReason  String?
+  replacedWithToolId String?
+  plantId         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  tool              Tool?              @relation(fields: [toolId], references: [id])
-  workOrder         WorkOrder?         @relation(fields: [workOrderId], references: [id])
-  toolRequest       RepairToolRequest? @relation("DamagedToolReportToolReq", fields: [toolRequestId], references: [id])
-  reportedBy        User               @relation("DamagedToolReported", fields: [reportedById], references: [id])
-  technician        User?              @relation("DamagedToolTechnician", fields: [technicianId], references: [id])
-  repairCompletedBy User?              @relation("DamagedToolRepaired", fields: [repairCompletedById], references: [id])
-  writtenOffBy      User?              @relation("DamagedToolWrittenOff", fields: [writtenOffById], references: [id])
+  tool              Tool?               @relation(fields: [toolId], references: [id])
+  workOrder         WorkOrder?          @relation(fields: [workOrderId], references: [id])
+  toolRequest       RepairToolRequest?  @relation("DamagedToolReportToolReq", fields: [toolRequestId], references: [id])
+  reportedBy        User                @relation("DamagedToolReported", fields: [reportedById], references: [id])
+  technician        User?               @relation("DamagedToolTechnician", fields: [technicianId], references: [id])
+  repairCompletedBy User?               @relation("DamagedToolRepaired", fields: [repairCompletedById], references: [id])
+  writtenOffBy      User?               @relation("DamagedToolWrittenOff", fields: [writtenOffById], references: [id])
 
   @@index([toolId])
   @@index([workOrderId])
@@ -3022,66 +3022,68 @@ model Attachment {
   @@map("attachments")
 }
 
+
+
 model ComponentRegistry {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   parentId          String?
   assetId           String?
   twinId            String?
   componentCode     String
   name              String
-  description       String?   @db.Text
-  componentType     String    @default("component") // assembly, subassembly, component, part, auxiliary, instrument
+  description       String?  @db.Text
+  componentType     String   @default("component") // assembly, subassembly, component, part, auxiliary, instrument
   manufacturer      String?
   modelNumber       String?
-  serialNumber      String?   @unique
-  specification     String?   @db.Text // JSON: full specs (power, speed, capacity, etc.)
-  operatingParams   String?   @db.Text // JSON: normal operating parameters
-  criticality       String    @default("medium") // low, medium, high, critical
-  lifecycleStatus   String    @default("operational") // operational, degraded, failed, under_maintenance, decommissioned
+  serialNumber      String?  @unique
+  specification     String?  @db.Text // JSON: full specs (power, speed, capacity, etc.)
+  operatingParams   String?  @db.Text // JSON: normal operating parameters
+  criticality       String   @default("medium") // low, medium, high, critical
+  lifecycleStatus   String   @default("operational") // operational, degraded, failed, under_maintenance, decommissioned
   installedDate     DateTime?
   expectedLifeHours Float?
-  operatingHours    Float     @default(0)
+  operatingHours    Float    @default(0)
   lastInspection    DateTime?
   nextInspectionDue DateTime?
-  healthScore       Int       @default(100) // 0-100 computed or manual
-  sortOrder         Int       @default(0)
-  notes             String?   @db.Text
+  healthScore       Int      @default(100) // 0-100 computed or manual
+  sortOrder         Int      @default(0)
+  notes             String?  @db.Text
 
-  parent           ComponentRegistry?         @relation("ComponentHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children         ComponentRegistry[]        @relation("ComponentHierarchy")
-  asset            Asset?                     @relation("RegistryAsset", fields: [assetId], references: [id])
-  twin             DigitalTwin?               @relation("RegistryTwin", fields: [twinId], references: [id])
-  failureRecords   FailureRecord[]
-  sparePartLinks   ComponentSparePart[]
+  parent        ComponentRegistry?  @relation("ComponentHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children      ComponentRegistry[] @relation("ComponentHierarchy")
+  asset         Asset?               @relation("RegistryAsset", fields: [assetId], references: [id])
+  twin          DigitalTwin?         @relation("RegistryTwin", fields: [twinId], references: [id])
+  failureRecords FailureRecord[]
+  sparePartLinks ComponentSparePart[]
   toolRequirements ComponentToolRequirement[]
   predictiveModels PredictiveModel[]
   predictionAlerts PredictionAlert[]
 
   // Component Maintenance Intelligence relations
-  runtimeCounters      ComponentRuntimeCounter[]
-  conditionReadings    ComponentConditionReading[]
-  maintenanceHistory   ComponentMaintenanceHistory[]
-  pmSchedules          PmSchedule[]                   @relation("PmScheduleComponent")
-  inspectionPoints     ComponentInspectionPoint[]
-  inspectionRecords    ComponentInspectionRecord[]
-  lubricationSchedules ComponentLubricationSchedule[]
-  lubricationRecords   ComponentLubricationRecord[]
-  replacementHistory   ComponentReplacementHistory[]
-  installedSpareParts  InstalledSparePart[]           @relation("InstalledSpareComponent")
-  visuals              ComponentVisual[]
+  runtimeCounters          ComponentRuntimeCounter[]
+  conditionReadings        ComponentConditionReading[]
+  maintenanceHistory       ComponentMaintenanceHistory[]
+  pmSchedules              PmSchedule[] @relation("PmScheduleComponent")
+  inspectionPoints         ComponentInspectionPoint[]
+  inspectionRecords        ComponentInspectionRecord[]
+  lubricationSchedules     ComponentLubricationSchedule[]
+  lubricationRecords       ComponentLubricationRecord[]
+  replacementHistory       ComponentReplacementHistory[]
+  installedSpareParts      InstalledSparePart[] @relation("InstalledSpareComponent")
+  visuals                  ComponentVisual[]
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
-  bomItems          BomRevisionItem[]      @relation("BomItemComponent")
-  altPrimaryParts   AlternatePart[]        @relation("AltPrimaryPart")
-  altAlternateParts AlternatePart[]        @relation("AltAlternatePart")
-  spareAnalysis     CriticalSpareAnalysis?
-  weibullAnalyses   WeibullAnalysis[]
-  rulEstimate       RemainingUsefulLife?
+  bomItems              BomRevisionItem[]    @relation("BomItemComponent")
+  altPrimaryParts       AlternatePart[]      @relation("AltPrimaryPart")
+  altAlternateParts     AlternatePart[]      @relation("AltAlternatePart")
+  spareAnalysis         CriticalSpareAnalysis?
+  weibullAnalyses        WeibullAnalysis[]
+  rulEstimate            RemainingUsefulLife?
 
   // Work Order - Component tracking
-  workOrderComponents    WorkOrderComponent[]
-  repairMaterialRequests RepairMaterialRequest[] @relation("RepairMatReqComponent")
-  sparePartReturns       SparePartReturn[]       @relation("SparePartReturnComponent")
+  workOrderComponents     WorkOrderComponent[]
+  repairMaterialRequests  RepairMaterialRequest[] @relation("RepairMatReqComponent")
+  sparePartReturns        SparePartReturn[] @relation("SparePartReturnComponent")
 
   @@unique([componentCode])
   @@index([parentId])
@@ -3094,29 +3096,29 @@ model ComponentRegistry {
 }
 
 model ComponentVisual {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   assetId        String?
   componentId    String?
-  visualType     String    @default("ai_realistic") // ai_realistic, technical_2d, exploded, photo, schematic
+  visualType     String   @default("ai_realistic") // ai_realistic, technical_2d, exploded, photo, schematic
   title          String
-  description    String?   @db.Text
+  description    String?  @db.Text
   imageUrl       String
   thumbnailUrl   String?
-  hotspotData    String?   @db.Text // JSON array of normalized x/y hotspots
-  cameraData     String?   @db.Text // JSON viewer state / crop / focus metadata
-  sourceProvider String? // openai, z_ai, meshy, uploaded, generated_svg
-  sourcePrompt   String?   @db.Text
-  zoomLevel      Int       @default(0)
-  sortOrder      Int       @default(0)
-  isPrimary      Boolean   @default(false)
-  isActive       Boolean   @default(true)
+  hotspotData    String?  @db.Text // JSON array of normalized x/y hotspots
+  cameraData     String?  @db.Text // JSON viewer state / crop / focus metadata
+  sourceProvider String?  // openai, z_ai, meshy, uploaded, generated_svg
+  sourcePrompt   String?  @db.Text
+  zoomLevel      Int      @default(0)
+  sortOrder      Int      @default(0)
+  isPrimary      Boolean  @default(false)
+  isActive       Boolean  @default(true)
   generatedAt    DateTime?
   createdById    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  asset     Asset?             @relation("AssetComponentVisuals", fields: [assetId], references: [id], onDelete: Cascade)
-  component ComponentRegistry? @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  asset      Asset?             @relation("AssetComponentVisuals", fields: [assetId], references: [id], onDelete: Cascade)
+  component  ComponentRegistry? @relation(fields: [componentId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
   @@index([componentId])
@@ -3126,16 +3128,16 @@ model ComponentVisual {
 }
 
 model ComponentSparePart {
-  id               String  @id @default(cuid())
-  componentId      String
-  inventoryItemId  String?
-  sparePartName    String
-  sparePartCode    String
-  quantityRequired Int     @default(1)
-  unitCost         Float?
-  leadTimeDays     Int?
-  criticality      String  @default("medium") // low, medium, high, critical
-  notes            String? @db.Text
+  id                String   @id @default(cuid())
+  componentId       String
+  inventoryItemId   String?
+  sparePartName     String
+  sparePartCode     String
+  quantityRequired  Int      @default(1)
+  unitCost          Float?
+  leadTimeDays      Int?
+  criticality       String   @default("medium") // low, medium, high, critical
+  notes             String?  @db.Text
 
   component     ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
   inventoryItem InventoryItem?    @relation("SparePartInventory", fields: [inventoryItemId], references: [id])
@@ -3146,17 +3148,17 @@ model ComponentSparePart {
 }
 
 model ComponentToolRequirement {
-  id               String  @id @default(cuid())
-  componentId      String
-  toolId           String?
-  toolName         String
-  toolCode         String
-  quantityRequired Int     @default(1)
-  taskType         String  @default("general") // inspection, repair, overhaul, calibration, installation
-  notes            String? @db.Text
+  id                String   @id @default(cuid())
+  componentId       String
+  toolId            String?
+  toolName          String
+  toolCode          String
+  quantityRequired  Int      @default(1)
+  taskType          String   @default("general") // inspection, repair, overhaul, calibration, installation
+  notes             String?  @db.Text
 
   component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  tool      Tool?             @relation("ToolComponentReq", fields: [toolId], references: [id])
+  tool       Tool?              @relation("ToolComponentReq", fields: [toolId], references: [id])
 
   @@index([componentId])
   @@index([toolId])
@@ -3164,34 +3166,34 @@ model ComponentToolRequirement {
 }
 
 model FailureRecord {
-  id          String  @id @default(cuid())
-  componentId String
-  assetId     String?
-  workOrderId String?
+  id              String   @id @default(cuid())
+  componentId     String
+  assetId         String?
+  workOrderId     String?
 
-  failureCode     String? // standardized failure code
-  failureMode     String // mechanical, electrical, hydraulic, pneumatic, software, corrosion, fatigue, wear, other
+  failureCode     String?  // standardized failure code
+  failureMode     String   // mechanical, electrical, hydraulic, pneumatic, software, corrosion, fatigue, wear, other
   failureModeId   String?
-  failureCause    String? @db.Text
-  failureSeverity String  @default("medium") // low, medium, high, critical
-  symptoms        String? @db.Text // JSON array of observed symptoms
+  failureCause    String?  @db.Text
+  failureSeverity String   @default("medium") // low, medium, high, critical
+  symptoms        String?  @db.Text // JSON array of observed symptoms
 
-  detectedAt      DateTime  @default(now())
+  detectedAt      DateTime @default(now())
   resolvedAt      DateTime?
-  downtimeMinutes Int       @default(0)
+  downtimeMinutes Int      @default(0)
   repairCost      Float?
 
-  rootCause        String? @db.Text
+  rootCause       String?  @db.Text
   correctiveAction String? @db.Text
   preventiveAction String? @db.Text
 
-  reportedById String?
+  reportedById    String?
 
-  component     ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  asset         Asset?            @relation("FailureAsset", fields: [assetId], references: [id])
-  workOrder     WorkOrder?        @relation("FailureWorkOrder", fields: [workOrderId], references: [id])
-  reportedBy    User?             @relation("FailureReported", fields: [reportedById], references: [id])
-  failureModeFk FailureMode?      @relation("FailureRecordMode", fields: [failureModeId], references: [id])
+  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  asset       Asset?            @relation("FailureAsset", fields: [assetId], references: [id])
+  workOrder   WorkOrder?        @relation("FailureWorkOrder", fields: [workOrderId], references: [id])
+  reportedBy  User?             @relation("FailureReported", fields: [reportedById], references: [id])
+  failureModeFk FailureMode?       @relation("FailureRecordMode", fields: [failureModeId], references: [id])
 
   @@index([componentId])
   @@index([assetId])
@@ -3214,10 +3216,10 @@ model ModelVersion {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  assetModel     AssetModel    @relation("ModelVersions", fields: [assetModelId], references: [id], onDelete: Cascade)
-  modelLibrary   ModelLibrary? @relation(fields: [modelLibraryId], references: [id])
+  assetModel    AssetModel    @relation("ModelVersions", fields: [assetModelId], references: [id], onDelete: Cascade)
+  modelLibrary  ModelLibrary? @relation(fields: [modelLibraryId], references: [id])
   modelLibraryId String?
-  uploadedBy     User          @relation("ModelVersionUploaded", fields: [uploadedById], references: [id])
+  uploadedBy    User          @relation("ModelVersionUploaded", fields: [uploadedById], references: [id])
 
   @@unique([assetModelId, version])
   @@index([assetModelId])
@@ -3226,15 +3228,15 @@ model ModelVersion {
 }
 
 model TwinAuditLog {
-  id         String   @id @default(cuid())
-  entityType String // twin, scene, hotspot, annotation, camera_preset, mesh_binding, asset_model, diagram
-  entityId   String
-  action     String // create, update, delete, view, export, share
-  changes    String?  @db.Text // JSON: { field: { old: val, new: val } }
-  userId     String
-  ipAddress  String?
-  userAgent  String?  @db.Text
-  createdAt  DateTime @default(now())
+  id            String   @id @default(cuid())
+  entityType    String   // twin, scene, hotspot, annotation, camera_preset, mesh_binding, asset_model, diagram
+  entityId      String
+  action        String   // create, update, delete, view, export, share
+  changes       String?  @db.Text // JSON: { field: { old: val, new: val } }
+  userId        String
+  ipAddress     String?
+  userAgent     String?  @db.Text
+  createdAt     DateTime @default(now())
 
   user User @relation("TwinAuditUser", fields: [userId], references: [id])
 
@@ -3246,28 +3248,28 @@ model TwinAuditLog {
 }
 
 model PredictiveModel {
-  id             String    @id @default(cuid())
-  componentId    String?
-  assetId        String?
-  modelName      String
-  modelType      String // anomaly_detection, regression, classification, survival
-  algorithm      String? // e.g. "isolation_forest", "lstm", "xgboost"
-  description    String?   @db.Text
-  parameters     String?   @db.Text // JSON: model parameters
-  trainingStatus String    @default("pending") // pending, training, trained, deploying, deployed, failed
-  accuracy       Float? // model accuracy metric
-  lastTrainedAt  DateTime?
-  dataPoints     Int       @default(0)
-  alertThreshold Float? // threshold for generating predictions
-  isActive       Boolean   @default(true)
-  createdById    String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  componentId       String?
+  assetId           String?
+  modelName         String
+  modelType         String   // anomaly_detection, regression, classification, survival
+  algorithm         String?  // e.g. "isolation_forest", "lstm", "xgboost"
+  description       String?  @db.Text
+  parameters        String?  @db.Text // JSON: model parameters
+  trainingStatus    String   @default("pending") // pending, training, trained, deploying, deployed, failed
+  accuracy          Float?   // model accuracy metric
+  lastTrainedAt     DateTime?
+  dataPoints        Int      @default(0)
+  alertThreshold    Float?   // threshold for generating predictions
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  component ComponentRegistry? @relation(fields: [componentId], references: [id])
-  asset     Asset?             @relation("PredictiveAsset", fields: [assetId], references: [id])
-  createdBy User               @relation("PredictiveCreatedBy", fields: [createdById], references: [id])
-  alerts    PredictionAlert[]
+  component  ComponentRegistry? @relation(fields: [componentId], references: [id])
+  asset      Asset?              @relation("PredictiveAsset", fields: [assetId], references: [id])
+  createdBy  User                @relation("PredictiveCreatedBy", fields: [createdById], references: [id])
+  alerts     PredictionAlert[]
 
   @@index([componentId])
   @@index([assetId])
@@ -3277,26 +3279,26 @@ model PredictiveModel {
 }
 
 model PredictionAlert {
-  id                 String    @id @default(cuid())
-  predictiveModelId  String
-  componentId        String?
-  assetId            String?
-  alertType          String // anomaly, degradation, failure_predicted, threshold_breach
-  severity           String    @default("medium") // low, medium, high, critical
-  confidence         Float? // 0.0 to 1.0
+  id                String   @id @default(cuid())
+  predictiveModelId String
+  componentId       String?
+  assetId           String?
+  alertType         String   // anomaly, degradation, failure_predicted, threshold_breach
+  severity          String   @default("medium") // low, medium, high, critical
+  confidence        Float?   // 0.0 to 1.0
   predictedFailureAt DateTime?
-  message            String    @db.Text
-  recommendations    String?   @db.Text
-  isAcknowledged     Boolean   @default(false)
-  acknowledgedById   String?
-  acknowledgedAt     DateTime?
-  resolvedAt         DateTime?
-  createdAt          DateTime  @default(now())
+  message           String   @db.Text
+  recommendations   String?  @db.Text
+  isAcknowledged    Boolean  @default(false)
+  acknowledgedById  String?
+  acknowledgedAt    DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime @default(now())
 
-  predictiveModel PredictiveModel    @relation(fields: [predictiveModelId], references: [id], onDelete: Cascade)
+  predictiveModel PredictiveModel   @relation(fields: [predictiveModelId], references: [id], onDelete: Cascade)
   component       ComponentRegistry? @relation(fields: [componentId], references: [id])
-  asset           Asset?             @relation("PredictionAsset", fields: [assetId], references: [id])
-  acknowledgedBy  User?              @relation("PredictionAcknowledged", fields: [acknowledgedById], references: [id])
+  asset           Asset?               @relation("PredictionAsset", fields: [assetId], references: [id])
+  acknowledgedBy  User?                @relation("PredictionAcknowledged", fields: [acknowledgedById], references: [id])
 
   @@index([predictiveModelId])
   @@index([componentId])
@@ -3312,14 +3314,14 @@ model PredictionAlert {
 // ============================================================================
 
 model ComponentRuntimeCounter {
-  id          String    @id @default(cuid())
-  componentId String
-  counterType String // operating_hours, starts, stops, cycles, runtime_minutes
-  value       Float     @default(0)
-  unit        String    @default("hours") // hours, cycles, starts, minutes
-  lastResetAt DateTime?
-  isRunning   Boolean   @default(false)
-  updatedAt   DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  componentId     String
+  counterType     String   // operating_hours, starts, stops, cycles, runtime_minutes
+  value           Float    @default(0)
+  unit            String   @default("hours") // hours, cycles, starts, minutes
+  lastResetAt     DateTime?
+  isRunning       Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
 
   component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
 
@@ -3330,21 +3332,21 @@ model ComponentRuntimeCounter {
 }
 
 model ComponentConditionReading {
-  id           String   @id @default(cuid())
-  componentId  String
-  parameterKey String // vibration, temperature, pressure, current, voltage, flow_rate, noise_level
-  value        Float
-  unit         String // mm/s, °C, bar, A, V, m³/h, dB
-  quality      Int      @default(100) // 0-100 data quality indicator
-  minThreshold Float? // alarm low
-  maxThreshold Float? // alarm high
-  isAlarm      Boolean  @default(false)
-  source       String   @default("manual") // iot, manual, calculated
-  recordedAt   DateTime @default(now())
-  recordedById String?
+  id              String   @id @default(cuid())
+  componentId     String
+  parameterKey    String   // vibration, temperature, pressure, current, voltage, flow_rate, noise_level
+  value           Float
+  unit            String   // mm/s, °C, bar, A, V, m³/h, dB
+  quality         Int      @default(100) // 0-100 data quality indicator
+  minThreshold    Float?   // alarm low
+  maxThreshold    Float?   // alarm high
+  isAlarm         Boolean  @default(false)
+  source          String   @default("manual") // iot, manual, calculated
+  recordedAt      DateTime @default(now())
+  recordedById    String?
 
-  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  recordedBy User?             @relation("ConditionRecorded", fields: [recordedById], references: [id])
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  recordedBy User?           @relation("ConditionRecorded", fields: [recordedById], references: [id])
 
   @@index([componentId, parameterKey])
   @@index([componentId, recordedAt])
@@ -3354,25 +3356,25 @@ model ComponentConditionReading {
 }
 
 model ComponentMaintenanceHistory {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   componentId     String
-  workOrderId     String? // linked WorkOrder
-  maintenanceType String // corrective, preventive, predictive, condition_based, emergency
-  description     String    @db.Text
+  workOrderId     String?  // linked WorkOrder
+  maintenanceType String   // corrective, preventive, predictive, condition_based, emergency
+  description     String   @db.Text
   performedById   String
   startedAt       DateTime?
   completedAt     DateTime?
   durationMinutes Int?
-  findings        String?   @db.Text // JSON: what was found during maintenance
-  actionsTaken    String?   @db.Text // JSON: what was done
-  partsUsed       String?   @db.Text // JSON: [{partName, partCode, quantity}]
+  findings        String?  @db.Text // JSON: what was found during maintenance
+  actionsTaken    String?  @db.Text // JSON: what was done
+  partsUsed       String?  @db.Text // JSON: [{partName, partCode, quantity}]
   cost            Float?
   nextDueDate     DateTime?
-  notes           String?   @db.Text
+  notes           String?  @db.Text
 
-  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  workOrder   WorkOrder?        @relation("ComponentWorkOrder", fields: [workOrderId], references: [id])
-  performedBy User              @relation("MaintenancePerformed", fields: [performedById], references: [id])
+  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder?        @relation("ComponentWorkOrder", fields: [workOrderId], references: [id])
+  performedBy User             @relation("MaintenancePerformed", fields: [performedById], references: [id])
 
   @@index([componentId])
   @@index([workOrderId])
@@ -3383,20 +3385,20 @@ model ComponentMaintenanceHistory {
 }
 
 model ComponentInspectionPoint {
-  id             String    @id @default(cuid())
-  componentId    String
-  name           String
-  description    String?   @db.Text
-  inspectionType String    @default("visual") // visual, measurement, functional, dimensional, ndt
-  parameterKey   String? // link to condition reading parameter
-  normalRange    String?   @db.Text // JSON: {min, max, unit}
-  frequency      String    @default("monthly") // hourly, daily, weekly, monthly, quarterly, annually, per_start
-  lastInspected  DateTime?
-  nextInspection DateTime?
-  isActive       Boolean   @default(true)
-  sortOrder      Int       @default(0)
+  id              String   @id @default(cuid())
+  componentId     String
+  name            String
+  description     String?  @db.Text
+  inspectionType  String   @default("visual") // visual, measurement, functional, dimensional, ndt
+  parameterKey    String?  // link to condition reading parameter
+  normalRange     String?  @db.Text // JSON: {min, max, unit}
+  frequency       String   @default("monthly") // hourly, daily, weekly, monthly, quarterly, annually, per_start
+  lastInspected   DateTime?
+  nextInspection  DateTime?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
 
-  component ComponentRegistry           @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
   records   ComponentInspectionRecord[]
 
   @@index([componentId])
@@ -3416,8 +3418,8 @@ model ComponentInspectionRecord {
   inspectedAt       DateTime @default(now())
 
   inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)
-  component       ComponentRegistry        @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  inspector       User                     @relation("InspectionRecorded", fields: [inspectorId], references: [id])
+  component       ComponentRegistry          @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  inspector       User                       @relation("InspectionRecorded", fields: [inspectorId], references: [id])
 
   @@index([inspectionPointId])
   @@index([componentId])
@@ -3427,21 +3429,21 @@ model ComponentInspectionRecord {
 }
 
 model ComponentLubricationSchedule {
-  id             String    @id @default(cuid())
-  componentId    String
-  lubricantType  String // grease, oil, solid
-  lubricantName  String
-  specification  String? // e.g. "ISO VG 68"
-  quantity       Float
-  unit           String    @default("grams") // grams, ml, oz
-  frequency      String    @default("monthly") // weekly, monthly, quarterly, biannually, annually, per_hours
-  frequencyHours Float? // alternate: every N operating hours
-  lastLubricated DateTime?
-  nextDueDate    DateTime?
-  isActive       Boolean   @default(true)
-  notes          String?   @db.Text
+  id              String   @id @default(cuid())
+  componentId     String
+  lubricantType   String   // grease, oil, solid
+  lubricantName   String
+  specification   String?  // e.g. "ISO VG 68"
+  quantity        Float
+  unit            String   @default("grams") // grams, ml, oz
+  frequency       String   @default("monthly") // weekly, monthly, quarterly, biannually, annually, per_hours
+  frequencyHours  Float?   // alternate: every N operating hours
+  lastLubricated  DateTime?
+  nextDueDate     DateTime?
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
 
-  component ComponentRegistry            @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
   records   ComponentLubricationRecord[]
 
   @@index([componentId])
@@ -3450,20 +3452,20 @@ model ComponentLubricationSchedule {
 }
 
 model ComponentLubricationRecord {
-  id               String   @id @default(cuid())
-  scheduleId       String
-  componentId      String
-  lubricantName    String
-  quantityUsed     Float
-  unit             String
-  operatingHoursAt Float?
-  performedById    String
-  performedAt      DateTime @default(now())
-  notes            String?  @db.Text
+  id                  String   @id @default(cuid())
+  scheduleId          String
+  componentId         String
+  lubricantName       String
+  quantityUsed        Float
+  unit                String
+  operatingHoursAt    Float?
+  performedById       String
+  performedAt         DateTime @default(now())
+  notes               String?  @db.Text
 
-  schedule    ComponentLubricationSchedule @relation(fields: [scheduleId], references: [id])
-  component   ComponentRegistry            @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  performedBy User                         @relation("LubricationPerformed", fields: [performedById], references: [id])
+  schedule  ComponentLubricationSchedule @relation(fields: [scheduleId], references: [id])
+  component ComponentRegistry            @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  performedBy User                       @relation("LubricationPerformed", fields: [performedById], references: [id])
 
   @@index([scheduleId])
   @@index([componentId])
@@ -3472,24 +3474,24 @@ model ComponentLubricationRecord {
 }
 
 model ComponentReplacementHistory {
-  id                      String    @id @default(cuid())
-  componentId             String
-  workOrderId             String?
-  partName                String
-  partCode                String?
-  serialNumberOld         String?
-  serialNumberNew         String?
-  reason                  String // wear, failure, upgrade, preventive, recall
-  cost                    Float?
-  vendor                  String?
-  performedById           String
-  replacedAt              DateTime  @default(now())
+  id              String   @id @default(cuid())
+  componentId     String
+  workOrderId     String?
+  partName        String
+  partCode        String?
+  serialNumberOld String?
+  serialNumberNew String?
+  reason          String   // wear, failure, upgrade, preventive, recall
+  cost            Float?
+  vendor          String?
+  performedById   String
+  replacedAt      DateTime @default(now())
   expectedNextReplacement DateTime?
-  notes                   String?   @db.Text
+  notes           String?  @db.Text
 
-  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  workOrder   WorkOrder?        @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-  performedBy User              @relation("ReplacementPerformed", fields: [performedById], references: [id])
+  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder?        @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  performedBy User             @relation("ReplacementPerformed", fields: [performedById], references: [id])
 
   @@index([componentId])
   @@index([workOrderId])
@@ -3498,24 +3500,24 @@ model ComponentReplacementHistory {
 }
 
 model SpatialNode {
-  id          String   @id @default(cuid())
-  parentId    String?
-  nodeType    String // plant, building, floor, area, production_line, machine, component
-  name        String
-  code        String? // unique spatial code
-  level       Int      @default(0) // hierarchy depth
-  sortOrder   Int      @default(0)
-  coordinates String?  @db.Text // JSON: {x, y, z} or {lat, lng} for geo
-  floorMapUrl String? // URL to floor plan image
-  capacity    String?  @db.Text // JSON: {maxUnits, currentUnits}
-  metadata    String?  @db.Text // JSON: any additional spatial data
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  parentId        String?
+  nodeType        String   // plant, building, floor, area, production_line, machine, component
+  name            String
+  code            String?  // unique spatial code
+  level           Int      @default(0) // hierarchy depth
+  sortOrder       Int      @default(0)
+  coordinates     String?  @db.Text // JSON: {x, y, z} or {lat, lng} for geo
+  floorMapUrl     String?  // URL to floor plan image
+  capacity        String?  @db.Text // JSON: {maxUnits, currentUnits}
+  metadata        String?  @db.Text // JSON: any additional spatial data
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  parent   SpatialNode?  @relation("SpatialHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
-  children SpatialNode[] @relation("SpatialHierarchy")
-  assets   Asset[]       @relation("SpatialAsset")
+  parent    SpatialNode?       @relation("SpatialHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  SpatialNode[]      @relation("SpatialHierarchy")
+  assets    Asset[]            @relation("SpatialAsset")
 
   @@unique([code])
   @@index([parentId])
@@ -3551,8 +3553,8 @@ model WorkInstruction {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  creator    User                       @relation("WICreatedBy", fields: [createdById], references: [id])
-  executions WorkInstructionExecution[]
+  creator      User                         @relation("WICreatedBy", fields: [createdById], references: [id])
+  executions   WorkInstructionExecution[]
 
   @@index([componentId])
   @@index([assetId])
@@ -3562,22 +3564,22 @@ model WorkInstruction {
 }
 
 model WorkInstructionExecution {
-  id                 String    @id @default(cuid())
-  workInstructionId  String
-  workOrderId        String    @default("")
-  technicianId       String
-  status             String    @default("not_started") // not_started, in_progress, paused, completed, abandoned
-  currentStep        Int       @default(1)
-  startedAt          DateTime  @default(now())
-  completedAt        DateTime?
-  pausedAt           DateTime?
-  totalDuration      Int? // minutes
-  stepResults        String    @default("[]") @db.Text // JSON: StepResult[]
-  safetyResults      String    @default("[]") @db.Text // JSON: SafetyResult[]
-  toolVerifications  String    @default("[]") @db.Text // JSON: ToolVerification[]
-  partVerifications  String    @default("[]") @db.Text // JSON: PartVerification[]
-  notes              String    @default("")
-  completionEvidence String    @default("[]") @db.Text // JSON: photo URLs, signatures
+  id                   String    @id @default(cuid())
+  workInstructionId    String
+  workOrderId          String    @default("")
+  technicianId         String
+  status               String    @default("not_started") // not_started, in_progress, paused, completed, abandoned
+  currentStep          Int       @default(1)
+  startedAt            DateTime  @default(now())
+  completedAt          DateTime?
+  pausedAt             DateTime?
+  totalDuration        Int? // minutes
+  stepResults          String    @default("[]") @db.Text // JSON: StepResult[]
+  safetyResults        String    @default("[]") @db.Text // JSON: SafetyResult[]
+  toolVerifications    String    @default("[]") @db.Text // JSON: ToolVerification[]
+  partVerifications    String    @default("[]") @db.Text // JSON: PartVerification[]
+  notes                String    @default("")
+  completionEvidence   String    @default("[]") @db.Text // JSON: photo URLs, signatures
 
   workInstruction WorkInstruction @relation(fields: [workInstructionId], references: [id], onDelete: Cascade)
 
@@ -3596,19 +3598,19 @@ model ModelLibrary {
   id              String   @id @default(cuid())
   name            String
   description     String?  @db.Text
-  originalFile    String // original filename
-  storedPath      String // storage path (local or S3)
-  fileSize        Int // bytes
+  originalFile    String   // original filename
+  storedPath      String   // storage path (local or S3)
+  fileSize        Int      // bytes
   mimeType        String   @default("model/gltf-binary")
   format          String   @default("glb") // glb, gltf, fbx, obj, step
   version         Int      @default(1)
   status          String   @default("processing") // processing, ready, failed, archived
-  thumbnail       String? // auto-generated thumbnail path
+  thumbnail       String?  // auto-generated thumbnail path
   boundingBox     String?  @db.Text // JSON: {minX, minY, minZ, maxX, maxY, maxZ}
   geometryStats   String?  @db.Text // JSON: {vertices, faces, meshes, materials, animations}
   dracoCompressed Boolean  @default(false)
   optimizedForWeb Boolean  @default(false)
-  maxLodPolygons  Int? // highest LOD polygon count
+  maxLodPolygons  Int?     // highest LOD polygon count
   metadata        String?  @db.Text // JSON: any additional model metadata
   processingLog   String?  @db.Text
   processingError String?  @db.Text
@@ -3619,13 +3621,13 @@ model ModelLibrary {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  asset                 Asset?                 @relation("ModelAsset", fields: [assetId], references: [id])
-  plant                 Plant?                 @relation("ModelPlant", fields: [plantId], references: [id])
-  uploadedBy            User                   @relation("ModelUploadedBy", fields: [uploadedById], references: [id])
-  scenes                DigitalTwinScene[]
-  versions              ModelVersion[]
+  asset      Asset?                  @relation("ModelAsset", fields: [assetId], references: [id])
+  plant      Plant?                  @relation("ModelPlant", fields: [plantId], references: [id])
+  uploadedBy User                    @relation("ModelUploadedBy", fields: [uploadedById], references: [id])
+  scenes     DigitalTwinScene[]
+  versions   ModelVersion[]
   meshComponentMappings MeshComponentMapping[]
-  modelProcessingJobs   ModelProcessingJob[]
+  modelProcessingJobs  ModelProcessingJob[]
 
   @@index([assetId])
   @@index([plantId])
@@ -3636,25 +3638,25 @@ model ModelLibrary {
 }
 
 model MeshComponentMapping {
-  id            String   @id @default(cuid())
-  modelId       String
-  meshName      String // GLTF node/mesh name
-  meshPath      String // GLTF node path (e.g., "Root/Pump/Impeller")
-  mappingType   String // component, spare_part, sensor, inspection_point, lubrication_point, pm_schedule, tool_requirement, work_instruction
-  targetId      String // ID of the mapped entity
-  targetName    String? // display name
-  color         String? // hex color for highlighting (e.g., "#ff0000")
-  opacity       Float    @default(1.0)
-  isHighlighted Boolean  @default(false)
-  isVisible     Boolean  @default(true)
-  metadata      String?  @db.Text // JSON: any additional mapping data
-  sortOrder     Int      @default(0)
-  createdById   String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(cuid())
+  modelId           String
+  meshName          String   // GLTF node/mesh name
+  meshPath          String   // GLTF node path (e.g., "Root/Pump/Impeller")
+  mappingType       String   // component, spare_part, sensor, inspection_point, lubrication_point, pm_schedule, tool_requirement, work_instruction
+  targetId          String   // ID of the mapped entity
+  targetName        String?  // display name
+  color             String?  // hex color for highlighting (e.g., "#ff0000")
+  opacity           Float    @default(1.0)
+  isHighlighted     Boolean  @default(false)
+  isVisible         Boolean  @default(true)
+  metadata          String?  @db.Text // JSON: any additional mapping data
+  sortOrder         Int      @default(0)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  model     ModelLibrary @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  createdBy User         @relation("MappingCreatedBy", fields: [createdById], references: [id])
+  model      ModelLibrary   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  createdBy  User            @relation("MappingCreatedBy", fields: [createdById], references: [id])
 
   @@unique([modelId, meshName, mappingType, targetId])
   @@index([modelId])
@@ -3665,21 +3667,21 @@ model MeshComponentMapping {
 }
 
 model InspectionTour {
-  id            String   @id @default(cuid())
-  twinId        String
-  name          String
-  description   String?  @db.Text
-  steps         String   @db.Text // JSON: TourStep[] with camera positions, duration, narration
-  estimatedTime Int      @default(0) // seconds
-  difficulty    String   @default("basic") // basic, intermediate, advanced
-  isPublished   Boolean  @default(false)
-  sortOrder     Int      @default(0)
-  createdById   String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  twinId          String
+  name            String
+  description     String?  @db.Text
+  steps           String   @db.Text // JSON: TourStep[] with camera positions, duration, narration
+  estimatedTime   Int      @default(0) // seconds
+  difficulty      String   @default("basic") // basic, intermediate, advanced
+  isPublished     Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  twin      DigitalTwin @relation(fields: [twinId], references: [id], onDelete: Cascade)
-  createdBy User        @relation("TourCreatedBy", fields: [createdById], references: [id])
+  twin       DigitalTwin  @relation(fields: [twinId], references: [id], onDelete: Cascade)
+  createdBy  User          @relation("TourCreatedBy", fields: [createdById], references: [id])
 
   @@index([twinId])
   @@index([isPublished])
@@ -3687,22 +3689,22 @@ model InspectionTour {
 }
 
 model ModelProcessingJob {
-  id          String    @id @default(cuid())
-  modelId     String
-  jobType     String // validation, thumbnail, draco_compress, optimize, lod_generation, metadata_extraction
-  status      String    @default("queued") // queued, running, completed, failed
-  input       String?   @db.Text // JSON: job parameters
-  output      String?   @db.Text // JSON: job results
-  error       String?   @db.Text
-  progress    Int       @default(0) // 0-100
-  startedAt   DateTime?
-  completedAt DateTime?
-  duration    Int? // milliseconds
-  queuedById  String
-  createdAt   DateTime  @default(now())
+  id              String   @id @default(cuid())
+  modelId         String
+  jobType         String   // validation, thumbnail, draco_compress, optimize, lod_generation, metadata_extraction
+  status          String   @default("queued") // queued, running, completed, failed
+  input           String?  @db.Text // JSON: job parameters
+  output          String?  @db.Text // JSON: job results
+  error           String?  @db.Text
+  progress        Int      @default(0) // 0-100
+  startedAt       DateTime?
+  completedAt     DateTime?
+  duration        Int?     // milliseconds
+  queuedById      String
+  createdAt       DateTime @default(now())
 
-  model    ModelLibrary @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  queuedBy User         @relation("JobQueuedBy", fields: [queuedById], references: [id])
+  model     ModelLibrary @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  queuedBy  User         @relation("JobQueuedBy", fields: [queuedById], references: [id])
 
   @@index([modelId])
   @@index([status])
@@ -3711,24 +3713,24 @@ model ModelProcessingJob {
 }
 
 model AssetViewBookmark {
-  id                String   @id @default(cuid())
-  sceneId           String
-  name              String
-  description       String?
-  cameraPosition    String   @db.Text // JSON: {x, y, z}
-  cameraTarget      String   @db.Text // JSON: {x, y, z}
-  cameraUp          String?  @db.Text // JSON: {x, y, z}
-  cameraFov         Float    @default(50)
-  isOrthographic    Boolean  @default(false)
-  zoomLevel         Float? // for orthographic
-  hiddenMeshes      String?  @db.Text // JSON: string[] of mesh paths to hide
-  highlightedMeshes String?  @db.Text // JSON: string[] of mesh paths to highlight
-  sectionPlane      String?  @db.Text // JSON: {normal, constant}
-  createdById       String
-  createdAt         DateTime @default(now())
+  id              String   @id @default(cuid())
+  sceneId         String
+  name            String
+  description     String?
+  cameraPosition  String   @db.Text // JSON: {x, y, z}
+  cameraTarget    String   @db.Text // JSON: {x, y, z}
+  cameraUp        String?  @db.Text // JSON: {x, y, z}
+  cameraFov       Float    @default(50)
+  isOrthographic  Boolean  @default(false)
+  zoomLevel       Float?   // for orthographic
+  hiddenMeshes    String?  @db.Text // JSON: string[] of mesh paths to hide
+  highlightedMeshes String? @db.Text // JSON: string[] of mesh paths to highlight
+  sectionPlane    String?  @db.Text // JSON: {normal, constant}
+  createdById     String
+  createdAt       DateTime @default(now())
 
   scene     DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
-  createdBy User             @relation("BookmarkCreatedBy", fields: [createdById], references: [id])
+  createdBy User              @relation("BookmarkCreatedBy", fields: [createdById], references: [id])
 
   @@index([sceneId])
   @@index([createdById])
@@ -3740,24 +3742,24 @@ model AssetViewBookmark {
 // ============================================================================
 
 model BomRevision {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   bomId           String
-  revision        String // e.g., "A", "B", "C", "1.0", "2.0"
-  description     String?   @db.Text
+  revision        String   // e.g., "A", "B", "C", "1.0", "2.0"
+  description     String?  @db.Text
   effectivityFrom DateTime?
   effectivityTo   DateTime?
-  changeReason    String?   @db.Text // engineering change description
-  status          String    @default("draft") // draft, pending_approval, approved, released, superseded, obsolete
+  changeReason    String?  @db.Text // engineering change description
+  status          String   @default("draft") // draft, pending_approval, approved, released, superseded, obsolete
   approvedById    String?
   approvedAt      DateTime?
-  isActive        Boolean   @default(true)
+  isActive        Boolean  @default(true)
   createdById     String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  bom        BillOfMaterial    @relation(fields: [bomId], references: [id], onDelete: Cascade)
-  approvedBy User?             @relation("BomRevApprovedBy", fields: [approvedById], references: [id])
-  createdBy  User              @relation("BomRevCreatedBy", fields: [createdById], references: [id])
+  bom        BillOfMaterial        @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  approvedBy User?                 @relation("BomRevApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User                  @relation("BomRevCreatedBy", fields: [createdById], references: [id])
   items      BomRevisionItem[]
 
   @@index([bomId])
@@ -3767,27 +3769,27 @@ model BomRevision {
 }
 
 model BomRevisionItem {
-  id               String  @id @default(cuid())
-  revisionId       String
-  parentItemId     String? // for hierarchical BOM (sub-assemblies)
-  componentId      String? // link to ComponentRegistry
-  inventoryItemId  String? // link to InventoryItem (spare part)
-  itemNumber       String // engineering part number
-  itemName         String
-  description      String? @db.Text
-  quantity         Float   @default(1)
-  unitOfMeasure    String  @default("EA") // EA, KG, M, L, SET, etc.
-  assemblySequence Int? // order in assembly
-  relationshipType String  @default("mechanical") // mechanical, electrical, hydraulic, pneumatic, process
-  isCritical       Boolean @default(false)
-  leadTimeDays     Int?
-  notes            String? @db.Text
+  id                String   @id @default(cuid())
+  revisionId        String
+  parentItemId      String?  // for hierarchical BOM (sub-assemblies)
+  componentId       String?  // link to ComponentRegistry
+  inventoryItemId   String?  // link to InventoryItem (spare part)
+  itemNumber        String   // engineering part number
+  itemName          String
+  description       String?  @db.Text
+  quantity          Float    @default(1)
+  unitOfMeasure     String   @default("EA") // EA, KG, M, L, SET, etc.
+  assemblySequence  Int?     // order in assembly
+  relationshipType  String   @default("mechanical") // mechanical, electrical, hydraulic, pneumatic, process
+  isCritical        Boolean  @default(false)
+  leadTimeDays      Int?
+  notes             String?  @db.Text
 
-  revision  BomRevision        @relation(fields: [revisionId], references: [id], onDelete: Cascade)
-  parent    BomRevisionItem?   @relation("BomItemHierarchy", fields: [parentItemId], references: [id])
-  children  BomRevisionItem[]  @relation("BomItemHierarchy")
-  component ComponentRegistry? @relation("BomItemComponent", fields: [componentId], references: [id])
-  inventory InventoryItem?     @relation("BomItemInventory", fields: [inventoryItemId], references: [id])
+  revision     BomRevision          @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  parent       BomRevisionItem?     @relation("BomItemHierarchy", fields: [parentItemId], references: [id])
+  children     BomRevisionItem[]    @relation("BomItemHierarchy")
+  component    ComponentRegistry?   @relation("BomItemComponent", fields: [componentId], references: [id])
+  inventory    InventoryItem?       @relation("BomItemInventory", fields: [inventoryItemId], references: [id])
 
   @@index([revisionId])
   @@index([parentItemId])
@@ -3797,22 +3799,22 @@ model BomRevisionItem {
 }
 
 model AlternatePart {
-  id                 String    @id @default(cuid())
-  primaryPartId      String // ComponentRegistry ID
-  alternatePartId    String // ComponentRegistry ID
-  interchangeability String    @default("equivalent") // equivalent, superior, inferior, modified
-  notes              String?   @db.Text
-  approvedById       String?
-  approvedAt         DateTime?
-  isActive           Boolean   @default(true)
-  createdById        String
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  primaryPartId     String   // ComponentRegistry ID
+  alternatePartId   String   // ComponentRegistry ID
+  interchangeability String @default("equivalent") // equivalent, superior, inferior, modified
+  notes             String?  @db.Text
+  approvedById      String?
+  approvedAt        DateTime?
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   primaryPart   ComponentRegistry @relation("AltPrimaryPart", fields: [primaryPartId], references: [id], onDelete: Cascade)
   alternatePart ComponentRegistry @relation("AltAlternatePart", fields: [alternatePartId], references: [id], onDelete: Cascade)
-  approvedBy    User?             @relation("AltPartApprovedBy", fields: [approvedById], references: [id])
-  createdBy     User              @relation("AltPartCreatedBy", fields: [createdById], references: [id])
+  approvedBy     User?              @relation("AltPartApprovedBy", fields: [approvedById], references: [id])
+  createdBy      User               @relation("AltPartCreatedBy", fields: [createdById], references: [id])
 
   @@unique([primaryPartId, alternatePartId])
   @@index([primaryPartId])
@@ -3821,35 +3823,35 @@ model AlternatePart {
 }
 
 model EngineeringChangeRequest {
-  id            String    @id @default(cuid())
-  ecrNumber     String    @unique // ECR-YYYYMM-NNNN
-  title         String
-  description   String    @db.Text
-  changeType    String // addition, modification, deletion, substitution
-  reason        String    @db.Text
-  impact        String?   @db.Text // JSON: affected assemblies, cost impact, schedule impact
-  priority      String    @default("medium") // low, medium, high, critical
-  status        String    @default("draft") // draft, submitted, reviewing, approved, rejected, implemented, closed
-  requestedById String
-  reviewedById  String?
-  approvedById  String?
-  reviewedAt    DateTime?
-  approvedAt    DateTime?
-  implementedAt DateTime?
-  bomId         String?
-  assetId       String?
-  plantId       String?
-  createdById   String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  ecrNumber       String   @unique // ECR-YYYYMM-NNNN
+  title           String
+  description     String   @db.Text
+  changeType      String   // addition, modification, deletion, substitution
+  reason          String   @db.Text
+  impact          String?  @db.Text // JSON: affected assemblies, cost impact, schedule impact
+  priority        String   @default("medium") // low, medium, high, critical
+  status          String   @default("draft") // draft, submitted, reviewing, approved, rejected, implemented, closed
+  requestedById   String
+  reviewedById    String?
+  approvedById    String?
+  reviewedAt      DateTime?
+  approvedAt      DateTime?
+  implementedAt   DateTime?
+  bomId           String?
+  assetId         String?
+  plantId         String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  bom         BillOfMaterial? @relation(fields: [bomId], references: [id])
-  asset       Asset?          @relation("EcrAsset", fields: [assetId], references: [id])
-  plant       Plant?          @relation("EcrPlant", fields: [plantId], references: [id])
-  requestedBy User            @relation("EcrRequestedBy", fields: [requestedById], references: [id])
-  reviewedBy  User?           @relation("EcrReviewedBy", fields: [reviewedById], references: [id])
-  approvedBy  User?           @relation("EcrApprovedBy", fields: [approvedById], references: [id])
-  createdBy   User            @relation("EcrCreatedBy", fields: [createdById], references: [id])
+  bom         BillOfMaterial?      @relation(fields: [bomId], references: [id])
+  asset       Asset?               @relation("EcrAsset", fields: [assetId], references: [id])
+  plant       Plant?               @relation("EcrPlant", fields: [plantId], references: [id])
+  requestedBy User                 @relation("EcrRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?                @relation("EcrReviewedBy", fields: [reviewedById], references: [id])
+  approvedBy  User?                @relation("EcrApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User                 @relation("EcrCreatedBy", fields: [createdById], references: [id])
 
   @@index([status])
   @@index([bomId])
@@ -3860,24 +3862,24 @@ model EngineeringChangeRequest {
 }
 
 model CriticalSpareAnalysis {
-  id               String   @id @default(cuid())
-  componentId      String
-  criticalityScore Float    @default(0) // 0-100
-  leadTimeRisk     String   @default("low") // low, medium, high, critical
-  stockoutRisk     String   @default("low")
-  recommendedStock Int?
-  currentStock     Int      @default(0)
-  annualUsage      Float    @default(0)
-  unitCost         Float?
-  stockValue       Float?
-  lastAnalysisDate DateTime @default(now())
-  notes            String?  @db.Text
-  analyzedById     String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                String   @id @default(cuid())
+  componentId       String
+  criticalityScore  Float    @default(0) // 0-100
+  leadTimeRisk      String   @default("low") // low, medium, high, critical
+  stockoutRisk      String   @default("low")
+  recommendedStock  Int?
+  currentStock      Int      @default(0)
+  annualUsage       Float    @default(0)
+  unitCost          Float?
+  stockValue        Float?
+  lastAnalysisDate  DateTime @default(now())
+  notes             String?  @db.Text
+  analyzedById      String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
-  analyzedBy User              @relation("SpareAnalyzedBy", fields: [analyzedById], references: [id])
+  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  analyzedBy  User               @relation("SpareAnalyzedBy", fields: [analyzedById], references: [id])
 
   @@unique([componentId])
   @@index([criticalityScore])
@@ -3890,29 +3892,29 @@ model CriticalSpareAnalysis {
 // ============================================================================
 
 model TelemetryDataSource {
-  id               String    @id @default(cuid())
-  name             String
-  sourceType       String // mqtt, opcua, modbus_tcp, rest_api, siemens_s7, bacnet
-  connectionConfig String    @db.Text // JSON: host, port, path, credentials, topic patterns
-  status           String    @default("disconnected") // connected, disconnected, error
-  plantId          String?
-  lastConnectionAt DateTime?
-  lastError        String?   @db.Text
-  metadata         String?   @db.Text // JSON: any additional config
-  createdById      String
-  isActive         Boolean   @default(true)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  sourceType        String   // mqtt, opcua, modbus_tcp, rest_api, siemens_s7, bacnet
+  connectionConfig  String   @db.Text // JSON: host, port, path, credentials, topic patterns
+  status            String   @default("disconnected") // connected, disconnected, error
+  plantId           String?
+  lastConnectionAt  DateTime?
+  lastError         String?  @db.Text
+  metadata          String?  @db.Text // JSON: any additional config
+  createdById       String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  plant     Plant?             @relation("TelemetryPlant", fields: [plantId], references: [id])
-  createdBy User               @relation("TelemetrySourceCreatedBy", fields: [createdById], references: [id])
-  mappings  TelemetryMapping[]
-  streams   TelemetryStream[]
+  plant      Plant?       @relation("TelemetryPlant", fields: [plantId], references: [id])
+  createdBy  User         @relation("TelemetrySourceCreatedBy", fields: [createdById], references: [id])
+  mappings   TelemetryMapping[]
+  streams    TelemetryStream[]
 
   // Industrial Connectivity (Phase 1)
-  gatewayId String?
-  gateway   EdgeGateway?          @relation("GatewaySource", fields: [gatewayId], references: [id], onDelete: SetNull)
-  sessions  ConnectivitySession[]
+  gatewayId  String?
+  gateway    EdgeGateway? @relation("GatewaySource", fields: [gatewayId], references: [id], onDelete: SetNull)
+  sessions   ConnectivitySession[]
 
   @@index([sourceType])
   @@index([status])
@@ -3921,29 +3923,29 @@ model TelemetryDataSource {
 }
 
 model TelemetryMapping {
-  id            String   @id @default(cuid())
-  sourceId      String
-  deviceId      String? // link to IotDevice
-  externalId    String // external tag/point ID from the source system
-  parameterName String // e.g., "Temperature", "Pressure", "Vibration"
-  parameterUnit String? // e.g., "°C", "bar", "mm/s"
-  dataType      String   @default("float") // float, int, boolean, string
-  scaleFactor   Float    @default(1)
-  offset        Float    @default(0)
-  deadband      Float? // minimum change threshold to record
-  qualityRule   String?  @db.Text // JSON: range limits, rate of change limits
-  isActve       Boolean  @default(true)
-  createdById   String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  sourceId        String
+  deviceId        String?  // link to IotDevice
+  externalId      String   // external tag/point ID from the source system
+  parameterName   String   // e.g., "Temperature", "Pressure", "Vibration"
+  parameterUnit   String?  // e.g., "°C", "bar", "mm/s"
+  dataType        String   @default("float") // float, int, boolean, string
+  scaleFactor     Float    @default(1)
+  offset          Float    @default(0)
+  deadband        Float?   // minimum change threshold to record
+  qualityRule     String?  @db.Text // JSON: range limits, rate of change limits
+  isActve         Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  source TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  device IotDevice?          @relation(fields: [deviceId], references: [id])
+  source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  device  IotDevice?          @relation(fields: [deviceId], references: [id])
 
-  streams      TelemetryStream[]
-  aggregations TelemetryAggregation[]
-  alarmRules   AlarmRule[]
-  alarmEvents  AlarmEvent[]
+  streams       TelemetryStream[]
+  aggregations  TelemetryAggregation[]
+  alarmRules    AlarmRule[]
+  alarmEvents   AlarmEvent[]
 
   @@unique([sourceId, externalId])
   @@index([sourceId])
@@ -3953,15 +3955,15 @@ model TelemetryMapping {
 }
 
 model TelemetryStream {
-  id           String   @id @default(cuid())
-  mappingId    String
-  sourceId     String
-  value        Float
-  quality      Int      @default(100) // 0-100 quality score
-  timestamp    DateTime @default(now())
-  isAnomaly    Boolean  @default(false)
-  anomalyScore Float?
-  metadata     String?  @db.Text // JSON: any additional data
+  id              String   @id @default(cuid())
+  mappingId       String
+  sourceId        String
+  value           Float
+  quality         Int      @default(100) // 0-100 quality score
+  timestamp       DateTime @default(now())
+  isAnomaly       Boolean  @default(false)
+  anomalyScore    Float?
+  metadata        String?  @db.Text // JSON: any additional data
 
   mapping TelemetryMapping    @relation(fields: [mappingId], references: [id], onDelete: Cascade)
   source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
@@ -3975,17 +3977,17 @@ model TelemetryStream {
 }
 
 model TelemetryAggregation {
-  id          String   @id @default(cuid())
-  mappingId   String
-  periodType  String // minute, hour, day, week, month
-  periodStart DateTime
-  periodEnd   DateTime
-  avgValue    Float?
-  minValue    Float?
-  maxValue    Float?
-  sumValue    Float?
-  count       Int
-  stdDev      Float?
+  id              String   @id @default(cuid())
+  mappingId       String
+  periodType      String   // minute, hour, day, week, month
+  periodStart     DateTime
+  periodEnd       DateTime
+  avgValue        Float?
+  minValue        Float?
+  maxValue        Float?
+  sumValue        Float?
+  count           Int
+  stdDev          Float?
 
   mapping TelemetryMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
 
@@ -4011,9 +4013,9 @@ model AlarmRule {
   updatedAt       DateTime @updatedAt
 
   mapping   TelemetryMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
-  createdBy User             @relation("AlarmRuleCreatedBy", fields: [createdById], references: [id])
+  createdBy User              @relation("AlarmRuleCreatedBy", fields: [createdById], references: [id])
 
-  events AlarmEvent[]
+  events  AlarmEvent[]
 
   @@index([mappingId])
   @@index([severity])
@@ -4022,18 +4024,18 @@ model AlarmRule {
 }
 
 model AlarmEvent {
-  id               String    @id @default(cuid())
-  ruleId           String
-  mappingId        String
-  value            Float
-  threshold        Float
-  severity         String
-  status           String    @default("active") // active, acknowledged, resolved, suppressed
-  acknowledgedById String?
-  acknowledgedAt   DateTime?
-  resolvedAt       DateTime?
-  resolutionNote   String?   @db.Text
-  createdAt        DateTime  @default(now())
+  id                String   @id @default(cuid())
+  ruleId            String
+  mappingId         String
+  value             Float
+  threshold         Float
+  severity          String
+  status            String   @default("active") // active, acknowledged, resolved, suppressed
+  acknowledgedById  String?
+  acknowledgedAt    DateTime?
+  resolvedAt        DateTime?
+  resolutionNote    String?  @db.Text
+  createdAt         DateTime @default(now())
 
   rule           AlarmRule        @relation(fields: [ruleId], references: [id])
   mapping        TelemetryMapping @relation(fields: [mappingId], references: [id])
@@ -4066,7 +4068,7 @@ model FailureMode {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  createdBy User            @relation("FailureModeCreatedBy", fields: [createdById], references: [id])
+  createdBy User   @relation("FailureModeCreatedBy", fields: [createdById], references: [id])
   records   FailureRecord[] @relation("FailureRecordMode")
 
   @@index([category])
@@ -4075,25 +4077,25 @@ model FailureMode {
 }
 
 model RcmAnalysis {
-  id             String    @id @default(cuid())
-  assetId        String
-  name           String
-  description    String?   @db.Text
-  methodology    String    @default("full")
-  status         String    @default("draft")
-  analysisDate   DateTime?
-  nextReviewDate DateTime?
-  resultSummary  String?   @db.Text
-  riskMatrix     String?   @db.Text
-  approvedById   String?
-  approvedAt     DateTime?
-  createdById    String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  assetId         String
+  name            String
+  description     String?  @db.Text
+  methodology     String   @default("full")
+  status          String   @default("draft")
+  analysisDate    DateTime?
+  nextReviewDate  DateTime?
+  resultSummary   String?  @db.Text
+  riskMatrix      String?  @db.Text
+  approvedById    String?
+  approvedAt      DateTime?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  asset      Asset @relation(fields: [assetId], references: [id])
-  approvedBy User? @relation("RcmApprovedBy", fields: [approvedById], references: [id])
-  createdBy  User  @relation("RcmCreatedBy", fields: [createdById], references: [id])
+  asset       Asset  @relation(fields: [assetId], references: [id])
+  approvedBy  User?  @relation("RcmApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User   @relation("RcmCreatedBy", fields: [createdById], references: [id])
 
   @@index([assetId])
   @@index([status])
@@ -4101,23 +4103,23 @@ model RcmAnalysis {
 }
 
 model WeibullAnalysis {
-  id            String   @id @default(cuid())
-  componentId   String
-  name          String
-  description   String?  @db.Text
-  shape         Float?
-  scale         Float?
-  location      Float?
-  confidence    Float?
-  sampleSize    Int      @default(0)
-  failureCount  Int      @default(0)
-  timeRange     String?  @db.Text
-  resultSummary String?  @db.Text
-  dataPoints    String?  @db.Text
-  analyzedAt    DateTime @default(now())
-  analyzedById  String
+  id              String   @id @default(cuid())
+  componentId     String
+  name            String
+  description     String?  @db.Text
+  shape           Float?
+  scale           Float?
+  location        Float?
+  confidence      Float?
+  sampleSize      Int      @default(0)
+  failureCount    Int      @default(0)
+  timeRange       String?  @db.Text
+  resultSummary   String?  @db.Text
+  dataPoints      String?  @db.Text
+  analyzedAt      DateTime @default(now())
+  analyzedById    String
 
-  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
   analyzedBy User              @relation("WeibullAnalyzedBy", fields: [analyzedById], references: [id])
 
   @@index([componentId])
@@ -4141,8 +4143,8 @@ model DowntimeAnalysis {
   createdById       String
   createdAt         DateTime @default(now())
 
-  asset     Asset @relation(fields: [assetId], references: [id])
-  createdBy User  @relation("DowntimeCreatedBy", fields: [createdById], references: [id])
+  asset     Asset  @relation(fields: [assetId], references: [id])
+  createdBy User   @relation("DowntimeCreatedBy", fields: [createdById], references: [id])
 
   @@index([assetId])
   @@index([periodStart])
@@ -4159,7 +4161,7 @@ model RemainingUsefulLife {
   lastUpdated     DateTime @default(now())
   analyzedById    String
 
-  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
   analyzedBy User              @relation("RulAnalyzedBy", fields: [analyzedById], references: [id])
 
   @@unique([componentId])
@@ -4189,31 +4191,31 @@ model TelemetryReading {
 // ============================================================================
 
 model EdgeGateway {
-  id               String    @id @default(cuid())
-  name             String
-  gatewayCode      String    @unique
-  ipAddress        String?
-  macAddress       String?
-  firmwareVersion  String?
-  protocolVersion  String?
-  plantId          String?
-  location         String?
-  status           String    @default("offline") // online, offline, degraded, maintenance
-  lastHeartbeatAt  DateTime?
-  lastSyncAt       DateTime?
-  bufferingEnabled Boolean   @default(true)
-  bufferSize       Int       @default(10000) // max readings to buffer offline
-  batchSize        Int       @default(500) // readings per batch sync
-  syncIntervalMs   Int       @default(5000) // sync interval in ms
-  config           Json? // gateway-specific config (polling intervals, etc.)
-  capabilities     Json? // JSON array of supported protocols
-  metadata         Json?
-  createdById      String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  gatewayCode       String   @unique
+  ipAddress         String?
+  macAddress        String?
+  firmwareVersion   String?
+  protocolVersion   String?
+  plantId           String?
+  location          String?
+  status            String   @default("offline") // online, offline, degraded, maintenance
+  lastHeartbeatAt   DateTime?
+  lastSyncAt        DateTime?
+  bufferingEnabled  Boolean  @default(true)
+  bufferSize        Int      @default(10000) // max readings to buffer offline
+  batchSize         Int      @default(500) // readings per batch sync
+  syncIntervalMs    Int      @default(5000) // sync interval in ms
+  config            Json? // gateway-specific config (polling intervals, etc.)
+  capabilities      Json? // JSON array of supported protocols
+  metadata          Json?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  plant       Plant?                @relation("GatewayPlant", fields: [plantId], references: [id])
-  createdBy   User                  @relation("GatewayCreatedBy", fields: [createdById], references: [id])
+  plant       Plant?              @relation("GatewayPlant", fields: [plantId], references: [id])
+  createdBy   User                @relation("GatewayCreatedBy", fields: [createdById], references: [id])
   sources     TelemetryDataSource[] @relation("GatewaySource")
   connections ConnectivitySession[]
 
@@ -4223,22 +4225,22 @@ model EdgeGateway {
 }
 
 model ConnectivitySession {
-  id             String    @id @default(cuid())
-  sourceId       String // → TelemetryDataSource
-  gatewayId      String? // → EdgeGateway (null = direct connection)
-  protocol       String // mqtt, opcua, modbus_tcp, bacnet, siemens_s7, ethernet_ip, rest_api
-  status         String    @default("disconnected") // connecting, connected, disconnected, error
-  connectedAt    DateTime?
+  id            String   @id @default(cuid())
+  sourceId      String   // → TelemetryDataSource
+  gatewayId     String?  // → EdgeGateway (null = direct connection)
+  protocol      String   // mqtt, opcua, modbus_tcp, bacnet, siemens_s7, ethernet_ip, rest_api
+  status        String   @default("disconnected") // connecting, connected, disconnected, error
+  connectedAt   DateTime?
   disconnectedAt DateTime?
-  errorCount     Int       @default(0)
-  lastError      String?   @db.Text
-  bytesIn        BigInt    @default(0)
-  bytesOut       BigInt    @default(0)
-  messagesIn     Int       @default(0)
-  messagesOut    Int       @default(0)
-  metadata       Json? // protocol-specific session data
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  errorCount    Int      @default(0)
+  lastError     String?  @db.Text
+  bytesIn       BigInt   @default(0)
+  bytesOut      BigInt   @default(0)
+  messagesIn    Int      @default(0)
+  messagesOut   Int      @default(0)
+  metadata      Json?    // protocol-specific session data
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   gateway EdgeGateway?        @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
@@ -4250,18 +4252,18 @@ model ConnectivitySession {
 }
 
 model TelemetryBatch {
-  id           String    @id @default(cuid())
-  sourceId     String // → TelemetryDataSource
-  gatewayId    String? // → EdgeGateway
-  batchNumber  Int
-  status       String    @default("pending") // pending, processing, completed, failed
-  readingCount Int       @default(0)
-  startTime    DateTime
-  endTime      DateTime
-  processedAt  DateTime?
-  errorCount   Int       @default(0)
-  metadata     Json?
-  createdAt    DateTime  @default(now())
+  id          String   @id @default(cuid())
+  sourceId    String   // → TelemetryDataSource
+  gatewayId   String?  // → EdgeGateway
+  batchNumber Int
+  status      String   @default("pending") // pending, processing, completed, failed
+  readingCount Int     @default(0)
+  startTime   DateTime
+  endTime     DateTime
+  processedAt DateTime?
+  errorCount  Int      @default(0)
+  metadata    Json?
+  createdAt   DateTime @default(now())
 
   @@index([sourceId])
   @@index([status])
@@ -4270,15 +4272,15 @@ model TelemetryBatch {
 }
 
 model EventStreamRecord {
-  id            String   @id @default(cuid())
-  eventType     String // data_ingested, alarm_triggered, anomaly_detected, connection_changed, batch_processed, sync_completed
-  sourceType    String? // mqtt, opcua, modbus_tcp, etc.
-  sourceId      String?
-  entityId      String? // related entity ID (mapping, alarm, source, etc.)
-  severity      String   @default("info") // info, warning, error, critical
-  payload       Json? // event-specific data
+  id          String   @id @default(cuid())
+  eventType   String   // data_ingested, alarm_triggered, anomaly_detected, connection_changed, batch_processed, sync_completed
+  sourceType  String?  // mqtt, opcua, modbus_tcp, etc.
+  sourceId    String?
+  entityId    String?  // related entity ID (mapping, alarm, source, etc.)
+  severity    String   @default("info") // info, warning, error, critical
+  payload     Json?    // event-specific data
   correlationId String? // for tracing event chains
-  timestamp     DateTime @default(now())
+  timestamp   DateTime @default(now())
 
   @@index([eventType])
   @@index([sourceId])
@@ -4292,17 +4294,17 @@ model EventStreamRecord {
 // ============================================================================
 
 model DownsamplingPolicy {
-  id                  String   @id @default(cuid())
-  sourceId            String? // null = global default
-  rawRetentionDays    Int      @default(7)
-  minuteRetentionDays Int      @default(30)
-  hourlyRetentionDays Int      @default(90)
-  dailyRetentionDays  Int      @default(730)
-  weeklyRetentionDays Int      @default(3650)
-  aggregationMethod   String   @default("avg") // avg, min, max, last, maxmin
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  sourceId              String?  // null = global default
+  rawRetentionDays      Int      @default(7)
+  minuteRetentionDays   Int      @default(30)
+  hourlyRetentionDays   Int      @default(90)
+  dailyRetentionDays    Int      @default(730)
+  weeklyRetentionDays   Int      @default(3650)
+  aggregationMethod     String   @default("avg") // avg, min, max, last, maxmin
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@map("downsampling_policies")
 }
@@ -4310,7 +4312,7 @@ model DownsamplingPolicy {
 model DownsampledReading {
   id          String   @id @default(cuid())
   sourceId    String
-  interval    String // '1m', '5m', '1h', '1d', '1w'
+  interval    String   // '1m', '5m', '1h', '1d', '1w'
   bucketStart DateTime
   avgValue    Float
   minValue    Float
@@ -4328,25 +4330,25 @@ model DownsampledReading {
 }
 
 model RetentionPolicy {
-  id                  String    @id @default(cuid())
-  name                String
-  description         String?
-  sourceId            String?
-  keepDays            Int
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  sourceId        String?
+  keepDays        Int
   aggregationKeepDays Int? // keep downsampled data longer
-  isActive            Boolean   @default(true)
-  lastExecutedAt      DateTime?
-  totalDeleted        Int       @default(0)
-  createdById         String
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  isActive        Boolean  @default(true)
+  lastExecutedAt  DateTime?
+  totalDeleted    Int      @default(0)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("retention_policies")
 }
 
 model AnomalyDetectionConfig {
   id                String   @id @default(cuid())
-  sourceId          String? // null = global
+  sourceId          String?  // null = global
   mappingId         String?
   method            String   @default("zscore") // zscore, modified_zscore, iqr, ema, rate_of_change, pattern
   windowSize        Int      @default(30) // number of readings for baseline
@@ -4354,7 +4356,7 @@ model AnomalyDetectionConfig {
   cooldownMinutes   Int      @default(15)
   confirmationCount Int      @default(2) // require N consecutive anomalies
   isActive          Boolean  @default(true)
-  config            Json? // method-specific params
+  config            Json?    // method-specific params
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -4362,20 +4364,20 @@ model AnomalyDetectionConfig {
 }
 
 model AnomalyRecord {
-  id               String    @id @default(cuid())
-  sourceId         String
-  mappingId        String?
-  detectedAt       DateTime  @default(now())
-  method           String
-  value            Float
-  expectedValue    Float?
-  anomalyScore     Float
-  severity         String    @default("warning") // low, warning, high, critical
-  confirmed        Boolean   @default(false)
-  acknowledgedAt   DateTime?
+  id            String   @id @default(cuid())
+  sourceId      String
+  mappingId     String?
+  detectedAt    DateTime @default(now())
+  method        String
+  value         Float
+  expectedValue Float?
+  anomalyScore  Float
+  severity      String   @default("warning") // low, warning, high, critical
+  confirmed     Boolean  @default(false)
+  acknowledgedAt DateTime?
   acknowledgedById String?
-  metadata         Json?
-  createdAt        DateTime  @default(now())
+  metadata      Json?
+  createdAt     DateTime @default(now())
 
   @@index([sourceId, detectedAt])
   @@index([severity])
@@ -4384,19 +4386,19 @@ model AnomalyRecord {
 }
 
 model DataQualityReport {
-  id            String   @id @default(cuid())
-  sourceId      String?
-  reportPeriod  String // '1h', '1d', '1w'
-  periodStart   DateTime
-  periodEnd     DateTime
-  expectedCount Int      @default(0)
-  actualCount   Int      @default(0)
-  completeness  Float    @default(0) // actual/expected as percentage
-  avgQuality    Float?
-  gapCount      Int      @default(0)
-  anomalyCount  Int      @default(0)
-  storageBytes  Int      @default(0)
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  sourceId        String?
+  reportPeriod    String   // '1h', '1d', '1w'
+  periodStart     DateTime
+  periodEnd       DateTime
+  expectedCount   Int      @default(0)
+  actualCount     Int      @default(0)
+  completeness    Float    @default(0) // actual/expected as percentage
+  avgQuality      Float?
+  gapCount        Int      @default(0)
+  anomalyCount    Int      @default(0)
+  storageBytes    Int      @default(0)
+  createdAt       DateTime @default(now())
 
   @@index([sourceId, periodStart])
   @@map("data_quality_reports")
@@ -4407,29 +4409,29 @@ model DataQualityReport {
 // ============================================================================
 
 model RbiAssessment {
-  id                      String    @id @default(cuid())
-  assetId                 String
-  equipmentType           String?
-  corrosionCircuit        String?
-  operatingConditions     Json? // temperature, pressure, fluid, etc.
-  degradationMechanisms   Json? // array of {mechanism, rate, description}
-  probabilityOfFailure    Float // 0.0-1.0
-  consequenceOfFailure    Float // 0.0-1.0
-  riskCategory            String // I, II, III, IV, V
-  riskScore               Float // PoF * CoF
-  currentDamageFactor     Float?
+  id                    String   @id @default(cuid())
+  assetId               String
+  equipmentType         String?
+  corrosionCircuit      String?
+  operatingConditions   Json?    // temperature, pressure, fluid, etc.
+  degradationMechanisms Json?    // array of {mechanism, rate, description}
+  probabilityOfFailure  Float    // 0.0-1.0
+  consequenceOfFailure  Float    // 0.0-1.0
+  riskCategory          String   // I, II, III, IV, V
+  riskScore             Float    // PoF * CoF
+  currentDamageFactor   Float?
   inspectionEffectiveness String? // A, B, C, D, E, F
-  nextInspectionDate      DateTime?
-  remainingLifeYears      Float?
-  thinningRate            Float? // mm/year
-  currentThickness        Float?
-  minimumThickness        Float?
-  status                  String    @default("active") // active, closed, superseded
-  notes                   String?   @db.Text
-  assessedById            String
-  approvedById            String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  nextInspectionDate    DateTime?
+  remainingLifeYears    Float?
+  thinningRate          Float?   // mm/year
+  currentThickness      Float?
+  minimumThickness      Float?
+  status                String   @default("active") // active, closed, superseded
+  notes                 String?  @db.Text
+  assessedById          String
+  approvedById          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@index([assetId])
   @@index([riskCategory])
@@ -4442,18 +4444,18 @@ model SilAssessment {
   assetId                 String
   sifName                 String
   sifDescription          String?  @db.Text
-  silTarget               Int // 1, 2, 3, or 4
+  silTarget               Int      // 1, 2, 3, or 4
   silAchieved             Int?
-  pfdRequired             Float? // e.g. 0.01 for SIL 1
+  pfdRequired             Float?   // e.g. 0.01 for SIL 1
   pfdCalculated           Float?
-  sffRequired             Float? // e.g. 0.90 for SIL 1 (Type B)
+  sffRequired             Float?   // e.g. 0.90 for SIL 1 (Type B)
   sffCalculated           Float?
-  architecture            String? // 1oo1, 1oo2, 2oo3, etc.
+  architecture            String?  // 1oo1, 1oo2, 2oo3, etc.
   proofTestIntervalMonths Int      @default(12)
-  demandRate              Float? // demands per year
-  meanTimeToFailSpurious  Float? // MTTF spurious (years)
-  lopaLayers              Json? // IPLs considered
-  components              Json? // SIS components with failure rates
+  demandRate              Float?   // demands per year
+  meanTimeToFailSpurious  Float?   // MTTF spurious (years)
+  lopaLayers              Json?    // IPLs considered
+  components              Json?    // SIS components with failure rates
   status                  String   @default("active") // draft, active, approved, archived
   assessedById            String
   approvedById            String?
@@ -4468,25 +4470,25 @@ model SilAssessment {
 }
 
 model DegradationProfile {
-  id                   String    @id @default(cuid())
-  assetId              String
-  parameterName        String // e.g. "Vibration", "Temperature", "Pressure"
-  unit                 String?
-  modelType            String    @default("linear") // linear, exponential, power_law, logarithmic
-  modelParams          Json? // model-specific parameters
-  currentValue         Float?
-  healthIndex          Float? // 0-100%
-  degradationStage     String    @default("normal") // normal, alert, alarm, critical
-  alertThreshold       Float?
-  alarmThreshold       Float?
-  criticalThreshold    Float?
-  predictedFailureDate DateTime?
-  degradationRate      Float? // rate of change per day
-  confidence           Float? // 0-1 model fit confidence
-  dataPoints           Int       @default(0)
-  lastUpdated          DateTime  @default(now())
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                    String   @id @default(cuid())
+  assetId               String
+  parameterName         String   // e.g. "Vibration", "Temperature", "Pressure"
+  unit                  String?
+  modelType             String   @default("linear") // linear, exponential, power_law, logarithmic
+  modelParams           Json?    // model-specific parameters
+  currentValue          Float?
+  healthIndex           Float?   // 0-100%
+  degradationStage      String   @default("normal") // normal, alert, alarm, critical
+  alertThreshold        Float?
+  alarmThreshold        Float?
+  criticalThreshold     Float?
+  predictedFailureDate  DateTime?
+  degradationRate       Float?   // rate of change per day
+  confidence            Float?   // 0-1 model fit confidence
+  dataPoints            Int      @default(0)
+  lastUpdated           DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@index([assetId, parameterName])
   @@index([degradationStage])
@@ -4494,55 +4496,55 @@ model DegradationProfile {
 }
 
 model LifecycleForecast {
-  id                   String    @id @default(cuid())
-  assetId              String
-  forecastType         String // tco, replacement, maintenance_cost, health_trajectory
-  forecastPeriodMonths Int       @default(36)
-  data                 Json? // forecast-specific data
-  totalCost            Float?
-  acquisitionCost      Float?
-  operatingCost        Float?
-  maintenanceCost      Float?
-  disposalCost         Float?
-  replacementDate      DateTime?
-  replacementReason    String?
-  healthTrajectory     Json? // array of {month, healthIndex}
-  monthlyCostForecast  Json? // array of {month, predictedCost}
-  recommendedAction    String? // continue_maintenance, repair, replace, upgrade
-  confidence           Float? // 0-1
-  createdById          String
-  createdAt            DateTime  @default(now())
+  id                    String   @id @default(cuid())
+  assetId               String
+  forecastType          String   // tco, replacement, maintenance_cost, health_trajectory
+  forecastPeriodMonths  Int      @default(36)
+  data                  Json?    // forecast-specific data
+  totalCost             Float?
+  acquisitionCost       Float?
+  operatingCost         Float?
+  maintenanceCost       Float?
+  disposalCost          Float?
+  replacementDate       DateTime?
+  replacementReason     String?
+  healthTrajectory      Json?    // array of {month, healthIndex}
+  monthlyCostForecast   Json?    // array of {month, predictedCost}
+  recommendedAction     String?  // continue_maintenance, repair, replace, upgrade
+  confidence            Float?   // 0-1
+  createdById           String
+  createdAt             DateTime @default(now())
 
   @@index([assetId])
   @@map("lifecycle_forecasts")
 }
 
 model SpareOptimization {
-  id                 String   @id @default(cuid())
-  inventoryItemId    String
-  abcClassification  String? // A, B, C
-  xyzClassification  String? // X, Y, Z
-  annualDemand       Float?
-  unitCost           Float?
-  holdingCostPercent Float?   @default(25) // % of unit cost per year
-  orderingCost       Float?
-  leadTimeDays       Float?
-  serviceLevel       Float?   @default(0.95)
-  eoq                Float? // Economic Order Quantity
-  reorderPoint       Float?
-  safetyStock        Float?
-  stockOutRisk       Float? // probability
-  criticality        String? // low, medium, high, critical
-  recommendedStock   Float?
-  currentStock       Float?
-  annualHoldingCost  Float?
-  annualOrderingCost Float?
-  totalAnnualCost    Float?
-  savingsPotential   Float? // cost reduction from optimization
-  analysisPeriod     String?  @db.Text
-  analyzedById       String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  inventoryItemId       String
+  abcClassification     String?  // A, B, C
+  xyzClassification     String?  // X, Y, Z
+  annualDemand          Float?
+  unitCost              Float?
+  holdingCostPercent    Float?   @default(25) // % of unit cost per year
+  orderingCost          Float?
+  leadTimeDays          Float?
+  serviceLevel          Float?   @default(0.95)
+  eoq                   Float?   // Economic Order Quantity
+  reorderPoint          Float?
+  safetyStock           Float?
+  stockOutRisk          Float?   // probability
+  criticality           String?  // low, medium, high, critical
+  recommendedStock      Float?
+  currentStock          Float?
+  annualHoldingCost     Float?
+  annualOrderingCost    Float?
+  totalAnnualCost       Float?
+  savingsPotential      Float?   // cost reduction from optimization
+  analysisPeriod        String?  @db.Text
+  analyzedById          String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@index([inventoryItemId])
   @@index([abcClassification])
@@ -4558,12 +4560,12 @@ model WorkflowDefinition {
   name            String
   key             String   @unique // e.g. "work_order_approval", "permit_to_work"
   version         Int      @default(1)
-  category        String? // maintenance, procurement, safety, quality, engineering
+  category        String?  // maintenance, procurement, safety, quality, engineering
   description     String?  @db.Text
-  stepsJson       Json? // array of step definitions
-  transitionsJson Json? // array of transition rules
-  triggersJson    Json? // event triggers
-  variablesSchema Json? // workflow variable schema
+  stepsJson       Json?    // array of step definitions
+  transitionsJson Json?    // array of transition rules
+  triggersJson    Json?    // event triggers
+  variablesSchema Json?    // workflow variable schema
   isActive        Boolean  @default(false)
   isSystem        Boolean  @default(false) // cannot be deleted
   createdById     String
@@ -4579,24 +4581,24 @@ model WorkflowDefinition {
 }
 
 model WorkflowInstance {
-  id            String    @id @default(cuid())
-  definitionId  String
-  entityType    String? // work_order, maintenance_request, safety_permit, etc.
-  entityId      String? // reference to the entity
-  currentStepId String?
-  status        String    @default("pending") // pending, running, suspended, completed, cancelled, failed
-  variables     Json? // workflow context variables
-  startedAt     DateTime?
-  completedAt   DateTime?
-  cancelledAt   DateTime?
-  startedById   String?
-  completedById String?
-  cancelledById String?
-  errorDetail   String?   @db.Text
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  definitionId    String
+  entityType      String?  // work_order, maintenance_request, safety_permit, etc.
+  entityId        String?  // reference to the entity
+  currentStepId   String?
+  status          String   @default("pending") // pending, running, suspended, completed, cancelled, failed
+  variables       Json?    // workflow context variables
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  startedById     String?
+  completedById   String?
+  cancelledById   String?
+  errorDetail     String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  definition  WorkflowDefinition    @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  definition  WorkflowDefinition  @relation(fields: [definitionId], references: [id], onDelete: Cascade)
   stepHistory WorkflowStepHistory[]
 
   @@index([entityType, entityId])
@@ -4610,13 +4612,13 @@ model WorkflowStepHistory {
   instanceId  String
   stepId      String
   stepName    String
-  action      String // started, completed, approved, rejected, skipped, escalated
-  assignedTo  String? // userId or role
-  performedBy String? // userId
+  action      String   // started, completed, approved, rejected, skipped, escalated
+  assignedTo  String?  // userId or role
+  performedBy String?  // userId
   comment     String?  @db.Text
-  durationMs  Int? // time spent on this step
-  variables   Json? // step-level variables snapshot
-  slaStatus   String? // within_sla, at_risk, breached
+  durationMs  Int?     // time spent on this step
+  variables   Json?    // step-level variables snapshot
+  slaStatus   String?  // within_sla, at_risk, breached
   createdAt   DateTime @default(now())
 
   instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
@@ -4629,11 +4631,11 @@ model WorkflowStepHistory {
 model SlaPolicy {
   id                String   @id @default(cuid())
   name              String
-  entityType        String? // work_order, maintenance_request, safety_incident
-  priority          String? // low, medium, high, critical, emergency
-  responseMinutes   Int? // max time to first response
-  resolutionMinutes Int? // max time to resolution
-  escalationRules   Json? // escalation steps
+  entityType        String?  // work_order, maintenance_request, safety_incident
+  priority          String?  // low, medium, high, critical, emergency
+  responseMinutes   Int?     // max time to first response
+  resolutionMinutes Int?     // max time to resolution
+  escalationRules   Json?    // escalation steps
   businessHoursOnly Boolean  @default(false)
   warningPercent    Int      @default(75) // warn at 75% of SLA used
   isActive          Boolean  @default(true)
@@ -4645,7 +4647,7 @@ model SlaPolicy {
 }
 
 model SlaTracking {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   policyId        String
   entityType      String
   entityId        String
@@ -4655,11 +4657,11 @@ model SlaTracking {
   breachedAt      DateTime?
   pausedAt        DateTime?
   resumedAt       DateTime?
-  totalPausedMs   Int       @default(0)
-  status          String    @default("active") // active, paused, completed, breached, cancelled
-  escalationLevel Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  totalPausedMs   Int      @default(0)
+  status          String   @default("active") // active, paused, completed, breached, cancelled
+  escalationLevel Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@unique([entityType, entityId])
   @@index([policyId])
@@ -4671,9 +4673,9 @@ model BusinessCalendar {
   id           String   @id @default(cuid())
   name         String
   timezone     String   @default("UTC")
-  workingDays  Json? // array of day indices [1,2,3,4,5]
-  workingHours Json? // array of {start: "08:00", end: "17:00"}
-  holidays     Json? // array of {date: "2026-01-01", name: "New Year"}
+  workingDays  Json?    // array of day indices [1,2,3,4,5]
+  workingHours Json?    // array of {start: "08:00", end: "17:00"}
+  holidays     Json?    // array of {date: "2026-01-01", name: "New Year"}
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -4686,34 +4688,34 @@ model BusinessCalendar {
 // ============================================================================
 
 model StoEvent {
-  id                     String    @id @default(cuid())
-  stoNumber              String    @unique // STO-YYYYMM-NNNN
-  name                   String
-  description            String?   @db.Text
-  type                   String    @default("turnaround") // planned_shutdown, turnaround, forced_outage, emergency
-  plantId                String
-  unitId                 String? // production unit or area
-  status                 String    @default("planning") // planning, scheduled, pre_shutdown, in_progress, startup, completed, cancelled
-  plannedStartDate       DateTime?
-  plannedEndDate         DateTime?
-  actualStartDate        DateTime?
-  actualEndDate          DateTime?
+  id                String   @id @default(cuid())
+  stoNumber         String   @unique // STO-YYYYMM-NNNN
+  name              String
+  description       String?  @db.Text
+  type              String   @default("turnaround") // planned_shutdown, turnaround, forced_outage, emergency
+  plantId           String
+  unitId            String?  // production unit or area
+  status            String   @default("planning") // planning, scheduled, pre_shutdown, in_progress, startup, completed, cancelled
+  plannedStartDate  DateTime?
+  plannedEndDate    DateTime?
+  actualStartDate   DateTime?
+  actualEndDate     DateTime?
   estimatedDurationHours Float?
-  actualDurationHours    Float?
-  budgetAmount           Float?
-  actualCost             Float     @default(0)
-  scopeJson              Json? // equipment and work packages
-  milestonesJson         Json? // milestone definitions
-  riskAssessment         Json?
-  notes                  String?   @db.Text
-  createdById            String
-  approvedById           String?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  actualDurationHours   Float?
+  budgetAmount      Float?
+  actualCost        Float    @default(0)
+  scopeJson         Json?    // equipment and work packages
+  milestonesJson    Json?    // milestone definitions
+  riskAssessment    Json?
+  notes             String?  @db.Text
+  createdById       String
+  approvedById      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  tasks           StoTask[]
-  contractors     StoContractorAssignment[]
-  progressReports StoProgressReport[]
+  tasks             StoTask[]
+  contractors       StoContractorAssignment[]
+  progressReports   StoProgressReport[]
 
   @@index([plantId])
   @@index([status])
@@ -4722,35 +4724,35 @@ model StoEvent {
 }
 
 model StoTask {
-  id               String    @id @default(cuid())
-  eventId          String
-  workOrderId      String? // linked WO
-  title            String
-  description      String?   @db.Text
-  discipline       String? // mechanical, electrical, instrument, civil, safety
-  priority         String    @default("medium")
-  estimatedHours   Float?
-  actualHours      Float?
-  startDate        DateTime?
-  endDate          DateTime?
-  earlyStart       DateTime?
-  earlyFinish      DateTime?
-  lateStart        DateTime?
-  lateFinish       DateTime?
-  totalFloat       Float? // hours
-  freeFloat        Float?
-  isOnCriticalPath Boolean   @default(false)
-  status           String    @default("pending") // pending, in_progress, completed, cancelled
-  progress         Float     @default(0) // 0-100%
-  predecessorIds   Json? // array of StoTask IDs
-  successorIds     Json? // array of StoTask IDs
-  assignedToId     String? // contractor or internal crew
-  notes            String?   @db.Text
-  sortOrder        Int       @default(0)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  eventId         String
+  workOrderId     String?  // linked WO
+  title           String
+  description     String?  @db.Text
+  discipline      String?  // mechanical, electrical, instrument, civil, safety
+  priority        String   @default("medium")
+  estimatedHours  Float?
+  actualHours     Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  earlyStart      DateTime?
+  earlyFinish     DateTime?
+  lateStart       DateTime?
+  lateFinish      DateTime?
+  totalFloat      Float?   // hours
+  freeFloat       Float?
+  isOnCriticalPath Boolean  @default(false)
+  status          String   @default("pending") // pending, in_progress, completed, cancelled
+  progress        Float    @default(0) // 0-100%
+  predecessorIds  Json?    // array of StoTask IDs
+  successorIds    Json?    // array of StoTask IDs
+  assignedToId    String?  // contractor or internal crew
+  notes           String?  @db.Text
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  event StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId])
   @@index([isOnCriticalPath])
@@ -4759,49 +4761,49 @@ model StoTask {
 }
 
 model StoContractor {
-  id                 String    @id @default(cuid())
-  name               String
-  code               String    @unique
-  contactPerson      String?
-  contactPhone       String?
-  contactEmail       String?
-  company            String?
-  taxId              String?
-  address            String?   @db.Text
-  specialties        Json? // array of disciplines
+  id                String   @id @default(cuid())
+  name              String
+  code              String   @unique
+  contactPerson     String?
+  contactPhone      String?
+  contactEmail      String?
+  company           String?
+  taxId             String?
+  address           String?  @db.Text
+  specialties       Json?    // array of disciplines
   qualificationLevel String? // tier1, tier2, tier3
-  insuranceExpiry    DateTime?
-  safetyCertExpiry   DateTime?
-  rating             Float? // 1-5
-  isActive           Boolean   @default(true)
-  notes              String?   @db.Text
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  insuranceExpiry   DateTime?
+  safetyCertExpiry  DateTime?
+  rating            Float?   // 1-5
+  isActive          Boolean  @default(true)
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  assignments StoContractorAssignment[]
+  assignments       StoContractorAssignment[]
 
   @@map("sto_contractors")
 }
 
 model StoContractorAssignment {
-  id                String    @id @default(cuid())
-  contractorId      String
-  eventId           String
-  taskIds           Json? // array of StoTask IDs
-  laborCount        Int?
-  startDate         DateTime?
-  endDate           DateTime?
-  budgetAmount      Float?
-  actualCost        Float?
-  accessPermitId    String?
-  status            String    @default("assigned") // assigned, mobilized, on_site, demobilized, completed
+  id              String   @id @default(cuid())
+  contractorId    String
+  eventId         String
+  taskIds         Json?    // array of StoTask IDs
+  laborCount      Int?
+  startDate       DateTime?
+  endDate         DateTime?
+  budgetAmount    Float?
+  actualCost      Float?
+  accessPermitId  String?
+  status          String   @default("assigned") // assigned, mobilized, on_site, demobilized, completed
   performanceRating Float?
-  notes             String?   @db.Text
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  contractor StoContractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  event      StoEvent      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contractor      StoContractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([contractorId])
   @@index([eventId])
@@ -4824,12 +4826,12 @@ model StoProgressReport {
   budgetSpent     Float?
   budgetRemaining Float?
   highlights      String?  @db.Text
-  issues          Json? // array of {description, severity, status}
+  issues          Json?    // array of {description, severity, status}
   notes           String?  @db.Text
   reportedById    String
   createdAt       DateTime @default(now())
 
-  event StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@index([eventId, reportDate])
   @@map("sto_progress_reports")
@@ -4840,49 +4842,49 @@ model StoProgressReport {
 // ============================================================================
 
 model InspectionTemplate {
-  id               String   @id @default(cuid())
-  name             String
-  description      String?  @db.Text
-  category         String? // safety, quality, environmental, equipment, regulatory
-  frequency        String? // daily, weekly, monthly, quarterly, annual, on_demand
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  category        String?  // safety, quality, environmental, equipment, regulatory
+  frequency       String?  // daily, weekly, monthly, quarterly, annual, on_demand
   estimatedMinutes Int?
-  sectionsJson     Json? // array of {title, items: [{type, label, required, options, conditional}]}
-  passThreshold    Float?   @default(0.8) // minimum pass rate
-  isActive         Boolean  @default(true)
-  createdById      String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  sectionsJson    Json?    // array of {title, items: [{type, label, required, options, conditional}]}
+  passThreshold   Float?   @default(0.8) // minimum pass rate
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  inspections MobileInspection[]
+  inspections     MobileInspection[]
 
   @@map("inspection_templates")
 }
 
 model MobileInspection {
-  id               String    @id @default(cuid())
-  templateId       String
-  assetId          String?
-  workOrderId      String?
-  inspectorId      String
-  status           String    @default("in_progress") // in_progress, completed, failed
-  startedAt        DateTime?
-  completedAt      DateTime?
-  score            Float? // 0-1 overall score
-  passCount        Int       @default(0)
-  failCount        Int       @default(0)
-  conditionalCount Int       @default(0)
-  naCount          Int       @default(0)
-  totalItems       Int       @default(0)
-  resultsJson      Json? // detailed results per item
-  findingsJson     Json? // array of {itemId, severity, description, photos}
-  photosJson       Json? // array of {url, caption, gps}
-  signatureData    String? // base64 signature image
-  gpsCoordinates   Json? // {lat, lng, accuracy}
-  notes            String?   @db.Text
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  templateId      String
+  assetId         String?
+  workOrderId     String?
+  inspectorId     String
+  status          String   @default("in_progress") // in_progress, completed, failed
+  startedAt       DateTime?
+  completedAt     DateTime?
+  score           Float?   // 0-1 overall score
+  passCount       Int      @default(0)
+  failCount       Int      @default(0)
+  conditionalCount Int     @default(0)
+  naCount         Int      @default(0)
+  totalItems      Int      @default(0)
+  resultsJson     Json?    // detailed results per item
+  findingsJson    Json?    // array of {itemId, severity, description, photos}
+  photosJson      Json?    // array of {url, caption, gps}
+  signatureData   String?  // base64 signature image
+  gpsCoordinates  Json?    // {lat, lng, accuracy}
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  template InspectionTemplate @relation(fields: [templateId], references: [id])
+  template        InspectionTemplate @relation(fields: [templateId], references: [id])
 
   @@index([templateId])
   @@index([assetId])
@@ -4892,32 +4894,32 @@ model MobileInspection {
 }
 
 model GeofenceZone {
-  id             String   @id @default(cuid())
-  name           String
-  description    String?
-  zoneType       String   @default("radius") // radius, polygon
-  coordinates    Json? // {center: {lat,lng}, radius} or {points: [{lat,lng}]}
-  plantId        String?
-  alertOnEnter   Boolean  @default(false)
-  alertOnExit    Boolean  @default(false)
-  requiresPermit Boolean  @default(false)
-  hazardLevel    String? // low, medium, high, critical
-  isActive       Boolean  @default(true)
-  createdById    String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  zoneType        String   @default("radius") // radius, polygon
+  coordinates     Json?    // {center: {lat,lng}, radius} or {points: [{lat,lng}]}
+  plantId         String?
+  alertOnEnter    Boolean  @default(false)
+  alertOnExit     Boolean  @default(false)
+  requiresPermit  Boolean  @default(false)
+  hazardLevel     String?  // low, medium, high, critical
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([plantId])
   @@map("geofence_zones")
 }
 
 model GeofenceEvent {
-  id          String   @id @default(cuid())
-  zoneId      String
-  userId      String
-  eventType   String // entered, exited
-  coordinates Json? // {lat, lng, accuracy}
-  timestamp   DateTime @default(now())
+  id              String   @id @default(cuid())
+  zoneId          String
+  userId          String
+  eventType       String   // entered, exited
+  coordinates     Json?    // {lat, lng, accuracy}
+  timestamp       DateTime @default(now())
 
   @@index([zoneId, timestamp])
   @@index([userId])
@@ -4925,19 +4927,19 @@ model GeofenceEvent {
 }
 
 model SyncOperation {
-  id             String    @id @default(cuid())
-  userId         String
-  deviceId       String?
-  operationType  String // upload, download, conflict
-  entityType     String? // work_order, inspection, etc.
-  entityId       String?
-  dataJson       Json?
-  status         String    @default("pending") // pending, processing, completed, failed, conflict
-  conflictReason String?
-  resolvedBy     String?
-  resolution     String? // server_wins, client_wins, merge, manual
-  createdAt      DateTime  @default(now())
-  resolvedAt     DateTime?
+  id              String   @id @default(cuid())
+  userId          String
+  deviceId        String?
+  operationType   String   // upload, download, conflict
+  entityType      String?  // work_order, inspection, etc.
+  entityId        String?
+  dataJson        Json?
+  status          String   @default("pending") // pending, processing, completed, failed, conflict
+  conflictReason  String?
+  resolvedBy      String?
+  resolution      String?  // server_wins, client_wins, merge, manual
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
 
   @@index([userId, status])
   @@index([status])
@@ -4949,38 +4951,38 @@ model SyncOperation {
 // ============================================================================
 
 model EngineeringDocument {
-  id               String    @id @default(cuid())
-  documentNumber   String    @unique // auto-generated, e.g. "PID-MEC-001-REV-A"
-  title            String
-  description      String?   @db.Text
-  category         String // p_id, pfd, isometric, electrical, instrumentation, mechanical, civil, safety, quality, procedure, manual, specification
-  subcategory      String?
-  discipline       String? // mechanical, electrical, instrument, civil, process, piping
-  plantId          String?
-  area             String?
-  folderPath       String? // virtual folder hierarchy
-  status           String    @default("draft") // draft, under_review, approved, issued, superseded, obsolete
-  version          Int       @default(1)
-  revision         String    @default("A") // A, B, C, ...
-  fileSize         Int?
-  fileMimeType     String?
-  fileUrl          String? // storage URL
-  thumbnailUrl     String?
-  extractedText    String?   @db.Text // OCR/text extraction result
-  metadata         Json? // extracted metadata (title block, equipment list, etc.)
-  tags             Json? // auto-generated or manual tags
-  linkedAssetIds   Json? // array of asset IDs referenced in this document
-  linkedTagNumbers Json? // array of equipment/instrument tag numbers found
-  issuedById       String?
-  approvedById     String?
-  reviewNotes      String?   @db.Text
-  effectiveDate    DateTime?
-  reviewDate       DateTime?
-  createdById      String
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  documentNumber    String   @unique // auto-generated, e.g. "PID-MEC-001-REV-A"
+  title             String
+  description       String?  @db.Text
+  category          String   // p_id, pfd, isometric, electrical, instrumentation, mechanical, civil, safety, quality, procedure, manual, specification
+  subcategory       String?
+  discipline        String?  // mechanical, electrical, instrument, civil, process, piping
+  plantId           String?
+  area              String?
+  folderPath        String?  // virtual folder hierarchy
+  status            String   @default("draft") // draft, under_review, approved, issued, superseded, obsolete
+  version           Int      @default(1)
+  revision          String   @default("A") // A, B, C, ...
+  fileSize          Int?
+  fileMimeType      String?
+  fileUrl           String?  // storage URL
+  thumbnailUrl      String?
+  extractedText     String?  @db.Text // OCR/text extraction result
+  metadata          Json?    // extracted metadata (title block, equipment list, etc.)
+  tags              Json?    // auto-generated or manual tags
+  linkedAssetIds    Json?    // array of asset IDs referenced in this document
+  linkedTagNumbers  Json?    // array of equipment/instrument tag numbers found
+  issuedById        String?
+  approvedById      String?
+  reviewNotes       String?  @db.Text
+  effectiveDate     DateTime?
+  reviewDate        DateTime?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  revisions DocumentRevision[]
+  revisions         DocumentRevision[]
 
   @@index([category])
   @@index([plantId])
@@ -4991,38 +4993,38 @@ model EngineeringDocument {
 }
 
 model DocumentRevision {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   documentId        String
   version           Int
   revision          String
-  changeDescription String?   @db.Text
+  changeDescription String?  @db.Text
   fileSize          Int?
   fileUrl           String?
-  changeType        String? // new, revision, correction, withdrawal
+  changeType        String?  // new, revision, correction, withdrawal
   changedById       String
   approvedById      String?
   approvedAt        DateTime?
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
-  document EngineeringDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document          EngineeringDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId, version])
   @@map("document_revisions")
 }
 
 model PidTagLink {
-  id           String    @id @default(cuid())
-  documentId   String
-  tagNumber    String // e.g. "P-101A", "TT-201", "LV-301"
-  tagType      String? // equipment, instrument, line, valve, vessel
-  assetId      String? // linked to asset database
-  x            Float? // position on P&ID (for overlay)
-  y            Float?
-  isVerified   Boolean   @default(false)
-  verifiedById String?
-  verifiedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String   @id @default(cuid())
+  documentId        String
+  tagNumber         String   // e.g. "P-101A", "TT-201", "LV-301"
+  tagType           String?  // equipment, instrument, line, valve, vessel
+  assetId           String?  // linked to asset database
+  x                 Float?   // position on P&ID (for overlay)
+  y                 Float?
+  isVerified        Boolean  @default(false)
+  verifiedById      String?
+  verifiedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([documentId])
   @@index([tagNumber])
@@ -5050,18 +5052,18 @@ model DocumentSearchLog {
 // ============================================================================
 
 model DomainEvent {
-  id            String    @id @default(cuid())
-  eventType     String // e.g. WorkOrderCompleted, AssetHealthChanged
-  entityName    String? // e.g. WorkOrder, Asset
-  entityId      String? // the entity's primary key
-  payload       Json? // typed event payload
-  correlationId String? // groups related events together
-  causationId   String? // tracks which event caused this one
-  source        String? // originating service/module
-  status        String    @default("pending") // pending, processed, dead_letter
+  id            String   @id @default(cuid())
+  eventType     String   // e.g. WorkOrderCompleted, AssetHealthChanged
+  entityName    String?  // e.g. WorkOrder, Asset
+  entityId      String?  // the entity's primary key
+  payload       Json?    // typed event payload
+  correlationId String?  // groups related events together
+  causationId   String?  // tracks which event caused this one
+  source        String?  // originating service/module
+  status        String   @default("pending") // pending, processed, dead_letter
   processedAt   DateTime?
-  retryCount    Int       @default(0)
-  createdAt     DateTime  @default(now())
+  retryCount    Int      @default(0)
+  createdAt     DateTime @default(now())
 
   @@index([eventType])
   @@index([correlationId])
@@ -5077,20 +5079,20 @@ model DomainEvent {
 // ============================================================================
 
 model ObservabilityLog {
-  id            String   @id @default(cuid())
-  level         String // trace, debug, info, warn, error, fatal
-  service       String?
-  message       String   @db.Text
-  traceId       String?
+  id           String   @id @default(cuid())
+  level        String   // trace, debug, info, warn, error, fatal
+  service      String?
+  message      String   @db.Text
+  traceId      String?
   correlationId String?
-  userId        String?
-  requestId     String?
-  durationMs    Float?
-  errorMessage  String?  @db.Text
-  tags          String?  @db.Text // JSON array
-  metadata      Json?
-  timestamp     DateTime
-  createdAt     DateTime @default(now())
+  userId       String?
+  requestId    String?
+  durationMs   Float?
+  errorMessage String?  @db.Text
+  tags         String?  @db.Text // JSON array
+  metadata     Json?
+  timestamp    DateTime
+  createdAt    DateTime @default(now())
 
   @@index([level])
   @@index([service])
@@ -5107,7 +5109,7 @@ model ObservabilityTrace {
   name         String
   serviceName  String?
   durationMs   Float?
-  status       String? // ok, error, timeout
+  status       String?  // ok, error, timeout
   attributes   Json?
   timestamp    DateTime
   createdAt    DateTime @default(now())
@@ -5121,7 +5123,7 @@ model ObservabilityTrace {
 model ObservabilityMetricSnapshot {
   id        String   @id @default(cuid())
   name      String
-  type      String // counter, gauge, histogram, summary
+  type      String   // counter, gauge, histogram, summary
   value     Float
   labels    String?  @db.Text // JSON object
   unit      String?
@@ -5138,22 +5140,22 @@ model ObservabilityMetricSnapshot {
 // ============================================================================
 
 model AiConfig {
-  id                 String   @id @default(cuid())
-  provider           String   @default("zai_sdk") // zai_sdk, gemini, groq, openrouter, cerebras, openai, anthropic, custom
-  llmModel           String   @default("default")
-  llmEndpoint        String   @default("")
-  llmApiKey          String   @default("")
-  llmTemperature     Float    @default(0.7)
-  llmMaxTokens       Int      @default(8000)
-  imageModel         String   @default("default")
-  imageApiKey        String   @default("")
-  meshyApiKey        String   @default("")
-  provider3d         String   @default("programmatic")
-  generationSettings String   @default("{}") @db.Text // JSON
-  isActive           Boolean  @default(false)
-  createdById        String   @default("")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id              String   @id @default(cuid())
+  provider        String   @default("zai_sdk") // zai_sdk, gemini, groq, openrouter, cerebras, openai, anthropic, custom
+  llmModel        String   @default("default")
+  llmEndpoint     String   @default("")
+  llmApiKey       String   @default("")
+  llmTemperature  Float    @default(0.7)
+  llmMaxTokens    Int      @default(8000)
+  imageModel      String   @default("default")
+  imageApiKey     String   @default("")
+  meshyApiKey     String   @default("")
+  provider3d      String   @default("programmatic")
+  generationSettings String @default("{}") @db.Text // JSON
+  isActive        Boolean  @default(false)
+  createdById     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("ai_configs")
 }
@@ -5177,14 +5179,14 @@ model SystemConfig {
 // ============================================================================
 
 model WorkOrderComponent {
-  id                  String   @id @default(cuid())
-  workOrderId         String
-  componentRegistryId String
-  notes               String?  @db.Text
-  createdAt           DateTime @default(now())
+  id                   String   @id @default(cuid())
+  workOrderId          String
+  componentRegistryId  String
+  notes                String?  @db.Text
+  createdAt            DateTime @default(now())
 
-  workOrder         WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  componentRegistry ComponentRegistry @relation(fields: [componentRegistryId], references: [id], onDelete: Cascade)
+  workOrder          WorkOrder          @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  componentRegistry  ComponentRegistry  @relation(fields: [componentRegistryId], references: [id], onDelete: Cascade)
 
   @@unique([workOrderId, componentRegistryId])
   @@index([workOrderId])
@@ -5193,40 +5195,40 @@ model WorkOrderComponent {
 }
 
 model ToolCalibrationRequirement {
-  id                      String    @id @default(cuid())
-  toolId                  String    @unique
-  calibrationRequired     Boolean   @default(false)
-  lastCalibrationDate     DateTime?
-  nextCalibrationDue      DateTime?
-  calibrationStatus       String    @default("not_required") // not_required, calibrated, due_soon, overdue, failed, expired
-  calibrationCertId       String?
-  calibratedById          String?
+  id                  String   @id @default(cuid())
+  toolId              String   @unique
+  calibrationRequired Boolean  @default(false)
+  lastCalibrationDate DateTime?
+  nextCalibrationDue  DateTime?
+  calibrationStatus   String   @default("not_required") // not_required, calibrated, due_soon, overdue, failed, expired
+  calibrationCertId    String?
+  calibratedById       String?
   calibrationIntervalDays Int?
-  emergencyOverride       Boolean   @default(false)
+  emergencyOverride    Boolean  @default(false)
   emergencyOverrideReason String?
-  emergencyOverrideById   String?
-  emergencyOverrideAt     DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  emergencyOverrideById String?
+  emergencyOverrideAt   DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  tool                Tool               @relation(fields: [toolId], references: [id], onDelete: Cascade)
-  calibrationRecord   CalibrationRecord? @relation(fields: [calibrationCertId], references: [id])
-  calibratedBy        User?              @relation("ToolCalBy", fields: [calibratedById], references: [id])
-  emergencyOverrideBy User?              @relation("ToolCalOverride", fields: [emergencyOverrideById], references: [id])
+  tool           Tool             @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  calibrationRecord CalibrationRecord? @relation(fields: [calibrationCertId], references: [id])
+  calibratedBy    User?            @relation("ToolCalBy", fields: [calibratedById], references: [id])
+  emergencyOverrideBy User? @relation("ToolCalOverride", fields: [emergencyOverrideById], references: [id])
 
   @@map("tool_calibration_requirements")
 }
 
 model IdempotencyRecord {
-  id           String   @id @default(cuid())
-  key          String   @unique
-  entityType   String
-  entityId     String
-  action       String
-  userId       String
-  executedAt   DateTime @default(now())
-  responseHash String // SHA-256 of the response to detect conflicts
-  responseData String?  @db.Text // JSON response for replay
+  id            String   @id @default(cuid())
+  key           String   @unique
+  entityType    String
+  entityId      String
+  action        String
+  userId        String
+  executedAt    DateTime @default(now())
+  responseHash  String   // SHA-256 of the response to detect conflicts
+  responseData  String?  @db.Text // JSON response for replay
 
   @@index([key])
   @@index([entityType, entityId])
@@ -5238,21 +5240,21 @@ model IdempotencyRecord {
 // ============================================================================
 
 model LaborRate {
-  id                 String    @id @default(cuid())
-  userId             String? // Specific user override
-  tradeId            String? // Trade-level rate
-  plantId            String? // Plant-specific override (null = all plants)
-  normalHourlyRate   Float // GHS per hour (or configured currency)
-  overtimeHourlyRate Float? // Overtime multiplier rate (null = 1.5x normal)
-  effectiveFrom      DateTime // When this rate becomes active
-  effectiveTo        DateTime? // When this rate expires (null = current)
-  currency           String    @default("GHS")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  userId               String?   // Specific user override
+  tradeId              String?   // Trade-level rate
+  plantId              String?   // Plant-specific override (null = all plants)
+  normalHourlyRate     Float     // GHS per hour (or configured currency)
+  overtimeHourlyRate   Float?    // Overtime multiplier rate (null = 1.5x normal)
+  effectiveFrom        DateTime  // When this rate becomes active
+  effectiveTo          DateTime? // When this rate expires (null = current)
+  currency             String    @default("GHS")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  user  User?  @relation("UserLaborRate", fields: [userId], references: [id], onDelete: Cascade)
-  trade Trade? @relation(fields: [tradeId], references: [id], onDelete: Cascade)
-  plant Plant? @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  user                 User?     @relation("UserLaborRate", fields: [userId], references: [id], onDelete: Cascade)
+  trade                Trade?    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  plant                Plant?    @relation(fields: [plantId], references: [id], onDelete: Cascade)
 
   @@index([userId, effectiveFrom, effectiveTo])
   @@index([tradeId, effectiveFrom, effectiveTo])

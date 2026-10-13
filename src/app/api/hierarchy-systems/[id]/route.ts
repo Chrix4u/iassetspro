@@ -32,10 +32,7 @@ export async function GET(
     const { id } = await params;
     const system = await db.hierarchySystem.findUnique({
       where: { id },
-      include: {
-        levels: { orderBy: { order: 'asc' } },
-        _count: { select: { functionalLocations: true } },
-      },
+      include: { levels: { orderBy: { order: 'asc' } } },
     });
     if (!system) {
       return NextResponse.json({ success: false, error: 'Hierarchy system not found' }, { status: 404 });
@@ -80,6 +77,12 @@ export async function PUT(
     if (existing.isPrimary && body.isActive === false) {
       return NextResponse.json(
         { success: false, error: 'The primary hierarchy system cannot be deactivated until another active system is made primary' },
+        { status: 400 },
+      );
+    }
+    if (body.isPrimary === true && body.isActive === false) {
+      return NextResponse.json(
+        { success: false, error: 'An inactive hierarchy system cannot be primary' },
         { status: 400 },
       );
     }

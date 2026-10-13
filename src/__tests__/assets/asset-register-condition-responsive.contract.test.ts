@@ -7,6 +7,7 @@ const assetPages = read('src/components/modules/AssetPages.tsx')
 const schema = read('prisma/schema.prisma')
 const assetsRoute = read('src/app/api/assets/route.ts')
 const assetRoute = read('src/app/api/assets/[id]/route.ts')
+const migration = read('prisma/migrations/20261013131000_split_asset_acquisition_condition/migration.sql')
 
 describe('Asset Register final responsive and acquisition-condition contract', () => {
   it('lets Asset Register header actions and filters reflow without fixed-width phone overflow', () => {
@@ -31,9 +32,19 @@ describe('Asset Register final responsive and acquisition-condition contract', (
     expect(formCondition).not.toContain('value="poor"')
   })
 
+  it('backfills and constrains legacy acquisition condition without rewriting health', () => {
+    expect(migration).toContain('ADD COLUMN "acquisitionCondition" TEXT')
+    expect(migration).toContain("WHEN \"condition\" = 'new' THEN 'new'")
+    expect(migration).toContain("ELSE 'used'")
+    expect(migration).toContain('CHECK ("acquisitionCondition" IN (\'new\', \'used\'))')
+    expect(migration).not.toContain('UPDATE "assets" SET "condition"')
+  })
+
   it('accepts acquisitionCondition through create/update APIs without repurposing health condition', () => {
     expect(assetsRoute).toContain('acquisitionCondition,')
     expect(assetsRoute).toContain("acquisitionCondition: acquisitionCondition || 'new'")
+    expect(assetsRoute).toContain("Condition must be New or Used")
     expect(assetRoute).toContain("'acquisitionCondition', 'condition', 'status', 'criticality'")
+    expect(assetRoute).toContain("Condition must be New or Used")
   })
 })

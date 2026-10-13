@@ -76,7 +76,7 @@ export function AssetsPage() {
     if (pageParams?.condition === 'at_risk') setAtRiskFilter(true);
   }, [pageParams]);
 
-  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
+  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', acquisitionCondition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
   const [form, setForm] = useState(emptyForm);
 
   const [showAllAssets, setShowAllAssets] = useState(false);
@@ -118,7 +118,7 @@ export function AssetsPage() {
   }), [assets]);
 
   const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
-  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
+  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', acquisitionCondition: a.acquisitionCondition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
@@ -174,9 +174,9 @@ export function AssetsPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
         </div>
         {(hasPermission('assets.create') || isAdmin()) && (
-          <div className='flex gap-2'>
-            <Button onClick={openCreate} className='bg-emerald-600 hover:bg-emerald-700 text-white'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
-            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5'><Sparkles className='h-4 w-4' />AI Generate</Button>
+          <div className='flex w-full flex-wrap gap-2 sm:w-auto'>
+            <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
+            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
           </div>
         )}
       </div>
@@ -197,24 +197,24 @@ export function AssetsPage() {
         ))}
       </div>
 
-      <div className="filter-row flex flex-wrap gap-3 items-center">
-        <div className="relative min-w-[200px] flex-1 max-w-sm">
+      <div className="filter-row grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center">
+        <div className="relative col-span-2 min-w-0 lg:col-span-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
         </Select>
         <Select value={conditionFilter} onValueChange={setConditionFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Condition" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All Condition</SelectItem><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All Health</SelectItem><SelectItem value="new">New / not yet assessed</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="out_of_service">Out of Service</SelectItem></SelectContent>
         </Select>
         <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticality" /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="col-span-2 flex items-center gap-2 lg:col-span-1 lg:ml-auto">
           <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
         </div>
@@ -239,12 +239,13 @@ export function AssetsPage() {
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Criticality</TableHead>
                 <TableHead className="hidden xl:table-cell">Condition</TableHead>
+                <TableHead className="hidden xl:table-cell">Health</TableHead>
                 <TableHead className="w-10">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredAssets.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Try adjusting your filters." /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Try adjusting your filters." /></TableCell></TableRow>
               ) : filteredAssets.map(a => (
                 <TableRow key={a.id}>
                   <TableCell className="font-mono text-xs">{a.assetTag}</TableCell>
@@ -253,6 +254,7 @@ export function AssetsPage() {
                   <TableCell className="text-sm hidden lg:table-cell">{a.location || '-'}</TableCell>
                   <TableCell><Badge variant="outline" className={`text-[10px] ${statusColors[a.status] || ''}`}>{(a.status || '').replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] ${criticalityColors[a.criticality] || ''}`}>{(a.criticality || '').toUpperCase()}</Badge></TableCell>
+                  <TableCell className="text-xs hidden xl:table-cell capitalize">{a.acquisitionCondition || '-'}</TableCell>
                   <TableCell className="text-xs hidden xl:table-cell capitalize">{a.condition || '-'}</TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -310,9 +312,9 @@ export function AssetsPage() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Condition</Label>
-                <Select value={form.condition} onValueChange={v => setForm(f => ({ ...f, condition: v }))}>
+                <Select value={form.acquisitionCondition} onValueChange={v => setForm(f => ({ ...f, acquisitionCondition: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>Status</Label>

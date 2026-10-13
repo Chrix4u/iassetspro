@@ -934,7 +934,8 @@ model Asset {
   manufacturer      String?
   model             String?
   yearManufactured  Int?
-  condition         String    @default("new") // new, good, fair, poor, out_of_service
+  acquisitionCondition String    @default("new") // new, used
+  condition         String    @default("new") // maintenance health: new, good, fair, poor, out_of_service
   status            String    @default("operational") // operational, standby, under_maintenance, decommissioned, disposed
   criticality       String    @default("medium") // low, medium, high, critical
   location          String?

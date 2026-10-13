@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
       manufacturer,
       model,
       yearManufactured,
+      acquisitionCondition,
       condition,
       status,
       criticality,
@@ -161,6 +162,10 @@ export async function POST(request: NextRequest) {
 
     if (!name) {
       return NextResponse.json({ success: false, error: 'Asset name is required' }, { status: 400 });
+    }
+
+    if (acquisitionCondition !== undefined && acquisitionCondition !== 'new' && acquisitionCondition !== 'used') {
+      return NextResponse.json({ success: false, error: 'Condition must be New or Used' }, { status: 400 });
     }
 
     if (!categoryId) {
@@ -221,6 +226,7 @@ export async function POST(request: NextRequest) {
         manufacturer: manufacturer || null,
         model: model || null,
         yearManufactured: yearManufactured ? parseInt(yearManufactured, 10) : null,
+        acquisitionCondition: acquisitionCondition || 'new',
         condition: condition || 'new',
         status: status || 'operational',
         criticality: criticality || 'medium',

@@ -27,10 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     const systems = await db.hierarchySystem.findMany({
-      include: {
-        levels: { orderBy: { order: 'asc' } },
-        _count: { select: { functionalLocations: true } },
-      },
+      include: { levels: { orderBy: { order: 'asc' } } },
       orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }],
     });
 
@@ -80,6 +77,14 @@ export async function POST(request: NextRequest) {
     }
 
     const requestPrimary = body.isPrimary === true;
+    const isActive = body.isActive !== false;
+    if (requestPrimary && !isActive) {
+      return NextResponse.json(
+        { success: false, error: 'An inactive hierarchy system cannot be primary' },
+        { status: 400 },
+      );
+    }
+
     const system = await db.hierarchySystem.create({
       data: {
         name,
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest) {
         purpose,
         description: typeof body.description === 'string' ? body.description.trim() || null : null,
         isPrimary: false,
-        isActive: body.isActive !== false,
+        isActive,
         codeMode,
         codeSeparator,
         allowCodeOverride: body.allowCodeOverride !== false,

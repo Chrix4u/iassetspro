@@ -32,7 +32,6 @@ export async function GET(
 
     const levels = await db.hierarchyLevel.findMany({
       where: { hierarchySystemId: id },
-      include: { _count: { select: { functionalLocations: true } } },
       orderBy: { order: 'asc' },
     });
     return NextResponse.json({ success: true, data: levels });
@@ -61,6 +60,17 @@ export async function POST(
     const order = parseOrder(body.order);
     if (!label || !order) {
       return NextResponse.json({ success: false, error: 'Level label and a positive integer order are required' }, { status: 400 });
+    }
+
+    const [systemLocationCount, orderSummary] = await Promise.all([
+      db.functionalLocation.count({ where: { hierarchySystemId: id } }),
+      db.hierarchyLevel.aggregate({ where: { hierarchySystemId: id }, _max: { order: true } }),
+    ]);
+    if (systemLocationCount > 0 && order <= (orderSummary._max.order ?? 0)) {
+      return NextResponse.json(
+        { success: false, error: 'New levels can only be appended after locations exist; inserting a level requires a migration plan' },
+        { status: 400 },
+      );
     }
 
     let codePrefix: string | null = null;
@@ -119,36 +129,29 @@ export async function PUT(
     const levelId = typeof body.id === 'string' ? body.id : '';
     if (!levelId) return NextResponse.json({ success: false, error: 'Level id is required' }, { status: 400 });
 
-    const existing = await db.hierarchyLevel.findUnique({
-      where: { id: levelId },
-      include: { _count: { select: { functionalLocations: true } } },
-    });
+    const existing = await db.hierarchyLevel.findUnique({ where: { id: levelId } });
     if (!existing || existing.hierarchySystemId !== hierarchySystemId) {
       return NextResponse.json({ success: false, error: 'Hierarchy level not found' }, { status: 404 });
     }
 
     const systemLocationCount = await db.functionalLocation.count({ where: { hierarchySystemId } });
-    const data: Prisma.HierarchyLevelUpdateInput = {};
-
-    if (body.order !== undefined) {
-      const order = parseOrder(body.order);
-      if (!order) return NextResponse.json({ success: false, error: 'Level order must be a positive integer' }, { status: 400 });
-      if (order !== existing.order && systemLocationCount > 0) {
-        return NextResponse.json(
-          { success: false, error: 'Level order cannot be changed after functional locations exist; create a migration plan instead' },
-          { status: 400 },
-        );
-      }
-      data.order = order;
+    const requestedOrder = body.order !== undefined ? parseOrder(body.order) : existing.order;
+    if (body.order !== undefined && !requestedOrder) {
+      return NextResponse.json({ success: false, error: 'Level order must be a positive integer' }, { status: 400 });
     }
 
-    if (body.isActive === false && existing._count.functionalLocations > 0) {
+    const structuralChange = requestedOrder !== existing.order
+      || (body.isRequired !== undefined && (body.isRequired === true) !== existing.isRequired)
+      || (body.isActive !== undefined && (body.isActive === true) !== existing.isActive);
+    if (systemLocationCount > 0 && structuralChange) {
       return NextResponse.json(
-        { success: false, error: 'A hierarchy level with functional locations cannot be deactivated' },
+        { success: false, error: 'Level order, required status, and active status cannot change after locations exist; create a migration plan instead' },
         { status: 400 },
       );
     }
 
+    const data: Prisma.HierarchyLevelUpdateInput = {};
+    if (body.order !== undefined) data.order = requestedOrder!;
     if (body.label !== undefined) {
       const label = typeof body.label === 'string' ? body.label.trim() : '';
       if (!label) return NextResponse.json({ success: false, error: 'Level label is required' }, { status: 400 });

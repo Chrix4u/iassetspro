@@ -122,6 +122,10 @@ export async function PUT(
       }
     }
 
+    if (body.acquisitionCondition !== undefined && body.acquisitionCondition !== 'new' && body.acquisitionCondition !== 'used') {
+      return NextResponse.json({ success: false, error: 'Condition must be New or Used' }, { status: 400 });
+    }
+
     if (body.assetTag !== undefined) {
       const normalizedAssetTag = String(body.assetTag || '').trim();
       if (!normalizedAssetTag) {
@@ -141,7 +145,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const scalarFields = [
       'name', 'assetTag', 'description', 'serialNumber', 'manufacturer', 'model',
-      'condition', 'status', 'criticality', 'location',
+      'acquisitionCondition', 'condition', 'status', 'criticality', 'location',
       'building', 'floor', 'area', 'imageUrl',
       'drawingsUrl', 'manualUrl', 'specification', 'isActive',
     ];

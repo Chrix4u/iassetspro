@@ -82,6 +82,7 @@ import {
   Settings2,
   History,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ============================================================================
 // SIDEBAR
@@ -117,14 +118,14 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   // Menu group definition
   interface NavGroup {
     label: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     perm: string;
     permOr?: string[]; // alternative permissions — show group if user has ANY of these
     adminOnly?: boolean; // when true, only admins can see this group
     page?: PageName;
     moduleCode?: string; // maps to SystemModule.code (lowercase) for module-aware filtering
     moduleCodes?: string[]; // for groups spanning multiple modules (any match = visible)
-    children?: { page: PageName; label: string; icon?: React.ElementType; pageAdminOnly?: boolean; moduleCode?: string }[];
+    children?: { page: PageName; label: string; icon?: LucideIcon; pageAdminOnly?: boolean; moduleCode?: string }[];
   }
 
   const menuGroups = useMemo<NavGroup[]>(() => [
@@ -304,6 +305,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'settings-company', label: 'Company Profile', icon: Building2 },
         { page: 'settings-plants', label: 'Plants', icon: Factory },
         { page: 'settings-departments', label: 'Departments', icon: Building },
+        { page: 'settings-hierarchy', label: 'Hierarchy & Locations', icon: GitBranch },
         { page: 'settings-notifications', label: 'Notifications', icon: BellRing },
         { page: 'settings-integrations', label: 'Integrations', icon: Link2 },
         { page: 'settings-backup', label: 'Backup', icon: Database },

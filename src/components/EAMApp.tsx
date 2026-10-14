@@ -152,6 +152,7 @@ const PAGE_TITLES: Record<string, string> = {
   'settings-company': 'Company Profile',
   'settings-plants': 'Plants',
   'settings-departments': 'Departments',
+  'settings-hierarchy': 'Hierarchy & Locations',
   'settings-notifications': 'Notifications',
   'settings-integrations': 'Integrations',
   'settings-backup': 'Backup & Restore',
@@ -310,6 +311,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'settings-company': () => import('./modules/SettingsPages').then(m => m.CompanyProfilePage),
   'settings-plants': () => import('./modules/SettingsPages').then(m => m.SettingsPlantsPage),
   'settings-departments': () => import('./modules/SettingsPages').then(m => m.SettingsDepartmentsPage),
+  'settings-hierarchy': () => import('./modules/FunctionalLocationSettingsPage').then(m => m.FunctionalLocationSettingsPage),
   'settings-notifications': () => import('./modules/SettingsPages').then(m => m.SettingsNotificationsPage),
   'settings-integrations': () => import('./modules/SettingsPages').then(m => m.SettingsIntegrationsPage),
   'settings-backup': () => import('./modules/SettingsPages').then(m => m.SettingsBackupPage),
@@ -684,14 +686,14 @@ interface ErrorBoundaryState {
 
 class GlobalErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  ErrorBoundaryState & { retryTimer: ReturnType<typeof setTimeout> | null; retryCount: number }
+  ErrorBoundaryState
 > {
   private _retryTimer: ReturnType<typeof setTimeout> | null = null;
   private _retryCount: number = 0;
 
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null, componentStack: null, isChunkError: false, retryTimer: null, retryCount: 0 };
+    this.state = { hasError: false, error: null, componentStack: null, isChunkError: false };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -738,9 +740,9 @@ class GlobalErrorBoundary extends React.Component<
         // Force a re-render by toggling state
         this.setState((prev) => {
           if (prev.hasError) {
-            return { ...prev, hasError: false, error: null, componentStack: null, isChunkError: false };
+            return { hasError: false, error: null, componentStack: null, isChunkError: false };
           }
-          return null;
+          return prev;
         });
       }, 50);
     }

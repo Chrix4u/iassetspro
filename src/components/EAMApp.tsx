@@ -39,7 +39,7 @@ const PAGE_TITLES: Record<string, string> = {
   // Assets
   'asset-categories': 'Asset Categories',
   'assets-machines': 'Machines',
-  'assets-hierarchy': 'Asset Hierarchy',
+  'assets-hierarchy': 'Asset & Location Hierarchy',
   'assets-bom': 'Bill of Materials',
   'assets-condition-monitoring': 'Condition Monitoring',
   'assets-digital-twin': 'Digital Twin',
@@ -195,7 +195,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   // Assets
   'asset-categories': () => import('./modules/AssetCategoriesPage').then(m => m.default),
   'assets-machines': () => import('./modules/AssetPages').then(m => m.AssetsMachinesPage),
-  'assets-hierarchy': () => import('./modules/AssetPages').then(m => m.AssetsHierarchyPage),
+  'assets-hierarchy': () => import('./modules/FunctionalLocationHierarchyPage').then(m => m.default),
   'assets-bom': () => import('./modules/AssetPages').then(m => m.AssetsBomPage),
   'assets-condition-monitoring': () => import('./modules/AssetPages').then(m => m.AssetsConditionMonitoringPage),
   'assets-digital-twin': () => import('./digital-twin/DigitalTwinMainPage').then(m => m.DigitalTwinMainPage),
@@ -691,7 +691,7 @@ class GlobalErrorBoundary extends React.Component<
 
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null, componentStack: null, isChunkError: false };
+    this.state = { hasError: false, error: null, componentStack: null, isChunkError: false, retryTimer: null, retryCount: 0 };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -722,7 +722,7 @@ class GlobalErrorBoundary extends React.Component<
     console.error('Stack:', error.stack);
     console.error('Component Stack:', info.componentStack);
     console.error('=== END ERROR ===');
-    this.setState({ componentStack: info.componentStack });
+    this.setState({ componentStack: info.componentStack ?? null });
 
     // For Error #185, schedule a silent retry after a short delay.
     // This handles the case where the automatic retry (hasError: false from
@@ -738,9 +738,9 @@ class GlobalErrorBoundary extends React.Component<
         // Force a re-render by toggling state
         this.setState((prev) => {
           if (prev.hasError) {
-            return { hasError: false, error: null, componentStack: null, isChunkError: false };
+            return { ...prev, hasError: false, error: null, componentStack: null, isChunkError: false };
           }
-          return prev;
+          return null;
         });
       }, 50);
     }

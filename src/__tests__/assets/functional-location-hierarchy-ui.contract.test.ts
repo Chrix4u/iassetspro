@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const hierarchyPagePath = resolve(process.cwd(), 'src/components/modules/FunctionalLocationHierarchyPage.tsx')
 const pickerPath = resolve(process.cwd(), 'src/components/assets/FunctionalLocationPicker.tsx')
+const commissioningPanelPath = resolve(process.cwd(), 'src/components/assets/HierarchyCommissioningPanel.tsx')
 const appPath = resolve(process.cwd(), 'src/components/EAMApp.tsx')
 
 describe('functional-location Phase 2 UI contract', () => {
@@ -51,5 +52,14 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('allowAssetAssignment')
     expect(source).toContain('locationCode')
     expect(source).toContain('breadcrumb')
+  })
+
+  it('standalone machine commissioning loads every existing node before enabling imports', () => {
+    const source = readFileSync(commissioningPanelPath, 'utf8')
+    expect(source).toContain('/api/component-registry?assetId=${encodeURIComponent(assetId)}&page=${page}&limit=${COMPONENT_PAGE_SIZE}')
+    expect(source).toContain('providedExistingComponents ?? loadedExistingComponents')
+    expect(source).toContain('validationUnavailable = existingLoading || Boolean(existingLoadError)')
+    expect(source).toContain('disabled={importing || validationUnavailable || parsed.length === 0 || validation.length > 0}')
+    expect(source).toContain('if (providedExistingComponents === undefined) await loadExistingComponents()')
   })
 })

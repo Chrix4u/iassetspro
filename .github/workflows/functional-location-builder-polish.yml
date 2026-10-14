@@ -1,0 +1,60 @@
+name: Functional Location Builder Polish
+
+on:
+  push:
+    branches:
+      - feat/functional-location-ui-20261014
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feat/functional-location-ui-20261014
+          fetch-depth: 0
+
+      - name: Remove non-persisted controls and expose hierarchy purpose
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/modules/FunctionalLocationHierarchyPage.tsx')
+          source = path.read_text()
+
+          replacements = [
+              ('  labelPlural?: string | null\n', ''),
+              ('  labelPlural: string\n', ''),
+              ("{ label: 'Company', labelPlural: 'Companies', codePrefix: 'CO', isRequired: true, allowAssetAssignment: false }", "{ label: 'Company', codePrefix: 'CO', isRequired: true, allowAssetAssignment: false }"),
+              ("{ label: 'Site / Plant', labelPlural: 'Sites / Plants', codePrefix: 'PL', isRequired: true, allowAssetAssignment: false }", "{ label: 'Site / Plant', codePrefix: 'PL', isRequired: true, allowAssetAssignment: false }"),
+              ("{ label: 'Area', labelPlural: 'Areas', codePrefix: 'AR', isRequired: false, allowAssetAssignment: false }", "{ label: 'Area', codePrefix: 'AR', isRequired: false, allowAssetAssignment: false }"),
+              ("{ label: 'Line / System', labelPlural: 'Lines / Systems', codePrefix: 'LN', isRequired: false, allowAssetAssignment: false }", "{ label: 'Line / System', codePrefix: 'LN', isRequired: false, allowAssetAssignment: false }"),
+              ("{ label: 'Functional Location', labelPlural: 'Functional Locations', codePrefix: 'FL', isRequired: true, allowAssetAssignment: true }", "{ label: 'Functional Location', codePrefix: 'FL', isRequired: true, allowAssetAssignment: true }"),
+              ("{ label: 'New Level', labelPlural: 'New Levels', codePrefix: '', isRequired: false, allowAssetAssignment: false }", "{ label: 'New Level', codePrefix: '', isRequired: false, allowAssetAssignment: false }"),
+              ('md:grid-cols-[2rem_minmax(8rem,1.2fr)_minmax(7rem,.8fr)_5rem_auto_auto_auto]', 'md:grid-cols-[2rem_minmax(9rem,1.4fr)_5rem_auto_auto_auto]'),
+              ('<Input value={level.labelPlural} onChange={event => updateLevelDraft(index, { labelPlural: event.target.value })} placeholder="Plural" />', ''),
+              ('<div className="grid gap-3 sm:grid-cols-3"><div><Label>Code mode</Label>', '<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><Label>Purpose</Label><Select value={systemForm.purpose} onValueChange={value => setSystemForm(current => ({ ...current, purpose: value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="functional_location">Functional Location</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="process">Process</SelectItem><SelectItem value="utilities">Utilities</SelectItem><SelectItem value="facilities">Facilities</SelectItem><SelectItem value="custom">Custom</SelectItem></SelectContent></Select></div><div><Label>Code mode</Label>'),
+              ('{selectedSystem.isPrimary && <Badge>Primary</Badge>}<Badge variant="outline">{selectedSystem.codeMode} codes</Badge>', '{selectedSystem.isPrimary && <Badge>Primary</Badge>}<Badge variant="outline">{selectedSystem.purpose || \'functional_location\'}</Badge><Badge variant="outline">{selectedSystem.codeMode} codes</Badge>'),
+          ]
+
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'missing expected builder fragment: {old!r}')
+              source = source.replace(old, new)
+
+          path.write_text(source)
+          PY
+
+      - name: Remove one-shot helper and commit
+        run: |
+          rm .github/workflows/functional-location-builder-polish.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/modules/FunctionalLocationHierarchyPage.tsx .github/workflows/functional-location-builder-polish.yml
+          git commit -m "fix: keep hierarchy builder aligned with persisted fields"
+          git push origin HEAD:feat/functional-location-ui-20261014

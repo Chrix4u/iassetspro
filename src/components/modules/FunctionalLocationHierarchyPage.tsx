@@ -241,7 +241,7 @@ export default function FunctionalLocationHierarchyPage() {
   })
 
   const canManageHierarchy = isAdmin() || hasPermission('assets.hierarchy.manage')
-  const canManageLocations = canManageHierarchy || hasPermission('assets.functional_locations.manage')
+  const canManageLocations = isAdmin() || hasPermission('assets.functional_locations.manage')
 
   const selectedSystem = useMemo(
     () => systems.find(system => system.id === selectedSystemId) || null,

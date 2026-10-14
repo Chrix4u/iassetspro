@@ -30,13 +30,14 @@ export interface CreateFunctionalLocationInput {
   description?: string | null;
   status?: 'active' | 'inactive' | 'retired';
   plantId?: string | null;
-  createdById?: string | null;
+  actorId: string;
 }
 
 export interface MoveFunctionalLocationInput {
   id: string;
   newParentId: string | null;
   hierarchyLevelId?: string | null;
+  actorId: string;
 }
 
 export interface FunctionalLocationPathNode {
@@ -70,6 +71,12 @@ function rethrowPrismaConflict(error: unknown, message: string): never {
   throw error;
 }
 
+function requireAuditActor(actorId: string): string {
+  const normalizedActorId = actorId.trim();
+  if (!normalizedActorId) validation('Audit actor is required for functional-location mutations');
+  return normalizedActorId;
+}
+
 function assertActiveSystem(system: { isActive: boolean } | null): asserts system is { isActive: true } {
   if (!system) notFound('Hierarchy system not found');
   if (!system.isActive) validation('Hierarchy system is inactive');
@@ -77,114 +84,160 @@ function assertActiveSystem(system: { isActive: boolean } | null): asserts syste
 
 export async function setPrimaryHierarchySystem(
   systemId: string,
-  _actorId: string,
+  actorId: string,
 ): Promise<HierarchySystem> {
+  const auditActorId = requireAuditActor(actorId);
+
   return db.$transaction(async (tx) => {
     const target = await tx.hierarchySystem.findUnique({ where: { id: systemId } });
     assertActiveSystem(target);
+
+    const previousPrimary = await tx.hierarchySystem.findFirst({
+      where: { isPrimary: true, isActive: true },
+      select: { id: true },
+    });
 
     await tx.hierarchySystem.updateMany({
       where: { isPrimary: true, id: { not: systemId } },
       data: { isPrimary: false },
     });
 
-    return tx.hierarchySystem.update({
+    const updated = await tx.hierarchySystem.update({
       where: { id: systemId },
       data: { isPrimary: true },
     });
+
+    await tx.auditLog.create({
+      data: {
+        userId: auditActorId,
+        action: 'set_primary',
+        entityType: 'hierarchy_system',
+        entityId: updated.id,
+        oldValues: JSON.stringify({ previousPrimaryId: previousPrimary?.id ?? null }),
+        newValues: JSON.stringify({ isPrimary: true }),
+      },
+    });
+
+    return updated;
   });
 }
 
 export async function createFunctionalLocation(
   input: CreateFunctionalLocationInput,
 ): Promise<FunctionalLocation> {
+  const actorId = requireAuditActor(input.actorId);
   const name = input.name.trim();
   if (!name) validation('Functional location name is required');
 
-  const system = await db.hierarchySystem.findUnique({
-    where: { id: input.hierarchySystemId },
-    include: {
-      levels: {
-        where: { isActive: true },
-        orderBy: { order: 'asc' },
-      },
-    },
-  });
-  assertActiveSystem(system);
-
-  const targetLevel = system.levels.find((level) => level.id === input.hierarchyLevelId);
-  if (!targetLevel) validation('Hierarchy level is not active in this hierarchy system');
-
-  const parent = input.parentId
-    ? await db.functionalLocation.findUnique({
-        where: { id: input.parentId },
-        include: { hierarchyLevel: true },
-      })
-    : null;
-
-  if (input.parentId && !parent) notFound('Parent functional location not found');
-  if (parent && parent.hierarchySystemId !== system.id) {
-    validation('Parent belongs to a different hierarchy system');
-  }
-  if (parent && parent.status !== 'active') {
-    validation('Parent functional location is not active');
-  }
-
-  validateLevelTransition({
-    hierarchySystemId: system.id,
-    parent: parent
-      ? { hierarchySystemId: parent.hierarchySystemId, order: parent.hierarchyLevel.order }
-      : null,
-    target: { hierarchySystemId: system.id, order: targetLevel.order },
-    levels: system.levels.map((level) => ({
-      hierarchySystemId: level.hierarchySystemId,
-      order: level.order,
-      isRequired: level.isRequired,
-      isActive: level.isActive,
-    })),
-  });
-
-  const plantId = input.plantId ?? parent?.plantId ?? null;
-  try {
-    validatePlantHierarchyPlacement({
-      nodePlantId: plantId,
-      parentPlantId: parent?.plantId ?? null,
-    });
-  } catch (error) {
-    validation(error instanceof Error ? error.message : 'Invalid plant hierarchy placement');
-  }
-
-  const codeSegment = input.codeSegment?.trim()
-    ? normalizeCodeSegment(input.codeSegment)
-    : null;
-  const locationCode = buildLocationCode({
-    mode: system.codeMode as LocationCodeMode,
-    separator: system.codeSeparator,
-    parentCode: parent?.locationCode ?? null,
-    prefix: targetLevel.codePrefix,
-    segment: codeSegment,
-    manualCode: input.locationCode,
-    allowOverride: system.allowCodeOverride,
-  });
+  let attemptedLocationCode = '';
 
   try {
-    return await db.functionalLocation.create({
-      data: {
+    return await db.$transaction(async (tx) => {
+      const system = await tx.hierarchySystem.findUnique({
+        where: { id: input.hierarchySystemId },
+        include: {
+          levels: {
+            where: { isActive: true },
+            orderBy: { order: 'asc' },
+          },
+        },
+      });
+      assertActiveSystem(system);
+
+      const targetLevel = system.levels.find((level) => level.id === input.hierarchyLevelId);
+      if (!targetLevel) validation('Hierarchy level is not active in this hierarchy system');
+
+      const parent = input.parentId
+        ? await tx.functionalLocation.findUnique({
+            where: { id: input.parentId },
+            include: { hierarchyLevel: true },
+          })
+        : null;
+
+      if (input.parentId && !parent) notFound('Parent functional location not found');
+      if (parent && parent.hierarchySystemId !== system.id) {
+        validation('Parent belongs to a different hierarchy system');
+      }
+      if (parent && parent.status !== 'active') {
+        validation('Parent functional location is not active');
+      }
+
+      validateLevelTransition({
         hierarchySystemId: system.id,
-        hierarchyLevelId: targetLevel.id,
-        parentId: parent?.id ?? null,
-        name,
-        codeSegment,
-        locationCode: normalizeLocationCode(locationCode),
-        description: input.description?.trim() || null,
-        status: input.status ?? 'active',
-        plantId,
-        depth: parent ? parent.depth + 1 : 0,
-        createdById: input.createdById ?? null,
-      },
+        parent: parent
+          ? { hierarchySystemId: parent.hierarchySystemId, order: parent.hierarchyLevel.order }
+          : null,
+        target: { hierarchySystemId: system.id, order: targetLevel.order },
+        levels: system.levels.map((level) => ({
+          hierarchySystemId: level.hierarchySystemId,
+          order: level.order,
+          isRequired: level.isRequired,
+          isActive: level.isActive,
+        })),
+      });
+
+      const plantId = input.plantId ?? parent?.plantId ?? null;
+      try {
+        validatePlantHierarchyPlacement({
+          nodePlantId: plantId,
+          parentPlantId: parent?.plantId ?? null,
+        });
+      } catch (error) {
+        validation(error instanceof Error ? error.message : 'Invalid plant hierarchy placement');
+      }
+
+      const codeSegment = input.codeSegment?.trim()
+        ? normalizeCodeSegment(input.codeSegment)
+        : null;
+      const locationCode = buildLocationCode({
+        mode: system.codeMode as LocationCodeMode,
+        separator: system.codeSeparator,
+        parentCode: parent?.locationCode ?? null,
+        prefix: targetLevel.codePrefix,
+        segment: codeSegment,
+        manualCode: input.locationCode,
+        allowOverride: system.allowCodeOverride,
+      });
+      attemptedLocationCode = normalizeLocationCode(locationCode);
+
+      const location = await tx.functionalLocation.create({
+        data: {
+          hierarchySystemId: system.id,
+          hierarchyLevelId: targetLevel.id,
+          parentId: parent?.id ?? null,
+          name,
+          codeSegment,
+          locationCode: attemptedLocationCode,
+          description: input.description?.trim() || null,
+          status: input.status ?? 'active',
+          plantId,
+          depth: parent ? parent.depth + 1 : 0,
+          createdById: actorId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: actorId,
+          action: 'create',
+          entityType: 'functional_location',
+          entityId: location.id,
+          plantId: location.plantId,
+          newValues: JSON.stringify({
+            hierarchySystemId: location.hierarchySystemId,
+            hierarchyLevelId: location.hierarchyLevelId,
+            parentId: location.parentId,
+            name: location.name,
+            locationCode: location.locationCode,
+          }),
+        },
+      });
+
+      return location;
     });
   } catch (error) {
-    rethrowPrismaConflict(error, `Location Code ${locationCode} already exists in this hierarchy system`);
+    const suffix = attemptedLocationCode ? ` ${attemptedLocationCode}` : '';
+    rethrowPrismaConflict(error, `Location Code${suffix} already exists in this hierarchy system`);
   }
 }
 
@@ -216,6 +269,8 @@ function descendantIdsFor(
 export async function moveFunctionalLocation(
   input: MoveFunctionalLocationInput,
 ): Promise<FunctionalLocation> {
+  const actorId = requireAuditActor(input.actorId);
+
   return db.$transaction(async (tx) => {
     const current = await tx.functionalLocation.findUnique({
       where: { id: input.id },
@@ -298,6 +353,26 @@ export async function moveFunctionalLocation(
         data: { depth: { increment: depthDelta } },
       });
     }
+
+    await tx.auditLog.create({
+      data: {
+        userId: actorId,
+        action: 'move',
+        entityType: 'functional_location',
+        entityId: moved.id,
+        plantId: moved.plantId,
+        oldValues: JSON.stringify({
+          parentId: current.parentId,
+          hierarchyLevelId: current.hierarchyLevelId,
+          depth: current.depth,
+        }),
+        newValues: JSON.stringify({
+          parentId: moved.parentId,
+          hierarchyLevelId: moved.hierarchyLevelId,
+          depth: moved.depth,
+        }),
+      },
+    });
 
     return moved;
   });

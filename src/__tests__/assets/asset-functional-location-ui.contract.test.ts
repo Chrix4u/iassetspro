@@ -25,7 +25,7 @@ describe('asset functional-location UX contract', () => {
   })
 
   it('shows Installed At / Asset Path from the primary assignment and coded breadcrumb', () => {
-    expect(assetDetail).toContain(`/api/assets/${id}/functional-locations`)
+    expect(assetDetail).toContain('/api/assets/${id}/functional-locations')
     expect(assetDetail).toContain('/api/functional-locations/${encodeURIComponent(primaryLocationId)}/path')
     expect(assetDetail).toContain('Installed At / Asset Path')
     expect(assetDetail).toContain('locationCode')

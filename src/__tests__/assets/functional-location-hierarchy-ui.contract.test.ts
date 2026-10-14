@@ -66,6 +66,14 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('!plantId || location.plantId === plantId')
   })
 
+  it('machine hierarchy commissioning mirrors the server create-permission contract', () => {
+    const source = readFileSync(commissioningPanelPath, 'utf8')
+    expect(source).toContain("hasPermission('digital_twin.manage')")
+    expect(source).toContain("hasPermission('assets.hierarchy')")
+    expect(source).toContain("hasPermission('assets.create') || hasPermission('assemblies.create')")
+    expect(source).toContain('You can view machine structure, but you do not have permission to commission hierarchy nodes.')
+  })
+
   it('standalone machine commissioning loads every existing node before enabling imports', () => {
     const source = readFileSync(commissioningPanelPath, 'utf8')
     expect(source).toContain('/api/component-registry?assetId=${encodeURIComponent(assetId)}&page=${page}&limit=${COMPONENT_PAGE_SIZE}')

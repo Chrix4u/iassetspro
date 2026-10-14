@@ -41,6 +41,13 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('Machine Structure')
   })
 
+  it('keeps hierarchy-definition management separate from functional-location management', () => {
+    const source = readFileSync(hierarchyPagePath, 'utf8')
+    expect(source).toContain("const canManageHierarchy = isAdmin() || hasPermission('assets.hierarchy.manage')")
+    expect(source).toContain("const canManageLocations = isAdmin() || hasPermission('assets.functional_locations.manage')")
+    expect(source).not.toContain("const canManageLocations = canManageHierarchy || hasPermission('assets.functional_locations.manage')")
+  })
+
   it('routes Assets → Hierarchy to the dedicated workspace and names it clearly', () => {
     const source = readFileSync(appPath, 'utf8')
     expect(source).toContain("'assets-hierarchy': 'Asset & Location Hierarchy'")

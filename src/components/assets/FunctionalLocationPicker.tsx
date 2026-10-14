@@ -19,9 +19,8 @@ type FunctionalLocation = {
   locationCode: string
   parentId?: string | null
   plantId?: string | null
-  isActive?: boolean
-  allowAssetAssignment?: boolean
-  hierarchyLevel?: { label?: string } | null
+  status?: string
+  hierarchyLevel?: { label?: string; allowAssetAssignment?: boolean } | null
 }
 
 export type FunctionalLocationPickerProps = {
@@ -91,7 +90,7 @@ export function FunctionalLocationPicker({
 
     let cancelled = false
     setLoading(true)
-    const params = new URLSearchParams({ systemId: resolvedSystemId, active: 'true' })
+    const params = new URLSearchParams({ hierarchySystemId: resolvedSystemId, status: 'active' })
     if (plantId) params.set('plantId', plantId)
 
     api.get<FunctionalLocation[]>(`/api/functional-locations?${params.toString()}`).then(res => {
@@ -108,7 +107,7 @@ export function FunctionalLocationPicker({
   const options = useMemo(() => {
     const byId = new Map(locations.map(location => [location.id, location]))
     return locations
-      .filter(location => !allowAssetAssignmentOnly || location.allowAssetAssignment)
+      .filter(location => !allowAssetAssignmentOnly || location.hierarchyLevel?.allowAssetAssignment)
       .map(location => ({
         ...location,
         breadcrumb: buildBreadcrumb(location, byId),

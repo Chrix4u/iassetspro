@@ -40,7 +40,7 @@ type HierarchyLevel = {
   label: string
   labelPlural?: string | null
   codePrefix?: string | null
-  levelOrder: number
+  order: number
   isRequired?: boolean
   allowAssetAssignment?: boolean
 }
@@ -53,7 +53,7 @@ type HierarchySystem = {
   description?: string | null
   isPrimary?: boolean
   codeMode: 'manual' | 'generated' | 'mixed'
-  separator: string
+  codeSeparator: string
   levels: HierarchyLevel[]
   _count?: { functionalLocations?: number }
 }
@@ -68,8 +68,7 @@ type FunctionalLocation = {
   description?: string | null
   locationCode: string
   depth: number
-  isActive?: boolean
-  allowAssetAssignment?: boolean
+  status?: string
   hierarchyLevel?: HierarchyLevel | null
   plant?: { id: string; name: string } | null
   _count?: { children?: number }
@@ -141,7 +140,7 @@ function LocationTreeNode({
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{node.hierarchyLevel?.label || 'Location'}</span>
               {node.plant?.name && <span>• {node.plant.name}</span>}
-              {node.allowAssetAssignment && <span>• Asset-ready</span>}
+              {node.hierarchyLevel?.allowAssetAssignment && <span>• Asset-ready</span>}
             </div>
           </div>
         </button>
@@ -281,7 +280,7 @@ export default function FunctionalLocationHierarchyPage() {
     }
     setLocationsLoading(true)
     try {
-      const res = await api.get<FunctionalLocation[]>(`/api/functional-locations?systemId=${encodeURIComponent(systemId)}&active=true`)
+      const res = await api.get<FunctionalLocation[]>(`/api/functional-locations?hierarchySystemId=${encodeURIComponent(systemId)}&status=active`)
       const next = res.success && Array.isArray(res.data) ? res.data : []
       setLocations(next)
       setExpandedLocations(new Set(next.filter(location => location.depth === 0).map(location => location.id)))
@@ -376,11 +375,11 @@ export default function FunctionalLocationHierarchyPage() {
   })
 
   const openCreateLocation = (parent?: FunctionalLocation | null) => {
-    const orderedLevels = [...(selectedSystem?.levels || [])].sort((a, b) => a.levelOrder - b.levelOrder)
+    const orderedLevels = [...(selectedSystem?.levels || [])].sort((a, b) => a.order - b.order)
     let level = orderedLevels[0]
     if (parent) {
       const parentLevel = orderedLevels.find(item => item.id === parent.hierarchyLevelId)
-      level = orderedLevels.find(item => item.levelOrder > (parentLevel?.levelOrder ?? -1)) || orderedLevels[orderedLevels.length - 1]
+      level = orderedLevels.find(item => item.order > (parentLevel?.order ?? -1)) || orderedLevels[orderedLevels.length - 1]
     }
     setLocationForm({
       name: '',
@@ -414,7 +413,7 @@ export default function FunctionalLocationHierarchyPage() {
         purpose: systemForm.purpose,
         isPrimary: systemForm.isPrimary,
         codeMode: systemForm.codeMode,
-        separator: systemForm.separator,
+        codeSeparator: systemForm.separator,
         levels,
       })
       if (!res.success) throw new Error(res.error || 'Failed to create hierarchy system')
@@ -451,9 +450,8 @@ export default function FunctionalLocationHierarchyPage() {
         plantId: locationForm.plantId || undefined,
         name: locationForm.name.trim(),
         description: locationForm.description.trim() || undefined,
-        code: locationForm.code.trim() || undefined,
+        locationCode: locationForm.code.trim() || undefined,
         codeSegment: locationForm.codeSegment.trim() || undefined,
-        allowAssetAssignment: locationForm.allowAssetAssignment,
       })
       if (!res.success) throw new Error(res.error || 'Failed to create functional location')
       toast.success('Functional location created')
@@ -528,8 +526,8 @@ export default function FunctionalLocationHierarchyPage() {
               </div>
               {selectedSystem ? (
                 <div className="min-w-0 rounded-lg bg-muted/40 px-4 py-3 text-sm">
-                  <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{selectedSystem.name}</span>{selectedSystem.isPrimary && <Badge>Primary</Badge>}<Badge variant="outline">{selectedSystem.codeMode} codes</Badge><Badge variant="outline">Separator: {selectedSystem.separator}</Badge></div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-muted-foreground">{[...selectedSystem.levels].sort((a, b) => a.levelOrder - b.levelOrder).map((level, index) => <React.Fragment key={level.id}><span className="rounded bg-background px-2 py-1">{level.label}</span>{index < selectedSystem.levels.length - 1 && <ChevronRight className="mt-1 h-3 w-3" />}</React.Fragment>)}</div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{selectedSystem.name}</span>{selectedSystem.isPrimary && <Badge>Primary</Badge>}<Badge variant="outline">{selectedSystem.codeMode} codes</Badge><Badge variant="outline">Separator: {selectedSystem.codeSeparator}</Badge></div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-muted-foreground">{[...selectedSystem.levels].sort((a, b) => a.order - b.order).map((level, index) => <React.Fragment key={level.id}><span className="rounded bg-background px-2 py-1">{level.label}</span>{index < selectedSystem.levels.length - 1 && <ChevronRight className="mt-1 h-3 w-3" />}</React.Fragment>)}</div>
                 </div>
               ) : <div className="text-sm text-muted-foreground">Create a hierarchy system to start building asset paths.</div>}
             </CardContent>
@@ -559,7 +557,7 @@ export default function FunctionalLocationHierarchyPage() {
                     <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Location Code</div><div className="mt-1 break-all font-mono text-lg font-bold">{selectedLocation.locationCode}</div></div>
                     <div><div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Asset path</div><div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">{locationPath.map((item, index) => <React.Fragment key={item.id}><span className={item.id === selectedLocation.id ? 'font-semibold text-foreground' : 'text-muted-foreground'}>{item.name}</span>{index < locationPath.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}</React.Fragment>)}</div></div>
                     <div className="grid grid-cols-2 gap-3 text-sm"><div className="rounded-lg bg-muted/40 p-3"><div className="text-xs text-muted-foreground">Level</div><div className="mt-1 font-medium">{selectedLocation.hierarchyLevel?.label || '-'}</div></div><div className="rounded-lg bg-muted/40 p-3"><div className="text-xs text-muted-foreground">Plant</div><div className="mt-1 font-medium">{selectedLocation.plant?.name || 'Company-wide'}</div></div></div>
-                    <div className="flex flex-wrap gap-2">{selectedLocation.allowAssetAssignment ? <Badge className="bg-emerald-600">Assets can be installed here</Badge> : <Badge variant="secondary">Structural node only</Badge>}{selectedLocation.isActive === false && <Badge variant="destructive">Inactive</Badge>}</div>
+                    <div className="flex flex-wrap gap-2">{selectedLocation.hierarchyLevel?.allowAssetAssignment ? <Badge className="bg-emerald-600">Assets can be installed here</Badge> : <Badge variant="secondary">Structural node only</Badge>}{selectedLocation.status !== 'active' && <Badge variant="destructive">Inactive</Badge>}</div>
                     {canManageLocations && <Button variant="outline" className="w-full" onClick={() => openCreateLocation(selectedLocation)}><Plus className="mr-2 h-4 w-4" />Add child location</Button>}
                   </div>
                 )}
@@ -605,13 +603,13 @@ export default function FunctionalLocationHierarchyPage() {
           <DialogHeader><DialogTitle>Add functional location</DialogTitle><DialogDescription>Create a coded node in {selectedSystem?.name || 'the selected hierarchy'}.</DialogDescription></DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><Label>Name</Label><Input className="mt-1.5" value={locationForm.name} onChange={event => setLocationForm(current => ({ ...current, name: event.target.value }))} placeholder="e.g. Printing Line 01" /></div>
-            <div><Label>Level</Label><Select value={locationForm.hierarchyLevelId} onValueChange={value => { const level = selectedSystem?.levels.find(item => item.id === value); setLocationForm(current => ({ ...current, hierarchyLevelId: value, allowAssetAssignment: Boolean(level?.allowAssetAssignment) })) }}><SelectTrigger className="mt-1.5"><SelectValue placeholder="Select level" /></SelectTrigger><SelectContent>{[...(selectedSystem?.levels || [])].sort((a, b) => a.levelOrder - b.levelOrder).map(level => <SelectItem key={level.id} value={level.id}>{level.label}</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Level</Label><Select value={locationForm.hierarchyLevelId} onValueChange={value => { const level = selectedSystem?.levels.find(item => item.id === value); setLocationForm(current => ({ ...current, hierarchyLevelId: value, allowAssetAssignment: Boolean(level?.allowAssetAssignment) })) }}><SelectTrigger className="mt-1.5"><SelectValue placeholder="Select level" /></SelectTrigger><SelectContent>{[...(selectedSystem?.levels || [])].sort((a, b) => a.order - b.order).map(level => <SelectItem key={level.id} value={level.id}>{level.label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>Parent</Label><Select value={locationForm.parentId || '__root__'} onValueChange={value => setLocationForm(current => ({ ...current, parentId: value === '__root__' ? '' : value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__root__">No parent / root</SelectItem>{locations.map(location => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.name}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>Plant scope</Label><Select value={locationForm.plantId || '__company__'} onValueChange={value => setLocationForm(current => ({ ...current, plantId: value === '__company__' ? '' : value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__company__">Company-wide</SelectItem>{plants.map(plant => <SelectItem key={plant.id} value={plant.id}>{plant.name}</SelectItem>)}</SelectContent></Select></div>
             {selectedSystem?.codeMode !== 'generated' && <div><Label>Location Code{selectedSystem?.codeMode === 'mixed' ? ' (optional override)' : ''}</Label><Input className="mt-1.5 font-mono" value={locationForm.code} onChange={event => setLocationForm(current => ({ ...current, code: event.target.value }))} placeholder="TEMA-PRT-L01" /></div>}
             {selectedSystem?.codeMode !== 'manual' && <div><Label>Code segment</Label><Input className="mt-1.5 font-mono" value={locationForm.codeSegment} onChange={event => setLocationForm(current => ({ ...current, codeSegment: event.target.value }))} placeholder="L01" /></div>}
             <div className="sm:col-span-2"><Label>Description</Label><Textarea className="mt-1.5" value={locationForm.description} onChange={event => setLocationForm(current => ({ ...current, description: event.target.value }))} /></div>
-            <label className="flex items-center justify-between rounded-lg border p-3 text-sm sm:col-span-2"><div><div className="font-medium">Allow asset assignment</div><div className="text-xs text-muted-foreground">Assets may use this node as their Installed At location.</div></div><Switch checked={locationForm.allowAssetAssignment} onCheckedChange={checked => setLocationForm(current => ({ ...current, allowAssetAssignment: checked }))} /></label>
+            <label className="flex items-center justify-between rounded-lg border p-3 text-sm sm:col-span-2"><div><div className="font-medium">Allow asset assignment</div><div className="text-xs text-muted-foreground">Inherited from the selected hierarchy level. Change the level definition when creating a hierarchy system.</div></div><Switch checked={locationForm.allowAssetAssignment} disabled /></label>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setLocationDialogOpen(false)}>Cancel</Button><Button onClick={saveLocation} disabled={saving}>{saving ? 'Creating...' : 'Create functional location'}</Button></DialogFooter>
         </DialogContent>

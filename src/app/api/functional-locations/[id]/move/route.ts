@@ -16,7 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
 
     const { id } = await params;
-    const current = await db.functionalLocation.findUnique({ where: { id }, select: { id: true, parentId: true, plantId: true } });
+    const current = await db.functionalLocation.findUnique({ where: { id }, select: { id: true, plantId: true } });
     if (!current) return NextResponse.json({ success: false, error: 'Functional location not found' }, { status: 404 });
     if (!canAccessPlant(plantScope, current.plantId)) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     if (!current.plantId && !plantScope.isSystemWide) {
@@ -39,18 +39,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       id,
       newParentId,
       hierarchyLevelId: body.hierarchyLevelId || null,
-    });
-
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'move',
-        entityType: 'functional_location',
-        entityId: moved.id,
-        plantId: moved.plantId,
-        oldValues: JSON.stringify({ parentId: current.parentId }),
-        newValues: JSON.stringify({ parentId: moved.parentId, hierarchyLevelId: moved.hierarchyLevelId, depth: moved.depth }),
-      },
+      actorId: session.userId,
     });
 
     return NextResponse.json({ success: true, data: moved });

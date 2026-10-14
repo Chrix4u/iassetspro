@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { normalizeCodeSegment, normalizeLocationCode, validateCodeSeparator } from '@/lib/functional-location/location-code';
-import { setPrimaryHierarchySystem } from '@/lib/functional-location/service';
 
 const ALLOWED_PURPOSES = new Set(['functional_location', 'electrical', 'process', 'utilities', 'facilities', 'custom']);
 const ALLOWED_CODE_MODES = new Set(['manual', 'generated', 'mixed']);
@@ -50,12 +49,16 @@ export async function POST(request: NextRequest) {
     const codeSeparator = validateCodeSeparator(String(body.codeSeparator || '-'));
     const allowCodeOverride = body.allowCodeOverride !== false;
     const requestedPrimary = body.isPrimary === true;
+    const isActive = body.isActive !== false;
     const rawLevels = Array.isArray(body.levels) ? body.levels : [];
 
     if (!name) return NextResponse.json({ success: false, error: 'Hierarchy name is required' }, { status: 400 });
     if (!ALLOWED_PURPOSES.has(purpose)) return NextResponse.json({ success: false, error: 'Unsupported hierarchy purpose' }, { status: 400 });
     if (!ALLOWED_CODE_MODES.has(codeMode)) return NextResponse.json({ success: false, error: 'Unsupported Location Code mode' }, { status: 400 });
     if (rawLevels.length === 0) return NextResponse.json({ success: false, error: 'At least one hierarchy level is required' }, { status: 400 });
+    if (requestedPrimary && !isActive) {
+      return NextResponse.json({ success: false, error: 'Primary hierarchy system must be active' }, { status: 400 });
+    }
 
     const seenOrders = new Set<number>();
     const levels = rawLevels.map((level: Record<string, unknown>, index: number) => {
@@ -77,41 +80,63 @@ export async function POST(request: NextRequest) {
       };
     }).sort((a, b) => a.order - b.order);
 
-    const created = await db.hierarchySystem.create({
-      data: {
-        name,
-        code,
-        purpose,
-        description: String(body.description || '').trim() || null,
-        isPrimary: false,
-        isActive: body.isActive !== false,
-        codeMode,
-        codeSeparator,
-        allowCodeOverride,
-        createdById: session.userId,
-        levels: { create: levels },
-      },
-      include: { levels: { orderBy: { order: 'asc' } } },
+    const hydrated = await db.$transaction(async (tx) => {
+      const created = await tx.hierarchySystem.create({
+        data: {
+          name,
+          code,
+          purpose,
+          description: String(body.description || '').trim() || null,
+          isPrimary: false,
+          isActive,
+          codeMode,
+          codeSeparator,
+          allowCodeOverride,
+          createdById: session.userId,
+          levels: { create: levels },
+        },
+      });
+
+      const activeSystemCount = await tx.hierarchySystem.count({ where: { isActive: true } });
+      const shouldBePrimary = requestedPrimary || (created.isActive && activeSystemCount === 1);
+
+      if (shouldBePrimary) {
+        await tx.hierarchySystem.updateMany({
+          where: { isPrimary: true, id: { not: created.id } },
+          data: { isPrimary: false },
+        });
+        await tx.hierarchySystem.update({
+          where: { id: created.id },
+          data: { isPrimary: true },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'hierarchy_system',
+          entityId: created.id,
+          newValues: JSON.stringify({
+            name,
+            code,
+            purpose,
+            codeMode,
+            codeSeparator,
+            allowCodeOverride,
+            isPrimary: shouldBePrimary,
+            isActive,
+            levels,
+          }),
+        },
+      });
+
+      return tx.hierarchySystem.findUnique({
+        where: { id: created.id },
+        include: { levels: { orderBy: { order: 'asc' } }, _count: { select: { functionalLocations: true } } },
+      });
     });
 
-    const system = requestedPrimary || (await db.hierarchySystem.count({ where: { isActive: true } })) === 1
-      ? await setPrimaryHierarchySystem(created.id, session.userId)
-      : created;
-
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'hierarchy_system',
-        entityId: created.id,
-        newValues: JSON.stringify({ name, code, purpose, codeMode, codeSeparator, allowCodeOverride, levels }),
-      },
-    });
-
-    const hydrated = await db.hierarchySystem.findUnique({
-      where: { id: system.id },
-      include: { levels: { orderBy: { order: 'asc' } }, _count: { select: { functionalLocations: true } } },
-    });
     return NextResponse.json({ success: true, data: hydrated }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create hierarchy system';

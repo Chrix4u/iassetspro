@@ -14,13 +14,9 @@ describe('Asset Register responsive contract', () => {
     expect(source).toContain("className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'")
   })
 
-  it('uses a compact two-column filter layout before switching to a desktop row', () => {
-    expect(source).toContain('filter-row grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center')
-    expect(source).toContain('relative col-span-2 min-w-0 lg:col-span-1')
-    expect(source).toContain('col-span-2 flex items-center gap-2 lg:col-span-1 lg:ml-auto')
-  })
-
-  it('lets each compact filter control use its available grid cell', () => {
+  it('keeps Status, Health, and Criticality together on one filter row', () => {
+    expect(source).toContain('filter-row grid gap-3 lg:grid-cols-[minmax(14rem,1.4fr)_minmax(27rem,2.4fr)_auto] lg:items-center')
+    expect(source).toContain('className="grid min-w-0 grid-cols-3 gap-2 sm:gap-3"')
     expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>')
     expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>')
     expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>')

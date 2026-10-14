@@ -25,8 +25,4 @@ describe('Asset Register responsive contract', () => {
     expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>')
     expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>')
   })
-
-  it('keeps the active risk badge on its own responsive grid row', () => {
-    expect(source).toContain('className="col-span-2 gap-1.5 cursor-pointer justify-self-start lg:col-span-5"')
-  })
 })

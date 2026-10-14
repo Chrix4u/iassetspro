@@ -21,6 +21,18 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('Functional Locations')
   })
 
+  it('uses the exact persisted API contract for systems and locations', () => {
+    const source = readFileSync(hierarchyPagePath, 'utf8')
+    const picker = readFileSync(pickerPath, 'utf8')
+    expect(source).toContain('hierarchySystemId=${encodeURIComponent(systemId)}&status=active')
+    expect(source).toContain('codeSeparator: systemForm.separator')
+    expect(source).toContain('locationCode: locationForm.code.trim() || undefined')
+    expect(source).toContain("selectedSystem.purpose || 'functional_location'")
+    expect(source).not.toContain('labelPlural')
+    expect(picker).toContain("hierarchySystemId: resolvedSystemId, status: 'active'")
+    expect(picker).toContain('location.hierarchyLevel?.allowAssetAssignment')
+  })
+
   it('keeps location, equipment, and machine structures visibly separate', () => {
     const source = readFileSync(hierarchyPagePath, 'utf8')
     expect(source).toContain('Functional Locations')

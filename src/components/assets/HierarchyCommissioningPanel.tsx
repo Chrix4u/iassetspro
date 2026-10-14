@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -116,6 +117,11 @@ export function HierarchyCommissioningPanel({
   onComplete,
   onCancel,
 }: HierarchyCommissioningPanelProps) {
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canCommission = isAdmin()
+    || hasPermission('digital_twin.manage')
+    || (hasPermission('assets.hierarchy')
+      && (hasPermission('assets.create') || hasPermission('assemblies.create')));
   const [text, setText] = useState(
     'componentCode,name,componentType,parentCode,criticality,manufacturer,modelNumber,description\n' +
     'ASM-DRIVE,Drive System,assembly,,high,,,Top-level drive assembly\n' +
@@ -124,10 +130,16 @@ export function HierarchyCommissioningPanel({
   );
   const [importing, setImporting] = useState(false);
   const [loadedExistingComponents, setLoadedExistingComponents] = useState<ExistingComponent[]>([]);
-  const [existingLoading, setExistingLoading] = useState(providedExistingComponents === undefined);
+  const [existingLoading, setExistingLoading] = useState(providedExistingComponents === undefined && canCommission);
   const [existingLoadError, setExistingLoadError] = useState('');
 
   const loadExistingComponents = useCallback(async () => {
+    if (!canCommission) {
+      setLoadedExistingComponents([]);
+      setExistingLoadError('');
+      setExistingLoading(false);
+      return;
+    }
     if (providedExistingComponents !== undefined) {
       setLoadedExistingComponents([]);
       setExistingLoadError('');
@@ -165,7 +177,7 @@ export function HierarchyCommissioningPanel({
     } finally {
       setExistingLoading(false);
     }
-  }, [assetId, providedExistingComponents]);
+  }, [assetId, canCommission, providedExistingComponents]);
 
   useEffect(() => {
     void loadExistingComponents();
@@ -204,7 +216,7 @@ export function HierarchyCommissioningPanel({
   const validationUnavailable = existingLoading || Boolean(existingLoadError);
 
   const handleImport = async () => {
-    if (parsed.length === 0 || validation.length > 0 || validationUnavailable) return;
+    if (!canCommission || parsed.length === 0 || validation.length > 0 || validationUnavailable) return;
     setImporting(true);
     try {
       const ordered = orderRows(parsed, new Set(existingComponents.map((item) => item.componentCode)));
@@ -236,6 +248,17 @@ export function HierarchyCommissioningPanel({
       setImporting(false);
     }
   };
+
+  if (!canCommission) {
+    return (
+      <Card className="border-primary/20 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm"><FileSpreadsheet className="h-4 w-4" />Bulk Hierarchy Commissioning</CardTitle>
+          <CardDescription>You can view machine structure, but you do not have permission to commission hierarchy nodes.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-primary/20 shadow-sm">

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const assetPages = readFileSync(resolve(process.cwd(), 'src/components/modules/AssetPages.tsx'), 'utf8')
-const assetDetail = readFileSync(resolve(process.cwd(), 'src/components/modules/AssetDetailPage.tsx'), 'utf8')
+const installedLocationPanel = readFileSync(resolve(process.cwd(), 'src/components/assets/AssetInstalledLocationPanel.tsx'), 'utf8')
 
 describe('asset functional-location UX contract', () => {
   it('uses the reusable plant-scoped functional-location picker on Add/Edit Asset', () => {
@@ -20,16 +20,17 @@ describe('asset functional-location UX contract', () => {
   })
 
   it('assigns or relocates through the authoritative history endpoint after saving the asset', () => {
-    expect(assetPages).toContain("functionalLocationId: form.functionalLocationId")
+    expect(assetPages).toContain('functionalLocationId: form.functionalLocationId')
     expect(assetPages).toContain("reason: editId ? 'Asset form relocation' : 'Initial asset location assignment'")
   })
 
   it('shows Installed At / Asset Path from the primary assignment and coded breadcrumb', () => {
-    expect(assetDetail).toContain('/api/assets/${id}/functional-locations')
-    expect(assetDetail).toContain('/api/functional-locations/${encodeURIComponent(primaryLocationId)}/path')
-    expect(assetDetail).toContain('Installed At / Asset Path')
-    expect(assetDetail).toContain('locationCode')
-    expect(assetDetail).toContain('assetPath')
+    expect(assetPages).toContain('<AssetInstalledLocationPanel assetId={detailId} />')
+    expect(installedLocationPanel).toContain('/api/assets/${assetId}/functional-locations')
+    expect(installedLocationPanel).toContain('/api/functional-locations/${encodeURIComponent(primaryLocationId)}/path')
+    expect(installedLocationPanel).toContain('Installed At / Asset Path')
+    expect(installedLocationPanel).toContain('locationCode')
+    expect(installedLocationPanel).toContain('assetPath')
   })
 
   it('keeps legacy physical location fields as migration fallback instead of deleting them', () => {
@@ -37,6 +38,6 @@ describe('asset functional-location UX contract', () => {
     expect(assetPages).toContain("building: ''")
     expect(assetPages).toContain("floor: ''")
     expect(assetPages).toContain("area: ''")
-    expect(assetDetail).toContain('Legacy location')
+    expect(installedLocationPanel).toContain('Legacy location')
   })
 })

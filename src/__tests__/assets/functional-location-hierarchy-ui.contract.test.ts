@@ -28,8 +28,9 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('Machine Structure')
   })
 
-  it('routes Assets → Hierarchy to the dedicated workspace', () => {
+  it('routes Assets → Hierarchy to the dedicated workspace and names it clearly', () => {
     const source = readFileSync(appPath, 'utf8')
+    expect(source).toContain("'assets-hierarchy': 'Asset & Location Hierarchy'")
     expect(source).toContain("'assets-hierarchy': () => import('./modules/FunctionalLocationHierarchyPage').then(m => m.default)")
   })
 

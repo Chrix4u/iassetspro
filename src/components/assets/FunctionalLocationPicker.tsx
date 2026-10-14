@@ -107,13 +107,14 @@ export function FunctionalLocationPicker({
   const options = useMemo(() => {
     const byId = new Map(locations.map(location => [location.id, location]))
     return locations
+      .filter(location => !plantId || location.plantId === plantId)
       .filter(location => !allowAssetAssignmentOnly || location.hierarchyLevel?.allowAssetAssignment)
       .map(location => ({
         ...location,
         breadcrumb: buildBreadcrumb(location, byId),
       }))
       .sort((a, b) => a.locationCode.localeCompare(b.locationCode))
-  }, [allowAssetAssignmentOnly, locations])
+  }, [allowAssetAssignmentOnly, locations, plantId])
 
   const effectiveDisabled = disabled || loading || !resolvedSystemId
 

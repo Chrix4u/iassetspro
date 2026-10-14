@@ -304,6 +304,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'settings-company', label: 'Company Profile', icon: Building2 },
         { page: 'settings-plants', label: 'Plants', icon: Factory },
         { page: 'settings-departments', label: 'Departments', icon: Building },
+        { page: 'settings-hierarchy', label: 'Hierarchy & Locations', icon: GitBranch },
         { page: 'settings-notifications', label: 'Notifications', icon: BellRing },
         { page: 'settings-integrations', label: 'Integrations', icon: Link2 },
         { page: 'settings-backup', label: 'Backup', icon: Database },

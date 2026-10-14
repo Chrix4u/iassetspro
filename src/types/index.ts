@@ -676,6 +676,7 @@ export type PageName =
   | 'settings-company'
   | 'settings-plants'
   | 'settings-departments'
+  | 'settings-hierarchy'
   | 'settings-security'
   | 'settings-health'
   | 'settings-queues'

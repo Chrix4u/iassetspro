@@ -115,24 +115,7 @@ export async function POST(request: NextRequest) {
       description: body.description || null,
       status: body.status || 'active',
       plantId: inferredPlantId || null,
-      createdById: session.userId,
-    });
-
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'functional_location',
-        entityId: location.id,
-        plantId: location.plantId,
-        newValues: JSON.stringify({
-          hierarchySystemId: location.hierarchySystemId,
-          hierarchyLevelId: location.hierarchyLevelId,
-          parentId: location.parentId,
-          name: location.name,
-          locationCode: location.locationCode,
-        }),
-      },
+      actorId: session.userId,
     });
 
     return NextResponse.json({ success: true, data: location }, { status: 201 });

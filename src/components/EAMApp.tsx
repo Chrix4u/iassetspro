@@ -686,7 +686,7 @@ interface ErrorBoundaryState {
 
 class GlobalErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  ErrorBoundaryState & { retryTimer: ReturnType<typeof setTimeout> | null; retryCount: number }
+  ErrorBoundaryState
 > {
   private _retryTimer: ReturnType<typeof setTimeout> | null = null;
   private _retryCount: number = 0;
@@ -724,7 +724,7 @@ class GlobalErrorBoundary extends React.Component<
     console.error('Stack:', error.stack);
     console.error('Component Stack:', info.componentStack);
     console.error('=== END ERROR ===');
-    this.setState({ componentStack: info.componentStack });
+    this.setState({ componentStack: info.componentStack ?? null });
 
     // For Error #185, schedule a silent retry after a short delay.
     // This handles the case where the automatic retry (hasError: false from

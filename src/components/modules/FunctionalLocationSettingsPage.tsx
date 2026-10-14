@@ -404,8 +404,13 @@ export function FunctionalLocationSettingsPage() {
               icon={GitBranch}
               title="No hierarchy systems yet"
               description="Create a primary functional-location hierarchy such as Company → Site → Area → Functional Location."
-              action={canManageHierarchy ? { label: 'Create Hierarchy', onClick: () => setCreateSystemOpen(true) } : undefined}
-            />
+            >
+              {canManageHierarchy && (
+                <Button variant="outline" onClick={() => setCreateSystemOpen(true)}>
+                  <Plus className="mr-1.5 h-4 w-4" />Create Hierarchy
+                </Button>
+              )}
+            </EmptyState>
           </CardContent>
         </Card>
       ) : (

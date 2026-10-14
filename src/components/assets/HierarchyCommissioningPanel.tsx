@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 
-type ExistingComponent = {
+export type ExistingComponent = {
   id: string;
   componentCode: string;
   name: string;
@@ -28,8 +28,17 @@ type ImportRow = {
   line: number;
 };
 
+type HierarchyCommissioningPanelProps = {
+  assetId: string;
+  existingComponents?: ExistingComponent[];
+  onComplete?: () => void;
+  onCancel?: () => void;
+};
+
 const TYPES = new Set(['assembly', 'subassembly', 'component', 'part', 'auxiliary', 'instrument']);
 const CRITICALITIES = new Set(['low', 'medium', 'high', 'critical']);
+const COMPONENT_PAGE_SIZE = 100;
+const MAX_COMPONENT_PAGES = 100;
 
 function splitDelimited(line: string, delimiter: string) {
   const values: string[] = [];
@@ -94,17 +103,19 @@ function orderRows(rows: ImportRow[], existingCodes: Set<string>) {
   return ordered;
 }
 
+function toExistingComponent(value: unknown): ExistingComponent | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.id !== 'string' || typeof candidate.componentCode !== 'string' || typeof candidate.name !== 'string') return null;
+  return { id: candidate.id, componentCode: candidate.componentCode, name: candidate.name };
+}
+
 export function HierarchyCommissioningPanel({
   assetId,
-  existingComponents,
+  existingComponents: providedExistingComponents,
   onComplete,
   onCancel,
-}: {
-  assetId: string;
-  existingComponents: ExistingComponent[];
-  onComplete: () => void;
-  onCancel: () => void;
-}) {
+}: HierarchyCommissioningPanelProps) {
   const [text, setText] = useState(
     'componentCode,name,componentType,parentCode,criticality,manufacturer,modelNumber,description\n' +
     'ASM-DRIVE,Drive System,assembly,,high,,,Top-level drive assembly\n' +
@@ -112,7 +123,55 @@ export function HierarchyCommissioningPanel({
     'PRT-BEAR-DE,Drive End Bearing,part,CMP-MOTOR,high,SKF,22222 EK,Motor drive-end bearing'
   );
   const [importing, setImporting] = useState(false);
+  const [loadedExistingComponents, setLoadedExistingComponents] = useState<ExistingComponent[]>([]);
+  const [existingLoading, setExistingLoading] = useState(providedExistingComponents === undefined);
+  const [existingLoadError, setExistingLoadError] = useState('');
 
+  const loadExistingComponents = useCallback(async () => {
+    if (providedExistingComponents !== undefined) {
+      setLoadedExistingComponents([]);
+      setExistingLoadError('');
+      setExistingLoading(false);
+      return;
+    }
+
+    setExistingLoading(true);
+    setExistingLoadError('');
+    try {
+      const collected: ExistingComponent[] = [];
+      for (let page = 1; page <= MAX_COMPONENT_PAGES; page += 1) {
+        const response = await api.get<unknown[]>(
+          `/api/component-registry?assetId=${encodeURIComponent(assetId)}&page=${page}&limit=${COMPONENT_PAGE_SIZE}`,
+        );
+        if (!response.success || !Array.isArray(response.data)) {
+          throw new Error(response.error || 'Could not load existing machine hierarchy');
+        }
+
+        const pageRows = response.data;
+        for (const row of pageRows) {
+          const component = toExistingComponent(row);
+          if (component) collected.push(component);
+        }
+
+        if (pageRows.length < COMPONENT_PAGE_SIZE) {
+          setLoadedExistingComponents(collected);
+          return;
+        }
+      }
+      throw new Error('Machine hierarchy is too large to validate safely. Narrow or review the component registry before importing.');
+    } catch (error) {
+      setLoadedExistingComponents([]);
+      setExistingLoadError(error instanceof Error ? error.message : 'Could not load existing machine hierarchy');
+    } finally {
+      setExistingLoading(false);
+    }
+  }, [assetId, providedExistingComponents]);
+
+  useEffect(() => {
+    void loadExistingComponents();
+  }, [loadExistingComponents]);
+
+  const existingComponents = providedExistingComponents ?? loadedExistingComponents;
   const parsed = useMemo(() => parseRows(text), [text]);
   const validation = useMemo(() => {
     const errors: string[] = [];
@@ -142,9 +201,10 @@ export function HierarchyCommissioningPanel({
   }, [parsed, existingComponents]);
 
   const rootCount = parsed.filter((row) => !row.parentCode).length;
+  const validationUnavailable = existingLoading || Boolean(existingLoadError);
 
   const handleImport = async () => {
-    if (parsed.length === 0 || validation.length > 0) return;
+    if (parsed.length === 0 || validation.length > 0 || validationUnavailable) return;
     setImporting(true);
     try {
       const ordered = orderRows(parsed, new Set(existingComponents.map((item) => item.componentCode)));
@@ -168,7 +228,8 @@ export function HierarchyCommissioningPanel({
 
       const createdCount = Number(response.data.createdCount);
       toast.success(`Imported ${createdCount} hierarchy node${createdCount === 1 ? '' : 's'} successfully`);
-      onComplete();
+      if (providedExistingComponents === undefined) await loadExistingComponents();
+      onComplete?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Hierarchy import failed');
     } finally {
@@ -184,7 +245,7 @@ export function HierarchyCommissioningPanel({
             <CardTitle className="flex items-center gap-2 text-sm"><FileSpreadsheet className="h-4 w-4" />Bulk Hierarchy Commissioning</CardTitle>
             <CardDescription className="mt-1">Paste rows copied from Excel/CSV. Parents may be existing machine nodes or nodes in the same batch.</CardDescription>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCancel}><X className="h-4 w-4" /></Button>
+          {onCancel && <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCancel}><X className="h-4 w-4" /></Button>}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -194,6 +255,18 @@ export function HierarchyCommissioningPanel({
           <p className="mt-1">Types: assembly, subassembly, component, part, auxiliary, instrument. Criticality: low, medium, high, critical.</p>
         </div>
 
+        {existingLoading && (
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />Loading existing machine hierarchy for duplicate validation…
+          </div>
+        )}
+        {existingLoadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50/70 p-3 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+            <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="font-medium">Import validation is unavailable.</p><p className="mt-1">{existingLoadError}</p></div></div>
+            <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void loadExistingComponents()}>Retry validation</Button>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label>Excel / CSV hierarchy</Label>
           <Textarea value={text} onChange={(event) => setText(event.target.value)} rows={10} className="font-mono text-xs" />
@@ -202,7 +275,8 @@ export function HierarchyCommissioningPanel({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{parsed.length} row{parsed.length === 1 ? '' : 's'}</Badge>
           <Badge variant="outline">{rootCount} root{rootCount === 1 ? '' : 's'}</Badge>
-          {validation.length === 0 && parsed.length > 0 ? (
+          <Badge variant="outline">{existingComponents.length} existing node{existingComponents.length === 1 ? '' : 's'}</Badge>
+          {!validationUnavailable && validation.length === 0 && parsed.length > 0 ? (
             <Badge className="gap-1 bg-emerald-600"><CheckCircle2 className="h-3 w-3" />Ready to import</Badge>
           ) : (
             <Badge variant="outline" className="gap-1 border-amber-300 text-amber-700"><AlertTriangle className="h-3 w-3" />Review required</Badge>
@@ -221,9 +295,9 @@ export function HierarchyCommissioningPanel({
         </div>
 
         <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onCancel} disabled={importing}>Cancel</Button>
-          <Button onClick={handleImport} disabled={importing || parsed.length === 0 || validation.length > 0}>
-            {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+          {onCancel && <Button variant="outline" onClick={onCancel} disabled={importing}>Cancel</Button>}
+          <Button onClick={handleImport} disabled={importing || validationUnavailable || parsed.length === 0 || validation.length > 0}>
+            {importing || existingLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
             Import {parsed.length || ''} Node{parsed.length === 1 ? '' : 's'}
           </Button>
         </div>

@@ -119,6 +119,8 @@ model User {
   assetsAssigned        Asset[]                     @relation("AssetAssignedTo")
   hierarchySystemsCreated    HierarchySystem[]           @relation("HierarchySystemCreatedBy")
   functionalLocationsCreated FunctionalLocation[]        @relation("FunctionalLocationCreatedBy")
+  functionalLocationAssignmentsMade AssetFunctionalLocationAssignment[] @relation("AssetFunctionalLocationAssignedBy")
+  functionalLocationAssignmentsEnded AssetFunctionalLocationAssignment[] @relation("AssetFunctionalLocationEndedBy")
   inventoryItemsCreated InventoryItem[]             @relation("InventoryItemCreatedBy")
   stockMovements        StockMovement[]
   pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
@@ -949,6 +951,7 @@ model HierarchySystem {
   createdBy           User?                @relation("HierarchySystemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   levels              HierarchyLevel[]
   functionalLocations FunctionalLocation[]
+  assetAssignments     AssetFunctionalLocationAssignment[]
 
   @@index([isPrimary, isActive])
   @@map("hierarchy_systems")
@@ -997,6 +1000,7 @@ model FunctionalLocation {
   children        FunctionalLocation[] @relation("FunctionalLocationTree")
   plant           Plant?               @relation(fields: [plantId], references: [id], onDelete: SetNull)
   createdBy       User?                @relation("FunctionalLocationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  assetAssignments AssetFunctionalLocationAssignment[]
 
   @@unique([hierarchySystemId, locationCode])
   @@index([hierarchySystemId, parentId])
@@ -1004,6 +1008,30 @@ model FunctionalLocation {
   @@index([plantId])
   @@index([status])
   @@map("functional_locations")
+}
+
+model AssetFunctionalLocationAssignment {
+  id                   String   @id @default(cuid())
+  assetId              String
+  hierarchySystemId    String
+  functionalLocationId String
+  assignedAt           DateTime @default(now())
+  endedAt              DateTime?
+  reason               String?  @db.Text
+  assignedById         String?
+  endedById            String?
+  createdAt            DateTime @default(now())
+
+  asset              Asset              @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  hierarchySystem    HierarchySystem    @relation(fields: [hierarchySystemId], references: [id], onDelete: Restrict)
+  functionalLocation FunctionalLocation @relation(fields: [functionalLocationId], references: [id], onDelete: Restrict)
+  assignedBy         User?              @relation("AssetFunctionalLocationAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  endedBy            User?              @relation("AssetFunctionalLocationEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
+
+  @@index([assetId, hierarchySystemId, assignedAt])
+  @@index([functionalLocationId, endedAt])
+  @@index([hierarchySystemId, endedAt])
+  @@map("asset_functional_location_assignments")
 }
 
 model Asset {
@@ -1051,6 +1079,7 @@ model Asset {
   department          Department?          @relation(fields: [departmentId], references: [id])
   createdBy           User                 @relation("AssetCreatedBy", fields: [createdById], references: [id])
   assignedTo          User?                @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
+  functionalLocationAssignments AssetFunctionalLocationAssignment[]
   pmSchedules         PmSchedule[]
   iotDevices          IotDevice[]
   bomAsParent         BillOfMaterial[]     @relation("BomParent")

@@ -63,6 +63,8 @@ const modulePermissions: Record<string, string[]> = {
 
   // ── ASSET (~47) ──
   assets: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'export', 'import', 'bulk_update', 'manage', 'hierarchy', 'relationships', 'health', 'criticality'],
+  'assets.hierarchy': ['view', 'manage'],
+  'assets.functional_locations': ['view', 'manage', 'assign'],
   equipment: ['view', 'create', 'update', 'delete'],
   assemblies: ['view', 'create', 'update', 'delete', 'manage'],
   bom: ['view', 'create', 'update', 'delete', 'import', 'export', 'manage'],
@@ -211,6 +213,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'audit_logs.view', 'system_settings.view', 'modules.view',
     'documents.view', 'company.view', 'company.update',
     'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality', 'assets.hierarchy',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.manage', 'assets.functional_locations.assign',
     'equipment.view', 'assemblies.view', 'bom.view', 'facilities.view',
     'meters.view', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.dashboard',
@@ -247,6 +250,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view', 'notifications.manage',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.delete',
     'assets.export', 'assets.manage', 'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
     'equipment.view', 'equipment.create', 'equipment.update',
     'assemblies.view', 'assemblies.create', 'assemblies.update', 'assemblies.manage',
     'bom.view', 'bom.create', 'bom.update', 'bom.manage',
@@ -297,6 +301,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update',
     'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
     'equipment.view', 'equipment.create', 'equipment.update',
     'assemblies.view', 'assemblies.create', 'assemblies.update',
     'bom.view', 'bom.create', 'bom.update',
@@ -341,6 +346,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.update',
     'assets.health', 'assets.criticality',
+    'assets.hierarchy.view', 'assets.functional_locations.view',
     'equipment.view', 'meters.view', 'meters.read', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all',
     'maintenance_requests.update', 'maintenance_requests.approve', 'maintenance_requests.reject',
@@ -574,6 +580,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'users.view', 'roles.view', 'permissions.view',
     'departments.view', 'plants.view',
     'assets.view', 'equipment.view', 'assemblies.view', 'bom.view',
+    'assets.hierarchy.view', 'assets.functional_locations.view',
     'facilities.view', 'meters.view', 'tools.view',
     'maintenance_requests.view',
     'work_orders.view', 'work_order_templates.view', 'recurring_work_orders.view',
@@ -610,14 +617,14 @@ const rolePermissionBundles: Record<string, string[]> = {
 
 function formatModuleName(mod: string): string {
   return mod
-    .split('_')
+    .split(/[._]/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 }
 
 function formatActionName(action: string): string {
   return action
-    .split('_')
+    .split(/[._]/)
     .map(w => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 }

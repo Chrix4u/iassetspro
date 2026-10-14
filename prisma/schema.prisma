@@ -117,6 +117,8 @@ model User {
   // Asset Management relations
   assetsCreated         Asset[]                     @relation("AssetCreatedBy")
   assetsAssigned        Asset[]                     @relation("AssetAssignedTo")
+  hierarchySystemsCreated    HierarchySystem[]           @relation("HierarchySystemCreatedBy")
+  functionalLocationsCreated FunctionalLocation[]        @relation("FunctionalLocationCreatedBy")
   inventoryItemsCreated InventoryItem[]             @relation("InventoryItemCreatedBy")
   stockMovements        StockMovement[]
   pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
@@ -383,6 +385,7 @@ model Plant {
   departments    Department[]
   plantAccess    UserPlant[]
   assets         Asset[]
+  functionalLocations FunctionalLocation[]
   inventoryItems InventoryItem[]
   models         ModelLibrary[] @relation("ModelPlant")
 
@@ -922,6 +925,85 @@ model AssetCategory {
   assets   Asset[]
 
   @@map("asset_categories")
+}
+
+// ============================================================================
+// 10.1 CONFIGURABLE FUNCTIONAL LOCATION / ASSET PATH HIERARCHY
+// ============================================================================
+
+model HierarchySystem {
+  id                String   @id @default(cuid())
+  name              String
+  code              String   @unique
+  purpose           String   @default("functional_location") // functional_location, electrical, process, utilities, facilities, custom
+  description       String?  @db.Text
+  isPrimary         Boolean  @default(false)
+  isActive          Boolean  @default(true)
+  codeMode          String   @default("mixed") // manual, generated, mixed
+  codeSeparator     String   @default("-")
+  allowCodeOverride Boolean  @default(true)
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  createdBy           User?                @relation("HierarchySystemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  levels              HierarchyLevel[]
+  functionalLocations FunctionalLocation[]
+
+  @@index([isPrimary, isActive])
+  @@map("hierarchy_systems")
+}
+
+model HierarchyLevel {
+  id                   String   @id @default(cuid())
+  hierarchySystemId    String
+  order                Int
+  label                String
+  description          String?  @db.Text
+  isRequired           Boolean  @default(true)
+  allowAssetAssignment Boolean  @default(false)
+  codePrefix           String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  hierarchySystem     HierarchySystem      @relation(fields: [hierarchySystemId], references: [id], onDelete: Restrict)
+  functionalLocations FunctionalLocation[]
+
+  @@unique([hierarchySystemId, order])
+  @@index([hierarchySystemId, isActive])
+  @@map("hierarchy_levels")
+}
+
+model FunctionalLocation {
+  id                String   @id @default(cuid())
+  hierarchySystemId String
+  hierarchyLevelId  String
+  parentId          String?
+  name              String
+  codeSegment       String?
+  locationCode      String
+  description       String?  @db.Text
+  status            String   @default("active") // active, inactive, retired
+  plantId           String?
+  depth             Int      @default(0)
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  hierarchySystem HierarchySystem      @relation(fields: [hierarchySystemId], references: [id], onDelete: Restrict)
+  hierarchyLevel  HierarchyLevel       @relation(fields: [hierarchyLevelId], references: [id], onDelete: Restrict)
+  parent          FunctionalLocation?  @relation("FunctionalLocationTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children        FunctionalLocation[] @relation("FunctionalLocationTree")
+  plant           Plant?               @relation(fields: [plantId], references: [id], onDelete: SetNull)
+  createdBy       User?                @relation("FunctionalLocationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([hierarchySystemId, locationCode])
+  @@index([hierarchySystemId, parentId])
+  @@index([hierarchyLevelId])
+  @@index([plantId])
+  @@index([status])
+  @@map("functional_locations")
 }
 
 model Asset {

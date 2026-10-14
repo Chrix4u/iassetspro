@@ -152,6 +152,7 @@ const PAGE_TITLES: Record<string, string> = {
   'settings-company': 'Company Profile',
   'settings-plants': 'Plants',
   'settings-departments': 'Departments',
+  'settings-hierarchy': 'Hierarchy & Locations',
   'settings-notifications': 'Notifications',
   'settings-integrations': 'Integrations',
   'settings-backup': 'Backup & Restore',
@@ -310,6 +311,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'settings-company': () => import('./modules/SettingsPages').then(m => m.CompanyProfilePage),
   'settings-plants': () => import('./modules/SettingsPages').then(m => m.SettingsPlantsPage),
   'settings-departments': () => import('./modules/SettingsPages').then(m => m.SettingsDepartmentsPage),
+  'settings-hierarchy': () => import('./modules/FunctionalLocationSettingsPage').then(m => m.FunctionalLocationSettingsPage),
   'settings-notifications': () => import('./modules/SettingsPages').then(m => m.SettingsNotificationsPage),
   'settings-integrations': () => import('./modules/SettingsPages').then(m => m.SettingsIntegrationsPage),
   'settings-backup': () => import('./modules/SettingsPages').then(m => m.SettingsBackupPage),
@@ -684,7 +686,7 @@ interface ErrorBoundaryState {
 
 class GlobalErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  ErrorBoundaryState & { retryTimer: ReturnType<typeof setTimeout> | null; retryCount: number }
+  ErrorBoundaryState
 > {
   private _retryTimer: ReturnType<typeof setTimeout> | null = null;
   private _retryCount: number = 0;
@@ -722,7 +724,7 @@ class GlobalErrorBoundary extends React.Component<
     console.error('Stack:', error.stack);
     console.error('Component Stack:', info.componentStack);
     console.error('=== END ERROR ===');
-    this.setState({ componentStack: info.componentStack });
+    this.setState({ componentStack: info.componentStack ?? null });
 
     // For Error #185, schedule a silent retry after a short delay.
     // This handles the case where the automatic retry (hasError: false from

@@ -54,6 +54,11 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('breadcrumb')
   })
 
+  it('picker cannot offer a different-plant location when an asset plant is supplied', () => {
+    const source = readFileSync(pickerPath, 'utf8')
+    expect(source).toContain('!plantId || location.plantId === plantId')
+  })
+
   it('standalone machine commissioning loads every existing node before enabling imports', () => {
     const source = readFileSync(commissioningPanelPath, 'utf8')
     expect(source).toContain('/api/component-registry?assetId=${encodeURIComponent(assetId)}&page=${page}&limit=${COMPONENT_PAGE_SIZE}')

@@ -21,32 +21,38 @@ describe('functional location API security contract', () => {
     }
   });
 
-  it('protects hierarchy-system mutations with authenticated RBAC and audit logging', () => {
+  it('protects hierarchy-system mutations with authenticated RBAC and transactional audit logging', () => {
     const source = read('src/app/api/hierarchy-systems/route.ts');
     expect(source).toContain('getSession');
     expect(source).toMatch(/assets\.hierarchy\.view/);
     expect(source).toMatch(/assets\.hierarchy\.manage/);
-    expect(source).toContain('db.auditLog.create');
+    expect(source).toContain('db.$transaction');
+    expect(source).toContain('tx.auditLog.create');
   });
 
   it('fails functional-location access closed through the existing plant-scope contract', () => {
     const source = read('src/app/api/functional-locations/route.ts');
+    const service = read('src/lib/functional-location/service.ts');
     expect(source).toContain('getPlantScope');
     expect(source).toMatch(/denyAccess/);
     expect(source).toContain('canAccessPlant');
     expect(source).toMatch(/assets\.functional_locations\.view/);
     expect(source).toMatch(/assets\.functional_locations\.manage/);
-    expect(source).toContain('db.auditLog.create');
+    expect(source).toContain('createFunctionalLocation');
+    expect(source).not.toContain('db.auditLog.create');
+    expect(service).toContain('tx.auditLog.create');
     expect(source).toMatch(/System-wide access required to manage global functional locations/);
   });
 
-  it('routes guarded moves through plant scope and the hierarchy service', () => {
+  it('routes guarded moves through plant scope and the audited hierarchy service', () => {
     const source = read('src/app/api/functional-locations/[id]/move/route.ts');
+    const service = read('src/lib/functional-location/service.ts');
     expect(source).toContain('getPlantScope');
     expect(source).toContain('canAccessPlant');
     expect(source).toContain('moveFunctionalLocation');
     expect(source).toMatch(/assets\.functional_locations\.manage/);
-    expect(source).toContain('db.auditLog.create');
+    expect(source).not.toContain('db.auditLog.create');
+    expect(service).toContain('tx.auditLog.create');
     expect(source).toMatch(/System-wide access required to move global functional locations/);
   });
 

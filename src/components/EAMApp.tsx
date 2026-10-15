@@ -39,7 +39,7 @@ const PAGE_TITLES: Record<string, string> = {
   // Assets
   'asset-categories': 'Asset Categories',
   'assets-machines': 'Machines',
-  'assets-hierarchy': 'Asset Hierarchy',
+  'assets-hierarchy': 'Asset & Location Hierarchy',
   'assets-bom': 'Bill of Materials',
   'assets-condition-monitoring': 'Condition Monitoring',
   'assets-digital-twin': 'Digital Twin',
@@ -196,7 +196,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   // Assets
   'asset-categories': () => import('./modules/AssetCategoriesPage').then(m => m.default),
   'assets-machines': () => import('./modules/AssetPages').then(m => m.AssetsMachinesPage),
-  'assets-hierarchy': () => import('./modules/AssetPages').then(m => m.AssetsHierarchyPage),
+  'assets-hierarchy': () => import('./modules/FunctionalLocationHierarchyPage').then(m => m.default),
   'assets-bom': () => import('./modules/AssetPages').then(m => m.AssetsBomPage),
   'assets-condition-monitoring': () => import('./modules/AssetPages').then(m => m.AssetsConditionMonitoringPage),
   'assets-digital-twin': () => import('./digital-twin/DigitalTwinMainPage').then(m => m.DigitalTwinMainPage),

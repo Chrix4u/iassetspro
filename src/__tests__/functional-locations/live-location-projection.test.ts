@@ -103,6 +103,13 @@ describe('live functional-location projection', () => {
     }));
   });
 
+  it('ignores nullish asset ids at defensive integration boundaries', async () => {
+    await getAssetLiveLocationMap(['asset-1', undefined, null, ' asset-1 '] as Array<string | null | undefined>);
+    expect(mockDb.asset.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: { in: ['asset-1'] } },
+    }));
+  });
+
   it('falls back to legacy plant/department/building/floor/area/location when no structured assignment exists', async () => {
     mockDb.assetFunctionalLocationAssignment.findMany.mockResolvedValue([]);
     const result = await getAssetLiveLocationMap(['asset-1']);

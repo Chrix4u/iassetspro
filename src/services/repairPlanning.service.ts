@@ -10,6 +10,8 @@
  */
 
 import { db } from '@/lib/db';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { buildMaintenanceLocationSnapshot, getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { executeTransition } from '@/lib/state-machine';
 import type { Prisma } from '@prisma/client';
 
@@ -221,6 +223,23 @@ export async function convertMRToWorkOrder(
     return { success: false, error: 'componentIds must be an array' };
   }
 
+  const mrHasFrozenLocation = Boolean(
+    mr.functionalLocationSourceSnapshot
+      || mr.functionalLocationIdSnapshot
+      || mr.functionalLocationNameSnapshot
+      || mr.functionalLocationCodeSnapshot
+      || mr.functionalLocationPathSnapshot
+      || mr.functionalLocationPathCodeSnapshot,
+  );
+  const liveLocations = mr.assetId && !mrHasFrozenLocation
+    ? await getAssetLiveLocationMap([mr.assetId])
+    : new Map();
+  const inheritedLocation = getMaintenanceLocationSnapshot(
+    mr,
+    mr.assetId ? liveLocations.get(mr.assetId) ?? null : null,
+  );
+  const maintenanceLocationSnapshot = buildMaintenanceLocationSnapshot(inheritedLocation);
+
   try {
     const result = await db.$transaction(async (tx) => {
       if (mr.workOrderId) {
@@ -381,6 +400,7 @@ export async function convertMRToWorkOrder(
               status: woStatus,
               maintenanceRequestId: mr.id,
               assetId: mr.assetId,
+              ...maintenanceLocationSnapshot,
               departmentId: mr.departmentId,
               plantId: mr.plantId,
               estimatedHours: payload.estimatedHours ?? mr.estimatedHours ?? undefined,

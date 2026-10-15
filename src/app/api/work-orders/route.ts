@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { buildMaintenanceLocationSnapshot, getMaintenanceLocationSnapshot, type MaintenanceLocationSnapshotRecord } from '@/lib/functional-location/maintenance-snapshot';
 import { Prisma } from '@prisma/client';
 
 // Helper: generate WO number WO-YYYYMM-NNNN (must be called inside a transaction)
@@ -119,6 +120,10 @@ export async function GET(request: NextRequest) {
           { title: { contains: search } },
           { woNumber: { contains: search } },
           { assetName: { contains: search } },
+          { functionalLocationNameSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationCodeSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathCodeSnapshot: { contains: search, mode: 'insensitive' } },
           { assetId: { in: locationAssetIds } },
         ],
       }];
@@ -248,6 +253,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Title is required' }, { status: 400 });
     }
 
+    let sourceMaintenanceRequest: (MaintenanceLocationSnapshotRecord & { assetId?: string | null }) | null = null;
+
     // ── Validate maintenance request if provided ──
     // We validate the MR exists and is in 'approved' status, but we do NOT change
     // the MR status here. The MR → WO conversion (status change to 'converted') must
@@ -256,7 +263,19 @@ export async function POST(request: NextRequest) {
     if (maintenanceRequestId) {
       const mr = await db.maintenanceRequest.findUnique({
         where: { id: maintenanceRequestId },
-        select: { id: true, status: true, workflowStatus: true, workOrderId: true },
+        select: {
+          id: true,
+          status: true,
+          workflowStatus: true,
+          workOrderId: true,
+          assetId: true,
+          functionalLocationIdSnapshot: true,
+          functionalLocationNameSnapshot: true,
+          functionalLocationCodeSnapshot: true,
+          functionalLocationPathSnapshot: true,
+          functionalLocationPathCodeSnapshot: true,
+          functionalLocationSourceSnapshot: true,
+        },
       });
       if (!mr) {
         return NextResponse.json(
@@ -276,6 +295,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      sourceMaintenanceRequest = mr;
     }
 
     // Resolve plantId (outside transaction — reads user config, no WO data yet)
@@ -326,6 +346,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const snapshotAssetId = sourceMaintenanceRequest?.assetId || assetId || null;
+    const liveLocationMap = snapshotAssetId ? await getAssetLiveLocationMap([snapshotAssetId]) : new Map();
+    const liveLocation = snapshotAssetId ? liveLocationMap.get(snapshotAssetId) ?? null : null;
+    const inheritedLocation = sourceMaintenanceRequest
+      ? getMaintenanceLocationSnapshot(sourceMaintenanceRequest, liveLocation)
+      : liveLocation;
+    const maintenanceLocationSnapshot = buildMaintenanceLocationSnapshot(inheritedLocation);
+
     // Determine initial WO status: "assigned" if assignee/team provided, otherwise "draft"
     const hasAssignment = assignedTo || (teamMembers && teamMembers.length > 0);
     const woStatus = hasAssignment ? 'assigned' : 'draft';
@@ -349,6 +377,7 @@ export async function POST(request: NextRequest) {
           priority: priority || 'medium',
           assetId: assetId || null,
           assetName: assetName || null,
+          ...maintenanceLocationSnapshot,
           departmentId: departmentId || null,
           plantId: resolvedPlantId,
           estimatedHours: estimatedHours || null,

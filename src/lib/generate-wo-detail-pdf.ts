@@ -14,6 +14,7 @@ interface WOPrintData {
     priority: string;
     status: string;
     maintenanceRequestId: string | null;
+    assetName: string | null;
     estimatedHours: number | null;
     actualHours: number | null;
     plannedStart: Date | string | null;
@@ -45,6 +46,7 @@ interface WOPrintData {
   planner: { fullName: string } | null;
   assigner: { fullName: string } | null;
   asset: Record<string, unknown> | null;
+  maintenanceLocation: { path: string; locationCode: string | null } | null;
   materials: Array<Record<string, unknown>>;
   timeLogs: Array<Record<string, unknown>>;
   downtimes: Array<Record<string, unknown>>;
@@ -457,7 +459,9 @@ function renderTwoColumnInfo(doc: PDFDoc, data: WOPrintData): void {
     ['Category:', safeStr(assetCategory?.name)],
     ['Criticality:', formatBadgeText(safeStr(asset?.criticality ?? wo.priority))],
     ['Condition:', formatBadgeText(safeStr(asset?.condition))],
-    ['Location:', [safeStr(asset?.building), safeStr(asset?.floor), safeStr(asset?.area)]
+    ['Maintenance Location:', safeStr(data.maintenanceLocation?.path)],
+    ['Location Code:', safeStr(data.maintenanceLocation?.locationCode)],
+    ['Current Asset Location:', [safeStr(asset?.building), safeStr(asset?.floor), safeStr(asset?.area), safeStr(asset?.location)]
       .filter((v) => v !== '—').join(', ') || '—'],
   ];
 
@@ -826,8 +830,9 @@ function renderTaskExecutions(doc: PDFDoc, data: WOPrintData): void {
 
   const rows = data.taskExecutions.map((te, i) => {
     const completedBy = (te.completedBy as { fullName: string } | null)?.fullName ?? '—';
+    const taskNumber = typeof te.taskNumber === 'number' ? te.taskNumber : i + 1;
     return [
-      te.taskNumber ?? i + 1,
+      taskNumber,
       safeStr(te.description).substring(0, 80),
       formatBadgeText(safeStr(te.taskType)),
       formatBadgeText(safeStr(te.status)),

@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 import {
   getMaintenanceApproverEligibility,
@@ -82,6 +83,10 @@ export async function GET(request: NextRequest) {
           { title: { contains: search } },
           { requestNumber: { contains: search } },
           { assetName: { contains: search } },
+          { functionalLocationNameSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationCodeSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathCodeSnapshot: { contains: search, mode: 'insensitive' } },
           { assetId: { in: locationAssetIds } },
         ],
       }];
@@ -296,6 +301,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const liveLocationMap = assetId ? await getAssetLiveLocationMap([assetId]) : new Map();
+    const maintenanceLocationSnapshot = buildMaintenanceLocationSnapshot(
+      assetId ? liveLocationMap.get(assetId) ?? null : null,
+    );
+
     const now = new Date();
     const requestPrefix = `MR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
     const canonicalPattern = new RegExp(`^${requestPrefix}-(\\d{4})$`);
@@ -326,6 +336,7 @@ export async function POST(request: NextRequest) {
           category: category || null,
           assetId: assetId || null,
           assetName: resolvedAssetName,
+          ...maintenanceLocationSnapshot,
           location: location || null,
           departmentId: resolvedDepartmentId,
           plantId: resolvedPlantId,

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getPlantFilterWhere: vi.fn(),
   getAssetLiveLocationMap: vi.fn(),
   getAssetIdsInFunctionalLocationSubtree: vi.fn(),
+  getFunctionalLocationSubtreeIds: vi.fn(),
   workOrderFindMany: vi.fn(),
   assetFindMany: vi.fn(),
   inventoryFindMany: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock('@/lib/plant-scope', () => ({
 vi.mock('@/lib/functional-location/live-location', () => ({
   getAssetLiveLocationMap: mocks.getAssetLiveLocationMap,
   getAssetIdsInFunctionalLocationSubtree: mocks.getAssetIdsInFunctionalLocationSubtree,
+  getFunctionalLocationSubtreeIds: mocks.getFunctionalLocationSubtreeIds,
 }));
 vi.mock('@/lib/db', () => ({
   db: {
@@ -129,6 +131,7 @@ describe('maintenance reporting live functional location', () => {
     });
     mocks.getPlantFilterWhere.mockReturnValue({ plantId: 'plant-a' });
     mocks.getAssetIdsInFunctionalLocationSubtree.mockResolvedValue(['asset-1', 'asset-2']);
+    mocks.getFunctionalLocationSubtreeIds.mockResolvedValue(['loc-area', 'loc-position']);
     mocks.getAssetLiveLocationMap.mockResolvedValue(new Map([['asset-1', liveLocation]]));
     mocks.workOrderFindMany.mockResolvedValue([workOrder]);
     mocks.assetFindMany.mockResolvedValue([asset]);
@@ -144,7 +147,18 @@ describe('maintenance reporting live functional location', () => {
     expect(mocks.workOrderFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        assetId: { in: ['asset-1', 'asset-2'] },
+        AND: [{
+          OR: [
+            { functionalLocationIdSnapshot: { in: ['loc-area', 'loc-position'] } },
+            {
+              AND: [
+                { functionalLocationSourceSnapshot: null },
+                { functionalLocationIdSnapshot: null },
+                { assetId: { in: ['asset-1', 'asset-2'] } },
+              ],
+            },
+          ],
+        }],
       }),
     }));
   });
@@ -193,6 +207,7 @@ describe('work-order reporting live functional location', () => {
     });
     mocks.getPlantFilterWhere.mockReturnValue({ plantId: 'plant-a' });
     mocks.getAssetIdsInFunctionalLocationSubtree.mockResolvedValue(['asset-1', 'asset-2']);
+    mocks.getFunctionalLocationSubtreeIds.mockResolvedValue(['loc-area', 'loc-position']);
     mocks.getAssetLiveLocationMap.mockResolvedValue(new Map([['asset-1', liveLocation]]));
     mocks.workOrderFindMany.mockResolvedValue([workOrder]);
     mocks.assetFindMany.mockResolvedValue([asset]);
@@ -207,7 +222,18 @@ describe('work-order reporting live functional location', () => {
     expect(mocks.workOrderFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         plantId: 'plant-a',
-        assetId: { in: ['asset-1', 'asset-2'] },
+        AND: [{
+          OR: [
+            { functionalLocationIdSnapshot: { in: ['loc-area', 'loc-position'] } },
+            {
+              AND: [
+                { functionalLocationSourceSnapshot: null },
+                { functionalLocationIdSnapshot: null },
+                { assetId: { in: ['asset-1', 'asset-2'] } },
+              ],
+            },
+          ],
+        }],
       }),
     }));
   });

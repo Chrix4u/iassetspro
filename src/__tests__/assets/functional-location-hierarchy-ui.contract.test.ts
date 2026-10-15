@@ -31,8 +31,16 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('locationCode: locationForm.code.trim() || undefined')
     expect(source).toContain("selectedSystem.purpose || 'functional_location'")
     expect(source).not.toContain('labelPlural')
-    expect(picker).toContain("hierarchySystemId: resolvedSystemId, status: 'active'")
+    expect(picker).toContain("new URLSearchParams({ status: 'active' })")
+    expect(picker).toContain("if (hierarchySystemId) params.set('hierarchySystemId', hierarchySystemId)")
     expect(picker).toContain('location.hierarchyLevel?.allowAssetAssignment')
+  })
+
+  it('lets the picker use the functional-location API primary-system default without hierarchy-view permission', () => {
+    const picker = readFileSync(pickerPath, 'utf8')
+    expect(picker).not.toContain("api.get<HierarchySystem[]>('/api/hierarchy-systems')")
+    expect(picker).not.toContain('resolvedSystemId')
+    expect(picker).not.toContain('No hierarchy configured')
   })
 
   it('keeps location, equipment, and machine structures visibly separate', () => {

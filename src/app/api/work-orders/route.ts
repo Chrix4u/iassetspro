@@ -159,22 +159,20 @@ export async function GET(request: NextRequest) {
     ]);
 
     const assetIds = [...new Set(workOrders.map((row) => row.assetId).filter((id): id is string => Boolean(id)))];
-    const [assetRows, liveLocations] = await Promise.all([
-      assetIds.length > 0
-        ? db.asset.findMany({
-            where: { id: { in: assetIds } },
-            select: {
-              id: true,
-              name: true,
-              assetTag: true,
-              serialNumber: true,
-              status: true,
-              criticality: true,
-            },
-          })
-        : Promise.resolve([]),
-      getAssetLiveLocationMap(assetIds),
-    ]);
+    const assetRows = assetIds.length > 0
+      ? await db.asset.findMany({
+          where: { id: { in: assetIds } },
+          select: {
+            id: true,
+            name: true,
+            assetTag: true,
+            serialNumber: true,
+            status: true,
+            criticality: true,
+          },
+        })
+      : [];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
     const assetById = new Map(assetRows.map((asset) => [asset.id, asset]));
     const enrichedWorkOrders = workOrders.map((row) => {
       const asset = row.assetId ? assetById.get(row.assetId) : null;

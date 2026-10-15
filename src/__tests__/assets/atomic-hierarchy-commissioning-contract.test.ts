@@ -2,13 +2,13 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('atomic hierarchy commissioning contract', () => {
-  const panel = fs.readFileSync('src/components/assets/HierarchyCommissioningPanel.tsx', 'utf8');
+  const commissioning = fs.readFileSync('src/components/assets/HierarchyCommissioningForm.tsx', 'utf8');
   const route = fs.readFileSync('src/app/api/component-registry/bulk/route.ts', 'utf8');
 
   it('submits the whole hierarchy in one bulk request', () => {
-    expect(panel).toContain("api.post<any>('/api/component-registry/bulk'");
-    expect(panel).not.toContain("api.post<any>('/api/component-registry',");
-    expect(panel).toContain('committed atomically on the server');
+    expect(commissioning).toContain("api.post<any>('/api/component-registry/bulk'");
+    expect(commissioning).not.toContain("api.post<any>('/api/component-registry',");
+    expect(commissioning).toContain('committed atomically on the server');
   });
 
   it('enforces permission, plant ownership and a bounded batch server-side', () => {

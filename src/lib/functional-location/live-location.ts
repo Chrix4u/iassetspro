@@ -242,11 +242,11 @@ export async function findAssetIdsByLiveLocationSearch(search: string): Promise<
   return [...new Set([...structuredAssetIds, ...legacyAssets.map((asset) => asset.id)])];
 }
 
-export async function getAssetIdsInFunctionalLocationSubtree(
+async function resolvePrimaryFunctionalLocationSubtree(
   functionalLocationId: string,
-): Promise<string[]> {
+): Promise<{ hierarchySystemId: string; locationIds: string[] } | null> {
   const locationId = functionalLocationId.trim();
-  if (!locationId) return [];
+  if (!locationId) return null;
 
   const root = await db.functionalLocation.findUnique({
     where: { id: locationId },
@@ -256,20 +256,37 @@ export async function getAssetIdsInFunctionalLocationSubtree(
       hierarchySystem: { select: { isPrimary: true, isActive: true } },
     },
   });
-  if (!root?.hierarchySystem.isPrimary || !root.hierarchySystem.isActive) return [];
+  if (!root?.hierarchySystem.isPrimary || !root.hierarchySystem.isActive) return null;
 
   const nodes = await db.functionalLocation.findMany({
     where: { hierarchySystemId: root.hierarchySystemId },
     select: { id: true, parentId: true },
   });
-  const locationIds = collectDescendantIds(nodes, [root.id]);
-  if (locationIds.length === 0) return [];
+
+  return {
+    hierarchySystemId: root.hierarchySystemId,
+    locationIds: collectDescendantIds(nodes, [root.id]),
+  };
+}
+
+export async function getFunctionalLocationSubtreeIds(
+  functionalLocationId: string,
+): Promise<string[]> {
+  const subtree = await resolvePrimaryFunctionalLocationSubtree(functionalLocationId);
+  return subtree?.locationIds ?? [];
+}
+
+export async function getAssetIdsInFunctionalLocationSubtree(
+  functionalLocationId: string,
+): Promise<string[]> {
+  const subtree = await resolvePrimaryFunctionalLocationSubtree(functionalLocationId);
+  if (!subtree || subtree.locationIds.length === 0) return [];
 
   const assignments = await db.assetFunctionalLocationAssignment.findMany({
     where: {
       endedAt: null,
-      hierarchySystemId: root.hierarchySystemId,
-      functionalLocationId: { in: locationIds },
+      hierarchySystemId: subtree.hierarchySystemId,
+      functionalLocationId: { in: subtree.locationIds },
     },
     select: { assetId: true },
   });

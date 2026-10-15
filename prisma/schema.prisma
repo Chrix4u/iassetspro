@@ -461,6 +461,12 @@ model MaintenanceRequest {
   assetId           String?
   assetName         String?
   location          String?
+  functionalLocationIdSnapshot       String?
+  functionalLocationNameSnapshot     String?
+  functionalLocationCodeSnapshot     String?
+  functionalLocationPathSnapshot     String?
+  functionalLocationPathCodeSnapshot String?
+  functionalLocationSourceSnapshot   String?
   departmentId      String?
   requestedBy       String // → User
   supervisorId      String? // → User
@@ -497,6 +503,7 @@ model MaintenanceRequest {
   @@index([status])
   @@index([priority])
   @@index([departmentId])
+  @@index([functionalLocationIdSnapshot])
   @@index([createdAt])
   @@index([status, priority])
   @@index([plantId, workflowStatus])
@@ -519,6 +526,12 @@ model WorkOrder {
   pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
   assetId              String?
   assetName            String?
+  functionalLocationIdSnapshot       String?
+  functionalLocationNameSnapshot     String?
+  functionalLocationCodeSnapshot     String?
+  functionalLocationPathSnapshot     String?
+  functionalLocationPathCodeSnapshot String?
+  functionalLocationSourceSnapshot   String?
   departmentId         String?
   assignedTo           String? // → User
   teamLeaderId         String? // → User
@@ -624,6 +637,7 @@ model WorkOrder {
   @@index([priority])
   @@index([assignedTo])
   @@index([assetId])
+  @@index([functionalLocationIdSnapshot])
   @@index([createdAt])
   @@index([status, priority])
   @@index([assignedTo, status])

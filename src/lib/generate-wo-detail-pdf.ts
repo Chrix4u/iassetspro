@@ -45,6 +45,7 @@ interface WOPrintData {
   planner: { fullName: string } | null;
   assigner: { fullName: string } | null;
   asset: Record<string, unknown> | null;
+  maintenanceLocation: { path: string; locationCode: string | null } | null;
   materials: Array<Record<string, unknown>>;
   timeLogs: Array<Record<string, unknown>>;
   downtimes: Array<Record<string, unknown>>;
@@ -457,7 +458,9 @@ function renderTwoColumnInfo(doc: PDFDoc, data: WOPrintData): void {
     ['Category:', safeStr(assetCategory?.name)],
     ['Criticality:', formatBadgeText(safeStr(asset?.criticality ?? wo.priority))],
     ['Condition:', formatBadgeText(safeStr(asset?.condition))],
-    ['Location:', [safeStr(asset?.building), safeStr(asset?.floor), safeStr(asset?.area)]
+    ['Maintenance Location:', safeStr(data.maintenanceLocation?.path)],
+    ['Location Code:', safeStr(data.maintenanceLocation?.locationCode)],
+    ['Current Asset Location:', [safeStr(asset?.building), safeStr(asset?.floor), safeStr(asset?.area), safeStr(asset?.location)]
       .filter((v) => v !== '—').join(', ') || '—'],
   ];
 

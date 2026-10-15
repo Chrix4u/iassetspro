@@ -120,6 +120,10 @@ export async function GET(request: NextRequest) {
           { title: { contains: search } },
           { woNumber: { contains: search } },
           { assetName: { contains: search } },
+          { functionalLocationNameSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationCodeSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathSnapshot: { contains: search, mode: 'insensitive' } },
+          { functionalLocationPathCodeSnapshot: { contains: search, mode: 'insensitive' } },
           { assetId: { in: locationAssetIds } },
         ],
       }];

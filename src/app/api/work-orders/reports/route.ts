@@ -6,7 +6,12 @@ import { generateReportPDF } from '@/lib/generate-report-pdf';
 import {
   getAssetIdsInFunctionalLocationSubtree,
   getAssetLiveLocationMap,
+  getFunctionalLocationSubtreeIds,
 } from '@/lib/functional-location/live-location';
+import {
+  getMaintenanceLocationSnapshot,
+  type MaintenanceLocationSnapshotRecord,
+} from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/work-orders/reports
 // Comprehensive WO reports: downtime, response time, breakdowns, man hours, materials, failure rate, stoppages
@@ -51,8 +56,22 @@ export async function GET(request: NextRequest) {
     if (trade) woWhere.tradeActivity = trade;
     if (priority) woWhere.priority = priority;
     if (functionalLocationId) {
-      const locationAssetIds = await getAssetIdsInFunctionalLocationSubtree(functionalLocationId);
-      woWhere.assetId = { in: locationAssetIds };
+      const [locationIds, currentLocationAssetIds] = await Promise.all([
+        getFunctionalLocationSubtreeIds(functionalLocationId),
+        getAssetIdsInFunctionalLocationSubtree(functionalLocationId),
+      ]);
+      woWhere.AND = [{
+        OR: [
+          { functionalLocationIdSnapshot: { in: locationIds } },
+          {
+            AND: [
+              { functionalLocationSourceSnapshot: null },
+              { functionalLocationIdSnapshot: null },
+              { assetId: { in: currentLocationAssetIds } },
+            ],
+          },
+        ],
+      }];
     }
     if (moduleFilter === 'repairs') woWhere.type = { in: ['corrective', 'emergency'] };
     if (moduleFilter === 'pm') woWhere.type = { in: ['preventive'] };
@@ -83,15 +102,23 @@ export async function GET(request: NextRequest) {
     const liveLocations = await getAssetLiveLocationMap(assetIds);
     const assetMap = new Map(assets.map(a => [a.id, a]));
 
-    function getLiveLocationDetails(assetId: string | null | undefined, legacyLocation: string | null | undefined) {
-      const liveLocation = assetId ? liveLocations.get(assetId) ?? null : null;
-      const preferredLocation = liveLocation?.path || legacyLocation || null;
+    function getMaintenanceLocationDetails(
+      record: MaintenanceLocationSnapshotRecord & { assetId?: string | null },
+      legacyLocation: string | null | undefined,
+    ) {
+      const liveLocation = record.assetId ? liveLocations.get(record.assetId) ?? null : null;
+      const maintenanceLocation = getMaintenanceLocationSnapshot(record, liveLocation);
+      const preferredLocation = maintenanceLocation?.path || legacyLocation || null;
       return {
         location: preferredLocation,
-        functionalLocationCode: liveLocation?.locationCode ?? null,
-        functionalLocationPath: liveLocation?.path || preferredLocation,
-        functionalLocationPathCode: liveLocation?.pathCode || preferredLocation,
+        functionalLocationCode: maintenanceLocation?.locationCode ?? null,
+        functionalLocationPath: maintenanceLocation?.path || preferredLocation,
+        functionalLocationPathCode: maintenanceLocation?.pathCode || preferredLocation,
       };
+    }
+
+    function getLiveLocationDetails(assetId: string | null | undefined, legacyLocation: string | null | undefined) {
+      return getMaintenanceLocationDetails({ assetId }, legacyLocation);
     }
 
     // Fetch enriched inventory item data for all referenced materials
@@ -196,7 +223,7 @@ export async function GET(request: NextRequest) {
         category: asset?.category?.name || null,
         criticality: asset?.criticality || null,
         condition: asset?.condition || null,
-        ...getLiveLocationDetails(wo.assetId, asset?.location),
+        ...getMaintenanceLocationDetails(wo, asset?.location),
         building: asset?.building || null,
         floor: asset?.floor || null,
         area: asset?.area || null,
@@ -826,6 +853,7 @@ export async function GET(request: NextRequest) {
         totalCost: wo.totalCost || 0,
         createdAt: wo.createdAt.toISOString(),
         downtimeMinutes: dtMinutes,
+        ...getMaintenanceLocationDetails(wo, wo.assetId ? assetMap.get(wo.assetId)?.location : null),
       });
     }
     const workOrdersByAsset = Object.values(woByAssetGroupMap)

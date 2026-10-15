@@ -50,6 +50,7 @@ export interface ClosedWOPackData {
   assigner: { fullName: string } | null;
   plant: { name: string; code: string; location: string | null; city: string | null; country: string | null } | null;
   asset: Record<string, unknown> | null;
+  maintenanceLocation: { path: string; locationCode: string | null } | null;
   components: Array<Record<string, unknown>>;
   sourceRequest: Record<string, unknown> | null;
   pmSchedule: { title: string; frequencyType: string; frequencyValue: number } | null;
@@ -619,10 +620,12 @@ function renderLocation(doc: PDFDoc, data: ClosedWOPackData): void {
   const rows: Array<[string, string]> = [
     ['Plant:', safeStr(data.plant?.name) + (data.plant?.code ? ` (${data.plant.code})` : '')],
     ['City/Country:', [safeStr(data.plant?.city), safeStr(data.plant?.country)].filter((v) => v !== '—').join(', ') || '—'],
+    ['Maintenance Location:', safeStr(data.maintenanceLocation?.path)],
+    ['Location Code:', safeStr(data.maintenanceLocation?.locationCode)],
     ['Building:', safeStr(asset?.building || mr?.location || data.plant?.location)],
     ['Floor:', safeStr(asset?.floor)],
     ['Area:', safeStr(asset?.area)],
-    ['Specific Location:', safeStr(asset?.location || mr?.location)],
+    ['Current Asset Location:', safeStr(asset?.location || mr?.location)],
   ];
 
   for (let i = 0; i < rows.length; i++) {

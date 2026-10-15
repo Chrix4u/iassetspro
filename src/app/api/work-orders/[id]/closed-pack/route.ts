@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 import { generateClosedWOPackPDF, type ClosedWOPackData } from '@/lib/generate-closed-wo-pack';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/work-orders/[id]/closed-pack
 // Returns a comprehensive Closed Work Order Pack PDF
@@ -182,6 +184,11 @@ export async function GET(
         asset = { ...rest, category };
       }
     }
+    const liveLocationMap = wo.assetId ? await getAssetLiveLocationMap([wo.assetId]) : new Map();
+    const maintenanceLocation = getMaintenanceLocationSnapshot(
+      wo,
+      wo.assetId ? liveLocationMap.get(wo.assetId) ?? null : null,
+    );
 
     // ── Fetch InventoryItems for materials ──
     const materialItemIds = wo.materials.map((m) => m.itemId).filter((id): id is string => !!id);
@@ -255,6 +262,7 @@ export async function GET(
       assigner: wo.assigner ? { fullName: wo.assigner.fullName } : null,
       plant,
       asset,
+      maintenanceLocation,
       components: wo.workOrderComponents.map((wc) => ({
         ...wc,
         componentRegistry: wc.componentRegistry,

@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { generateWODetailPDF } from '@/lib/generate-wo-detail-pdf';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/work-orders/[id]/print
 // Returns enriched WO data as JSON (default) or PDF binary (?format=pdf)
@@ -126,6 +128,11 @@ export async function GET(
           return assetWithoutCategory;
         })()
       : null;
+    const liveLocationMap = wo.assetId ? await getAssetLiveLocationMap([wo.assetId]) : new Map();
+    const maintenanceLocation = getMaintenanceLocationSnapshot(
+      wo,
+      wo.assetId ? liveLocationMap.get(wo.assetId) ?? null : null,
+    );
 
     // ── Fetch InventoryItems for materials ──
     const materialItemIds = wo.materials
@@ -197,6 +204,7 @@ export async function GET(
             category: assetCategory,
           }
         : null,
+      maintenanceLocation,
       materials: materialsWithInventory,
       timeLogs: wo.timeLogs,
       downtimes: wo.workOrderDowntimes,

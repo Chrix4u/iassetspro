@@ -7,7 +7,12 @@ import { Prisma } from '@prisma/client';
 import {
   getAssetIdsInFunctionalLocationSubtree,
   getAssetLiveLocationMap,
+  getFunctionalLocationSubtreeIds,
 } from '@/lib/functional-location/live-location';
+import {
+  getMaintenanceLocationSnapshot,
+  type MaintenanceLocationSnapshotRecord,
+} from '@/lib/functional-location/maintenance-snapshot';
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,14 +52,27 @@ export async function GET(request: NextRequest) {
     if (plantId && !plantScope.isScoped) baseFilter.plantId = plantId;
     if (priority) baseFilter.priority = priority;
     if (tradeActivity) baseFilter.tradeActivity = tradeActivity;
+    let historicalLocationFilter: Record<string, unknown> | null = null;
     if (functionalLocationId) {
-      const locationAssetIds = await getAssetIdsInFunctionalLocationSubtree(functionalLocationId);
-      baseFilter.assetId = assetId
-        ? (locationAssetIds.includes(assetId) ? assetId : { in: [] })
-        : { in: locationAssetIds };
-    } else if (assetId) {
-      baseFilter.assetId = assetId;
+      const [locationIds, currentLocationAssetIds] = await Promise.all([
+        getFunctionalLocationSubtreeIds(functionalLocationId),
+        getAssetIdsInFunctionalLocationSubtree(functionalLocationId),
+      ]);
+      historicalLocationFilter = {
+        OR: [
+          { functionalLocationIdSnapshot: { in: locationIds } },
+          {
+            AND: [
+              { functionalLocationSourceSnapshot: null },
+              { functionalLocationIdSnapshot: null },
+              { assetId: { in: currentLocationAssetIds } },
+            ],
+          },
+        ],
+      };
+      baseFilter.AND = [historicalLocationFilter];
     }
+    if (assetId) baseFilter.assetId = assetId;
     if (moduleFilter === 'repairs') {
       (baseFilter as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
     } else if (moduleFilter === 'pm') {
@@ -106,10 +124,13 @@ export async function GET(request: NextRequest) {
     const itemMap = new Map(inventoryItems.map(i => [i.id, i]));
 
     // Helper: get enriched asset details from a work order
-    function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
+    function getAssetDetails(
+      wo: MaintenanceLocationSnapshotRecord & { assetId?: string | null; assetName?: string | null },
+    ) {
       const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
       const liveLocation = wo.assetId ? liveLocations.get(wo.assetId) ?? null : null;
-      const preferredLocation = liveLocation?.path || asset?.location || null;
+      const maintenanceLocation = getMaintenanceLocationSnapshot(wo, liveLocation);
+      const preferredLocation = maintenanceLocation?.path || asset?.location || null;
       return {
         assetId: wo.assetId || null,
         assetName: asset?.name || (wo.assetName && wo.assetName !== 'Unassigned' ? wo.assetName : null) || 'Unassigned',
@@ -121,9 +142,9 @@ export async function GET(request: NextRequest) {
         criticality: asset?.criticality || null,
         condition: asset?.condition || null,
         location: preferredLocation,
-        functionalLocationCode: liveLocation?.locationCode ?? null,
-        functionalLocationPath: liveLocation?.path || preferredLocation,
-        functionalLocationPathCode: liveLocation?.pathCode || preferredLocation,
+        functionalLocationCode: maintenanceLocation?.locationCode ?? null,
+        functionalLocationPath: maintenanceLocation?.path || preferredLocation,
+        functionalLocationPathCode: maintenanceLocation?.pathCode || preferredLocation,
         building: asset?.building || null,
         floor: asset?.floor || null,
         area: asset?.area || null,
@@ -164,6 +185,7 @@ export async function GET(request: NextRequest) {
     if (departmentId) mrFilter.departmentId = departmentId;
     if (plantId && !plantScope.isScoped) mrFilter.plantId = plantId;
     if (priority) mrFilter.priority = priority;
+    if (historicalLocationFilter) mrFilter.AND = [historicalLocationFilter];
     if (assetId) mrFilter.assetId = assetId;
     const mrs = await db.maintenanceRequest.findMany({
       where: Object.keys(mrFilter).length > 0 ? mrFilter : undefined,

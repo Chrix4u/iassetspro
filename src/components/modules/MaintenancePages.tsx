@@ -62,7 +62,7 @@ import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/compo
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
-import { formatFunctionalLocationDisplay } from '@/lib/functional-location/display';
+import { formatFunctionalLocationDisplay, formatMaintenanceLocationDisplay } from '@/lib/functional-location/display';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -909,6 +909,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   const isMobile = useIsMobile();
   const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
+  const mrLocationDisplay = useMemo(() => formatMaintenanceLocationDisplay(mr), [mr]);
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -1537,13 +1538,19 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-semibold">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-blue-600 font-medium uppercase">Functional Location</p>
-                  <p className="text-sm font-semibold">{formatFunctionalLocationDisplay(mr.asset).path}</p>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">{mrLocationDisplay.differsFromCurrent ? 'Maintenance Location' : 'Functional Location'}</p>
+                  <p className="text-sm font-semibold">{mrLocationDisplay.maintenancePath}</p>
                 </div>
-                {formatFunctionalLocationDisplay(mr.asset).code && (
+                {mrLocationDisplay.maintenanceCode && (
                   <div>
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Location Code</p>
-                    <p className="text-sm font-semibold font-mono">{formatFunctionalLocationDisplay(mr.asset).code}</p>
+                    <p className="text-sm font-semibold font-mono">{mrLocationDisplay.maintenanceCode}</p>
+                  </div>
+                )}
+                {mrLocationDisplay.differsFromCurrent && (
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Current Asset Location</p>
+                    <p className="text-sm font-semibold">{mrLocationDisplay.currentPath}</p>
                   </div>
                 )}
                 {mr.location && (
@@ -1807,13 +1814,19 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-bold text-blue-900 mt-0.5">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Functional Location</p>
-                  <p className="text-sm font-bold text-blue-900 mt-0.5">{formatFunctionalLocationDisplay(mr.asset).path}</p>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">{mrLocationDisplay.differsFromCurrent ? 'Maintenance Location' : 'Functional Location'}</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{mrLocationDisplay.maintenancePath}</p>
                 </div>
-                {formatFunctionalLocationDisplay(mr.asset).code && (
+                {mrLocationDisplay.maintenanceCode && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Location Code</p>
-                    <p className="text-sm font-bold font-mono text-blue-900 mt-0.5">{formatFunctionalLocationDisplay(mr.asset).code}</p>
+                    <p className="text-sm font-bold font-mono text-blue-900 mt-0.5">{mrLocationDisplay.maintenanceCode}</p>
+                  </div>
+                )}
+                {mrLocationDisplay.differsFromCurrent && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Current Asset Location</p>
+                    <p className="text-sm font-bold text-blue-900 mt-0.5">{mrLocationDisplay.currentPath}</p>
                   </div>
                 )}
                 {mr.location && (
@@ -2128,11 +2141,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
               <Separator />
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Department</span><span className="font-medium text-right">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>
               <Separator />
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Functional Location</span><span className="font-medium text-right">{formatFunctionalLocationDisplay(mr.asset).path}</span></div>
-              {formatFunctionalLocationDisplay(mr.asset).code && (
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">{mrLocationDisplay.differsFromCurrent ? 'Maintenance Location' : 'Functional Location'}</span><span className="font-medium text-right">{mrLocationDisplay.maintenancePath}</span></div>
+              {mrLocationDisplay.maintenanceCode && (
                 <>
                   <Separator />
-                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{formatFunctionalLocationDisplay(mr.asset).code}</span></div>
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{mrLocationDisplay.maintenanceCode}</span></div>
+                </>
+              )}
+              {mrLocationDisplay.differsFromCurrent && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Current Asset Location</span><span className="font-medium text-right">{mrLocationDisplay.currentPath}</span></div>
+                  {mrLocationDisplay.currentCode && <div className="flex justify-between gap-4"><span className="text-muted-foreground">Current Location Code</span><span className="font-medium font-mono text-right">{mrLocationDisplay.currentCode}</span></div>}
                 </>
               )}
               {mr.location && (
@@ -3247,6 +3267,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const inventoryEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const toolsEnabled = useModuleEnabled(MODULE_CODES.TOOLS);
   const downtimeEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
+  const woLocationDisplay = useMemo(() => formatMaintenanceLocationDisplay(wo), [wo]);
   const materialResourcesEnabled = repairsEnabled && inventoryEnabled;
   const toolResourcesEnabled = repairsEnabled && toolsEnabled;
   const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(r.slug)) ?? false;
@@ -7454,8 +7475,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               {assetsEnabled && <>
                 <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.asset?.name || wo.assetName || '-'}</span></div>
                 <Separator />
-                <div className="flex justify-between gap-4"><span className="text-muted-foreground">Functional Location</span><span className="font-medium text-right">{formatFunctionalLocationDisplay(wo.asset).path}</span></div>
-                {formatFunctionalLocationDisplay(wo.asset).code && <><Separator /><div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{formatFunctionalLocationDisplay(wo.asset).code}</span></div></>}
+                <div className="flex justify-between gap-4"><span className="text-muted-foreground">{woLocationDisplay.differsFromCurrent ? 'Maintenance Location' : 'Functional Location'}</span><span className="font-medium text-right">{woLocationDisplay.maintenancePath}</span></div>
+                {woLocationDisplay.maintenanceCode && <><Separator /><div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{woLocationDisplay.maintenanceCode}</span></div></>}
+                {woLocationDisplay.differsFromCurrent && <><Separator /><div className="flex justify-between gap-4"><span className="text-muted-foreground">Current Asset Location</span><span className="font-medium text-right">{woLocationDisplay.currentPath}</span></div>{woLocationDisplay.currentCode && <div className="flex justify-between gap-4"><span className="text-muted-foreground">Current Location Code</span><span className="font-medium font-mono text-right">{woLocationDisplay.currentCode}</span></div>}</>}
                 <Separator />
               </>}
               <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || ((wo.teamMembers?.length ?? 0) > 0 ? `Team (${(wo.teamMembers?.length ?? 0)} member${(wo.teamMembers?.length ?? 0) !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>

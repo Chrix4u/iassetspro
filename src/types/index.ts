@@ -107,6 +107,12 @@ export interface MaintenanceRequest {
   machineDownStatus: boolean;
   assetId?: string;
   assetName?: string;
+  functionalLocationIdSnapshot?: string | null;
+  functionalLocationNameSnapshot?: string | null;
+  functionalLocationCodeSnapshot?: string | null;
+  functionalLocationPathSnapshot?: string | null;
+  functionalLocationPathCodeSnapshot?: string | null;
+  functionalLocationSourceSnapshot?: string | null;
   location?: string;
   departmentId?: string;
   plantId?: string;
@@ -165,6 +171,12 @@ export interface WorkOrder {
   status: 'draft' | 'requested' | 'approved' | 'planned' | 'assigned' | 'in_progress' | 'waiting_parts' | 'waiting_tools' | 'waiting_shutdown' | 'waiting_permit' | 'on_hold' | 'pending_handover' | 'completed' | 'verified' | 'closed' | 'cancelled';
   assetId?: string;
   assetName?: string;
+  functionalLocationIdSnapshot?: string | null;
+  functionalLocationNameSnapshot?: string | null;
+  functionalLocationCodeSnapshot?: string | null;
+  functionalLocationPathSnapshot?: string | null;
+  functionalLocationPathCodeSnapshot?: string | null;
+  functionalLocationSourceSnapshot?: string | null;
   departmentId?: string;
   requestId?: string;
   assignedToId?: string;

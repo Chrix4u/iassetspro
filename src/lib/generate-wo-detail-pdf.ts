@@ -14,6 +14,7 @@ interface WOPrintData {
     priority: string;
     status: string;
     maintenanceRequestId: string | null;
+    assetName: string | null;
     estimatedHours: number | null;
     actualHours: number | null;
     plannedStart: Date | string | null;
@@ -829,8 +830,9 @@ function renderTaskExecutions(doc: PDFDoc, data: WOPrintData): void {
 
   const rows = data.taskExecutions.map((te, i) => {
     const completedBy = (te.completedBy as { fullName: string } | null)?.fullName ?? '—';
+    const taskNumber = typeof te.taskNumber === 'number' ? te.taskNumber : i + 1;
     return [
-      te.taskNumber ?? i + 1,
+      taskNumber,
       safeStr(te.description).substring(0, 80),
       formatBadgeText(safeStr(te.taskType)),
       formatBadgeText(safeStr(te.status)),

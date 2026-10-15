@@ -14,6 +14,7 @@ export interface ClosedWOPackData {
     priority: string;
     status: string;
     maintenanceRequestId: string | null;
+    assetName: string | null;
     estimatedHours: number | null;
     actualHours: number | null;
     plannedStart: Date | string | null;
@@ -35,11 +36,14 @@ export interface ClosedWOPackData {
     assignedSupervisorId: string | null;
     plannerId: string | null;
     assignedBy: string | null;
+    assignmentType: string | null;
     plantId: string | null;
     notes: string | null;
     isLocked: boolean;
     lockReason: string | null;
     lockedAt: Date | string | null;
+    escalationLevel: number;
+    lastEscalatedAt: Date | string | null;
     createdAt: Date | string;
     updatedAt: Date | string;
   };
@@ -769,7 +773,7 @@ function renderWorkInstructionRef(doc: PDFDoc, data: ClosedWOPackData): void {
       safeStr(wi?.title),
       safeStr(tech?.fullName),
       formatBadgeText(safeStr(ex.status)),
-      fmtNum(ex.currentStep, 0),
+      fmtNum(ex.currentStep as number | null, 0),
       dur ? fmtMinutes(dur) : '—',
       fmtDate(ex.completedAt as Date | string | null),
     ];
@@ -907,8 +911,9 @@ function renderTaskExecutions(doc: PDFDoc, data: ClosedWOPackData): void {
 
   const rows = data.taskExecutions.map((te, i) => {
     const completedBy = (te.completedBy as { fullName: string } | null)?.fullName ?? '—';
+    const taskNumber = typeof te.taskNumber === 'number' ? te.taskNumber : i + 1;
     return [
-      te.taskNumber ?? i + 1,
+      taskNumber,
       safeStr(te.description).substring(0, 60),
       formatBadgeText(safeStr(te.taskType)),
       formatBadgeText(safeStr(te.status)),

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const hierarchyPagePath = resolve(process.cwd(), 'src/components/modules/FunctionalLocationHierarchyPage.tsx')
 const pickerPath = resolve(process.cwd(), 'src/components/assets/FunctionalLocationPicker.tsx')
 const commissioningPanelPath = resolve(process.cwd(), 'src/components/assets/HierarchyCommissioningPanel.tsx')
+const commissioningFormPath = resolve(process.cwd(), 'src/components/assets/HierarchyCommissioningForm.tsx')
 const appPath = resolve(process.cwd(), 'src/components/EAMApp.tsx')
 
 describe('functional-location Phase 2 UI contract', () => {
@@ -41,6 +42,16 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(source).toContain('Machine Structure')
   })
 
+  it('renders the registered machine hierarchy before commissioning controls', () => {
+    expect(existsSync(commissioningFormPath)).toBe(true)
+    const source = readFileSync(commissioningPanelPath, 'utf8')
+    expect(source).toContain("import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer'")
+    expect(source).toContain("/api/assets/${encodeURIComponent(assetId)}")
+    expect(source).toContain('Registered machine structure')
+    expect(source).toContain('<MachineVisualExplorer')
+    expect(source).toContain('<HierarchyCommissioningForm')
+  })
+
   it('keeps hierarchy-definition management separate from functional-location management', () => {
     const source = readFileSync(hierarchyPagePath, 'utf8')
     expect(source).toContain("const canManageHierarchy = isAdmin() || hasPermission('assets.hierarchy.manage')")
@@ -67,7 +78,7 @@ describe('functional-location Phase 2 UI contract', () => {
   })
 
   it('machine hierarchy commissioning mirrors the server create-permission contract', () => {
-    const source = readFileSync(commissioningPanelPath, 'utf8')
+    const source = readFileSync(commissioningFormPath, 'utf8')
     expect(source).toContain("hasPermission('digital_twin.manage')")
     expect(source).toContain("hasPermission('assets.hierarchy')")
     expect(source).toContain("hasPermission('assets.create') || hasPermission('assemblies.create')")
@@ -75,7 +86,7 @@ describe('functional-location Phase 2 UI contract', () => {
   })
 
   it('standalone machine commissioning loads every existing node before enabling imports', () => {
-    const source = readFileSync(commissioningPanelPath, 'utf8')
+    const source = readFileSync(commissioningFormPath, 'utf8')
     expect(source).toContain('/api/component-registry?assetId=${encodeURIComponent(assetId)}&page=${page}&limit=${COMPONENT_PAGE_SIZE}')
     expect(source).toContain('providedExistingComponents ?? loadedExistingComponents')
     expect(source).toContain('validationUnavailable = existingLoading || Boolean(existingLoadError)')

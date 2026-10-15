@@ -24,6 +24,7 @@ import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { useNavigationStore } from '@/stores/navigationStore'
 import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel'
+import { LegacyLocationMigrationDialog } from '@/components/assets/LegacyLocationMigrationDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -217,6 +218,7 @@ export default function FunctionalLocationHierarchyPage() {
   const [expandedAssets, setExpandedAssets] = useState<Set<string>>(new Set())
   const [systemDialogOpen, setSystemDialogOpen] = useState(false)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
+  const [legacyMigrationOpen, setLegacyMigrationOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [systemForm, setSystemForm] = useState({
@@ -242,6 +244,7 @@ export default function FunctionalLocationHierarchyPage() {
 
   const canManageHierarchy = isAdmin() || hasPermission('assets.hierarchy.manage')
   const canManageLocations = isAdmin() || hasPermission('assets.functional_locations.manage')
+  const canMigrateLegacyLocations = isAdmin()
 
   const selectedSystem = useMemo(
     () => systems.find(system => system.id === selectedSystemId) || null,
@@ -362,13 +365,15 @@ export default function FunctionalLocationHierarchyPage() {
 
   const toggleLocation = (id: string) => setExpandedLocations(current => {
     const next = new Set(current)
-    next.has(id) ? next.delete(id) : next.add(id)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
     return next
   })
 
   const toggleAsset = (id: string) => setExpandedAssets(current => {
     const next = new Set(current)
-    next.has(id) ? next.delete(id) : next.add(id)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
     return next
   })
 
@@ -493,6 +498,7 @@ export default function FunctionalLocationHierarchyPage() {
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Configure where assets are installed without mixing location paths with equipment parent/child or internal machine components.</p>
         </div>
         <div className="flex w-full flex-wrap gap-2 lg:w-auto">
+          {canMigrateLegacyLocations && selectedSystem && <Button variant="outline" className="flex-1 lg:flex-none" onClick={() => setLegacyMigrationOpen(true)}><Route className="mr-2 h-4 w-4" />Migrate legacy locations</Button>}
           {canManageHierarchy && <Button variant="outline" className="flex-1 lg:flex-none" onClick={() => setSystemDialogOpen(true)}><Settings2 className="mr-2 h-4 w-4" />New hierarchy system</Button>}
           {canManageLocations && selectedSystem && <Button className="flex-1 lg:flex-none" onClick={() => openCreateLocation(selectedLocation)}><Plus className="mr-2 h-4 w-4" />Add location</Button>}
         </div>
@@ -579,6 +585,18 @@ export default function FunctionalLocationHierarchyPage() {
           {selectedMachineId ? <HierarchyCommissioningPanel assetId={selectedMachineId} /> : <Card><CardContent className="py-16 text-center"><Wrench className="mx-auto h-8 w-8 text-muted-foreground/40" /><p className="mt-3 text-sm text-muted-foreground">Select a machine to view or build its internal component hierarchy.</p></CardContent></Card>}
         </TabsContent>
       </Tabs>
+
+      {selectedSystem && (
+        <LegacyLocationMigrationDialog
+          open={legacyMigrationOpen}
+          onOpenChange={setLegacyMigrationOpen}
+          hierarchySystem={selectedSystem}
+          plants={plants}
+          onImported={async () => {
+            await Promise.all([loadLocations(selectedSystem.id), loadBase()])
+          }}
+        />
+      )}
 
       <Dialog open={systemDialogOpen} onOpenChange={setSystemDialogOpen}>
         <DialogContent className="max-w-4xl">

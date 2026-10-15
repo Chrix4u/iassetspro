@@ -88,15 +88,11 @@ export async function GET(request: NextRequest) {
 
     // Fetch enriched asset data for all referenced assets
     const assetIds = [...new Set(workOrders.map(wo => wo.assetId).filter((id): id is string => !!id))];
-    const [assets, liveLocations] = await Promise.all([
-      assetIds.length > 0
-        ? db.asset.findMany({
-            where: { id: { in: assetIds } },
-            include: { category: { select: { name: true } } },
-          })
-        : Promise.resolve([]),
-      getAssetLiveLocationMap(assetIds),
-    ]);
+    const assets = assetIds.length > 0 ? await db.asset.findMany({
+      where: { id: { in: assetIds } },
+      include: { category: { select: { name: true } } },
+    }) : [];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
     const assetMap = new Map(assets.map(a => [a.id, a]));
 
     // Fetch enriched inventory item data for all referenced materials

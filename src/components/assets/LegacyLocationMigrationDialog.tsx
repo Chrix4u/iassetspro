@@ -102,13 +102,14 @@ export function LegacyLocationMigrationDialog({
     [hierarchySystem.levels],
   )
 
-  const runPreview = useCallback(async (mappingOverride?: LegacyMapping) => {
+  const runPreview = useCallback(async (mappingOverride?: LegacyMapping, plantOverride?: string, inferMapping = false) => {
     setPreviewing(true)
     try {
-      const reviewedMapping = mappingOverride ?? (Object.keys(mapping).length ? mapping : undefined)
+      const reviewedMapping = inferMapping ? undefined : mappingOverride ?? (Object.keys(mapping).length ? mapping : undefined)
+      const reviewedPlantId = plantOverride ?? plantId
       const response = await api.post<MigrationPreview>('/api/admin/functional-location-migration/preview', {
         hierarchySystemId: hierarchySystem.id,
-        plantId: plantId === '__all__' ? undefined : plantId,
+        plantId: reviewedPlantId === '__all__' ? undefined : reviewedPlantId,
         mapping: reviewedMapping,
       })
       if (!response.success || !response.data) throw new Error(response.error || 'Legacy location preview failed')
@@ -129,7 +130,7 @@ export function LegacyLocationMigrationDialog({
     setMapping({})
     setPreview(null)
     setConfirmation('')
-    void runPreview()
+    void runPreview(undefined, '__all__', true)
     // run once for each dialog/system opening; mapping returned by server is authoritative.
   }, [open, hierarchySystem.id])
 

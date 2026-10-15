@@ -9,7 +9,14 @@ export interface MaintenanceLocationSnapshotFields {
   functionalLocationSourceSnapshot: 'structured' | 'legacy' | null;
 }
 
-export type MaintenanceLocationSnapshotRecord = Partial<MaintenanceLocationSnapshotFields>;
+export type MaintenanceLocationSnapshotRecord = {
+  functionalLocationIdSnapshot?: string | null;
+  functionalLocationNameSnapshot?: string | null;
+  functionalLocationCodeSnapshot?: string | null;
+  functionalLocationPathSnapshot?: string | null;
+  functionalLocationPathCodeSnapshot?: string | null;
+  functionalLocationSourceSnapshot?: string | null;
+};
 
 export function buildMaintenanceLocationSnapshot(
   projection: AssetLiveLocationProjection | null | undefined,

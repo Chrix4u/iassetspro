@@ -8,6 +8,8 @@ import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -75,8 +77,10 @@ export async function POST(request: NextRequest) {
         nextDueDate: { not: null },
         asset: manualAssetPlantFilter(plantScope),
       },
-      select: { id: true },
+      select: { id: true, assetId: true },
     });
+
+    const dueLocationMap = await getAssetLiveLocationMap(dueSchedules.map((schedule) => schedule.assetId));
 
     const results: {
       scheduleId: string;
@@ -88,6 +92,9 @@ export async function POST(request: NextRequest) {
     }[] = [];
 
     for (const candidate of dueSchedules) {
+      const maintenanceLocationSnapshot = buildMaintenanceLocationSnapshot(
+        dueLocationMap.get(candidate.assetId) ?? null,
+      );
       const generation = await db.$transaction(async (tx) => {
         await lockPmScheduleLifecycle(tx, candidate.id);
         // Serialize one PM schedule's due-cycle decision. A second worker waits,
@@ -309,6 +316,7 @@ export async function POST(request: NextRequest) {
             status: 'draft',
             assetId: schedule.assetId,
             assetName: schedule.asset.name,
+            ...maintenanceLocationSnapshot,
             assignedTo: schedule.assignedToId,
             plannerId: schedule.createdById,
             departmentId: schedule.asset.departmentId || schedule.departmentId || null,

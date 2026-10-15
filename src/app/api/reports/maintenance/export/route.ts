@@ -18,6 +18,9 @@ type ReportWorkOrder = {
   category?: string | null;
   criticality?: string | null;
   location?: string | null;
+  functionalLocationCode?: string | null;
+  functionalLocationPath?: string | null;
+  functionalLocationPathCode?: string | null;
   assigneeName?: string | null;
   teamLeaderName?: string | null;
   estimatedHours?: number | null;
@@ -42,6 +45,9 @@ type WorkOrderAssetGroup = {
   category?: string | null;
   criticality?: string | null;
   location?: string | null;
+  functionalLocationCode?: string | null;
+  functionalLocationPath?: string | null;
+  functionalLocationPathCode?: string | null;
   workOrders?: ReportWorkOrder[];
 };
 
@@ -88,15 +94,15 @@ function toResponseBody(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
-const WORK_ORDER_HEADERS = [
+export const WORK_ORDER_HEADERS = [
   'WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Asset Tag',
   'Manufacturer', 'Model', 'Serial Number', 'Category', 'Criticality', 'Location',
-  'Assigned To', 'Team Leader', 'Estimated Hours', 'Actual Hours', 'Material Cost',
+  'Location Code', 'Asset Path', 'Assigned To', 'Team Leader', 'Estimated Hours', 'Actual Hours', 'Material Cost',
   'Labor Cost', 'Total Cost', 'Created', 'Planned End', 'Completed', 'Department ID',
   'Plant ID',
 ] as const;
 
-function workOrderRow(wo: ReportWorkOrder): Array<string | number> {
+export function workOrderRow(wo: ReportWorkOrder): Array<string | number> {
   return [
     wo.woNumber || '',
     wo.title || '',
@@ -111,6 +117,8 @@ function workOrderRow(wo: ReportWorkOrder): Array<string | number> {
     wo.category || '',
     wo.criticality || '',
     wo.location || '',
+    wo.functionalLocationCode || '',
+    wo.functionalLocationPath || '',
     wo.assigneeName || '',
     wo.teamLeaderName || '',
     wo.estimatedHours ?? '',
@@ -139,6 +147,9 @@ function getExportWorkOrders(data: ReportData): ReportWorkOrder[] {
         category: workOrder.category || group.category || '',
         criticality: workOrder.criticality || group.criticality || '',
         location: workOrder.location || group.location || '',
+        functionalLocationCode: workOrder.functionalLocationCode || group.functionalLocationCode || '',
+        functionalLocationPath: workOrder.functionalLocationPath || group.functionalLocationPath || '',
+        functionalLocationPathCode: workOrder.functionalLocationPathCode || group.functionalLocationPathCode || '',
       })),
     );
   }
@@ -187,7 +198,8 @@ function buildWorkbook(data: ReportData): Uint8Array {
     [...WORK_ORDER_HEADERS],
     ...workOrders.map(workOrderRow),
   ]);
-  woSheet['!autofilter'] = { ref: `A1:Y${Math.max(1, workOrders.length + 1)}` };
+  const lastColumn = XLSX.utils.encode_col(WORK_ORDER_HEADERS.length - 1);
+  woSheet['!autofilter'] = { ref: `A1:${lastColumn}${Math.max(1, workOrders.length + 1)}` };
   woSheet['!cols'] = WORK_ORDER_HEADERS.map((header) => ({ wch: Math.min(34, Math.max(12, header.length + 2)) }));
   XLSX.utils.book_append_sheet(workbook, woSheet, 'Work Orders');
 

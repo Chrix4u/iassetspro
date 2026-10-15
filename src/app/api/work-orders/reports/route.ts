@@ -3,6 +3,10 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 import { generateReportPDF } from '@/lib/generate-report-pdf';
+import {
+  getAssetIdsInFunctionalLocationSubtree,
+  getAssetLiveLocationMap,
+} from '@/lib/functional-location/live-location';
 
 // GET /api/work-orders/reports
 // Comprehensive WO reports: downtime, response time, breakdowns, man hours, materials, failure rate, stoppages
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority');
     const format = searchParams.get('format');
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess) {
@@ -45,6 +50,10 @@ export async function GET(request: NextRequest) {
     if (department) woWhere.departmentId = department;
     if (trade) woWhere.tradeActivity = trade;
     if (priority) woWhere.priority = priority;
+    if (functionalLocationId) {
+      const locationAssetIds = await getAssetIdsInFunctionalLocationSubtree(functionalLocationId);
+      woWhere.assetId = { in: locationAssetIds };
+    }
     if (moduleFilter === 'repairs') woWhere.type = { in: ['corrective', 'emergency'] };
     if (moduleFilter === 'pm') woWhere.type = { in: ['preventive'] };
 
@@ -67,11 +76,27 @@ export async function GET(request: NextRequest) {
 
     // Fetch enriched asset data for all referenced assets
     const assetIds = [...new Set(workOrders.map(wo => wo.assetId).filter((id): id is string => !!id))];
-    const assets = assetIds.length > 0 ? await db.asset.findMany({
-      where: { id: { in: assetIds } },
-      include: { category: { select: { name: true } } },
-    }) : [];
+    const [assets, liveLocations] = await Promise.all([
+      assetIds.length > 0
+        ? db.asset.findMany({
+            where: { id: { in: assetIds } },
+            include: { category: { select: { name: true } } },
+          })
+        : Promise.resolve([]),
+      getAssetLiveLocationMap(assetIds),
+    ]);
     const assetMap = new Map(assets.map(a => [a.id, a]));
+
+    function getLiveLocationDetails(assetId: string | null | undefined, legacyLocation: string | null | undefined) {
+      const liveLocation = assetId ? liveLocations.get(assetId) ?? null : null;
+      const preferredLocation = liveLocation?.path || legacyLocation || null;
+      return {
+        location: preferredLocation,
+        functionalLocationCode: liveLocation?.locationCode ?? null,
+        functionalLocationPath: liveLocation?.path || preferredLocation,
+        functionalLocationPathCode: liveLocation?.pathCode || preferredLocation,
+      };
+    }
 
     // Fetch enriched inventory item data for all referenced materials
     const itemIds = [...new Set(workOrders.flatMap(wo =>
@@ -175,7 +200,7 @@ export async function GET(request: NextRequest) {
         category: asset?.category?.name || null,
         criticality: asset?.criticality || null,
         condition: asset?.condition || null,
-        location: asset?.location || null,
+        ...getLiveLocationDetails(wo.assetId, asset?.location),
         building: asset?.building || null,
         floor: asset?.floor || null,
         area: asset?.area || null,
@@ -576,7 +601,7 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          ...getLiveLocationDetails(assetId !== 'unassigned' ? assetId : null, asset?.location),
           building: asset?.building || null,
           area: asset?.area || null,
           totalWOs: data.total,
@@ -627,7 +652,7 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          ...getLiveLocationDetails(assetId !== 'unassigned' ? assetId : null, asset?.location),
           building: asset?.building || null,
           area: asset?.area || null,
           mtbfDays: Math.round(mtbfDays * 10) / 10,
@@ -774,7 +799,7 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          ...getLiveLocationDetails(a.assetId, asset?.location),
           building: asset?.building || null,
           area: asset?.area || null,
         };
@@ -821,7 +846,7 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          ...getLiveLocationDetails(a.assetId, asset?.location),
           building: asset?.building || null,
           area: asset?.area || null,
           completionRate: a.woCount > 0 ? Math.round((a.completedCount / a.woCount) * 100) : 0,
@@ -851,7 +876,7 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          ...getLiveLocationDetails(assetId !== 'unassigned' ? assetId : null, asset?.location),
           building: asset?.building || null,
           area: asset?.area || null,
           count: data.count,
@@ -874,7 +899,7 @@ export async function GET(request: NextRequest) {
       condition: a.condition,
       status: a.status,
       criticality: a.criticality,
-      location: a.location || null,
+      ...getLiveLocationDetails(a.id, a.location),
       building: a.building || null,
       floor: a.floor || null,
       area: a.area || null,

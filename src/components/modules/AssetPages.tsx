@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -47,6 +47,7 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { AIAssetGenerator } from '@/components/shared/AIAssetGenerator';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
 
 export function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -55,6 +56,8 @@ export function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [locationAssignmentLoading, setLocationAssignmentLoading] = useState(false);
+  const editLocationRequestRef = useRef(0);
   const [editId, setEditId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -67,6 +70,7 @@ export function AssetsPage() {
   const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
   const { navigate, pageParams } = useNavigationStore();
   const { hasPermission, isAdmin } = useAuthStore();
+  const canAssignFunctionalLocation = isAdmin() || hasPermission('assets.functional_locations.assign');
 
   // If navigated here with an asset ID, open detail view
   // If navigated with condition='at_risk', pre-filter to poor/critical condition
@@ -76,7 +80,7 @@ export function AssetsPage() {
     if (pageParams?.condition === 'at_risk') setAtRiskFilter(true);
   }, [pageParams]);
 
-  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', acquisitionCondition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
+  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', acquisitionCondition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '', functionalLocationId: '' };
   const [form, setForm] = useState(emptyForm);
 
   const [showAllAssets, setShowAllAssets] = useState(false);
@@ -117,19 +121,51 @@ export function AssetsPage() {
     critical: assets.filter(a => a.criticality === 'critical').length,
   }), [assets]);
 
-  const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
-  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', acquisitionCondition: a.acquisitionCondition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
+  const openCreate = () => { editLocationRequestRef.current += 1; setLocationAssignmentLoading(false); setEditId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openEdit = async (a: any) => {
+    const requestId = ++editLocationRequestRef.current;
+    setEditId(a.id);
+    setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', acquisitionCondition: a.acquisitionCondition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '', functionalLocationId: '' });
+    setDialogOpen(true);
+    if (!canAssignFunctionalLocation) {
+      setLocationAssignmentLoading(false);
+      return;
+    }
+    setLocationAssignmentLoading(true);
+    try {
+      const locationRes = await api.get<any>(`/api/assets/${a.id}/functional-locations`);
+      if (requestId !== editLocationRequestRef.current) return;
+      const functionalLocationId = locationRes.success ? locationRes.data?.primary?.functionalLocationId : '';
+      if (functionalLocationId) setForm(current => ({ ...current, functionalLocationId: String(functionalLocationId) }));
+    } catch { /* preserve editable asset fields even if location history cannot load */ }
+    finally {
+      if (requestId === editLocationRequestRef.current) setLocationAssignmentLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
     setSaving(true);
-    const payload: any = { ...form, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
+    const { functionalLocationId, ...assetForm } = form;
+    const payload: any = { ...assetForm, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
     const res = editId
       ? await api.put(`/api/assets/${editId}`, payload)
       : await api.post('/api/assets', payload, { headers: { 'x-plant-id': form.plantId } });
 
     if (res.success) {
-      toast.success(editId ? 'Asset updated' : 'Asset created');
+      const savedAssetId = editId || (res.data?.id ? String(res.data.id) : '');
+      let locationAssignmentFailed = false;
+      if (savedAssetId && functionalLocationId && canAssignFunctionalLocation) {
+        const locationRes = await api.post(`/api/assets/${savedAssetId}/functional-locations`, {
+          functionalLocationId,
+          reason: editId ? 'Updated from Asset form' : 'Assigned during asset registration',
+        });
+        if (!locationRes.success) {
+          locationAssignmentFailed = true;
+          toast.warning(`Asset saved, but its functional location could not be updated: ${locationRes.error || 'Unknown error'}`);
+        }
+      }
+      if (!locationAssignmentFailed) toast.success(editId ? 'Asset updated' : 'Asset created');
       setDialogOpen(false);
 
       if (!editId && res.data?.id) {
@@ -330,17 +366,11 @@ export function AssetsPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Building</Label><Input value={form.building} onChange={e => setForm(f => ({ ...f, building: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Area</Label><Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} /></div>
-            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Plant</Label>
                 <AsyncSearchableSelect
                   value={form.plantId}
-                  onValueChange={v => setForm(f => ({ ...f, plantId: v }))}
+                  onValueChange={v => setForm(f => ({ ...f, plantId: v, functionalLocationId: '' }))}
                   fetchOptions={async () => {
                     const res = await api.get('/api/plants');
                     if (res.success && res.data) {
@@ -373,6 +403,25 @@ export function AssetsPage() {
                   placeholder="Select department..."
                   searchPlaceholder="Search departments..."
                 />
+              </div>
+            </div>
+            {canAssignFunctionalLocation && form.plantId && (
+              <FunctionalLocationPicker
+                value={form.functionalLocationId}
+                onValueChange={v => setForm(f => ({ ...f, functionalLocationId: v }))}
+                plantId={form.plantId}
+                label="Functional Location / Installed At"
+                placeholder="Select coded asset location..."
+                disabled={locationAssignmentLoading}
+              />
+            )}
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <div><p className="text-xs font-medium">Legacy location details</p><p className="text-[11px] text-muted-foreground">Optional migration/fallback fields. Use Functional Location above for the authoritative asset path.</p></div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
+                <div className="space-y-1.5"><Label>Building</Label><Input value={form.building} onChange={e => setForm(f => ({ ...f, building: e.target.value }))} /></div>
+                <div className="space-y-1.5"><Label>Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
+                <div className="space-y-1.5"><Label>Area</Label><Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} /></div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

@@ -9,6 +9,8 @@ function read(relativePath: string): string {
 describe('maintenance functional-location snapshot write paths', () => {
   const mrRoute = read('src/app/api/maintenance-requests/route.ts');
   const woRoute = read('src/app/api/work-orders/route.ts');
+  const mrUpdateRoute = read('src/app/api/maintenance-requests/[id]/route.ts');
+  const woUpdateRoute = read('src/app/api/work-orders/[id]/route.ts');
   const conversion = read('src/services/repairPlanning.service.ts');
   const pmDue = read('src/app/api/pm-schedules/check-due/route.ts');
 
@@ -35,6 +37,24 @@ describe('maintenance functional-location snapshot write paths', () => {
     expect(conversion).toContain('getAssetLiveLocationMap');
     expect(conversion).toContain('const liveLocations = mr.assetId');
     expect(conversion).toContain("liveLocations.get(mr.assetId) ?? null");
+  });
+
+
+  it('keeps all frozen snapshot columns outside generic MR and WO update allowlists', () => {
+    const snapshotFields = [
+      'functionalLocationIdSnapshot',
+      'functionalLocationNameSnapshot',
+      'functionalLocationCodeSnapshot',
+      'functionalLocationPathSnapshot',
+      'functionalLocationPathCodeSnapshot',
+      'functionalLocationSourceSnapshot',
+    ];
+
+    for (const route of [mrUpdateRoute, woUpdateRoute]) {
+      const allowedFieldsBlock = route.match(/const allowedFields = \[([\s\S]*?)\];/)?.[1] ?? '';
+      expect(allowedFieldsBlock).not.toBe('');
+      for (const field of snapshotFields) expect(allowedFieldsBlock).not.toContain(field);
+    }
   });
 
   it('batch-resolves due-schedule locations before generating PM work orders', () => {

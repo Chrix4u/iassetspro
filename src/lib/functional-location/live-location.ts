@@ -28,8 +28,13 @@ type PathNode = {
   locationCode: string;
 };
 
-function normalizeAssetIds(assetIds: string[]): string[] {
-  return [...new Set(assetIds.map((id) => id.trim()).filter(Boolean))];
+function normalizeAssetIds(assetIds: Array<string | null | undefined>): string[] {
+  const normalized = assetIds.flatMap((id) => {
+    if (typeof id !== 'string') return [];
+    const value = id.trim();
+    return value ? [value] : [];
+  });
+  return [...new Set(normalized)];
 }
 
 function compactPathSegments(values: Array<string | null | undefined>): string[] {
@@ -72,7 +77,7 @@ function buildStructuredPath(locationId: string, nodesById: Map<string, PathNode
 }
 
 export async function getAssetLiveLocationMap(
-  assetIds: string[],
+  assetIds: Array<string | null | undefined>,
 ): Promise<Map<string, AssetLiveLocationProjection | null>> {
   const ids = normalizeAssetIds(assetIds);
   if (ids.length === 0) return new Map();

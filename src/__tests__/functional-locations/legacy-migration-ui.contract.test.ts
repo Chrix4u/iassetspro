@@ -26,6 +26,7 @@ describe('legacy functional-location migration UI', () => {
     expect(dialog).toContain('previewFingerprint');
     expect(dialog).toContain("IMPORT READY LEGACY LOCATIONS");
     expect(dialog).toContain('setPreview(null)');
+    expect(dialog).toContain("runPreview(undefined, '__all__', true)");
   });
 
   it('shows ready, blocked, already-assigned and node-create/reuse counts before execution', () => {

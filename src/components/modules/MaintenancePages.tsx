@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api, hasClientAuthToken } from '@/lib/api';
-import type { MaintenanceRequest as BaseMaintenanceRequest, WorkOrder as BaseWorkOrder, WOTimeLog as BaseWOTimeLog, WOComment as BaseWOComment, WOTeamMember, PersonalTool, User, PageName, DashboardStats } from '@/types';
+import type { MaintenanceRequest as BaseMaintenanceRequest, WorkOrder as BaseWorkOrder, WOTimeLog as BaseWOTimeLog, WOComment as BaseWOComment, WOTeamMember, PersonalTool, User, PageName, DashboardStats, FunctionalLocationProjection } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,6 +62,7 @@ import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/compo
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { formatFunctionalLocationDisplay } from '@/lib/functional-location/display';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
@@ -105,6 +106,7 @@ type MaintenanceAssetSummary = {
   name: string;
   assetTag?: string | null;
   location?: string | null;
+  functionalLocation?: FunctionalLocationProjection | null;
   criticality?: string | null;
 };
 
@@ -1535,12 +1537,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-semibold">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-blue-600 font-medium uppercase">Asset Location</p>
-                  <p className="text-sm font-semibold">{(mr as any).asset?.location || '-'}</p>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Functional Location</p>
+                  <p className="text-sm font-semibold">{formatFunctionalLocationDisplay(mr.asset).path}</p>
                 </div>
+                {formatFunctionalLocationDisplay(mr.asset).code && (
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Location Code</p>
+                    <p className="text-sm font-semibold font-mono">{formatFunctionalLocationDisplay(mr.asset).code}</p>
+                  </div>
+                )}
                 {mr.location && (
                   <div>
-                    <p className="text-[11px] text-blue-600 font-medium uppercase">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Reported Location</p>
                     <p className="text-sm font-semibold">{mr.location}</p>
                   </div>
                 )}
@@ -1799,12 +1807,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <p className="text-sm font-bold text-blue-900 mt-0.5">{(mr as any).department?.name || mr.requester?.department || '-'}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Asset Location</p>
-                  <p className="text-sm font-bold text-blue-900 mt-0.5">{(mr as any).asset?.location || '-'}</p>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Functional Location</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{formatFunctionalLocationDisplay(mr.asset).path}</p>
                 </div>
+                {formatFunctionalLocationDisplay(mr.asset).code && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Location Code</p>
+                    <p className="text-sm font-bold font-mono text-blue-900 mt-0.5">{formatFunctionalLocationDisplay(mr.asset).code}</p>
+                  </div>
+                )}
                 {mr.location && (
                   <div>
-                    <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">{(mr as any).asset?.location ? 'Reported Location' : 'Location'}</p>
+                    <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Reported Location</p>
                     <p className="text-sm font-bold text-blue-900 mt-0.5">{mr.location}</p>
                   </div>
                 )}
@@ -2114,8 +2128,14 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
               <Separator />
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Department</span><span className="font-medium text-right">{(mr as any).department?.name || mr.requester?.department || '-'}</span></div>
               <Separator />
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">{(mr as any).asset?.location ? 'Asset Location' : 'Location'}</span><span className="font-medium text-right">{(mr as any).asset?.location || mr.location || '-'}</span></div>
-              {(mr as any).asset?.location && mr.location && (
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Functional Location</span><span className="font-medium text-right">{formatFunctionalLocationDisplay(mr.asset).path}</span></div>
+              {formatFunctionalLocationDisplay(mr.asset).code && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{formatFunctionalLocationDisplay(mr.asset).code}</span></div>
+                </>
+              )}
+              {mr.location && (
                 <>
                   <Separator />
                   <div className="flex justify-between gap-4"><span className="text-muted-foreground">Reported Location</span><span className="font-medium text-right">{mr.location}</span></div>
@@ -7431,8 +7451,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-medium capitalize">{wo.type.replace('_', ' ')}</span></div>
               <Separator />
-              {assetsEnabled && <><div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
-              <Separator /></>}
+              {assetsEnabled && <>
+                <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.asset?.name || wo.assetName || '-'}</span></div>
+                <Separator />
+                <div className="flex justify-between gap-4"><span className="text-muted-foreground">Functional Location</span><span className="font-medium text-right">{formatFunctionalLocationDisplay(wo.asset).path}</span></div>
+                {formatFunctionalLocationDisplay(wo.asset).code && <><Separator /><div className="flex justify-between gap-4"><span className="text-muted-foreground">Location Code</span><span className="font-medium font-mono text-right">{formatFunctionalLocationDisplay(wo.asset).code}</span></div></>}
+                <Separator />
+              </>}
               <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || ((wo.teamMembers?.length ?? 0) > 0 ? `Team (${(wo.teamMembers?.length ?? 0)} member${(wo.teamMembers?.length ?? 0) !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
@@ -8540,6 +8565,10 @@ export function PmSchedulesPage() {
                 <Badge variant="outline">{viewItem.isActive ? 'Active' : 'Inactive'}</Badge>
               </div>
               <div className="mt-3"><p className="text-xs uppercase tracking-wide text-muted-foreground">PM Target</p><p className="mt-1 text-sm break-words">{viewItem.component ? `${String(viewItem.component.componentType || 'component').replace(/_/g, ' ')} · ${viewItem.component.componentCode || viewItem.component.name} · ${viewItem.component.name}` : 'Whole machine'}</p></div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Functional Location</p><p className="mt-1 text-sm font-medium break-words">{formatFunctionalLocationDisplay(viewItem.asset).path}</p></div>
+                {formatFunctionalLocationDisplay(viewItem.asset).code && <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Location Code</p><p className="mt-1 text-sm font-medium font-mono break-words">{formatFunctionalLocationDisplay(viewItem.asset).code}</p></div>}
+              </div>
             </div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Template</p><p className="mt-1 text-sm font-medium">{viewItem.template?.title || 'No template'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Frequency</p><p className="mt-1 text-sm font-medium">{freqLabel(viewItem.frequencyType, viewItem.frequencyValue)}</p></div>

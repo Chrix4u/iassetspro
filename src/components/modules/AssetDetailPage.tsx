@@ -56,6 +56,7 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
 export function AssetDetailPage({ id }: { id: string }) {
   const { hasPermission, isAdmin } = useAuthStore();
   const pageParams = useNavigationStore((state) => state.pageParams);
+  const canViewFunctionalLocations = isAdmin() || hasPermission('assets.functional_locations.view');
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
@@ -63,6 +64,8 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   const [activeTab, setActiveTab] = useState('overview');
   const [asset, setAsset] = useState<any>(null);
+  const [functionalLocationData, setFunctionalLocationData] = useState<any>(null);
+  const [functionalLocationPath, setFunctionalLocationPath] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [bomItems, setBomItems] = useState<any[]>([]);
   const [bomAsChild, setBomAsChild] = useState<any[]>([]);
@@ -143,6 +146,31 @@ export function AssetDetailPage({ id }: { id: string }) {
     };
   }, [id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setFunctionalLocationData(null);
+    setFunctionalLocationPath([]);
+    if (!canViewFunctionalLocations) return () => { cancelled = true; };
+
+    api.get<any>(`/api/assets/${id}/functional-locations`).then(async (res) => {
+      if (cancelled || !res.success || !res.data) return;
+      setFunctionalLocationData(res.data);
+      const primary = res.data.primary;
+      if (!primary?.functionalLocation?.id) return;
+      try {
+        const pathRes = await api.get<any[]>(`/api/functional-locations/${primary.functionalLocation.id}/path`);
+        if (!cancelled && pathRes.success && Array.isArray(pathRes.data)) setFunctionalLocationPath(pathRes.data);
+      } catch { /* use the selected location itself when breadcrumb lookup is unavailable */ }
+    }).catch(() => {
+      if (!cancelled) {
+        setFunctionalLocationData(null);
+        setFunctionalLocationPath([]);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [id, canViewFunctionalLocations]);
+
   // Report and search drill-throughs can deep-link directly to a component.
   // Keep the side-sheet asset experience, but open Visual Explorer already focused
   // on the requested assembly/component/part.
@@ -171,19 +199,19 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Reload components
   const reloadComponents = useCallback(() => {
-    api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
+    return api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
       if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, [id]);
 
   const reloadInventoryItems = useCallback(() => {
-    api.get('/api/inventory?mode=lookup&status=available&limit=100').then(res => {
+    return api.get('/api/inventory?mode=lookup&status=available&limit=100').then(res => {
       if (res.success && res.data) setInventoryItems(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, []);
 
   const reloadToolOptions = useCallback(() => {
-    api.get('/api/tools?mode=lookup&limit=100').then(res => {
+    return api.get('/api/tools?mode=lookup&limit=100').then(res => {
       if (res.success && res.data) setToolOptions(Array.isArray(res.data) ? res.data : []);
       else setToolOptions([]);
     }).catch(() => setToolOptions([]));
@@ -216,7 +244,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Reload digital twin
   const reloadTwin = useCallback(() => {
-    api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
+    return api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
       if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
         setTwin(res.data[0]);
       }
@@ -225,7 +253,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Reload diagrams
   const reloadDiagrams = useCallback(() => {
-    api.get(`/api/system-diagrams?assetId=${id}&limit=100`).then(res => {
+    return api.get(`/api/system-diagrams?assetId=${id}&limit=100`).then(res => {
       if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, [id]);
@@ -590,14 +618,16 @@ export function AssetDetailPage({ id }: { id: string }) {
   const statusColors: Record<string, string> = { operational: 'bg-emerald-100 text-emerald-700 border-emerald-200', under_maintenance: 'bg-amber-100 text-amber-700 border-amber-200', standby: 'bg-sky-100 text-sky-700 border-sky-200', decommissioned: 'bg-slate-100 text-slate-600 border-slate-200', disposed: 'bg-red-100 text-red-600 border-red-200' };
   const criticalityColors: Record<string, string> = { low: 'bg-slate-100 text-slate-600 border-slate-200', medium: 'bg-sky-100 text-sky-700 border-sky-200', high: 'bg-amber-100 text-amber-700 border-amber-200', critical: 'bg-red-100 text-red-700 border-red-200' };
   const condColors: Record<string, string> = { new: 'bg-emerald-100 text-emerald-700 border-emerald-200', good: 'bg-emerald-100 text-emerald-700 border-emerald-200', fair: 'bg-amber-100 text-amber-700 border-amber-200', poor: 'bg-red-100 text-red-700 border-red-200', out_of_service: 'bg-red-100 text-red-800 border-red-300' };
-  const hasHierarchy = asset.parent || (asset.children && asset.children.length > 0);
+  const hasEquipmentHierarchy = asset.parent || (asset.children && asset.children.length > 0);
+  const primaryFunctionalLocation = functionalLocationData?.primary?.functionalLocation || null;
+  const legacyLocationParts = Array.from(new Set([asset.plant?.name, asset.department?.name, asset.area, asset.building, asset.floor, asset.location].filter(Boolean)));
   const hasIoT = asset.iotDevices && asset.iotDevices.length > 0;
   const hasMR = asset.maintenanceRequests && asset.maintenanceRequests.length > 0;
   const hasWO = asset.workOrders && asset.workOrders.length > 0;
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Building2 },
-    { id: 'hierarchy', label: 'Hierarchy', icon: GitBranch, badge: hasHierarchy ? asset.children.length + 1 : 0 },
+    { id: 'hierarchy', label: 'Hierarchy', icon: GitBranch, badge: hasEquipmentHierarchy ? (asset.children?.length || 0) + (asset.parent ? 1 : 0) : 0 },
     { id: 'bom', label: 'BOM', icon: Layers },
     { id: 'components', label: 'Components', icon: Cpu, badge: components.length || 0 },
     { id: 'visual-explorer', label: 'Visual Explorer', icon: Monitor },
@@ -680,6 +710,21 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-600" />Installed At / Asset Path</CardTitle></CardHeader>
+                <CardContent>
+                  {primaryFunctionalLocation ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        {(functionalLocationPath.length > 0 ? functionalLocationPath : [primaryFunctionalLocation]).map((item: any, index: number, items: any[]) => <React.Fragment key={item.id}><span className="break-words">{item.locationCode ? `${item.locationCode} · ${item.name}` : item.name}</span>{index < items.length - 1 && <ChevronRight className="h-3 w-3 shrink-0" />}</React.Fragment>)}
+                      </div>
+                    </div>
+                  ) : legacyLocationParts.length > 0 ? (
+                    <div className="space-y-2"><Badge variant="secondary">Legacy location</Badge><div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">{legacyLocationParts.map((part: any, index: number) => <React.Fragment key={`${part}-${index}`}><span>{part}</span>{index < legacyLocationParts.length - 1 && <ChevronRight className="h-3 w-3 shrink-0" />}</React.Fragment>)}</div></div>
+                  ) : <p className="text-sm text-muted-foreground">No functional location has been assigned yet.</p>}
+                </CardContent>
+              </Card>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Details</CardTitle></CardHeader>
@@ -725,12 +770,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                 </Card>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {hasHierarchy && (
-                  <button onClick={() => setActiveTab('hierarchy')} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
-                    <GitBranch className="h-4 w-4 text-muted-foreground" />
-                    <div><p className="text-xs font-medium">Hierarchy</p><p className="text-[10px] text-muted-foreground">{asset.children.length} child(ren)</p></div>
-                  </button>
-                )}
+                <button onClick={() => setActiveTab('hierarchy')} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
+                  <GitBranch className="h-4 w-4 text-muted-foreground" />
+                  <div><p className="text-xs font-medium">Hierarchy</p><p className="text-[10px] text-muted-foreground">Location, equipment & machine</p></div>
+                </button>
                 <button onClick={() => setActiveTab('bom')} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
                   <Layers className="h-4 w-4 text-muted-foreground" />
                   <div><p className="text-xs font-medium">BOM</p><p className="text-[10px] text-muted-foreground">View components</p></div>
@@ -780,65 +823,38 @@ export function AssetDetailPage({ id }: { id: string }) {
 
             {/* ==================== HIERARCHY TAB ==================== */}
             <TabsContent value="hierarchy" className="mt-4 space-y-4">
-              {!hasHierarchy ? (
-                <EmptyTab icon={GitBranch} title="No Hierarchy" description="This asset is not part of a hierarchy. Set a Parent Asset or add child assets to build the structure." />
-              ) : (
-                <>
-                  {asset.parent && (
-                    <Card className="border-0 shadow-sm">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          <span className="h-5 w-5 rounded bg-amber-100 flex items-center justify-center"><ChevronRight className="h-3 w-3 text-amber-700 -rotate-90" /></span>
-                          Parent Asset
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                          <Building2 className="h-5 w-5 text-muted-foreground" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{asset.parent.name}</p>
-                            <p className="text-xs text-muted-foreground">{asset.parent.assetTag} · {(asset.parent.status || '').replace(/_/g, ' ')}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                  <Card className="border-0 shadow-sm border-l-4 border-l-primary">
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center"><Building2 className="h-4 w-4 text-primary" /></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{asset.name}</p>
-                          <p className="text-xs text-muted-foreground">{asset.assetTag} · {asset.category?.name}</p>
-                        </div>
-                        <Badge variant="outline" className="text-[10px]">Current</Badge>
-                      </div>
-                    </CardContent>
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-600" />Installed At / Asset Path</CardTitle><CardDescription>Functional location answers where this equipment is installed.</CardDescription></CardHeader>
+                <CardContent>
+                  {primaryFunctionalLocation ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">{(functionalLocationPath.length > 0 ? functionalLocationPath : [primaryFunctionalLocation]).map((item: any, index: number, items: any[]) => <React.Fragment key={item.id}><span>{item.locationCode ? `${item.locationCode} · ${item.name}` : item.name}</span>{index < items.length - 1 && <ChevronRight className="h-3 w-3" />}</React.Fragment>)}</div>
+                    </div>
+                  ) : legacyLocationParts.length > 0 ? (
+                    <div className="space-y-2"><Badge variant="secondary">Legacy location</Badge><p className="text-sm text-muted-foreground">{legacyLocationParts.join(' › ')}</p></div>
+                  ) : <p className="text-sm text-muted-foreground">No structured functional location is assigned to this asset yet.</p>}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-2">
+                <div><h3 className="text-sm font-semibold">Equipment Structure</h3><p className="text-xs text-muted-foreground">Maintainable Parent Asset / Child Asset relationships. This is separate from the machine's internal components.</p></div>
+                {asset.parent && (
+                  <Card className="border-0 shadow-sm">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">Parent Asset</CardTitle></CardHeader>
+                    <CardContent><div className="flex items-center gap-3 rounded-lg bg-muted/50 p-2"><Building2 className="h-5 w-5 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{asset.parent.name}</p><p className="text-xs text-muted-foreground">{asset.parent.assetTag} · {(asset.parent.status || '').replace(/_/g, ' ')}</p></div></div></CardContent>
                   </Card>
-                  {asset.children && asset.children.length > 0 && (
-                    <Card className="border-0 shadow-sm">
-                      <CardHeader className="pb-2"><CardTitle className="text-sm">Child Assets ({asset.children.length})</CardTitle></CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {asset.children.map((child: any) => (
-                            <div key={child.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                              <Building2 className="h-4 w-4 text-muted-foreground ml-4" />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">{child.name}</p>
-                                <p className="text-xs text-muted-foreground">{child.assetTag} · {child.category?.name || 'N/A'}</p>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <Badge variant="outline" className={`text-[9px] capitalize ${statusColors[child.status] || ''}`}>{(child.status || '').replace(/_/g, ' ')}</Badge>
-                                <Badge variant="outline" className={`text-[9px] capitalize ${condColors[child.condition] || ''}`}>{child.condition || '-'}</Badge>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-                </>
-              )}
+                )}
+                <Card className="border-0 border-l-4 border-l-primary shadow-sm"><CardContent className="p-3"><div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10"><Building2 className="h-4 w-4 text-primary" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{asset.name}</p><p className="text-xs text-muted-foreground">{asset.assetTag} · {asset.category?.name}</p></div><Badge variant="outline" className="text-[10px]">Current</Badge></div></CardContent></Card>
+                {asset.children?.length > 0 ? (
+                  <Card className="border-0 shadow-sm"><CardHeader className="pb-2"><CardTitle className="text-sm">Child Assets ({asset.children.length})</CardTitle></CardHeader><CardContent><div className="space-y-2">{asset.children.map((child: any) => <div key={child.id} className="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/50"><Building2 className="ml-4 h-4 w-4 text-muted-foreground" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{child.name}</p><p className="text-xs text-muted-foreground">{child.assetTag} · {child.category?.name || 'N/A'}</p></div><div className="flex items-center gap-1.5"><Badge variant="outline" className={`text-[9px] capitalize ${statusColors[child.status] || ''}`}>{(child.status || '').replace(/_/g, ' ')}</Badge><Badge variant="outline" className={`text-[9px] capitalize ${condColors[child.condition] || ''}`}>{child.condition || '-'}</Badge></div></div>)}</div></CardContent></Card>
+                ) : !asset.parent ? <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No Parent Asset / Child Asset links are configured. This does not mean the machine has no internal hierarchy.</p> : null}
+              </div>
+
+              <div className="space-y-2">
+                <div><h3 className="text-sm font-semibold">Machine Structure</h3><p className="text-xs text-muted-foreground">Internal Component Registry hierarchy: assembly → subassembly → component → part.</p></div>
+                <HierarchyCommissioningPanel assetId={id} />
+              </div>
             </TabsContent>
 
             {/* ==================== BOM TAB ==================== */}

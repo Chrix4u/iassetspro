@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 import {
   getMaintenanceApproverEligibility,
@@ -46,7 +47,6 @@ export async function GET(request: NextRequest) {
     }
     if (priority) where.priority = priority;
     if (category) where.category = category;
-    if (search) where.title = { contains: search };
 
     if (!hasViewAll) {
       where.requestedBy = session.userId;
@@ -75,6 +75,18 @@ export async function GET(request: NextRequest) {
 
     if (plantScope) applyPlantScope(where, plantScope);
 
+    if (search) {
+      const locationAssetIds = await findAssetIdsByLiveLocationSearch(search);
+      where.AND = [{
+        OR: [
+          { title: { contains: search } },
+          { requestNumber: { contains: search } },
+          { assetName: { contains: search } },
+          { assetId: { in: locationAssetIds } },
+        ],
+      }];
+    }
+
     const [requests, total] = await Promise.all([
       db.maintenanceRequest.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
@@ -95,9 +107,18 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    const assetIds = [...new Set(requests.map((row) => row.asset?.id || row.assetId).filter((id): id is string => Boolean(id)))];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
+    const enrichedRequests = requests.map((row) => ({
+      ...row,
+      asset: row.asset
+        ? { ...row.asset, functionalLocation: liveLocations.get(row.asset.id) ?? null }
+        : row.asset,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: requests,
+      data: enrichedRequests,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error: unknown) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
@@ -49,7 +50,17 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json({ success: true, data: schedule });
+    const liveLocations = await getAssetLiveLocationMap([schedule.asset.id]);
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...schedule,
+        asset: {
+          ...schedule.asset,
+          functionalLocation: liveLocations.get(schedule.asset.id) ?? null,
+        },
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load PM schedule';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
@@ -382,6 +383,40 @@ export async function GET(
 
     if (!wo.workOrderComponents) {
       (wo as Record<string, unknown>).workOrderComponents = [];
+    }
+
+    if (!unavailableModules.has('assets')) {
+      const maintenanceAssetId = wo.maintenanceRequest?.asset?.id || null;
+      const liveAssetIds = [...new Set([wo.assetId, maintenanceAssetId].filter((assetId): assetId is string => Boolean(assetId)))];
+      const [directAsset, liveLocations] = await Promise.all([
+        wo.assetId
+          ? db.asset.findUnique({
+              where: { id: wo.assetId },
+              select: {
+                id: true,
+                name: true,
+                assetTag: true,
+                serialNumber: true,
+                status: true,
+                criticality: true,
+              },
+            })
+          : Promise.resolve(null),
+        getAssetLiveLocationMap(liveAssetIds),
+      ]);
+
+      (wo as Record<string, unknown>).asset = directAsset
+        ? { ...directAsset, functionalLocation: liveLocations.get(directAsset.id) ?? null }
+        : null;
+      if (wo.maintenanceRequest?.asset) {
+        const requestAsset = wo.maintenanceRequest.asset;
+        (wo.maintenanceRequest as Record<string, unknown>).asset = {
+          ...requestAsset,
+          functionalLocation: liveLocations.get(requestAsset.id) ?? null,
+        };
+      }
+    } else {
+      (wo as Record<string, unknown>).asset = null;
     }
 
     return NextResponse.json({ success: true, data: wo });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { Prisma } from '@prisma/client';
 
 // Helper: generate WO number WO-YYYYMM-NNNN (must be called inside a transaction)
@@ -59,9 +60,6 @@ export async function GET(request: NextRequest) {
     }
     if (priority) where.priority = priority;
     if (type) where.type = type;
-    if (search) {
-      where.title = { contains: search };
-    }
     if (overdue === 'true') {
       where.plannedEnd = { lt: new Date() };
       where.status = { notIn: ['completed', 'verified', 'closed', 'cancelled'] };
@@ -114,6 +112,18 @@ export async function GET(request: NextRequest) {
       applyPlantScope(where, plantScope);
     }
 
+    if (search) {
+      const locationAssetIds = await findAssetIdsByLiveLocationSearch(search);
+      where.AND = [{
+        OR: [
+          { title: { contains: search } },
+          { woNumber: { contains: search } },
+          { assetName: { contains: search } },
+          { assetId: { in: locationAssetIds } },
+        ],
+      }];
+    }
+
     const [workOrders, total] = await Promise.all([
       db.workOrder.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
@@ -148,9 +158,35 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    const assetIds = [...new Set(workOrders.map((row) => row.assetId).filter((id): id is string => Boolean(id)))];
+    const assetRows = assetIds.length > 0
+      ? await db.asset.findMany({
+          where: { id: { in: assetIds } },
+          select: {
+            id: true,
+            name: true,
+            assetTag: true,
+            serialNumber: true,
+            status: true,
+            criticality: true,
+          },
+        })
+      : [];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
+    const assetById = new Map(assetRows.map((asset) => [asset.id, asset]));
+    const enrichedWorkOrders = workOrders.map((row) => {
+      const asset = row.assetId ? assetById.get(row.assetId) : null;
+      return {
+        ...row,
+        asset: asset
+          ? { ...asset, functionalLocation: liveLocations.get(asset.id) ?? null }
+          : null,
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      data: workOrders,
+      data: enrichedWorkOrders,
       pagination: {
         page,
         limit,

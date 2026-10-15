@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { calculateNextDueDate, isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
@@ -17,6 +18,7 @@ export async function GET(request: NextRequest) {
     const componentId = searchParams.get('componentId');
     const isActive = searchParams.get('isActive');
     const dueSoon = searchParams.get('dueSoon');
+    const search = searchParams.get('search');
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     // PmSchedule has no direct plantId — scope through the related Asset's plantId.
@@ -50,6 +52,16 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    if (search) {
+      const locationAssetIds = await findAssetIdsByLiveLocationSearch(search);
+      where.AND = [{
+        OR: [
+          { title: { contains: search } },
+          { assetId: { in: locationAssetIds } },
+        ],
+      }];
+    }
+
     const schedules = await db.pmSchedule.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,
       include: {
@@ -67,7 +79,16 @@ export async function GET(request: NextRequest) {
       orderBy: { nextDueDate: 'asc' },
     });
 
-    return NextResponse.json({ success: true, data: schedules });
+    const assetIds = [...new Set(schedules.map((schedule) => schedule.asset?.id || schedule.assetId).filter((id): id is string => Boolean(id)))];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
+    const enrichedSchedules = schedules.map((schedule) => ({
+      ...schedule,
+      asset: schedule.asset
+        ? { ...schedule.asset, functionalLocation: liveLocations.get(schedule.asset.id) ?? null }
+        : schedule.asset,
+    }));
+
+    return NextResponse.json({ success: true, data: enrichedSchedules });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load PM schedules';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

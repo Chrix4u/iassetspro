@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { authorizeMaintenanceRequestPlant } from '@/lib/plant-auth-helpers';
 import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
@@ -90,7 +91,14 @@ export async function GET(
         })
       : null;
 
-    return NextResponse.json({ success: true, data: { ...mr, department } });
+    const liveLocations = mr.asset?.id
+      ? await getAssetLiveLocationMap([mr.asset.id])
+      : new Map();
+    const asset = mr.asset
+      ? { ...mr.asset, functionalLocation: liveLocations.get(mr.asset.id) ?? null }
+      : mr.asset;
+
+    return NextResponse.json({ success: true, data: { ...mr, asset, department } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

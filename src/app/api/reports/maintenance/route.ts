@@ -4,6 +4,10 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
+import {
+  getAssetIdsInFunctionalLocationSubtree,
+  getAssetLiveLocationMap,
+} from '@/lib/functional-location/live-location';
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,6 +29,7 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority');
     const tradeActivity = searchParams.get('tradeActivity');
     const assetId = searchParams.get('assetId');
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
@@ -42,7 +47,14 @@ export async function GET(request: NextRequest) {
     if (plantId && !plantScope.isScoped) baseFilter.plantId = plantId;
     if (priority) baseFilter.priority = priority;
     if (tradeActivity) baseFilter.tradeActivity = tradeActivity;
-    if (assetId) baseFilter.assetId = assetId;
+    if (functionalLocationId) {
+      const locationAssetIds = await getAssetIdsInFunctionalLocationSubtree(functionalLocationId);
+      baseFilter.assetId = assetId
+        ? (locationAssetIds.includes(assetId) ? assetId : { in: [] })
+        : { in: locationAssetIds };
+    } else if (assetId) {
+      baseFilter.assetId = assetId;
+    }
     if (moduleFilter === 'repairs') {
       (baseFilter as Record<string, unknown>).type = { in: ['breakdown', 'corrective', 'emergency', 'predictive'] };
     } else if (moduleFilter === 'pm') {
@@ -80,6 +92,7 @@ export async function GET(request: NextRequest) {
       where: { id: { in: assetIds } },
       include: { category: { select: { name: true } } },
     }) : [];
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
     const assetMap = new Map(assets.map(a => [a.id, a]));
 
     // Fetch enriched inventory item data for all referenced materials
@@ -95,6 +108,8 @@ export async function GET(request: NextRequest) {
     // Helper: get enriched asset details from a work order
     function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
       const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
+      const liveLocation = wo.assetId ? liveLocations.get(wo.assetId) ?? null : null;
+      const preferredLocation = liveLocation?.path || asset?.location || null;
       return {
         assetId: wo.assetId || null,
         assetName: asset?.name || (wo.assetName && wo.assetName !== 'Unassigned' ? wo.assetName : null) || 'Unassigned',
@@ -105,7 +120,10 @@ export async function GET(request: NextRequest) {
         category: asset?.category?.name || null,
         criticality: asset?.criticality || null,
         condition: asset?.condition || null,
-        location: asset?.location || null,
+        location: preferredLocation,
+        functionalLocationCode: liveLocation?.locationCode ?? null,
+        functionalLocationPath: liveLocation?.path || preferredLocation,
+        functionalLocationPathCode: liveLocation?.pathCode || preferredLocation,
         building: asset?.building || null,
         floor: asset?.floor || null,
         area: asset?.area || null,

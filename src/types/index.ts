@@ -501,10 +501,20 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface FunctionalLocationProjection {
+  id: string | null;
+  name: string | null;
+  locationCode: string | null;
+  path: string;
+  pathCode: string;
+  source: 'structured' | 'legacy';
+  legacyPath: string | null;
+}
+
 // Asset Categories & Assets
 export interface AssetCategory { id: string; name: string; code: string; description?: string; parentId?: string; isActive: boolean; createdAt: string; updatedAt: string; parent?: AssetCategory; children?: AssetCategory[]; _count?: { assets: number }; }
 
-export interface Asset { id: string; name: string; assetTag: string; description?: string; categoryId?: string; serialNumber?: string; manufacturer?: string; model?: string; yearManufactured?: number; condition: string; status: string; criticality: string; location?: string; building?: string; floor?: string; area?: string; plantId?: string; departmentId?: string; purchaseDate?: string; purchaseCost?: number; warrantyExpiry?: string; installedDate?: string; expectedLifeYears?: number; currentValue?: number; depreciationRate?: number; imageUrl?: string; parentId?: string; isActive: boolean; createdById?: string; assignedToId?: string; createdAt: string; updatedAt: string; category?: AssetCategory; plant?: { id: string; name: string; code: string }; department?: { id: string; name: string; code: string }; assignedTo?: { id: string; fullName: string; username: string }[]; pmSchedules?: any[]; }
+export interface Asset { id: string; name: string; assetTag: string; description?: string; categoryId?: string; serialNumber?: string; manufacturer?: string; model?: string; yearManufactured?: number; condition: string; status: string; criticality: string; location?: string; building?: string; floor?: string; area?: string; plantId?: string; departmentId?: string; purchaseDate?: string; purchaseCost?: number; warrantyExpiry?: string; installedDate?: string; expectedLifeYears?: number; currentValue?: number; depreciationRate?: number; imageUrl?: string; parentId?: string; isActive: boolean; createdById?: string; assignedToId?: string; createdAt: string; updatedAt: string; category?: AssetCategory; plant?: { id: string; name: string; code: string }; department?: { id: string; name: string; code: string }; assignedTo?: { id: string; fullName: string; username: string }[]; pmSchedules?: any[]; functionalLocation?: FunctionalLocationProjection | null; }
 
 export interface InventoryItem { id: string; itemCode: string; name: string; description?: string; category: string; unitOfMeasure: string; currentStock: number; minStockLevel: number; maxStockLevel?: number; reorderQuantity?: number; unitCost?: number; supplier?: string; supplierPartNumber?: string; location?: string; binLocation?: string; shelfLocation?: string; plantId?: string; isActive: boolean; createdById?: string; createdAt: string; updatedAt: string; plant?: { id: string; name: string }; stockMovements?: any[]; }
 

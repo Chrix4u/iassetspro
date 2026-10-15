@@ -7,12 +7,6 @@ import { api } from '@/lib/api'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-type HierarchySystem = {
-  id: string
-  name: string
-  isPrimary?: boolean
-}
-
 type FunctionalLocation = {
   id: string
   name: string
@@ -60,37 +54,14 @@ export function FunctionalLocationPicker({
   placeholder = 'Select functional location',
   className,
 }: FunctionalLocationPickerProps) {
-  const [systems, setSystems] = useState<HierarchySystem[]>([])
-  const [resolvedSystemId, setResolvedSystemId] = useState(hierarchySystemId || '')
   const [locations, setLocations] = useState<FunctionalLocation[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (hierarchySystemId) {
-      setResolvedSystemId(hierarchySystemId)
-      return
-    }
-
-    let cancelled = false
-    api.get<HierarchySystem[]>('/api/hierarchy-systems').then(res => {
-      if (cancelled || !res.success || !Array.isArray(res.data)) return
-      setSystems(res.data)
-      const primary = res.data.find(system => system.isPrimary) || res.data[0]
-      setResolvedSystemId(primary?.id || '')
-    }).catch(() => undefined)
-
-    return () => { cancelled = true }
-  }, [hierarchySystemId])
-
-  useEffect(() => {
-    if (!resolvedSystemId) {
-      setLocations([])
-      return
-    }
-
     let cancelled = false
     setLoading(true)
-    const params = new URLSearchParams({ hierarchySystemId: resolvedSystemId, status: 'active' })
+    const params = new URLSearchParams({ status: 'active' })
+    if (hierarchySystemId) params.set('hierarchySystemId', hierarchySystemId)
     if (plantId) params.set('plantId', plantId)
 
     api.get<FunctionalLocation[]>(`/api/functional-locations?${params.toString()}`).then(res => {
@@ -102,7 +73,7 @@ export function FunctionalLocationPicker({
     })
 
     return () => { cancelled = true }
-  }, [plantId, resolvedSystemId])
+  }, [hierarchySystemId, plantId])
 
   const options = useMemo(() => {
     const byId = new Map(locations.map(location => [location.id, location]))
@@ -116,16 +87,14 @@ export function FunctionalLocationPicker({
       .sort((a, b) => a.locationCode.localeCompare(b.locationCode))
   }, [allowAssetAssignmentOnly, locations, plantId])
 
-  const effectiveDisabled = disabled || loading || !resolvedSystemId
-
   return (
     <div className={className}>
       {label && <Label className="mb-1.5 block">{label}</Label>}
-      <Select value={value || ''} onValueChange={onValueChange} disabled={effectiveDisabled}>
+      <Select value={value || ''} onValueChange={onValueChange} disabled={disabled || loading}>
         <SelectTrigger className="w-full min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <SelectValue placeholder={loading ? 'Loading locations...' : systems.length === 0 && !hierarchySystemId ? 'No hierarchy configured' : placeholder} />
+            <SelectValue placeholder={loading ? 'Loading locations...' : placeholder} />
           </div>
         </SelectTrigger>
         <SelectContent className="max-w-[min(42rem,calc(100vw-2rem))]">

@@ -5,6 +5,9 @@ import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import { csvCell } from '@/lib/csv';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
+import type { WorkOrder, Asset, InventoryItem, MaintenanceRequest } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,7 +73,7 @@ function filterByDateRange<T extends { createdAt?: string | null }>(items: T[], 
 
 // Reusable CSV export helper
 const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
-  const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c ?? '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
+  const csv = '\uFEFF' + [headers.map(csvCell).join(','), ...rows.map(r => r.map(csvCell).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -365,7 +368,7 @@ export function ReportsMaintenancePage() {
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('assets');
-  const [techSort, setTechSort] = useState<'completedCount' | 'avgHoursPerWO' | 'totalHours'>('completedCount');
+  const [techSort, setTechSort] = useState<'assignedCount' | 'completedCount' | 'avgHoursPerWO' | 'totalHours'>('completedCount');
 
   const fetchReport = useCallback(() => {
     setLoading(true);
@@ -3107,9 +3110,9 @@ export function EquipmentHistoryPage() {
                             <Tooltip formatter={(val: number) => formatCurrency(val)} />
                             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                               {[
-                                { name: 'Purchase Cost', fill: '#059669' },
-                                { name: 'Maintenance Cost', fill: '#f59e0b' },
-                                { name: 'Current Value', fill: '#0ea5e9' },
+                                { name: 'Purchase Cost', value: data.tco.purchaseCost, fill: '#059669' },
+                                { name: 'Maintenance Cost', value: data.tco.totalMaintenanceCost, fill: '#f59e0b' },
+                                { name: 'Current Value', value: data.tco.currentValue || 0, fill: '#0ea5e9' },
                               ].filter(d => d.value > 0).map((entry: any, i: number) => <Cell key={i} fill={entry.fill} />)}
                             </Bar>
                           </BarChart>
@@ -3161,16 +3164,19 @@ export function FailureAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [functionalLocationId, setFunctionalLocationId] = useState('');
 
   const fetchData = useCallback(() => {
     setLoading(true);
     setError(null);
-    api.get<any>(`/api/reports/failure-analysis?from=${startDate}&to=${endDate}`).then(res => {
+    const params = new URLSearchParams({ from: startDate, to: endDate });
+    if (functionalLocationId) params.set('functionalLocationId', functionalLocationId);
+    api.get<any>(`/api/reports/failure-analysis?${params.toString()}`).then(res => {
       if (res.success && res.data) setData(res.data);
       else setError(res.error || 'Failed to load data');
       setLoading(false);
     }).catch((err: any) => { setError(err.message || 'Network error'); setLoading(false); });
-  }, [startDate, endDate]);
+  }, [startDate, endDate, functionalLocationId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -3215,13 +3221,13 @@ export function FailureAnalysisPage() {
     (data.byRootCause || []).forEach((d: any) => rows.push([d.cause, String(d.count), String(d.totalDowntimeMinutes), String(d.totalRepairCost), d.correctiveActions.join('; ')]));
     rows.push([]);
     rows.push(['--- By Asset ---']);
-    rows.push(['Asset Name', 'Tag', 'Manufacturer', 'Model', 'Category', 'Criticality', 'Location', 'Failure Count', 'Downtime (min)', 'Repair Cost', 'Dominant Mode', 'Dominant Cause', 'MTBF (days)']);
-    (data.byAsset || []).forEach((d: any) => rows.push([d.assetName, d.assetTag, d.manufacturer, d.model, d.category, d.criticality, d.location, String(d.failureCount), String(d.totalDowntimeMinutes), String(d.totalRepairCost), d.dominantMode, d.dominantCause, String(d.mtbfDays)]));
+    rows.push(['Asset Name', 'Tag', 'Manufacturer', 'Model', 'Category', 'Criticality', 'Location Code', 'Asset Path', 'Failure Count', 'Downtime (min)', 'Repair Cost', 'Dominant Mode', 'Dominant Cause', 'MTBF (days)']);
+    (data.byAsset || []).forEach((d: any) => rows.push([d.assetName, d.assetTag, d.manufacturer, d.model, d.category, d.criticality, d.functionalLocationCode || '', d.functionalLocationPath || d.location || '', String(d.failureCount), String(d.totalDowntimeMinutes), String(d.totalRepairCost), d.dominantMode, d.dominantCause, String(d.mtbfDays)]));
     rows.push([]);
     rows.push(['--- By Component ---']);
     rows.push(['Component', 'Code', 'Asset', 'Failure Count', 'Repair Cost', 'Most Common Mode']);
     (data.byComponent || []).forEach((d: any) => rows.push([d.componentName, d.componentCode, d.assetName, String(d.failureCount), String(d.totalRepairCost), d.mostCommonMode]));
-    exportCSV(`failure-analysis-${startDate}-to-${endDate}`, ['Field1', 'Field2', 'Field3', 'Field4', 'Field5', 'Field6', 'Field7', 'Field8', 'Field9', 'Field10', 'Field11', 'Field12', 'Field13'], rows);
+    exportCSV(`failure-analysis-${startDate}-to-${endDate}`, ['Field1', 'Field2', 'Field3', 'Field4', 'Field5', 'Field6', 'Field7', 'Field8', 'Field9', 'Field10', 'Field11', 'Field12', 'Field13', 'Field14'], rows);
   };
 
   if (!moduleEnabled) {
@@ -3266,6 +3272,17 @@ export function FailureAnalysisPage() {
             <Label className="text-xs mb-1 block">To</Label>
             <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9" />
           </div>
+          <FunctionalLocationPicker
+            value={functionalLocationId}
+            onValueChange={setFunctionalLocationId}
+            allowAssetAssignmentOnly={false}
+            label="Location scope"
+            placeholder="All functional locations"
+            className="min-w-[240px] flex-[1.4]"
+          />
+          {functionalLocationId && (
+            <Button variant="ghost" size="sm" onClick={() => setFunctionalLocationId('')} className="h-9">All locations</Button>
+          )}
           <Button size="sm" onClick={fetchData} disabled={loading} className="h-9">Go</Button>
         </CardContent>
       </Card>
@@ -3478,7 +3495,7 @@ export function FailureAnalysisPage() {
                 <CardContent className="p-0">
                   <div className="max-h-96 overflow-y-auto">
                     <Table>
-                      <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead>Tag</TableHead><TableHead>Manufacturer</TableHead><TableHead>Model</TableHead><TableHead>Category</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Failures</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead>Dominant Mode</TableHead><TableHead>Dominant Cause</TableHead><TableHead className="text-right">MTBF (d)</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead>Tag</TableHead><TableHead>Manufacturer</TableHead><TableHead>Model</TableHead><TableHead>Category</TableHead><TableHead>Criticality</TableHead><TableHead>Installed At</TableHead><TableHead className="text-right">Failures</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead>Dominant Mode</TableHead><TableHead>Dominant Cause</TableHead><TableHead className="text-right">MTBF (d)</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {(data.byAsset || []).map((d: any) => (
                           <TableRow key={d.assetId}>
@@ -3488,6 +3505,7 @@ export function FailureAnalysisPage() {
                             <TableCell>{d.model}</TableCell>
                             <TableCell>{d.category?.name || d.category || '-'}</TableCell>
                             <TableCell><Badge variant="outline" style={{ borderColor: SEVERITY_COLORS[d.criticality], color: SEVERITY_COLORS[d.criticality] }}>{d.criticality}</Badge></TableCell>
+                            <TableCell className="max-w-[22rem] text-xs text-muted-foreground" title={d.functionalLocationPathCode || d.location || undefined}>{d.functionalLocationPathCode || d.location || '-'}</TableCell>
                             <TableCell className="text-right font-medium">{d.failureCount}</TableCell>
                             <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
                             <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>

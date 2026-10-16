@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getAssetIdsInFunctionalLocationSubtree, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 
 // ============================================================================
 // HELPERS
@@ -108,6 +109,9 @@ interface MachineData {
   mfgYear: number | null;
   installYear: number | null;
   machineLife: number | null;
+  functionalLocationCode: string | null;
+  functionalLocationPath: string | null;
+  functionalLocationPathCode: string | null;
   weekly: MachineWeekData[];
   totals: {
     plannedMins: number;
@@ -147,6 +151,7 @@ export async function GET(request: NextRequest) {
     const weekParam = searchParams.get('week');
     const plantIdParam = searchParams.get('plantId');
     const criticalityParam = searchParams.get('criticality');
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const targetYear = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
     const targetWeek = weekParam ? parseInt(weekParam, 10) : null;
@@ -167,6 +172,9 @@ export async function GET(request: NextRequest) {
     };
     if (criticalityParam) {
       assetWhere.criticality = criticalityParam;
+    }
+    if (functionalLocationId) {
+      assetWhere.id = { in: await getAssetIdsInFunctionalLocationSubtree(functionalLocationId) };
     }
 
     const assets = await db.asset.findMany({
@@ -207,6 +215,8 @@ export async function GET(request: NextRequest) {
         },
       });
     }
+
+    const liveLocations = await getAssetLiveLocationMap(assets.map((asset) => asset.id));
 
     // Build asset lookup map
     const assetMap = new Map<string, (typeof assets)[0]>();
@@ -427,6 +437,7 @@ export async function GET(request: NextRequest) {
           ? failureRateValues.reduce((s, v) => s + v, 0) / failureRateValues.length
           : 0;
 
+      const liveLocation = liveLocations.get(asset.id) ?? null;
       machinesData.push({
         assetId: asset.id,
         assetName: asset.name,
@@ -438,6 +449,9 @@ export async function GET(request: NextRequest) {
         mfgYear: asset.yearManufactured,
         installYear,
         machineLife,
+        functionalLocationCode: liveLocation?.locationCode ?? null,
+        functionalLocationPath: liveLocation?.path ?? null,
+        functionalLocationPathCode: liveLocation?.pathCode ?? liveLocation?.path ?? null,
         weekly,
         totals: {
           plannedMins: totalPlanned,

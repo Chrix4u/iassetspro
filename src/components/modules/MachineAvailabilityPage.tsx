@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { api } from '@/lib/api';
+import { csvCell } from '@/lib/csv';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
 
 import {
   ResponsiveContainer,
@@ -87,6 +89,9 @@ interface MachineAvailabilityData {
     mfgYear: number | null;
     installYear: number | null;
     machineLife: number | null;
+    functionalLocationCode: string | null;
+    functionalLocationPath: string | null;
+    functionalLocationPathCode: string | null;
     weekly: Array<{
       week: number;
       plannedMins: number;
@@ -200,13 +205,16 @@ export function MachineAvailabilityPage() {
   const [data, setData] = useState<MachineAvailabilityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [functionalLocationId, setFunctionalLocationId] = useState('');
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [tab, setTab] = useState('machine-details');
 
   // Fetch
   useEffect(() => {
     setLoading(true);
-    api.get<MachineAvailabilityData>(`/api/reports/machine-availability?year=${year}`)
+    const params = new URLSearchParams({ year: String(year) });
+    if (functionalLocationId) params.set('functionalLocationId', functionalLocationId);
+    api.get<MachineAvailabilityData>(`/api/reports/machine-availability?${params.toString()}`)
       .then((res) => {
         if (res.success && res.data) {
           setData(res.data);
@@ -223,7 +231,7 @@ export function MachineAvailabilityPage() {
         toast.error(`Network error: ${err instanceof Error ? err.message : 'Request failed'}`);
       })
       .finally(() => setLoading(false));
-  }, [year]);
+  }, [year, functionalLocationId]);
 
   const weeks = useMemo(() => (data ? data.weeklyKPIs.map((k) => k.week) : []), [data]);
 
@@ -251,7 +259,7 @@ export function MachineAvailabilityPage() {
   const exportCSV = useCallback(() => {
     if (!data || !selectedWeek) return;
     const header = [
-      'Machine Name', 'Code', 'Mfg Year', 'Install Year', 'Life',
+      'Machine Name', 'Code', 'Location Code', 'Asset Path', 'Mfg Year', 'Install Year', 'Life',
       'Planned (min)', 'Stoppages (min)', 'Repair DT (min)', 'Breakdowns',
       'Actual Avail (min)', '% DT', 'Efficiency', 'Weighted Eff',
     ];
@@ -261,6 +269,8 @@ export function MachineAvailabilityPage() {
       rows.push([
         m.assetName,
         m.assetTag,
+        m.functionalLocationCode ?? '',
+        m.functionalLocationPath ?? '',
         String(m.mfgYear ?? ''),
         String(m.installYear ?? ''),
         String(m.machineLife ?? ''),
@@ -274,7 +284,7 @@ export function MachineAvailabilityPage() {
         w ? fmt(w.efficiency) : '',
       ]);
     }
-    const csv = rows.map((r) => r.join(',')).join('\n');
+    const csv = '\uFEFF' + rows.map((r) => r.map(csvCell).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -349,9 +359,22 @@ export function MachineAvailabilityPage() {
             Weekly machine register &mdash; Year {data.year}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto md:flex-row md:items-end">
+          <FunctionalLocationPicker
+            value={functionalLocationId}
+            onValueChange={setFunctionalLocationId}
+            allowAssetAssignmentOnly={false}
+            label="Location scope"
+            placeholder="All functional locations"
+            className="min-w-0 md:w-[24rem]"
+          />
+          {functionalLocationId && (
+            <Button variant="ghost" size="sm" onClick={() => setFunctionalLocationId('')} className="h-10 shrink-0">
+              All locations
+            </Button>
+          )}
           <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-            <SelectTrigger className="w-28">
+            <SelectTrigger className="h-10 w-full md:w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -441,11 +464,12 @@ export function MachineAvailabilityPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[480px] overflow-auto">
-                <table className="w-full min-w-[800px] text-xs">
+                <table className="w-full min-w-[1050px] text-xs">
                   <thead>
                     <tr className="sticky top-0 z-10 bg-background border-b">
                       <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Machine Name</th>
                       <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Code</th>
+                      <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Installed At</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Mfg Year</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Install Year</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Life (yrs)</th>
@@ -471,6 +495,9 @@ export function MachineAvailabilityPage() {
                         >
                           <td className="px-3 py-2 font-medium">{m.assetName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{m.assetTag}</td>
+                          <td className="max-w-[22rem] px-3 py-2 text-muted-foreground" title={m.functionalLocationPathCode || undefined}>
+                            <span className="line-clamp-2">{m.functionalLocationPathCode || '—'}</span>
+                          </td>
                           <td className="px-3 py-2 text-right">{m.mfgYear ?? '—'}</td>
                           <td className="px-3 py-2 text-right">{m.installYear ?? '—'}</td>
                           <td className="px-3 py-2 text-right">{m.machineLife != null ? fmt(m.machineLife, 0) : '—'}</td>
@@ -490,7 +517,7 @@ export function MachineAvailabilityPage() {
                   {selectedWeek && (
                     <tfoot>
                       <tr className="sticky bottom-0 z-10 border-t-2 bg-muted/60 font-semibold">
-                        <td className="px-3 py-2" colSpan={5}>TOTALS / AVERAGES</td>
+                        <td className="px-3 py-2" colSpan={6}>TOTALS / AVERAGES</td>
                         {pmEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.plannedMins ?? 0); }, 0))}</td>}
                         {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.stoppagesMins ?? 0); }, 0))}</td>}
                         {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.repairDowntimeMins ?? 0); }, 0))}</td>}

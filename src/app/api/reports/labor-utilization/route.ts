@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
 
 // GET /api/reports/labor-utilization
 // Per-technician and per-department labor utilization, overtime, skill-based analysis
@@ -20,9 +21,13 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from');
     const to = searchParams.get('to');
     const department = searchParams.get('department');
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
 
     const dateFilter: Record<string, unknown> = {};
     if (from) dateFilter.gte = new Date(from + 'T00:00:00');
@@ -34,6 +39,7 @@ export async function GET(request: NextRequest) {
     };
     if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
     if (department) woWhere.departmentId = department;
+    if (locationScope) woWhere.AND = [locationScope.workOrderFilter];
 
     // Fetch WOs with time logs, assignee, team members
     const workOrders = await db.workOrder.findMany({

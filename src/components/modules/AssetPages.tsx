@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { csvCell } from '@/lib/csv';
 import type { Asset, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,7 @@ import {
   GitBranch, Layers, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
   ChevronRight,
   Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2, Play,
-  FolderOpen, Sparkles, X,
+  FolderOpen, Sparkles, X, Download,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
@@ -71,6 +72,7 @@ export function AssetsPage() {
   const { navigate, pageParams } = useNavigationStore();
   const { hasPermission, isAdmin } = useAuthStore();
   const canAssignFunctionalLocation = isAdmin() || hasPermission('assets.functional_locations.assign');
+  const canExportAssets = hasPermission('assets.export') || isAdmin();
 
   // If navigated here with an asset ID, open detail view
   // If navigated with condition='at_risk', pre-filter to poor/critical condition
@@ -104,7 +106,14 @@ export function AssetsPage() {
 
   const filteredAssets = useMemo(() => {
     return assets.filter(a => {
-      if (searchText) { const q = searchText.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.assetTag.toLowerCase().includes(q)) return false; }
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        const matchesAssetIdentity = a.name.toLowerCase().includes(q) || a.assetTag.toLowerCase().includes(q);
+        const matchesFunctionalLocation =
+          a.functionalLocation?.locationCode?.toLowerCase().includes(q) ||
+          a.functionalLocation?.path?.toLowerCase().includes(q);
+        if (!matchesAssetIdentity && !matchesFunctionalLocation) return false;
+      }
       if (statusFilter !== 'all' && a.status !== statusFilter) return false;
       if (atRiskFilter) {
         if (a.condition !== 'poor' && a.condition !== 'critical' && a.condition !== 'out_of_service') return false;
@@ -113,6 +122,44 @@ export function AssetsPage() {
       return true;
     });
   }, [assets, searchText, statusFilter, conditionFilter, criticalityFilter, atRiskFilter]);
+
+  const handleExportCsv = () => {
+    const headers = [
+      'Asset Tag',
+      'Name',
+      'Category',
+      'Location Code',
+      'Asset Path',
+      'Legacy Location',
+      'Status',
+      'Criticality',
+      'Condition',
+      'Health Score',
+    ];
+    const rows = filteredAssets.map(a => [
+      a.assetTag,
+      a.name,
+      a.category?.name ?? '',
+      a.functionalLocation?.locationCode ?? '',
+      a.functionalLocation?.path ?? '',
+      a.location ?? '',
+      a.status ?? '',
+      a.criticality ?? '',
+      a.condition ?? a.acquisitionCondition ?? '',
+      a.healthScore ?? '',
+    ]);
+    const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `asset-register-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${filteredAssets.length} assets`);
+  };
 
   const stats = useMemo(() => ({
     total: assets.length,
@@ -209,10 +256,19 @@ export function AssetsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Asset Register</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
         </div>
-        {(hasPermission('assets.create') || isAdmin()) && (
+        {((hasPermission('assets.create') || isAdmin()) || canExportAssets) && (
           <div className='flex w-full flex-wrap gap-2 sm:w-auto'>
-            <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
-            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
+            {canExportAssets && (
+              <Button variant='outline' onClick={handleExportCsv} disabled={filteredAssets.length === 0} className='flex-1 sm:flex-none'>
+                <Download className='h-4 w-4 mr-1.5' />Export CSV
+              </Button>
+            )}
+            {(hasPermission('assets.create') || isAdmin()) && (
+              <>
+                <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
+                <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -271,7 +327,7 @@ export function AssetsPage() {
                 <TableHead>Asset Tag</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead className="hidden md:table-cell">Category</TableHead>
-                <TableHead className="hidden lg:table-cell">Location</TableHead>
+                <TableHead className="hidden lg:table-cell">Installed At</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Criticality</TableHead>
                 <TableHead className="hidden xl:table-cell">Condition</TableHead>
@@ -287,7 +343,7 @@ export function AssetsPage() {
                   <TableCell className="font-mono text-xs">{a.assetTag}</TableCell>
                   <TableCell className="font-medium text-sm">{a.name}</TableCell>
                   <TableCell className="text-sm hidden md:table-cell">{a.category?.name || '-'}</TableCell>
-                  <TableCell className="text-sm hidden lg:table-cell">{a.location || '-'}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{a.functionalLocation?.pathCode || a.location || '-'}</TableCell>
                   <TableCell><Badge variant="outline" className={`text-[10px] ${statusColors[a.status] || ''}`}>{(a.status || '').replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] ${criticalityColors[a.criticality] || ''}`}>{(a.criticality || '').toUpperCase()}</Badge></TableCell>
                   <TableCell className="text-xs hidden xl:table-cell capitalize">{a.acquisitionCondition || '-'}</TableCell>

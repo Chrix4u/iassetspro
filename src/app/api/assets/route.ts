@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
+import {
+  findAssetIdsByLiveLocationSearch,
+  getAssetIdsInFunctionalLocationSubtree,
+  getAssetLiveLocationMap,
+} from '@/lib/functional-location/live-location';
 
 // Helper: generate asset tag AST-YYYYMM-NNNN
 async function generateAssetTag(): Promise<string> {
@@ -39,6 +44,7 @@ export async function GET(request: NextRequest) {
     const searchPlantId = searchParams.get('plantId');
     const departmentId = searchParams.get('departmentId');
     const search = searchParams.get('search');
+    const functionalLocationId = searchParams.get('functionalLocationId');
     const topLevelOnly = searchParams.get('topLevelOnly') === 'true';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
@@ -57,15 +63,26 @@ export async function GET(request: NextRequest) {
     if (categoryId) where.categoryId = categoryId;
     if (departmentId) where.departmentId = departmentId;
     if (topLevelOnly) where.parentId = null;
+
+    const andFilters: Record<string, unknown>[] = [];
     if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { assetTag: { contains: search } },
-        { serialNumber: { contains: search } },
-        { manufacturer: { contains: search } },
-        { model: { contains: search } },
-      ];
+      const locationAssetIds = await findAssetIdsByLiveLocationSearch(search);
+      andFilters.push({
+        OR: [
+          { name: { contains: search } },
+          { assetTag: { contains: search } },
+          { serialNumber: { contains: search } },
+          { manufacturer: { contains: search } },
+          { model: { contains: search } },
+          ...(locationAssetIds.length > 0 ? [{ id: { in: locationAssetIds } }] : []),
+        ],
+      });
     }
+    if (functionalLocationId) {
+      const subtreeAssetIds = await getAssetIdsInFunctionalLocationSubtree(functionalLocationId);
+      andFilters.push({ id: { in: subtreeAssetIds } });
+    }
+    if (andFilters.length > 0) where.AND = andFilters;
 
     // Always apply the authenticated user's plant scope. Previously, a regular
     // user with no X-Plant-ID header received an unrestricted asset list and
@@ -99,9 +116,15 @@ export async function GET(request: NextRequest) {
       db.asset.count({ where }),
     ]);
 
+    const liveLocations = await getAssetLiveLocationMap(assets.map(asset => asset.id));
+    const projectedAssets = assets.map(asset => ({
+      ...asset,
+      functionalLocation: liveLocations.get(asset.id) ?? null,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: assets,
+      data: projectedAssets,
       pagination: {
         page,
         limit,

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/reports/repeat-failures
 // Repeat failure analysis with pattern detection and recommended actions
@@ -21,9 +24,22 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get('to');
     const minFailures = parseInt(searchParams.get('minFailures') || '3', 10);
     const timeWindowDays = parseInt(searchParams.get('window') || '90', 10);
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
+
+    let qualifyingLocationWorkOrderIds: string[] | null = null;
+    if (locationScope) {
+      const locationWorkOrders = await db.workOrder.findMany({
+        where: { ...plantFilter, AND: [locationScope.workOrderFilter] },
+        select: { id: true },
+      });
+      qualifyingLocationWorkOrderIds = locationWorkOrders.map(wo => wo.id);
+    }
 
     const now = new Date();
     const windowStart = new Date(now.getTime() - timeWindowDays * 24 * 60 * 60 * 1000);
@@ -33,6 +49,19 @@ export async function GET(request: NextRequest) {
     };
     if (plantFilter && Object.keys(plantFilter).length > 0) {
       frFilter.asset = { ...plantFilter };
+    }
+    if (locationScope && qualifyingLocationWorkOrderIds) {
+      frFilter.AND = [{
+        OR: [
+          { workOrderId: { in: qualifyingLocationWorkOrderIds } },
+          {
+            AND: [
+              { workOrderId: null },
+              { assetId: { in: locationScope.currentAssetIds } },
+            ],
+          },
+        ],
+      }];
     }
     if (from) frFilter.detectedAt = { ...(frFilter.detectedAt as Record<string, unknown> || {}), gte: new Date(from + 'T00:00:00') };
     if (to) {
@@ -46,10 +75,26 @@ export async function GET(request: NextRequest) {
       include: {
         asset: { select: { id: true, name: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true, criticality: true, expectedLifeHours: true, operatingHours: true } },
-        workOrder: { select: { id: true, woNumber: true, title: true, assignedTo: true } },
+        workOrder: { select: {
+          id: true,
+          woNumber: true,
+          title: true,
+          assignedTo: true,
+          functionalLocationIdSnapshot: true,
+          functionalLocationNameSnapshot: true,
+          functionalLocationSourceSnapshot: true,
+          functionalLocationCodeSnapshot: true,
+          functionalLocationPathSnapshot: true,
+          functionalLocationPathCodeSnapshot: true,
+        } },
       },
       orderBy: { detectedAt: 'desc' },
     });
+
+    const failureAssetIds = [...new Set(failureRecords
+      .map(fr => fr.assetId)
+      .filter((id): id is string => Boolean(id)))];
+    const liveLocations = await getAssetLiveLocationMap(failureAssetIds);
 
     // ========== ASSETS WITH N+ FAILURES ==========
     const assetFailures: Record<string, {
@@ -89,6 +134,11 @@ export async function GET(request: NextRequest) {
         const lastDate = new Date(Math.max(...a.failures.map(f => new Date(f.detectedAt).getTime())));
         const daysBetween = Math.max(1, Math.ceil((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)));
         const frequencyPerMonth = Math.round((a.failures.length / daysBetween) * 30 * 100) / 100;
+        const latestFailure = a.failures[0];
+        const reportLocation = getMaintenanceLocationSnapshot(
+          latestFailure?.workOrder || {},
+          liveLocations.get(a.assetId) || null,
+        );
 
         return {
           assetId: a.assetId,
@@ -99,7 +149,10 @@ export async function GET(request: NextRequest) {
           model: a.model,
           serialNumber: a.serialNumber,
           category: a.category,
-          location: a.location,
+          location: reportLocation?.path || a.location,
+          functionalLocationCode: reportLocation?.locationCode || null,
+          functionalLocationPath: reportLocation?.path || null,
+          functionalLocationPathCode: reportLocation?.pathCode || null,
           building: a.building,
           area: a.area,
           failureCount: a.failures.length,

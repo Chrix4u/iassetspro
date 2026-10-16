@@ -8506,7 +8506,7 @@ export function PmSchedulesPage() {
                 </div>
                 {pmComponentsLoading && <p className="mt-2 text-[11px] text-muted-foreground">Loading complete machine hierarchy...</p>}
               </div>
-              <p className="text-[11px] text-muted-foreground">Open the machine explorer to select an exact assembly, component or part. The node is applied only after Confirm Selection.</p>
+              <p className="text-[11px] text-muted-foreground">Open the machine explorer to drill from the asset into assemblies, subassemblies, components and parts. The node is only applied after Confirm Selection.</p>
             </div>
           )}
 

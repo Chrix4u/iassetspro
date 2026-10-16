@@ -8374,73 +8374,148 @@ export function PmSchedulesPage() {
       </Card>
 
       {/* Create/Edit Dialog */}
-      <ResponsiveDialog open={createOpen || !!editItem} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); setTargetExplorerOpen(false); } }} size="extra-wide" title={editItem ? 'Edit PM Schedule' : 'New PM Schedule'} description={editItem ? 'Update preventive maintenance schedule' : 'Define a new preventive maintenance schedule for an asset'} footer={<div className="flex gap-2"><Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); }}>Cancel</Button><Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editItem ? 'Update Schedule' : 'Create Schedule'}</Button></div>}>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Title *</Label>
-              <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Monthly Motor Inspection" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Description</Label>
-              <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance tasks..." rows={2} />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">PM Template</Label>
-              <AsyncSearchableSelect
-                value={formTemplateId}
-                onValueChange={setFormTemplateId}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/pm-templates?active=true');
-                  if (res.success && res.data) {
-                    return (Array.isArray(res.data) ? res.data : []).map((template: any) => ({
-                      value: template.id,
-                      label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
-                      badge: template.type,
-                    }));
-                  }
-                  return [];
-                }}
-                placeholder="Optional — select PM template..."
-                searchPlaceholder="Search PM templates..."
-              />
-              <p className="text-[11px] text-muted-foreground">When this schedule generates a work order, the selected template&apos;s task checklist is carried into the work order.</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Asset *</Label>
-              <AsyncSearchableSelect
-                value={formAssetId}
-                onValueChange={handlePmAssetChange}
-                fetchOptions={fetchPmAssetOptions}
-                placeholder="Select asset..."
-                searchPlaceholder="Search assets by name or tag..."
-              />
-            </div>
-            {formAssetId && (
-              <div className="space-y-2 min-w-0">
-                <Label className="text-sm font-semibold">PM Target — Machine / Assembly / Component / Part</Label>
-                <div className="rounded-lg border bg-muted/20 p-3 min-w-0">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold">{formComponentId ? 'Exact hierarchy node' : 'Whole machine'}</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground break-words">
-                        {formComponentId
-                          ? (() => {
-                              const component = pmComponentOptions.find((item: any) => item.id === formComponentId);
-                              return component ? pmComponentLabel(component) : (editItem?.component ? `${editItem.component.componentCode || editItem.component.name} · ${editItem.component.name}` : 'Selected component');
-                            })()
-                          : `${pmAssetSummary?.name || 'Selected asset'}${pmAssetSummary?.assetTag ? ` [${pmAssetSummary.assetTag}]` : ''}`}
-                      </p>
-                    </div>
-                    <Button type="button" variant="outline" onClick={openPmTargetExplorer} disabled={!pmAssetSummary} className="shrink-0">
-                      <Target className="h-4 w-4 mr-1.5" />{formComponentId ? 'Change PM Target' : 'Choose PM Target'}
-                    </Button>
+      <ResponsiveDialog
+        open={createOpen || !!editItem}
+        onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); setTargetExplorerOpen(false); } }}
+        size="extra-wide"
+        title={editItem ? 'Edit PM Schedule' : 'New PM Schedule'}
+        description={editItem ? 'Update preventive maintenance schedule' : 'Define a new preventive maintenance schedule for an asset'}
+        footer={(
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => { setCreateOpen(false); setEditItem(null); }}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white sm:w-auto"
+            >
+              {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              {editItem ? 'Update Schedule' : 'Create Schedule'}
+            </Button>
+          </div>
+        )}
+      >
+        <div data-testid="pm-schedule-form-grid" className="grid gap-4 py-2 md:grid-cols-2 xl:grid-cols-12">
+          <div className="space-y-2 md:col-span-2 xl:col-span-7">
+            <Label className="text-sm font-semibold">Title *</Label>
+            <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Monthly Motor Inspection" />
+          </div>
+
+          <div className="space-y-2 md:col-span-2 xl:col-span-5">
+            <Label className="text-sm font-semibold">PM Template</Label>
+            <AsyncSearchableSelect
+              value={formTemplateId}
+              onValueChange={setFormTemplateId}
+              fetchOptions={async () => {
+                const res = await api.get('/api/pm-templates?active=true');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((template: any) => ({
+                    value: template.id,
+                    label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
+                    badge: template.type,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Optional — select PM template..."
+              searchPlaceholder="Search PM templates..."
+            />
+            <p className="text-[11px] text-muted-foreground">Selected template tasks flow into generated work orders.</p>
+          </div>
+
+          <div className="space-y-2 md:col-span-2 xl:col-span-12">
+            <Label className="text-sm font-semibold">Description</Label>
+            <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance tasks..." rows={2} />
+          </div>
+
+          <div className="space-y-2 md:col-span-1 xl:col-span-6">
+            <Label className="text-sm font-semibold">Asset *</Label>
+            <AsyncSearchableSelect
+              value={formAssetId}
+              onValueChange={handlePmAssetChange}
+              fetchOptions={fetchPmAssetOptions}
+              placeholder="Select asset..."
+              searchPlaceholder="Search assets by name or tag..."
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-1 xl:col-span-3">
+            <Label className="text-sm font-semibold">Assigned To</Label>
+            <AsyncSearchableSelect
+              value={formAssignedToId}
+              onValueChange={setFormAssignedToId}
+              fetchOptions={async () => {
+                const res = await api.get('/api/workers?role=technician');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                    value: u.id,
+                    label: u.fullName,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Select technician..."
+              searchPlaceholder="Search technicians..."
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-1 xl:col-span-3">
+            <Label className="text-sm font-semibold">Department</Label>
+            <AsyncSearchableSelect
+              value={formDepartmentId}
+              onValueChange={setFormDepartmentId}
+              fetchOptions={async () => {
+                const res = await api.get('/api/departments?limit=100');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                    value: d.id,
+                    label: d.name,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Select department..."
+              searchPlaceholder="Search departments..."
+            />
+          </div>
+
+          {formAssetId && (
+            <div className="space-y-2 min-w-0 md:col-span-2 xl:col-span-12">
+              <Label className="text-sm font-semibold">PM Target — Machine / Assembly / Component / Part</Label>
+              <div className="rounded-xl border bg-muted/20 p-3 min-w-0">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold">{formComponentId ? 'Exact hierarchy node' : 'Whole machine'}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground break-words">
+                      {formComponentId
+                        ? (() => {
+                            const component = pmComponentOptions.find((item: any) => item.id === formComponentId);
+                            return component ? pmComponentLabel(component) : (editItem?.component ? `${editItem.component.componentCode || editItem.component.name} · ${editItem.component.name}` : 'Selected component');
+                          })()
+                        : `${pmAssetSummary?.name || 'Selected asset'}${pmAssetSummary?.assetTag ? ` [${pmAssetSummary.assetTag}]` : ''}`}
+                    </p>
                   </div>
-                  {pmComponentsLoading && <p className="mt-2 text-[11px] text-muted-foreground">Loading complete machine hierarchy...</p>}
+                  <Button type="button" variant="outline" onClick={openPmTargetExplorer} disabled={!pmAssetSummary} className="w-full shrink-0 sm:w-auto">
+                    <Target className="h-4 w-4 mr-1.5" />{formComponentId ? 'Change PM Target' : 'Choose PM Target'}
+                  </Button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">Open the machine explorer to drill from the asset into assemblies, subassemblies, components and parts. The node is only applied after Confirm Selection.</p>
+                {pmComponentsLoading && <p className="mt-2 text-[11px] text-muted-foreground">Loading complete machine hierarchy...</p>}
               </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
+              <p className="text-[11px] text-muted-foreground">Open the machine explorer to select an exact assembly, component or part. The node is applied only after Confirm Selection.</p>
+            </div>
+          )}
+
+          <div className="rounded-xl border bg-muted/15 p-4 md:col-span-2 xl:col-span-12">
+            <div className="mb-3">
+              <p className="text-sm font-semibold">Planning & recurrence</p>
+              <p className="text-[11px] text-muted-foreground">Set cadence, urgency, effort and due-cycle timing in one compact planning row.</p>
+            </div>
+            <div data-testid="pm-schedule-recurrence-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Frequency Type *</Label>
                 <Select value={formFreqType} onValueChange={setFormFreqType}>
@@ -8452,12 +8527,12 @@ export function PmSchedulesPage() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Frequency Value *</Label>
                 <Input type="number" min="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Priority</Label>
                 <Select value={formPriority} onValueChange={setFormPriority}>
@@ -8469,72 +8544,39 @@ export function PmSchedulesPage() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Est. Duration (hrs)</Label>
                 <Input type="number" min="0" step="0.5" value={formEstDuration} onChange={e => setFormEstDuration(e.target.value)} placeholder="0" />
               </div>
+
+              {formUsesCalendarCadence && (
+                <>
+                  <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Lead Days</Label>
+                    <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
+                    <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Assigned To</Label>
-              <AsyncSearchableSelect
-                value={formAssignedToId}
-                onValueChange={setFormAssignedToId}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/workers?role=technician');
-                  if (res.success && res.data) {
-                    return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                      value: u.id,
-                      label: u.fullName,
-                    }));
-                  }
-                  return [];
-                }}
-                placeholder="Select technician..."
-                searchPlaceholder="Search technicians..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Department</Label>
-              <AsyncSearchableSelect
-                value={formDepartmentId}
-                onValueChange={setFormDepartmentId}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/departments?limit=100');
-                  if (res.success && res.data) {
-                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                      value: d.id,
-                      label: d.name,
-                    }));
-                  }
-                  return [];
-                }}
-                placeholder="Select department..."
-                searchPlaceholder="Search departments..."
-              />
-            </div>
-            {formUsesCalendarCadence && (
-              <>
-                <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">Lead Days</Label>
-                  <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
-                  <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
-                </div>
-              </>
-            )}
+
             {!formUsesCalendarCadence && (
-              <div className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-600">
+              <div className="mt-3 rounded-lg border bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-950/30 dark:text-slate-300">
                 Usage-based PM is governed by its runtime meter trigger. Calendar due dates and lead days do not apply.
               </div>
             )}
-            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-              <div>
-                <p className="text-sm font-medium">Auto-generate Work Order</p>
-                <p className="text-[11px] text-muted-foreground">Automatically create WO when the schedule or runtime trigger is due</p>
-              </div>
-              <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} />
-            </div>
           </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-3 md:col-span-2 xl:col-span-12">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Auto-generate Work Order</p>
+              <p className="text-[11px] text-muted-foreground">Automatically create a work order when the schedule or runtime trigger is due.</p>
+            </div>
+            <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />
+          </div>
+        </div>
       </ResponsiveDialog>
 
       <ResponsiveDialog

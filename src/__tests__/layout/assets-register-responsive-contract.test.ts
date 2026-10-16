@@ -29,7 +29,7 @@ describe('Asset Register responsive contract', () => {
   it('contains the wide asset table instead of widening the page', () => {
     expect(source).toContain('<div className="overflow-x-auto">')
     expect(source).toContain('<TableHead className="hidden md:table-cell">Category</TableHead>')
-    expect(source).toContain('<TableHead className="hidden lg:table-cell">Location</TableHead>')
+    expect(source).toContain('<TableHead className="hidden lg:table-cell">Installed At</TableHead>')
     expect(source).toContain('<TableHead className="hidden xl:table-cell">Condition</TableHead>')
   })
 })

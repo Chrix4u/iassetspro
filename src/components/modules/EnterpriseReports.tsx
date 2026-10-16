@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +36,7 @@ import {
   HardHat, Timer, Layers, ArrowRightLeft, Filter, ArrowUpRight, ArrowDownRight,
   Cpu,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
   PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, ReferenceLine,
@@ -76,7 +78,7 @@ const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
 // ============================================================================
 
 function KPICard({ icon: Icon, label, value, subtext, color, bgColor, onClick }: {
-  icon: React.ElementType; label: string; value: string | number;
+  icon: LucideIcon; label: string; value: string | number;
   subtext?: string; color: string; bgColor: string; onClick?: () => void;
 }) {
   return (
@@ -110,6 +112,7 @@ export default function EnterpriseReports() {
   const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('executive');
+  const [functionalLocationId, setFunctionalLocationId] = useState('');
 
   const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
@@ -121,15 +124,17 @@ export default function EnterpriseReports() {
     const params = new URLSearchParams();
     if (startDate) params.set('startDate', startDate);
     if (endDate) params.set('endDate', endDate);
+    if (functionalLocationId) params.set('functionalLocationId', functionalLocationId);
 
     const enterpriseParams = new URLSearchParams();
     if (startDate) enterpriseParams.set('from', startDate);
     if (endDate) enterpriseParams.set('to', endDate);
+    if (functionalLocationId) enterpriseParams.set('functionalLocationId', functionalLocationId);
 
     Promise.all([
-      api.get<any>(`/api/reports/maintenance?${params.toString()}`).catch(() => ({ success: false })),
-      api.get<any>(`/api/reports/enterprise?${enterpriseParams.toString()}`).catch(() => ({ success: false })),
-      api.get('/api/work-orders?limit=200').catch(() => ({ success: false })),
+      api.get<any>(`/api/reports/maintenance?${params.toString()}`).catch(() => ({ success: false, data: null })),
+      api.get<any>(`/api/reports/enterprise?${enterpriseParams.toString()}`).catch(() => ({ success: false, data: null })),
+      api.get<any[]>('/api/work-orders?limit=200').catch(() => ({ success: false, data: null })),
     ]).then(([reportRes, enterpriseRes, woRes]) => {
       if (reportRes.success && reportRes.data) setReportData(reportRes.data);
       else setReportData(null);
@@ -138,7 +143,7 @@ export default function EnterpriseReports() {
       if (woRes.success && woRes.data) setWorkOrders(Array.isArray(woRes.data) ? woRes.data : []);
       setLoading(false);
     });
-  }, [startDate, endDate]);
+  }, [startDate, endDate, functionalLocationId]);
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
@@ -251,6 +256,7 @@ export default function EnterpriseReports() {
         category: a.category,
         criticality: a.criticality,
         location: a.location,
+        functionalLocationPathCode: a.functionalLocationPathCode,
         totalDowntimeMinutes: a.totalDowntimeMinutes,
         totalRepairCost: a.totalRepairCost,
         failureModes: a.failureModes,
@@ -388,8 +394,23 @@ export default function EnterpriseReports() {
       <Card className="border border-border/60 shadow-sm">
         <CardContent className="p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+            <div className="flex min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-end">
+              <div className="min-w-0 flex-1">
+                <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+              </div>
+              <div className="flex min-w-0 flex-1 items-end gap-2">
+                <FunctionalLocationPicker
+                  value={functionalLocationId}
+                  onValueChange={setFunctionalLocationId}
+                  allowAssetAssignmentOnly={false}
+                  label="Location scope"
+                  placeholder="All functional locations"
+                  className="min-w-0 flex-1"
+                />
+                {functionalLocationId && (
+                  <Button variant="ghost" size="sm" onClick={() => setFunctionalLocationId('')} className="h-9 shrink-0">All locations</Button>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
               <Button size="sm" onClick={fetchReport} className="bg-emerald-600 hover:bg-emerald-700 text-white">
@@ -797,6 +818,11 @@ export default function EnterpriseReports() {
                             </button>
                           ) : <span className="font-medium">{asset.name}</span>}
                           {(asset as any).criticality && <Badge variant="outline" className={`ml-2 text-[9px] ${(asset as any).criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : (asset as any).criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{(asset as any).criticality}</Badge>}
+                          {(asset as any).functionalLocationPathCode && (
+                            <p className="max-w-[24rem] truncate font-mono text-[10px] text-muted-foreground mt-0.5" title={(asset as any).functionalLocationPathCode}>
+                              {(asset as any).functionalLocationPathCode}
+                            </p>
+                          )}
                           {(asset as any).failureModes?.length > 0 && <p className="text-[10px] text-muted-foreground mt-0.5">Modes: {(asset as any).failureModes.join(', ')}</p>}
                         </div>
                       </TableCell>

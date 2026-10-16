@@ -3879,11 +3879,13 @@ export function RepairAnalyticsPage() {
   // New report state
   const [enterpriseReport, setEnterpriseReport] = useState<any>(null);
   const [enterpriseLoading, setEnterpriseLoading] = useState(false);
+  const [enterpriseFunctionalLocationId, setEnterpriseFunctionalLocationId] = useState('');
   const [downtimeReport, setDowntimeReport] = useState<any>(null);
   const [downtimeLoading, setDowntimeLoading] = useState(false);
   const [downtimeFunctionalLocationId, setDowntimeFunctionalLocationId] = useState('');
   const [repeatReport, setRepeatReport] = useState<any>(null);
   const [repeatLoading, setRepeatLoading] = useState(false);
+  const [repeatFunctionalLocationId, setRepeatFunctionalLocationId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -3914,11 +3916,12 @@ export function RepairAnalyticsPage() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
+    if (enterpriseFunctionalLocationId) params.set('functionalLocationId', enterpriseFunctionalLocationId);
     const res = await api.get(`/api/reports/enterprise?${params}`);
     if (res.success) setEnterpriseReport(res.data);
     else toast.error(res.error || 'Failed to load enterprise report');
     setEnterpriseLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, enterpriseFunctionalLocationId]);
 
   const fetchDowntimeReport = useCallback(async () => {
     setDowntimeLoading(true);
@@ -3937,11 +3940,12 @@ export function RepairAnalyticsPage() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
+    if (repeatFunctionalLocationId) params.set('functionalLocationId', repeatFunctionalLocationId);
     const res = await api.get(`/api/reports/repeat-failures?${params}`);
     if (res.success) setRepeatReport(res.data);
     else toast.error(res.error || 'Failed to load repeat failure report');
     setRepeatLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, repeatFunctionalLocationId]);
 
   const downloadPDF = useCallback(async () => {
     try {
@@ -4096,12 +4100,25 @@ export function RepairAnalyticsPage() {
 
           {/* ===== BACKLOG ANALYSIS TAB ===== */}
           <TabsContent value="backlog" className="mt-4 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Backlog Analysis</h3>
-                <p className="text-sm text-muted-foreground">Open work orders by age bracket, priority, and department</p>
+                <p className="text-sm text-muted-foreground">Open work orders by age bracket, priority, department, and Functional Location</p>
               </div>
-              <Button onClick={fetchEnterpriseReport} disabled={enterpriseLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${enterpriseLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-auto">
+                <FunctionalLocationPicker
+                  value={enterpriseFunctionalLocationId}
+                  onValueChange={setEnterpriseFunctionalLocationId}
+                  allowAssetAssignmentOnly={false}
+                  label="Location scope"
+                  placeholder="All functional locations"
+                  className="min-w-0 flex-1 sm:min-w-[22rem]"
+                />
+                {enterpriseFunctionalLocationId && (
+                  <Button variant="ghost" size="sm" onClick={() => setEnterpriseFunctionalLocationId('')} className="h-10 shrink-0">All locations</Button>
+                )}
+                <Button onClick={fetchEnterpriseReport} disabled={enterpriseLoading} className="h-10 gap-2 shrink-0"><RefreshCw className={`h-4 w-4 ${enterpriseLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              </div>
             </div>
 
             {enterpriseLoading && !enterpriseReport ? <LoadingSkeleton /> : enterpriseReport ? (
@@ -4348,12 +4365,25 @@ export function RepairAnalyticsPage() {
 
           {/* ===== REPEAT FAILURES TAB ===== */}
           <TabsContent value="repeat-failures" className="mt-4 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Repeat Failure Analysis</h3>
-                <p className="text-sm text-muted-foreground">Assets with recurring failures requiring investigation</p>
+                <p className="text-sm text-muted-foreground">Assets with recurring failures requiring investigation, scoped by Functional Location</p>
               </div>
-              <Button onClick={fetchRepeatReport} disabled={repeatLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${repeatLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-auto">
+                <FunctionalLocationPicker
+                  value={repeatFunctionalLocationId}
+                  onValueChange={setRepeatFunctionalLocationId}
+                  allowAssetAssignmentOnly={false}
+                  label="Location scope"
+                  placeholder="All functional locations"
+                  className="min-w-0 flex-1 sm:min-w-[22rem]"
+                />
+                {repeatFunctionalLocationId && (
+                  <Button variant="ghost" size="sm" onClick={() => setRepeatFunctionalLocationId('')} className="h-10 shrink-0">All locations</Button>
+                )}
+                <Button onClick={fetchRepeatReport} disabled={repeatLoading} className="h-10 gap-2 shrink-0"><RefreshCw className={`h-4 w-4 ${repeatLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              </div>
             </div>
 
             {repeatLoading && !repeatReport ? <LoadingSkeleton /> : repeatReport ? (
@@ -4389,6 +4419,9 @@ export function RepairAnalyticsPage() {
                                   <div>
                                     <p className="font-medium text-sm">{a.assetName}</p>
                                     {a.assetCode && <p className="text-xs text-muted-foreground">{a.assetCode}</p>}
+                                    {a.functionalLocationPathCode && (
+                                      <p className="max-w-[24rem] truncate font-mono text-[10px] text-muted-foreground" title={a.functionalLocationPathCode}>{a.functionalLocationPathCode}</p>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-center">

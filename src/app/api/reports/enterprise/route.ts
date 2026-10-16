@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/reports/enterprise
 // Enterprise-level maintenance report with all analytics sections
@@ -21,9 +24,13 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get('to');
     const department = searchParams.get('department');
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
 
     // Date filter
     const dateFilter: Record<string, unknown> = {};
@@ -36,6 +43,7 @@ export async function GET(request: NextRequest) {
     };
     if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
     if (department) woWhere.departmentId = department;
+    if (locationScope) woWhere.AND = [locationScope.workOrderFilter];
     if (moduleFilter === 'repairs') {
       (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -65,6 +73,22 @@ export async function GET(request: NextRequest) {
       include: { category: { select: { name: true } } },
     }) : [];
     const assetMap = new Map(assets.map(a => [a.id, a]));
+    const assetLiveLocations = assetIds.length > 0
+      ? await getAssetLiveLocationMap(assetIds)
+      : new Map();
+    const latestWorkOrderByAsset = new Map<string, (typeof workOrders)[number]>();
+    for (const wo of workOrders) {
+      if (wo.assetId && !latestWorkOrderByAsset.has(wo.assetId)) {
+        latestWorkOrderByAsset.set(wo.assetId, wo);
+      }
+    }
+    const getReportedAssetLocation = (assetId: string | null | undefined) => {
+      if (!assetId) return null;
+      return getMaintenanceLocationSnapshot(
+        latestWorkOrderByAsset.get(assetId) || {},
+        assetLiveLocations.get(assetId) || null,
+      );
+    };
 
     // Fetch enriched inventory item data for all referenced materials
     const itemIds = [...new Set(workOrders.flatMap(wo =>
@@ -221,6 +245,7 @@ export async function GET(request: NextRequest) {
     const downtimeByAsset = Object.entries(dtAssetMap)
       .map(([, data]) => {
         const asset = data.assetId ? assetMap.get(data.assetId) : null;
+        const reportLocation = getReportedAssetLocation(data.assetId);
         return {
           assetId: data.assetId || null,
           assetName: data.assetName,
@@ -233,7 +258,10 @@ export async function GET(request: NextRequest) {
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
           condition: asset?.condition || null,
-          location: asset?.location || null,
+          location: reportLocation?.path || asset?.location || null,
+          functionalLocationCode: reportLocation?.locationCode || null,
+          functionalLocationPath: reportLocation?.path || null,
+          functionalLocationPathCode: reportLocation?.pathCode || null,
           building: asset?.building || null,
           area: asset?.area || null,
         };
@@ -277,13 +305,57 @@ export async function GET(request: NextRequest) {
     if (plantFilter && Object.keys(plantFilter).length > 0) {
       frEnterpriseFilter.asset = { ...plantFilter };
     }
+
+    let qualifyingLocationWorkOrderIds: string[] | null = null;
+    if (locationScope) {
+      const locationWorkOrders = await db.workOrder.findMany({
+        where: { ...plantFilter, AND: [locationScope.workOrderFilter] },
+        select: { id: true },
+      });
+      qualifyingLocationWorkOrderIds = locationWorkOrders.map(wo => wo.id);
+      frEnterpriseFilter.AND = [{
+        OR: [
+          { workOrderId: { in: qualifyingLocationWorkOrderIds } },
+          {
+            AND: [
+              { workOrderId: null },
+              { assetId: { in: locationScope.currentAssetIds } },
+            ],
+          },
+        ],
+      }];
+    }
+
     const failureRecords = await db.failureRecord.findMany({
       where: frEnterpriseFilter,
       include: {
         asset: { select: { id: true, name: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, condition: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true } },
+        workOrder: {
+          select: {
+            id: true,
+            functionalLocationIdSnapshot: true,
+            functionalLocationNameSnapshot: true,
+            functionalLocationSourceSnapshot: true,
+            functionalLocationCodeSnapshot: true,
+            functionalLocationPathSnapshot: true,
+            functionalLocationPathCodeSnapshot: true,
+          },
+        },
       },
     });
+
+    const failureAssetIds = [...new Set(failureRecords
+      .map(fr => fr.assetId)
+      .filter((id): id is string => Boolean(id)))];
+    const missingFailureAssetIds = failureAssetIds.filter(id => !assetLiveLocations.has(id));
+    const missingFailureLiveLocations = missingFailureAssetIds.length > 0
+      ? await getAssetLiveLocationMap(missingFailureAssetIds)
+      : new Map();
+    const failureLiveLocations = new Map(assetLiveLocations);
+    for (const [assetId, location] of missingFailureLiveLocations) {
+      failureLiveLocations.set(assetId, location);
+    }
 
     const assetFailureMap: Record<string, { assetId: string; assetName: string; failures: any[] }> = {};
     failureRecords.forEach(fr => {
@@ -297,15 +369,26 @@ export async function GET(request: NextRequest) {
       .filter(a => a.failures.length >= 3)
       .map(a => {
         const firstAsset = a.failures[0]?.asset || null;
+        const latestFailure = a.failures.reduce((latest, failure) =>
+          !latest || new Date(failure.detectedAt) > new Date(latest.detectedAt) ? failure : latest,
+        null as any);
+        const reportLocation = getMaintenanceLocationSnapshot(
+          latestFailure?.workOrder || {},
+          failureLiveLocations.get(a.assetId) || null,
+        );
         return {
           assetId: a.assetId,
           assetName: a.assetName,
+          assetTag: firstAsset?.assetTag || null,
           manufacturer: firstAsset?.manufacturer || null,
           model: firstAsset?.model || null,
           serialNumber: firstAsset?.serialNumber || null,
           category: firstAsset?.category?.name || null,
           criticality: firstAsset?.criticality || null,
-          location: firstAsset?.location || null,
+          location: reportLocation?.path || firstAsset?.location || null,
+          functionalLocationCode: reportLocation?.locationCode || null,
+          functionalLocationPath: reportLocation?.path || null,
+          functionalLocationPathCode: reportLocation?.pathCode || null,
           building: firstAsset?.building || null,
           area: firstAsset?.area || null,
           failureCount: a.failures.length,
@@ -455,6 +538,7 @@ export async function GET(request: NextRequest) {
       .slice(0, 20)
       .map(a => {
         const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        const reportLocation = getReportedAssetLocation(a.assetId);
         return {
           assetId: a.assetId || null,
           assetName: a.assetName,
@@ -463,6 +547,10 @@ export async function GET(request: NextRequest) {
           model: asset?.model || null,
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
+          location: reportLocation?.path || asset?.location || null,
+          functionalLocationCode: reportLocation?.locationCode || null,
+          functionalLocationPath: reportLocation?.path || null,
+          functionalLocationPathCode: reportLocation?.pathCode || null,
           totalCost: Math.round(a.totalCost * 100) / 100,
           laborCost: Math.round(a.laborCost * 100) / 100,
           partsCost: Math.round(a.partsCost * 100) / 100,
@@ -588,6 +676,7 @@ export async function GET(request: NextRequest) {
     async function fetchPeriodWOs(start: Date, end: Date) {
       const where: Record<string, unknown> = { ...plantFilter, status: { notIn: ['cancelled'] }, createdAt: { gte: start, lte: end } };
       if (department) where.departmentId = department;
+      if (locationScope) where.AND = [locationScope.workOrderFilter];
       return db.workOrder.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         include: { workOrderDowntimes: true },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
 
 // GET /api/reports/enterprise
 // Enterprise-level maintenance report with all analytics sections
@@ -21,9 +22,13 @@ export async function GET(request: NextRequest) {
     const to = searchParams.get('to');
     const department = searchParams.get('department');
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
 
     // Date filter
     const dateFilter: Record<string, unknown> = {};
@@ -36,6 +41,7 @@ export async function GET(request: NextRequest) {
     };
     if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
     if (department) woWhere.departmentId = department;
+    if (locationScope) woWhere.AND = [locationScope.workOrderFilter];
     if (moduleFilter === 'repairs') {
       (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -277,6 +283,27 @@ export async function GET(request: NextRequest) {
     if (plantFilter && Object.keys(plantFilter).length > 0) {
       frEnterpriseFilter.asset = { ...plantFilter };
     }
+
+    let qualifyingLocationWorkOrderIds: string[] | null = null;
+    if (locationScope) {
+      const locationWorkOrders = await db.workOrder.findMany({
+        where: { ...plantFilter, AND: [locationScope.workOrderFilter] },
+        select: { id: true },
+      });
+      qualifyingLocationWorkOrderIds = locationWorkOrders.map(wo => wo.id);
+      frEnterpriseFilter.AND = [{
+        OR: [
+          { workOrderId: { in: qualifyingLocationWorkOrderIds } },
+          {
+            AND: [
+              { workOrderId: null },
+              { assetId: { in: locationScope.currentAssetIds } },
+            ],
+          },
+        ],
+      }];
+    }
+
     const failureRecords = await db.failureRecord.findMany({
       where: frEnterpriseFilter,
       include: {
@@ -588,6 +615,7 @@ export async function GET(request: NextRequest) {
     async function fetchPeriodWOs(start: Date, end: Date) {
       const where: Record<string, unknown> = { ...plantFilter, status: { notIn: ['cancelled'] }, createdAt: { gte: start, lte: end } };
       if (department) where.departmentId = department;
+      if (locationScope) where.AND = [locationScope.workOrderFilter];
       return db.workOrder.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         include: { workOrderDowntimes: true },

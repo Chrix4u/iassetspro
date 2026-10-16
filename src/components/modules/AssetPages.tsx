@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { csvCell } from '@/lib/csv';
 import type { Asset, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -147,7 +148,6 @@ export function AssetsPage() {
       a.condition ?? a.acquisitionCondition ?? '',
       a.healthScore ?? '',
     ]);
-    const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const csv = '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 // GET /api/reports/downtime
 // Detailed downtime analysis with MTBF, MTTR, availability, trending, top assets, cost impact
@@ -20,14 +23,20 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from');
     const to = searchParams.get('to');
     const assetId = searchParams.get('assetId');
+    const functionalLocationId = searchParams.get('functionalLocationId');
     const trendGrouping = searchParams.get('grouping') || 'weekly'; // daily, weekly, monthly
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
 
     const dtFilter: Record<string, unknown> = {};
-    if (plantFilter && Object.keys(plantFilter).length > 0) {
-      dtFilter.workOrder = { ...plantFilter };
+    const downtimeWorkOrderFilter: Record<string, unknown> = { ...plantFilter };
+    if (locationScope) downtimeWorkOrderFilter.AND = [locationScope.workOrderFilter];
+    if (Object.keys(downtimeWorkOrderFilter).length > 0) {
+      dtFilter.workOrder = downtimeWorkOrderFilter;
     }
     if (from) dtFilter.downtimeStart = { ...(dtFilter.downtimeStart as Record<string, unknown> || {}), gte: new Date(from + 'T00:00:00') };
     if (to) {
@@ -40,13 +49,27 @@ export async function GET(request: NextRequest) {
     const downtimeRecords = await db.workOrderDowntime.findMany({
       where: Object.keys(dtFilter).length > 0 ? dtFilter : undefined,
       include: {
-        workOrder: { select: { id: true, woNumber: true, title: true, priority: true, status: true } },
+        workOrder: {
+          select: {
+            id: true,
+            woNumber: true,
+            title: true,
+            priority: true,
+            status: true,
+            functionalLocationIdSnapshot: true,
+            functionalLocationSourceSnapshot: true,
+            functionalLocationCodeSnapshot: true,
+            functionalLocationPathSnapshot: true,
+            functionalLocationPathCodeSnapshot: true,
+          },
+        },
       },
       orderBy: { downtimeStart: 'desc' },
     });
 
     // Fetch completed WOs for MTBF/MTTR calculation
     const woFilter: Record<string, unknown> = { ...plantFilter, status: { in: ['completed', 'verified', 'closed'] } };
+    if (locationScope) woFilter.AND = [locationScope.workOrderFilter];
     if (from) woFilter.actualEnd = { ...(woFilter.actualEnd as Record<string, unknown> || {}), gte: new Date(from + 'T00:00:00') };
     if (to) {
       const existingEnd = woFilter.actualEnd as Record<string, unknown> || {};
@@ -57,6 +80,9 @@ export async function GET(request: NextRequest) {
       where: Object.keys(woFilter).length > 0 ? woFilter : undefined,
       select: { id: true, actualStart: true, actualEnd: true, assetId: true, assetName: true, plantId: true },
     });
+
+    const downtimeAssetIds = [...new Set(downtimeRecords.map((dt) => dt.assetId).filter((id): id is string => !!id))];
+    const liveLocations = await getAssetLiveLocationMap(downtimeAssetIds);
 
     // ========== CORE METRICS ==========
     const totalEvents = downtimeRecords.length;
@@ -97,19 +123,50 @@ export async function GET(request: NextRequest) {
       : 100;
 
     // ========== BREAKDOWN BY ASSET ==========
-    const assetMap: Record<string, { assetName: string; events: number; totalMinutes: number; plannedMinutes: number; unplannedMinutes: number; productionLoss: number }> = {};
+    const assetMap: Record<string, {
+      assetId: string | null;
+      assetName: string;
+      functionalLocationCode: string | null;
+      functionalLocationPath: string | null;
+      functionalLocationPathCode: string | null;
+      events: number;
+      totalMinutes: number;
+      plannedMinutes: number;
+      unplannedMinutes: number;
+      productionLoss: number;
+    }> = {};
     downtimeRecords.forEach(dt => {
+      const assetKey = dt.assetId || dt.assetName || 'Unknown';
       const name = dt.assetName || 'Unknown';
-      if (!assetMap[name]) assetMap[name] = { assetName: name, events: 0, totalMinutes: 0, plannedMinutes: 0, unplannedMinutes: 0, productionLoss: 0 };
-      assetMap[name].events += 1;
-      assetMap[name].totalMinutes += (dt.durationMinutes || 0);
-      if (dt.category === 'planned') assetMap[name].plannedMinutes += (dt.durationMinutes || 0);
-      else assetMap[name].unplannedMinutes += (dt.durationMinutes || 0);
-      assetMap[name].productionLoss += (dt.productionLoss || 0);
+      const liveLocation = dt.assetId ? liveLocations.get(dt.assetId) ?? null : null;
+      const maintenanceLocation = getMaintenanceLocationSnapshot(dt.workOrder, liveLocation);
+      if (!assetMap[assetKey]) {
+        assetMap[assetKey] = {
+          assetId: dt.assetId || null,
+          assetName: name,
+          functionalLocationCode: maintenanceLocation?.locationCode ?? null,
+          functionalLocationPath: maintenanceLocation?.path || null,
+          functionalLocationPathCode: maintenanceLocation?.pathCode || maintenanceLocation?.path || null,
+          events: 0,
+          totalMinutes: 0,
+          plannedMinutes: 0,
+          unplannedMinutes: 0,
+          productionLoss: 0,
+        };
+      }
+      assetMap[assetKey].events += 1;
+      assetMap[assetKey].totalMinutes += (dt.durationMinutes || 0);
+      if (dt.category === 'planned') assetMap[assetKey].plannedMinutes += (dt.durationMinutes || 0);
+      else assetMap[assetKey].unplannedMinutes += (dt.durationMinutes || 0);
+      assetMap[assetKey].productionLoss += (dt.productionLoss || 0);
     });
-    const breakdownByAsset = Object.entries(assetMap)
-      .map(([assetName, data]) => ({
-        assetName,
+    const breakdownByAsset = Object.values(assetMap)
+      .map((data) => ({
+        assetId: data.assetId,
+        assetName: data.assetName,
+        functionalLocationCode: data.functionalLocationCode,
+        functionalLocationPath: data.functionalLocationPath,
+        functionalLocationPathCode: data.functionalLocationPathCode,
         events: data.events,
         totalMinutes: data.totalMinutes,
         totalHours: Math.round(data.totalMinutes / 60 * 100) / 100,

@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +41,7 @@ import {
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
   FileDown, Loader2,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration, formatDurationFromMinutes } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
@@ -166,7 +168,7 @@ function OverduePulse({ isOverdue, date }: { isOverdue: boolean; date: string })
 }
 
 function StatsCard({ icon: Icon, count, label, color, bgColor, subtext, onClick }: {
-  icon: React.ElementType; count: number | string; label: string;
+  icon: LucideIcon; count: number | string; label: string;
   color: string; bgColor: string; subtext?: string; onClick?: () => void;
 }) {
   return (
@@ -3879,6 +3881,7 @@ export function RepairAnalyticsPage() {
   const [enterpriseLoading, setEnterpriseLoading] = useState(false);
   const [downtimeReport, setDowntimeReport] = useState<any>(null);
   const [downtimeLoading, setDowntimeLoading] = useState(false);
+  const [downtimeFunctionalLocationId, setDowntimeFunctionalLocationId] = useState('');
   const [repeatReport, setRepeatReport] = useState<any>(null);
   const [repeatLoading, setRepeatLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
@@ -3922,11 +3925,12 @@ export function RepairAnalyticsPage() {
     const params = new URLSearchParams();
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
+    if (downtimeFunctionalLocationId) params.set('functionalLocationId', downtimeFunctionalLocationId);
     const res = await api.get(`/api/reports/downtime?${params}`);
     if (res.success) setDowntimeReport(res.data);
     else toast.error(res.error || 'Failed to load downtime report');
     setDowntimeLoading(false);
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, downtimeFunctionalLocationId]);
 
   const fetchRepeatReport = useCallback(async () => {
     setRepeatLoading(true);
@@ -4211,12 +4215,25 @@ export function RepairAnalyticsPage() {
 
           {/* ===== DOWNTIME DEEP DIVE TAB ===== */}
           <TabsContent value="downtime-deep" className="mt-4 space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Downtime Deep Dive</h3>
-                <p className="text-sm text-muted-foreground">Detailed downtime analysis with MTBF, MTTR, and availability metrics</p>
+                <p className="text-sm text-muted-foreground">Detailed downtime analysis with MTBF, MTTR, availability, and Functional Location rollups</p>
               </div>
-              <Button onClick={fetchDowntimeReport} disabled={downtimeLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${downtimeLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end lg:w-auto">
+                <FunctionalLocationPicker
+                  value={downtimeFunctionalLocationId}
+                  onValueChange={setDowntimeFunctionalLocationId}
+                  allowAssetAssignmentOnly={false}
+                  label="Location scope"
+                  placeholder="All functional locations"
+                  className="min-w-0 flex-1 sm:min-w-[22rem]"
+                />
+                {downtimeFunctionalLocationId && (
+                  <Button variant="ghost" size="sm" onClick={() => setDowntimeFunctionalLocationId('')} className="h-10 shrink-0">All locations</Button>
+                )}
+                <Button onClick={fetchDowntimeReport} disabled={downtimeLoading} className="h-10 gap-2 shrink-0"><RefreshCw className={`h-4 w-4 ${downtimeLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+              </div>
             </div>
 
             {downtimeLoading && !downtimeReport ? <LoadingSkeleton /> : downtimeReport ? (
@@ -4244,7 +4261,12 @@ export function RepairAnalyticsPage() {
                                 <TableCell>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs text-muted-foreground w-5">#{idx + 1}</span>
-                                    <span className="font-medium text-sm">{a.assetName}</span>
+                                    <div className="min-w-0">
+                                      <span className="font-medium text-sm">{a.assetName}</span>
+                                      {a.functionalLocationPathCode && (
+                                        <p className="max-w-[28rem] truncate font-mono text-[10px] text-muted-foreground" title={a.functionalLocationPathCode}>{a.functionalLocationPathCode}</p>
+                                      )}
+                                    </div>
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">{a.events}</TableCell>
@@ -4405,7 +4427,7 @@ export function RepairAnalyticsPage() {
                     <CardContent>
                       <div className="space-y-3">
                         {repeatReport.recommendedActions.map((action: any, idx: number) => {
-                          const typeConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+                          const typeConfig: Record<string, { icon: LucideIcon; color: string; bg: string }> = {
                             pm_schedule_review: { icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
                             component_replacement: { icon: Wrench, color: 'text-red-600', bg: 'bg-red-50' },
                             rca: { icon: Search, color: 'text-amber-600', bg: 'bg-amber-50' },

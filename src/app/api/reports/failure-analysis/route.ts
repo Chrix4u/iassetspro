@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
+import { resolveFunctionalLocationReportScope } from '@/lib/functional-location/reporting';
+import { getMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,10 +22,22 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from');
     const to = searchParams.get('to');
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
+    const functionalLocationId = searchParams.get('functionalLocationId');
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope, 'plantId');
+    const locationScope = functionalLocationId
+      ? await resolveFunctionalLocationReportScope(functionalLocationId)
+      : null;
+    let qualifyingLocationWorkOrderIds: string[] | null = null;
+    if (locationScope) {
+      const locationWorkOrders = await db.workOrder.findMany({
+        where: { ...plantFilter, AND: [locationScope.workOrderFilter] },
+        select: { id: true },
+      });
+      qualifyingLocationWorkOrderIds = locationWorkOrders.map((wo) => wo.id);
+    }
 
     // Build where clause for FailureRecord
     const dateFilter: Record<string, unknown> = {};
@@ -34,6 +49,19 @@ export async function GET(request: NextRequest) {
     if (Object.keys(plantFilter).length > 0) {
       (where as Record<string, unknown>).asset = plantFilter;
     }
+    if (locationScope && qualifyingLocationWorkOrderIds) {
+      where.AND = [{
+        OR: [
+          { workOrderId: { in: qualifyingLocationWorkOrderIds } },
+          {
+            AND: [
+              { workOrderId: null },
+              { assetId: { in: locationScope.currentAssetIds } },
+            ],
+          },
+        ],
+      }];
+    }
 
     // Fetch failure records with relations
     const failureRecords = await db.failureRecord.findMany({
@@ -41,7 +69,27 @@ export async function GET(request: NextRequest) {
       include: {
         asset: { select: { id: true, name: true, assetTag: true, manufacturer: true, model: true, plantId: true, criticality: true, location: true, building: true, area: true, categoryId: true, status: true, createdAt: true } },
         component: { select: { id: true, name: true, componentCode: true } },
-        workOrder: { select: { id: true, woNumber: true, type: true, status: true, assetId: true, assetName: true, tradeActivity: true, totalCost: true, laborCost: true, partsCost: true, repairCompletion: { select: { rootCause: true, correctiveAction: true, reworkCount: true } } } },
+        workOrder: {
+          select: {
+            id: true,
+            woNumber: true,
+            type: true,
+            status: true,
+            assetId: true,
+            assetName: true,
+            tradeActivity: true,
+            totalCost: true,
+            laborCost: true,
+            partsCost: true,
+            functionalLocationIdSnapshot: true,
+            functionalLocationNameSnapshot: true,
+            functionalLocationSourceSnapshot: true,
+            functionalLocationCodeSnapshot: true,
+            functionalLocationPathSnapshot: true,
+            functionalLocationPathCodeSnapshot: true,
+            repairCompletion: { select: { rootCause: true, correctiveAction: true, reworkCount: true } },
+          },
+        },
       },
       orderBy: { detectedAt: 'desc' },
     });
@@ -53,6 +101,7 @@ export async function GET(request: NextRequest) {
       include: { category: { select: { name: true } } },
     }) : [];
     const assetCategoryMap = new Map(assets.map(a => [a.id, a.category?.name || 'Uncategorized']));
+    const liveLocations = await getAssetLiveLocationMap(assetIds);
 
     // Fetch WOs with repairCompletion for additional RCA data (WOs that completed in date range)
     const woWhere: Record<string, unknown> = { status: { in: ['completed', 'verified', 'closed'] } };
@@ -65,6 +114,7 @@ export async function GET(request: NextRequest) {
     if (Object.keys(plantFilter).length > 0) {
       Object.assign(woWhere, plantFilter);
     }
+    if (locationScope) woWhere.AND = [locationScope.workOrderFilter];
     if (moduleFilter === 'repairs') {
       (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -157,13 +207,30 @@ export async function GET(request: NextRequest) {
       .map(severity => ({ severity, ...bySeverityMap[severity], totalRepairCost: Math.round(bySeverityMap[severity].totalRepairCost * 100) / 100 }));
 
     // ── By Asset ─────────────────────────────────────────────────────────
-    const byAssetMap: Record<string, { assetId: string; assetName: string; assetTag: string; manufacturer: string; model: string; category: string; criticality: string; location: string; failures: { downtime: number; cost: number; mode: string; cause: string; detectedAt: Date }[] }> = {};
+    const byAssetMap: Record<string, {
+      assetId: string;
+      assetName: string;
+      assetTag: string;
+      manufacturer: string;
+      model: string;
+      category: string;
+      criticality: string;
+      location: string;
+      functionalLocationCode: string | null;
+      functionalLocationPath: string | null;
+      functionalLocationPathCode: string | null;
+      failures: { downtime: number; cost: number; mode: string; cause: string; detectedAt: Date }[];
+    }> = {};
     failureRecords.forEach(fr => {
       const aId = fr.assetId || '';
       if (!aId) return;
       const a = fr.asset;
       const key = aId;
       if (!byAssetMap[key]) {
+        const liveLocation = liveLocations.get(aId) ?? null;
+        const maintenanceLocation = getMaintenanceLocationSnapshot(fr.workOrder ?? {}, liveLocation);
+        const legacyLocation = a?.location ? `${a.location}${a.building ? ` / ${a.building}` : ''}` : '';
+        const preferredLocation = maintenanceLocation?.path || legacyLocation;
         byAssetMap[key] = {
           assetId: aId,
           assetName: a?.name || 'Unknown',
@@ -172,7 +239,10 @@ export async function GET(request: NextRequest) {
           model: a?.model || '',
           category: assetCategoryMap.get(aId) || '',
           criticality: a?.criticality || 'medium',
-          location: a?.location ? `${a.location}${a.building ? ` / ${a.building}` : ''}` : '',
+          location: preferredLocation,
+          functionalLocationCode: maintenanceLocation?.locationCode ?? null,
+          functionalLocationPath: maintenanceLocation?.path || preferredLocation || null,
+          functionalLocationPathCode: maintenanceLocation?.pathCode || preferredLocation || null,
           failures: [],
         };
       }
@@ -215,6 +285,9 @@ export async function GET(request: NextRequest) {
         category: a.category,
         criticality: a.criticality,
         location: a.location,
+        functionalLocationCode: a.functionalLocationCode,
+        functionalLocationPath: a.functionalLocationPath,
+        functionalLocationPathCode: a.functionalLocationPathCode,
         failureCount,
         totalDowntimeMinutes,
         totalRepairCost: Math.round(totalRepairCost * 100) / 100,

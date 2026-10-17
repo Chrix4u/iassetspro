@@ -3,8 +3,9 @@
 # Built with Bun runtime for optimal performance
 # ============================================================================
 
-# Keep the application runtime deterministic instead of floating on oven/bun:1.
-ARG BUN_IMAGE=oven/bun:1.4.2
+# Pin both the Bun version and the immutable multi-platform image index digest.
+# This prevents oven/bun:1.4.2 from silently changing underneath a reviewed SHA.
+ARG BUN_IMAGE=oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 
 # ---------------------------------------------------------------------------
 # Stage 1: Dependencies

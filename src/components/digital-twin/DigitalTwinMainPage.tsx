@@ -1500,7 +1500,12 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <Component height="100%" />
+      <Component
+        height="100%"
+        assetId={assetId || null}
+        twinId={twinId}
+        twinName={twinName}
+      />
     </ViewerErrorBoundary>
   );
 }

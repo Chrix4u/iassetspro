@@ -10597,7 +10597,7 @@ export function PmTemplatesPage() {
                         return (
                           <div
                             key={task.id}
-                            className="flex items-center gap-2 p-2.5 rounded-lg border bg-card group/task hover:bg-muted/30 transition-colors"
+                            className="flex items-start gap-2 p-2.5 rounded-lg border bg-card group/task hover:bg-muted/30 transition-colors"
                           >
                             {/* Drag handle */}
                             <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
@@ -10607,7 +10607,7 @@ export function PmTemplatesPage() {
                             </span>
                             {/* Description */}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{task.description}</p>
+                              <p className="text-sm font-medium whitespace-normal break-words leading-snug">{task.description}</p>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <TaskTypeBadge type={task.taskType} />
                                 {task.estimatedMinutes && (

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 import {
   Upload, Search, MoreVertical, Eye, Trash2, RefreshCw,
   CheckCircle2, XCircle, Loader2, HardDrive, Box,
@@ -30,7 +31,7 @@ interface ModelRecord {
   optimizedForWeb: boolean;
   createdAt: string;
   updatedAt: string;
-  uploadedBy: { id: string; name: string; fullName?: string };
+  uploadedBy: { id: string; username: string; fullName?: string };
   asset?: { id: string; name: string };
   plant?: { id: string; name: string };
   _count: { scenes: number; versions: number };
@@ -41,7 +42,9 @@ export interface ModelManagerPanelProps {
   onClose?: () => void;
 }
 
-export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelProps) {
+export function ModelManagerPanel({ onSelectModel, onClose: _onClose }: ModelManagerPanelProps) {
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canManage = hasPermission('digital_twin.manage') || isAdmin();
   const [models, setModels] = useState<ModelRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -61,10 +64,10 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
       if (search) params.set('search', search);
       if (formatFilter !== 'all') params.set('format', formatFilter);
       if (statusFilter !== 'all') params.set('status', statusFilter);
-      const res = await api.get(`/api/model-library?${params}`);
+      const res = await api.get<ModelRecord[]>(`/api/model-library?${params}`);
       if (res.success) {
-        setModels(res.data?.data || []);
-        setStats(res.data?.stats || null);
+        setModels(Array.isArray(res.data) ? res.data : []);
+        setStats((res.stats as Record<string, unknown> | undefined) || null);
       }
     } catch (err) {
       console.error('Failed to fetch models:', err);
@@ -74,7 +77,7 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this model? This cannot be undone.')) return;
+    if (!canManage || !confirm('Delete this model? This cannot be undone.')) return;
     try {
       await api.delete(`/api/model-library/${id}`);
       fetchModels();
@@ -105,7 +108,7 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
             { label: 'Total Models', value: stats.totalCount, icon: Box, color: 'text-sky-600 bg-sky-50 dark:bg-sky-950/30' },
             { label: 'Ready', value: stats.readyCount, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30' },
             { label: 'Processing', value: stats.processingCount, icon: Loader2, color: 'text-amber-600 bg-amber-50 dark:bg-amber-950/30' },
-            { label: 'Storage', value: formatFileSize(stats.totalSizeBytes as number), icon: HardDrive, color: 'text-violet-600 bg-violet-50 dark:bg-violet-950/30' },
+            { label: 'Storage', value: formatFileSize(Number(stats.totalSizeBytes || 0)), icon: HardDrive, color: 'text-violet-600 bg-violet-50 dark:bg-violet-950/30' },
           ].map(s => (
             <Card key={s.label} className="border-0 shadow-sm">
               <CardContent className="p-3 flex items-center gap-3">
@@ -194,7 +197,9 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => onSelectModel?.(model)}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
                         <DropdownMenuItem><Download className="h-4 w-4 mr-2" />Download</DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => handleDelete(model.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                        {canManage && (
+                          <DropdownMenuItem variant="destructive" onClick={() => handleDelete(model.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>

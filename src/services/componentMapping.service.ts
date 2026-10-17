@@ -7,6 +7,7 @@ import { db } from '@/lib/db';
 export interface ListMappingsParams {
   modelId: string;
   mappingType?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -34,12 +35,19 @@ function serializeMetadata(value: CreateMappingParams['metadata']): string | nul
 
 export const componentMappingService = {
   async listMappings(params: ListMappingsParams) {
-    const { modelId, mappingType, page = 1, limit = 50 } = params;
+    const { modelId, mappingType, search, page = 1, limit = 50 } = params;
 
     const where: Record<string, unknown> = { modelId };
     if (mappingType) where.mappingType = mappingType;
+    if (search) {
+      where.OR = [
+        { meshName: { contains: search } },
+        { meshPath: { contains: search } },
+        { targetName: { contains: search } },
+      ];
+    }
 
-    const [mappings, total] = await Promise.all([
+    const [mappings, total, grouped] = await Promise.all([
       db.meshComponentMapping.findMany({
         where,
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -50,11 +58,17 @@ export const componentMappingService = {
         },
       }),
       db.meshComponentMapping.count({ where }),
+      db.meshComponentMapping.groupBy({
+        by: ['mappingType'],
+        where: { modelId },
+        _count: { _all: true },
+      }),
     ]);
 
     return {
       data: mappings,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      typeCounts: Object.fromEntries(grouped.map((row) => [row.mappingType, row._count._all])),
     };
   },
 
@@ -129,6 +143,26 @@ export const componentMappingService = {
       successCount: created.length,
       errorCount: errors.length,
     };
+  },
+
+  async getMappingById(id: string) {
+    const mapping = await db.meshComponentMapping.findUnique({
+      where: { id },
+      include: {
+        model: {
+          select: {
+            id: true,
+            name: true,
+            plantId: true,
+            assetId: true,
+            asset: { select: { plantId: true } },
+          },
+        },
+        createdBy: { select: { id: true, fullName: true, username: true } },
+      },
+    });
+    if (!mapping) throw new Error('Mapping not found');
+    return mapping;
   },
 
   async updateMapping(id: string, updates: Record<string, unknown>) {

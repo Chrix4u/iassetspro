@@ -9,7 +9,7 @@ function run(env: Record<string, string | undefined>) {
   return spawnSync(process.execPath, [script, 'test-op'], {
     env: {
       ...process.env,
-      NODE_ENV: '',
+      NODE_ENV: 'test',
       DATABASE_URL: '',
       IASSETSPRO_ALLOW_DESTRUCTIVE_DB: '',
       ...env,

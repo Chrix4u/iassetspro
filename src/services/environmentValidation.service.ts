@@ -77,23 +77,23 @@ function checkDatabaseUrl(): SingleCheck {
     };
   }
 
-  // Try to parse as a connection string
+  // Production architecture is PostgreSQL-only. Do not accept legacy
+  // MariaDB/MySQL/SQLite URLs as a valid configuration.
   try {
-    if (url.startsWith('mysql://') || url.startsWith('mariadb://') || url.startsWith('file:')) {
+    const parsed = new URL(url);
+    if (!['postgres:', 'postgresql:'].includes(parsed.protocol)) {
       return {
         name: 'DATABASE_URL',
-        severity: 'info',
-        message: 'DATABASE_URL is set and appears valid.',
-        passed: true,
+        severity: 'error',
+        message: `Unsupported database provider ${parsed.protocol || 'unknown'}; PostgreSQL is required.`,
+        passed: false,
       };
     }
 
-    // Check if it's a valid URL format
-    new URL(url);
     return {
       name: 'DATABASE_URL',
       severity: 'info',
-      message: 'DATABASE_URL is set and parseable.',
+      message: 'DATABASE_URL is a valid PostgreSQL connection string.',
       passed: true,
     };
   } catch {

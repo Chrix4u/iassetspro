@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       } catch (fallbackErr: any) {
         console.error('[login] Minimal user query also failed:', fallbackErr?.message);
         return NextResponse.json(
-          { success: false, error: `Database error: ${fallbackErr?.message || 'User lookup failed'}. Run: npx prisma db push` },
+          { success: false, error: 'Authentication service is temporarily unavailable. Please contact an administrator.' },
           { status: 500 }
         );
       }
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
       } catch (fallbackErr: any) {
         console.error('[login] Lightweight session also failed:', fallbackErr?.message);
         return NextResponse.json(
-          { success: false, error: `Session creation failed: ${fallbackErr?.message}. Run: npx prisma db push` },
+          { success: false, error: 'Authentication session could not be created. Please contact an administrator.' },
           { status: 500 }
         );
       }
@@ -209,6 +209,9 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Login failed';
     console.error('[login] Unhandled error:', message);
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: 'Authentication request could not be completed. Please contact an administrator.' },
+      { status: 500 }
+    );
   }
 }

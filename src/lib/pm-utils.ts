@@ -68,6 +68,25 @@ export type PmFrequencyInputResult =
   | { ok: true; value: SerializedPmFrequency }
   | { ok: false; error: string };
 
+export interface PmNextDueDateUpdateInput {
+  frequencyType: string;
+  frequencyValue: number;
+  lastCompletedDate: Date | null;
+  previousNextDueDate: Date | null;
+  requestedNextDueDate: Date | null | undefined;
+  timingChanged: boolean;
+  now: Date;
+}
+
+export type MeterTriggerTransition = 'none' | 'create' | 'reconcile' | 'remove';
+
+export interface MeterTriggerTransitionInput {
+  previousFrequencyType: string;
+  nextFrequencyType: string;
+  hasTrigger: boolean;
+  targetChanged: boolean;
+}
+
 const TIME_UNIT_TO_FREQUENCY_TYPE: Record<PmTimeUnit, PmFrequencyType> = {
   minutes: 'time_minutes',
   hours: 'time_hours',
@@ -91,6 +110,10 @@ export function isPmTimeUnit(value: unknown): value is PmTimeUnit {
 
 export function isPmMeterUnit(value: unknown): value is PmMeterUnit {
   return typeof value === 'string' && (PM_METER_UNITS as readonly string[]).includes(value);
+}
+
+export function isMeterFrequencyType(frequencyType: string): boolean {
+  return frequencyType === 'meter_based' || frequencyType === 'custom_hours';
 }
 
 export function validatePmFrequencySelection(
@@ -236,7 +259,7 @@ export function calculateNextDueDate(
 ): Date | null {
   if (!isPmFrequencyType(frequencyType)) return null;
 
-  if (frequencyType === 'meter_based' || frequencyType === 'custom_hours') {
+  if (isMeterFrequencyType(frequencyType)) {
     return null;
   }
 
@@ -285,8 +308,58 @@ export function calculateNextDueDate(
   return next;
 }
 
+/**
+ * Keep calendar due-date state coherent when a PM schedule is edited.
+ * Meter schedules never own a calendar due date. For Time/Day schedules an
+ * explicit date wins; clearing that date means "resume automatic scheduling".
+ */
+export function resolvePmNextDueDateForUpdate(input: PmNextDueDateUpdateInput): Date | null {
+  if (isMeterFrequencyType(input.frequencyType)) {
+    return null;
+  }
+
+  if (input.requestedNextDueDate instanceof Date) {
+    return input.requestedNextDueDate;
+  }
+
+  if (input.requestedNextDueDate === null || input.timingChanged) {
+    return calculateNextDueDate(
+      input.lastCompletedDate ?? input.now,
+      input.frequencyType,
+      input.frequencyValue,
+    );
+  }
+
+  return input.previousNextDueDate;
+}
+
+/**
+ * Decide the one-to-one Meter trigger lifecycle for an update. A stale trigger
+ * on any resulting Time/Day schedule is removed defensively.
+ */
+export function resolveMeterTriggerTransition(
+  input: MeterTriggerTransitionInput,
+): MeterTriggerTransition {
+  const wasMeter = isMeterFrequencyType(input.previousFrequencyType);
+  const willBeMeter = isMeterFrequencyType(input.nextFrequencyType);
+
+  if (!willBeMeter) {
+    return input.hasTrigger ? 'remove' : 'none';
+  }
+
+  if (!input.hasTrigger) {
+    return 'create';
+  }
+
+  if (!wasMeter || input.targetChanged || input.previousFrequencyType !== input.nextFrequencyType) {
+    return 'reconcile';
+  }
+
+  return 'none';
+}
+
 export function isAutoCalculableFrequency(frequencyType: string): boolean {
-  return isPmFrequencyType(frequencyType) && frequencyType !== 'meter_based' && frequencyType !== 'custom_hours';
+  return isPmFrequencyType(frequencyType) && !isMeterFrequencyType(frequencyType);
 }
 
 export function formatFrequencyLabel(frequencyType: string, frequencyValue: number): string {

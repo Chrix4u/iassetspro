@@ -1,9 +1,28 @@
 /**
- * PM Schedule utility functions for calculating next due dates
- * and determining if meter-based/custom_hours schedules need readings.
+ * PM Schedule utility functions.
+ *
+ * New schedules use exactly two frequency types:
+ * - time_day: a calendar/clock interval with an explicit unit
+ * - meter: a threshold interval evaluated by a meter trigger
+ *
+ * Legacy cadence names remain readable through normalizePmFrequency so existing
+ * schedules can be migrated without losing their original recurrence semantics.
  */
 
-export const PM_FREQUENCY_TYPES = [
+export const PM_FREQUENCY_TYPES = ['time_day', 'meter'] as const;
+export type PmFrequencyType = (typeof PM_FREQUENCY_TYPES)[number];
+
+export const TIME_DAY_FREQUENCY_UNITS = [
+  'minutes',
+  'hours',
+  'days',
+  'weeks',
+  'months',
+  'years',
+] as const;
+export type TimeDayFrequencyUnit = (typeof TIME_DAY_FREQUENCY_UNITS)[number];
+
+export const LEGACY_PM_FREQUENCY_TYPES = [
   'daily',
   'weekly',
   'biweekly',
@@ -15,56 +34,119 @@ export const PM_FREQUENCY_TYPES = [
   'custom_days',
   'meter_based',
 ] as const;
+export type LegacyPmFrequencyType = (typeof LEGACY_PM_FREQUENCY_TYPES)[number];
 
-export type PmFrequencyType = (typeof PM_FREQUENCY_TYPES)[number];
+export interface NormalizedPmFrequency {
+  type: PmFrequencyType;
+  value: number;
+  unit: TimeDayFrequencyUnit | string | null;
+}
 
 export function isPmFrequencyType(value: unknown): value is PmFrequencyType {
   return typeof value === 'string' && (PM_FREQUENCY_TYPES as readonly string[]).includes(value);
 }
 
+export function isTimeDayFrequencyUnit(value: unknown): value is TimeDayFrequencyUnit {
+  return typeof value === 'string' && (TIME_DAY_FREQUENCY_UNITS as readonly string[]).includes(value);
+}
+
+export function isLegacyPmFrequencyType(value: unknown): value is LegacyPmFrequencyType {
+  return typeof value === 'string' && (LEGACY_PM_FREQUENCY_TYPES as readonly string[]).includes(value);
+}
+
 /**
- * Calculate the next due date from a given date based on frequency type and value.
- * Returns null for meter_based and custom_hours (these need external triggers).
+ * Convert legacy recurrence names to the canonical two-mode representation.
+ * Unknown inputs and canonical Time/Day values without a supported unit are
+ * rejected instead of silently falling back to a different cadence.
+ */
+export function normalizePmFrequency(
+  frequencyType: string,
+  frequencyValue: number,
+  frequencyUnit?: string | null,
+): NormalizedPmFrequency | null {
+  const value = Number(frequencyValue);
+  if (!Number.isFinite(value) || value <= 0) return null;
+
+  if (frequencyType === 'time_day') {
+    if (!isTimeDayFrequencyUnit(frequencyUnit)) return null;
+    return { type: 'time_day', value, unit: frequencyUnit };
+  }
+
+  if (frequencyType === 'meter') {
+    return {
+      type: 'meter',
+      value,
+      unit: typeof frequencyUnit === 'string' && frequencyUnit.trim() ? frequencyUnit.trim() : null,
+    };
+  }
+
+  switch (frequencyType) {
+    case 'daily':
+      return { type: 'time_day', value, unit: 'days' };
+    case 'weekly':
+      return { type: 'time_day', value, unit: 'weeks' };
+    case 'biweekly':
+      return { type: 'time_day', value: value * 2, unit: 'weeks' };
+    case 'monthly':
+      return { type: 'time_day', value, unit: 'months' };
+    case 'quarterly':
+      return { type: 'time_day', value: value * 3, unit: 'months' };
+    case 'semiannual':
+      return { type: 'time_day', value: value * 6, unit: 'months' };
+    case 'annual':
+      return { type: 'time_day', value, unit: 'years' };
+    case 'custom_hours':
+      return { type: 'time_day', value, unit: 'hours' };
+    case 'custom_days':
+      return { type: 'time_day', value, unit: 'days' };
+    case 'meter_based':
+      return {
+        type: 'meter',
+        value,
+        unit: typeof frequencyUnit === 'string' && frequencyUnit.trim() ? frequencyUnit.trim() : null,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Calculate the next calendar due date from a given date.
+ * Meter schedules deliberately return null; their due state is driven by a
+ * meter threshold rather than a fabricated date.
  */
 export function calculateNextDueDate(
   fromDate: Date,
   frequencyType: string,
   frequencyValue: number,
+  frequencyUnit?: string | null,
 ): Date | null {
-  if (!isPmFrequencyType(frequencyType)) return null;
-
-  // meter_based and custom_hours need meter/time readings — skip auto-calculation
-  if (frequencyType === 'meter_based' || frequencyType === 'custom_hours') {
+  const normalized = normalizePmFrequency(frequencyType, frequencyValue, frequencyUnit);
+  if (!normalized || normalized.type === 'meter' || !isTimeDayFrequencyUnit(normalized.unit)) {
     return null;
   }
 
   const next = new Date(fromDate);
-  const val = Math.max(1, frequencyValue); // at least 1
+  const val = normalized.value;
 
-  switch (frequencyType) {
-    case 'daily':
+  switch (normalized.unit) {
+    case 'minutes':
+      next.setMinutes(next.getMinutes() + val);
+      break;
+    case 'hours':
+      next.setHours(next.getHours() + val);
+      break;
+    case 'days':
       next.setDate(next.getDate() + val);
       break;
-    case 'weekly':
+    case 'weeks':
       next.setDate(next.getDate() + val * 7);
       break;
-    case 'biweekly':
-      next.setDate(next.getDate() + val * 14);
-      break;
-    case 'monthly':
+    case 'months':
       next.setMonth(next.getMonth() + val);
       break;
-    case 'quarterly':
-      next.setMonth(next.getMonth() + val * 3);
-      break;
-    case 'semiannual':
-      next.setMonth(next.getMonth() + val * 6);
-      break;
-    case 'annual':
-      next.setMonth(next.getMonth() + val * 12);
-      break;
-    case 'custom_days':
-      next.setDate(next.getDate() + val);
+    case 'years':
+      next.setFullYear(next.getFullYear() + val);
       break;
     default:
       return null;
@@ -74,39 +156,31 @@ export function calculateNextDueDate(
 }
 
 /**
- * Check if a frequency type can be auto-calculated (doesn't need meter readings).
+ * Calendar/clock schedules can be calculated automatically; meter schedules
+ * require their configured reading source to cross a threshold.
  */
-export function isAutoCalculableFrequency(frequencyType: string): boolean {
-  return isPmFrequencyType(frequencyType) && frequencyType !== 'meter_based' && frequencyType !== 'custom_hours';
+export function isAutoCalculableFrequency(
+  frequencyType: string,
+  frequencyUnit?: string | null,
+): boolean {
+  const normalized = normalizePmFrequency(frequencyType, 1, frequencyUnit);
+  return normalized?.type === 'time_day' && isTimeDayFrequencyUnit(normalized.unit);
 }
 
-/**
- * Generate a human-readable frequency label.
- */
-export function formatFrequencyLabel(frequencyType: string, frequencyValue: number): string {
-  const val = frequencyValue;
-  switch (frequencyType) {
-    case 'daily':
-      return `Every ${val} day${val > 1 ? 's' : ''}`;
-    case 'weekly':
-      return `Every ${val} week${val > 1 ? 's' : ''}`;
-    case 'biweekly':
-      return `Every ${val * 2} weeks`;
-    case 'monthly':
-      return `Every ${val} month${val > 1 ? 's' : ''}`;
-    case 'quarterly':
-      return `Every ${val * 3} months`;
-    case 'semiannual':
-      return `Every ${val * 6} months`;
-    case 'annual':
-      return `Every ${val} year${val > 1 ? 's' : ''}`;
-    case 'custom_hours':
-      return `Every ${val} hour${val > 1 ? 's' : ''}`;
-    case 'custom_days':
-      return `Every ${val} day${val > 1 ? 's' : ''}`;
-    case 'meter_based':
-      return `Every ${val} units`;
-    default:
-      return `${frequencyType}/${val}`;
-  }
+function singularizeUnit(unit: string, value: number): string {
+  if (value !== 1) return unit;
+  return unit.endsWith('s') ? unit.slice(0, -1) : unit;
+}
+
+/** Generate a human-readable recurrence label. */
+export function formatFrequencyLabel(
+  frequencyType: string,
+  frequencyValue: number,
+  frequencyUnit?: string | null,
+): string {
+  const normalized = normalizePmFrequency(frequencyType, frequencyValue, frequencyUnit);
+  if (!normalized) return `${frequencyType}/${frequencyValue}`;
+
+  const unit = normalized.unit || 'units';
+  return `Every ${normalized.value} ${singularizeUnit(unit, normalized.value)}`;
 }

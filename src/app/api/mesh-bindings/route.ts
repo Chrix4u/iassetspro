@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,9 +22,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'modelId query parameter is required' }, { status: 400 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const model = await db.assetModel.findUnique({
+      where: { id: modelId },
+      include: { asset: { select: { plantId: true } } },
+    });
+    if (!model) {
+      return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
+    }
+    if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const where: Record<string, unknown> = { modelId };
 
     if (assetId) {
+      const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });
+      if (!asset || !canAccessPlantStrict(plantScope, asset.plantId)) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
+      if (asset.plantId !== model.asset.plantId) {
+        return NextResponse.json({ success: false, error: 'Bound asset must belong to the model plant' }, { status: 400 });
+      }
       where.assetId = assetId;
     }
 
@@ -69,19 +93,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Asset ID is required' }, { status: 400 });
     }
 
-    // Verify model exists
-    const model = await db.assetModel.findUnique({ where: { id: modelId } });
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const model = await db.assetModel.findUnique({
+      where: { id: modelId },
+      include: { asset: { select: { plantId: true } } },
+    });
     if (!model) {
       return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
     }
+    if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    // Verify asset exists
-    const asset = await db.asset.findUnique({ where: { id: assetId } });
+    const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });
     if (!asset) {
       return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
     }
+    if (!canAccessPlantStrict(plantScope, asset.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (asset.plantId !== model.asset.plantId) {
+      return NextResponse.json({ success: false, error: 'Bound asset must belong to the model plant' }, { status: 400 });
+    }
 
-    // Check for duplicate binding (same model + meshName)
     const existing = await db.assetMeshBinding.findFirst({
       where: { modelId, meshName },
     });

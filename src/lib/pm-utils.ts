@@ -57,6 +57,17 @@ export interface SerializedPmFrequency {
   frequencyValue: number;
 }
 
+export interface PmFrequencyInput {
+  frequencyMode?: unknown;
+  frequencyUnit?: unknown;
+  frequencyType?: unknown;
+  frequencyValue?: unknown;
+}
+
+export type PmFrequencyInputResult =
+  | { ok: true; value: SerializedPmFrequency }
+  | { ok: false; error: string };
+
 const TIME_UNIT_TO_FREQUENCY_TYPE: Record<PmTimeUnit, PmFrequencyType> = {
   minutes: 'time_minutes',
   hours: 'time_hours',
@@ -126,6 +137,57 @@ export function serializePmFrequency(
   return {
     frequencyType: TIME_UNIT_TO_FREQUENCY_TYPE[frequencyUnit as PmTimeUnit],
     frequencyValue,
+  };
+}
+
+/**
+ * Resolve either the new canonical API shape or the existing legacy/storage
+ * shape into the persisted PM frequency pair. Canonical mode/unit fields take
+ * precedence when either is present, so a mixed payload cannot silently fall
+ * back to a legacy frequency type.
+ */
+export function resolvePmFrequencyInput(input: PmFrequencyInput): PmFrequencyInputResult {
+  const normalizedFrequencyValue = typeof input.frequencyValue === 'number'
+    || typeof input.frequencyValue === 'string'
+    ? Number(input.frequencyValue)
+    : Number.NaN;
+
+  if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
+    return { ok: false, error: 'Frequency value must be a positive whole number' };
+  }
+
+  const hasCanonicalInput = input.frequencyMode !== undefined || input.frequencyUnit !== undefined;
+  if (hasCanonicalInput) {
+    if (!isPmFrequencyMode(input.frequencyMode)) {
+      return { ok: false, error: 'Select a valid frequency type' };
+    }
+    if (input.frequencyMode === 'time_day' && !isPmTimeUnit(input.frequencyUnit)) {
+      return { ok: false, error: 'Select a valid Time/Day unit' };
+    }
+    if (input.frequencyMode === 'meter' && !isPmMeterUnit(input.frequencyUnit)) {
+      return { ok: false, error: 'Select a supported meter unit' };
+    }
+
+    return {
+      ok: true,
+      value: serializePmFrequency(
+        input.frequencyMode,
+        input.frequencyUnit,
+        normalizedFrequencyValue,
+      ),
+    };
+  }
+
+  if (!isPmFrequencyType(input.frequencyType)) {
+    return { ok: false, error: 'Invalid PM frequency type' };
+  }
+
+  return {
+    ok: true,
+    value: {
+      frequencyType: input.frequencyType,
+      frequencyValue: normalizedFrequencyValue,
+    },
   };
 }
 

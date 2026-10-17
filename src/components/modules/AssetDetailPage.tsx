@@ -56,6 +56,7 @@ function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { i
 export function AssetDetailPage({ id }: { id: string }) {
   const { hasPermission, isAdmin } = useAuthStore();
   const pageParams = useNavigationStore((state) => state.pageParams);
+  const navigate = useNavigationStore((state) => state.navigate);
   const canViewFunctionalLocations = isAdmin() || hasPermission('assets.functional_locations.view');
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
@@ -1477,7 +1478,13 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." actionLabel="Create Digital Twin" onAction={() => setShowTwinForm(true)} />
               ) : twin && !showTwinForm && (
                 <div className="flex justify-end">
-                  <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate('assets-digital-twin', { twinId: twin.id, assetId: id, view: 'viewer' })}
+                  >
+                    <Monitor className="h-3.5 w-3.5 mr-1.5" />Open 3D / 2D Viewer
+                  </Button>
                 </div>
               )}
 

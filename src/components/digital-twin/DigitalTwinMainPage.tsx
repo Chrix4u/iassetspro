@@ -4,6 +4,7 @@ import React, { Component, useState, useEffect, useCallback, useMemo, useRef } f
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1535,6 +1536,8 @@ function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string 
 
 export function DigitalTwinMainPage() {
   const { hasPermission, isAdmin } = useAuthStore();
+  const pageParams = useNavigationStore((state) => state.pageParams);
+  const handoffConsumedRef = useRef<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [contentView, setContentView] = useState<ContentView>('grid');
   const [selectedTwin, setSelectedTwin] = useState<TwinData | null>(null);
@@ -1679,7 +1682,7 @@ export function DigitalTwinMainPage() {
     }
   }, [sortField]);
 
-  const handleOpenViewer = (twin: TwinData) => {
+  const handleOpenViewer = useCallback((twin: TwinData) => {
     // Reset the Zustand store to clear stale state from previous viewer sessions.
     // Stale state (selectedMeshName, selectedAssetId, isInfoPanelOpen, etc.)
     // can trigger cascading useEffect calls that cause Error #185.
@@ -1688,7 +1691,22 @@ export function DigitalTwinMainPage() {
       setSelectedTwin(twin);
       setViewMode('viewer');
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading || pageParams?.view !== 'viewer' || !pageParams?.twinId) return;
+
+    const requestedTwinId = pageParams.twinId;
+    if (handoffConsumedRef.current === requestedTwinId) return;
+
+    // Only open a twin returned by the caller's normal authorized list. A stale
+    // or cross-scope navigation parameter therefore fails closed.
+    const candidate = twins.find((candidate) => candidate.id === requestedTwinId);
+    if (!candidate) return;
+
+    handoffConsumedRef.current = requestedTwinId;
+    handleOpenViewer(candidate);
+  }, [handleOpenViewer, loading, pageParams, twins]);
 
   const handleOpenDiagram = (twin: TwinData) => {
     useDigitalTwinStore.getState().reset();

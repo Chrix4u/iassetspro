@@ -4,8 +4,11 @@ import {
   PM_TIME_UNITS,
   calculateNextDueDate,
   isAutoCalculableFrequency,
+  isMeterFrequencyType,
   normalizePmFrequency,
+  resolveMeterTriggerTransition,
   resolvePmFrequencyInput,
+  resolvePmNextDueDateForUpdate,
   serializePmFrequency,
   validatePmFrequencySelection,
 } from '@/lib/pm-utils';
@@ -171,4 +174,114 @@ describe('PM schedule API frequency input', () => {
       error: 'Invalid PM frequency type',
     });
   });
+});
+
+describe('PM schedule update timing', () => {
+  const now = new Date('2026-02-01T08:00:00.000Z');
+
+  it('recognizes only real Meter-backed persistence values as meter frequencies', () => {
+    expect(isMeterFrequencyType('meter_based')).toBe(true);
+    expect(isMeterFrequencyType('custom_hours')).toBe(true);
+    expect(isMeterFrequencyType('time_hours')).toBe(false);
+    expect(isMeterFrequencyType('monthly')).toBe(false);
+  });
+
+  it('recalculates a changed Time/Day schedule from the last completed date', () => {
+    const next = resolvePmNextDueDateForUpdate({
+      frequencyType: 'time_months',
+      frequencyValue: 3,
+      lastCompletedDate: new Date('2026-01-15T12:00:00.000Z'),
+      previousNextDueDate: new Date('2026-02-15T12:00:00.000Z'),
+      requestedNextDueDate: undefined,
+      timingChanged: true,
+      now,
+    });
+    expect(next?.toISOString()).toBe('2026-04-15T12:00:00.000Z');
+  });
+
+  it('uses now when a changed Time/Day schedule has never been completed', () => {
+    const next = resolvePmNextDueDateForUpdate({
+      frequencyType: 'time_days',
+      frequencyValue: 10,
+      lastCompletedDate: null,
+      previousNextDueDate: null,
+      requestedNextDueDate: undefined,
+      timingChanged: true,
+      now,
+    });
+    expect(next?.toISOString()).toBe('2026-02-11T08:00:00.000Z');
+  });
+
+  it('keeps an explicit valid Time/Day due date', () => {
+    const requested = new Date('2026-05-01T08:00:00.000Z');
+    expect(resolvePmNextDueDateForUpdate({
+      frequencyType: 'time_months',
+      frequencyValue: 3,
+      lastCompletedDate: new Date('2026-01-15T12:00:00.000Z'),
+      previousNextDueDate: new Date('2026-02-15T12:00:00.000Z'),
+      requestedNextDueDate: requested,
+      timingChanged: true,
+      now,
+    })).toEqual(requested);
+  });
+
+  it('auto-recalculates a Time/Day schedule when an explicit due date is cleared', () => {
+    const next = resolvePmNextDueDateForUpdate({
+      frequencyType: 'time_weeks',
+      frequencyValue: 2,
+      lastCompletedDate: new Date('2026-01-15T12:00:00.000Z'),
+      previousNextDueDate: new Date('2026-01-29T12:00:00.000Z'),
+      requestedNextDueDate: null,
+      timingChanged: false,
+      now,
+    });
+    expect(next?.toISOString()).toBe('2026-01-29T12:00:00.000Z');
+  });
+
+  it('preserves the existing Time/Day due date when timing did not change', () => {
+    const previous = new Date('2026-03-15T12:00:00.000Z');
+    expect(resolvePmNextDueDateForUpdate({
+      frequencyType: 'time_months',
+      frequencyValue: 1,
+      lastCompletedDate: new Date('2026-02-15T12:00:00.000Z'),
+      previousNextDueDate: previous,
+      requestedNextDueDate: undefined,
+      timingChanged: false,
+      now,
+    })).toEqual(previous);
+  });
+
+  it('always clears calendar next-due state for Meter schedules', () => {
+    expect(resolvePmNextDueDateForUpdate({
+      frequencyType: 'meter_based',
+      frequencyValue: 500,
+      lastCompletedDate: null,
+      previousNextDueDate: new Date('2026-03-15T12:00:00.000Z'),
+      requestedNextDueDate: new Date('2026-05-01T08:00:00.000Z'),
+      timingChanged: true,
+      now,
+    })).toBeNull();
+  });
+});
+
+describe('PM Meter trigger lifecycle decisions', () => {
+  it.each([
+    ['monthly', 'meter_based', false, true, 'create'],
+    ['meter_based', 'meter_based', true, true, 'reconcile'],
+    ['custom_hours', 'meter_based', true, false, 'reconcile'],
+    ['meter_based', 'time_days', true, true, 'remove'],
+    ['time_days', 'time_weeks', true, false, 'remove'],
+    ['meter_based', 'meter_based', true, false, 'none'],
+    ['time_days', 'time_weeks', false, true, 'none'],
+  ])(
+    'chooses %s → %s with trigger=%s targetChanged=%s as %s',
+    (previousFrequencyType, nextFrequencyType, hasTrigger, targetChanged, expected) => {
+      expect(resolveMeterTriggerTransition({
+        previousFrequencyType,
+        nextFrequencyType,
+        hasTrigger,
+        targetChanged,
+      })).toBe(expected);
+    },
+  );
 });

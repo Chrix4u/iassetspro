@@ -9,6 +9,8 @@ const retired = [
   'scripts/seed-rotary-printer-part2.mjs',
   'scripts/fix-schema-drift.sh',
   'scripts/fix-prisma-generate.sh',
+  'activate-role-permissions.js',
+  'refresh-session-permissions.js',
 ];
 
 describe('legacy database utility safety', () => {

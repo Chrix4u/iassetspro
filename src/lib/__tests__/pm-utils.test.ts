@@ -5,6 +5,7 @@ import {
   calculateNextDueDate,
   isAutoCalculableFrequency,
   normalizePmFrequency,
+  resolvePmFrequencyInput,
   serializePmFrequency,
   validatePmFrequencySelection,
 } from '@/lib/pm-utils';
@@ -113,5 +114,61 @@ describe('canonical PM frequency model', () => {
     const start = new Date('2026-01-15T12:00:00.000Z');
     expect(calculateNextDueDate(start, 'meter_based', 500)).toBeNull();
     expect(isAutoCalculableFrequency('meter_based')).toBe(false);
+  });
+});
+
+describe('PM schedule API frequency input', () => {
+  it('resolves canonical Time/Day input into the persisted time unit', () => {
+    expect(resolvePmFrequencyInput({
+      frequencyMode: 'time_day',
+      frequencyUnit: 'months',
+      frequencyValue: '3',
+    })).toEqual({
+      ok: true,
+      value: { frequencyType: 'time_months', frequencyValue: 3 },
+    });
+  });
+
+  it('resolves canonical Meter input into the existing operating-hours trigger type', () => {
+    expect(resolvePmFrequencyInput({
+      frequencyMode: 'meter',
+      frequencyUnit: 'hours',
+      frequencyValue: 500,
+    })).toEqual({
+      ok: true,
+      value: { frequencyType: 'meter_based', frequencyValue: 500 },
+    });
+  });
+
+  it.each([
+    [{ frequencyMode: 'time_day', frequencyUnit: 'cycles', frequencyValue: 1 }, 'Select a valid Time/Day unit'],
+    [{ frequencyMode: 'meter', frequencyUnit: 'days', frequencyValue: 100 }, 'Select a supported meter unit'],
+    [{ frequencyMode: 'time_day', frequencyValue: 1 }, 'Select a valid Time/Day unit'],
+    [{ frequencyUnit: 'days', frequencyValue: 1 }, 'Select a valid frequency type'],
+    [{ frequencyMode: 'time_day', frequencyUnit: 'days', frequencyValue: 0 }, 'Frequency value must be a positive whole number'],
+    [{ frequencyMode: 'time_day', frequencyUnit: 'days', frequencyValue: -1 }, 'Frequency value must be a positive whole number'],
+    [{ frequencyMode: 'time_day', frequencyUnit: 'days', frequencyValue: 1.5 }, 'Frequency value must be a positive whole number'],
+    [{ frequencyMode: 'time_day', frequencyUnit: 'days', frequencyValue: 'abc' }, 'Frequency value must be a positive whole number'],
+  ])('rejects invalid canonical API input %#', (input, error) => {
+    expect(resolvePmFrequencyInput(input)).toEqual({ ok: false, error });
+  });
+
+  it.each([
+    ['monthly', '2', 'monthly', 2],
+    ['time_days', 5, 'time_days', 5],
+    ['custom_hours', 250, 'custom_hours', 250],
+    ['meter_based', 750, 'meter_based', 750],
+  ])('keeps legacy/storage clients compatible for %s', (frequencyType, frequencyValue, persistedType, persistedValue) => {
+    expect(resolvePmFrequencyInput({ frequencyType, frequencyValue })).toEqual({
+      ok: true,
+      value: { frequencyType: persistedType, frequencyValue: persistedValue },
+    });
+  });
+
+  it('rejects an unknown legacy frequency type', () => {
+    expect(resolvePmFrequencyInput({ frequencyType: 'fortnightly', frequencyValue: 1 })).toEqual({
+      ok: false,
+      error: 'Invalid PM frequency type',
+    });
   });
 });

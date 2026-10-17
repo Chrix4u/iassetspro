@@ -7,6 +7,8 @@ const modelCollection = fs.readFileSync('src/app/api/model-library/route.ts', 'u
 const modelItem = fs.readFileSync('src/app/api/model-library/[id]/route.ts', 'utf8');
 const mappingCollection = fs.readFileSync('src/app/api/mesh-mappings/route.ts', 'utf8');
 const mappingItem = fs.readFileSync('src/app/api/mesh-mappings/[id]/route.ts', 'utf8');
+const modelManager = fs.readFileSync('src/components/digital-twin/ModelManagerPanel.tsx', 'utf8');
+const mappingEditor = fs.readFileSync('src/components/digital-twin/ComponentMappingEditor.tsx', 'utf8');
 
 describe('enterprise model library and mapping safety contract', () => {
   it('uses the current PostgreSQL ModelLibrary schema instead of the removed ThreeDModel delegate', () => {
@@ -38,5 +40,14 @@ describe('enterprise model library and mapping safety contract', () => {
     expect(mappingCollection).toContain('targetAssetId !== model.assetId');
     expect(mappingItem).toContain('authorizeMapping');
     expect(mappingItem).toContain('canAccessPlantStrict(plantScope, modelPlantId)');
+  });
+
+  it('aligns Digital Twin panels with the flattened API response and permission-gates writes', () => {
+    expect(modelManager).toContain('setModels(Array.isArray(res.data) ? res.data : [])');
+    expect(modelManager).toContain('setStats((res.stats as Record<string, unknown> | undefined) || null)');
+    expect(modelManager).toContain("hasPermission('digital_twin.manage')");
+    expect(mappingEditor).toContain('setMappings(Array.isArray(res.data) ? res.data : [])');
+    expect(mappingEditor).toContain('res.typeCounts as Record<string, number>');
+    expect(mappingEditor).toContain("hasPermission('digital_twin.manage')");
   });
 });

@@ -444,6 +444,11 @@ jobs:
       - name: Seed full platform demo data
         run: bun run seed
 
+      - name: Enable Digital Twin platform E2E fixture
+        env:
+          IASSETSPRO_PLATFORM_E2E_FIXTURE: '1'
+        run: bunx tsx scripts/enable-digital-twin-platform-e2e.ts
+
       - name: Download production standalone build
         uses: actions/download-artifact@v4
         with:

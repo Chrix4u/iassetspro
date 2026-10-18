@@ -627,7 +627,7 @@ export class MobileAIService {
           where: {
             assetId: context.assetId,
             isActive: true,
-            frequencyType: { notIn: ['meter_based', 'custom_hours'] },
+            frequencyType: { notIn: ['meter', 'meter_based'] },
             nextDueDate: { lt: new Date() },
           },
         });

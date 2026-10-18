@@ -25,7 +25,7 @@ import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { useNavigationStore } from "@/stores/navigationStore";
 import { cn } from "@/lib/utils";
-import { isAutoCalculableFrequency } from "@/lib/pm-utils";
+import { formatFrequencyLabel, isAutoCalculableFrequency } from "@/lib/pm-utils";
 import type { PmSchedule } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -112,18 +112,13 @@ function formatTimeAgo(dateStr?: string | null): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function formatFrequency(type: string, value: number): string {
-  const labels: Record<string, string> = {
-    daily: "Day",
-    weekly: "Week",
-    biweekly: "2 Weeks",
-    monthly: "Month",
-    quarterly: "Quarter",
-    semiannual: "6 Months",
-    yearly: "Year",
-  };
-  const label = labels[type] || type;
-  return `Every ${value > 1 ? value + " " : ""}${label}${value > 1 ? "s" : ""}`;
+function formatFrequency(schedule: Pick<PmSchedule, "frequencyType" | "frequencyValue" | "frequencyUnit" | "meterName">): string {
+  return formatFrequencyLabel(
+    schedule.frequencyType,
+    schedule.frequencyValue,
+    schedule.frequencyUnit,
+    schedule.meterName,
+  );
 }
 
 function formatDuration(minutes?: number | null): string {
@@ -968,7 +963,7 @@ function PmScheduleDetail({ schedule }: { schedule: PmScheduleWithRelations }) {
               Frequency
             </p>
             <p className="text-sm font-medium mt-0.5">
-              {formatFrequency(schedule.frequencyType, schedule.frequencyValue)}
+              {formatFrequency(schedule)}
             </p>
           </div>
         </div>

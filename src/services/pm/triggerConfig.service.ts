@@ -9,6 +9,8 @@ export interface TriggerScheduleTarget {
   assetId: string;
   componentId: string | null;
   frequencyType: string;
+  frequencyUnit?: string | null;
+  meterName?: string | null;
   asset: { plantId: string };
 }
 
@@ -121,8 +123,42 @@ export async function normalizePmTriggerConfig(options: {
   const existing = options.existingConfig || {};
 
   if (triggerType === 'meter') {
-    if (!schedule.componentId || !['meter_based', 'custom_hours'].includes(schedule.frequencyType)) {
-      return { error: 'meter triggers require a component-targeted usage-based PM schedule' };
+    if (schedule.frequencyType === 'meter') {
+      const meterName = text(schedule.meterName);
+      const unit = text(schedule.frequencyUnit);
+      if (!meterName || !unit) {
+        return { error: 'canonical meter PM requires a selected asset meter and unit' };
+      }
+      const latestReading = await db.meterReading.findFirst({
+        where: { assetId: schedule.assetId, meterName, unit },
+        orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+        select: { id: true, value: true, readingDate: true },
+      });
+      if (!latestReading) {
+        return { error: 'selected meter has no reading for this PM schedule asset' };
+      }
+      const sameSource = existing.source === 'asset_meter_reading'
+        && existing.assetId === schedule.assetId
+        && existing.meterName === meterName
+        && existing.unit === unit;
+      const existingBaseline = Number(existing.baselineValue);
+      return {
+        config: {
+          source: 'asset_meter_reading',
+          assetId: schedule.assetId,
+          meterName,
+          unit,
+          threshold: triggerValue,
+          baselineValue: sameSource && Number.isFinite(existingBaseline)
+            ? existingBaseline
+            : Number(latestReading.value),
+          baselineReadingId: sameSource ? (existing.baselineReadingId ?? latestReading.id) : latestReading.id,
+        },
+      };
+    }
+
+    if (!schedule.componentId || !['meter_based'].includes(schedule.frequencyType)) {
+      return { error: 'meter triggers require a canonical asset meter or a legacy component usage schedule' };
     }
     const component = await db.componentRegistry.findUnique({
       where: { id: schedule.componentId },

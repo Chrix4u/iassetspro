@@ -4,7 +4,8 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
-import { isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
+import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export async function GET(
@@ -115,51 +116,42 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    const existingNormalizedFrequency = normalizePmFrequency(existing);
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
-      'title', 'description', 'frequencyType', 'frequencyValue',
-      'lastCompletedDate', 'nextDueDate', 'estimatedDuration', 'priority',
-      'assignedToId', 'departmentId', 'isActive', 'autoGenerateWO',
-      'leadDays', 'woTypeId', 'componentId', 'templateId',
+      'title', 'description', 'lastCompletedDate', 'nextDueDate',
+      'estimatedDuration', 'priority', 'assignedToId', 'departmentId',
+      'isActive', 'autoGenerateWO', 'leadDays', 'woTypeId', 'componentId', 'templateId',
     ];
 
     for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        if (field === 'lastCompletedDate' || field === 'nextDueDate') {
-          const rawDate = body[field];
-          const isBlankDate = rawDate === null
-            || (typeof rawDate === 'string' && rawDate.trim() === '');
-          if (isBlankDate) {
-            updateData[field] = null;
-          } else {
-            const normalizedDate = new Date(rawDate);
-            if (Number.isNaN(normalizedDate.getTime())) {
-              const label = field === 'lastCompletedDate' ? 'Last completed date' : 'Next due date';
-              return NextResponse.json(
-                { success: false, error: `${label} must be a valid date` },
-                { status: 400 },
-              );
-            }
-            updateData[field] = normalizedDate;
-          }
-        } else if (field === 'componentId' || field === 'templateId' || field === 'assignedToId' || field === 'departmentId' || field === 'woTypeId') {
-          updateData[field] = body[field] || null;
+      if (body[field] === undefined) continue;
+      if (field === 'lastCompletedDate' || field === 'nextDueDate') {
+        // Frequency edits own nextDueDate below so they can derive a new due date
+        // when the planner changes interval/unit without entering a manual date.
+        if (field === 'nextDueDate') continue;
+        const rawDate = body[field];
+        const isBlankDate = rawDate === null
+          || (typeof rawDate === 'string' && rawDate.trim() === '');
+        if (isBlankDate) {
+          updateData[field] = null;
         } else {
-          updateData[field] = body[field];
+          const normalizedDate = new Date(rawDate);
+          if (Number.isNaN(normalizedDate.getTime())) {
+            return NextResponse.json(
+              { success: false, error: 'Last completed date must be a valid date' },
+              { status: 400 },
+            );
+          }
+          updateData[field] = normalizedDate;
         }
+      } else if (field === 'componentId' || field === 'templateId' || field === 'assignedToId' || field === 'departmentId' || field === 'woTypeId') {
+        updateData[field] = body[field] || null;
+      } else {
+        updateData[field] = body[field];
       }
     }
 
-    if (body.frequencyType !== undefined && !isPmFrequencyType(body.frequencyType)) {
-      return NextResponse.json({ success: false, error: 'Invalid PM frequency type' }, { status: 400 });
-    }
-    if (body.frequencyValue !== undefined) {
-      const normalizedFrequencyValue = Number(body.frequencyValue);
-      if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
-        return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
-      }
-      updateData.frequencyValue = normalizedFrequencyValue;
-    }
     if (body.leadDays !== undefined) {
       const normalizedLeadDays = typeof body.leadDays === 'number' || typeof body.leadDays === 'string'
         ? Number(body.leadDays)
@@ -190,9 +182,12 @@ export async function PUT(
       updateData.estimatedDuration = normalizedEstimatedDuration;
     }
 
-    if (body.componentId !== undefined && body.componentId) {
+    const prospectiveComponentId = body.componentId !== undefined
+      ? (body.componentId || null)
+      : existing.componentId;
+    if (prospectiveComponentId) {
       const component = await db.componentRegistry.findUnique({
-        where: { id: body.componentId },
+        where: { id: prospectiveComponentId },
         select: { id: true, assetId: true },
       });
       if (!component) {
@@ -203,6 +198,144 @@ export async function PUT(
           { success: false, error: 'Selected component does not belong to the PM schedule asset' },
           { status: 400 },
         );
+      }
+    }
+
+    const frequencyFieldsChanging = ['frequencyType', 'frequencyValue', 'frequencyUnit', 'meterName']
+      .some((field) => body[field] !== undefined);
+    let canonicalFrequencyForUpdate: ReturnType<typeof normalizePmFrequency> | null = null;
+    let storedFrequencyTypeForUpdate: string | null = null;
+    let storedFrequencyUnitForUpdate: string | null = null;
+    let storedMeterNameForUpdate: string | null = null;
+
+    if (frequencyFieldsChanging) {
+      const rawFrequencyType = body.frequencyType !== undefined ? body.frequencyType : existing.frequencyType;
+      if (!isPmFrequencyType(rawFrequencyType)) {
+        return NextResponse.json({ success: false, error: 'Invalid PM frequency type' }, { status: 400 });
+      }
+      const rawFrequencyValue = body.frequencyValue !== undefined ? body.frequencyValue : existing.frequencyValue;
+      const normalizedFrequencyValue = Number(rawFrequencyValue);
+      if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
+        return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
+      }
+
+      const rawFrequencyUnit = body.frequencyUnit !== undefined ? body.frequencyUnit : existing.frequencyUnit;
+      const rawMeterName = body.meterName !== undefined ? body.meterName : existing.meterName;
+      if (
+        body.frequencyType !== undefined
+        && body.frequencyType !== existing.frequencyType
+        && isCanonicalPmFrequencyType(rawFrequencyType)
+        && body.frequencyUnit === undefined
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'Frequency unit is required when changing frequency type' },
+          { status: 400 },
+        );
+      }
+      if (isCanonicalPmFrequencyType(rawFrequencyType)) {
+        const rawFrequencyValidation = validateCanonicalPmFrequency({
+          frequencyType: rawFrequencyType,
+          frequencyValue: normalizedFrequencyValue,
+          frequencyUnit: rawFrequencyUnit,
+          meterName: rawMeterName,
+        });
+        if (!rawFrequencyValidation.ok) {
+          return NextResponse.json({ success: false, error: rawFrequencyValidation.error }, { status: 400 });
+        }
+      }
+
+      canonicalFrequencyForUpdate = normalizePmFrequency({
+        frequencyType: rawFrequencyType,
+        frequencyValue: normalizedFrequencyValue,
+        frequencyUnit: rawFrequencyUnit,
+        meterName: rawMeterName,
+      });
+      const legacyComponentUsage = ['meter_based'].includes(rawFrequencyType)
+        && !canonicalFrequencyForUpdate.meterName
+        && Boolean(prospectiveComponentId);
+
+      if (!legacyComponentUsage && !isCanonicalPmFrequencyType(rawFrequencyType)) {
+        const frequencyValidation = validateCanonicalPmFrequency(canonicalFrequencyForUpdate);
+        if (!frequencyValidation.ok) {
+          return NextResponse.json({ success: false, error: frequencyValidation.error }, { status: 400 });
+        }
+      }
+
+      if (canonicalFrequencyForUpdate.frequencyType === 'meter' && canonicalFrequencyForUpdate.meterName) {
+        const selectedMeter = await db.meterReading.findFirst({
+          where: {
+            assetId: existing.assetId,
+            meterName: canonicalFrequencyForUpdate.meterName,
+            unit: canonicalFrequencyForUpdate.frequencyUnit,
+          },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { id: true },
+        });
+        if (!selectedMeter) {
+          return NextResponse.json(
+            { success: false, error: 'Selected meter has no reading for this asset' },
+            { status: 400 },
+          );
+        }
+      } else if (canonicalFrequencyForUpdate.frequencyType === 'meter' && !legacyComponentUsage) {
+        return NextResponse.json(
+          { success: false, error: 'Meter frequency requires a configured asset meter and unit' },
+          { status: 400 },
+        );
+      }
+
+      storedFrequencyTypeForUpdate = legacyComponentUsage
+        ? rawFrequencyType
+        : canonicalFrequencyForUpdate.frequencyType;
+      storedFrequencyUnitForUpdate = legacyComponentUsage ? null : canonicalFrequencyForUpdate.frequencyUnit;
+      storedMeterNameForUpdate = legacyComponentUsage ? null : canonicalFrequencyForUpdate.meterName;
+      updateData.frequencyType = storedFrequencyTypeForUpdate;
+      updateData.frequencyValue = canonicalFrequencyForUpdate.frequencyValue;
+      updateData.frequencyUnit = storedFrequencyUnitForUpdate;
+      updateData.meterName = storedMeterNameForUpdate;
+
+      if (canonicalFrequencyForUpdate.frequencyType === 'meter') {
+        updateData.nextDueDate = null;
+        updateData.leadDays = 0;
+      } else {
+        let requestedNextDueDate: Date | null = null;
+        if (body.nextDueDate !== undefined && body.nextDueDate !== null && String(body.nextDueDate).trim() !== '') {
+          requestedNextDueDate = new Date(body.nextDueDate);
+          if (Number.isNaN(requestedNextDueDate.getTime())) {
+            return NextResponse.json(
+              { success: false, error: 'Next due date must be a valid date' },
+              { status: 400 },
+            );
+          }
+        }
+        const effectiveLastCompleted = updateData.lastCompletedDate instanceof Date
+          ? updateData.lastCompletedDate
+          : existing.lastCompletedDate;
+        updateData.nextDueDate = requestedNextDueDate ?? calculateNextDueDate(
+          effectiveLastCompleted ?? new Date(),
+          canonicalFrequencyForUpdate.frequencyType,
+          canonicalFrequencyForUpdate.frequencyValue,
+          canonicalFrequencyForUpdate.frequencyUnit,
+        );
+      }
+    } else if (existingNormalizedFrequency.frequencyType === 'meter') {
+      // Partial API edits must not reintroduce calendar state onto usage-based PM.
+      if (body.nextDueDate !== undefined) updateData.nextDueDate = null;
+      if (body.leadDays !== undefined) updateData.leadDays = 0;
+    } else if (body.nextDueDate !== undefined) {
+      const rawDate = body.nextDueDate;
+      const isBlankDate = rawDate === null || (typeof rawDate === 'string' && rawDate.trim() === '');
+      if (isBlankDate) {
+        updateData.nextDueDate = null;
+      } else {
+        const normalizedDate = new Date(rawDate);
+        if (Number.isNaN(normalizedDate.getTime())) {
+          return NextResponse.json(
+            { success: false, error: 'Next due date must be a valid date' },
+            { status: 400 },
+          );
+        }
+        updateData.nextDueDate = normalizedDate;
       }
     }
 
@@ -218,6 +351,8 @@ export async function PUT(
           componentId: true,
           frequencyType: true,
           frequencyValue: true,
+          frequencyUnit: true,
+          meterName: true,
           assetId: true,
           asset: { select: { plantId: true } },
           trigger: {
@@ -234,21 +369,29 @@ export async function PUT(
       if (!lockedSchedule) return { kind: 'not_found' as const };
 
       const lockedUpdateData: Record<string, unknown> = { ...updateData };
-      const lockedProspectiveFrequencyType = body.frequencyType !== undefined
-        ? String(body.frequencyType)
-        : lockedSchedule.frequencyType;
-      if (!isAutoCalculableFrequency(lockedProspectiveFrequencyType)) {
-        lockedUpdateData.nextDueDate = null;
-      }
+      const lockedProspectiveFrequencyType = storedFrequencyTypeForUpdate ?? lockedSchedule.frequencyType;
+      const lockedProspectiveFrequencyValue = canonicalFrequencyForUpdate?.frequencyValue ?? Number(lockedSchedule.frequencyValue);
+      const lockedProspectiveFrequencyUnit = frequencyFieldsChanging
+        ? storedFrequencyUnitForUpdate
+        : lockedSchedule.frequencyUnit;
+      const lockedProspectiveMeterName = frequencyFieldsChanging
+        ? storedMeterNameForUpdate
+        : lockedSchedule.meterName;
+      const lockedProspectiveComponentId = body.componentId !== undefined
+        ? (body.componentId || null)
+        : lockedSchedule.componentId;
+      const lockedNormalizedProspectiveFrequency = normalizePmFrequency({
+        frequencyType: lockedProspectiveFrequencyType,
+        frequencyValue: lockedProspectiveFrequencyValue,
+        frequencyUnit: lockedProspectiveFrequencyUnit,
+        meterName: lockedProspectiveMeterName,
+      });
 
-      let lockedReconciledTriggerConfig: string | undefined;
-      let lockedReconciledTriggerValue: number | undefined;
-      const lockedTriggerTargetChanged = body.componentId !== undefined
-        || body.frequencyType !== undefined
-        || (lockedSchedule.trigger?.triggerType === 'meter' && body.frequencyValue !== undefined);
-
+      const lockedTriggerTargetChanged = body.componentId !== undefined || frequencyFieldsChanging;
+      const lockedTriggerConfig = lockedSchedule.trigger
+        ? parsePmTriggerConfig(lockedSchedule.trigger.triggerConfig)
+        : {};
       if (lockedSchedule.trigger?.isActive && lockedTriggerTargetChanged) {
-        const lockedTriggerConfig = parsePmTriggerConfig(lockedSchedule.trigger.triggerConfig);
         const lockedOpenGeneratedWork = await findOpenRuntimeGeneratedWorkOrder(
           lockedTriggerConfig,
           lockedSchedule.id,
@@ -257,41 +400,66 @@ export async function PUT(
         if (lockedOpenGeneratedWork) {
           return { kind: 'open_work' as const, openGeneratedWork: lockedOpenGeneratedWork };
         }
+      }
 
-        const lockedProspectiveFrequencyValue = body.frequencyValue !== undefined
-          ? Number(body.frequencyValue)
-          : Number(lockedSchedule.frequencyValue);
-        const lockedProspectiveComponentId = body.componentId !== undefined
-          ? (body.componentId || null)
-          : lockedSchedule.componentId;
-        const effectiveTriggerValue = lockedSchedule.trigger.triggerType === 'meter'
-          ? lockedProspectiveFrequencyValue
-          : lockedSchedule.trigger.triggerValue;
-        if (!Number.isFinite(effectiveTriggerValue) || effectiveTriggerValue <= 0) {
-          return { kind: 'invalid_trigger_interval' as const };
-        }
+      let triggerMutation: 'create' | 'update' | 'delete' | null = null;
+      let reconciledTriggerConfig: string | undefined;
+      let reconciledTriggerValue: number | undefined;
 
-        const normalized = await normalizePmTriggerConfig({
-          triggerType: lockedSchedule.trigger.triggerType,
-          triggerValue: effectiveTriggerValue,
-          triggerConfig: lockedTriggerConfig,
-          schedule: {
-            id: lockedSchedule.id,
-            assetId: lockedSchedule.assetId,
-            componentId: lockedProspectiveComponentId,
-            frequencyType: lockedProspectiveFrequencyType,
-            asset: { plantId: lockedSchedule.asset.plantId },
-          },
-          existingConfig: lockedTriggerConfig,
-        });
-        if (normalized.error || !normalized.config) {
-          return {
-            kind: 'trigger_conflict' as const,
-            error: normalized.error || 'invalid trigger configuration',
-          };
+      if (lockedTriggerTargetChanged) {
+        const prospectiveSchedule = {
+          id: lockedSchedule.id,
+          assetId: lockedSchedule.assetId,
+          componentId: lockedProspectiveComponentId,
+          frequencyType: lockedProspectiveFrequencyType,
+          frequencyUnit: lockedProspectiveFrequencyUnit,
+          meterName: lockedProspectiveMeterName,
+          asset: { plantId: lockedSchedule.asset.plantId },
+        };
+
+        if (lockedNormalizedProspectiveFrequency.frequencyType === 'meter') {
+          if (lockedSchedule.trigger && lockedSchedule.trigger.triggerType !== 'meter') {
+            return {
+              kind: 'trigger_conflict' as const,
+              error: 'Meter schedules require the schedule meter trigger; deactivate or remove the existing condition/production trigger first',
+            };
+          }
+          const normalized = await normalizePmTriggerConfig({
+            triggerType: 'meter',
+            triggerValue: lockedProspectiveFrequencyValue,
+            triggerConfig: lockedTriggerConfig,
+            schedule: prospectiveSchedule,
+            existingConfig: lockedTriggerConfig,
+          });
+          if (normalized.error || !normalized.config) {
+            return {
+              kind: 'trigger_conflict' as const,
+              error: normalized.error || 'invalid meter trigger configuration',
+            };
+          }
+          reconciledTriggerConfig = JSON.stringify(normalized.config);
+          reconciledTriggerValue = lockedProspectiveFrequencyValue;
+          triggerMutation = lockedSchedule.trigger ? 'update' : 'create';
+        } else if (lockedSchedule.trigger?.triggerType === 'meter' && frequencyFieldsChanging) {
+          triggerMutation = 'delete';
+        } else if (lockedSchedule.trigger) {
+          const normalized = await normalizePmTriggerConfig({
+            triggerType: lockedSchedule.trigger.triggerType,
+            triggerValue: lockedSchedule.trigger.triggerValue,
+            triggerConfig: lockedTriggerConfig,
+            schedule: prospectiveSchedule,
+            existingConfig: lockedTriggerConfig,
+          });
+          if (normalized.error || !normalized.config) {
+            return {
+              kind: 'trigger_conflict' as const,
+              error: normalized.error || 'invalid trigger configuration',
+            };
+          }
+          reconciledTriggerConfig = JSON.stringify(normalized.config);
+          reconciledTriggerValue = lockedSchedule.trigger.triggerValue;
+          triggerMutation = 'update';
         }
-        lockedReconciledTriggerConfig = JSON.stringify(normalized.config);
-        lockedReconciledTriggerValue = effectiveTriggerValue;
       }
 
       const effectiveIsActive = body.isActive !== undefined
@@ -329,12 +497,24 @@ export async function PUT(
         },
       });
 
-      if (lockedSchedule.trigger && lockedReconciledTriggerConfig !== undefined) {
+      if (triggerMutation === 'delete' && lockedSchedule.trigger) {
+        await tx.pmTrigger.delete({ where: { id: lockedSchedule.trigger.id } });
+      } else if (triggerMutation === 'update' && lockedSchedule.trigger && reconciledTriggerConfig !== undefined) {
         await tx.pmTrigger.update({
           where: { id: lockedSchedule.trigger.id },
           data: {
-            triggerConfig: lockedReconciledTriggerConfig,
-            ...(lockedReconciledTriggerValue !== undefined ? { triggerValue: lockedReconciledTriggerValue } : {}),
+            triggerConfig: reconciledTriggerConfig,
+            ...(reconciledTriggerValue !== undefined ? { triggerValue: reconciledTriggerValue } : {}),
+          },
+        });
+      } else if (triggerMutation === 'create' && reconciledTriggerConfig !== undefined && reconciledTriggerValue !== undefined) {
+        await tx.pmTrigger.create({
+          data: {
+            scheduleId: lockedSchedule.id,
+            triggerType: 'meter',
+            triggerValue: reconciledTriggerValue,
+            triggerConfig: reconciledTriggerConfig,
+            isActive: true,
           },
         });
       }
@@ -350,12 +530,12 @@ export async function PUT(
             componentId: lockedSchedule.componentId,
             frequencyType: lockedSchedule.frequencyType,
             frequencyValue: lockedSchedule.frequencyValue,
+            frequencyUnit: lockedSchedule.frequencyUnit,
+            meterName: lockedSchedule.meterName,
           }),
           newValues: JSON.stringify({
             ...lockedUpdateData,
-            ...(lockedReconciledTriggerConfig !== undefined
-              ? { reconciledTriggerId: lockedSchedule.trigger?.id, reconciledTriggerValue: lockedReconciledTriggerValue }
-              : {}),
+            ...(triggerMutation ? { triggerMutation, reconciledTriggerValue } : {}),
           }),
         },
       });
@@ -374,9 +554,6 @@ export async function PUT(
     }
     if (updateResult.kind === 'not_found') {
       return NextResponse.json({ success: false, error: 'PM schedule not found' }, { status: 404 });
-    }
-    if (updateResult.kind === 'invalid_trigger_interval') {
-      return NextResponse.json({ success: false, error: 'PM trigger interval must remain a positive number' }, { status: 400 });
     }
     if (updateResult.kind === 'trigger_conflict') {
       return NextResponse.json(

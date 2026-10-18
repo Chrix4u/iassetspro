@@ -1221,8 +1221,10 @@ model PmSchedule {
   description       String?
   assetId           String
   componentId       String?
-  frequencyType     String // daily, weekly, biweekly, monthly, quarterly, semiannual, annual, custom_hours, custom_days, meter_based
+  frequencyType     String // canonical: time_day, meter; legacy rows are normalized on read/edit
   frequencyValue    Int
+  frequencyUnit     String? // Time/Day unit or selected meter unit
+  meterName         String? // selected asset meter for canonical Meter schedules
   lastCompletedDate DateTime?
   nextDueDate       DateTime?
   estimatedDuration Float // hours

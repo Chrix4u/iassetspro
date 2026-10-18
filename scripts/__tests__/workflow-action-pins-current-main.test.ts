@@ -15,7 +15,7 @@ function externalActionRefs(source: string) {
   return source
     .split('\n')
     .map((line) => line.match(/^\s*uses:\s+([^\s#]+)/)?.[1])
-    .filter((ref): ref is string => Boolean(ref) && !ref.startsWith('./'))
+    .filter((ref): ref is string => typeof ref === 'string' && !ref.startsWith('./'))
 }
 
 function checkoutBlocks(source: string) {

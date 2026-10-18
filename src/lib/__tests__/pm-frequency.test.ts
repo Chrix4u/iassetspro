@@ -34,7 +34,6 @@ describe('PM frequency contract', () => {
     ['annually', 1, 'years'],
     ['yearly', 1, 'years'],
     ['custom', 5, 'days'],
-    ['custom_hours', 250, 'hours'],
   ] as const)(
     'normalizes legacy %s schedules to Time/Day without losing the interval',
     (frequencyType, expectedValue, expectedUnit) => {
@@ -42,9 +41,7 @@ describe('PM frequency contract', () => {
         normalizePmFrequency({
           frequencyType,
           frequencyValue:
-            frequencyType === 'custom' || frequencyType === 'custom_hours'
-              ? expectedValue
-              : null,
+            frequencyType === 'custom' ? expectedValue : null,
         })
       ).toMatchObject({
         frequencyType: 'time_day',
@@ -54,6 +51,20 @@ describe('PM frequency contract', () => {
       });
     }
   );
+
+  it('normalizes legacy custom-hours schedules as Time/Day hours', () => {
+    expect(
+      normalizePmFrequency({
+        frequencyType: 'custom_hours',
+        frequencyValue: 250,
+      })
+    ).toEqual({
+      frequencyType: 'time_day',
+      frequencyValue: 250,
+      frequencyUnit: 'hours',
+      meterName: null,
+    });
+  });
 
   it('normalizes legacy meter schedules while preserving legacy runtime-hour semantics', () => {
     expect(

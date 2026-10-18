@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     const overdueSchedules = await db.pmSchedule.findMany({
       where: {
         isActive: true,
-        frequencyType: { notIn: ['meter_based', 'custom_hours'] },
+        frequencyType: { notIn: ['meter', 'meter_based'] },
         nextDueDate: { not: null, lt: now },
         asset: manualAssetPlantFilter(plantScope),
       },

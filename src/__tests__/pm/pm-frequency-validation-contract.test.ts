@@ -7,8 +7,10 @@ const detail = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8')
 
 describe('PM frequency validation contract', () => {
   it('recognizes only supported schedule frequencies', () => {
-    expect(isPmFrequencyType('monthly')).toBe(true);
-    expect(isPmFrequencyType('custom_hours')).toBe(true);
+    expect(isPmFrequencyType('time_day')).toBe(true);
+    expect(isPmFrequencyType('meter')).toBe(true);
+    expect(isPmFrequencyType('monthly')).toBe(false);
+    expect(isPmFrequencyType('custom_hours')).toBe(false);
     expect(isPmFrequencyType('monthy')).toBe(false);
     expect(isPmFrequencyType('')).toBe(false);
   });
@@ -21,12 +23,12 @@ describe('PM frequency validation contract', () => {
   it('rejects invalid type and non-positive/non-integer interval on create', () => {
     expect(collection).toContain('Invalid PM frequency type');
     expect(collection).toContain('Frequency value must be a positive whole number');
-    expect(collection).toContain('frequencyValue: normalizedFrequencyValue');
+    expect(collection).toContain('frequencyValue: canonicalFrequency.frequencyValue');
   });
 
   it('applies the same validation to schedule edits', () => {
-    expect(detail).toContain('!isPmFrequencyType(body.frequencyType)');
+    expect(detail).toContain('!isPmFrequencyType(rawFrequencyType)');
     expect(detail).toContain('Number.isInteger(normalizedFrequencyValue)');
-    expect(detail).toContain('updateData.frequencyValue = normalizedFrequencyValue');
+    expect(detail).toContain('updateData.frequencyValue = canonicalFrequencyForUpdate.frequencyValue');
   });
 });

@@ -160,7 +160,7 @@ export async function PUT(
         if (
           effectiveType === 'meter'
           && body.triggerValue !== undefined
-          && ['meter_based', 'custom_hours'].includes(lockedTrigger.schedule.frequencyType)
+          && ['meter', 'meter_based'].includes(lockedTrigger.schedule.frequencyType)
         ) {
           await tx.pmSchedule.update({
             where: { id: lockedTrigger.scheduleId },

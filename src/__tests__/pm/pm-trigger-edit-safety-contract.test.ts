@@ -23,7 +23,7 @@ describe('PM trigger edit safety contract', () => {
     expect(scheduleRoute).toContain("lockedSchedule.trigger?.triggerType === 'meter'");
     expect(scheduleRoute).toContain('lockedProspectiveFrequencyValue');
     expect(scheduleRoute).toContain('normalizePmTriggerConfig');
-    expect(scheduleRoute).toContain('lockedReconciledTriggerConfig');
+    expect(scheduleRoute).toContain('reconciledTriggerConfig');
     expect(scheduleRoute).toContain('await db.$transaction(async (tx) =>');
   });
 

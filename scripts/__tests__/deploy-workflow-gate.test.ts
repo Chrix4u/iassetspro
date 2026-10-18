@@ -30,16 +30,21 @@ describe('production deployment workflow gate', () => {
     expect(workflow).toContain('DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}');
   });
 
-  it('uses Node 24 GitHub Actions releases in the production deploy path', async () => {
+  it('pins the Node 24 GitHub Actions releases immutably in the production deploy path', async () => {
     const workflow = await readFile(
       join(process.cwd(), '.github/workflows/deploy.yml'),
       'utf8',
     );
 
-    expect(workflow).toContain('uses: actions/checkout@v7.0.1');
-    expect(workflow).toContain('uses: actions/download-artifact@v8.0.1');
-    expect(workflow).not.toContain('uses: actions/checkout@v4');
-    expect(workflow).not.toContain('uses: actions/download-artifact@v4');
+    // actions/checkout v7.0.1 and actions/download-artifact v8.0.1, pinned by commit SHA.
+    expect(workflow).toContain(
+      'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+    );
+    expect(workflow).toContain(
+      'uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+    );
+    expect(workflow).not.toMatch(/uses:\s+actions\/checkout@v\d/);
+    expect(workflow).not.toMatch(/uses:\s+actions\/download-artifact@v\d/);
   });
 
   it('keeps artifact provenance, integrity and pinned SSH trust as hard deployment safeguards', async () => {
@@ -52,9 +57,11 @@ describe('production deployment workflow gate', () => {
     expect(workflow).toContain('Download tested production artifact from CI');
     expect(workflow).toContain('Verify release artifact integrity');
     expect(workflow).toContain('DEPLOY_KNOWN_HOSTS');
-    expect(workflow).toContain('ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts');
+    expect(workflow).toContain('KNOWN_HOST_QUERY="$DEPLOY_HOST"');
+    expect(workflow).toContain('KNOWN_HOST_QUERY="[$DEPLOY_HOST]:$DEPLOY_PORT"');
+    expect(workflow).toContain('ssh-keygen -F "$KNOWN_HOST_QUERY" -f ~/.ssh/known_hosts');
     expect(workflow).toContain('StrictHostKeyChecking=yes');
-    expect(workflow).toContain('UserKnownHostsFile=~/.ssh/known_hosts');
+    expect(workflow).toContain('UserKnownHostsFile="$HOME/.ssh/known_hosts"');
     expect(workflow).toContain("sudo /usr/local/sbin/iassetspro-deploy-artifact '$RELEASE_SHA'");
   });
 

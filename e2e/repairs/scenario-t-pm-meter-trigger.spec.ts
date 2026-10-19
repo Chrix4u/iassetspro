@@ -1,15 +1,41 @@
 import { test, expect } from '@playwright/test';
 import { authenticateAs } from './helpers/auth';
-import { apiCall, getToken, lookupAssetId, lookupUserByKey } from './helpers/api';
+import { db } from '../../src/lib/db';
+import { apiCall, getToken, lookupAssetId, lookupPlantId, lookupUserByKey } from './helpers/api';
 
 test('UAT-20: meter PM threshold generates once, respects plant scope, and cancellation rearms', async ({ page, context }) => {
   const suffix = Date.now().toString().slice(-7);
   const componentCode = `UAT-METER-${suffix}`;
   const scheduleTitle = `UAT Meter PM ${suffix}`;
+  const meterName = `UAT Runtime Hours ${suffix}`;
+  const meterUnit = 'hours';
   const plannerToken = await getToken('planner');
   const plantBPlannerToken = await getToken('planner_plant_b');
   const technicianId = await lookupUserByKey(plannerToken, 'tech_single');
+  const plannerId = await lookupUserByKey(plannerToken, 'planner');
   const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
+  const meterBaseTime = Date.now();
+  let previousMeterValue: number | null = null;
+  const recordMeterReading = async (value: number, step: number, label: string) => {
+    const reading = await db.meterReading.create({
+      data: {
+        readingNumber: `UAT-PM-METER-${suffix}-${step}`,
+        assetId,
+        plantId,
+        meterName,
+        value,
+        unit: meterUnit,
+        readingDate: new Date(meterBaseTime + step * 1000),
+        previousValue: previousMeterValue,
+        consumption: previousMeterValue == null ? null : value - previousMeterValue,
+        notes: `UAT-20 ${label}`,
+        readById: plannerId,
+      },
+    });
+    previousMeterValue = value;
+    return reading;
+  };
 
   let componentId = '';
   let scheduleId = '';
@@ -17,7 +43,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
   const generatedWoIds: string[] = [];
 
   try {
-    // Dedicated component gives the trigger a deterministic 1000h baseline.
+    // Dedicated component remains the PM target while the runtime source is an asset meter.
     const componentCreate = await apiCall(plannerToken, 'POST', '/api/component-registry', {
       componentCode,
       name: `UAT Meter Bearing ${suffix}`,
@@ -30,7 +56,11 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     componentId = String(componentCreate.data.data?.id || '');
     expect(componentId).toBeTruthy();
 
-    // Planner authors the actual component meter schedule through the browser.
+    // Deterministic fixture data establishes the authoritative asset-meter baseline.
+    // PM behavior itself remains exercised exclusively through production UI/API paths.
+    await recordMeterReading(1000, 0, 'baseline');
+
+    // Planner authors the actual component-targeted asset-meter schedule through the browser.
     await authenticateAs(context, 'planner');
     await page.goto('/#/pm-schedules');
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
@@ -57,9 +87,14 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
 
     const frequencyLabel = page.locator('label').filter({ hasText: /^Frequency Type \*/ }).first();
     await frequencyLabel.locator('..').getByRole('combobox').click();
-    await page.getByRole('option', { name: 'Meter Based', exact: true }).click();
-    const frequencyValueLabel = page.locator('label').filter({ hasText: /^Frequency Value \*/ }).first();
-    await frequencyValueLabel.locator('..').locator('input').fill('100');
+    await page.getByRole('option', { name: 'Meter', exact: true }).click();
+    const intervalLabel = page.locator('label').filter({ hasText: /^Interval \*/ }).first();
+    await intervalLabel.locator('..').locator('input').fill('100');
+    const meterLabel = page.locator('label').filter({ hasText: /^Asset Meter \*/ }).first();
+    const meterSelect = meterLabel.locator('..').getByRole('combobox');
+    await expect(meterSelect).toBeEnabled({ timeout: 10_000 });
+    await meterSelect.click();
+    await page.getByRole('option', { name: `${meterName} · 1000 ${meterUnit}`, exact: true }).click();
     const durationLabel = page.locator('label').filter({ hasText: /Est\. Duration/ }).first();
     await durationLabel.locator('..').locator('input').fill('1');
 
@@ -76,7 +111,9 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     expect(schedule?.id).toBeTruthy();
     scheduleId = String(schedule.id);
     expect(schedule.componentId).toBe(componentId);
-    expect(schedule.frequencyType).toBe('meter_based');
+    expect(schedule.frequencyType).toBe('meter');
+    expect(schedule.frequencyUnit).toBe(meterUnit);
+    expect(schedule.meterName).toBe(meterName);
     expect(Number(schedule.frequencyValue)).toBe(100);
 
     // Schedule creation must atomically provision one matching meter trigger.
@@ -87,7 +124,11 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     triggerId = String(trigger.id);
     expect(trigger.triggerType).toBe('meter');
     expect(Number(trigger.triggerValue)).toBe(100);
-    expect(JSON.parse(trigger.triggerConfig || '{}').baselineHours).toBe(1000);
+    const triggerConfig = JSON.parse(trigger.triggerConfig || '{}');
+    expect(triggerConfig.source).toBe('asset_meter_reading');
+    expect(triggerConfig.meterName).toBe(meterName);
+    expect(triggerConfig.unit).toBe(meterUnit);
+    expect(triggerConfig.baselineValue).toBe(1000);
 
     // The runtime trigger must be visible/editable on the actual PM Triggers page.
     await page.goto('/#/pm-triggers');
@@ -100,7 +141,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     // 1099h is still below the 1100h threshold.
-    expect((await apiCall(plannerToken, 'PUT', `/api/component-registry/${componentId}`, { operatingHours: 1099 })).status).toBe(200);
+    await recordMeterReading(1099, 1, 'below threshold');
     const belowEvaluation = await apiCall(plannerToken, 'POST', '/api/pm-triggers/evaluate', {});
     expect(belowEvaluation.status).toBe(200);
     const below = (belowEvaluation.data.data.results as any[]).find((row) => row.triggerId === triggerId);
@@ -108,7 +149,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     expect(String(below?.reason || '')).toMatch(/threshold not reached/i);
 
     // Cross exactly to 1100h. A Plant-B-only planner must not generate Plant-A's PM.
-    expect((await apiCall(plannerToken, 'PUT', `/api/component-registry/${componentId}`, { operatingHours: 1100 })).status).toBe(200);
+    await recordMeterReading(1100, 2, 'threshold crossing');
     const crossPlantEvaluation = await apiCall(plantBPlannerToken, 'POST', '/api/pm-triggers/evaluate', {});
     expect(crossPlantEvaluation.status).toBe(200);
     expect((crossPlantEvaluation.data.data.results as any[]).some((row) => row.triggerId === triggerId && row.skipped === false)).toBe(false);
@@ -142,7 +183,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     await openWoScheduleRow.getByRole('button').last().click();
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
     await expect(page.getByText('Edit PM Schedule', { exact: true })).toBeVisible();
-    const blockedFrequency = page.locator('label').filter({ hasText: /^Frequency Value \*/ }).first().locator('..').locator('input');
+    const blockedFrequency = page.locator('label').filter({ hasText: /^Interval \*/ }).first().locator('..').locator('input');
     await blockedFrequency.fill('125');
     const blockedUpdateResponse = page.waitForResponse((response) =>
       response.url().includes(`/api/pm-schedules/${scheduleId}`)
@@ -175,7 +216,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     expect(Number(blockedTriggerState.data.data?.triggerValue)).toBe(100);
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    // Cancelling a trigger-generated WO rolls back the consumed meter cycle.
+    // Cancelling a trigger-generated WO rolls back the consumed canonical meter cycle.
     const cancelFirst = await apiCall(plannerToken, 'POST', `/api/work-orders/${firstWoId}/cancel`, {
       reason: 'UAT proves runtime-trigger cancellation rearm',
     });
@@ -205,7 +246,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     await unlockedScheduleRow.hover();
     await unlockedScheduleRow.getByRole('button').last().click();
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    const unlockedFrequency = page.locator('label').filter({ hasText: /^Frequency Value \*/ }).first().locator('..').locator('input');
+    const unlockedFrequency = page.locator('label').filter({ hasText: /^Interval \*/ }).first().locator('..').locator('input');
     await expect(unlockedFrequency).toHaveValue('100');
     await unlockedFrequency.fill('125');
     const unlockedUpdateResponse = page.waitForResponse((response) =>
@@ -252,6 +293,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     }
     if (triggerId) await apiCall(plannerToken, 'DELETE', `/api/pm-triggers/${triggerId}`);
     if (scheduleId) await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${scheduleId}`, { isActive: false });
+    await db.meterReading.deleteMany({ where: { assetId, meterName } }).catch(() => undefined);
     await context.close().catch(() => undefined);
   }
 });

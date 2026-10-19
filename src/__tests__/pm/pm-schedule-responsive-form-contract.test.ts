@@ -19,7 +19,7 @@ describe('PM schedule responsive form contract', () => {
 
   it('keeps recurrence controls dense on desktop while collapsing cleanly on smaller screens', () => {
     expect(source).toContain('data-testid="pm-schedule-recurrence-grid"');
-    expect(source).toContain('grid gap-3 sm:grid-cols-2 xl:grid-cols-6');
+    expect(source).toContain('grid gap-3 sm:grid-cols-2 xl:grid-cols-7');
     expect(source).toContain('Planning & recurrence');
   });
 

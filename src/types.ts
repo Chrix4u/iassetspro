@@ -13,6 +13,8 @@ export interface PmSchedule {
   componentId?: string | null;
   frequencyType: string;
   frequencyValue: number;
+  frequencyUnit?: string | null;
+  meterName?: string | null;
   lastCompletedDate?: string;
   nextDueDate?: string;
   estimatedDuration?: number;

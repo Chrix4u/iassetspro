@@ -25,7 +25,8 @@ describe('frontend hierarchy commissioning and PM targeting', () => {
   it('allows PM schedules to target any component-registry hierarchy node', () => {
     expect(pmApi).toContain('componentId: componentId || null')
     expect(pmApi).toContain('Selected component does not belong to the selected asset')
-    expect(pmApi).toContain("['custom_hours', 'meter_based'].includes(frequencyType)")
+    expect(pmApi).toContain("const legacyComponentUsageRequested = ['meter_based'].includes(frequencyType)")
+    expect(pmApi).toContain("source: 'component_operating_hours'")
     expect(maintenance).toContain('PM Target — Machine / Assembly / Component / Part')
     expect(maintenance).toContain('Choose PM Target')
     expect(maintenance).toContain('Confirm Selection')

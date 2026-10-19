@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
       if (
         triggerType === 'meter'
-        && ['meter_based', 'custom_hours'].includes(lockedSchedule.frequencyType)
+        && ['meter', 'meter_based'].includes(lockedSchedule.frequencyType)
         && Number(lockedSchedule.frequencyValue) !== triggerValue
       ) {
         await tx.pmSchedule.update({

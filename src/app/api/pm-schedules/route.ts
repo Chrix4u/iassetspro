@@ -3,7 +3,8 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
-import { calculateNextDueDate, isAutoCalculableFrequency, isPmFrequencyType } from '@/lib/pm-utils';
+import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
+import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 export async function GET(request: NextRequest) {
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (dueSoon === 'true') {
       const now = new Date();
       const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      where.frequencyType = { notIn: ['meter_based', 'custom_hours'] };
+      where.frequencyType = { notIn: ['meter', 'meter_based'] };
       where.nextDueDate = { gte: now, lte: weekFromNow };
     }
 
@@ -122,6 +123,8 @@ export async function POST(request: NextRequest) {
       componentId,
       frequencyType,
       frequencyValue,
+      frequencyUnit,
+      meterName,
       lastCompletedDate,
       nextDueDate,
       estimatedDuration,
@@ -140,7 +143,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!frequencyType || !frequencyValue) {
+    if (!frequencyType || frequencyValue === undefined || frequencyValue === null) {
       return NextResponse.json(
         { success: false, error: 'Frequency type and value are required' },
         { status: 400 }
@@ -153,6 +156,33 @@ export async function POST(request: NextRequest) {
     const normalizedFrequencyValue = Number(frequencyValue);
     if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
       return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
+    }
+
+    if (isCanonicalPmFrequencyType(frequencyType)) {
+      const rawFrequencyValidation = validateCanonicalPmFrequency({
+        frequencyType,
+        frequencyValue: normalizedFrequencyValue,
+        frequencyUnit,
+        meterName,
+      });
+      if (!rawFrequencyValidation.ok) {
+        return NextResponse.json({ success: false, error: rawFrequencyValidation.error }, { status: 400 });
+      }
+    }
+
+    const canonicalFrequency = normalizePmFrequency({
+      frequencyType,
+      frequencyValue: normalizedFrequencyValue,
+      frequencyUnit,
+      meterName,
+    });
+    const legacyComponentUsageRequested = ['meter_based'].includes(frequencyType)
+      && !canonicalFrequency.meterName;
+    if (!legacyComponentUsageRequested && !isCanonicalPmFrequencyType(frequencyType)) {
+      const frequencyValidation = validateCanonicalPmFrequency(canonicalFrequency);
+      if (!frequencyValidation.ok) {
+        return NextResponse.json({ success: false, error: frequencyValidation.error }, { status: 400 });
+      }
     }
 
     const rawLeadDays = leadDays === undefined
@@ -207,14 +237,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const canonicalNextDueDate = isAutoCalculableFrequency(frequencyType)
-      ? (normalizedNextDueDate ?? calculateNextDueDate(
-          normalizedLastCompletedDate ?? new Date(),
-          frequencyType,
-          normalizedFrequencyValue,
-        ))
-      : null;
-
     // Validate asset exists and belongs to the caller's active/assigned plant scope.
     const assetExists = await db.asset.findUnique({
       where: { id: assetId },
@@ -245,6 +267,54 @@ export async function POST(request: NextRequest) {
       componentForTrigger = component;
     }
 
+    // Canonical Meter schedules are driven by a real meter reading on the selected
+    // asset. Historical meter_based component-hour clients remain supported without rewriting
+    // their persisted semantics until a planner explicitly edits those schedules.
+    let selectedMeter: { id: string; value: number; meterName: string; unit: string } | null = null;
+    if (canonicalFrequency.frequencyType === 'meter' && canonicalFrequency.meterName) {
+      selectedMeter = await db.meterReading.findFirst({
+        where: {
+          assetId,
+          meterName: canonicalFrequency.meterName,
+          unit: canonicalFrequency.frequencyUnit,
+        },
+        orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+        select: { id: true, value: true, meterName: true, unit: true },
+      });
+      if (!selectedMeter) {
+        return NextResponse.json(
+          { success: false, error: 'Selected meter has no reading for this asset' },
+          { status: 400 },
+        );
+      }
+    } else if (canonicalFrequency.frequencyType === 'meter' && !legacyComponentUsageRequested) {
+      const frequencyValidation = validateCanonicalPmFrequency(canonicalFrequency);
+      return NextResponse.json(
+        { success: false, error: frequencyValidation.ok ? 'Selected meter is required' : frequencyValidation.error },
+        { status: 400 },
+      );
+    } else if (legacyComponentUsageRequested && !componentForTrigger) {
+      return NextResponse.json(
+        { success: false, error: 'Legacy runtime-hour PM requires a component target or migration to a configured asset meter' },
+        { status: 400 },
+      );
+    }
+
+    const preserveLegacyComponentUsage = legacyComponentUsageRequested && Boolean(componentForTrigger);
+    const storedFrequencyType = preserveLegacyComponentUsage ? frequencyType : canonicalFrequency.frequencyType;
+    const storedFrequencyUnit = preserveLegacyComponentUsage ? null : canonicalFrequency.frequencyUnit;
+    const storedMeterName = preserveLegacyComponentUsage ? null : canonicalFrequency.meterName;
+    const calendarFrequency = preserveLegacyComponentUsage ? null : canonicalFrequency;
+    const canonicalNextDueDate = calendarFrequency?.frequencyType === 'time_day'
+      ? (normalizedNextDueDate ?? calculateNextDueDate(
+          normalizedLastCompletedDate ?? new Date(),
+          calendarFrequency.frequencyType,
+          calendarFrequency.frequencyValue,
+          calendarFrequency.frequencyUnit,
+        ))
+      : null;
+    const effectiveLeadDays = calendarFrequency?.frequencyType === 'time_day' ? normalizedLeadDays : 0;
+
     const scheduleResult = await db.$transaction(async (tx) => {
       if (templateId) {
         await lockPmTemplateLifecycle(tx, templateId);
@@ -262,64 +332,94 @@ export async function POST(request: NextRequest) {
       }
 
       const createdSchedule = await tx.pmSchedule.create({
-      data: {
-        title,
-        description: description || null,
-        assetId,
-        componentId: componentId || null,
-        frequencyType,
-        frequencyValue: normalizedFrequencyValue,
-        lastCompletedDate: normalizedLastCompletedDate,
-        nextDueDate: canonicalNextDueDate,
-        estimatedDuration: normalizedEstimatedDuration,
-        priority: priority || 'medium',
-        assignedToId: assignedToId || null,
-        departmentId: departmentId || null,
-        templateId: templateId || null,
-        autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
-        leadDays: normalizedLeadDays,
-        createdById: session.userId,
-      },
-      include: {
-        asset: { select: { id: true, name: true, assetTag: true, status: true } },
-        component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
-        assignedTo: { select: { id: true, fullName: true, username: true } },
-        department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
-    if (
-      componentForTrigger
-      && ['custom_hours', 'meter_based'].includes(frequencyType)
-      && Number(frequencyValue) > 0
-    ) {
-      await tx.pmTrigger.create({
         data: {
-          scheduleId: createdSchedule.id,
-          triggerType: 'meter',
-          triggerValue: normalizedFrequencyValue,
-          triggerConfig: JSON.stringify({
-            source: 'component_operating_hours',
-            componentId: componentForTrigger.id,
-            baselineHours: Number(componentForTrigger.operatingHours || 0),
-            unit: 'hours',
-          }),
-          isActive: true,
+          title,
+          description: description || null,
+          assetId,
+          componentId: componentId || null,
+          frequencyType: storedFrequencyType,
+          frequencyValue: canonicalFrequency.frequencyValue,
+          frequencyUnit: storedFrequencyUnit,
+          meterName: storedMeterName,
+          lastCompletedDate: normalizedLastCompletedDate,
+          nextDueDate: canonicalNextDueDate,
+          estimatedDuration: normalizedEstimatedDuration,
+          priority: priority || 'medium',
+          assignedToId: assignedToId || null,
+          departmentId: departmentId || null,
+          templateId: templateId || null,
+          autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
+          leadDays: effectiveLeadDays,
+          createdById: session.userId,
+        },
+        include: {
+          asset: { select: { id: true, name: true, assetTag: true, status: true } },
+          component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true, assetId: true } },
+          assignedTo: { select: { id: true, fullName: true, username: true } },
+          department: { select: { id: true, name: true, code: true } },
+          template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
+          createdBy: { select: { id: true, fullName: true, username: true } },
         },
       });
-    }
 
-    await tx.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'pm_schedule',
-        entityId: createdSchedule.id,
-        newValues: JSON.stringify({ title, assetId, componentId: componentId || null, templateId: templateId || null, frequencyType, frequencyValue }),
-      },
-    });
+      if (selectedMeter) {
+        await tx.pmTrigger.create({
+          data: {
+            scheduleId: createdSchedule.id,
+            triggerType: 'meter',
+            triggerValue: canonicalFrequency.frequencyValue,
+            triggerConfig: JSON.stringify({
+              source: 'asset_meter_reading',
+              assetId,
+              meterName: selectedMeter.meterName,
+              unit: selectedMeter.unit,
+              threshold: canonicalFrequency.frequencyValue,
+              baselineValue: Number(selectedMeter.value),
+              baselineReadingId: selectedMeter.id,
+            }),
+            isActive: true,
+          },
+        });
+      } else if (
+        componentForTrigger
+        && preserveLegacyComponentUsage
+        && Number(frequencyValue) > 0
+      ) {
+        await tx.pmTrigger.create({
+          data: {
+            scheduleId: createdSchedule.id,
+            triggerType: 'meter',
+            triggerValue: normalizedFrequencyValue,
+            triggerConfig: JSON.stringify({
+              source: 'component_operating_hours',
+              componentId: componentForTrigger.id,
+              meterName: `${componentForTrigger.componentCode} operating hours`,
+              baselineHours: Number(componentForTrigger.operatingHours || 0),
+              unit: 'hours',
+            }),
+            isActive: true,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'pm_schedule',
+          entityId: createdSchedule.id,
+          newValues: JSON.stringify({
+            title,
+            assetId,
+            componentId: componentId || null,
+            templateId: templateId || null,
+            frequencyType: storedFrequencyType,
+            frequencyValue: canonicalFrequency.frequencyValue,
+            frequencyUnit: storedFrequencyUnit,
+            meterName: storedMeterName,
+          }),
+        },
+      });
 
       return { kind: 'created' as const, createdSchedule };
     });

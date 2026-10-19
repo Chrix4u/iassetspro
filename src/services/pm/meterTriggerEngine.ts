@@ -101,39 +101,95 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
       }
 
       const component = schedule.component;
-      if (!component || !['meter_based', 'custom_hours'].includes(schedule.frequencyType)) {
-        return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule is not an active component usage-based PM' };
+      const config = parseConfig(trigger.triggerConfig);
+      const usesAssetMeter = schedule.frequencyType === 'meter' && config.source === 'asset_meter_reading';
+      const usesLegacyComponentHours = Boolean(
+        component
+        && ['meter_based'].includes(schedule.frequencyType)
+        && (config.source === 'component_operating_hours' || !config.source),
+      );
+      if (!usesAssetMeter && !usesLegacyComponentHours) {
+        return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Schedule has no valid meter source' };
       }
 
-      // Re-read baseline and component operating hours only after acquiring the
-      // trigger lock. A concurrent worker that already generated will have
-      // advanced baselineHours before this worker reaches this point.
-      const config = parseConfig(trigger.triggerConfig);
-      const current = Number(component.operatingHours ?? 0);
+      // Re-read the meter source only after the trigger lock. A concurrent worker
+      // that generated already will have advanced the corresponding baseline.
       const interval = Number(trigger.triggerValue || schedule.frequencyValue || 0);
-      const configuredBaseline = config.baselineHours;
-      if (configuredBaseline === undefined || configuredBaseline === null || !Number.isFinite(Number(configuredBaseline))) {
-        const initializedConfig = {
-          ...config,
-          source: config.source || 'component_operating_hours',
-          componentId: component.id,
-          baselineHours: current,
-          unit: config.unit || 'hours',
-        };
-        await tx.pmTrigger.update({
-          where: { id: trigger.id },
-          data: { triggerConfig: JSON.stringify(initializedConfig) },
+      let current: number;
+      let baseline: number;
+      let latestReadingId: string | null = null;
+
+      if (usesAssetMeter) {
+        const meterName = typeof config.meterName === 'string' ? config.meterName : '';
+        const unit = typeof config.unit === 'string' ? config.unit : '';
+        if (!meterName || !unit) {
+          return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Asset meter configuration is incomplete' };
+        }
+        const latestReading = await tx.meterReading.findFirst({
+          where: { assetId: schedule.assetId, meterName, unit },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { id: true, value: true },
         });
-        return {
-          triggerId: trigger.id,
-          scheduleId: schedule.id,
-          skipped: true,
-          reason: 'Meter baseline initialized',
-          current,
-          nextThreshold: current + interval,
-        };
+        if (!latestReading) {
+          return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Selected asset meter has no reading' };
+        }
+        current = Number(latestReading.value);
+        latestReadingId = latestReading.id;
+        const configuredBaseline = config.baselineValue;
+        if (configuredBaseline === undefined || configuredBaseline === null || !Number.isFinite(Number(configuredBaseline))) {
+          const initializedConfig = {
+            ...config,
+            source: 'asset_meter_reading',
+            assetId: schedule.assetId,
+            baselineValue: current,
+            baselineReadingId: latestReading.id,
+          };
+          await tx.pmTrigger.update({
+            where: { id: trigger.id },
+            data: { triggerConfig: JSON.stringify(initializedConfig) },
+          });
+          return {
+            triggerId: trigger.id,
+            scheduleId: schedule.id,
+            skipped: true,
+            reason: 'Meter baseline initialized',
+            current,
+            nextThreshold: current + interval,
+          };
+        }
+        baseline = Number(configuredBaseline);
+      } else {
+        // Legacy meter_based schedules remain tied to component
+        // operatingHours until a planner edits them into the canonical meter model.
+        if (!component) {
+          return { triggerId: trigger.id, scheduleId: schedule.id, skipped: true, reason: 'Legacy component meter source is missing' };
+        }
+        current = Number(component.operatingHours ?? 0);
+        const configuredBaseline = config.baselineHours;
+        if (configuredBaseline === undefined || configuredBaseline === null || !Number.isFinite(Number(configuredBaseline))) {
+          const initializedConfig = {
+            ...config,
+            source: 'component_operating_hours',
+            componentId: component.id,
+            baselineHours: current,
+            unit: config.unit || 'hours',
+          };
+          await tx.pmTrigger.update({
+            where: { id: trigger.id },
+            data: { triggerConfig: JSON.stringify(initializedConfig) },
+          });
+          return {
+            triggerId: trigger.id,
+            scheduleId: schedule.id,
+            skipped: true,
+            reason: 'Meter baseline initialized',
+            current,
+            nextThreshold: current + interval,
+          };
+        }
+        baseline = Number(configuredBaseline);
       }
-      const baseline = Number(configuredBaseline);
+
       const threshold = evaluateMeterThreshold(current, baseline, interval);
 
       if (!threshold.due || threshold.crossedThreshold == null) {
@@ -170,7 +226,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         ? '\n\nTask Checklist:\n' + tasks.map((task) => `${task.taskNumber}. [${task.taskType}] ${task.description}`).join('\n')
         : '';
 
-      const suggestedParts = (component.sparePartLinks || []).map((spare) => ({
+      const suggestedParts = (component?.sparePartLinks || []).map((spare) => ({
         itemId: spare.inventoryItemId,
         itemName: spare.inventoryItem?.name || spare.sparePartName,
         itemCode: spare.inventoryItem?.itemCode || spare.sparePartCode,
@@ -179,7 +235,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         notes: spare.notes || '',
         status: 'recommended',
       }));
-      const suggestedTools = (component.toolRequirements || []).map((tool) => ({
+      const suggestedTools = (component?.toolRequirements || []).map((tool) => ({
         toolId: tool.toolId,
         toolName: tool.tool?.name || tool.toolName,
         toolCode: tool.tool?.toolCode || tool.toolCode,
@@ -207,12 +263,18 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
       }, 0);
       const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
 
+      const meterLabel = usesAssetMeter
+        ? `${String(config.meterName)} (${String(config.unit)})`
+        : 'component operating hours';
+      const targetLabel = component
+        ? `${component.componentCode} - ${component.name}`
+        : `${schedule.asset.assetTag} - ${schedule.asset.name}`;
       const plannedEnd = calculatePmPlannedEnd(woDate, schedule.estimatedDuration);
       const wo = await tx.workOrder.create({
         data: {
           woNumber,
           title: `PM: ${schedule.title}`,
-          description: `Meter-triggered preventive maintenance for ${component.componentCode} - ${component.name}. Current operating hours: ${current}. Trigger threshold reached: ${threshold.crossedThreshold}.${taskText}`,
+          description: `Meter-triggered preventive maintenance for ${targetLabel}. Current ${meterLabel}: ${current}. Trigger threshold reached: ${threshold.crossedThreshold}.${taskText}`,
           type: 'preventive',
           priority: schedule.priority,
           status: 'draft',
@@ -226,26 +288,28 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
           pmScheduleId: schedule.id,
           plannedStart: woDate,
           plannedEnd,
-          notes: `Auto-generated by meter trigger ${trigger.id}; baseline ${baseline}, interval ${interval}, current ${current}`,
+          notes: `Auto-generated by meter trigger ${trigger.id}; source ${meterLabel}; baseline ${baseline}, interval ${interval}, current ${current}`,
           suggestedParts: JSON.stringify(suggestedParts),
           suggestedTools: JSON.stringify(suggestedTools),
         },
       });
 
-      await tx.workOrderComponent.upsert({
-        where: {
-          workOrderId_componentRegistryId: {
+      if (component) {
+        await tx.workOrderComponent.upsert({
+          where: {
+            workOrderId_componentRegistryId: {
+              workOrderId: wo.id,
+              componentRegistryId: component.id,
+            },
+          },
+          create: {
             workOrderId: wo.id,
             componentRegistryId: component.id,
+            notes: 'Inherited from meter-triggered component PM schedule',
           },
-        },
-        create: {
-          workOrderId: wo.id,
-          componentRegistryId: component.id,
-          notes: 'Inherited from meter-triggered component PM schedule',
-        },
-        update: {},
-      });
+          update: {},
+        });
+      }
 
       await materializePmTemplateTasks(tx, wo.id, tasks);
 
@@ -259,15 +323,25 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         });
       }
 
-      const nextConfig = {
-        ...config,
-        source: config.source || 'component_operating_hours',
-        componentId: component.id,
-        baselineHours: threshold.crossedThreshold,
-        unit: config.unit || 'hours',
-        lastGeneratedWorkOrderId: wo.id,
-        lastGeneratedPreviousBaselineHours: baseline,
-      };
+      const nextConfig = config.source === 'asset_meter_reading'
+        ? {
+            ...config,
+            source: 'asset_meter_reading',
+            assetId: schedule.assetId,
+            baselineValue: threshold.crossedThreshold,
+            baselineReadingId: latestReadingId,
+            lastGeneratedWorkOrderId: wo.id,
+            lastGeneratedPreviousBaselineValue: baseline,
+          }
+        : {
+            ...config,
+            source: 'component_operating_hours',
+            componentId: component?.id,
+            baselineHours: threshold.crossedThreshold,
+            unit: config.unit || 'hours',
+            lastGeneratedWorkOrderId: wo.id,
+            lastGeneratedPreviousBaselineHours: baseline,
+          };
       await tx.pmTrigger.update({
         where: { id: trigger.id },
         data: { lastTriggeredAt: woDate, triggerConfig: JSON.stringify(nextConfig) },
@@ -283,11 +357,12 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
             woNumber: wo.woNumber,
             type: 'preventive',
             pmScheduleId: schedule.id,
-            componentId: component.id,
+            componentId: component?.id || null,
             meterTriggerId: trigger.id,
-            previousBaselineHours: baseline,
+            meterSource: config.source,
+            previousBaseline: baseline,
             crossedThreshold: threshold.crossedThreshold,
-            currentOperatingHours: current,
+            currentMeterValue: current,
             autoGenerated: true,
           }),
         },

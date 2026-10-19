@@ -19,6 +19,26 @@ describe('PM runtime trigger cancellation re-arm', () => {
     expect(next).not.toHaveProperty('lastGeneratedPreviousBaselineHours');
   });
 
+  it('restores the exact pre-generation canonical asset-meter baseline', () => {
+    const next = buildRearmedTriggerConfig('meter', {
+      source: 'asset_meter_reading',
+      baselineValue: 1100,
+      baselineReadingId: 'reading-1100',
+      lastGeneratedWorkOrderId: 'wo-meter',
+      lastGeneratedPreviousBaselineValue: 1000,
+      meterName: 'Runtime Hours',
+      unit: 'hours',
+    }, 'wo-meter');
+    expect(next).toMatchObject({
+      source: 'asset_meter_reading',
+      baselineValue: 1000,
+      meterName: 'Runtime Hours',
+      unit: 'hours',
+    });
+    expect(next).not.toHaveProperty('lastGeneratedWorkOrderId');
+    expect(next).not.toHaveProperty('lastGeneratedPreviousBaselineValue');
+  });
+
   it('restores the exact pre-generation production baseline', () => {
     const next = buildRearmedTriggerConfig('production_count', {
       baselineCount: 15000,
@@ -53,6 +73,7 @@ describe('PM runtime trigger cancellation re-arm', () => {
 
   it('persists exact rollback markers at runtime generation and consumes them in canonical cancellation', () => {
     expect(meterEngine).toContain('lastGeneratedWorkOrderId: wo.id');
+    expect(meterEngine).toContain('lastGeneratedPreviousBaselineValue: baseline');
     expect(meterEngine).toContain('lastGeneratedPreviousBaselineHours: baseline');
     expect(signalEngine).toContain('lastGeneratedPreviousBaselineCount: Number(config.baselineCount)');
     expect(signalEngine).toContain('lastGeneratedPreviousReadingId: config.lastReadingId ?? null');

@@ -8,12 +8,12 @@ describe('PM schedule first due date contract', () => {
     expect(collection).toContain('calculateNextDueDate');
     expect(collection).toContain('normalizedNextDueDate ?? calculateNextDueDate(');
     expect(collection).toContain('normalizedLastCompletedDate ?? new Date()');
-    expect(collection).toContain('frequencyType');
-    expect(collection).toContain('normalizedFrequencyValue');
+    expect(collection).toContain('calendarFrequency.frequencyUnit');
+    expect(collection).toContain('canonicalFrequency.frequencyValue');
   });
 
   it('keeps usage-based schedules out of calendar due state', () => {
-    expect(collection).toContain('isAutoCalculableFrequency(frequencyType)');
+    expect(collection).toContain("calendarFrequency?.frequencyType === 'time_day'");
     expect(collection).toContain(': null;');
   });
 });

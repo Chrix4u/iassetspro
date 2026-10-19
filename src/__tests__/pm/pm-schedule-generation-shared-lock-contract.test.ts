@@ -31,9 +31,10 @@ describe('PM schedule/generation shared lifecycle lock contract', () => {
     expect(triggerRoute).toContain('await lockPmScheduleLifecycle(tx, existing.scheduleId)');
 
     expect(scheduleRoute).toContain('trigger: {');
-    expect(scheduleRoute).toContain('const lockedTriggerConfig = parsePmTriggerConfig(lockedSchedule.trigger.triggerConfig)');
+    expect(scheduleRoute).toContain('const lockedTriggerConfig = lockedSchedule.trigger');
     expect(scheduleRoute).toContain('parsePmTriggerConfig(lockedSchedule.trigger.triggerConfig)');
-    expect(scheduleRoute).toContain('schedule: {');
+    expect(scheduleRoute).toContain('const prospectiveSchedule = {');
+    expect(scheduleRoute).toContain('schedule: prospectiveSchedule');
     expect(scheduleRoute).toContain('frequencyType: lockedProspectiveFrequencyType');
     expect(triggerRoute.match(/await lockPmScheduleLifecycle\(tx, existing\.scheduleId\)/g)?.length || 0).toBeGreaterThanOrEqual(2);
   });

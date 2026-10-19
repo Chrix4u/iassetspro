@@ -58,7 +58,55 @@ describe('reporting proxy security', () => {
       expect(requiredModulesForApiPath('/api/repairs/tool-transfers/transfer-1')).toEqual(['repairs', 'tools']);
       expect(requiredModulesForApiPath('/api/repairs/reports/detailed')).toEqual(['repairs', 'reports']);
       expect(requiredModulesForApiPath('/api/reports/maintenance/export')).toEqual(['reports', 'work_orders', 'maintenance_requests']);
+      expect(requiredModulesForApiPath('/api/pm-schedules/meter-sources')).toEqual(['pm_schedules']);
+      expect(requiredModulesForApiPath('/api/meter-readings')).toEqual(['meter_readings']);
       expect(requiredModulesForApiPath('/api/users')).toEqual([]);
+    });
+
+    it('rewrites asset-scoped meter reads to the PM source route when the standalone meter module is unavailable', async () => {
+      mockGetUnavailableOperationalModules.mockImplementation(async (modules: string[]) =>
+        modules.includes('meter_readings') ? ['meter_readings'] : [],
+      );
+
+      const response = await proxy(request('/api/meter-readings?assetId=asset-1', 'plant-a'));
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('x-middleware-rewrite')).toContain('/api/pm-schedules/meter-sources?assetId=asset-1');
+      expect(response.headers.get('x-middleware-request-x-session-verified')).toBe('1');
+      expect(response.headers.get('x-middleware-request-x-plant-id')).toBe('plant-a');
+      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['meter_readings']);
+      expect(mockGetUnavailableOperationalModules).toHaveBeenCalledWith(['pm_schedules']);
+    });
+
+    it('keeps the full meter collection gated when only PM is licensed', async () => {
+      mockGetUnavailableOperationalModules.mockImplementation(async (modules: string[]) =>
+        modules.includes('meter_readings') ? ['meter_readings'] : [],
+      );
+
+      const response = await proxy(request('/api/meter-readings'));
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body.unavailableModules).toEqual(['meter_readings']);
+      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    });
+
+    it('never rewrites meter writes through the PM read-only fallback', async () => {
+      mockGetUnavailableOperationalModules.mockImplementation(async (modules: string[]) =>
+        modules.includes('meter_readings') ? ['meter_readings'] : [],
+      );
+      const headers = new Headers({
+        authorization: 'Bearer valid-token',
+        'X-Plant-ID': 'plant-a',
+      });
+
+      const response = await proxy(new NextRequest('http://localhost/api/meter-readings?assetId=asset-1', {
+        method: 'POST',
+        headers,
+      }));
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
     });
 
     it('blocks authenticated requests before the route when a required module is unavailable', async () => {

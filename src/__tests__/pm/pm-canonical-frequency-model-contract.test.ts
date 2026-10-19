@@ -6,6 +6,7 @@ const maintenancePage = fs.readFileSync('src/components/modules/MaintenancePages
 const scheduleCollection = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
 const scheduleDetail = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8');
 const meterRoute = fs.readFileSync('src/app/api/meter-readings/route.ts', 'utf8');
+const meterSourceRoute = fs.readFileSync('src/app/api/pm-schedules/meter-sources/route.ts', 'utf8');
 const triggerConfig = fs.readFileSync('src/services/pm/triggerConfig.service.ts', 'utf8');
 const meterEngine = fs.readFileSync('src/services/pm/meterTriggerEngine.ts', 'utf8');
 
@@ -41,8 +42,9 @@ describe('canonical PM frequency model contract', () => {
 
   it('discovers meter choices from readings tied to the selected asset', () => {
     expect(maintenancePage).toContain('/api/meter-readings?assetId=');
-    expect(meterRoute).toContain("const assetId = searchParams.get('assetId')");
-    expect(meterRoute).toContain('if (assetId) where.assetId = assetId');
+    expect(meterSourceRoute).toContain("const assetId = searchParams.get('assetId')");
+    expect(meterSourceRoute).toContain('where: { assetId }');
+    expect(meterSourceRoute).toContain("distinct: ['meterName', 'unit']");
     expect(meterRoute).toContain('assetId: assetId || null');
   });
 

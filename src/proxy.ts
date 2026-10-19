@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionAsync } from '@/lib/auth';
+import { getSessionAsync, type SessionData } from '@/lib/auth';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 /**
@@ -120,7 +120,47 @@ export function requiredModulesForApiPath(pathname: string): string[] {
   return API_MODULE_RULES.find((rule) => matchesApiPrefix(pathname, rule.prefix))?.modules ?? [];
 }
 
-async function moduleGateResponse(pathname: string): Promise<NextResponse | null> {
+async function moduleGateResponse(
+  request: NextRequest,
+  session?: SessionData,
+): Promise<NextResponse | null> {
+  const { pathname } = request.nextUrl;
+
+  // Asset-scoped meter history is a shared read dependency of canonical Meter PM.
+  // Keep the standalone Meter Readings workspace/writes under meter_readings, but
+  // when that module is unavailable and PM is operational, transparently route
+  // this read-only asset lookup to the minimal PM-owned source endpoint.
+  if (
+    session
+    && request.method === 'GET'
+    && pathname === '/api/meter-readings'
+    && request.nextUrl.searchParams.get('assetId')
+  ) {
+    const unavailableMeterModules = await getUnavailableOperationalModules(['meter_readings']);
+    if (unavailableMeterModules.length === 0) return null;
+
+    const unavailablePmModules = await getUnavailableOperationalModules(['pm_schedules']);
+    if (unavailablePmModules.length === 0) {
+      const rewriteUrl = request.nextUrl.clone();
+      rewriteUrl.pathname = '/api/pm-schedules/meter-sources';
+      return withSecurityHeaders(
+        NextResponse.rewrite(rewriteUrl, {
+          request: { headers: buildVerifiedSessionHeaders(request, session) },
+        }),
+      );
+    }
+
+    return withSecurityHeaders(
+      NextResponse.json(
+        {
+          success: false,
+          error: 'Required module is not licensed, enabled, and active',
+          unavailableModules: unavailableMeterModules,
+        },
+        { status: 403 },
+      ),
+    );
+  }
   // A specific handover record is shared operational infrastructure:
   // Repairs uses it for WO custody transfer while the standalone handover
   // workspace belongs to Shift Management. Permit nested record/confirm routes
@@ -197,6 +237,26 @@ export function resolveEffectivePlantId(request: NextRequest): string | null {
   return null;
 }
 
+function buildVerifiedSessionHeaders(request: NextRequest, session: SessionData): Headers {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-session-verified', '1');
+  requestHeaders.set('x-session-user-id', session.userId);
+  requestHeaders.set('x-session-username', encodeURIComponent(session.username || ''));
+  requestHeaders.set('x-session-full-name', encodeURIComponent(session.fullName || session.username || ''));
+  requestHeaders.set('x-session-roles', session.roles.join(','));
+  requestHeaders.set('x-session-permissions', session.permissions.join(','));
+  requestHeaders.set('x-session-created-at', session.createdAt.toISOString());
+  requestHeaders.set('x-user-plant-id', '');
+
+  const effectivePlantId = resolveEffectivePlantId(request);
+  if (effectivePlantId) {
+    requestHeaders.set('X-Plant-ID', effectivePlantId);
+    requestHeaders.set('x-user-plant-id', effectivePlantId);
+  }
+
+  return requestHeaders;
+}
+
 function hasReportViewPermission(session: { roles: string[]; permissions: string[] }): boolean {
   return session.roles.includes('admin') || session.permissions.some(permission =>
     ['reports.view', 'reports.export', 'analytics.view'].includes(permission),
@@ -231,7 +291,7 @@ export default async function proxy(request: NextRequest) {
     const cronSecret = request.headers.get('x-pm-cron-secret') || '';
     const internalSecret = getInternalPmSecret();
     if (internalSecret && cronSecret === internalSecret) {
-      const blocked = await moduleGateResponse(pathname);
+      const blocked = await moduleGateResponse(request);
       if (blocked) return blocked;
       return withSecurityHeaders(NextResponse.next());
     }
@@ -263,7 +323,7 @@ export default async function proxy(request: NextRequest) {
     );
   }
 
-  const moduleBlocked = await moduleGateResponse(pathname);
+  const moduleBlocked = await moduleGateResponse(request, session);
   if (moduleBlocked) return moduleBlocked;
 
   // Legacy detailed Repairs reporting previously required only authentication.
@@ -314,29 +374,9 @@ export default async function proxy(request: NextRequest) {
     );
   }
 
-  // Token is valid — attach a verified session snapshot for the route worker.
-  // Route handlers may run in a separate worker/process from the proxy, so they
-  // must not depend on sharing the proxy's in-memory session cache.
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set('x-session-verified', '1');
-  requestHeaders.set('x-session-user-id', session.userId);
-  requestHeaders.set('x-session-username', encodeURIComponent(session.username || ''));
-  requestHeaders.set('x-session-full-name', encodeURIComponent(session.fullName || session.username || ''));
-  requestHeaders.set('x-session-roles', session.roles.join(','));
-  requestHeaders.set('x-session-permissions', session.permissions.join(','));
-  requestHeaders.set('x-session-created-at', session.createdAt.toISOString());
-  requestHeaders.set('x-user-plant-id', '');
-
-  // Bind maintenance-report query plant selection into the normal X-Plant-ID
-  // validation path. Without this, an unscoped multi-plant request could reach
-  // the route with ?plantId=... and overwrite its server-generated IN filter.
-  // System-wide actors remain unaffected because getPlantScope intentionally
-  // ignores X-Plant-ID for system-wide sessions.
-  const effectivePlantId = resolveEffectivePlantId(request);
-  if (effectivePlantId) {
-    requestHeaders.set('X-Plant-ID', effectivePlantId);
-    requestHeaders.set('x-user-plant-id', effectivePlantId);
-  }
+  // Token is valid — forward the verified authorization snapshot into the route worker.
+  // Route handlers may run separately from the proxy and cannot rely on its in-memory cache.
+  const requestHeaders = buildVerifiedSessionHeaders(request, session);
 
   return withSecurityHeaders(
     NextResponse.next({

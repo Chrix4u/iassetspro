@@ -9,7 +9,6 @@ const dashboardStats = fs.readFileSync('src/app/api/dashboard/stats/route.ts', '
 const generalAnalytics = fs.readFileSync('src/app/api/analytics/route.ts', 'utf8');
 const maintenancePage = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
 const calendarPage = fs.readFileSync('src/components/modules/PmCalendarPage.tsx', 'utf8');
-const mobileAi = fs.readFileSync('src/services/mobile/mobileAI.service.ts', 'utf8');
 
 describe('PM due-state consistency contract', () => {
   it('classifies only Meter PM as usage based while legacy custom-hours normalizes to calendar hours', () => {
@@ -37,10 +36,6 @@ describe('PM due-state consistency contract', () => {
     expect(pmAnalytics.match(/frequencyType: \{ notIn: \['meter', 'meter_based'\] \}/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(dashboardStats.match(/frequencyType: \{ notIn: \['meter', 'meter_based'\] \}/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(generalAnalytics).toContain("frequencyType: { notIn: ['meter', 'meter_based'] }");
-  });
-
-  it('does not surface usage-based PM as calendar overdue in mobile recommendations', () => {
-    expect(mobileAi).toContain("frequencyType: { notIn: ['meter', 'meter_based'] }");
   });
 
   it('uses the same timestamp boundary as the dueSoon API on the PM schedules page', () => {

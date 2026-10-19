@@ -61,7 +61,8 @@ import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
-import { isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { formatFrequencyLabel, isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { PM_FREQUENCY_TYPES as PM_SCHEDULE_FREQUENCY_TYPES, PM_TIME_UNITS, isPmTimeUnit, normalizePmFrequency } from '@/lib/pm-frequency';
 import { formatFunctionalLocationDisplay, formatMaintenanceLocationDisplay } from '@/lib/functional-location/display';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
@@ -7866,8 +7867,12 @@ export function PmSchedulesPage() {
   const [formComponentId, setFormComponentId] = useState('');
   const [pmComponentOptions, setPmComponentOptions] = useState<any[]>([]);
   const [pmComponentsLoading, setPmComponentsLoading] = useState(false);
-  const [formFreqType, setFormFreqType] = useState('monthly');
+  const [pmMeterOptions, setPmMeterOptions] = useState<Array<{ key: string; meterName: string; unit: string; value: number; readingDate?: string }>>([]);
+  const [pmMetersLoading, setPmMetersLoading] = useState(false);
+  const [formFreqType, setFormFreqType] = useState('time_day');
   const [formFreqValue, setFormFreqValue] = useState('1');
+  const [formFreqUnit, setFormFreqUnit] = useState('months');
+  const [formMeterName, setFormMeterName] = useState('');
   const [formPriority, setFormPriority] = useState('medium');
   const [formEstDuration, setFormEstDuration] = useState('');
   const [formAssignedToId, setFormAssignedToId] = useState('');
@@ -7875,7 +7880,7 @@ export function PmSchedulesPage() {
   const [formAutoGenWO, setFormAutoGenWO] = useState(true);
   const [formLeadDays, setFormLeadDays] = useState('3');
   const [formNextDueDate, setFormNextDueDate] = useState('');
-  const formUsesCalendarCadence = isAutoCalculableFrequency(formFreqType);
+  const formUsesCalendarCadence = formFreqType === 'time_day';
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
 
@@ -7918,35 +7923,78 @@ export function PmSchedulesPage() {
     return all;
   }, []);
 
+
+  const loadAllPmMeters = useCallback(async (assetId: string) => {
+    const readings: any[] = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const res = await api.get(`/api/meter-readings?assetId=${encodeURIComponent(assetId)}&limit=100&page=${page}`);
+      if (!res.success) break;
+      if (Array.isArray(res.data)) readings.push(...res.data);
+      const reportedTotalPages = Number(res.pagination?.totalPages || 1);
+      totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0
+        ? Math.min(reportedTotalPages, 1000)
+        : 1;
+      page += 1;
+    } while (page <= totalPages);
+
+    const unique = new Map<string, { key: string; meterName: string; unit: string; value: number; readingDate?: string }>();
+    for (const reading of readings) {
+      const meterName = String(reading.meterName || '').trim();
+      const unit = String(reading.unit || '').trim();
+      if (!meterName || !unit) continue;
+      const key = `${meterName}|||${unit}`;
+      if (!unique.has(key)) {
+        unique.set(key, {
+          key,
+          meterName,
+          unit,
+          value: Number(reading.value || 0),
+          readingDate: reading.readingDate,
+        });
+      }
+    }
+    return [...unique.values()];
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     if (!formAssetId) {
       setPmComponentOptions([]);
+      setPmMeterOptions([]);
       setPmAssetSummary(null);
       setFormComponentId('');
       return () => { cancelled = true; };
     }
 
     setPmComponentsLoading(true);
+    setPmMetersLoading(true);
     void Promise.all([
       loadAllPmComponents(formAssetId),
+      loadAllPmMeters(formAssetId),
       api.get(`/api/assets/${encodeURIComponent(formAssetId)}`),
-    ]).then(([options, assetRes]) => {
+    ]).then(([options, meters, assetRes]) => {
       if (cancelled) return;
       setPmComponentOptions(options);
+      setPmMeterOptions(meters);
       setPmAssetSummary(assetRes.success ? assetRes.data || null : null);
       setFormComponentId((current) => current && !options.some((component: any) => component.id === current) ? '' : current);
     }).catch(() => {
       if (!cancelled) {
         setPmComponentOptions([]);
+        setPmMeterOptions([]);
         setPmAssetSummary(null);
       }
     }).finally(() => {
-      if (!cancelled) setPmComponentsLoading(false);
+      if (!cancelled) {
+        setPmComponentsLoading(false);
+        setPmMetersLoading(false);
+      }
     });
 
     return () => { cancelled = true; };
-  }, [formAssetId, loadAllPmComponents]);
+  }, [formAssetId, loadAllPmComponents, loadAllPmMeters]);
 
   const pmComponentLabel = (component: any) => {
     const byId = new Map(pmComponentOptions.map((item: any) => [item.id, item]));
@@ -7988,8 +8036,22 @@ export function PmSchedulesPage() {
   const handlePmAssetChange = (value: string) => {
     setFormAssetId(value);
     setFormComponentId('');
+    setFormMeterName('');
+    if (formFreqType === 'meter') setFormFreqUnit('');
     setTargetDraftSelection({ component: null, path: [] });
     setTargetExplorerOpen(false);
+  };
+
+  const handlePmFrequencyTypeChange = (value: string) => {
+    setFormFreqType(value);
+    if (value === 'time_day') {
+      setFormMeterName('');
+      setFormFreqUnit((current) => isPmTimeUnit(current) ? current : 'months');
+      return;
+    }
+    setFormMeterName('');
+    setFormFreqUnit('');
+    setFormNextDueDate('');
   };
 
   const openPmTargetExplorer = () => {
@@ -8048,7 +8110,7 @@ export function PmSchedulesPage() {
 
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormAssetId(''); setFormComponentId('');
-    setFormFreqType('monthly'); setFormFreqValue('1');
+    setFormFreqType('time_day'); setFormFreqValue('1'); setFormFreqUnit('months'); setFormMeterName('');
     setFormPriority('medium'); setFormEstDuration('');
     setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
     setFormLeadDays('3'); setFormNextDueDate('');
@@ -8062,8 +8124,11 @@ export function PmSchedulesPage() {
     setFormTemplateId(item.templateId || '');
     setFormAssetId(item.assetId || '');
     setFormComponentId(item.componentId || '');
-    setFormFreqType(item.frequencyType || 'monthly');
-    setFormFreqValue(String(item.frequencyValue || 1));
+    const normalizedFrequency = normalizePmFrequency(item);
+    setFormFreqType(normalizedFrequency.frequencyType);
+    setFormFreqValue(String(normalizedFrequency.frequencyValue));
+    setFormFreqUnit(normalizedFrequency.frequencyUnit);
+    setFormMeterName(normalizedFrequency.meterName || '');
     setFormPriority(item.priority || 'medium');
     setFormEstDuration(item.estimatedDuration ? String(item.estimatedDuration) : '');
     setFormAssignedToId(item.assignedToId || '');
@@ -8076,12 +8141,23 @@ export function PmSchedulesPage() {
 
   const handleSave = async () => {
     if (!formTitle || !formAssetId) { toast.error('Title and asset are required'); return; }
+    const parsedFrequencyValue = Number(formFreqValue);
+    if (!Number.isInteger(parsedFrequencyValue) || parsedFrequencyValue <= 0) {
+      toast.error('Frequency interval must be a positive whole number');
+      return;
+    }
+    if (formFreqType === 'meter' && (!formMeterName || !formFreqUnit)) {
+      toast.error('Select a meter recorded for this asset');
+      return;
+    }
     setSaving(true);
     try {
       const payload: any = {
         title: formTitle, description: formDesc || null,
         assetId: formAssetId, componentId: formComponentId || null, frequencyType: formFreqType,
-        frequencyValue: parseInt(formFreqValue, 10) || 1,
+        frequencyValue: parsedFrequencyValue,
+        frequencyUnit: formFreqUnit,
+        meterName: formFreqType === 'meter' ? formMeterName : null,
         priority: formPriority,
         estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
         assignedToId: formAssignedToId || null,
@@ -8117,21 +8193,9 @@ export function PmSchedulesPage() {
     } catch { toast.error('Failed'); }
   };
 
-  const freqLabel = (type: string, val: number) => {
-    const map: Record<string, string> = {
-      daily: `Every ${val} day${val > 1 ? 's' : ''}`,
-      weekly: `Every ${val} week${val > 1 ? 's' : ''}`,
-      biweekly: `Every ${val * 2} weeks`,
-      monthly: `Every ${val} month${val > 1 ? 's' : ''}`,
-      quarterly: `Every ${val * 3} months`,
-      semiannual: `Every ${val * 6} months`,
-      annual: `Every ${val} year${val > 1 ? 's' : ''}`,
-      custom_hours: `Every ${val} hours`,
-      custom_days: `Every ${val} days`,
-      meter_based: `Every ${val} units`,
-    };
-    return map[type] || `${type}/${val}`;
-  };
+  const freqLabel = (type: string, val: number, unit?: string | null, meterName?: string | null) => (
+    formatFrequencyLabel(type, val, unit, meterName)
+  );
 
   const isDueSoon = (d?: string) => {
     if (!d) return false;
@@ -8321,7 +8385,7 @@ export function PmSchedulesPage() {
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <Badge variant="outline" className="text-[10px] font-medium">
-                      {freqLabel(s.frequencyType, s.frequencyValue)}
+                      {freqLabel(s.frequencyType, s.frequencyValue, s.frequencyUnit, s.meterName)}
                     </Badge>
                   </TableCell>
                   <TableCell><PriorityBadge priority={s.priority} /></TableCell>
@@ -8515,23 +8579,66 @@ export function PmSchedulesPage() {
               <p className="text-sm font-semibold">Planning & recurrence</p>
               <p className="text-[11px] text-muted-foreground">Set cadence, urgency, effort and due-cycle timing in one compact planning row.</p>
             </div>
-            <div data-testid="pm-schedule-recurrence-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div data-testid="pm-schedule-recurrence-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Frequency Type *</Label>
-                <Select value={formFreqType} onValueChange={setFormFreqType}>
+                <Select value={formFreqType} onValueChange={handlePmFrequencyTypeChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semiannual', 'annual', 'custom_hours', 'custom_days', 'meter_based'].map(f => (
-                      <SelectItem key={f} value={f}>{f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                    {PM_SCHEDULE_FREQUENCY_TYPES.map((frequency) => (
+                      <SelectItem key={frequency.value} value={frequency.value}>{frequency.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Frequency Value *</Label>
-                <Input type="number" min="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} />
+                <Label className="text-sm font-semibold">Interval *</Label>
+                <Input type="number" min="1" step="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} />
               </div>
+
+              {formFreqType === 'time_day' && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Unit *</Label>
+                  <Select value={formFreqUnit} onValueChange={setFormFreqUnit}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PM_TIME_UNITS.map((unit) => (
+                        <SelectItem key={unit.value} value={unit.value}>{unit.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {formFreqType === 'meter' && (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Asset Meter *</Label>
+                    <Select
+                      value={formMeterName ? `${formMeterName}|||${formFreqUnit}` : ''}
+                      onValueChange={(key) => {
+                        const selected = pmMeterOptions.find((meter) => meter.key === key);
+                        if (!selected) return;
+                        setFormMeterName(selected.meterName);
+                        setFormFreqUnit(selected.unit);
+                      }}
+                      disabled={!formAssetId || pmMetersLoading || pmMeterOptions.length === 0}
+                    >
+                      <SelectTrigger><SelectValue placeholder={pmMetersLoading ? 'Loading meters...' : 'Select asset meter'} /></SelectTrigger>
+                      <SelectContent>
+                        {pmMeterOptions.map((meter) => (
+                          <SelectItem key={meter.key} value={meter.key}>{meter.meterName} · {meter.value} {meter.unit}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Unit</Label>
+                    <Input value={formFreqUnit} readOnly placeholder="From selected meter" className="bg-muted/40" />
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Priority</Label>
@@ -8562,9 +8669,15 @@ export function PmSchedulesPage() {
               )}
             </div>
 
-            {!formUsesCalendarCadence && (
+            {formFreqType === 'meter' && (
               <div className="mt-3 rounded-lg border bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-950/30 dark:text-slate-300">
-                Usage-based PM is governed by its runtime meter trigger. Calendar due dates and lead days do not apply.
+                {pmMetersLoading
+                  ? 'Loading meters recorded for this asset...'
+                  : pmMeterOptions.length === 0
+                    ? 'No meter readings are linked to this asset yet. Record an asset meter reading before creating a Meter PM schedule.'
+                    : formMeterName
+                      ? `This PM becomes due every ${formFreqValue || '—'} ${formFreqUnit} on ${formMeterName}. Calendar due dates and lead days do not apply.`
+                      : 'Select the asset meter that should drive this PM schedule. Its recorded unit is used automatically.'}
               </div>
             )}
           </div>
@@ -8635,7 +8748,7 @@ export function PmSchedulesPage() {
               </div>
             </div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Template</p><p className="mt-1 text-sm font-medium">{viewItem.template?.title || 'No template'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Frequency</p><p className="mt-1 text-sm font-medium">{freqLabel(viewItem.frequencyType, viewItem.frequencyValue)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Frequency</p><p className="mt-1 text-sm font-medium">{freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Priority</p><div className="mt-1"><PriorityBadge priority={viewItem.priority} /></div></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Estimated Duration</p><p className="mt-1 text-sm font-medium">{viewItem.estimatedDuration != null ? `${viewItem.estimatedDuration} hrs` : '—'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Assigned To</p><p className="mt-1 text-sm font-medium">{viewItem.assignedTo?.fullName || 'Unassigned'}</p></div>

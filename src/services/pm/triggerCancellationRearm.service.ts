@@ -29,6 +29,7 @@ function finiteNumber(value: unknown): number | null {
 function clearGenerationMarker(config: TriggerConfig): TriggerConfig {
   const next = { ...config };
   delete next.lastGeneratedWorkOrderId;
+  delete next.lastGeneratedPreviousBaselineValue;
   delete next.lastGeneratedPreviousBaselineHours;
   delete next.lastGeneratedPreviousBaselineCount;
   delete next.lastGeneratedPreviousReadingId;
@@ -46,6 +47,13 @@ export function buildRearmedTriggerConfig(
   const next = clearGenerationMarker(config);
 
   if (triggerType === 'meter') {
+    if (config.source === 'asset_meter_reading') {
+      const previous = finiteNumber(config.lastGeneratedPreviousBaselineValue);
+      if (previous == null) return null;
+      next.baselineValue = previous;
+      return next;
+    }
+
     const previous = finiteNumber(config.lastGeneratedPreviousBaselineHours);
     if (previous == null) return null;
     next.baselineHours = previous;

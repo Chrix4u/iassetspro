@@ -6,6 +6,7 @@ import {
   verifyManifestSignature,
 } from '@/lib/gtp-migration-manifest';
 
+const manifestLib = fs.readFileSync('src/lib/gtp-migration-manifest.ts', 'utf8');
 const auditRoute = fs.readFileSync('src/app/api/admin/gtp-migration/audit/route.ts', 'utf8');
 const importRoute = fs.readFileSync('src/app/api/admin/gtp-migration/import/route.ts', 'utf8');
 
@@ -100,6 +101,13 @@ describe('signed GTP historical import gate', () => {
     expect(importRoute).not.toContain('tx.auditLog.create({');
     expect(importRoute).not.toContain('tx.workOrder.findUnique');
     expect(importRoute).not.toContain('tx.maintenanceRequest.findUnique');
+  });
+
+  it('binds the workbook parity baseline into the approved signature boundary', () => {
+    expect(manifestLib).toContain('workbookParity:');
+    expect(auditRoute).toContain('workbookParity,');
+    expect(importRoute).toContain('workbookParity: manifest.workbookParity');
+    expect(importRoute).toContain('!manifest.workbookParity');
   });
 
   it('refuses non-canonical or already-imported identities', () => {

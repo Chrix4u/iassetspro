@@ -546,8 +546,7 @@ export function DigitalTwinViewer({
 
   // ── Screenshot handler ──────────────────────────────────────────────────
   const handleScreenshot = useCallback(() => {
-    // Get the canvas from the DOM
-    const canvas = document.querySelector('canvas');
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const link = document.createElement('a');

@@ -82,7 +82,8 @@ function parseManifest(raw: string): ApprovedManifest {
   const manifest = JSON.parse(raw) as ApprovedManifest;
   if (!manifest || typeof manifest !== 'object') throw new Error('Invalid manifest');
   if (manifest.schemaVersion !== GTP_MANIFEST_SCHEMA) throw new Error('Unsupported GTP manifest schema');
-  if (!Array.isArray(manifest.rows) || !manifest.source?.sha256 || !manifest.fingerprint || !manifest.migrationPlantId) {
+  if (!Array.isArray(manifest.rows) || !manifest.source?.sha256 || !manifest.fingerprint
+    || !manifest.migrationPlantId || !manifest.workbookParity) {
     throw new Error('Manifest is incomplete');
   }
   return manifest;
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
       migrationPlantId: manifest.migrationPlantId,
       identityConvention: manifest.identityConvention,
       counts: manifest.counts,
+      workbookParity: manifest.workbookParity,
       rows: manifest.rows,
     };
     const calculatedFingerprint = fingerprintManifestCore(core);

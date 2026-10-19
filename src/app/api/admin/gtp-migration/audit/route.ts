@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { fingerprintManifestCore, signManifestFingerprint } from '@/lib/gtp-migration-manifest';
+import { fingerprintManifestCore, signManifestFingerprint, type GtpWorkbookParity } from '@/lib/gtp-migration-manifest';
 import * as XLSX from 'xlsx';
 import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -126,22 +126,7 @@ const asNumber = (value: unknown): number | null => {
   return Number.isFinite(numeric) ? numeric : null;
 };
 
-type WorkbookParity = {
-  authoritativeJobRecords: number;
-  authoritativeBreakdowns: number;
-  cachedBreakdownPivotTotal: number | null;
-  breakdownPivotFresh: boolean;
-  breakdownWeekMismatches: Array<{ week: string; source: number; cachedPivot: number }>;
-  priorityOneBreakdowns: number;
-  cachedPriorityOneBreakdowns: number | null;
-  priorityOneBreakdownParity: boolean;
-  priorityOneResponseMinutes: number;
-  cachedResponseByWeekTotal: number | null;
-  cachedResponseByMachineTotal: number | null;
-  responseParity: boolean;
-  legacyDowntimeFormulaErrorRows: Array<{ rowNumber: number; workOrderNo: string; equipmentDescription: string; value: string }>;
-  warnings: string[];
-};
+type WorkbookParity = GtpWorkbookParity;
 
 const pivotRows = (sheet: XLSX.WorkSheet | undefined): unknown[][] =>
   sheet ? XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null, raw: true }) : [];
@@ -874,6 +859,7 @@ export async function POST(request: NextRequest) {
           maintenanceRequests: proposedRows.length,
           workOrders: proposedRows.length,
         },
+        workbookParity,
         rows: proposedRows,
       };
       const previewFingerprint = fingerprintManifestCore(manifestCore);

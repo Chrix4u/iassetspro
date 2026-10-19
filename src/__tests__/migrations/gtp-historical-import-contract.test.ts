@@ -28,11 +28,32 @@ describe('signed GTP historical import gate', () => {
       migrationPlantId: 'plant-1',
       identityConvention: { maintenanceRequest: 'GTP-MR-{legacyWorkOrderNo}', workOrder: 'GTP-WO-{legacyWorkOrderNo}' },
       counts: { rows: 0, maintenanceRequests: 0, workOrders: 0 },
+      workbookParity: {
+        authoritativeJobRecords: 0,
+        authoritativeBreakdowns: 0,
+        cachedBreakdownPivotTotal: null,
+        breakdownPivotFresh: true,
+        breakdownWeekMismatches: [],
+        priorityOneBreakdowns: 0,
+        cachedPriorityOneBreakdowns: null,
+        priorityOneBreakdownParity: false,
+        priorityOneResponseMinutes: 0,
+        cachedResponseByWeekTotal: null,
+        cachedResponseByMachineTotal: null,
+        responseParity: false,
+        legacyDowntimeFormulaErrorRows: [],
+        warnings: [],
+      },
       rows: [],
     };
     const fingerprint = fingerprintManifestCore(core);
+    const alteredParityFingerprint = fingerprintManifestCore({
+      ...core,
+      workbookParity: { ...core.workbookParity, authoritativeBreakdowns: 1 },
+    });
     const signature = signManifestFingerprint(fingerprint);
     expect(fingerprint).toHaveLength(64);
+    expect(alteredParityFingerprint).not.toBe(fingerprint);
     expect(signature).toHaveLength(64);
     expect(verifyManifestSignature(fingerprint, signature!)).toBe(true);
     expect(verifyManifestSignature('b'.repeat(64), signature!)).toBe(false);
@@ -105,7 +126,7 @@ describe('signed GTP historical import gate', () => {
 
   it('binds the workbook parity baseline into the approved signature boundary', () => {
     expect(manifestLib).toContain('workbookParity:');
-    expect(auditRoute).toContain('workbookParity,');
+    expect(auditRoute).toMatch(/const manifestCore = \{[\s\S]*?counts: \{[\s\S]*?workbookParity,[\s\S]*?rows: proposedRows/);
     expect(importRoute).toContain('workbookParity: manifest.workbookParity');
     expect(importRoute).toContain('!manifest.workbookParity');
   });

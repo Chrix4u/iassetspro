@@ -2,6 +2,28 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export const GTP_MANIFEST_SCHEMA = 'gtp-historical-import-preview/v1';
 
+export type GtpWorkbookParity = {
+  authoritativeJobRecords: number;
+  authoritativeBreakdowns: number;
+  cachedBreakdownPivotTotal: number | null;
+  breakdownPivotFresh: boolean;
+  breakdownWeekMismatches: Array<{ week: string; source: number; cachedPivot: number }>;
+  priorityOneBreakdowns: number;
+  cachedPriorityOneBreakdowns: number | null;
+  priorityOneBreakdownParity: boolean;
+  priorityOneResponseMinutes: number;
+  cachedResponseByWeekTotal: number | null;
+  cachedResponseByMachineTotal: number | null;
+  responseParity: boolean;
+  legacyDowntimeFormulaErrorRows: Array<{
+    rowNumber: number;
+    workOrderNo: string;
+    equipmentDescription: string;
+    value: string;
+  }>;
+  warnings: string[];
+};
+
 export type GtpManifestCore = {
   schemaVersion: string;
   source: { fileName: string; sizeBytes: number; sha256: string };
@@ -14,6 +36,7 @@ export type GtpManifestCore = {
   migrationPlantId: string;
   identityConvention: { maintenanceRequest: string; workOrder: string };
   counts: { rows: number; maintenanceRequests: number; workOrders: number };
+  workbookParity: GtpWorkbookParity;
   rows: unknown[];
 };
 

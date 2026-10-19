@@ -111,7 +111,11 @@ async function verifyPostImportParity(manifest: ApprovedManifest) {
       && evidence.migrationPlantId === manifest.migrationPlantId;
   });
   const auditRowCount = exactAudits.length;
-  const workOrderIds = [...new Set(exactAudits.map((row) => row.entityId).filter(Boolean))];
+  const workOrderIds = [...new Set(
+    exactAudits
+      .map((row) => row.entityId)
+      .filter((value): value is string => Boolean(value)),
+  )];
 
   const workOrders = workOrderIds.length > 0
     ? await db.workOrder.findMany({

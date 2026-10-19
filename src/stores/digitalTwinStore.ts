@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { api } from '@/lib/api';
+import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
 import type {
   ComponentRegistryItem,
   FailureAnalysisData,
@@ -317,7 +318,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
         set({ isLoadingScene: true, sceneError: null }, false, 'digitalTwin/loadScene:start');
 
         try {
-          const res = await api.get<DigitalTwinScene>(`/api/digital-twin-scenes/${sceneId}`);
+          const res = await api.get<unknown>(`/api/digital-twin-scenes/${sceneId}`);
 
           if (!res.success || !res.data) {
             const errorMsg = res.error || `Scene ${sceneId} not found`;
@@ -325,7 +326,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
             return;
           }
 
-          const scene = res.data;
+          const scene = normalizeDigitalTwinScene(res.data);
 
           set(
             {

@@ -7,6 +7,7 @@ import { findOpenRuntimeGeneratedWorkOrder, normalizePmTriggerConfig, parsePmTri
 import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
 import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
 
 export async function GET(
   request: NextRequest,
@@ -36,7 +37,7 @@ export async function GET(
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
+        template: { select: { id: true, title: true, type: true, category: true, tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } }, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -78,6 +79,12 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
     const body = await request.json();
+    const inlineTasksProvided = body.inlineTasks !== undefined;
+    const normalizedInlineTasksResult = inlineTasksProvided ? normalizePmScheduleTasks(body.inlineTasks) : null;
+    if (normalizedInlineTasksResult && !normalizedInlineTasksResult.ok) {
+      return NextResponse.json({ success: false, error: normalizedInlineTasksResult.error }, { status: 400 });
+    }
+    const normalizedInlineTasks = normalizedInlineTasksResult?.ok ? normalizedInlineTasksResult.tasks : [];
     const requestedFields = Object.keys(body).filter((field) => body[field] !== undefined);
     const isActivationOnly = requestedFields.length === 1
       && requestedFields[0] === 'isActive'
@@ -346,6 +353,9 @@ export async function PUT(
         select: {
           id: true,
           title: true,
+          description: true,
+          estimatedDuration: true,
+          priority: true,
           isActive: true,
           templateId: true,
           componentId: true,
@@ -469,19 +479,43 @@ export async function PUT(
         ? (body.templateId || null)
         : lockedSchedule.templateId;
 
-      if (effectiveIsActive && effectiveTemplateId) {
-        await lockPmTemplateLifecycle(tx, effectiveTemplateId);
-        const template = await tx.pmTemplate.findUnique({
-          where: { id: effectiveTemplateId },
-          select: {
-            id: true,
-            isActive: true,
-            tasks: { where: { isActive: true }, take: 1, select: { id: true } },
-          },
-        });
-        if (!template || !template.isActive || template.tasks.length === 0) {
-          return { kind: 'invalid_template' as const };
+      // Preserve the existing shared-template lifecycle contract for callers
+      // that are not replacing the checklist with schedule-owned inline tasks.
+      if (!inlineTasksProvided) {
+        if (effectiveIsActive && effectiveTemplateId) {
+          await lockPmTemplateLifecycle(tx, effectiveTemplateId);
+          const template = await tx.pmTemplate.findUnique({
+            where: { id: effectiveTemplateId },
+            select: {
+              id: true,
+              isActive: true,
+              tasks: { where: { isActive: true }, take: 1, select: { id: true } },
+            },
+          });
+          if (!template || !template.isActive || template.tasks.length === 0) {
+            return { kind: 'invalid_template' as const };
+          }
         }
+      }
+
+      if (inlineTasksProvided) {
+        const scheduleSnapshotTemplateId = normalizedInlineTasks.length > 0
+          ? await createPmScheduleTaskSnapshot(tx, {
+              scheduleTitle: String(lockedUpdateData.title || lockedSchedule.title),
+              scheduleDescription: typeof lockedUpdateData.description === 'string'
+                ? lockedUpdateData.description
+                : lockedSchedule.description,
+              estimatedDurationHours: typeof lockedUpdateData.estimatedDuration === 'number'
+                ? lockedUpdateData.estimatedDuration
+                : lockedSchedule.estimatedDuration,
+              priority: typeof lockedUpdateData.priority === 'string'
+                ? lockedUpdateData.priority
+                : lockedSchedule.priority,
+              createdById: session.userId,
+              tasks: normalizedInlineTasks,
+            })
+          : null;
+        lockedUpdateData.templateId = scheduleSnapshotTemplateId;
       }
 
       const nextSchedule = await tx.pmSchedule.update({

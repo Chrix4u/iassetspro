@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { PM_SCHEDULE_SNAPSHOT_CATEGORY } from '@/services/pm/scheduleTaskSnapshot.service';
 
 // ============================================================================
 // GET /api/pm-templates — List all PM templates
@@ -20,13 +21,22 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type');
     const active = searchParams.get('active');
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      AND: [{
+        OR: [
+          { category: null },
+          { category: { not: PM_SCHEDULE_SNAPSHOT_CATEGORY } },
+        ],
+      }],
+    };
 
     if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { description: { contains: search } },
-      ];
+      (where.AND as Array<Record<string, unknown>>).push({
+        OR: [
+          { title: { contains: search } },
+          { description: { contains: search } },
+        ],
+      });
     }
 
     if (type) {

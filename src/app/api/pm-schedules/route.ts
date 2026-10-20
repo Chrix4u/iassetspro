@@ -6,6 +6,7 @@ import { findAssetIdsByLiveLocationSearch, getAssetLiveLocationMap } from '@/lib
 import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
 import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
       templateId,
       autoGenerateWO,
       leadDays,
+      inlineTasks,
     } = body;
 
     if (!title || !assetId) {
@@ -214,6 +216,13 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    const inlineTasksProvided = inlineTasks !== undefined;
+    const normalizedInlineTasksResult = inlineTasksProvided ? normalizePmScheduleTasks(inlineTasks) : null;
+    if (normalizedInlineTasksResult && !normalizedInlineTasksResult.ok) {
+      return NextResponse.json({ success: false, error: normalizedInlineTasksResult.error }, { status: 400 });
+    }
+    const normalizedInlineTasks = normalizedInlineTasksResult?.ok ? normalizedInlineTasksResult.tasks : [];
 
     const isBlankLastCompletedDate = lastCompletedDate === undefined
       || lastCompletedDate === null
@@ -316,7 +325,19 @@ export async function POST(request: NextRequest) {
     const effectiveLeadDays = calendarFrequency?.frequencyType === 'time_day' ? normalizedLeadDays : 0;
 
     const scheduleResult = await db.$transaction(async (tx) => {
-      if (templateId) {
+      let effectiveTemplateId = templateId || null;
+      if (inlineTasksProvided) {
+        effectiveTemplateId = normalizedInlineTasks.length > 0
+          ? await createPmScheduleTaskSnapshot(tx, {
+              scheduleTitle: title,
+              scheduleDescription: description || null,
+              estimatedDurationHours: normalizedEstimatedDuration,
+              priority: priority || 'medium',
+              createdById: session.userId,
+              tasks: normalizedInlineTasks,
+            })
+          : null;
+      } else if (templateId) {
         await lockPmTemplateLifecycle(tx, templateId);
         const template = await tx.pmTemplate.findUnique({
           where: { id: templateId },
@@ -347,7 +368,7 @@ export async function POST(request: NextRequest) {
           priority: priority || 'medium',
           assignedToId: assignedToId || null,
           departmentId: departmentId || null,
-          templateId: templateId || null,
+          templateId: effectiveTemplateId,
           autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
           leadDays: effectiveLeadDays,
           createdById: session.userId,
@@ -412,7 +433,7 @@ export async function POST(request: NextRequest) {
             title,
             assetId,
             componentId: componentId || null,
-            templateId: templateId || null,
+            templateId: effectiveTemplateId,
             frequencyType: storedFrequencyType,
             frequencyValue: canonicalFrequency.frequencyValue,
             frequencyUnit: storedFrequencyUnit,

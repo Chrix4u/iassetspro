@@ -11,7 +11,9 @@ describe('PM schedule template linkage', () => {
     expect(listRoute).toContain('templateId,');
     expect(listRoute).toContain("where: { id: templateId }");
     expect(listRoute).toContain("error: 'PM template must be active and contain at least one active task'");
-    expect(listRoute).toContain('templateId: templateId || null');
+    expect(listRoute).toContain('let effectiveTemplateId = templateId || null');
+    expect(listRoute).toContain('templateId: effectiveTemplateId');
+    expect(listRoute).toContain('if (inlineTasksProvided)');
     expect(listRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
 

@@ -13,6 +13,7 @@ vi.mock('@/lib/queue', () => ({
 import {
   buildPmAutomationJobId,
   enqueuePmAutomationTick,
+  isPmAutomationSchedulerStarted,
   resolvePmAutomationIntervalMs,
   startPmAutomationScheduler,
   stopPmAutomationScheduler,
@@ -74,7 +75,9 @@ describe('server-owned PM automation scheduler', () => {
   });
 
   it('starts once and enqueues on cadence without a browser request', async () => {
+    expect(isPmAutomationSchedulerStarted()).toBe(false);
     expect(startPmAutomationScheduler()).toBe(true);
+    expect(isPmAutomationSchedulerStarted()).toBe(true);
     expect(startPmAutomationScheduler()).toBe(false);
 
     await vi.advanceTimersByTimeAsync(59_999);
@@ -83,6 +86,19 @@ describe('server-owned PM automation scheduler', () => {
     expect(add).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(add).toHaveBeenCalledTimes(2);
+    stopPmAutomationScheduler();
+    expect(isPmAutomationSchedulerStarted()).toBe(false);
+  });
+
+  it('keeps scheduler lifecycle visible across server module reloads', async () => {
+    expect(startPmAutomationScheduler()).toBe(true);
+    expect(isPmAutomationSchedulerStarted()).toBe(true);
+
+    vi.resetModules();
+    const reloaded = await import('@/services/pm/automationScheduler.service');
+    expect(reloaded.isPmAutomationSchedulerStarted()).toBe(true);
+    reloaded.stopPmAutomationScheduler();
+    expect(reloaded.isPmAutomationSchedulerStarted()).toBe(false);
   });
 
   it('does not start when the trusted PM automation secret is absent', async () => {

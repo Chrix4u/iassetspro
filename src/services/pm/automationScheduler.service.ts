@@ -7,7 +7,20 @@ export const DEFAULT_PM_AUTOMATION_INTERVAL_MS = 60_000;
 export const MIN_PM_AUTOMATION_INTERVAL_MS = 30_000;
 export const MAX_PM_AUTOMATION_INTERVAL_MS = 900_000;
 
-let schedulerTimer: ReturnType<typeof setInterval> | null = null;
+type PmAutomationSchedulerGlobal = typeof globalThis & {
+  __iassetsproPmAutomationSchedulerTimer__?: ReturnType<typeof setInterval>;
+};
+
+const schedulerGlobal = globalThis as PmAutomationSchedulerGlobal;
+
+function getSchedulerTimer(): ReturnType<typeof setInterval> | null {
+  return schedulerGlobal.__iassetsproPmAutomationSchedulerTimer__ ?? null;
+}
+
+function setSchedulerTimer(timer: ReturnType<typeof setInterval> | null): void {
+  if (timer) schedulerGlobal.__iassetsproPmAutomationSchedulerTimer__ = timer;
+  else delete schedulerGlobal.__iassetsproPmAutomationSchedulerTimer__;
+}
 
 export function resolvePmAutomationIntervalMs(raw = process.env.PM_AUTOMATION_INTERVAL_MS): number {
   if (!raw) return DEFAULT_PM_AUTOMATION_INTERVAL_MS;
@@ -38,7 +51,7 @@ export async function enqueuePmAutomationTick(nowMs = Date.now()): Promise<strin
 }
 
 export function startPmAutomationScheduler(): boolean {
-  if (schedulerTimer) return false;
+  if (getSchedulerTimer()) return false;
 
   const cronSecret = process.env.PM_CRON_SECRET?.trim();
   if (!cronSecret) {
@@ -47,7 +60,7 @@ export function startPmAutomationScheduler(): boolean {
   }
 
   const intervalMs = resolvePmAutomationIntervalMs();
-  schedulerTimer = setInterval(() => {
+  const schedulerTimer = setInterval(() => {
     void enqueuePmAutomationTick().catch((error) => {
       logger.error('Failed to enqueue PM automation tick', error);
     });
@@ -56,14 +69,20 @@ export function startPmAutomationScheduler(): boolean {
   if (typeof schedulerTimer === 'object' && 'unref' in schedulerTimer) {
     schedulerTimer.unref();
   }
+  setSchedulerTimer(schedulerTimer);
 
   logger.info('PM automation scheduler started', { intervalMs });
   return true;
 }
 
+export function isPmAutomationSchedulerStarted(): boolean {
+  return getSchedulerTimer() !== null;
+}
+
 export function stopPmAutomationScheduler(): void {
+  const schedulerTimer = getSchedulerTimer();
   if (!schedulerTimer) return;
   clearInterval(schedulerTimer);
-  schedulerTimer = null;
+  setSchedulerTimer(null);
   logger.info('PM automation scheduler stopped');
 }

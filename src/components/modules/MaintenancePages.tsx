@@ -7883,6 +7883,7 @@ export function PmSchedulesPage() {
   const formUsesCalendarCadence = formFreqType === 'time_day';
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
+  const [pmAutomationStatus, setPmAutomationStatus] = useState<any>(null);
 
   const fetchPmAssetOptions = useCallback(async (query: string) => {
     const assets: any[] = [];
@@ -8103,6 +8104,12 @@ export function PmSchedulesPage() {
     });
   }, []);
 
+  useEffect(() => {
+    api.get('/api/pm-automation/status').then(res => {
+      if (res.success && res.data) setPmAutomationStatus(res.data);
+    }).catch(() => { /* status is informational and must not block the PM page */ });
+  }, []);
+
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormAssetId(''); setFormComponentId('');
     setFormFreqType('time_day'); setFormFreqValue('1'); setFormFreqUnit('months'); setFormMeterName('');
@@ -8217,6 +8224,27 @@ export function PmSchedulesPage() {
           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Preventive Maintenance</p>
           <h1 className="text-2xl font-bold tracking-tight">PM Schedules</h1>
           <p className="text-sm text-muted-foreground mt-1">Manage preventive maintenance schedules for your assets</p>
+          {pmAutomationStatus && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-medium text-muted-foreground">PM Automation</span>
+              <Badge variant="outline" className={
+                pmAutomationStatus.health === 'healthy'
+                  ? 'border-emerald-300 text-emerald-700 dark:text-emerald-400'
+                  : pmAutomationStatus.health === 'starting'
+                    ? 'border-sky-300 text-sky-700 dark:text-sky-400'
+                    : pmAutomationStatus.health === 'disabled'
+                      ? 'border-slate-300 text-slate-600 dark:text-slate-400'
+                      : 'border-red-300 text-red-700 dark:text-red-400'
+              }>
+                {pmAutomationStatus.health === 'healthy' ? 'Healthy' : pmAutomationStatus.health === 'starting' ? 'Starting' : pmAutomationStatus.health === 'disabled' ? 'Disabled' : 'Needs attention'}
+              </Badge>
+              <span className="text-muted-foreground">
+                {pmAutomationStatus.lastCompletedAt
+                  ? `Last run ${timeAgo(pmAutomationStatus.lastCompletedAt)}`
+                  : `Checks every ${Math.round((pmAutomationStatus.intervalMs || 60000) / 1000)}s`}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => { setDueSoonFilter(!dueSoonFilter); }}

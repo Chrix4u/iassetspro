@@ -638,9 +638,20 @@ export function registerDefaultProcessors() {
   });
 
   jobQueue.process(QUEUES.MAINTENANCE_SCHEDULING, async (job) => {
-    const { scheduleId, action } = job.data as { scheduleId: string; action: string };
+    const { scheduleId, action } = job.data as { scheduleId?: string; action: string };
+
+    if (action === 'run_pm_automation') {
+      // Load lazily so the generic queue module stays lightweight for callers
+      // that only enqueue unrelated work. The runner uses the canonical PM cron
+      // endpoint, preserving its locks, audit actor, trigger engines and alerts.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { runPmAutomationTick } = require('@/services/pm/automationRunner.service');
+      const result = await runPmAutomationTick();
+      return { scheduled: true, action, result, timestamp: new Date().toISOString() };
+    }
+
     logger.info('Processing maintenance schedule', { scheduleId, action });
-    return { scheduled: true };
+    return { scheduled: true, action };
   });
 
   jobQueue.process(QUEUES.PREDICTIVE_ANALYSIS, async (job) => {

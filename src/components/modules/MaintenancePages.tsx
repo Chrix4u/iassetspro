@@ -8103,11 +8103,6 @@ export function PmSchedulesPage() {
     });
   }, []);
 
-  // Background PM check: fire-and-forget trigger on page load
-  useEffect(() => {
-    api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
-  }, []);
-
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormAssetId(''); setFormComponentId('');
     setFormFreqType('time_day'); setFormFreqValue('1'); setFormFreqUnit('months'); setFormMeterName('');

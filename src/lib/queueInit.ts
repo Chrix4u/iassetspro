@@ -6,6 +6,7 @@ import { registerDefaultProcessors, getQueueAdapterType, closeQueueAdapter } fro
 import { registerNotificationEmailProcessor } from '@/lib/notification-email-queue';
 import { closeRedisClient } from '@/lib/redis';
 import { createLogger } from '@/lib/logger';
+import { startPmAutomationScheduler, stopPmAutomationScheduler } from '@/services/pm/automationScheduler.service';
 
 const logger = createLogger('queue-init');
 
@@ -20,6 +21,7 @@ export function initQueues() {
     void registerNotificationEmailProcessor().catch((error) => {
       logger.error('Failed to register notification email processor', error);
     });
+    startPmAutomationScheduler();
 
     const adapterType = getQueueAdapterType();
     const redisUrl = process.env.REDIS_URL;
@@ -29,7 +31,7 @@ export function initQueues() {
       logger.info('Job queue system initialized (in-memory fallback)');
     }
   } catch (error) {
-    logger.error('Failed to initialize job queues', error);
+    logger.error('Failed to initialize job queues', error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -40,10 +42,11 @@ export function initQueues() {
  */
 export async function shutdownQueues() {
   try {
+    stopPmAutomationScheduler();
     await closeQueueAdapter();
     await closeRedisClient();
     logger.info('Queue and Redis connections shut down');
   } catch (error) {
-    logger.error('Error during queue shutdown', error);
+    logger.error('Error during queue shutdown', error instanceof Error ? error : new Error(String(error)));
   }
 }

@@ -117,6 +117,7 @@ type MaintenanceRequest = BaseMaintenanceRequest & {
 
 type WorkOrder = BaseWorkOrder & {
   plantId?: string | null;
+  pmScheduleId?: string | null;
   assignedSupervisorId?: string | null;
   assignedTo?: { id: string; fullName: string; username?: string | null } | null;
   assignee?: { id: string; fullName: string; username?: string | null; department?: string | null } | null;
@@ -136,6 +137,27 @@ type WorkOrder = BaseWorkOrder & {
 
 type WOTimeLog = BaseWOTimeLog & { timestamp?: string };
 type WOComment = BaseWOComment & { user?: { id: string; fullName: string; username?: string | null } | null };
+
+type PmPlanningReadinessData = {
+  readyForPlanning: boolean;
+  blockingIssues: Array<{ code: string; label: string }>;
+  warnings: Array<{ code: string; label: string }>;
+  checklist: { taskCount: number; estimatedMinutes: number };
+  requiredSkills: string[];
+  resources: {
+    mappedPartCount: number;
+    mappedToolCount: number;
+    unresolvedPartLabels: string[];
+    unresolvedToolLabels: string[];
+  };
+  schedule: {
+    id: string;
+    title: string;
+    templateId: string | null;
+    templateTitle: string | null;
+  };
+  modules: { repairs: boolean; inventory: boolean; tools: boolean };
+};
 
 async function loadWorkOrderDefaults(): Promise<WorkOrderDefaults> {
   try {
@@ -3447,6 +3469,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Suggested Materials & Tools
   const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
   const [suggestedTools, setSuggestedTools] = useState<any[]>([]);
+  // PM-generated WO planning readiness (assignments, checklist, mapped resources)
+  const [pmPlanningReadiness, setPmPlanningReadiness] = useState<PmPlanningReadinessData | null>(null);
+  const [pmPlanningReadinessLoading, setPmPlanningReadinessLoading] = useState(false);
 
   const hydrateSuggestedResourcesFromWO = useCallback((workOrder: any) => {
     const parseSnapshot = (value: unknown): any[] => {
@@ -3746,6 +3771,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
   }, [id, materialResourcesEnabled, toolResourcesEnabled, mergeSuggestedResourceRows]);
 
+  const fetchPmPlanningReadiness = useCallback(async () => {
+    setPmPlanningReadinessLoading(true);
+    try {
+      const res = await api.get<PmPlanningReadinessData>(`/api/work-orders/${id}/pm-planning-readiness`);
+      setPmPlanningReadiness(res.success && res.data ? res.data : null);
+    } catch {
+      // Non-PM work orders and unavailable PM context simply omit this optional panel.
+      setPmPlanningReadiness(null);
+    } finally {
+      setPmPlanningReadinessLoading(false);
+    }
+  }, [id]);
+
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
     if (!confirm(`Remove this recommended ${itemType === 'part' ? 'material' : 'tool'} from the work plan?`)) return;
     try {
@@ -3854,6 +3892,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     fetchSuggestedItems();
     return () => { active = false; };
   }, [id, fetchSuggestedItems, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
+
+  useEffect(() => {
+    if (!wo?.pmScheduleId) {
+      setPmPlanningReadiness(null);
+      return;
+    }
+    void fetchPmPlanningReadiness();
+  }, [wo?.pmScheduleId, wo?.updatedAt, fetchPmPlanningReadiness]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -6392,6 +6438,104 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
             </CardContent>
           </Card>
+
+          {/* PM Planning Readiness — PM-generated work stays on the canonical Repairs lifecycle. */}
+          {wo.pmScheduleId && (
+            <Card className="border-0 shadow-sm border-l-4 border-l-sky-500">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-sky-600" />
+                      PM Planning Readiness
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {pmPlanningReadiness?.schedule.title || 'Preventive maintenance work order'} · assignments, checklist and resource mapping before execution.
+                    </CardDescription>
+                  </div>
+                  {pmPlanningReadiness ? (
+                    <Badge variant="outline" className={pmPlanningReadiness.readyForPlanning
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'}>
+                      {pmPlanningReadiness.readyForPlanning ? 'Ready to plan' : 'Needs planning'}
+                    </Badge>
+                  ) : null}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {pmPlanningReadinessLoading && !pmPlanningReadiness ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />Checking PM planning readiness…
+                  </div>
+                ) : pmPlanningReadiness ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                      <div className="rounded-lg border bg-muted/20 p-2.5">
+                        <p className="text-[10px] uppercase text-muted-foreground">Checklist</p>
+                        <p className="text-sm font-semibold">{pmPlanningReadiness.checklist.taskCount} tasks</p>
+                        <p className="text-[10px] text-muted-foreground">~{pmPlanningReadiness.checklist.estimatedMinutes} min</p>
+                      </div>
+                      <div className="rounded-lg border bg-muted/20 p-2.5">
+                        <p className="text-[10px] uppercase text-muted-foreground">Materials</p>
+                        <p className="text-sm font-semibold">{pmPlanningReadiness.resources.mappedPartCount} mapped</p>
+                        <p className="text-[10px] text-muted-foreground">{pmPlanningReadiness.modules.inventory ? `${pmPlanningReadiness.resources.unresolvedPartLabels.length} unresolved` : 'IMS unavailable'}</p>
+                      </div>
+                      <div className="rounded-lg border bg-muted/20 p-2.5">
+                        <p className="text-[10px] uppercase text-muted-foreground">Tools</p>
+                        <p className="text-sm font-semibold">{pmPlanningReadiness.resources.mappedToolCount} mapped</p>
+                        <p className="text-[10px] text-muted-foreground">{pmPlanningReadiness.modules.tools ? `${pmPlanningReadiness.resources.unresolvedToolLabels.length} unresolved` : 'TRAC unavailable'}</p>
+                      </div>
+                      <div className="rounded-lg border bg-muted/20 p-2.5">
+                        <p className="text-[10px] uppercase text-muted-foreground">Skills</p>
+                        <p className="text-sm font-semibold">{pmPlanningReadiness.requiredSkills.length || '—'}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{pmPlanningReadiness.requiredSkills.join(', ') || 'No template skills'}</p>
+                      </div>
+                    </div>
+
+                    {pmPlanningReadiness.blockingIssues.length > 0 && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                        <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" />Planning actions required</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {pmPlanningReadiness.blockingIssues.map((issue) => (
+                            <Badge key={issue.code} variant="outline" className="bg-white text-amber-800 border-amber-200">{issue.label}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {(pmPlanningReadiness.resources.unresolvedPartLabels.length > 0 || pmPlanningReadiness.resources.unresolvedToolLabels.length > 0) && (
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {pmPlanningReadiness.resources.unresolvedPartLabels.length > 0 && (
+                          <div className="rounded-lg border p-3">
+                            <p className="text-xs font-semibold flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Unmapped task parts</p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {pmPlanningReadiness.resources.unresolvedPartLabels.map((label) => <Badge key={label} variant="secondary" className="text-[10px]">{label}</Badge>)}
+                            </div>
+                            {!pmPlanningReadiness.modules.inventory && <p className="mt-2 text-[10px] text-muted-foreground">Informational only while the Inventory module is unavailable.</p>}
+                          </div>
+                        )}
+                        {pmPlanningReadiness.resources.unresolvedToolLabels.length > 0 && (
+                          <div className="rounded-lg border p-3">
+                            <p className="text-xs font-semibold flex items-center gap-1.5"><Wrench className="h-3.5 w-3.5" />Unmapped template tools</p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {pmPlanningReadiness.resources.unresolvedToolLabels.map((label) => <Badge key={label} variant="secondary" className="text-[10px]">{label}</Badge>)}
+                            </div>
+                            {!pmPlanningReadiness.modules.tools && <p className="mt-2 text-[10px] text-muted-foreground">Informational only while the Tools module is unavailable.</p>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {pmPlanningReadiness.warnings.some((warning) => warning.code === 'checklist_empty') && (
+                      <p className="text-xs text-amber-700 flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" />No PM checklist is attached to this work order.</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Planning readiness is unavailable for this PM work order.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Suggested Materials & Tools — Planner's suggestions */}
           {(() => {

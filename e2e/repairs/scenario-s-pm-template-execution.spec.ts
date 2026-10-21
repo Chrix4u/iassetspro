@@ -16,11 +16,13 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   const suffix = Date.now().toString().slice(-7);
   const templateTitle = `UAT PM Execution Template ${suffix}`;
   const scheduleTitle = `UAT PM Execution Schedule ${suffix}`;
-  const taskDescriptions = [
+  const templateTaskDescriptions = [
     `Inspect pump bearing seals ${suffix}`,
     `Measure pump bearing vibration ${suffix}`,
     `Lubricate pump bearing ${suffix}`,
   ];
+  const scheduleOnlyTask = `Record pump discharge pressure ${suffix}`;
+  const taskDescriptions = [...templateTaskDescriptions, scheduleOnlyTask];
 
   const plannerToken = await getToken('planner');
   const technicianToken = await getToken('tech_single');
@@ -55,7 +57,7 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   await expect(page.getByText('Edit PM Template', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Task Checklist/i }).click();
 
-  for (const description of taskDescriptions) {
+  for (const description of templateTaskDescriptions) {
     await page.getByPlaceholder('Task description *').fill(description);
     await page.getByPlaceholder('Est. minutes').fill('10');
     const addTaskResponse = page.waitForResponse((response) => response.url().includes(`/api/pm-templates/${template.id}/tasks`) && response.request().method() === 'POST');
@@ -75,10 +77,20 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   await page.getByRole('button', { name: /New Schedule/i }).click();
   await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(scheduleTitle);
 
-  const templateLabel = page.locator('label').filter({ hasText: /^PM Template$/ }).first();
+  const templateLabel = page.locator('label').filter({ hasText: /PM Template$/ }).first();
   await templateLabel.locator('..').getByRole('combobox').click();
   await page.getByPlaceholder('Search PM templates...').fill(templateTitle);
   await page.getByText(`${templateTitle} · 3 tasks`, { exact: true }).click();
+
+  // Template is a starter: its checklist is copied into this schedule form and
+  // can be customized without mutating the reusable template.
+  const scheduleTaskInputs = page.getByPlaceholder('Describe the maintenance task...');
+  await expect(scheduleTaskInputs).toHaveCount(3, { timeout: 10_000 });
+  await expect(scheduleTaskInputs.nth(0)).toHaveValue(templateTaskDescriptions[0]);
+  await expect(scheduleTaskInputs.nth(1)).toHaveValue(templateTaskDescriptions[1]);
+  await expect(scheduleTaskInputs.nth(2)).toHaveValue(templateTaskDescriptions[2]);
+  await page.getByRole('button', { name: 'Add Task', exact: true }).click();
+  await scheduleTaskInputs.last().fill(scheduleOnlyTask);
 
   const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
   await assetLabel.locator('..').getByRole('combobox').click();
@@ -96,7 +108,18 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   expect(schedules.status).toBe(200);
   const schedule = (schedules.data.data as any[]).find((row) => row.title === scheduleTitle);
   expect(schedule?.id).toBeTruthy();
-  expect(schedule?.templateId).toBe(template.id);
+  expect(schedule?.templateId).toBeTruthy();
+  expect(schedule?.templateId).not.toBe(template.id);
+
+  const savedSchedule = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${schedule.id}`);
+  expect(savedSchedule.status).toBe(200);
+  expect(savedSchedule.data.data?.template?.category).toBe('schedule_snapshot');
+  expect((savedSchedule.data.data?.template?.tasks as any[]).map((task) => task.description)).toEqual(taskDescriptions);
+
+  // The reusable source template remains unchanged at three tasks.
+  const reusableTemplateAfterScheduleSave = await apiCall(plannerToken, 'GET', `/api/pm-templates/${template.id}`);
+  expect(reusableTemplateAfterScheduleSave.status).toBe(200);
+  expect((reusableTemplateAfterScheduleSave.data.data?.tasks as any[]).map((task) => task.description)).toEqual(templateTaskDescriptions);
 
   // Force only this schedule due, then run the real PM generation engine.
   const forcedDueDate = new Date(Date.now() - 60_000).toISOString();
@@ -138,7 +161,7 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
     expect((taskStateBefore.data.data as any[]).map((task) => task.description)).toEqual(taskDescriptions);
 
     const materializedTasks = taskStateBefore.data.data as any[];
-    await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(3, { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toHaveCount(4, { timeout: 10_000 });
     for (const description of taskDescriptions) {
       const task = materializedTasks.find((row) => row.description === description);
       expect(task?.id).toBeTruthy();
@@ -162,7 +185,7 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
     }
     const taskStateAfter = await apiCall(technicianToken, 'GET', `/api/work-orders/${woId}/tasks`);
     expect(taskStateAfter.status).toBe(200);
-    expect(taskStateAfter.data.data).toHaveLength(3);
+    expect(taskStateAfter.data.data).toHaveLength(4);
     expect((taskStateAfter.data.data as any[]).every((task) => task.status === 'completed')).toBe(true);
 
     const readinessAfter = await apiCall(technicianToken, 'GET', `/api/work-orders/${woId}/readiness`);

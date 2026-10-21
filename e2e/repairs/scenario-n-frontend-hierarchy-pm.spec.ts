@@ -129,7 +129,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(title);
 
       if (useTemplate) {
-        const templateLabel = page.locator('label').filter({ hasText: /^PM Template$/ }).first();
+        const templateLabel = page.locator('label').filter({ hasText: /PM Template$/ }).first();
         const templateCombobox = templateLabel.locator('..').getByRole('combobox');
         await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
         await templateCombobox.click();

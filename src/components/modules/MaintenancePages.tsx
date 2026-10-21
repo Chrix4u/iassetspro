@@ -7841,6 +7841,41 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   );
 }
 // --- PmSchedulesPage separator ---
+type PmScheduleTaskDraft = {
+  id: string;
+  description: string;
+  taskType: string;
+  estimatedMinutes: string;
+  requiredPartsText: string;
+};
+
+const PM_SCHEDULE_TASK_TYPE_OPTIONS = [
+  { value: 'check', label: 'Check' },
+  { value: 'measure', label: 'Measure' },
+  { value: 'inspect', label: 'Inspect' },
+  { value: 'lubricate', label: 'Lubricate' },
+  { value: 'replace', label: 'Replace' },
+  { value: 'record', label: 'Record' },
+];
+
+function pmScheduleTaskDraft(task: any, index: number): PmScheduleTaskDraft {
+  let requiredParts: string[] = [];
+  if (Array.isArray(task?.requiredParts)) requiredParts = task.requiredParts;
+  else if (typeof task?.requiredParts === 'string' && task.requiredParts.trim()) {
+    try {
+      const parsed = JSON.parse(task.requiredParts);
+      if (Array.isArray(parsed)) requiredParts = parsed.filter((part) => typeof part === 'string');
+    } catch { /* malformed legacy optional metadata is displayed as empty */ }
+  }
+  return {
+    id: String(task?.id || `pm-task-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`),
+    description: String(task?.description || ''),
+    taskType: String(task?.taskType || 'check'),
+    estimatedMinutes: task?.estimatedMinutes ? String(task.estimatedMinutes) : '',
+    requiredPartsText: requiredParts.join(', '),
+  };
+}
+
 export function PmSchedulesPage() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -7863,6 +7898,10 @@ export function PmSchedulesPage() {
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
+  const [formTemplateStarterId, setFormTemplateStarterId] = useState('');
+  const [formTasks, setFormTasks] = useState<PmScheduleTaskDraft[]>([]);
+  const [formTasksDirty, setFormTasksDirty] = useState(false);
+  const [formTasksLoading, setFormTasksLoading] = useState(false);
   const [formAssetId, setFormAssetId] = useState('');
   const [formComponentId, setFormComponentId] = useState('');
   const [pmComponentOptions, setPmComponentOptions] = useState<any[]>([]);
@@ -7883,6 +7922,7 @@ export function PmSchedulesPage() {
   const formUsesCalendarCadence = formFreqType === 'time_day';
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
+  const [pmAutomationStatus, setPmAutomationStatus] = useState<any>(null);
 
   const fetchPmAssetOptions = useCallback(async (query: string) => {
     const assets: any[] = [];
@@ -8103,13 +8143,15 @@ export function PmSchedulesPage() {
     });
   }, []);
 
-  // Background PM check: fire-and-forget trigger on page load
   useEffect(() => {
-    api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
+    api.get('/api/pm-automation/status').then(res => {
+      if (res.success && res.data) setPmAutomationStatus(res.data);
+    }).catch(() => { /* status is informational and must not block the PM page */ });
   }, []);
 
   const resetForm = () => {
-    setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormAssetId(''); setFormComponentId('');
+    setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormTemplateStarterId(''); setFormAssetId(''); setFormComponentId('');
+    setFormTasks([]); setFormTasksDirty(false); setFormTasksLoading(false);
     setFormFreqType('time_day'); setFormFreqValue('1'); setFormFreqUnit('months'); setFormMeterName('');
     setFormPriority('medium'); setFormEstDuration('');
     setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
@@ -8117,11 +8159,63 @@ export function PmSchedulesPage() {
     setTargetExplorerOpen(false); setTargetDraftSelection({ component: null, path: [] });
   };
 
+  const handlePmTemplateStarterChange = async (templateId: string) => {
+    setFormTemplateStarterId(templateId);
+    if (!templateId) return;
+    setFormTasksLoading(true);
+    try {
+      const res = await api.get(`/api/pm-templates/${templateId}`);
+      if (!res.success || !res.data) {
+        toast.error(res.error || 'Failed to load PM template tasks');
+        return;
+      }
+      const tasks = Array.isArray(res.data.tasks) ? res.data.tasks : [];
+      setFormTemplateId(templateId);
+      setFormTasks(tasks.map((task: any, index: number) => pmScheduleTaskDraft(task, index)));
+      setFormTasksDirty(false);
+      toast.success(`Loaded ${tasks.length} task${tasks.length === 1 ? '' : 's'} from template`);
+    } catch {
+      toast.error('Failed to load PM template tasks');
+    } finally {
+      setFormTasksLoading(false);
+    }
+  };
+
+  const addPmTask = () => {
+    setFormTasks((current) => [...current, pmScheduleTaskDraft({ taskType: 'check' }, current.length)]);
+    setFormTasksDirty(true);
+  };
+
+  const updatePmTask = (id: string, patch: Partial<PmScheduleTaskDraft>) => {
+    setFormTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
+    setFormTasksDirty(true);
+  };
+
+  const movePmTask = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= formTasks.length) return;
+    setFormTasks((current) => {
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+    setFormTasksDirty(true);
+  };
+
+  const removePmTask = (id: string) => {
+    setFormTasks((current) => current.filter((task) => task.id !== id));
+    setFormTasksDirty(true);
+  };
+
   const openCreate = () => { resetForm(); setCreateOpen(true); };
   const openEdit = (item: any) => {
     setFormTitle(item.title || '');
     setFormDesc(item.description || '');
     setFormTemplateId(item.templateId || '');
+    setFormTemplateStarterId('');
+    setFormTasks([]);
+    setFormTasksDirty(false);
+    setFormTasksLoading(true);
     setFormAssetId(item.assetId || '');
     setFormComponentId(item.componentId || '');
     const normalizedFrequency = normalizePmFrequency(item);
@@ -8137,10 +8231,28 @@ export function PmSchedulesPage() {
     setFormLeadDays(String(item.leadDays ?? 3));
     setFormNextDueDate(item.nextDueDate ? item.nextDueDate.split('T')[0] : '');
     setEditItem(item);
+
+    void api.get(`/api/pm-schedules/${item.id}`).then((res) => {
+      if (!res.success || !res.data) return;
+      const detail = res.data;
+      setEditItem(detail);
+      setFormTemplateId(detail.templateId || '');
+      setFormTasks((Array.isArray(detail.template?.tasks) ? detail.template.tasks : []).map((task: any, index: number) => pmScheduleTaskDraft(task, index)));
+      setFormAssignedToId(detail.assignedToId || '');
+      setFormDepartmentId(detail.departmentId || '');
+    }).catch(() => {
+      toast.error('Could not load the current PM task list');
+    }).finally(() => {
+      setFormTasksLoading(false);
+    });
   };
 
   const handleSave = async () => {
     if (!formTitle || !formAssetId) { toast.error('Title and asset are required'); return; }
+    if (formTasks.some((task) => !task.description.trim())) { toast.error('Every PM task needs a description'); return; }
+    if (formTasks.some((task) => task.estimatedMinutes && (!Number.isInteger(Number(task.estimatedMinutes)) || Number(task.estimatedMinutes) <= 0))) {
+      toast.error('Task estimated minutes must be positive whole numbers'); return;
+    }
     const parsedFrequencyValue = Number(formFreqValue);
     if (!Number.isInteger(parsedFrequencyValue) || parsedFrequencyValue <= 0) {
       toast.error('Frequency interval must be a positive whole number');
@@ -8166,6 +8278,14 @@ export function PmSchedulesPage() {
         autoGenerateWO: formAutoGenWO,
         leadDays: formUsesCalendarCadence ? (formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)) : 0,
         nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
+        ...(formTasksDirty ? {
+          inlineTasks: formTasks.map((task) => ({
+            description: task.description.trim(),
+            taskType: task.taskType,
+            estimatedMinutes: task.estimatedMinutes ? Number(task.estimatedMinutes) : null,
+            requiredParts: task.requiredPartsText.split(',').map((part) => part.trim()).filter(Boolean),
+          })),
+        } : {}),
       };
 
       if (editItem) {
@@ -8222,6 +8342,27 @@ export function PmSchedulesPage() {
           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Preventive Maintenance</p>
           <h1 className="text-2xl font-bold tracking-tight">PM Schedules</h1>
           <p className="text-sm text-muted-foreground mt-1">Manage preventive maintenance schedules for your assets</p>
+          {pmAutomationStatus && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-medium text-muted-foreground">PM Automation</span>
+              <Badge variant="outline" className={
+                pmAutomationStatus.health === 'healthy'
+                  ? 'border-emerald-300 text-emerald-700 dark:text-emerald-400'
+                  : pmAutomationStatus.health === 'starting'
+                    ? 'border-sky-300 text-sky-700 dark:text-sky-400'
+                    : pmAutomationStatus.health === 'disabled'
+                      ? 'border-slate-300 text-slate-600 dark:text-slate-400'
+                      : 'border-red-300 text-red-700 dark:text-red-400'
+              }>
+                {pmAutomationStatus.health === 'healthy' ? 'Healthy' : pmAutomationStatus.health === 'starting' ? 'Starting' : pmAutomationStatus.health === 'disabled' ? 'Disabled' : 'Needs attention'}
+              </Badge>
+              <span className="text-muted-foreground">
+                {pmAutomationStatus.lastCompletedAt
+                  ? `Last run ${timeAgo(pmAutomationStatus.lastCompletedAt)}`
+                  : `Checks every ${Math.round((pmAutomationStatus.intervalMs || 60000) / 1000)}s`}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => { setDueSoonFilter(!dueSoonFilter); }}
@@ -8471,10 +8612,10 @@ export function PmSchedulesPage() {
           </div>
 
           <div className="space-y-2 md:col-span-2 xl:col-span-5">
-            <Label className="text-sm font-semibold">PM Template</Label>
+            <Label className="text-sm font-semibold">Start / Replace from PM Template</Label>
             <AsyncSearchableSelect
-              value={formTemplateId}
-              onValueChange={setFormTemplateId}
+              value={formTemplateStarterId}
+              onValueChange={handlePmTemplateStarterChange}
               fetchOptions={async () => {
                 const res = await api.get('/api/pm-templates?active=true');
                 if (res.success && res.data) {
@@ -8489,7 +8630,7 @@ export function PmSchedulesPage() {
               placeholder="Optional — select PM template..."
               searchPlaceholder="Search PM templates..."
             />
-            <p className="text-[11px] text-muted-foreground">Selected template tasks flow into generated work orders.</p>
+            <p className="text-[11px] text-muted-foreground">Loads a reusable template into this schedule's Task List. You can customize it without changing other schedules.</p>
           </div>
 
           <div className="space-y-2 md:col-span-2 xl:col-span-12">
@@ -8546,6 +8687,79 @@ export function PmSchedulesPage() {
               placeholder="Select department..."
               searchPlaceholder="Search departments..."
             />
+          </div>
+
+          <div className="rounded-xl border bg-muted/15 p-4 md:col-span-2 xl:col-span-12">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">Task List</p>
+                <p className="text-[11px] text-muted-foreground">These tasks become the technician checklist on every work order generated by this schedule.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={addPmTask} disabled={formTasksLoading}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Task
+              </Button>
+            </div>
+
+            {formTasksLoading ? (
+              <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading task list...</div>
+            ) : formTasks.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
+                No tasks yet. Add tasks here or load a reusable PM template above.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {formTasks.map((task, index) => (
+                  <div key={task.id} className="grid gap-2 rounded-lg border bg-card p-3 lg:grid-cols-12 lg:items-start">
+                    <div className="lg:col-span-5">
+                      <Label className="text-[10px] text-muted-foreground">Task {index + 1}</Label>
+                      <Input
+                        value={task.description}
+                        onChange={(event) => updatePmTask(task.id, { description: event.target.value })}
+                        placeholder="Describe the maintenance task..."
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <Label className="text-[10px] text-muted-foreground">Type</Label>
+                      <Select value={task.taskType} onValueChange={(value) => updatePmTask(task.id, { taskType: value })}>
+                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {PM_SCHEDULE_TASK_TYPE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="lg:col-span-2">
+                      <Label className="text-[10px] text-muted-foreground">Est. Minutes</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={task.estimatedMinutes}
+                        onChange={(event) => updatePmTask(task.id, { estimatedMinutes: event.target.value })}
+                        placeholder="15"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <Label className="text-[10px] text-muted-foreground">Required Parts</Label>
+                      <Input
+                        value={task.requiredPartsText}
+                        onChange={(event) => updatePmTask(task.id, { requiredPartsText: event.target.value })}
+                        placeholder="Grease, seal"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex items-end justify-end gap-1 lg:col-span-1 lg:pt-5">
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => movePmTask(index, -1)} disabled={index === 0} aria-label={`Move task ${index + 1} up`}>↑</Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => movePmTask(index, 1)} disabled={index === formTasks.length - 1} aria-label={`Move task ${index + 1} down`}>↓</Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-600" onClick={() => removePmTask(task.id)} aria-label={`Remove task ${index + 1}`}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {formAssetId && (
@@ -8757,6 +8971,31 @@ export function PmSchedulesPage() {
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Last Completed</p><p className="mt-1 text-sm font-medium">{viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Lead Days</p><p className="mt-1 text-sm font-medium">{viewItem.leadDays ?? 0}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Auto-generate Work Order</p><p className="mt-1 text-sm font-medium">{viewItem.autoGenerateWO ? 'Enabled' : 'Disabled'}</p></div>
+            <div className="sm:col-span-2 rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase text-muted-foreground">PM Task List</p>
+                <Badge variant="secondary" className="text-[10px]">{viewItem.template?.tasks?.length ?? 0} task{viewItem.template?.tasks?.length === 1 ? '' : 's'}</Badge>
+              </div>
+              {viewItem.template?.tasks?.length ? (
+                <div className="mt-3 space-y-2">
+                  {viewItem.template.tasks.map((task: any, index: number) => (
+                    <div key={task.id || `${index}-${task.description}`} className="flex gap-3 rounded-lg border bg-muted/20 p-2.5">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium break-words">{task.description}</p>
+                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                          <span className="capitalize">{String(task.taskType || 'check').replace(/_/g, ' ')}</span>
+                          {task.estimatedMinutes ? <span>· {task.estimatedMinutes} min</span> : null}
+                          {task.requiredParts ? <span>· Parts: {(() => { try { const parts = JSON.parse(task.requiredParts); return Array.isArray(parts) ? parts.join(', ') : String(task.requiredParts); } catch { return String(task.requiredParts); } })()}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">No task checklist is attached to this schedule.</p>
+              )}
+            </div>
             {viewItem.description && <div className="sm:col-span-2 rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Description</p><p className="mt-1 text-sm whitespace-pre-wrap break-words">{viewItem.description}</p></div>}
             <div className="sm:col-span-2 text-[11px] text-muted-foreground">Created by {viewItem.createdBy?.fullName || '—'}{viewItem.createdAt ? ` · ${formatDateTime(viewItem.createdAt)}` : ''}</div>
           </div>

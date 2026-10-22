@@ -2,6 +2,7 @@ import type { PmTask, PmTemplateTask, Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { normalizePmTaskDraft, type PmTaskDraft, type PmTaskType } from '@/lib/pm-task';
 import { createPmTaskBatchInTransaction } from '@/services/pm/pmTask.service';
+import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -29,6 +30,18 @@ export interface DeactivatePmTemplateTaskInput extends TemplateMutationInput {
 
 export interface ConvertLegacyPmTemplateTaskInput extends DeactivatePmTemplateTaskInput {
   taskType: PmTaskType;
+}
+
+export class PmTemplateLastActiveTaskError extends Error {
+  readonly scheduleId: string;
+  readonly scheduleTitle: string;
+
+  constructor(schedule: { id: string; title: string }) {
+    super(`Cannot remove the last active task while active PM schedule \"${schedule.title}\" uses this template`);
+    this.name = 'PmTemplateLastActiveTaskError';
+    this.scheduleId = schedule.id;
+    this.scheduleTitle = schedule.title;
+  }
 }
 
 async function lockTemplateOrder(tx: Tx, templateId: string): Promise<void> {
@@ -201,10 +214,23 @@ export async function reorderPmTemplateTasks(input: ReorderPmTemplateTasksInput)
 export async function deactivatePmTemplateTask(input: DeactivatePmTemplateTaskInput): Promise<PmTemplateTask> {
   return db.$transaction(async (tx) => {
     await lockTemplateOrder(tx, input.templateId);
+    await lockPmTemplateLifecycle(tx, input.templateId);
     await requireOwnedTemplate(tx, input.templateId, input.plantId);
     const association = (await loadTemplateAssociations(tx, input.templateId)).find((row) => row.id === input.associationId);
     if (!association) throw new Error('PM template task association not found');
     if (!association.isActive) return association;
+
+    const activeSchedule = await tx.pmSchedule.findFirst({
+      where: { templateId: input.templateId, isActive: true },
+      select: { id: true, title: true },
+    });
+    if (activeSchedule) {
+      const activeTaskCount = await tx.pmTemplateTask.count({
+        where: { templateId: input.templateId, isActive: true },
+      });
+      if (activeTaskCount <= 1) throw new PmTemplateLastActiveTaskError(activeSchedule);
+    }
+
     const updated = await tx.pmTemplateTask.update({
       where: { id: association.id },
       data: { isActive: false },

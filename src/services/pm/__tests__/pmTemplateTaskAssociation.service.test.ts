@@ -5,6 +5,7 @@ const { mockDb, tx } = vi.hoisted(() => {
     $executeRaw: vi.fn(),
     $executeRawUnsafe: vi.fn(),
     pmTemplate: { findUnique: vi.fn() },
+    pmSchedule: { findFirst: vi.fn() },
     pmTask: {
       aggregate: vi.fn(),
       createManyAndReturn: vi.fn(),
@@ -14,6 +15,7 @@ const { mockDb, tx } = vi.hoisted(() => {
     pmTemplateTask: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
+      count: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -57,6 +59,8 @@ describe('pmTemplateTaskAssociation.service', () => {
     tx.$executeRaw.mockResolvedValue(0);
     tx.$executeRawUnsafe.mockResolvedValue(0);
     tx.pmTemplate.findUnique.mockResolvedValue(template());
+    tx.pmSchedule.findFirst.mockResolvedValue(null);
+    tx.pmTemplateTask.count.mockResolvedValue(2);
     tx.pmTask.aggregate.mockResolvedValue({ _max: { taskNumber: 20 } });
     tx.auditLog.create.mockResolvedValue({ id: 'audit-1' });
     tx.auditLog.createMany.mockResolvedValue({ count: 0 });
@@ -176,6 +180,26 @@ describe('pmTemplateTaskAssociation.service', () => {
       where: { id: 'assoc-1', templateId: 'template-1', isActive: true }, data: { sortOrder: 1 },
     });
     expect(tx.pmTask.update).not.toHaveBeenCalled();
+  });
+
+  it('atomically blocks removal of the final active task when an active schedule uses the template', async () => {
+    tx.pmTemplateTask.findMany.mockResolvedValue([association()]);
+    tx.pmSchedule.findFirst.mockResolvedValue({ id: 'schedule-1', title: 'Pump monthly PM' });
+    tx.pmTemplateTask.count.mockResolvedValue(1);
+
+    await expect(deactivatePmTemplateTask({
+      templateId: 'template-1', associationId: 'assoc-1', plantId: 'plant-1', userId: 'user-1',
+    })).rejects.toThrow(/last active task/i);
+
+    expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      'iassetspro:pm-template-task-order:template-1',
+    );
+    expect(tx.pmSchedule.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { templateId: 'template-1', isActive: true },
+    }));
+    expect(tx.pmTemplateTask.count).toHaveBeenCalledWith({ where: { templateId: 'template-1', isActive: true } });
+    expect(tx.pmTemplateTask.update).not.toHaveBeenCalled();
   });
 
   it('soft-removes an association without deactivating or deleting its Task Master', async () => {

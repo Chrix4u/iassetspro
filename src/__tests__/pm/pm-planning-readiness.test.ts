@@ -44,6 +44,56 @@ describe('PM planning readiness', () => {
     expect(result.readyForPlanning).toBe(true);
   });
 
+  it('tracks mapped recommendations that entered Repairs requests and flags rejected or missing coverage', async () => {
+    const { buildPmPlanningReadiness } = await loadService();
+
+    const result = buildPmPlanningReadiness({
+      plannerId: 'planner-1',
+      assignedTo: 'tech-1',
+      assignedSupervisorId: 'supervisor-1',
+      departmentId: 'dept-1',
+      repairsOperational: true,
+      requiredSkills: null,
+      requiredTools: JSON.stringify(['Torque Wrench', 'Grease Gun']),
+      suggestedParts: JSON.stringify([
+        { itemId: 'part-1', itemName: 'Bearing 6205', itemCode: 'BRG-6205', quantity: 2 },
+        { itemId: 'part-2', itemName: 'Seal Kit', itemCode: 'SEAL-01', quantity: 1 },
+      ]),
+      suggestedTools: JSON.stringify([
+        { toolId: 'tool-1', toolName: 'Torque Wrench', toolCode: 'TW-01', quantity: 1 },
+        { toolId: 'tool-2', toolName: 'Grease Gun', toolCode: 'GG-01', quantity: 1 },
+      ]),
+      materialRequests: [
+        { itemId: 'part-1', itemName: 'Bearing 6205', status: 'pending' },
+        { itemId: 'part-2', itemName: 'Seal Kit', status: 'rejected' },
+      ],
+      toolRequests: [
+        { toolId: 'tool-1', toolName: 'Torque Wrench', status: 'supervisor_approved' },
+      ],
+      tasks: [
+        { requiredParts: JSON.stringify([{ itemId: 'part-1', partName: 'Bearing 6205' }]), estimatedMinutes: 20 },
+        { requiredParts: JSON.stringify([{ itemId: 'part-2', partName: 'Seal Kit' }]), estimatedMinutes: 10 },
+      ],
+    });
+
+    expect(result.resources.requestCoverage).toEqual({
+      materials: {
+        recommendedCount: 2,
+        requestedCount: 1,
+        outstandingLabels: ['Seal Kit'],
+      },
+      tools: {
+        recommendedCount: 2,
+        requestedCount: 1,
+        outstandingLabels: ['Grease Gun'],
+      },
+    });
+    expect(result.warnings.map((warning: { code: string }) => warning.code)).toEqual([
+      'materials_not_requested',
+      'tools_not_requested',
+    ]);
+  });
+
   it('flags missing accountable planning assignments without treating free-text resources as hard blockers', async () => {
     const { buildPmPlanningReadiness } = await loadService();
 

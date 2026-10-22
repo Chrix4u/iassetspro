@@ -56,6 +56,7 @@ const modulePermissions: Record<string, string[]> = {
   assistance_requests: ['view', 'create', 'respond'],
   time_logs: ['view', 'create', 'update', 'delete'],
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_tasks: ['view', 'create', 'update', 'delete', 'import'],
   pm_templates: ['view', 'create', 'update', 'delete'],
   pm_triggers: ['view', 'create', 'update'],
   pm_checklists: ['view', 'create', 'update', 'delete'],
@@ -176,6 +177,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'reports.view', 'reports.export',
     'quality_inspections.view', 'quality_ncr.view', 'quality_audits.view',
     'iot.view', 'analytics.view', 'operations.view', 'quality.view', 'safety.view',
+    'pm_tasks.view',
   ],
 
   maintenance_manager: [
@@ -196,6 +198,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory.view', 'inventory.view_all', 'parts.view',
     'reports.view', 'reports.export', 'reports.generate',
     'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   maintenance_planner: [
@@ -213,6 +216,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory.view', 'inventory.view_all',
     'reports.view', 'reports.export',
     'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   maintenance_supervisor: [

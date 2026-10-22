@@ -161,6 +161,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'users.view', 'employees.view', 'shifts.view', 'training.view',
     'tools.view',
     'audit_logs.view',
+    'pm_tasks.view',
   ],
 
   // ── 3. MAINTENANCE MANAGER: full WO, MR, PM, assets ──
@@ -207,6 +208,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'reports.view', 'reports.export', 'reports.generate', 'reports.create',
     'analytics.view', 'operations.view',
     'employees.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   // ── 4. PRODUCTION MANAGER: full MPMP ──
@@ -302,6 +304,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'reports.view', 'reports.export', 'reports.generate', 'reports.create',
     'analytics.view', 'operations.view',
     'employees.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   // ── 7. MAINTENANCE SUPERVISOR: WO manage + execute, approve/reject ──

@@ -111,7 +111,7 @@ const MORE_ITEMS: MoreItem[] = [
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view_all', permOr: ['inventory.view_all', 'inventory.manage', 'inventory.create', 'inventory.update', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve', 'inventory.export'], activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'], moduleCode: 'inventory' },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
+  { page: 'pm-schedules', label: 'PM Maintenance', icon: Clock, perm: 'pm_schedules.view', activePages: ['pm-schedules', 'pm-tasks', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety

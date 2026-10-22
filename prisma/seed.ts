@@ -84,6 +84,7 @@ const modulePermissions: Record<string, string[]> = {
 
   // ── MRMP / PM (~28) ──
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_tasks: ['view', 'create', 'update', 'delete', 'import'],
   pm_templates: ['view', 'create', 'update', 'delete'],
   pm_triggers: ['view', 'create', 'update'],
   pm_checklists: ['view', 'create', 'update', 'delete'],
@@ -264,6 +265,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'quality_inspections.view', 'quality_ncr.view',
     'quality_audits.view', 'quality_control_plans.view', 'spc.view',
     'iot.view', 'analytics.view', 'operations.view', 'quality.view', 'safety.view',
+    'pm_tasks.view',
   ],
 
   // ── 3. MAINTENANCE MANAGER: full RWOP + MRMP + assets ──
@@ -315,6 +317,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'damaged_tool_reports.view', 'damaged_tool_reports.view_all', 'damaged_tool_reports.update',
     'reports.view', 'reports.export', 'reports.generate',
     'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   // ── 4. MAINTENANCE PLANNER: RWOP manage + MRMP manage ──
@@ -363,6 +366,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'damaged_tool_reports.view', 'damaged_tool_reports.view_all', 'damaged_tool_reports.update',
     'reports.view', 'reports.export', 'reports.generate',
     'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
 
   // ── 5. MAINTENANCE SUPERVISOR: RWOP manage + execute ──

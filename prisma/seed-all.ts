@@ -111,6 +111,7 @@ const modulePermissions: Record<string, string[]> = {
   assistance_requests: ['view', 'create', 'respond'],
   time_logs: ['view', 'create', 'update', 'delete'],
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_tasks: ['view', 'create', 'update', 'delete', 'import'],
   pm_templates: ['view', 'create', 'update', 'delete'],
   pm_triggers: ['view', 'create', 'update'],
   pm_checklists: ['view', 'create', 'update', 'delete'],
@@ -227,6 +228,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'reports.view', 'reports.export',
     'quality_inspections.view', 'quality_ncr.view', 'quality_audits.view', 'quality_control_plans.view', 'spc.view',
     'iot.view', 'analytics.view', 'operations.view', 'quality.view', 'safety.view',
+    'pm_tasks.view',
   ],
   maintenance_manager: [
     'dashboard.view', 'dashboard.stats', 'chat.view', 'documents.view', 'documents.upload', 'documents.download',
@@ -260,6 +262,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'asset_health.view', 'condition_monitoring.view', 'condition_monitoring.manage',
     'inventory.view', 'inventory.view_all', 'parts.view',
     'reports.view', 'reports.export', 'reports.generate', 'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
   maintenance_planner: [
     'dashboard.view', 'dashboard.stats', 'chat.view', 'documents.view', 'documents.upload', 'documents.download',
@@ -287,6 +290,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'calibration.view', 'calibration.create', 'calibration.update',
     'asset_health.view', 'condition_monitoring.view', 'inventory.view', 'parts.view',
     'reports.view', 'reports.export', 'reports.generate', 'analytics.view', 'operations.view',
+    'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
   ],
   maintenance_supervisor: [
     'dashboard.view', 'chat.view', 'documents.view', 'documents.upload', 'documents.download', 'notifications.view',

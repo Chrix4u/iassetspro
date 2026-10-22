@@ -603,6 +603,7 @@ export type PageName =
   | 'maintenance-risk-assessment'
   | 'maintenance-tools'
   | 'pm-schedules'
+  | 'pm-tasks'
   | 'pm-templates'
   | 'pm-triggers'
   | 'pm-calendar'

@@ -174,6 +174,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       label: 'PM Maintenance', icon: Calendar, perm: 'pm_schedules.view', moduleCode: 'pm_schedules',
       children: [
         { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, moduleCode: 'pm_schedules' },
+        { page: 'pm-tasks', label: 'Task Library', icon: ListChecks, moduleCode: 'pm_schedules' },
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules' },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules' },
         { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar, moduleCode: 'pm_schedules' },

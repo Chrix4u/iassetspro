@@ -134,6 +134,7 @@ function buildNavigationItems(): PaletteItem[] {
     { id: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert, group: 'navigation', page: 'maintenance-risk-assessment' },
     { id: 'maintenance-tools', label: 'Maintenance Tools', icon: Wrench, group: 'navigation', page: 'maintenance-tools' },
     { id: 'pm-schedules', label: 'PM Schedules', icon: Clock, group: 'navigation', page: 'pm-schedules', keywords: ['preventive', 'schedule', 'planned'] },
+    { id: 'pm-tasks', label: 'PM Task Library', icon: ListChecks, group: 'navigation', page: 'pm-tasks', keywords: ['preventive', 'task', 'library', 'mechanical', 'electrical', 'lubrication'] },
     { id: 'repairs-material-requests', label: 'Repairs - Material Requests', icon: Package, group: 'navigation', page: 'repairs-material-requests', keywords: ['repair', 'material', 'spare'] },
     { id: 'repairs-tool-requests', label: 'Repairs - Tool Requests', icon: Wrench, group: 'navigation', page: 'repairs-tool-requests', keywords: ['repair', 'tool'] },
     { id: 'repairs-tool-transfers', label: 'Repairs - Tool Transfers', icon: ArrowRightLeft, group: 'navigation', page: 'repairs-tool-transfers', keywords: ['repair', 'transfer'] },

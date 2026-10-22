@@ -602,16 +602,21 @@ async function main() {
   let deptCount = 0;
   const createdDepts: Record<string, string> = {};
   for (const dept of departments) {
-    // Find existing plant to attach department to
+    // Department.code is not globally unique and plantId is required. Match the
+    // existing record within an actual plant instead of using an invalid upsert key.
     const anyPlant = await db.plant.findFirst({ select: { id: true } });
-    const d = await db.department.upsert({
-      where: { code: dept.code },
-      update: {},
-      create: {
+    if (!anyPlant) {
+      console.warn('  ⚠️ No plant exists yet; skipping department seed until a plant is available');
+      break;
+    }
+    const existingDepartment = await db.department.findFirst({
+      where: { code: dept.code, plantId: anyPlant.id },
+    });
+    const d = existingDepartment ?? await db.department.create({
+      data: {
         name: dept.name,
         code: dept.code,
-        description: dept.description,
-        plantId: anyPlant?.id || undefined,
+        plantId: anyPlant.id,
       },
     });
     createdDepts[dept.name] = d.id;
@@ -631,7 +636,6 @@ async function main() {
         name: plant.name,
         code: plant.code,
         location: plant.location,
-        type: plant.type,
       },
     });
     createdPlants[plant.code] = p.id;

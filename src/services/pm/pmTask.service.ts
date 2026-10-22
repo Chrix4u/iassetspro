@@ -15,11 +15,11 @@ export async function createPmTaskBatch(input: CreatePmTaskBatchInput): Promise<
     const created = await tx.pmTask.createManyAndReturn({ data: validation.rows.map((row, index) => ({
       plantId: input.plantId, taskNumber: firstTaskNumber + index, description: row.description, taskType: row.taskType, createdById: input.userId,
     })) });
-    for (const task of created) {
-      await tx.auditLog.create({ data: {
+    if (created.length > 0) {
+      await tx.auditLog.createMany({ data: created.map((task) => ({
         userId: input.userId, action: 'create', entityType: 'pm_task', entityId: task.id, plantId: input.plantId,
         newValues: JSON.stringify({ taskNumber: task.taskNumber, description: task.description, taskType: task.taskType, isActive: task.isActive, source: input.source }),
-      } });
+      })) });
     }
     if (input.source === 'bulk' || input.source === 'import') {
       await tx.auditLog.create({ data: {

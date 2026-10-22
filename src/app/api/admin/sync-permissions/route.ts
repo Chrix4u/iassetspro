@@ -44,6 +44,7 @@ const MODULE_PERMISSIONS: Record<string, string[]> = {
   repair_tool_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
   repair_tool_transfers: ['view', 'view_all', 'view_own', 'create', 'update'],
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_tasks: ['view', 'create', 'update', 'delete', 'import'],
   pm_templates: ['view', 'create', 'update', 'delete'],
   pm_triggers: ['view', 'create', 'update'],
   pm_checklists: ['view', 'create', 'update', 'delete'],

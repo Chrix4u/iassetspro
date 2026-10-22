@@ -126,6 +126,7 @@ model User {
   pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
   pmSchedulesCreated    PmSchedule[]                @relation("PmScheduleCreatedBy")
   pmTemplatesCreated    PmTemplate[]                @relation("PmTemplateCreatedBy")
+  pmTasksCreated        PmTask[]                    @relation("PmTaskCreatedBy")
   woStatusHistory       WorkOrderStatusHistory[]
   mrComments            MaintenanceRequestComment[]
 
@@ -389,6 +390,7 @@ model Plant {
   assets         Asset[]
   functionalLocations FunctionalLocation[]
   inventoryItems InventoryItem[]
+  pmTasks        PmTask[]
   models         ModelLibrary[] @relation("ModelPlant")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
@@ -1275,6 +1277,26 @@ model PmTemplate {
   tasks     PmTemplateTask[]
 
   @@map("pm_templates")
+}
+
+
+model PmTask {
+  id          String   @id @default(cuid())
+  plantId     String
+  taskNumber  Int
+  description String
+  taskType    String
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plant     Plant @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  createdBy User  @relation("PmTaskCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([plantId, taskNumber])
+  @@index([plantId, taskType, isActive])
+  @@map("pm_tasks")
 }
 
 model PmTemplateTask {

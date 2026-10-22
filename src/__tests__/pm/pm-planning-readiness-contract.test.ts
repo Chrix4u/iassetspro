@@ -39,9 +39,28 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('/inventory-candidates?');
     expect(source).toContain('/tool-candidates?');
     expect(source).toContain('Map Resource');
-    expect(source).toContain('Submit Planned Resources');
+    expect(source).toContain('Submit Outstanding Planned Resources');
     expect(source).toContain('Resolve assignments');
     expect(source).toContain('openEditWO');
     expect(source).toContain('fetchPmPlanningReadiness()');
+  });
+
+  it('uses canonical Repairs request coverage so rejected PM resources stay actionable', () => {
+    const ui = fs.readFileSync(uiPath, 'utf8');
+    const suggestedItems = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/work-orders/[id]/suggested-items/route.ts'),
+      'utf8',
+    );
+
+    expect(ui).toContain('requestCoverage: {');
+    expect(ui).toContain('pmOutstandingMaterialLabels');
+    expect(ui).toContain('pmOutstandingToolLabels');
+    expect(ui).toContain('pmOutstandingResourceCount');
+    expect(ui).toContain('Submit Outstanding Planned Resources');
+    expect(ui).toContain('resources.requestCoverage');
+    expect(ui).not.toContain('const pmSubmittedResourceCount = [...suggestedParts, ...suggestedTools]');
+
+    expect(suggestedItems).toContain("const parts = inventoryResourcesOperational ? parseSuggestions(wo.suggestedParts) : []");
+    expect(suggestedItems).toContain("const tools = toolResourcesOperational ? parseSuggestions(wo.suggestedTools) : []");
   });
 });

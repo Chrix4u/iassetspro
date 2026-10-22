@@ -15,14 +15,18 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('taskExecutions');
     expect(source).toContain('requiredSkills');
     expect(source).toContain('requiredTools');
+    expect(source).toContain('repairMaterialRequests');
+    expect(source).toContain('repairToolRequests');
   });
 
-  it('surfaces PM planning readiness in the work-order detail UI', () => {
+  it('surfaces PM planning readiness and Repairs request coverage in the work-order detail UI', () => {
     const source = fs.readFileSync(uiPath, 'utf8');
     expect(source).toContain('/pm-planning-readiness');
     expect(source).toContain('PM Planning Readiness');
     expect(source).toContain('unresolvedPartLabels');
     expect(source).toContain('unresolvedToolLabels');
     expect(source).toContain('readyForPlanning');
+    expect(source).toContain('requestCoverage');
+    expect(source).toContain('Outstanding recommendations');
   });
 });

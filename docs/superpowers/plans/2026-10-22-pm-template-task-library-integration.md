@@ -23,6 +23,10 @@
 - Existing legacy task rows are never auto-merged by description. Only deterministically scoped/categorized rows are backfilled automatically; ambiguous rows remain explicit legacy rows until converted by a user.
 - Existing schedule-owned snapshot templates remain supported and hidden from normal template browsing as today.
 
+## Slice Boundary
+
+This plan intentionally implements the PM Template portion of the approved architecture plus the plant/provenance compatibility needed to make it safe. It does **not** introduce `PmScheduleTask`, TBM/UBM/CBM per-task recurrence, due-task bundling, or task-level analytics; those remain separate later implementation plans after this slice is live.
+
 ## Review Focus
 
 - **Cross-plant ID injection:** a caller who knows another plant's template or Task Master ID must receive a scoped denial and create no association.
@@ -153,7 +157,7 @@ Pin the following behaviors:
 - an already-active association is not duplicated.
 - re-adding an inactive association reactivates it and moves it to the final `sortOrder`.
 - inline single/multi-row creation creates Task Masters and associations in one transaction using the same canonical Task validation/number lock.
-- association compatibility columns copy master description, use a valid internal legacy action default, and are never interpreted as discipline.
+- association compatibility columns copy the master description, set compatibility `taskType='check'`, set `requiredParts=null` and `estimatedMinutes=null`, allocate a stable compatibility `taskNumber` at the current template maximum + 1, and are never interpreted as Task Master discipline.
 - reorder requires exactly the active association set and updates `sortOrder` only; it never changes `PmTask.taskNumber`.
 - remove/deactivate preserves the Task Master.
 - legacy conversion creates exactly one master in the same plant, preserves the association id/order, and links it; conversion is impossible for an unowned template.
@@ -170,7 +174,7 @@ Move the current validated/advisory-lock create body into `createPmTaskBatchInTr
 
 - [ ] **Step 4: Implement the association service**
 
-Use one template-order advisory lock per transaction. Use `sortOrder` as template sequence. Keep legacy `taskNumber/description/taskType/requiredParts/estimatedMinutes` columns only for compatibility; new master-linked associations do not treat them as Task Master identity.
+Use one template-order advisory lock per transaction. Use `sortOrder` as template sequence. For a brand-new master-linked association set compatibility `taskType='check'`, `requiredParts=null`, `estimatedMinutes=null`, copy the current master description, and allocate legacy `taskNumber = MAX(template taskNumber) + 1`; reorder never changes that compatibility number. Keep these legacy columns only for current execution compatibility; they are not Task Master identity.
 
 - [ ] **Step 5: Verify focused services**
 
@@ -239,7 +243,7 @@ git commit -m "feat(pm): expose template task library association APIs"
 
 **Interfaces:**
 - Consumes: `PmTemplateTask` + optional `pmTask` relation.
-- Produces `ResolvedPmTemplateTask` with explicit fields: association id, sequence, `pmTaskId`, stable `masterTaskNumber`, current `description`, `discipline`, legacy action type, compatibility parts/minutes, legacy flag, master active state.
+- Produces `ResolvedPmTemplateTask = { associationId: string; templateId: string; pmTaskId: string | null; sequence: number; masterTaskNumber: number | null; description: string; discipline: PmTaskType | null; compatibilityActionType: string; requiredParts: string | null; estimatedMinutes: number | null; isLegacy: boolean; masterIsActive: boolean | null }`.
 
 - [ ] **Step 1: Write failing resolution/snapshot tests**
 
@@ -370,7 +374,7 @@ bunx eslint \
   src/components/modules/pm \
   src/components/modules/MaintenancePages.tsx \
   src/__tests__/pm
-bun run check:rwop-lifecycle-imports
+bunx tsx scripts/check-rwop-legacy-lifecycle-imports.ts
 bunx tsc -p tsconfig.repairs.json --noEmit
 ```
 Expected: PASS.

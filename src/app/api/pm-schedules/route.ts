@@ -334,6 +334,7 @@ export async function POST(request: NextRequest) {
               estimatedDurationHours: normalizedEstimatedDuration,
               priority: priority || 'medium',
               createdById: session.userId,
+              plantId: assetExists.plantId,
               tasks: normalizedInlineTasks,
             })
           : null;

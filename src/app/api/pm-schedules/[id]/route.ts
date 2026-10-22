@@ -512,6 +512,7 @@ export async function PUT(
                 ? lockedUpdateData.priority
                 : lockedSchedule.priority,
               createdById: session.userId,
+              plantId: lockedSchedule.asset.plantId,
               tasks: normalizedInlineTasks,
             })
           : null;

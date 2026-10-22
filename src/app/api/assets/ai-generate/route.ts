@@ -805,6 +805,7 @@ export async function POST(request: NextRequest) {
           requiredTools: JSON.stringify([]),
           isActive: true,
           createdById: session.userId,
+          plantId,
         },
       });
 

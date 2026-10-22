@@ -149,6 +149,18 @@ type PmPlanningReadinessData = {
     mappedToolCount: number;
     unresolvedPartLabels: string[];
     unresolvedToolLabels: string[];
+    requestCoverage: {
+      materials: {
+        recommendedCount: number;
+        requestedCount: number;
+        outstandingLabels: string[];
+      };
+      tools: {
+        recommendedCount: number;
+        requestedCount: number;
+        outstandingLabels: string[];
+      };
+    };
   };
   schedule: {
     id: string;
@@ -5005,12 +5017,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Viewers/read-only actors should not see execution buttons they cannot use.
   const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO;
   const workActionDisabled = isWOFinalized || !canPerformWorkActions;
-  const pmPendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter(
-    (item: any) => !item.pipelineStatus || item.pipelineStatus === 'suggested'
-  ).length;
-  const pmSubmittedResourceCount = [...suggestedParts, ...suggestedTools].filter(
-    (item: any) => item.pipelineStatus && item.pipelineStatus !== 'suggested'
-  ).length;
+  const pmMaterialCoverage = pmPlanningReadiness?.resources.requestCoverage.materials;
+  const pmToolCoverage = pmPlanningReadiness?.resources.requestCoverage.tools;
+  const pmOutstandingMaterialLabels = pmPlanningReadiness?.modules.inventory
+    ? pmMaterialCoverage?.outstandingLabels || []
+    : [];
+  const pmOutstandingToolLabels = pmPlanningReadiness?.modules.tools
+    ? pmToolCoverage?.outstandingLabels || []
+    : [];
+  const pmOutstandingResourceCount = pmOutstandingMaterialLabels.length + pmOutstandingToolLabels.length;
+  const pmRecommendedResourceCount =
+    (pmPlanningReadiness?.modules.inventory ? pmMaterialCoverage?.recommendedCount || 0 : 0)
+    + (pmPlanningReadiness?.modules.tools ? pmToolCoverage?.recommendedCount || 0 : 0);
+  const pmRequestedResourceCount =
+    (pmPlanningReadiness?.modules.inventory ? pmMaterialCoverage?.requestedCount || 0 : 0)
+    + (pmPlanningReadiness?.modules.tools ? pmToolCoverage?.requestedCount || 0 : 0);
   const hasPmAssignmentBlocker = pmPlanningReadiness?.blockingIssues.some((issue) =>
     ['planner_missing', 'technician_missing', 'supervisor_missing', 'department_missing'].includes(issue.code)
   ) || false;
@@ -6713,21 +6734,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       </div>
                     )}
 
-                    {(pmPendingSuggestedCount > 0 || pmSubmittedResourceCount > 0) && (
+                    {pmRecommendedResourceCount > 0 && (
                       <div className="flex flex-col gap-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-xs font-semibold text-violet-800">Planned resource pipeline</p>
                           <p className="text-[10px] text-violet-700">
-                            {pmPendingSuggestedCount > 0
-                              ? `${pmPendingSuggestedCount} mapped resource${pmPendingSuggestedCount === 1 ? '' : 's'} awaiting execution submission`
+                            {pmOutstandingResourceCount > 0
+                              ? `${pmOutstandingResourceCount} of ${pmRecommendedResourceCount} mapped resource${pmRecommendedResourceCount === 1 ? '' : 's'} still need execution submission or resubmission`
                               : 'All mapped resources have entered the approval workflow'}
-                            {pmSubmittedResourceCount > 0 ? ` · ${pmSubmittedResourceCount} already submitted` : ''}
+                            {pmRequestedResourceCount > 0 ? ` · ${pmRequestedResourceCount} currently covered by Repairs requests` : ''}
                           </p>
+                          {pmOutstandingResourceCount > 0 && (
+                            <p className="mt-1 text-[10px] text-violet-700/80">
+                              Outstanding: {[...pmOutstandingMaterialLabels, ...pmOutstandingToolLabels].join(', ')}
+                            </p>
+                          )}
                         </div>
-                        {canPerformWorkActions && !isWOFinalized && pmPendingSuggestedCount > 0 && (
+                        {canPerformWorkActions && !isWOFinalized && pmOutstandingResourceCount > 0 && (
                           <Button size="sm" variant="outline" className="shrink-0 border-violet-300 bg-white text-violet-700 hover:bg-violet-50" onClick={handleSubmitSuggestedRecommendations}>
                             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                            Submit Planned Resources
+                            Submit Outstanding Planned Resources
                           </Button>
                         )}
                       </div>

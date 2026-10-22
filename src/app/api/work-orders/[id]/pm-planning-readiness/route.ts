@@ -34,6 +34,28 @@ export async function GET(
           orderBy: { taskNumber: 'asc' },
           select: { requiredParts: true, estimatedMinutes: true },
         },
+        repairMaterialRequests: {
+          select: {
+            itemId: true,
+            itemName: true,
+            status: true,
+            source: true,
+          },
+        },
+        repairToolRequests: {
+          select: {
+            toolId: true,
+            toolName: true,
+            status: true,
+            source: true,
+            items: {
+              select: {
+                toolId: true,
+                toolName: true,
+              },
+            },
+          },
+        },
         pmSchedule: {
           select: {
             id: true,
@@ -62,6 +84,21 @@ export async function GET(
       await getUnavailableOperationalModules(['repairs', 'inventory', 'tools']),
     );
     const repairsOperational = !unavailableModules.has('repairs');
+    const inventoryOperational = !unavailableModules.has('inventory');
+    const toolsOperational = !unavailableModules.has('tools');
+
+    const toolRequests = wo.repairToolRequests.flatMap((toolRequest) => {
+      const requestItems = toolRequest.items.length > 0
+        ? toolRequest.items
+        : [{ toolId: toolRequest.toolId, toolName: toolRequest.toolName }];
+
+      return requestItems.map((item) => ({
+        toolId: item.toolId,
+        toolName: item.toolName || toolRequest.toolName,
+        status: toolRequest.status,
+        source: toolRequest.source,
+      }));
+    });
 
     const readiness = buildPmPlanningReadiness({
       plannerId: wo.plannerId,
@@ -69,10 +106,14 @@ export async function GET(
       assignedSupervisorId: wo.assignedSupervisorId,
       departmentId: wo.departmentId,
       repairsOperational,
+      inventoryOperational,
+      toolsOperational,
       requiredSkills: wo.pmSchedule.template?.requiredSkills || null,
       requiredTools: wo.pmSchedule.template?.requiredTools || null,
       suggestedParts: wo.suggestedParts,
       suggestedTools: wo.suggestedTools,
+      materialRequests: wo.repairMaterialRequests,
+      toolRequests,
       tasks: wo.taskExecutions,
     });
 
@@ -88,8 +129,8 @@ export async function GET(
         },
         modules: {
           repairs: repairsOperational,
-          inventory: !unavailableModules.has('inventory'),
-          tools: !unavailableModules.has('tools'),
+          inventory: inventoryOperational,
+          tools: toolsOperational,
         },
       },
     });

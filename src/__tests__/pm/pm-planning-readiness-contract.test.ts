@@ -6,10 +6,10 @@ const routePath = path.resolve(process.cwd(), 'src/app/api/work-orders/[id]/pm-p
 const uiPath = path.resolve(process.cwd(), 'src/components/modules/MaintenancePages.tsx');
 
 describe('PM planning readiness integration contract', () => {
-  it('exposes an authenticated work-order planning readiness endpoint', () => {
+  it('exposes an authenticated work-order planning readiness endpoint with canonical Repairs request coverage', () => {
     expect(fs.existsSync(routePath), 'planning readiness route should exist').toBe(true);
     const source = fs.readFileSync(routePath, 'utf8');
-    expect(source).toContain("buildPmPlanningReadiness");
+    expect(source).toContain('buildPmPlanningReadiness');
     expect(source).toContain('authorizeWorkOrderExecutionAccess');
     expect(source).toContain('pmScheduleId');
     expect(source).toContain('taskExecutions');
@@ -19,14 +19,15 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('repairToolRequests');
   });
 
-  it('surfaces PM planning readiness and Repairs request coverage in the work-order detail UI', () => {
+  it('keeps PM readiness paired with the existing Repairs recommendation submission surface', () => {
     const source = fs.readFileSync(uiPath, 'utf8');
     expect(source).toContain('/pm-planning-readiness');
     expect(source).toContain('PM Planning Readiness');
     expect(source).toContain('unresolvedPartLabels');
     expect(source).toContain('unresolvedToolLabels');
     expect(source).toContain('readyForPlanning');
-    expect(source).toContain('requestCoverage');
-    expect(source).toContain('Outstanding recommendations');
+    expect(source).toContain('Planner Recommended Materials & Tools');
+    expect(source).toContain('Submit Recommendations');
+    expect(source).toContain('pipelineStatus');
   });
 });

@@ -223,12 +223,12 @@ export function buildPmPlanningReadiness(input: PmPlanningReadinessInput) {
   const mappedParts = mappedResources(
     input.suggestedParts,
     ['itemId'],
-    ['itemName', 'itemCode'],
+    ['itemName', 'itemCode', 'requirementLabel'],
   );
   const mappedTools = mappedResources(
     input.suggestedTools,
     ['toolId'],
-    ['toolName', 'toolCode'],
+    ['toolName', 'toolCode', 'requirementLabel'],
   );
 
   const unresolvedPartLabels = requiredPartEntries

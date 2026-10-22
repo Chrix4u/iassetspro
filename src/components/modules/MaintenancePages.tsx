@@ -41,7 +41,7 @@ import {
   Building2,
   ArrowRightLeft, ArrowRight, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
-  Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
+  Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Link2, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
   FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
@@ -3472,6 +3472,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // PM-generated WO planning readiness (assignments, checklist, mapped resources)
   const [pmPlanningReadiness, setPmPlanningReadiness] = useState<PmPlanningReadinessData | null>(null);
   const [pmPlanningReadinessLoading, setPmPlanningReadinessLoading] = useState(false);
+  const [pmResourceMapping, setPmResourceMapping] = useState<{
+    itemType: 'part' | 'tool';
+    requirementLabel: string;
+  } | null>(null);
+  const [pmResourceMappingId, setPmResourceMappingId] = useState('');
+  const [pmResourceMappingQuantity, setPmResourceMappingQuantity] = useState('1');
+  const [pmResourceMappingLoading, setPmResourceMappingLoading] = useState(false);
 
   const hydrateSuggestedResourcesFromWO = useCallback((workOrder: any) => {
     const parseSnapshot = (value: unknown): any[] => {
@@ -3784,6 +3791,62 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     }
   }, [id]);
 
+  const handleOpenPmResourceMapping = (itemType: 'part' | 'tool', requirementLabel: string) => {
+    setPmResourceMapping({ itemType, requirementLabel });
+    setPmResourceMappingId('');
+    setPmResourceMappingQuantity('1');
+  };
+
+  const handleMapPmResource = async () => {
+    if (!pmResourceMapping || !pmResourceMappingId) return;
+    const quantity = Number(pmResourceMappingQuantity || 1);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Quantity must be greater than zero');
+      return;
+    }
+
+    setPmResourceMappingLoading(true);
+    try {
+      const item = pmResourceMapping.itemType === 'part'
+        ? {
+            itemId: pmResourceMappingId,
+            quantity,
+            requirementLabel: pmResourceMapping.requirementLabel,
+            notes: `Mapped from PM requirement: ${pmResourceMapping.requirementLabel}`,
+          }
+        : {
+            toolId: pmResourceMappingId,
+            quantity,
+            requirementLabel: pmResourceMapping.requirementLabel,
+            notes: `Mapped from PM requirement: ${pmResourceMapping.requirementLabel}`,
+          };
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, {
+        action: 'add_item',
+        itemType: pmResourceMapping.itemType,
+        item,
+      });
+      if (!res.success) {
+        toast.error(res.error || 'Could not map PM resource');
+        return;
+      }
+
+      toast.success('PM resource mapped to the work plan');
+      setPmResourceMapping(null);
+      setPmResourceMappingId('');
+      setPmResourceMappingQuantity('1');
+      await Promise.all([
+        fetchSuggestedItems(),
+        fetchPmPlanningReadiness(),
+        fetchWO(),
+      ]);
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not map PM resource');
+    } finally {
+      setPmResourceMappingLoading(false);
+    }
+  };
+
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
     if (!confirm(`Remove this recommended ${itemType === 'part' ? 'material' : 'tool'} from the work plan?`)) return;
     try {
@@ -3837,8 +3900,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       });
       if (res.success) {
         toast.success((res as any).message || res.data?.message || 'Recommended resources submitted for approval');
-        fetchSuggestedItems();
-        fetchWO();
+        await Promise.all([
+          fetchSuggestedItems(),
+          fetchPmPlanningReadiness(),
+          fetchWO(),
+        ]);
       } else {
         toast.error(res.error || 'Could not submit recommended resources');
       }
@@ -3930,6 +3996,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       || wo.assignedById === user.id;
 
     return hasAccountableAuthority;
+  }, [wo, user, isAdmin, hasPermission]);
+
+  // Planner/management resource mapping mirrors the suggested-items API boundary:
+  // recommendation changes need work_orders.update plus accountable WO authority.
+  const canManagePmRecommendations = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    if (!hasPermission('work_orders.update')) return false;
+
+    const roleSlugs = (user.roles || []).map((role: any) => role.slug).filter(Boolean);
+    const hasManagementOverride = roleSlugs.some((slug: string) =>
+      ['maintenance_manager', 'plant_manager'].includes(slug)
+    );
+    return hasManagementOverride
+      || wo.assignedSupervisorId === user.id
+      || wo.plannerId === user.id
+      || wo.assignedById === user.id;
   }, [wo, user, isAdmin, hasPermission]);
 
   // Permission: can request team members (technician or team member, but not admin/planner — they add directly)
@@ -4922,6 +5005,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Viewers/read-only actors should not see execution buttons they cannot use.
   const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO;
   const workActionDisabled = isWOFinalized || !canPerformWorkActions;
+  const pmPendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter(
+    (item: any) => !item.pipelineStatus || item.pipelineStatus === 'suggested'
+  ).length;
+  const pmSubmittedResourceCount = [...suggestedParts, ...suggestedTools].filter(
+    (item: any) => item.pipelineStatus && item.pipelineStatus !== 'suggested'
+  ).length;
+  const hasPmAssignmentBlocker = pmPlanningReadiness?.blockingIssues.some((issue) =>
+    ['planner_missing', 'technician_missing', 'supervisor_missing', 'department_missing'].includes(issue.code)
+  ) || false;
 
   // Recommendation-only rows are rendered in the dedicated planner
   // recommendation card. Do not duplicate legacy/projection rows into the
@@ -5793,6 +5885,75 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </div>
       </ResponsiveDialog>
 
+      {/* PM resource mapping keeps planning separate from request/issue approval. */}
+      <ResponsiveDialog
+        open={!!pmResourceMapping}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPmResourceMapping(null);
+            setPmResourceMappingId('');
+            setPmResourceMappingQuantity('1');
+          }
+        }}
+        title={pmResourceMapping?.itemType === 'part' ? 'Map PM Material' : 'Map PM Tool'}
+        description={pmResourceMapping
+          ? `Match “${pmResourceMapping.requirementLabel}” to a real ${pmResourceMapping.itemType === 'part' ? 'inventory item' : 'tool'} for this plant.`
+          : 'Map the PM requirement to an operational resource.'}
+        footer={
+          <Button
+            className="w-full"
+            disabled={pmResourceMappingLoading || !pmResourceMappingId}
+            onClick={handleMapPmResource}
+          >
+            {pmResourceMappingLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+            Map Resource
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-sky-50/60 p-3 text-xs text-sky-800">
+            Mapping adds this resource to the planner recommendation set. It does not request or issue stock; assigned execution staff submit planned resources into the normal approval workflow.
+          </div>
+          <div className="space-y-1.5">
+            <Label>{pmResourceMapping?.itemType === 'part' ? 'Inventory item' : 'Tool'} *</Label>
+            <AsyncSearchableSelect
+              value={pmResourceMappingId}
+              onValueChange={setPmResourceMappingId}
+              fetchOptions={async (query) => {
+                if (!pmResourceMapping) return [];
+                const params = new URLSearchParams({
+                  limit: '50',
+                  search: query.trim() || pmResourceMapping.requirementLabel,
+                });
+                if (pmResourceMapping.itemType === 'tool') params.set('status', 'all');
+                const res = pmResourceMapping.itemType === 'part'
+                  ? await api.get(`/api/work-orders/${id}/inventory-candidates?${params.toString()}`)
+                  : await api.get(`/api/work-orders/${id}/tool-candidates?${params.toString()}`);
+                if (!res.success || !Array.isArray(res.data)) return [];
+                return res.data.map((candidate: any) => ({
+                  value: candidate.id,
+                  label: pmResourceMapping.itemType === 'part'
+                    ? `${candidate.name || candidate.itemName}${candidate.itemCode ? ` (${candidate.itemCode})` : ''}${candidate.unitOfMeasure ? ` — ${candidate.currentStock ?? 0} ${candidate.unitOfMeasure} in stock` : ''}`
+                    : `${candidate.name || candidate.toolName}${candidate.toolCode ? ` (${candidate.toolCode})` : ''}${candidate.status ? ` — ${candidate.status}` : ''}`,
+                }));
+              }}
+              placeholder={pmResourceMapping?.itemType === 'part' ? 'Search inventory...' : 'Search tools...'}
+              searchPlaceholder={`Search for ${pmResourceMapping?.requirementLabel || 'resource'}...`}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Planned quantity</Label>
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              value={pmResourceMappingQuantity}
+              onChange={(event) => setPmResourceMappingQuantity(event.target.value)}
+            />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
       {/* Add Material Dialog — pick from inventory */}
       <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); setMatReason(''); setMatUrgency('normal'); }}} title="Request Material" description="Select a material or part from inventory. It will go through supervisor and store approval." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Submit Request'}</Button>}>
           <div className="space-y-4">
@@ -6494,7 +6655,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
                     {pmPlanningReadiness.blockingIssues.length > 0 && (
                       <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
-                        <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" />Planning actions required</p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" />Planning actions required</p>
+                          {hasPmAssignmentBlocker && canManagePmRecommendations && !isWOFinalized && (
+                            <Button size="sm" variant="outline" className="h-8 bg-white text-amber-800 border-amber-300" onClick={openEditWO}>
+                              <Users className="mr-1.5 h-3.5 w-3.5" />
+                              Resolve assignments
+                            </Button>
+                          )}
+                        </div>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {pmPlanningReadiness.blockingIssues.map((issue) => (
                             <Badge key={issue.code} variant="outline" className="bg-white text-amber-800 border-amber-200">{issue.label}</Badge>
@@ -6508,8 +6677,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         {pmPlanningReadiness.resources.unresolvedPartLabels.length > 0 && (
                           <div className="rounded-lg border p-3">
                             <p className="text-xs font-semibold flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Unmapped task parts</p>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {pmPlanningReadiness.resources.unresolvedPartLabels.map((label) => <Badge key={label} variant="secondary" className="text-[10px]">{label}</Badge>)}
+                            <div className="mt-2 space-y-1.5">
+                              {pmPlanningReadiness.resources.unresolvedPartLabels.map((label) => (
+                                <div key={label} className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-2 py-1.5">
+                                  <span className="min-w-0 truncate text-xs">{label}</span>
+                                  {pmPlanningReadiness.modules.inventory && canManagePmRecommendations && !isWOFinalized && (
+                                    <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-[10px]" onClick={() => handleOpenPmResourceMapping('part', label)}>
+                                      <Link2 className="mr-1 h-3 w-3" />Map Resource
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                             {!pmPlanningReadiness.modules.inventory && <p className="mt-2 text-[10px] text-muted-foreground">Informational only while the Inventory module is unavailable.</p>}
                           </div>
@@ -6517,11 +6695,40 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         {pmPlanningReadiness.resources.unresolvedToolLabels.length > 0 && (
                           <div className="rounded-lg border p-3">
                             <p className="text-xs font-semibold flex items-center gap-1.5"><Wrench className="h-3.5 w-3.5" />Unmapped template tools</p>
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {pmPlanningReadiness.resources.unresolvedToolLabels.map((label) => <Badge key={label} variant="secondary" className="text-[10px]">{label}</Badge>)}
+                            <div className="mt-2 space-y-1.5">
+                              {pmPlanningReadiness.resources.unresolvedToolLabels.map((label) => (
+                                <div key={label} className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-2 py-1.5">
+                                  <span className="min-w-0 truncate text-xs">{label}</span>
+                                  {pmPlanningReadiness.modules.tools && canManagePmRecommendations && !isWOFinalized && (
+                                    <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-[10px]" onClick={() => handleOpenPmResourceMapping('tool', label)}>
+                                      <Link2 className="mr-1 h-3 w-3" />Map Resource
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                             {!pmPlanningReadiness.modules.tools && <p className="mt-2 text-[10px] text-muted-foreground">Informational only while the Tools module is unavailable.</p>}
                           </div>
+                        )}
+                      </div>
+                    )}
+
+                    {(pmPendingSuggestedCount > 0 || pmSubmittedResourceCount > 0) && (
+                      <div className="flex flex-col gap-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-violet-800">Planned resource pipeline</p>
+                          <p className="text-[10px] text-violet-700">
+                            {pmPendingSuggestedCount > 0
+                              ? `${pmPendingSuggestedCount} mapped resource${pmPendingSuggestedCount === 1 ? '' : 's'} awaiting execution submission`
+                              : 'All mapped resources have entered the approval workflow'}
+                            {pmSubmittedResourceCount > 0 ? ` · ${pmSubmittedResourceCount} already submitted` : ''}
+                          </p>
+                        </div>
+                        {canPerformWorkActions && !isWOFinalized && pmPendingSuggestedCount > 0 && (
+                          <Button size="sm" variant="outline" className="shrink-0 border-violet-300 bg-white text-violet-700 hover:bg-violet-50" onClick={handleSubmitSuggestedRecommendations}>
+                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                            Submit Planned Resources
+                          </Button>
                         )}
                       </div>
                     )}

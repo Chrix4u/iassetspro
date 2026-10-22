@@ -30,4 +30,18 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('Submit Recommendations');
     expect(source).toContain('pipelineStatus');
   });
+
+  it('turns unresolved PM resources and assignment blockers into existing workflow actions', () => {
+    const source = fs.readFileSync(uiPath, 'utf8');
+
+    expect(source).toContain('handleOpenPmResourceMapping');
+    expect(source).toContain("action: 'add_item'");
+    expect(source).toContain('/inventory-candidates?');
+    expect(source).toContain('/tool-candidates?');
+    expect(source).toContain('Map Resource');
+    expect(source).toContain('Submit Planned Resources');
+    expect(source).toContain('Resolve assignments');
+    expect(source).toContain('openEditWO');
+    expect(source).toContain('fetchPmPlanningReadiness()');
+  });
 });

@@ -29,6 +29,7 @@ describe('technician exact-WO tool access contract', () => {
     expect(tools).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(tools).toContain('isWorkOrderExecutionMember(session, wo)');
     expect(tools).toContain("hasPermission(session, 'repair_tool_requests.create')");
+    expect(tools).toContain("if (!isAdmin(session) && !isAccountableManagement && !hasPermission(session, 'repair_tool_requests.create'))");
     expect(tools).toContain('{ plantId: wo.plantId }');
     expect(tools).toContain('{ plantId: null }');
     expect(tools).toContain('A tool explicitly assigned to another plant stays excluded.');
@@ -37,6 +38,7 @@ describe('technician exact-WO tool access contract', () => {
     expect(inventory).toContain('authorizeWorkOrderExecutionAccess(request, session, id)');
     expect(inventory).toContain('isWorkOrderExecutionMember(session, wo)');
     expect(inventory).toContain("hasPermission(session, 'repair_material_requests.create')");
+    expect(inventory).toContain("if (!isAdmin(session) && !isAccountableManagement && !hasPermission(session, 'repair_material_requests.create'))");
     expect(inventory).toContain('plantId: wo.plantId');
     expect(inventory).toContain('isActive: true');
 

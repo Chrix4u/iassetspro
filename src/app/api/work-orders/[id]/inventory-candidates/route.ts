@@ -34,7 +34,7 @@ export async function GET(
       );
     }
 
-    if (!isAdmin(session) && !hasPermission(session, 'repair_material_requests.create')) {
+    if (!isAdmin(session) && !isAccountableManagement && !hasPermission(session, 'repair_material_requests.create')) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permission to request materials' },
         { status: 403 },

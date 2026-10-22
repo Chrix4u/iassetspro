@@ -94,6 +94,41 @@ describe('PM planning readiness', () => {
     ]);
   });
 
+  it('resolves a PM requirement through explicit mapping provenance even when catalog names differ', async () => {
+    const { buildPmPlanningReadiness } = await loadService();
+
+    const result = buildPmPlanningReadiness({
+      plannerId: 'planner-1',
+      assignedTo: 'tech-1',
+      assignedSupervisorId: 'supervisor-1',
+      departmentId: 'dept-1',
+      requiredSkills: null,
+      requiredTools: JSON.stringify(['Insulation tester']),
+      suggestedParts: JSON.stringify([
+        {
+          itemId: 'grease-1',
+          itemName: 'Kluberfood NH1 94-402',
+          itemCode: 'LUB-0042',
+          requirementLabel: 'Food-grade grease',
+          quantity: 1,
+        },
+      ]),
+      suggestedTools: JSON.stringify([
+        {
+          toolId: 'meter-1',
+          toolName: 'Megger MIT420/2',
+          toolCode: 'ELT-019',
+          requirementLabel: 'Insulation tester',
+          quantity: 1,
+        },
+      ]),
+      tasks: [{ requiredParts: JSON.stringify(['Food-grade grease']), estimatedMinutes: 15 }],
+    });
+
+    expect(result.resources.unresolvedPartLabels).toEqual([]);
+    expect(result.resources.unresolvedToolLabels).toEqual([]);
+  });
+
   it('flags missing accountable planning assignments without treating free-text resources as hard blockers', async () => {
     const { buildPmPlanningReadiness } = await loadService();
 

@@ -1,4 +1,4 @@
-name: PM Task Permission Sync Fix Gate
+name: PM Task Library Hardening Gate
 
 on:
   push:
@@ -16,39 +16,45 @@ jobs:
   fix-and-verify:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: feature/pm-task-library-foundation-20261022
           fetch-depth: 0
+          persist-credentials: false
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Apply runtime permission sync fix
+      - name: Apply PM Task Library hardening
         run: python3 scripts/fix_pm_task_sync_permissions.py
-      - name: Verify focused PM Task RBAC contract
-        run: bunx vitest run src/__tests__/pm/pm-task-library-schema-contract.test.ts
-      - name: Lint touched TypeScript sources
-        run: bunx eslint src/app/api/admin/sync-permissions/route.ts src/__tests__/pm/pm-task-library-schema-contract.test.ts
-      - name: Validate Prisma and generate client
+      - name: Validate Prisma schema and client
         run: bunx prisma validate && bunx prisma generate
+      - name: Run focused PM Task tests
+        run: bunx vitest run src/__tests__/pm/pm-task-library-schema-contract.test.ts src/lib/__tests__/pm-task.test.ts src/services/pm/__tests__/pmTask.service.test.ts src/services/pm/__tests__/pmTaskImport.service.test.ts src/__tests__/pm/pm-task-library-api-contract.test.ts src/__tests__/pm/pm-task-library-ui-contract.test.ts
+      - name: Lint touched TypeScript sources
+        run: bunx eslint src/app/api/admin/sync-permissions/route.ts src/services/pm/pmTask.service.ts src/services/pm/__tests__/pmTask.service.test.ts src/services/pm/__tests__/pmTaskImport.service.test.ts src/__tests__/pm/pm-task-library-schema-contract.test.ts
+      - name: Enforce canonical RWOP lifecycle imports
+        run: bunx tsx scripts/check-rwop-legacy-lifecycle-imports.ts
       - name: Run Repairs TypeScript release gate
         run: bunx tsc -p tsconfig.repairs.json --noEmit
       - name: Run full unit suite
         run: bunx vitest run
       - name: Run production build
         run: bun run build
-      - name: Verify diff
+      - name: Verify diff scope and whitespace
         run: git diff --check && git status --short
-      - name: Commit verified fix and remove scaffolding
+      - name: Commit verified product changes and remove scaffolding
+        env:
+          GH_PUSH_TOKEN: ${{ github.token }}
         run: |
           rm -f scripts/fix_pm_task_sync_permissions.py .github/workflows/fix-pm-task-sync-permissions.yml
           git add -A
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(pm): sync task library permissions at runtime'
+          git commit -m 'fix(pm): harden task library transactions and permissions'
+          git remote set-url origin "https://x-access-token:${GH_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin HEAD:feature/pm-task-library-foundation-20261022

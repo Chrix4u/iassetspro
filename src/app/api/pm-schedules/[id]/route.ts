@@ -8,6 +8,7 @@ import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
 import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
+import { resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 
 export async function GET(
   request: NextRequest,
@@ -37,7 +38,7 @@ export async function GET(
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
-        template: { select: { id: true, title: true, type: true, category: true, tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } }, _count: { select: { tasks: { where: { isActive: true } } } } } },
+        template: { select: { id: true, title: true, type: true, category: true, tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true } }, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
@@ -53,10 +54,14 @@ export async function GET(
     }
 
     const liveLocations = await getAssetLiveLocationMap([schedule.asset.id]);
+    const resolvedTemplate = schedule.template
+      ? { ...schedule.template, tasks: resolvePmTemplateTasks(schedule.template.tasks) }
+      : null;
     return NextResponse.json({
       success: true,
       data: {
         ...schedule,
+        template: resolvedTemplate,
         asset: {
           ...schedule.asset,
           functionalLocation: liveLocations.get(schedule.asset.id) ?? null,

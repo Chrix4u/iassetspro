@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 
 // ============================================================================
 // GET /api/pm-templates/[id] — Get single template with tasks
@@ -32,7 +33,8 @@ export async function GET(
         createdBy: { select: { id: true, fullName: true, username: true } },
         tasks: {
           where: { isActive: true },
-          orderBy: { taskNumber: 'asc' },
+          orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }],
+          include: { pmTask: true },
         },
         _count: {
           select: { schedules: true },
@@ -50,7 +52,10 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json({ success: true, data: template });
+    return NextResponse.json({
+      success: true,
+      data: { ...template, tasks: resolvePmTemplateTasks(template.tasks) },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load PM template';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

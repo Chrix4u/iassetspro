@@ -6,6 +6,7 @@ const detail = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/[taskId]/rou
 const pmTask = fs.readFileSync('src/lib/pm-task.ts', 'utf8');
 const associationService = fs.readFileSync('src/services/pm/pmTemplateTaskAssociation.service.ts', 'utf8');
 const page = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
+const taskList = fs.readFileSync('src/components/modules/pm/PmTemplateTaskList.tsx', 'utf8');
 
 describe('PM template task authoring contract', () => {
   it('validates new template tasks through the canonical Task Master disciplines', () => {
@@ -26,12 +27,11 @@ describe('PM template task authoring contract', () => {
     expect(associationService).toContain('estimatedMinutes: null');
   });
 
-  it('treats task removal as template editing and gates the UI accordingly', () => {
+  it('treats task removal as template editing and gates the reusable list accordingly', () => {
     expect(detail).toContain("hasPermission(session, 'pm_templates.update')");
     expect(detail).not.toContain("hasPermission(session, 'pm_templates.delete')");
-    const taskListStart = page.indexOf('taskList.map((task) => {');
-    const taskListEnd = page.indexOf('Add Task form', taskListStart);
-    const taskList = page.slice(taskListStart, taskListEnd);
-    expect(taskList).toContain('{canUpdateTemplate && (');
+    expect(page).toContain("disabled={!canUpdateTemplate || templateTaskBusyId === 'reorder'}");
+    expect(taskList).toContain("!disabled && <Button");
+    expect(taskList).toContain('Remove from Template');
   });
 });

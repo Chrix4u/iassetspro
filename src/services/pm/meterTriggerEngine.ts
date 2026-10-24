@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { notifyUser } from '@/lib/notifications';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
+import { formatResolvedPmTemplateTaskComment, resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
@@ -81,7 +82,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
                   toolRequirements: { include: { tool: true } },
                 },
               },
-              template: { include: { tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } } } },
+              template: { include: { tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true } } } },
             },
           },
         },
@@ -221,9 +222,9 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         };
       }
 
-      const tasks = schedule.template?.tasks || [];
+      const tasks = resolvePmTemplateTasks(schedule.template?.tasks || []);
       const taskText = tasks.length
-        ? '\n\nTask Checklist:\n' + tasks.map((task) => `${task.taskNumber}. [${task.taskType}] ${task.description}`).join('\n')
+        ? '\n\nTask Checklist:\n' + tasks.map((task) => formatResolvedPmTemplateTaskComment(task)).join('\n')
         : '';
 
       const suggestedParts = (component?.sparePartLinks || []).map((spare) => ({
@@ -318,7 +319,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
           data: {
             workOrderId: wo.id,
             userId: options.actorId,
-            content: `[PM Task #${task.taskNumber}] [${task.taskType.toUpperCase()}] ${task.description}`,
+            content: formatResolvedPmTemplateTaskComment(task),
           },
         });
       }

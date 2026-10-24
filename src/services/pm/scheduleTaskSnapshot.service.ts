@@ -78,6 +78,7 @@ export async function createPmScheduleTaskSnapshot(
     estimatedDurationHours?: number | null;
     priority?: string | null;
     createdById: string;
+    plantId: string;
     tasks: NormalizedPmScheduleTask[];
   },
 ): Promise<string> {
@@ -99,6 +100,7 @@ export async function createPmScheduleTaskSnapshot(
       estimatedDuration,
       priority: input.priority || 'medium',
       createdById: input.createdById,
+      plantId: input.plantId,
     },
     select: { id: true },
   });

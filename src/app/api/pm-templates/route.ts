@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantFilterWhere, getPlantScope } from '@/lib/plant-scope';
 import { PM_SCHEDULE_SNAPSHOT_CATEGORY } from '@/services/pm/scheduleTaskSnapshot.service';
 
 // ============================================================================
-// GET /api/pm-templates — List all PM templates
+// GET /api/pm-templates — List plant-visible PM templates
 // ============================================================================
 export async function GET(request: NextRequest) {
   try {
@@ -16,12 +18,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const type = searchParams.get('type');
     const active = searchParams.get('active');
+    const includeUnassigned = searchParams.get('includeUnassigned') === 'true' && isAdmin(session);
 
-    const where: Record<string, unknown> = {
+    const where: Prisma.PmTemplateWhereInput = {
       AND: [{
         OR: [
           { category: null },
@@ -29,26 +37,35 @@ export async function GET(request: NextRequest) {
         ],
       }],
     };
+    const and = where.AND as Prisma.PmTemplateWhereInput[];
+
+    const plantFilter = getPlantFilterWhere(plantScope) as Prisma.PmTemplateWhereInput;
+    if (includeUnassigned) {
+      if (!plantScope.isSystemWide && plantScope.plantId) {
+        and.push({ OR: [{ plantId: plantScope.plantId }, { plantId: null }] });
+      } else if (!plantScope.isSystemWide) {
+        and.push(plantFilter);
+      }
+    } else if (plantScope.isSystemWide) {
+      and.push({ plantId: { not: null } });
+    } else {
+      and.push(plantFilter);
+    }
 
     if (search) {
-      (where.AND as Array<Record<string, unknown>>).push({
+      and.push({
         OR: [
-          { title: { contains: search } },
-          { description: { contains: search } },
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
         ],
       });
     }
 
-    if (type) {
-      where.type = type;
-    }
-
-    if (active !== null) {
-      where.isActive = active === 'true';
-    }
+    if (type) and.push({ type });
+    if (active !== null) and.push({ isActive: active === 'true' });
 
     const templates = await db.pmTemplate.findMany({
-      where: Object.keys(where).length > 0 ? where : undefined,
+      where,
       include: {
         createdBy: {
           select: { id: true, fullName: true, username: true },
@@ -68,7 +85,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================================================
-// POST /api/pm-templates — Create a new PM template
+// POST /api/pm-templates — Create a PM template in the selected plant
 // ============================================================================
 export async function POST(request: NextRequest) {
   try {
@@ -79,6 +96,17 @@ export async function POST(request: NextRequest) {
 
     if (!hasPermission(session, 'pm_templates.create') && !isAdmin(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!plantScope.plantId) {
+      return NextResponse.json(
+        { success: false, error: 'Select a plant before creating PM templates' },
+        { status: 400 },
+      );
     }
 
     const body = await request.json();
@@ -96,7 +124,7 @@ export async function POST(request: NextRequest) {
     if (!title || estimatedDuration === undefined || estimatedDuration === null || estimatedDuration === '') {
       return NextResponse.json(
         { success: false, error: 'Title and estimated duration are required' },
-        { status: 400 }
+        { status: 400 },
       );
     }
     const normalizedDuration = Number(estimatedDuration);
@@ -127,6 +155,7 @@ export async function POST(request: NextRequest) {
           requiredSkills: Array.isArray(requiredSkills) && requiredSkills.length > 0 ? JSON.stringify(requiredSkills) : null,
           requiredTools: Array.isArray(requiredTools) && requiredTools.length > 0 ? JSON.stringify(requiredTools) : null,
           createdById: session.userId,
+          plantId: plantScope.plantId,
         },
         include: {
           createdBy: { select: { id: true, fullName: true, username: true } },
@@ -149,6 +178,7 @@ export async function POST(request: NextRequest) {
             requiredSkills: createdTemplate.requiredSkills,
             requiredTools: createdTemplate.requiredTools,
             isActive: createdTemplate.isActive,
+            plantId: createdTemplate.plantId,
           }),
         },
       });

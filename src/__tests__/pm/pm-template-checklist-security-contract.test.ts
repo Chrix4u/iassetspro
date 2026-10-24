@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const templateCollection = fs.readFileSync('src/app/api/pm-templates/route.ts', 'utf8');
 const templateDirect = fs.readFileSync('src/app/api/pm-templates/[id]/route.ts', 'utf8');
 const templateTasks = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/route.ts', 'utf8');
+const taskAssociationService = fs.readFileSync('src/services/pm/pmTemplateTaskAssociation.service.ts', 'utf8');
 const checklistCollection = fs.readFileSync('src/app/api/checklists/route.ts', 'utf8');
 const checklistDirect = fs.readFileSync('src/app/api/checklists/[id]/route.ts', 'utf8');
 const checklistScope = fs.readFileSync('src/lib/pm-checklist-scope.ts', 'utf8');
@@ -40,10 +41,12 @@ describe('PM template and checklist security contract', () => {
     expect(checklistDirect).toContain('await db.$transaction(async (tx) =>');
   });
 
-  it('serializes task numbering and rejects cross-template, duplicate or partial reorder sets', () => {
-    expect(templateTasks).toContain('iassetspro:pm-template-task-order:${id}');
-    expect(templateTasks).toContain('taskIds must not contain duplicates');
-    expect(templateTasks).toContain('Every active task must belong to this template before reordering');
-    expect(templateTasks).toContain('where: { id: taskId, templateId: id, isActive: true }');
+  it('delegates Task Library association writes while the canonical service serializes order and rejects invalid sets', () => {
+    expect(templateTasks).toContain('linkPmTasksToTemplate');
+    expect(templateTasks).toContain('reorderPmTemplateTasks');
+    expect(taskAssociationService).toContain('iassetspro:pm-template-task-order:${templateId}');
+    expect(taskAssociationService).toContain('must not contain duplicate IDs');
+    expect(taskAssociationService).toContain('exact set of every active template association');
+    expect(taskAssociationService).toContain('plantId: input.plantId, isActive: true');
   });
 });

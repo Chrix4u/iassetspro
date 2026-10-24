@@ -1,108 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { getPlantScope } from '@/lib/plant-scope';
+import { PM_TASK_TYPES, type PmTaskType } from '@/lib/pm-task';
+import {
+  convertLegacyPmTemplateTask,
+  deactivatePmTemplateTask,
+  PmTemplateLastActiveTaskError,
+} from '@/services/pm/pmTemplateTaskAssociation.service';
 
-// ============================================================================
-// DELETE /api/pm-templates/[id]/tasks/[taskId] — Remove a specific task from future use
-// ============================================================================
-export async function DELETE(
+async function requireSelectedPlant(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; taskId: string }> }
+  session: NonNullable<ReturnType<typeof getSession>>,
+) {
+  const plantScope = await getPlantScope(request, session);
+  if (plantScope.denyAccess) return { response: NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 }) };
+  if (!plantScope.plantId) {
+    return { response: NextResponse.json({ success: false, error: 'Select a plant before editing PM template tasks' }, { status: 400 }) };
+  }
+  return { plantId: plantScope.plantId };
+}
+
+function mutationError(error: unknown, fallback: string) {
+  if (error instanceof PmTemplateLastActiveTaskError) {
+    return NextResponse.json({
+      success: false,
+      error: `${error.message}. Add a replacement task or reassign/deactivate the schedule first.`,
+    }, { status: 409 });
+  }
+  const message = error instanceof Error ? error.message : fallback;
+  if (/does not belong to the selected plant/i.test(message)) {
+    return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+  }
+  if (/association not found/i.test(message)) return NextResponse.json({ success: false, error: message }, { status: 404 });
+  if (/already linked|invalid PM task type|required/i.test(message)) {
+    return NextResponse.json({ success: false, error: message }, { status: 400 });
+  }
+  return NextResponse.json({ success: false, error: message }, { status: 500 });
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; taskId: string }> },
 ) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
-
     const { id, taskId } = await params;
-
-    // Verify template exists
-    const template = await db.pmTemplate.findUnique({ where: { id } });
-    if (!template) {
-      return NextResponse.json(
-        { success: false, error: 'PM template not found' },
-        { status: 404 }
-      );
+    const scoped = await requireSelectedPlant(request, session);
+    if ('response' in scoped) return scoped.response;
+    const body = await request.json();
+    const taskType = body?.convertLegacy?.taskType;
+    if (typeof taskType !== 'string' || !PM_TASK_TYPES.includes(taskType.toLowerCase() as PmTaskType)) {
+      return NextResponse.json({ success: false, error: 'convertLegacy.taskType must be a valid PM Task Type' }, { status: 400 });
     }
-
-    // Verify task exists and belongs to the template
-    const task = await db.pmTemplateTask.findFirst({
-      where: { id: taskId, templateId: id },
+    const data = await convertLegacyPmTemplateTask({
+      templateId: id,
+      associationId: taskId,
+      plantId: scoped.plantId,
+      userId: session.userId,
+      taskType: taskType.toLowerCase() as PmTaskType,
     });
-
-    if (!task) {
-      return NextResponse.json(
-        { success: false, error: 'Task not found in this template' },
-        { status: 404 }
-      );
-    }
-
-    const result = await db.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        'SELECT pg_advisory_xact_lock(hashtext($1))',
-        `iassetspro:pm-template-task-order:${id}`,
-      );
-      await lockPmTemplateLifecycle(tx, id);
-
-      const activeSchedule = await tx.pmSchedule.findFirst({
-        where: { templateId: id, isActive: true },
-        select: { id: true, title: true },
-      });
-      if (activeSchedule && task.isActive) {
-        const activeTaskCount = await tx.pmTemplateTask.count({
-          where: { templateId: id, isActive: true },
-        });
-        if (activeTaskCount <= 1) {
-          return { kind: 'last_active_task' as const, activeSchedule };
-        }
-      }
-
-      await tx.pmTemplateTask.update({
-        where: { id: taskId },
-        data: { isActive: false },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'delete',
-          entityType: 'pm_template_task',
-          entityId: taskId,
-          oldValues: JSON.stringify({
-            templateId: id,
-            taskNumber: task.taskNumber,
-            description: task.description,
-            taskType: task.taskType,
-            requiredParts: task.requiredParts,
-            estimatedMinutes: task.estimatedMinutes,
-            isActive: task.isActive,
-          }),
-          newValues: JSON.stringify({ isActive: false }),
-        },
-      });
-
-      return { kind: 'removed' as const };
-    });
-
-    if (result.kind === 'last_active_task') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Cannot remove the last active task while active PM schedule "${result.activeSchedule.title}" uses this template. Add a replacement task or reassign/deactivate the schedule first.`,
-        },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json({ success: true, data: { id: taskId } });
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to delete task';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return mutationError(error, 'Failed to convert legacy PM template task');
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; taskId: string }> },
+) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+    const { id, taskId } = await params;
+    const scoped = await requireSelectedPlant(request, session);
+    if ('response' in scoped) return scoped.response;
+    const data = await deactivatePmTemplateTask({
+      templateId: id,
+      associationId: taskId,
+      plantId: scoped.plantId,
+      userId: session.userId,
+    });
+    return NextResponse.json({ success: true, data: { id: data.id } });
+  } catch (error: unknown) {
+    return mutationError(error, 'Failed to remove PM template task');
   }
 }

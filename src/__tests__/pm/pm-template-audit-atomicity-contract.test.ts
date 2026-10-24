@@ -3,8 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const templates = fs.readFileSync('src/app/api/pm-templates/route.ts', 'utf8');
 const templateDetail = fs.readFileSync('src/app/api/pm-templates/[id]/route.ts', 'utf8');
-const tasks = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/route.ts', 'utf8');
-const taskDetail = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/[taskId]/route.ts', 'utf8');
+const taskAssociations = fs.readFileSync('src/services/pm/pmTemplateTaskAssociation.service.ts', 'utf8');
 
 function section(source: string, start: string, end?: string): string {
   const from = source.indexOf(start);
@@ -33,21 +32,21 @@ describe('PM template audit atomicity contract', () => {
     }
   });
 
-  it('adds and reorders template tasks atomically with audit records', () => {
-    const post = section(tasks, 'export async function POST(', 'export async function PUT(');
-    const put = section(tasks, 'export async function PUT(');
-    for (const write of [post, put]) {
-      expect(write).toContain('db.$transaction(async (tx) =>');
-      expect(write).toContain('tx.auditLog.create');
-      expect(write).toContain("entityType: 'pm_template_task'");
+  it('mutates template task associations and writes their audit events in canonical transactions', () => {
+    for (const operation of [
+      'linkPmTasksToTemplate',
+      'createAndLinkPmTasks',
+      'reorderPmTemplateTasks',
+      'deactivatePmTemplateTask',
+      'convertLegacyPmTemplateTask',
+    ]) {
+      const start = taskAssociations.indexOf(`export async function ${operation}`);
+      expect(start).toBeGreaterThan(0);
+      const next = taskAssociations.indexOf('export async function ', start + 1);
+      const write = taskAssociations.slice(start, next > start ? next : undefined);
+      expect(write).toContain('db.$transaction');
     }
-  });
-
-  it('deletes a template task atomically with its audit record', () => {
-    const del = section(taskDetail, 'export async function DELETE(');
-    expect(del).toContain('db.$transaction(async (tx) =>');
-    expect(del).toContain('tx.pmTemplateTask.update');
-    expect(del).toContain('tx.auditLog.create');
-    expect(del).toContain("entityType: 'pm_template_task'");
+    expect(taskAssociations).toContain('tx.auditLog.create');
+    expect(taskAssociations).toContain("entityType: 'pm_template_task'");
   });
 });

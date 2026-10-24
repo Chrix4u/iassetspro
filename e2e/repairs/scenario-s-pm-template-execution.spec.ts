@@ -2,12 +2,14 @@ import { test, expect } from '@playwright/test';
 import { authenticateAs, navigateToWODetail, switchUser } from './helpers/auth';
 import {
   apiCall,
+  apiCallWithPlant,
   assignWO,
   completeWO,
   getToken,
   getWO,
   logTime,
   lookupAssetId,
+  lookupPlantId,
   lookupUserByKey,
   startWO,
 } from './helpers/api';
@@ -28,11 +30,14 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   const technicianToken = await getToken('tech_single');
   const supervisorToken = await getToken('supervisor');
   const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   const technicianId = await lookupUserByKey(plannerToken, 'tech_single');
   const supervisorId = await lookupUserByKey(plannerToken, 'supervisor');
 
   // Planner creates the reusable template through the real UI.
   await authenticateAs(context, 'planner');
+  await page.goto('/');
+  await page.evaluate((selectedPlantId) => localStorage.setItem('user_plant_id', selectedPlantId), plantId);
   await page.goto('/#/pm-templates');
   await expect(page.getByRole('heading', { name: 'PM Templates', exact: true })).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: /New Template/i }).click();
@@ -42,32 +47,38 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   const createTemplateResponse = page.waitForResponse((response) => response.url().includes('/api/pm-templates') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Create Template', exact: true }).click();
   expect((await createTemplateResponse).status()).toBe(201);
-  await expect(page.getByText(templateTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Edit PM Template', { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Task Library Checklist', { exact: true })).toBeVisible({ timeout: 20_000 });
 
-  const templateList = await apiCall(plannerToken, 'GET', `/api/pm-templates?search=${encodeURIComponent(templateTitle)}`);
+  const templateList = await apiCallWithPlant(plannerToken, 'GET', `/api/pm-templates?search=${encodeURIComponent(templateTitle)}`, plantId);
   expect(templateList.status).toBe(200);
   const template = (templateList.data.data as any[]).find((row) => row.title === templateTitle);
   expect(template?.id).toBeTruthy();
 
-  // Edit the browser-created template and add a real checklist through the UI.
-  const templateRow = page.getByRole('row').filter({ hasText: templateTitle });
-  await templateRow.hover();
-  await templateRow.getByRole('button').last().click();
-  await page.getByRole('menuitem', { name: /Edit/i }).click();
-  await expect(page.getByText('Edit PM Template', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Task Checklist/i }).click();
-
+  // Creation intentionally transitions directly into Edit mode with the Task
+  // Library checklist expanded. Create real Task Masters through that UI and
+  // let the template editor link each returned master through the association API.
   for (const description of templateTaskDescriptions) {
-    await page.getByPlaceholder('Task description *').fill(description);
-    await page.getByPlaceholder('Est. minutes').fill('10');
-    const addTaskResponse = page.waitForResponse((response) => response.url().includes(`/api/pm-templates/${template.id}/tasks`) && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Add Task to Checklist', exact: true }).click();
-    expect((await addTaskResponse).status()).toBe(201);
+    await page.getByRole('button', { name: 'Add New Task', exact: true }).click();
+    await expect(page.getByText('Add PM Task', { exact: true })).toBeVisible();
+    await page.getByPlaceholder('e.g. Lubricate drive-end bearing').fill(description);
+    const createTaskResponse = page.waitForResponse((response) =>
+      response.url().includes('/api/pm-tasks')
+      && !response.url().includes('/bulk')
+      && response.request().method() === 'POST',
+    );
+    const linkTaskResponse = page.waitForResponse((response) =>
+      response.url().includes(`/api/pm-templates/${template.id}/tasks`)
+      && response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Create Task', exact: true }).click();
+    expect((await createTaskResponse).status()).toBe(201);
+    expect((await linkTaskResponse).status()).toBe(201);
     await expect(page.getByText(description, { exact: true })).toBeVisible({ timeout: 10_000 });
   }
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-  const templateState = await apiCall(plannerToken, 'GET', `/api/pm-templates/${template.id}`);
+  const templateState = await apiCallWithPlant(plannerToken, 'GET', `/api/pm-templates/${template.id}`, plantId);
   expect(templateState.status).toBe(200);
   expect(templateState.data.data?.tasks).toHaveLength(3);
 

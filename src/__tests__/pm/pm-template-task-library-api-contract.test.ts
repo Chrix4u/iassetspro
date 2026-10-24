@@ -23,8 +23,18 @@ vi.mock('@/services/pm/pmTemplateTaskAssociation.service', () => ({
   deactivatePmTemplateTask, convertLegacyPmTemplateTask, PmTemplateLastActiveTaskError,
 }));
 
-import { POST, PUT } from '@/app/api/pm-templates/[id]/tasks/route';
-import { PATCH, DELETE } from '@/app/api/pm-templates/[id]/tasks/[taskId]/route';
+import { POST as postHandler, PUT as putHandler } from '@/app/api/pm-templates/[id]/tasks/route';
+import { PATCH as patchHandler, DELETE as deleteHandler } from '@/app/api/pm-templates/[id]/tasks/[taskId]/route';
+
+async function requireRouteResponse<T>(response: T | undefined): Promise<NonNullable<T>> {
+  if (response === undefined) throw new Error('Expected route handler to return a response');
+  return response as NonNullable<T>;
+}
+
+const POST = async (...args: Parameters<typeof postHandler>) => requireRouteResponse(await postHandler(...args));
+const PUT = async (...args: Parameters<typeof putHandler>) => requireRouteResponse(await putHandler(...args));
+const PATCH = async (...args: Parameters<typeof patchHandler>) => requireRouteResponse(await patchHandler(...args));
+const DELETE = async (...args: Parameters<typeof deleteHandler>) => requireRouteResponse(await deleteHandler(...args));
 
 const session = { userId: 'planner-1', permissions: ['pm_templates.update'], roles: ['planner'] };
 const collectionParams = { params: Promise.resolve({ id: 'template-1' }) };

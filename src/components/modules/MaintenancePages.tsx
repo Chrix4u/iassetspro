@@ -8563,7 +8563,7 @@ export function PmSchedulesPage() {
     setFormTasksDirty(true);
   };
 
-  const openCreate = () => { resetForm(); setTaskList([]); setTasksExpanded(false); setCreateOpen(true); };
+  const openCreate = () => { resetForm(); setCreateOpen(true); };
   const openEdit = (item: any) => {
     setFormTitle(item.title || '');
     setFormDesc(item.description || '');

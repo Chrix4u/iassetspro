@@ -25,9 +25,11 @@ describe('PM schedule task-list workflow contract', () => {
     expect(templates).toContain('where.AND');
   });
 
-  it('returns schedule task details through the schedule endpoint', () => {
+  it('returns resolved master-aware schedule task details through the schedule endpoint', () => {
     const detail = read('src/app/api/pm-schedules/[id]/route.ts');
-    expect(detail).toContain("tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } }");
+    expect(detail).toContain("tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true }");
+    expect(detail).toContain('resolvePmTemplateTasks(schedule.template.tasks)');
+    expect(detail).toContain('template: resolvedTemplate');
   });
 
   it('shows Assigned To, Department and an editable Task List in the schedule form', () => {

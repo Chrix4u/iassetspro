@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 const scheduleCollection = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
 const scheduleDetail = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8');
 const templateDetail = fs.readFileSync('src/app/api/pm-templates/[id]/route.ts', 'utf8');
-const taskDetail = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/[taskId]/route.ts', 'utf8');
+const taskAssociationService = fs.readFileSync('src/services/pm/pmTemplateTaskAssociation.service.ts', 'utf8');
 const lifecyclePath = 'src/services/pm/templateLifecycle.service.ts';
 const lifecycle = fs.existsSync(lifecyclePath) ? fs.readFileSync(lifecyclePath, 'utf8') : '';
 
@@ -19,7 +19,7 @@ describe('PM template lifecycle serialization contract', () => {
     expect(scheduleCollection).toContain(`${LOCK_CALL} templateId)`);
     expect(scheduleDetail).toContain(`${LOCK_CALL} effectiveTemplateId)`);
     expect(templateDetail.match(/lockPmTemplateLifecycle\(tx, id\)/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(taskDetail).toContain(`${LOCK_CALL} id)`);
+    expect(taskAssociationService).toContain(`${LOCK_CALL} input.templateId)`);
   });
 
   it('revalidates the effective retained template whenever an existing schedule becomes or remains active', () => {

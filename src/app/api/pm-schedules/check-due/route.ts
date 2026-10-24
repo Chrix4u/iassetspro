@@ -6,6 +6,7 @@ import { isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { notifyUser } from '@/lib/notifications';
 import { resolvePmAutomationActorId } from '@/lib/pm-automation-actor';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
+import { formatResolvedPmTemplateTaskComment, resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
@@ -148,15 +149,8 @@ export async function POST(request: NextRequest) {
                 type: true,
                 tasks: {
                   where: { isActive: true },
-                  orderBy: { taskNumber: 'asc' },
-                  select: {
-                    id: true,
-                    taskNumber: true,
-                    description: true,
-                    taskType: true,
-                    requiredParts: true,
-                    estimatedMinutes: true,
-                  },
+                  orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }],
+                  include: { pmTask: true },
                 },
               },
             },
@@ -235,11 +229,11 @@ export async function POST(request: NextRequest) {
 
         let woDescription = `Preventive maintenance scheduled for asset: ${schedule.asset.name || schedule.asset.assetTag}${schedule.component ? ` | Component: ${schedule.component.componentCode} - ${schedule.component.name}` : ''}`;
         let estimatedHours = schedule.estimatedDuration || null;
-        const tasks = schedule.template?.tasks || [];
+        const tasks = resolvePmTemplateTasks(schedule.template?.tasks || []);
 
         if (tasks.length > 0) {
           const taskLines = tasks.map(
-            (task) => `  ${task.taskNumber}. [${task.taskType}] ${task.description}${task.estimatedMinutes ? ` (~${task.estimatedMinutes}min)` : ''}${task.requiredParts ? ` | Parts: ${task.requiredParts}` : ''}`,
+            (task) => `  ${formatResolvedPmTemplateTaskComment(task)}`,
           );
           woDescription += `\n\nPM Template: ${schedule.template?.title || 'N/A'} (${schedule.template?.type || 'preventive'})\nTask Checklist:\n${taskLines.join('\n')}`;
 
@@ -355,7 +349,7 @@ export async function POST(request: NextRequest) {
             data: {
               workOrderId: wo.id,
               userId: automationActorId,
-              content: `[PM Task #${task.taskNumber}] [${task.taskType.toUpperCase()}] ${task.description}${task.estimatedMinutes ? ` — Est: ${task.estimatedMinutes} min` : ''}${task.requiredParts ? ` — Parts: ${task.requiredParts}` : ''}`,
+              content: formatResolvedPmTemplateTaskComment(task),
             },
           });
         }

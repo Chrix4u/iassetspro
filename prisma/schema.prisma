@@ -391,6 +391,7 @@ model Plant {
   functionalLocations FunctionalLocation[]
   inventoryItems InventoryItem[]
   pmTasks        PmTask[]
+  pmTemplates    PmTemplate[]
   models         ModelLibrary[] @relation("ModelPlant")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
@@ -1269,13 +1270,16 @@ model PmTemplate {
   requiredTools     String?  @db.Text // JSON array of tool descriptions .Text
   isActive          Boolean  @default(true)
   createdById       String
+  plantId           String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   schedules PmSchedule[]
   createdBy User             @relation("PmTemplateCreatedBy", fields: [createdById], references: [id])
+  plant     Plant?           @relation(fields: [plantId], references: [id], onDelete: SetNull)
   tasks     PmTemplateTask[]
 
+  @@index([plantId, isActive])
   @@map("pm_templates")
 }
 
@@ -1293,6 +1297,7 @@ model PmTask {
 
   plant     Plant @relation(fields: [plantId], references: [id], onDelete: Cascade)
   createdBy User  @relation("PmTaskCreatedBy", fields: [createdById], references: [id])
+  templateTasks PmTemplateTask[]
 
   @@unique([plantId, taskNumber])
   @@index([plantId, taskType, isActive])
@@ -1302,6 +1307,7 @@ model PmTask {
 model PmTemplateTask {
   id               String  @id @default(cuid())
   templateId       String
+  pmTaskId         String?
   taskNumber       Int // sequential order within template
   description      String
   taskType         String  @default("check") // check, measure, inspect, lubricate, replace, record
@@ -1311,9 +1317,12 @@ model PmTemplateTask {
   isActive         Boolean @default(true)
 
   template PmTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  pmTask   PmTask?     @relation(fields: [pmTaskId], references: [id], onDelete: SetNull)
 
   taskExecutions WorkOrderTaskExecution[]
 
+  @@unique([templateId, pmTaskId])
+  @@index([pmTaskId])
   @@map("pm_template_tasks")
 }
 

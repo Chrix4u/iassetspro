@@ -12,7 +12,7 @@ const taskPatch = fs.readFileSync('src/app/api/work-orders/[id]/tasks/[taskId]/r
 describe('PM checklist completion contract', () => {
   it('snapshots template tasks when every PM generation engine creates a work order', () => {
     expect(helper).toContain('workOrderTaskExecution.createMany');
-    expect(helper).toContain('templateTaskId: task.id');
+    expect(helper).toContain('templateTaskId: task.associationId');
     for (const source of [due, meter, signal]) {
       expect(source).toContain('materializePmTemplateTasks(tx, wo.id, tasks)');
     }

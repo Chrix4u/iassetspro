@@ -42,7 +42,7 @@ import {
   ArrowRightLeft, ArrowRight, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Link2, Hammer,
-  Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
+  Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, ListPlus, Droplets, RotateCcw,
   FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX, Undo2, StopCircle, Printer,
@@ -69,6 +69,11 @@ import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSe
 // WorkerAssignmentPicker still used by WO Detail page
 import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
 import { MachineVisualExplorer, type MachineExplorerSelection } from '@/components/digital-twin/MachineVisualExplorer';
+import { PmTaskFormDialog, type PmTaskFormRecord } from '@/components/modules/pm/PmTaskFormDialog';
+import { PmTaskBulkDialog } from '@/components/modules/pm/PmTaskBulkDialog';
+import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTaskPickerDialog';
+import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
+import type { PmTaskType } from '@/lib/pm-task';
 // Local UrgencyBadge for WO detail page (same as RepairsPages)
 const URGENCY_CFG: Record<string, { label: string; color: string; dotColor: string }> = {
   low: { label: 'Low', color: 'bg-slate-100 text-slate-700 border-slate-300', dotColor: 'bg-slate-400' },
@@ -10727,17 +10732,7 @@ interface PmTemplateItem {
   tasks?: PmTemplateTaskItem[];
 }
 
-interface PmTemplateTaskItem {
-  id: string;
-  templateId: string;
-  taskNumber: number;
-  description: string;
-  taskType: string;
-  requiredParts?: string | null;
-  estimatedMinutes?: number | null;
-  sortOrder: number;
-  isActive: boolean;
-}
+type PmTemplateTaskItem = PmTemplateResolvedTask;
 
 const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   preventive: { label: 'Preventive', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40', icon: CheckCircle2 },
@@ -10747,30 +10742,11 @@ const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon:
   lubrication: { label: 'Lubrication', color: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/30 dark:text-teal-400 dark:border-teal-900/40', icon: Droplets },
 };
 
-const TASK_TYPE_CONFIG: Record<string, { label: string; color: string; icon: LucideIcon }> = {
-  check: { label: 'Check', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400', icon: CheckSquare },
-  measure: { label: 'Measure', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400', icon: Ruler },
-  inspect: { label: 'Inspect', color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400', icon: Eye },
-  lubricate: { label: 'Lubricate', color: 'bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:text-teal-400', icon: Droplets },
-  replace: { label: 'Replace', color: 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400', icon: RotateCcw },
-  record: { label: 'Record', color: 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400', icon: FileText },
-};
-
 function TemplateTypeBadge({ type }: { type: string }) {
   const cfg = TEMPLATE_TYPE_CONFIG[type] || { label: type, color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400', icon: ClipboardList };
   return (
     <Badge variant="outline" className={`text-[10px] font-semibold gap-1 ${cfg.color}`}>
       <cfg.icon className="h-3 w-3" />
-      {cfg.label}
-    </Badge>
-  );
-}
-
-function TaskTypeBadge({ type }: { type: string }) {
-  const cfg = TASK_TYPE_CONFIG[type] || { label: type, color: 'bg-slate-100 text-slate-600', icon: CheckSquare };
-  return (
-    <Badge variant="outline" className={`text-[10px] font-semibold gap-1 ${cfg.color}`}>
-      <cfg.icon className="h-2.5 w-2.5" />
       {cfg.label}
     </Badge>
   );
@@ -10800,20 +10776,22 @@ export function PmTemplatesPage() {
   const [formSkills, setFormSkills] = useState('');
   const [formTools, setFormTools] = useState('');
 
-  // Task builder state
+  // Task Library association state
   const [taskList, setTaskList] = useState<PmTemplateTaskItem[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
-  const [newTaskDesc, setNewTaskDesc] = useState('');
-  const [newTaskType, setNewTaskType] = useState('check');
-  const [newTaskMinutes, setNewTaskMinutes] = useState('');
-  const [newTaskParts, setNewTaskParts] = useState('');
-  const [addTaskLoading, setAddTaskLoading] = useState(false);
+  const [templateTaskPickerOpen, setTemplateTaskPickerOpen] = useState(false);
+  const [templateTaskCreateOpen, setTemplateTaskCreateOpen] = useState(false);
+  const [templateTaskBulkOpen, setTemplateTaskBulkOpen] = useState(false);
+  const [templateTaskBusyId, setTemplateTaskBusyId] = useState<string | null>(null);
 
   const { hasPermission, isAdmin } = useAuthStore();
-  const canCreateTemplate = isAdmin() || hasPermission('pm_templates.create');
-  const canUpdateTemplate = isAdmin() || hasPermission('pm_templates.update');
-  const canDeleteTemplate = isAdmin() || hasPermission('pm_templates.delete');
+  const templateAdmin = isAdmin();
+  const canCreateTemplate = templateAdmin || hasPermission('pm_templates.create');
+  const canUpdateTemplate = templateAdmin || hasPermission('pm_templates.update');
+  const canDeleteTemplate = templateAdmin || hasPermission('pm_templates.delete');
+  const canViewTaskLibrary = templateAdmin || hasPermission('pm_tasks.view');
+  const canCreateTaskMaster = templateAdmin || hasPermission('pm_tasks.create');
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
@@ -10850,12 +10828,8 @@ export function PmTemplatesPage() {
   const fetchTasks = useCallback(async (templateId: string) => {
     setTasksLoading(true);
     try {
-      const res = await api.get<{ tasks: PmTemplateTaskItem[] }>(`/api/pm-templates/${templateId}`);
-      if (res.success && res.data && (res.data as any).tasks) {
-        setTaskList((res.data as any).tasks);
-      } else {
-        setTaskList([]);
-      }
+      const res = await api.get<PmTemplateItem>(`/api/pm-templates/${templateId}`);
+      setTaskList(res.success && res.data?.tasks ? res.data.tasks : []);
     } catch { setTaskList([]); }
     setTasksLoading(false);
   }, []);
@@ -10881,6 +10855,9 @@ export function PmTemplatesPage() {
     setEditItem(item);
     setTasksExpanded(false);
     setTaskList([]);
+    setTemplateTaskPickerOpen(false);
+    setTemplateTaskCreateOpen(false);
+    setTemplateTaskBulkOpen(false);
   };
 
   const handleSave = async () => {
@@ -10917,11 +10894,15 @@ export function PmTemplatesPage() {
           requiredSkills: skillsArray.length > 0 ? skillsArray : undefined,
           requiredTools: toolsArray.length > 0 ? toolsArray : undefined,
         });
-        if (res.success) {
-          toast.success('Template created');
+        if (res.success && res.data) {
+          const createdTemplate = res.data as PmTemplateItem;
+          toast.success('Template created. Add Task Library tasks below.');
           setCreateOpen(false);
-          resetForm();
-          fetchTemplates();
+          setEditItem(createdTemplate);
+          setTasksExpanded(true);
+          setTaskList([]);
+          void fetchTasks(createdTemplate.id);
+          void fetchTemplates();
         } else { toast.error(res.error || 'Create failed'); }
       }
     } catch { toast.error('Operation failed'); }
@@ -10948,39 +10929,66 @@ export function PmTemplatesPage() {
     setDeleteConfirmId(null);
   };
 
-  const handleAddTask = async () => {
-    if (!editItem || !newTaskDesc.trim()) { toast.error('Task description is required'); return; }
-    setAddTaskLoading(true);
+  const refreshTemplateTasks = async () => {
+    if (!editItem) return;
+    await fetchTasks(editItem.id);
+    await fetchTemplates();
+  };
+
+  const linkTemplateTaskIds = async (taskIds: string[]) => {
+    if (!editItem || taskIds.length === 0) return false;
+    const res = await api.post(`/api/pm-templates/${editItem.id}/tasks`, { taskIds });
+    if (!res.success) { toast.error(res.error || 'Failed to link Task Library records'); return false; }
+    await refreshTemplateTasks();
+    return true;
+  };
+
+  const handleSelectTemplateTasks = async (taskIds: string[]) => {
+    if (await linkTemplateTaskIds(taskIds)) toast.success(`${taskIds.length} task${taskIds.length === 1 ? '' : 's'} added to template`);
+  };
+
+  const handleCreatedTemplateTask = async (task: PmTaskFormRecord) => {
+    if (await linkTemplateTaskIds([task.id])) toast.success(`Task #${task.taskNumber} created and added to template`);
+  };
+
+  const handleBulkCreatedTemplateTasks = async (tasks: PmTaskFormRecord[]) => {
+    const taskIds = tasks.map((task) => task.id);
+    if (taskIds.length && await linkTemplateTaskIds(taskIds)) toast.success(`${taskIds.length} new Task Library records added to template`);
+  };
+
+  const handleReorderTemplateTasks = async (associationIds: string[]) => {
+    if (!editItem) return;
+    setTemplateTaskBusyId('reorder');
     try {
-      const partsArray = newTaskParts ? newTaskParts.split(',').map(s => s.trim()).filter(Boolean) : [];
-      const res = await api.post(`/api/pm-templates/${editItem.id}/tasks`, {
-        description: newTaskDesc.trim(),
-        taskType: newTaskType,
-        estimatedMinutes: newTaskMinutes ? parseInt(newTaskMinutes, 10) : undefined,
-        requiredParts: partsArray.length > 0 ? partsArray : undefined,
-      });
-      if (res.success) {
-        toast.success('Task added');
-        setNewTaskDesc(''); setNewTaskMinutes(''); setNewTaskParts('');
-        setNewTaskType('check');
-        fetchTasks(editItem.id);
-        fetchTemplates(); // refresh task count
-      } else { toast.error(res.error || 'Failed to add task'); }
-    } catch { toast.error('Failed to add task'); }
-    setAddTaskLoading(false);
+      const res = await api.put(`/api/pm-templates/${editItem.id}/tasks`, { associationIds });
+      if (!res.success) { toast.error(res.error || 'Failed to reorder template tasks'); return; }
+      await fetchTasks(editItem.id);
+      toast.success('Template task sequence updated');
+    } finally { setTemplateTaskBusyId(null); }
+  };
+
+  const handleConvertLegacyTemplateTask = async (associationId: string, taskType: PmTaskType) => {
+    if (!editItem) return;
+    setTemplateTaskBusyId(associationId);
+    try {
+      const res = await api.patch(`/api/pm-templates/${editItem.id}/tasks/${associationId}`, { convertLegacy: { taskType } });
+      if (!res.success) { toast.error(res.error || 'Failed to add legacy task to Task Library'); return; }
+      await refreshTemplateTasks();
+      toast.success('Legacy task added to Task Library');
+    } finally { setTemplateTaskBusyId(null); }
   };
 
   const handleDeleteTask = async () => {
     if (!editItem || !deleteTaskConfirmId) return;
+    setTemplateTaskBusyId(deleteTaskConfirmId);
     try {
       const res = await api.delete(`/api/pm-templates/${editItem.id}/tasks/${deleteTaskConfirmId}`);
       if (res.success) {
-        toast.success('Task removed');
-        fetchTasks(editItem.id);
-        fetchTemplates();
-      } else { toast.error(res.error || 'Failed to delete task'); }
-    } catch { toast.error('Failed to delete task'); }
-    setDeleteTaskConfirmId(null);
+        toast.success('Task removed from template');
+        await refreshTemplateTasks();
+      } else { toast.error(res.error || 'Failed to remove task from template'); }
+    } catch { toast.error('Failed to remove task from template'); }
+    finally { setTemplateTaskBusyId(null); setDeleteTaskConfirmId(null); }
   };
 
   const dialogOpen = createOpen || !!editItem;
@@ -11158,9 +11166,9 @@ export function PmTemplatesPage() {
       <ConfirmDialog
         open={!!deleteTaskConfirmId}
         onOpenChange={(open) => { if (!open) setDeleteTaskConfirmId(null); }}
-        title="Remove Task"
-        description="Are you sure you want to remove this task from the template? This action cannot be undone."
-        confirmLabel="Remove Task"
+        title="Remove from Template"
+        description="Remove this task from future use in this template? The Task Library record and historical work orders remain unchanged."
+        confirmLabel="Remove from Template"
         variant="destructive"
         onConfirm={handleDeleteTask}
       />
@@ -11169,14 +11177,14 @@ export function PmTemplatesPage() {
       <ResponsiveDialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          if (!open) { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); }
+          if (!open) { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); setTemplateTaskPickerOpen(false); setTemplateTaskCreateOpen(false); setTemplateTaskBulkOpen(false); }
         }}
         title={dialogTitle}
         description={dialogDesc}
         large
         footer={(
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); setTemplateTaskPickerOpen(false); setTemplateTaskCreateOpen(false); setTemplateTaskBulkOpen(false); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving || (editItem ? !canUpdateTemplate : !canCreateTemplate)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <RefreshCw className="h-4 w-4 animate-spin mr-1.5" />}
               {editItem ? 'Update Template' : 'Create Template'}
@@ -11255,148 +11263,81 @@ export function PmTemplatesPage() {
             <p className="text-[11px] text-muted-foreground">Comma-separated list of required tools</p>
           </div>
 
-          {/* Task Checklist Builder — only visible when editing */}
+          {/* Task Library associations — only visible when editing */}
           {editItem && (
             <div className="mt-4">
-              {/* Expandable header */}
               <button
                 type="button"
                 onClick={() => {
-                  if (!tasksExpanded && taskList.length === 0) fetchTasks(editItem.id);
+                  if (!tasksExpanded && taskList.length === 0) void fetchTasks(editItem.id);
                   setTasksExpanded(!tasksExpanded);
                 }}
-                className="w-full flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+                className="flex w-full items-center justify-between rounded-lg border bg-muted/30 p-3 transition-colors hover:bg-muted/50"
               >
                 <div className="flex items-center gap-2">
                   <ListChecks className="h-4 w-4 text-emerald-600" />
-                  <span className="text-sm font-semibold">Task Checklist</span>
-                  <Badge variant="outline" className="text-[10px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
+                  <span className="text-sm font-semibold">Task Library Checklist</span>
+                  <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] font-medium text-emerald-700">
                     {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'}
                   </Badge>
                 </div>
                 {tasksExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
               </button>
 
-              {/* Expanded task list */}
               {tasksExpanded && (
                 <div className="mt-3 space-y-3">
-                  {/* Task list */}
-                  <div className="max-h-64 overflow-y-auto space-y-1.5 custom-scrollbar">
-                    {tasksLoading ? (
-                      <div className="space-y-2 p-3">
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-3/4" />
-                      </div>
-                    ) : taskList.length === 0 ? (
-                      <div className="text-center py-6 text-muted-foreground">
-                        <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                        <p className="text-sm">No tasks yet. Add your first task below.</p>
-                      </div>
-                    ) : (
-                      taskList.map((task) => {
-                        let parsedParts: string[] = [];
-                        try { parsedParts = task.requiredParts ? JSON.parse(task.requiredParts) : []; } catch { /* ignore */ }
-                        return (
-                          <div
-                            key={task.id}
-                            className="flex items-start gap-2 p-2.5 rounded-lg border bg-card group/task hover:bg-muted/30 transition-colors"
-                          >
-                            {/* Drag handle */}
-                            <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
-                            {/* Task number */}
-                            <span className="text-[10px] font-mono font-semibold text-muted-foreground bg-muted rounded px-1.5 py-0.5 shrink-0">
-                              {task.taskNumber}
-                            </span>
-                            {/* Description */}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium whitespace-normal break-words leading-snug">{task.description}</p>
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                <TaskTypeBadge type={task.taskType} />
-                                {task.estimatedMinutes && (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                    <Clock className="h-2.5 w-2.5" />{task.estimatedMinutes}m
-                                  </span>
-                                )}
-                                {parsedParts.length > 0 && (
-                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                    <Wrench className="h-2.5 w-2.5" />{parsedParts.join(', ')}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {/* Delete task button */}
-                            {canUpdateTemplate && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 opacity-0 group-hover/task:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
-                                onClick={() => setDeleteTaskConfirmId(task.id)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Add Task form */}
-                  {canUpdateTemplate && <div className="p-3 rounded-lg border-2 border-dashed border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/10">
-                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Task
-                    </p>
-                    <div className="space-y-2">
-                      <Input
-                        value={newTaskDesc}
-                        onChange={e => setNewTaskDesc(e.target.value)}
-                        placeholder="Task description *"
-                        className="text-sm"
-                      />
-                      <div className="grid grid-cols-2 gap-2">
-                        <Select value={newTaskType} onValueChange={setNewTaskType}>
-                          <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(TASK_TYPE_CONFIG).map(([key, cfg]) => (
-                              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={newTaskMinutes}
-                          onChange={e => setNewTaskMinutes(e.target.value)}
-                          placeholder="Est. minutes"
-                          className="text-sm"
-                        />
-                      </div>
-                      <Input
-                        value={newTaskParts}
-                        onChange={e => setNewTaskParts(e.target.value)}
-                        placeholder="Required parts (comma-separated, optional)"
-                        className="text-sm"
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleAddTask}
-                        disabled={addTaskLoading || !newTaskDesc.trim()}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
-                      >
-                        {addTaskLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
-                        Add Task to Checklist
-                      </Button>
-                    </div>
+                  {canUpdateTemplate && <div className="grid gap-2 sm:grid-cols-3">
+                    {canViewTaskLibrary && <Button type="button" variant="outline" onClick={() => setTemplateTaskPickerOpen(true)}>
+                      <Search className="mr-2 h-3.5 w-3.5" />Select Existing Tasks
+                    </Button>}
+                    {canCreateTaskMaster && <Button type="button" variant="outline" onClick={() => setTemplateTaskCreateOpen(true)}>
+                      <Plus className="mr-2 h-3.5 w-3.5" />Add New Task
+                    </Button>}
+                    {canCreateTaskMaster && <Button type="button" variant="outline" onClick={() => setTemplateTaskBulkOpen(true)}>
+                      <ListChecks className="mr-2 h-3.5 w-3.5" />Add Multiple Tasks
+                    </Button>}
                   </div>}
+                  <p className="text-[11px] text-muted-foreground">
+                    Task # is the permanent Task Library identity. Dragging changes only this template&apos;s sequence.
+                  </p>
+                  {tasksLoading ? (
+                    <div className="space-y-2 p-3">
+                      <Skeleton className="h-20 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                    </div>
+                  ) : (
+                    <PmTemplateTaskList
+                      tasks={taskList}
+                      disabled={!canUpdateTemplate || templateTaskBusyId === 'reorder'}
+                      busyAssociationId={templateTaskBusyId}
+                      onReorder={handleReorderTemplateTasks}
+                      onRemove={(associationId) => setDeleteTaskConfirmId(associationId)}
+                      onConvertLegacy={handleConvertLegacyTemplateTask}
+                    />
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
       </ResponsiveDialog>
+
+      <PmTemplateTaskPickerDialog
+        open={templateTaskPickerOpen}
+        onOpenChange={setTemplateTaskPickerOpen}
+        excludedTaskIds={taskList.map((task) => task.pmTaskId).filter((taskId): taskId is string => Boolean(taskId))}
+        onConfirm={handleSelectTemplateTasks}
+      />
+      <PmTaskFormDialog
+        open={templateTaskCreateOpen}
+        onOpenChange={setTemplateTaskCreateOpen}
+        onSaved={handleCreatedTemplateTask}
+      />
+      <PmTaskBulkDialog
+        open={templateTaskBulkOpen}
+        onOpenChange={setTemplateTaskBulkOpen}
+        onSaved={handleBulkCreatedTemplateTasks}
+      />
     </div>
   );
 }

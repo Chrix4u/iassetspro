@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { authenticateAs } from './helpers/auth';
-import { apiCall, getToken, lookupAssetId } from './helpers/api';
+import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } from './helpers/api';
 
 test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
   test('planner commissions assembly/part in UI and targets both with PM schedules', async ({ page, context }) => {
     const plannerToken = await getToken('planner');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+    const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
     const suffix = Date.now().toString().slice(-7);
     const assemblyCode = `UAT-FE-ASM-${suffix}`;
     const partCode = `UAT-FE-PRT-${suffix}`;
@@ -32,6 +33,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     }
 
     await authenticateAs(context, 'planner');
+    await page.goto('/');
+    await page.evaluate((selectedPlantId) => localStorage.setItem('user_plant_id', selectedPlantId), plantId);
     await page.goto(`/#/asset-detail?id=${encodeURIComponent(assetId)}`);
     await expect(page.getByText('UAT Test Pump').first()).toBeVisible({ timeout: 20_000 });
 
@@ -68,7 +71,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     // commissioning migrations intentionally run only in the named staging DB,
     // while CI uses an isolated repairs_uat database. Create the template through
     // the same authenticated APIs a planner uses instead of depending on staging seed data.
-    const templateCreate = await apiCall(plannerToken, 'POST', '/api/pm-templates', {
+    const templateCreate = await apiCallWithPlant(plannerToken, 'POST', '/api/pm-templates', plantId, {
       title: templateTitle,
       description: 'Browser-created six-step bearing service template for PM schedule linkage UAT.',
       type: 'preventive',
@@ -81,26 +84,25 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const templateId = String(templateCreate.data.data?.id || '');
     expect(templateId).toBeTruthy();
 
-    const templateTasks = [
-      ['Inspect bearing housing and seals', 'inspect'],
-      ['Measure bearing temperature and vibration', 'measure'],
-      ['Check shaft runout and alignment', 'measure'],
-      ['Lubricate bearing to specification', 'lubricate'],
-      ['Verify fastener torque', 'check'],
-      ['Record readings and recommendations', 'record'],
-    ] as const;
-    for (const [index, [description, taskType]] of templateTasks.entries()) {
-      const taskCreate = await apiCall(plannerToken, 'POST', `/api/pm-templates/${encodeURIComponent(templateId)}/tasks`, {
-        taskNumber: index + 1,
-        description,
-        taskType,
-        estimatedMinutes: 10,
-      });
-      expect(taskCreate.status).toBe(201);
-      expect(taskCreate.data.success).toBe(true);
-    }
+    const templateTaskDescriptions = [
+      'Inspect bearing housing and seals',
+      'Measure bearing temperature and vibration',
+      'Check shaft runout and alignment',
+      'Lubricate bearing to specification',
+      'Verify fastener torque',
+      'Record readings and recommendations',
+    ];
+    const taskCreate = await apiCallWithPlant(
+      plannerToken,
+      'POST',
+      `/api/pm-templates/${encodeURIComponent(templateId)}/tasks`,
+      plantId,
+      { newTasks: templateTaskDescriptions.map((description) => ({ description, taskType: 'mechanical' })) },
+    );
+    expect(taskCreate.status).toBe(201);
+    expect(taskCreate.data.success).toBe(true);
 
-    const templateState = await apiCall(plannerToken, 'GET', '/api/pm-templates?active=true');
+    const templateState = await apiCallWithPlant(plannerToken, 'GET', '/api/pm-templates?active=true', plantId);
     expect(templateState.status).toBe(200);
     const seededTemplate = (templateState.data.data as any[]).find((item) => item.id === templateId);
     expect(seededTemplate?.title).toBe(templateTitle);

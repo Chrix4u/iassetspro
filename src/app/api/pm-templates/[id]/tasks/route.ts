@@ -1,244 +1,105 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
+import { PmTaskBatchValidationError } from '@/lib/pm-task';
+import {
+  createAndLinkPmTasks,
+  linkPmTasksToTemplate,
+  reorderPmTemplateTasks,
+} from '@/services/pm/pmTemplateTaskAssociation.service';
 
-const VALID_TASK_TYPES = new Set(['check', 'measure', 'inspect', 'lubricate', 'replace', 'record']);
+async function requireSelectedPlant(
+  request: NextRequest,
+  session: NonNullable<ReturnType<typeof getSession>>,
+) {
+  const plantScope = await getPlantScope(request, session);
+  if (plantScope.denyAccess) return { response: NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 }) };
+  if (!plantScope.plantId) {
+    return { response: NextResponse.json({ success: false, error: 'Select a plant before editing PM template tasks' }, { status: 400 }) };
+  }
+  return { plantId: plantScope.plantId };
+}
 
-// ============================================================================
-// POST /api/pm-templates/[id]/tasks — Add a task to a template
-// ============================================================================
+function requestError(error: unknown, fallback: string) {
+  if (error instanceof PmTaskBatchValidationError) {
+    return NextResponse.json({ success: false, error: error.message, rowErrors: error.rowErrors }, { status: 400 });
+  }
+  const message = error instanceof Error ? error.message : fallback;
+  if (/does not belong to the selected plant|unavailable, inactive, or not in the same plant/i.test(message)) {
+    return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+  }
+  if (/not found/i.test(message)) return NextResponse.json({ success: false, error: message }, { status: 404 });
+  if (/required|duplicate|exact set|active template association|Task Master/i.test(message)) {
+    return NextResponse.json({ success: false, error: message }, { status: 400 });
+  }
+  return NextResponse.json({ success: false, error: message }, { status: 500 });
+}
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
-
     const { id } = await params;
+    const scoped = await requireSelectedPlant(request, session);
+    if ('response' in scoped) return scoped.response;
     const body = await request.json();
-    const { description, taskType, requiredParts, estimatedMinutes, taskNumber } = body;
-
-    if (typeof description !== 'string' || !description.trim() || typeof taskType !== 'string') {
-      return NextResponse.json(
-        { success: false, error: 'Description and task type are required' },
-        { status: 400 }
-      );
-    }
-    if (!VALID_TASK_TYPES.has(taskType)) {
-      return NextResponse.json({ success: false, error: 'Invalid task type' }, { status: 400 });
+    const hasTaskIds = Array.isArray(body?.taskIds);
+    const hasNewTasks = Array.isArray(body?.newTasks);
+    if (hasTaskIds === hasNewTasks) {
+      return NextResponse.json({ success: false, error: 'Provide exactly one of taskIds or newTasks' }, { status: 400 });
     }
 
-    let normalizedEstimatedMinutes: number | null = null;
-    if (estimatedMinutes !== undefined && estimatedMinutes !== null && estimatedMinutes !== '') {
-      normalizedEstimatedMinutes = Number(estimatedMinutes);
-      if (!Number.isInteger(normalizedEstimatedMinutes) || normalizedEstimatedMinutes <= 0) {
-        return NextResponse.json(
-          { success: false, error: 'Estimated minutes must be a positive whole number' },
-          { status: 400 },
-        );
-      }
-    }
-    if (requiredParts !== undefined && requiredParts !== null
-      && (!Array.isArray(requiredParts) || !requiredParts.every((part) => typeof part === 'string' && part.trim().length > 0))) {
-      return NextResponse.json(
-        { success: false, error: 'Required parts must be an array of non-empty strings' },
-        { status: 400 },
-      );
-    }
-    const normalizedRequiredParts = Array.isArray(requiredParts)
-      ? requiredParts.map((part: string) => part.trim())
-      : null;
-
-    const requestedNumber = taskNumber !== undefined ? Number(taskNumber) : null;
-    if (requestedNumber !== null && (!Number.isInteger(requestedNumber) || requestedNumber <= 0)) {
-      return NextResponse.json(
-        { success: false, error: 'Task number must be a positive integer' },
-        { status: 400 },
-      );
-    }
-
-    const result = await db.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        'SELECT pg_advisory_xact_lock(hashtext($1))',
-        `iassetspro:pm-template-task-order:${id}`,
-      );
-
-      const template = await tx.pmTemplate.findUnique({ where: { id }, select: { id: true } });
-      if (!template) return { kind: 'missing' as const };
-
-      let nextNumber = requestedNumber;
-      if (nextNumber === null) {
-        const maxTask = await tx.pmTemplateTask.findFirst({
-          where: { templateId: id },
-          orderBy: { taskNumber: 'desc' },
-          select: { taskNumber: true },
-        });
-        nextNumber = (maxTask?.taskNumber ?? 0) + 1;
-      } else {
-        const collision = await tx.pmTemplateTask.findFirst({
-          where: { templateId: id, taskNumber: nextNumber, isActive: true },
-          select: { id: true },
-        });
-        if (collision) return { kind: 'duplicate' as const };
-      }
-
-      const task = await tx.pmTemplateTask.create({
-        data: {
+    const data = hasTaskIds
+      ? await linkPmTasksToTemplate({
           templateId: id,
-          taskNumber: nextNumber,
-          description: description.trim(),
-          taskType,
-          requiredParts: normalizedRequiredParts && normalizedRequiredParts.length > 0 ? JSON.stringify(normalizedRequiredParts) : null,
-          estimatedMinutes: normalizedEstimatedMinutes,
-          sortOrder: nextNumber,
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
+          plantId: scoped.plantId,
           userId: session.userId,
-          action: 'create',
-          entityType: 'pm_template_task',
-          entityId: task.id,
-          newValues: JSON.stringify({
-            templateId: id,
-            taskNumber: task.taskNumber,
-            description: task.description,
-            taskType: task.taskType,
-            requiredParts: task.requiredParts,
-            estimatedMinutes: task.estimatedMinutes,
-          }),
-        },
-      });
+          pmTaskIds: body.taskIds,
+        })
+      : await createAndLinkPmTasks({
+          templateId: id,
+          plantId: scoped.plantId,
+          userId: session.userId,
+          rows: body.newTasks,
+        });
 
-      return { kind: 'created' as const, task };
-    });
-
-    if (result.kind === 'missing') {
-      return NextResponse.json({ success: false, error: 'PM template not found' }, { status: 404 });
-    }
-    if (result.kind === 'duplicate') {
-      return NextResponse.json({ success: false, error: 'Task number already exists in this template' }, { status: 409 });
-    }
-
-    return NextResponse.json({ success: true, data: result.task }, { status: 201 });
+    return NextResponse.json({ success: true, data, count: data.length }, { status: 201 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to add task';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return requestError(error, 'Failed to add PM template tasks');
   }
 }
 
-// ============================================================================
-// PUT /api/pm-templates/[id]/tasks — Reorder tasks
-// Body: { taskIds: string[] } — new ordered list of task IDs
-// ============================================================================
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = getSession(request);
-    if (!session) {
-      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
-
     const { id } = await params;
+    const scoped = await requireSelectedPlant(request, session);
+    if ('response' in scoped) return scoped.response;
     const body = await request.json();
-    const { taskIds } = body;
-
-    if (!Array.isArray(taskIds) || taskIds.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'taskIds array is required' },
-        { status: 400 }
-      );
+    if (!Array.isArray(body?.associationIds) || body.associationIds.length === 0) {
+      return NextResponse.json({ success: false, error: 'associationIds array is required' }, { status: 400 });
     }
-
-    const template = await db.pmTemplate.findUnique({ where: { id }, select: { id: true } });
-    if (!template) {
-      return NextResponse.json(
-        { success: false, error: 'PM template not found' },
-        { status: 404 },
-      );
-    }
-
-    const normalizedTaskIds = taskIds.map((taskId: unknown) => String(taskId));
-    const uniqueTaskIds = new Set(normalizedTaskIds);
-    if (uniqueTaskIds.size !== normalizedTaskIds.length) {
-      return NextResponse.json(
-        { success: false, error: 'taskIds must not contain duplicates' },
-        { status: 400 },
-      );
-    }
-
-    const reorderResult = await db.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        'SELECT pg_advisory_xact_lock(hashtext($1))',
-        `iassetspro:pm-template-task-order:${id}`,
-      );
-
-      const lockedActiveTasks = await tx.pmTemplateTask.findMany({
-        where: { templateId: id, isActive: true },
-        select: { id: true },
-        orderBy: [{ taskNumber: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }],
-      });
-      const lockedActiveTaskIds = new Set(lockedActiveTasks.map((task) => task.id));
-      const isExactTaskSet =
-        lockedActiveTasks.length === normalizedTaskIds.length
-        && normalizedTaskIds.every((taskId) => lockedActiveTaskIds.has(taskId));
-      if (!isExactTaskSet) {
-        return { kind: 'invalid_task_set' as const };
-      }
-
-      for (const [index, taskId] of normalizedTaskIds.entries()) {
-        await tx.pmTemplateTask.updateMany({
-          where: { id: taskId, templateId: id, isActive: true },
-          data: {
-            taskNumber: index + 1,
-            sortOrder: index + 1,
-          },
-        });
-      }
-
-      await tx.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'update',
-          entityType: 'pm_template_task',
-          entityId: id,
-          oldValues: JSON.stringify({ order: lockedActiveTasks.map((task) => task.id) }),
-          newValues: JSON.stringify({ order: normalizedTaskIds }),
-        },
-      });
-
-      return { kind: 'reordered' as const };
+    const associationIds = await reorderPmTemplateTasks({
+      templateId: id,
+      plantId: scoped.plantId,
+      userId: session.userId,
+      associationIds: body.associationIds,
     });
-
-    if (reorderResult.kind === 'invalid_task_set') {
-      return NextResponse.json(
-        { success: false, error: 'Every active task must belong to this template before reordering' },
-        { status: 400 },
-      );
-    }
-
-    const updatedTasks = await db.pmTemplateTask.findMany({
-      where: { templateId: id, isActive: true },
-      orderBy: { taskNumber: 'asc' },
-    });
-
-    return NextResponse.json({ success: true, data: updatedTasks });
+    return NextResponse.json({ success: true, data: { associationIds } });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to reorder tasks';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return requestError(error, 'Failed to reorder PM template tasks');
   }
 }

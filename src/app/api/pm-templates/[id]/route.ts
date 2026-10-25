@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
+import { resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 
 // ============================================================================
 // GET /api/pm-templates/[id] — Get single template with tasks
@@ -18,6 +20,10 @@ export async function GET(
     if (!hasPermission(session, 'pm_templates.view') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
     const { id } = await params;
 
@@ -27,7 +33,8 @@ export async function GET(
         createdBy: { select: { id: true, fullName: true, username: true } },
         tasks: {
           where: { isActive: true },
-          orderBy: { taskNumber: 'asc' },
+          orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }],
+          include: { pmTask: true },
         },
         _count: {
           select: { schedules: true },
@@ -41,8 +48,14 @@ export async function GET(
         { status: 404 }
       );
     }
+    if (!canAccessPlantStrict(plantScope, template.plantId)) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
 
-    return NextResponse.json({ success: true, data: template });
+    return NextResponse.json({
+      success: true,
+      data: { ...template, tasks: resolvePmTemplateTasks(template.tasks) },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load PM template';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -65,6 +78,13 @@ export async function PUT(
     if (!hasPermission(session, 'pm_templates.update') && !isAdmin(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Select a plant before editing PM templates' }, { status: 400 });
+    }
 
     const { id } = await params;
     const body = await request.json();
@@ -75,6 +95,9 @@ export async function PUT(
         { success: false, error: 'PM template not found' },
         { status: 404 }
       );
+    }
+    if (!canAccessPlantStrict(plantScope, existing.plantId) || existing.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -193,6 +216,13 @@ export async function DELETE(
     if (!hasPermission(session, 'pm_templates.delete') && !isAdmin(session)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Select a plant before deactivating PM templates' }, { status: 400 });
+    }
 
     const { id } = await params;
 
@@ -202,6 +232,9 @@ export async function DELETE(
         { success: false, error: 'PM template not found' },
         { status: 404 }
       );
+    }
+    if (!canAccessPlantStrict(plantScope, existing.plantId) || existing.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
     const result = await db.$transaction(async (tx) => {

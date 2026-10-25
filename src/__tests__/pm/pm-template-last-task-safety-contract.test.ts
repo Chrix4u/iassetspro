@@ -1,16 +1,16 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const detail = fs.readFileSync('src/app/api/pm-templates/[id]/tasks/[taskId]/route.ts', 'utf8');
+const service = fs.readFileSync('src/services/pm/pmTemplateTaskAssociation.service.ts', 'utf8');
 
 describe('PM template last-task safety contract', () => {
-  it('refuses to remove the final active task while an active schedule uses the template', () => {
-    expect(detail).toContain('tx.pmSchedule.findFirst');
-    expect(detail).toContain('templateId: id');
-    expect(detail).toContain('isActive: true');
-    expect(detail).toContain('tx.pmTemplateTask.count');
-    expect(detail).toContain('activeTaskCount <= 1');
-    expect(detail).toContain('last active task');
-    expect(detail).toContain('status: 409');
+  it('refuses to remove the final active association inside the canonical mutation transaction', () => {
+    expect(service).toContain('lockPmTemplateLifecycle(tx, input.templateId)');
+    expect(service).toContain('tx.pmSchedule.findFirst');
+    expect(service).toContain('templateId: input.templateId');
+    expect(service).toContain('isActive: true');
+    expect(service).toContain('tx.pmTemplateTask.count');
+    expect(service).toContain('activeTaskCount <= 1');
+    expect(service).toContain('last active task');
   });
 });

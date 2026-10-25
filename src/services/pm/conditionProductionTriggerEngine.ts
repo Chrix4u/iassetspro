@@ -3,6 +3,7 @@ import { notifyUser } from '@/lib/notifications';
 import { evaluateMeterThreshold } from '@/services/pm/meterTriggerEngine';
 import { parsePmTriggerConfig } from '@/services/pm/triggerConfig.service';
 import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateTasks.service';
+import { formatResolvedPmTemplateTaskComment, resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 
@@ -59,7 +60,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
                   toolRequirements: { include: { tool: true } },
                 },
               },
-              template: { include: { tasks: { where: { isActive: true }, orderBy: { taskNumber: 'asc' } } } },
+              template: { include: { tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true } } } },
             },
           },
         },
@@ -273,9 +274,9 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
       }
 
       const component = schedule.component;
-      const tasks = schedule.template?.tasks || [];
+      const tasks = resolvePmTemplateTasks(schedule.template?.tasks || []);
       const taskText = tasks.length
-        ? '\n\nTask Checklist:\n' + tasks.map((task) => `${task.taskNumber}. [${task.taskType}] ${task.description}`).join('\n')
+        ? '\n\nTask Checklist:\n' + tasks.map((task) => formatResolvedPmTemplateTaskComment(task)).join('\n')
         : '';
       const suggestedParts = (component?.sparePartLinks || []).map((spare) => ({
         itemId: spare.inventoryItemId,
@@ -355,7 +356,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
           data: {
             workOrderId: wo.id,
             userId: options.actorId,
-            content: `[PM Task #${task.taskNumber}] [${task.taskType.toUpperCase()}] ${task.description}`,
+            content: formatResolvedPmTemplateTaskComment(task),
           },
         });
       }

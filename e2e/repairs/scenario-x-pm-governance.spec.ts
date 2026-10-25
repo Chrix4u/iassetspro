@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { authenticateAs } from './helpers/auth';
-import { apiCall, getToken, lookupAssetId } from './helpers/api';
+import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } from './helpers/api';
 
 test('UAT-23: PM plan governance preserves lifecycle locks and editable template metadata', async ({ page, context }) => {
   const suffix = Date.now().toString().slice(-7);
@@ -10,12 +10,13 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
   const lastTask = `Verify governance lubrication ${suffix}`;
   const plannerToken = await getToken('planner');
   const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
 
   let templateId = '';
   let scheduleId = '';
 
   try {
-    const templateCreate = await apiCall(plannerToken, 'POST', '/api/pm-templates', {
+    const templateCreate = await apiCallWithPlant(plannerToken, 'POST', '/api/pm-templates', plantId, {
       title: templateTitle,
       description: 'UAT PM governance lifecycle template.',
       type: 'preventive',
@@ -29,16 +30,21 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     templateId = String(templateCreate.data.data?.id || '');
     expect(templateId).toBeTruthy();
 
-    for (const [description, taskType] of [[firstTask, 'check'], [lastTask, 'lubricate']] as const) {
-      const created = await apiCall(plannerToken, 'POST', `/api/pm-templates/${templateId}/tasks`, {
-        description,
-        taskType,
-        estimatedMinutes: 15,
-      });
-      expect(created.status).toBe(201);
-    }
+    const createdTasks = await apiCallWithPlant(
+      plannerToken,
+      'POST',
+      `/api/pm-templates/${templateId}/tasks`,
+      plantId,
+      {
+        newTasks: [
+          { description: firstTask, taskType: 'mechanical' },
+          { description: lastTask, taskType: 'lubrication' },
+        ],
+      },
+    );
+    expect(createdTasks.status).toBe(201);
 
-    const scheduleCreate = await apiCall(plannerToken, 'POST', '/api/pm-schedules', {
+    const scheduleCreate = await apiCallWithPlant(plannerToken, 'POST', '/api/pm-schedules', plantId, {
       title: scheduleTitle,
       description: 'UAT linked active schedule for governance locks.',
       assetId,
@@ -57,6 +63,8 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     expect(scheduleId).toBeTruthy();
 
     await authenticateAs(context, 'planner');
+    await page.goto('/');
+    await page.evaluate((selectedPlantId) => localStorage.setItem('user_plant_id', selectedPlantId), plantId);
     await page.goto('/#/pm-templates');
     await expect(page.getByRole('heading', { name: 'PM Templates', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByPlaceholder('Search templates...').fill(templateTitle);
@@ -90,32 +98,30 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     await rowAfterEdit.hover();
     await rowAfterEdit.getByRole('button').last().click();
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    await page.getByRole('button', { name: /Task Checklist/i }).click();
-    await expect(page.getByText(firstTask, { exact: true })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(lastTask, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('button', { name: /Task Library Checklist/i }).click();
+    await expect(page.getByText(`Task Description: ${firstTask}`, { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`Task Description: ${lastTask}`, { exact: true })).toBeVisible({ timeout: 10_000 });
 
-    const firstTaskRow = page.getByText(firstTask, { exact: true }).locator('xpath=ancestor::div[contains(@class,"group/task")]').first();
-    await firstTaskRow.hover();
-    await firstTaskRow.getByRole('button').click();
+    const firstTaskRow = page.getByText(`Task Description: ${firstTask}`, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await firstTaskRow.getByRole('button', { name: 'Remove from Template', exact: true }).click();
     const firstDelete = page.waitForResponse((response) =>
       response.url().includes(`/api/pm-templates/${templateId}/tasks/`)
       && response.request().method() === 'DELETE',
     );
-    await page.getByRole('button', { name: 'Remove Task', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from Template', exact: true }).click();
     expect((await firstDelete).status()).toBe(200);
-    await expect(page.getByText(firstTask, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(`Task Description: ${firstTask}`, { exact: true })).toHaveCount(0);
 
     // The last active task is protected while an active schedule still depends on this template.
-    const lastTaskRow = page.getByText(lastTask, { exact: true }).locator('xpath=ancestor::div[contains(@class,"group/task")]').first();
-    await lastTaskRow.hover();
-    await lastTaskRow.getByRole('button').click();
+    const lastTaskRow = page.getByText(`Task Description: ${lastTask}`, { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+    await lastTaskRow.getByRole('button', { name: 'Remove from Template', exact: true }).click();
     const blockedLastDelete = page.waitForResponse((response) =>
       response.url().includes(`/api/pm-templates/${templateId}/tasks/`)
       && response.request().method() === 'DELETE',
     );
-    await page.getByRole('button', { name: 'Remove Task', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from Template', exact: true }).click();
     expect((await blockedLastDelete).status()).toBe(409);
-    await expect(page.getByText(lastTask, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Task Description: ${lastTask}`, { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     // Template deactivation is also blocked while the linked schedule remains active.
@@ -211,6 +217,6 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     expect(finalTemplate.data.data?.tasks?.[0]?.description).toBe(lastTask);
   } finally {
     if (scheduleId) await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${scheduleId}`, { isActive: false });
-    if (templateId) await apiCall(plannerToken, 'PUT', `/api/pm-templates/${templateId}`, { isActive: false });
+    if (templateId) await apiCallWithPlant(plannerToken, 'PUT', `/api/pm-templates/${templateId}`, plantId, { isActive: false });
   }
 });

@@ -161,7 +161,7 @@ CRITICAL RULES:
 // ============================================================================
 
 function truncateText(text: string, maxChars: number = 2000): string {
-  if (!text || text.length <= maxChars) return text || null;
+  if (!text || text.length <= maxChars) return text;
   return text.substring(0, maxChars).trim() + '…';
 }
 
@@ -183,7 +183,7 @@ Remember: Return ONLY valid JSON matching the specified structure. Include reali
   logger.info('Calling LLM to generate machine data', { machineName });
 
   // Retry LLM call up to 2 times on transient fetch errors
-  let response: Record<string, unknown>;
+  let response: Awaited<ReturnType<typeof aiChatCompletion>> | null = null;
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -805,6 +805,7 @@ export async function POST(request: NextRequest) {
           requiredTools: JSON.stringify([]),
           isActive: true,
           createdById: session.userId,
+          plantId,
         },
       });
 

@@ -32,21 +32,18 @@ describe('PM schedule task-list workflow contract', () => {
     expect(detail).toContain('template: resolvedTemplate');
   });
 
-  it('shows Assigned To, Department and an editable Task List in the schedule form', () => {
+  it('shows Assigned To, Department and the Task Master planner in the schedule form', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
     expect(ui).toContain('>Assigned To</Label>');
     expect(ui).toContain('>Department</Label>');
-    expect(ui).toContain('>Task List</p>');
-    expect(ui).toContain('Add Task');
-    expect(ui).toContain('formTasks');
-    expect(ui).toContain('inlineTasks:');
+    expect(ui).toContain('<PmScheduleTaskPlanner');
+    expect(ui).toContain('formScheduledTasks');
+    expect(ui).toContain('payload.scheduledTasks = formScheduledTasks.map');
     expect(ui).toContain("api.get(`/api/pm-templates/${templateId}`)");
-    expect(ui).toContain('setFormTemplateId(templateId)');
-    expect(ui).toContain('setFormTasksDirty(false)');
-    expect(ui).toContain('...(formTasksDirty ? {');
+    expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
     expect(ui).toContain("api.get(`/api/pm-schedules/${item.id}`)");
+    expect(ui).not.toContain('inlineTasks:');
   });
-
 
   it('shows the saved checklist in the schedule detail view', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
@@ -56,12 +53,17 @@ describe('PM schedule task-list workflow contract', () => {
     expect(ui).toContain('viewItem.department?.name');
   });
 
-  it('supports the six canonical PM checklist task types and task ordering controls', () => {
+  it('uses permanent Task Masters with task-level mode and ordering controls', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
-    for (const type of ['check', 'measure', 'inspect', 'lubricate', 'replace', 'record']) {
-      expect(ui).toContain(`value: '${type}'`);
-    }
-    expect(ui).toContain('movePmTask');
-    expect(ui).toContain('removePmTask');
+    const card = read('src/components/modules/pm/PmScheduleTaskCard.tsx');
+    expect(ui).toContain('pmScheduleTaskDraftFromMaster');
+    expect(ui).toContain('pmScheduleTaskDraftFromApi');
+    expect(card).toContain('Task #');
+    expect(card).toContain('TBM');
+    expect(card).toContain('UBM');
+    expect(card).toContain('CBM');
+    expect(card).toContain('Move Task #');
+    expect(card).toContain('Remove Task #');
   });
+
 });

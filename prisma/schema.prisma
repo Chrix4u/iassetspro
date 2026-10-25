@@ -1252,6 +1252,7 @@ model PmSchedule {
   template   PmTemplate? @relation(fields: [templateId], references: [id])
 
   workOrders WorkOrder[]
+  tasks      PmScheduleTask[]
   trigger    PmTrigger?
 
   @@index([componentId])
@@ -1298,6 +1299,7 @@ model PmTask {
   plant     Plant @relation(fields: [plantId], references: [id], onDelete: Cascade)
   createdBy User  @relation("PmTaskCreatedBy", fields: [createdById], references: [id])
   templateTasks PmTemplateTask[]
+  scheduleTasks PmScheduleTask[]
 
   @@unique([plantId, taskNumber])
   @@index([plantId, taskType, isActive])
@@ -1324,6 +1326,44 @@ model PmTemplateTask {
   @@unique([templateId, pmTaskId])
   @@index([pmTaskId])
   @@map("pm_template_tasks")
+}
+
+model PmScheduleTask {
+  id                       String   @id @default(cuid())
+  scheduleId               String
+  pmTaskId                  String
+  sortOrder                 Int      @default(0)
+  maintenanceMode           String   // tbm, ubm, cbm
+  equipmentState            String   // running, stopped
+  estimatedMinutes          Int      @default(0)
+  leadDays                  Int      @default(0)
+  frequencyInterval         Float?
+  frequencyUnit             String?
+  meterName                 String?
+  nextDueReading            Float?
+  conditionSourceType       String?
+  conditionSourceId         String?
+  conditionMetric           String?
+  conditionOperator         String?
+  conditionThreshold        Float?
+  conditionThresholdMax     Float?
+  conditionUnit             String?
+  evaluationCadenceMinutes  Int?
+  lastCompletedAt           DateTime?
+  nextDueDate               DateTime?
+  isActive                  Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  schedule PmSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  pmTask   PmTask     @relation(fields: [pmTaskId], references: [id], onDelete: Restrict)
+
+  @@unique([scheduleId, pmTaskId])
+  @@index([scheduleId, isActive, sortOrder])
+  @@index([maintenanceMode, isActive, nextDueDate])
+  @@index([meterName, isActive])
+  @@index([conditionSourceType, conditionSourceId, isActive])
+  @@map("pm_schedule_tasks")
 }
 
 model PmTrigger {

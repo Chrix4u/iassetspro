@@ -60,7 +60,7 @@ describe('PM scheduled-task UI contract', () => {
   });
 
   it('formats planner-readable TBM, UBM and CBM summaries', () => {
-    const master = { id: 'task-1', taskNumber: 1, description: 'Inspect', taskType: 'mechanical', isActive: true };
+    const master = { id: 'task-1', taskNumber: 1, description: 'Inspect', taskType: 'mechanical' as const, isActive: true };
     const tbm = pmScheduleTaskDraftFromMaster(master);
     tbm.frequencyInterval = '2'; tbm.frequencyUnit = 'weeks'; tbm.nextDueDate = '2026-11-09';
     expect(formatPmScheduleTaskPlanningSummary(tbm)).toContain('Every 2 weeks');

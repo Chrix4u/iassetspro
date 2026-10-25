@@ -60,50 +60,28 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     // PM behavior itself remains exercised exclusively through production UI/API paths.
     await recordMeterReading(1000, 0, 'baseline');
 
-    // Planner authors the actual component-targeted asset-meter schedule through the browser.
+    // New browser-authored schedules are task-level in slice 3. UAT-20 specifically
+    // protects the legacy meter-trigger runtime, so create a no-scheduledTasks compatibility
+    // schedule through the API; this must still atomically provision the legacy meter trigger.
+    const createSchedule = await apiCall(plannerToken, 'POST', '/api/pm-schedules', {
+      title: scheduleTitle,
+      assetId,
+      componentId,
+      frequencyType: 'meter',
+      frequencyValue: 100,
+      frequencyUnit: meterUnit,
+      meterName,
+      estimatedDuration: 1,
+      priority: 'high',
+      autoGenerateWO: true,
+      leadDays: 0,
+    });
+    expect(createSchedule.status).toBe(201);
+
+    // Authenticate the browser once for the trigger page and the later legacy-schedule edit assertions.
     await authenticateAs(context, 'planner');
-    await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /New Schedule/i }).click();
-    await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(scheduleTitle);
-
-    const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
-    await assetLabel.locator('..').getByRole('combobox').click();
-    await page.getByPlaceholder('Search assets by name or tag...').fill('UAT-PUMP-001');
-    await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
-
-    const chooseTargetButton = page.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
-    await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
-    await chooseTargetButton.click();
-    const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
-    await expect(explorerHeading).toBeVisible({ timeout: 20_000 });
-    const explorerDialog = page.getByRole('dialog').filter({ has: explorerHeading });
-    const targetNode = explorerDialog.getByRole('button').filter({ hasText: componentCode }).first();
-    await expect(targetNode).toBeVisible({ timeout: 20_000 });
-    await targetNode.click();
-    await explorerDialog.getByRole('button', { name: 'Confirm Selection', exact: true }).click();
-    await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
-    await expect(page.getByText(componentCode, { exact: false }).first()).toBeVisible();
-
-    const frequencyLabel = page.locator('label').filter({ hasText: /^Frequency Type \*/ }).first();
-    await frequencyLabel.locator('..').getByRole('combobox').click();
-    await page.getByRole('option', { name: 'Meter', exact: true }).click();
-    const intervalLabel = page.locator('label').filter({ hasText: /^Interval \*/ }).first();
-    await intervalLabel.locator('..').locator('input').fill('100');
-    const meterLabel = page.locator('label').filter({ hasText: /^Asset Meter \*/ }).first();
-    const meterSelect = meterLabel.locator('..').getByRole('combobox');
-    await expect(meterSelect).toBeEnabled({ timeout: 10_000 });
-    await meterSelect.click();
-    await page.getByRole('option', { name: `${meterName} · 1000 ${meterUnit}`, exact: true }).click();
-    const durationLabel = page.locator('label').filter({ hasText: /Est\. Duration/ }).first();
-    await durationLabel.locator('..').locator('input').fill('1');
-
-    const createScheduleResponse = page.waitForResponse((response) =>
-      response.url().includes('/api/pm-schedules') && response.request().method() === 'POST',
-    );
-    await page.getByRole('button', { name: /Create Schedule/i }).click();
-    expect((await createScheduleResponse).status()).toBe(201);
-    await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await page.goto('/');
+    await page.evaluate((selectedPlantId) => localStorage.setItem('user_plant_id', selectedPlantId), plantId);
 
     const scheduleState = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
     expect(scheduleState.status).toBe(200);

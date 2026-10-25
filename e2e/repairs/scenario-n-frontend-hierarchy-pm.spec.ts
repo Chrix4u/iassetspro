@@ -12,6 +12,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const partCode = `UAT-FE-PRT-${suffix}`;
     const assemblyPmTitle = `UAT Frontend Assembly PM ${suffix}`;
     const partPmTitle = `UAT Frontend Part PM ${suffix}`;
+    const partTaskLevelPmTitle = `UAT Frontend Task-Level Part PM ${suffix}`;
     const templateTitle = `UAT Frontend Bearing 500h Service ${suffix}`;
     const cycleA = `UAT-FE-CYCLE-A-${suffix}`;
     const cycleB = `UAT-FE-CYCLE-B-${suffix}`;
@@ -108,48 +109,32 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(seededTemplate?.title).toBe(templateTitle);
     expect(seededTemplate?._count?.tasks).toBe(6);
 
-    const createPmViaUi = async (
+    // Keep browser coverage on the new task-level authoring path: asset search,
+    // exact hierarchy selection and Task Library seeding from a PM template.
+    const createTaskLevelPmViaUi = async (
       title: string,
       targetCode: string,
-      useTemplate = false,
       expandParentCode?: string,
     ) => {
+      await page.goto('/#/pm-schedules');
       const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
-      if (!(await pmHeading.isVisible().catch(() => false))) {
-        // Asset detail is rendered as a modal sheet, so return to the authenticated
-        // dashboard before exercising the same visible PM quick action a planner uses.
-        await page.goto('/');
-        await expect(page.getByText(/Welcome back/i).first()).toBeVisible({ timeout: 20_000 });
-        const pmQuickAction = page.getByRole('button', { name: 'PM Schedules', exact: true }).last();
-        await expect(pmQuickAction).toBeVisible({ timeout: 20_000 });
-        const analyticsResponse = page.waitForResponse((response) => response.url().includes('/api/pm-analytics'));
-        await pmQuickAction.click();
-        expect((await analyticsResponse).status()).toBe(200);
-      }
       await expect(pmHeading).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: /New Schedule/i }).click();
-      await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(title);
+      const scheduleHeading = page.getByRole('heading', { name: 'New PM Schedule', exact: true });
+      await expect(scheduleHeading).toBeVisible({ timeout: 10_000 });
+      const scheduleDialog = page.getByRole('dialog').filter({ has: scheduleHeading });
+      await scheduleDialog.getByPlaceholder('e.g., Drive System Preventive Maintenance').fill(title);
 
-      if (useTemplate) {
-        const templateLabel = page.locator('label').filter({ hasText: /PM Template$/ }).first();
-        const templateCombobox = templateLabel.locator('..').getByRole('combobox');
-        await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
-        await templateCombobox.click();
-        const templateSearch = page.getByPlaceholder('Search PM templates...');
-        await templateSearch.fill(templateTitle);
-        await page.getByText(`${templateTitle} · 6 tasks`, { exact: true }).click();
-      }
-
-      const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
+      const assetLabel = scheduleDialog.locator('label').filter({ hasText: /^Asset/ }).first();
       const assetCombobox = assetLabel.locator('..').getByRole('combobox');
       await expect(assetCombobox).toBeEnabled({ timeout: 10_000 });
       await assetCombobox.click();
       const assetSearch = page.getByPlaceholder('Search assets by name or tag...');
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
-      await expect(page.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
+      await expect(scheduleDialog.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
 
-      const chooseTargetButton = page.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
+      const chooseTargetButton = scheduleDialog.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
       await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
       await chooseTargetButton.click();
       const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
@@ -168,27 +153,67 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await targetNode.click();
       await explorerDialog.getByRole('button', { name: 'Confirm Selection', exact: true }).click();
       await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
-      await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
+      await expect(scheduleDialog.getByText(targetCode, { exact: false }).first()).toBeVisible();
 
-      const durationLabel = page.locator('label').filter({ hasText: /Est\. Duration/ }).first();
-      await durationLabel.locator('..').locator('input').fill('1');
+      const templateLabel = scheduleDialog.locator('label').filter({ hasText: /Start \/ Replace Tasks from PM Template/ }).first();
+      const templateCombobox = templateLabel.locator('..').getByRole('combobox');
+      await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
+      await templateCombobox.click();
+      const templateSearch = page.getByPlaceholder('Search PM templates...');
+      await templateSearch.fill(templateTitle);
+      await page.getByText(`${templateTitle} · 6 tasks`, { exact: true }).click();
+      await expect(scheduleDialog.getByText('Tasks & Planning', { exact: true })).toBeVisible();
+      await expect(scheduleDialog.getByText(/Task #/)).toHaveCount(6, { timeout: 15_000 });
 
-      await page.getByRole('button', { name: /Create Schedule/i }).click();
+      const nextDue = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const dueInputs = scheduleDialog.locator('input[type="date"]');
+      await expect(dueInputs).toHaveCount(6, { timeout: 10_000 });
+      for (let index = 0; index < 6; index += 1) await dueInputs.nth(index).fill(nextDue);
+
+      await scheduleDialog.getByRole('button', { name: /Create Schedule/i }).click();
+      await expect(scheduleHeading).toBeHidden({ timeout: 20_000 });
       await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
-      if (useTemplate) {
-        await expect(page.getByText(`Template · ${templateTitle} · 6 tasks`, { exact: true })).toBeVisible();
-      }
     };
 
-    await createPmViaUi(assemblyPmTitle, assemblyCode);
-    await createPmViaUi(partPmTitle, partCode, true, assemblyCode);
+    await createTaskLevelPmViaUi(partTaskLevelPmTitle, partCode, assemblyCode);
 
-    const partScheduleRow = page.getByRole('row').filter({ hasText: partPmTitle });
-    await expect(partScheduleRow).toBeVisible();
-    await partScheduleRow.getByRole('button').last().click();
+    // Slice 3 deliberately keeps the legacy generation engine fail-closed for new
+    // task-level schedules. Seed separate compatibility schedules through the API so
+    // this UAT can continue protecting the legacy generation runtime as well.
+    const createLegacyPm = async (title: string, componentId: string, useTemplate = false) => {
+      const created = await apiCall(plannerToken, 'POST', '/api/pm-schedules', {
+        title,
+        assetId,
+        componentId,
+        templateId: useTemplate ? templateId : null,
+        frequencyType: 'time_day',
+        frequencyValue: 1,
+        frequencyUnit: 'months',
+        nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        estimatedDuration: 1,
+        priority: 'high',
+        autoGenerateWO: true,
+        leadDays: 3,
+      });
+      expect(created.status).toBe(201);
+      expect(created.data.data?.componentId).toBe(componentId);
+    };
+
+    await createLegacyPm(assemblyPmTitle, assembly.id);
+    await createLegacyPm(partPmTitle, part.id, true);
+
+    await page.goto('/#/pm-schedules');
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(assemblyPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(partPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(partTaskLevelPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    const taskLevelScheduleRow = page.getByRole('row').filter({ hasText: partTaskLevelPmTitle });
+    await expect(taskLevelScheduleRow).toBeVisible();
+    await taskLevelScheduleRow.getByRole('button').last().click();
     await page.getByRole('menuitem', { name: 'View', exact: true }).click();
-    const viewHeading = page.getByRole('heading', { name: `PM Schedule · ${partPmTitle}`, exact: true });
+    const viewHeading = page.getByRole('heading', { name: `PM Schedule · ${partTaskLevelPmTitle}`, exact: true });
     await expect(viewHeading).toBeVisible({ timeout: 10_000 });
     const viewDialog = page.getByRole('dialog').filter({ has: viewHeading });
     await expect(viewDialog.getByText('PM Target', { exact: true })).toBeVisible();

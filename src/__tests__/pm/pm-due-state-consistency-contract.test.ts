@@ -44,11 +44,14 @@ describe('PM due-state consistency contract', () => {
     expect(maintenancePage).not.toContain('now.setHours(0, 0, 0, 0);');
   });
 
-  it('hides calendar date controls and local calendar counts for usage schedules', () => {
+  it('keeps calendar controls legacy-only and computes local counts from task-level due dates when present', () => {
     expect(maintenancePage).toContain("const formUsesCalendarCadence = formFreqType === 'time_day'");
-    expect(maintenancePage).toContain('{formUsesCalendarCadence && (');
-    expect(maintenancePage).toContain('isAutoCalculableFrequency(s.frequencyType) && isDueSoon(s.nextDueDate)');
-    expect(maintenancePage).toContain('isAutoCalculableFrequency(s.frequencyType) && isOverdue(s.nextDueDate)');
+    expect(maintenancePage).toContain('data-testid="pm-schedule-legacy-recurrence-grid"');
+    expect(maintenancePage).toContain('{formUsesCalendarCadence && <DatePicker');
+    expect(maintenancePage).toContain('const scheduleDueDates = (schedule: any) =>');
+    expect(maintenancePage).toContain('schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean)');
+    expect(maintenancePage).toContain('scheduleDueDates(s).some((due: string) => isDueSoon(due))');
+    expect(maintenancePage).toContain('scheduleDueDates(s).some((due: string) => isOverdue(due))');
     expect(calendarPage).toContain('isAutoCalculableFrequency(s.frequencyType)');
     expect(calendarPage).toContain('isAutoCalculableFrequency(schedule.frequencyType)');
   });

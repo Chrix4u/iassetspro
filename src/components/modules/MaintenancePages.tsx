@@ -8973,7 +8973,9 @@ export function PmSchedulesPage() {
               fetchOptions={fetchPmAssetOptions}
               placeholder="Select asset..."
               searchPlaceholder="Search assets by name or tag..."
+              disabled={Boolean(editItem)}
             />
+            {editItem && <p className="text-[11px] text-muted-foreground">Asset is fixed after schedule creation. Create a new schedule to move this plan to another asset.</p>}
           </div>
 
           {formAssetId && (

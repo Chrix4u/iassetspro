@@ -7,7 +7,7 @@ import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
 import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
-import { normalizePmScheduledTasks, syncPmScheduledTasks } from '@/services/pm/pmScheduleTask.service';
+import { PmScheduleTaskValidationError, normalizePmScheduledTasks, syncPmScheduledTasks } from '@/services/pm/pmScheduleTask.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,9 +154,10 @@ export async function POST(request: NextRequest) {
     if (normalizedScheduledTasks && !normalizedScheduledTasks.ok) {
       return NextResponse.json({ success: false, error: normalizedScheduledTasks.error }, { status: 400 });
     }
-    const effectiveFrequencyType = scheduledTasksProvided ? (frequencyType || 'time_day') : frequencyType;
-    const effectiveFrequencyValue = scheduledTasksProvided && (frequencyValue === undefined || frequencyValue === null) ? 1 : frequencyValue;
-    const effectiveFrequencyUnit = scheduledTasksProvided ? (frequencyUnit || 'days') : frequencyUnit;
+    const effectiveFrequencyType = scheduledTasksProvided ? 'time_day' : frequencyType;
+    const effectiveFrequencyValue = scheduledTasksProvided ? 1 : frequencyValue;
+    const effectiveFrequencyUnit = scheduledTasksProvided ? 'days' : frequencyUnit;
+    const effectiveMeterName = scheduledTasksProvided ? null : meterName;
 
     if (!effectiveFrequencyType || effectiveFrequencyValue === undefined || effectiveFrequencyValue === null) {
       return NextResponse.json(
@@ -178,7 +179,7 @@ export async function POST(request: NextRequest) {
         frequencyType: effectiveFrequencyType,
         frequencyValue: normalizedFrequencyValue,
         frequencyUnit: effectiveFrequencyUnit,
-        meterName,
+        meterName: effectiveMeterName,
       });
       if (!rawFrequencyValidation.ok) {
         return NextResponse.json({ success: false, error: rawFrequencyValidation.error }, { status: 400 });
@@ -189,7 +190,7 @@ export async function POST(request: NextRequest) {
       frequencyType: effectiveFrequencyType,
       frequencyValue: normalizedFrequencyValue,
       frequencyUnit: effectiveFrequencyUnit,
-      meterName,
+      meterName: effectiveMeterName,
     });
     const legacyComponentUsageRequested = ['meter_based'].includes(effectiveFrequencyType)
       && !canonicalFrequency.meterName;
@@ -200,11 +201,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const rawLeadDays = leadDays === undefined
-      || leadDays === null
-      || (typeof leadDays === 'string' && leadDays.trim() === '')
-      ? 3
-      : leadDays;
+    const rawLeadDays = scheduledTasksProvided
+      ? 0
+      : leadDays === undefined
+        || leadDays === null
+        || (typeof leadDays === 'string' && leadDays.trim() === '')
+        ? 3
+        : leadDays;
     const normalizedLeadDays = typeof rawLeadDays === 'number' || typeof rawLeadDays === 'string'
       ? Number(rawLeadDays)
       : Number.NaN;
@@ -231,6 +234,12 @@ export async function POST(request: NextRequest) {
     }
 
     const inlineTasksProvided = inlineTasks !== undefined;
+    if (scheduledTasksProvided && inlineTasksProvided) {
+      return NextResponse.json(
+        { success: false, error: 'Task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' },
+        { status: 400 },
+      );
+    }
     const normalizedInlineTasksResult = inlineTasksProvided ? normalizePmScheduleTasks(inlineTasks) : null;
     if (normalizedInlineTasksResult && !normalizedInlineTasksResult.ok) {
       return NextResponse.json({ success: false, error: normalizedInlineTasksResult.error }, { status: 400 });
@@ -357,12 +366,16 @@ export async function POST(request: NextRequest) {
           where: { id: templateId },
           select: {
             id: true,
+            plantId: true,
             isActive: true,
             tasks: { where: { isActive: true }, take: 1, select: { id: true } },
           },
         });
         if (!template || !template.isActive || template.tasks.length === 0) {
           return { kind: 'invalid_template' as const };
+        }
+        if (scheduledTasksProvided && template.plantId !== assetExists.plantId) {
+          return { kind: 'invalid_template_plant' as const };
         }
       }
 
@@ -404,7 +417,7 @@ export async function POST(request: NextRequest) {
           })
         : [];
 
-      if (selectedMeter) {
+      if (!scheduledTasksProvided && selectedMeter) {
         await tx.pmTrigger.create({
           data: {
             scheduleId: createdSchedule.id,
@@ -423,7 +436,8 @@ export async function POST(request: NextRequest) {
           },
         });
       } else if (
-        componentForTrigger
+        !scheduledTasksProvided
+        && componentForTrigger
         && preserveLegacyComponentUsage
         && Number(effectiveFrequencyValue) > 0
       ) {
@@ -472,10 +486,19 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (scheduleResult.kind === 'invalid_template_plant') {
+      return NextResponse.json(
+        { success: false, error: 'Task-level PM template must belong to the same plant as the schedule asset' },
+        { status: 400 },
+      );
+    }
 
     return NextResponse.json({ success: true, data: scheduleResult.createdSchedule }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create PM schedule';
+    if (error instanceof PmScheduleTaskValidationError) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

@@ -47,6 +47,11 @@ describe('PM task-level schedule form contract', () => {
     expect(page).toContain('Legacy header cadence');
   });
 
+  it('locks the asset identity while editing an existing schedule', () => {
+    expect(page).toContain('disabled={Boolean(editItem)}');
+    expect(page).toContain('Asset is fixed after schedule creation. Create a new schedule to move this plan to another asset.');
+  });
+
   it('keeps task-level automatic generation fail-closed until the task engines land', () => {
     expect(page).toContain('Task-level automation is staged safely');
     expect(page).toContain('Legacy automatic generation stays disabled');

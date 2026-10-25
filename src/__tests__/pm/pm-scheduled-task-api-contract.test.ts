@@ -58,7 +58,7 @@ const schedule = (overrides: Record<string, unknown> = {}) => ({
   createdAt: stamp, updatedAt: stamp,
   asset: { id: 'asset-1', name: 'Pump A', assetTag: 'P-001', status: 'active', plantId: 'plant-1' },
   component: null, assignedTo: null, department: null, template: null,
-  createdBy: { id: 'planner-1', fullName: 'Planner', username: 'planner' }, trigger: null, ...overrides,
+  createdBy: { id: 'planner-1', fullName: 'Planner', username: 'planner' }, trigger: null, tasks: [], ...overrides,
 });
 const taskPayload = () => [
   { pmTaskId: 'task-1', sortOrder: 0, maintenanceMode: 'tbm', equipmentState: 'stopped', estimatedMinutes: 30, leadDays: 2, frequencyInterval: 30, frequencyUnit: 'days', nextDueDate: '2026-11-24T00:00:00.000Z' },
@@ -77,6 +77,9 @@ describe('PM scheduled-task API contract', () => {
     mocks.canAccessPlantStrict.mockReturnValue(true);
     mocks.getAssetLiveLocationMap.mockResolvedValue(new Map());
     mocks.db.asset.findUnique.mockResolvedValue({ id: 'asset-1', plantId: 'plant-1' });
+    mocks.db.componentRegistry.findUnique.mockResolvedValue(null);
+    mocks.db.meterReading.findFirst.mockResolvedValue(null);
+    mocks.tx.pmTemplate.findUnique.mockResolvedValue(null);
     mocks.tx.pmTask.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => {
       const all = [taskMaster('task-1', 1), taskMaster('task-2', 2), taskMaster('task-3', 3)];
       return all.filter((task) => where.id.in.includes(task.id));
@@ -122,6 +125,57 @@ describe('PM scheduled-task API contract', () => {
     expect(mocks.tx.pmSchedule.create).not.toHaveBeenCalled();
   });
 
+  it('neutralizes supplied legacy cadence and never creates a legacy trigger for task-level POST', async () => {
+    mocks.db.meterReading.findFirst.mockResolvedValue({ id: 'reading-1', value: 1250, meterName: 'Operating Hours', unit: 'hours' });
+    mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
+
+    const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
+      title: 'Task-level PM', assetId: 'asset-1', scheduledTasks: taskPayload(),
+      frequencyType: 'meter', frequencyValue: 500, frequencyUnit: 'hours', meterName: 'Operating Hours',
+      autoGenerateWO: true, nextDueDate: '2026-12-01T00:00:00.000Z', leadDays: 9,
+    }) as never);
+
+    expect(response.status).toBe(201);
+    expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', meterName: null,
+      nextDueDate: null, leadDays: 0, autoGenerateWO: false,
+    }) }));
+    expect(mocks.tx.pmTrigger.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects mixing legacy inline snapshots with task-level Scheduled Tasks', async () => {
+    const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
+      title: 'Mixed model PM', assetId: 'asset-1', scheduledTasks: taskPayload(),
+      inlineTasks: [{ description: 'Legacy copied task', taskType: 'check' }],
+    }) as never);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/inline|scheduled task|task-level/i);
+    expect(mocks.tx.pmSchedule.create).not.toHaveBeenCalled();
+  });
+
+  it('returns task-level Task Master ownership validation as a client error', async () => {
+    mocks.tx.pmTask.findMany.mockResolvedValue([]);
+    mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
+    const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
+      title: 'Cross-plant task PM', assetId: 'asset-1', scheduledTasks: [taskPayload()[0]],
+    }) as never);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/plant|active|task library/i);
+  });
+
+  it('rejects a task-level template that is not owned by the schedule plant', async () => {
+    mocks.tx.pmTemplate.findUnique.mockResolvedValue({
+      id: 'template-evil', plantId: 'plant-evil', isActive: true, tasks: [{ id: 'template-task-1' }],
+    });
+    mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
+    const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
+      title: 'Cross-plant template PM', assetId: 'asset-1', templateId: 'template-evil', scheduledTasks: [taskPayload()[0]],
+    }) as never);
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/template.*plant|same plant/i);
+    expect(mocks.tx.pmSchedule.create).not.toHaveBeenCalled();
+  });
+
   it('preserves the legacy header-cadence create path when scheduledTasks is absent', async () => {
     mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
     const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
@@ -164,6 +218,86 @@ describe('PM scheduled-task API contract', () => {
       expect.objectContaining({ sourceType: 'component_condition', sourceId: 'component-1', metric: 'vibration', currentValue: 4.2 }),
       expect.objectContaining({ sourceType: 'component_condition', sourceId: 'component-1', metric: 'temperature', currentValue: 68 }),
     ]);
+  });
+
+  it('rejects enabling the legacy generation engine on an existing task-level schedule', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      autoGenerateWO: true,
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/task-level|automatic generation|legacy/i);
+    expect(mocks.tx.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
+  it('requires Scheduled Tasks to be resubmitted when a task-level target changes', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.db.componentRegistry.findUnique.mockResolvedValue({ id: 'component-2', assetId: 'asset-1' });
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      componentId: 'component-2',
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/target|scheduled task|revalidate/i);
+    expect(mocks.tx.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects legacy header recurrence edits on an existing task-level schedule', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      frequencyType: 'time_day', frequencyValue: 2, frequencyUnit: 'days',
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/task-level|recurrence|scheduled task/i);
+    expect(mocks.tx.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects legacy recurrence fields when a legacy schedule transitions to Scheduled Tasks', async () => {
+    const existing = schedule({ tasks: [] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      scheduledTasks: [taskPayload()[0]],
+      frequencyType: 'time_day', frequencyValue: 2, frequencyUnit: 'days',
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/task-level|recurrence|scheduled task/i);
+  });
+
+  it('rejects legacy inline snapshots on an existing task-level plan even without resubmitting Scheduled Tasks', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      inlineTasks: [{ description: 'Legacy copied task', taskType: 'check' }],
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/inline|scheduled task|task-level/i);
+  });
+
+  it('rejects mixing inline snapshots into an existing task-level plan', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      scheduledTasks: [{ ...taskPayload()[0], id: 'scheduled-1' }],
+      inlineTasks: [{ description: 'Legacy copied task', taskType: 'check' }],
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/inline|scheduled task|task-level/i);
+  });
+
+  it('rejects cross-plant template changes on a task-level schedule', async () => {
+    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmTemplate.findUnique.mockResolvedValue({
+      id: 'template-evil', plantId: 'plant-evil', isActive: true, tasks: [{ id: 'template-task-1' }],
+    });
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      templateId: 'template-evil', scheduledTasks: [{ ...taskPayload()[0], id: 'scheduled-1' }],
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toMatch(/template.*plant|same plant/i);
   });
 
   it('updates task rows inside the schedule transaction and keeps legacy automation disabled', async () => {

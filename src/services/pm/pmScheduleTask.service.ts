@@ -12,6 +12,13 @@ export type PmScheduleTaskTimeUnit = (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number
 export type PmConditionOperator = (typeof PM_CONDITION_OPERATORS)[number];
 export type PmConditionSourceType = (typeof PM_CONDITION_SOURCE_TYPES)[number];
 
+export class PmScheduleTaskValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PmScheduleTaskValidationError';
+  }
+}
+
 export interface PmScheduledTaskInput {
   id?: unknown;
   pmTaskId?: unknown;
@@ -206,6 +213,10 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
     });
   }
 
+  if (!tasks.some((task) => task.isActive)) {
+    return { ok: false, error: 'At least one active scheduled task is required' };
+  }
+
   return { ok: true, tasks };
 }
 
@@ -247,7 +258,7 @@ export async function syncPmScheduledTasks(
   input: SyncPmScheduledTasksInput,
 ) {
   const normalized = normalizePmScheduledTasks(input.tasks);
-  if (!normalized.ok) throw new Error(normalized.error);
+  if (!normalized.ok) throw new PmScheduleTaskValidationError(normalized.error);
 
   const taskIds = normalized.tasks.map((task) => task.pmTaskId);
   const masters = await tx.pmTask.findMany({
@@ -256,7 +267,7 @@ export async function syncPmScheduledTasks(
   });
   const masterIds = new Set(masters.map((task) => task.id));
   if (masterIds.size !== taskIds.length || taskIds.some((id) => !masterIds.has(id))) {
-    throw new Error('Every scheduled Task Library record must be active and belong to the schedule plant');
+    throw new PmScheduleTaskValidationError('Every scheduled Task Library record must be active and belong to the schedule plant');
   }
 
   const existingRows = await tx.pmScheduleTask.findMany({
@@ -269,7 +280,7 @@ export async function syncPmScheduledTasks(
   for (const task of normalized.tasks) {
     const existingById = task.id ? byId.get(task.id) : undefined;
     if (task.id && (!existingById || existingById.pmTaskId !== task.pmTaskId)) {
-      throw new Error('Scheduled task identity does not belong to this schedule or Task Master');
+      throw new PmScheduleTaskValidationError('Scheduled task identity does not belong to this schedule or Task Master');
     }
     const existing = existingById || byTaskId.get(task.pmTaskId);
 
@@ -279,7 +290,7 @@ export async function syncPmScheduledTasks(
         orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
         select: { id: true, value: true, meterName: true, unit: true },
       });
-      if (!reading) throw new Error('Selected UBM meter does not exist on the schedule asset');
+      if (!reading) throw new PmScheduleTaskValidationError('Selected UBM meter does not exist on the schedule asset');
       if (task.nextDueReading === null) {
         const preserved = existing?.maintenanceMode === 'ubm'
           && existing.meterName === task.meterName
@@ -295,25 +306,25 @@ export async function syncPmScheduledTasks(
     if (task.maintenanceMode === 'cbm') {
       if (task.conditionSourceType === 'component_condition') {
         if (!input.componentId || task.conditionSourceId !== input.componentId) {
-          throw new Error('Component CBM source must belong to the selected schedule target');
+          throw new PmScheduleTaskValidationError('Component CBM source must belong to the selected schedule target');
         }
         const reading = await tx.componentConditionReading.findFirst({
           where: { componentId: input.componentId, parameterKey: task.conditionMetric! },
           orderBy: { recordedAt: 'desc' },
           select: { id: true, value: true, unit: true },
         });
-        if (!reading) throw new Error('Selected component condition source has no reading for this schedule target');
+        if (!reading) throw new PmScheduleTaskValidationError('Selected component condition source has no reading for this schedule target');
         task.conditionUnit = reading.unit;
       } else {
         if (input.componentId) {
-          throw new Error('Component-targeted CBM must use a condition reading from the selected component');
+          throw new PmScheduleTaskValidationError('Component-targeted CBM must use a condition reading from the selected component');
         }
         const device = await tx.iotDevice.findUnique({
           where: { id: task.conditionSourceId! },
           select: { id: true, assetId: true, plantId: true, parameter: true, unit: true, isActive: true },
         });
         if (!device || !device.isActive || device.assetId !== input.assetId || (device.plantId && device.plantId !== input.plantId)) {
-          throw new Error('Selected IoT condition source must be active on the schedule asset and plant');
+          throw new PmScheduleTaskValidationError('Selected IoT condition source must be active on the schedule asset and plant');
         }
         task.conditionMetric = device.parameter;
         task.conditionUnit = device.unit;

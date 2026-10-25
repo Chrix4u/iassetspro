@@ -97,6 +97,13 @@ describe('pmScheduleTask.service', () => {
     expect(normalizePmScheduledTasks([baseTbm({ equipmentState: 'sometimes' })])).toEqual(expect.objectContaining({ ok: false }));
   });
 
+  it('rejects a task-level plan with no active scheduled task', () => {
+    expect(normalizePmScheduledTasks([baseTbm({ isActive: false })])).toEqual({
+      ok: false,
+      error: 'At least one active scheduled task is required',
+    });
+  });
+
   it('requires mode-specific UBM and CBM configuration', () => {
     expect(normalizePmScheduledTasks([baseTbm({ maintenanceMode: 'ubm', frequencyUnit: 'hours', nextDueDate: null })])).toEqual(expect.objectContaining({ ok: false }));
     expect(normalizePmScheduledTasks([baseTbm({

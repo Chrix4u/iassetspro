@@ -7,6 +7,7 @@ import { calculateNextDueDate, isPmFrequencyType } from '@/lib/pm-utils';
 import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFrequency } from '@/lib/pm-frequency';
 import { lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
+import { normalizePmScheduledTasks, syncPmScheduledTasks } from '@/services/pm/pmScheduleTask.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },
         template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } },
+        tasks: { where: { isActive: true }, include: { pmTask: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
       },
       orderBy: { nextDueDate: 'asc' },
     });
@@ -85,6 +87,7 @@ export async function GET(request: NextRequest) {
     const liveLocations = await getAssetLiveLocationMap(assetIds);
     const enrichedSchedules = schedules.map((schedule) => ({
       ...schedule,
+      scheduledTasks: schedule.tasks,
       asset: schedule.asset
         ? { ...schedule.asset, functionalLocation: liveLocations.get(schedule.asset.id) ?? null }
         : schedule.asset,
@@ -136,6 +139,7 @@ export async function POST(request: NextRequest) {
       autoGenerateWO,
       leadDays,
       inlineTasks,
+      scheduledTasks,
     } = body;
 
     if (!title || !assetId) {
@@ -145,26 +149,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!frequencyType || frequencyValue === undefined || frequencyValue === null) {
+    const scheduledTasksProvided = scheduledTasks !== undefined;
+    const normalizedScheduledTasks = scheduledTasksProvided ? normalizePmScheduledTasks(scheduledTasks) : null;
+    if (normalizedScheduledTasks && !normalizedScheduledTasks.ok) {
+      return NextResponse.json({ success: false, error: normalizedScheduledTasks.error }, { status: 400 });
+    }
+    const effectiveFrequencyType = scheduledTasksProvided ? (frequencyType || 'time_day') : frequencyType;
+    const effectiveFrequencyValue = scheduledTasksProvided && (frequencyValue === undefined || frequencyValue === null) ? 1 : frequencyValue;
+    const effectiveFrequencyUnit = scheduledTasksProvided ? (frequencyUnit || 'days') : frequencyUnit;
+
+    if (!effectiveFrequencyType || effectiveFrequencyValue === undefined || effectiveFrequencyValue === null) {
       return NextResponse.json(
         { success: false, error: 'Frequency type and value are required' },
         { status: 400 }
       );
     }
 
-    if (!isPmFrequencyType(frequencyType)) {
+    if (!isPmFrequencyType(effectiveFrequencyType)) {
       return NextResponse.json({ success: false, error: 'Invalid PM frequency type' }, { status: 400 });
     }
-    const normalizedFrequencyValue = Number(frequencyValue);
+    const normalizedFrequencyValue = Number(effectiveFrequencyValue);
     if (!Number.isInteger(normalizedFrequencyValue) || normalizedFrequencyValue <= 0) {
       return NextResponse.json({ success: false, error: 'Frequency value must be a positive whole number' }, { status: 400 });
     }
 
-    if (isCanonicalPmFrequencyType(frequencyType)) {
+    if (isCanonicalPmFrequencyType(effectiveFrequencyType)) {
       const rawFrequencyValidation = validateCanonicalPmFrequency({
-        frequencyType,
+        frequencyType: effectiveFrequencyType,
         frequencyValue: normalizedFrequencyValue,
-        frequencyUnit,
+        frequencyUnit: effectiveFrequencyUnit,
         meterName,
       });
       if (!rawFrequencyValidation.ok) {
@@ -173,14 +186,14 @@ export async function POST(request: NextRequest) {
     }
 
     const canonicalFrequency = normalizePmFrequency({
-      frequencyType,
+      frequencyType: effectiveFrequencyType,
       frequencyValue: normalizedFrequencyValue,
-      frequencyUnit,
+      frequencyUnit: effectiveFrequencyUnit,
       meterName,
     });
-    const legacyComponentUsageRequested = ['meter_based'].includes(frequencyType)
+    const legacyComponentUsageRequested = ['meter_based'].includes(effectiveFrequencyType)
       && !canonicalFrequency.meterName;
-    if (!legacyComponentUsageRequested && !isCanonicalPmFrequencyType(frequencyType)) {
+    if (!legacyComponentUsageRequested && !isCanonicalPmFrequencyType(effectiveFrequencyType)) {
       const frequencyValidation = validateCanonicalPmFrequency(canonicalFrequency);
       if (!frequencyValidation.ok) {
         return NextResponse.json({ success: false, error: frequencyValidation.error }, { status: 400 });
@@ -310,11 +323,11 @@ export async function POST(request: NextRequest) {
     }
 
     const preserveLegacyComponentUsage = legacyComponentUsageRequested && Boolean(componentForTrigger);
-    const storedFrequencyType = preserveLegacyComponentUsage ? frequencyType : canonicalFrequency.frequencyType;
+    const storedFrequencyType = preserveLegacyComponentUsage ? effectiveFrequencyType : canonicalFrequency.frequencyType;
     const storedFrequencyUnit = preserveLegacyComponentUsage ? null : canonicalFrequency.frequencyUnit;
     const storedMeterName = preserveLegacyComponentUsage ? null : canonicalFrequency.meterName;
     const calendarFrequency = preserveLegacyComponentUsage ? null : canonicalFrequency;
-    const canonicalNextDueDate = calendarFrequency?.frequencyType === 'time_day'
+    const canonicalNextDueDate = !scheduledTasksProvided && calendarFrequency?.frequencyType === 'time_day'
       ? (normalizedNextDueDate ?? calculateNextDueDate(
           normalizedLastCompletedDate ?? new Date(),
           calendarFrequency.frequencyType,
@@ -322,7 +335,7 @@ export async function POST(request: NextRequest) {
           calendarFrequency.frequencyUnit,
         ))
       : null;
-    const effectiveLeadDays = calendarFrequency?.frequencyType === 'time_day' ? normalizedLeadDays : 0;
+    const effectiveLeadDays = !scheduledTasksProvided && calendarFrequency?.frequencyType === 'time_day' ? normalizedLeadDays : 0;
 
     const scheduleResult = await db.$transaction(async (tx) => {
       let effectiveTemplateId = templateId || null;
@@ -370,7 +383,7 @@ export async function POST(request: NextRequest) {
           assignedToId: assignedToId || null,
           departmentId: departmentId || null,
           templateId: effectiveTemplateId,
-          autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
+          autoGenerateWO: scheduledTasksProvided ? false : (autoGenerateWO !== undefined ? autoGenerateWO : true),
           leadDays: effectiveLeadDays,
           createdById: session.userId,
         },
@@ -383,6 +396,13 @@ export async function POST(request: NextRequest) {
           createdBy: { select: { id: true, fullName: true, username: true } },
         },
       });
+
+      const taskRows = scheduledTasksProvided
+        ? await syncPmScheduledTasks(tx, {
+            scheduleId: createdSchedule.id, plantId: assetExists.plantId, assetId,
+            componentId: componentId || null, tasks: scheduledTasks,
+          })
+        : [];
 
       if (selectedMeter) {
         await tx.pmTrigger.create({
@@ -405,7 +425,7 @@ export async function POST(request: NextRequest) {
       } else if (
         componentForTrigger
         && preserveLegacyComponentUsage
-        && Number(frequencyValue) > 0
+        && Number(effectiveFrequencyValue) > 0
       ) {
         await tx.pmTrigger.create({
           data: {
@@ -443,7 +463,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      return { kind: 'created' as const, createdSchedule };
+      return { kind: 'created' as const, createdSchedule: { ...createdSchedule, scheduledTasks: taskRows } };
     });
 
     if (scheduleResult.kind === 'invalid_template') {

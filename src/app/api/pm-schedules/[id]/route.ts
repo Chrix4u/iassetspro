@@ -9,6 +9,7 @@ import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFr
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
 import { resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
+import { normalizePmScheduledTasks, syncPmScheduledTasks } from '@/services/pm/pmScheduleTask.service';
 
 export async function GET(
   request: NextRequest,
@@ -40,6 +41,7 @@ export async function GET(
         department: { select: { id: true, name: true, code: true } },
         template: { select: { id: true, title: true, type: true, category: true, tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true } }, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
+        tasks: { where: { isActive: true }, include: { pmTask: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
       },
     });
 
@@ -61,6 +63,7 @@ export async function GET(
       success: true,
       data: {
         ...schedule,
+        scheduledTasks: schedule.tasks,
         template: resolvedTemplate,
         asset: {
           ...schedule.asset,
@@ -84,6 +87,11 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
     const body = await request.json();
+    const scheduledTasksProvided = body.scheduledTasks !== undefined;
+    const normalizedScheduledTasks = scheduledTasksProvided ? normalizePmScheduledTasks(body.scheduledTasks) : null;
+    if (normalizedScheduledTasks && !normalizedScheduledTasks.ok) {
+      return NextResponse.json({ success: false, error: normalizedScheduledTasks.error }, { status: 400 });
+    }
     const inlineTasksProvided = body.inlineTasks !== undefined;
     const normalizedInlineTasksResult = inlineTasksProvided ? normalizePmScheduleTasks(body.inlineTasks) : null;
     if (normalizedInlineTasksResult && !normalizedInlineTasksResult.ok) {
@@ -177,6 +185,8 @@ export async function PUT(
       }
       updateData.leadDays = normalizedLeadDays;
     }
+    if (scheduledTasksProvided) updateData.autoGenerateWO = false;
+
     if (body.estimatedDuration !== undefined) {
       const rawEstimatedDuration = body.estimatedDuration === null
         || (typeof body.estimatedDuration === 'string' && body.estimatedDuration.trim() === '')
@@ -580,7 +590,17 @@ export async function PUT(
         },
       });
 
-      return { kind: 'updated' as const, nextSchedule };
+      const taskRows = scheduledTasksProvided
+        ? await syncPmScheduledTasks(tx, {
+            scheduleId: id,
+            plantId: lockedSchedule.asset.plantId,
+            assetId: lockedSchedule.assetId,
+            componentId: lockedProspectiveComponentId,
+            tasks: body.scheduledTasks,
+          })
+        : [];
+
+      return { kind: 'updated' as const, nextSchedule: { ...nextSchedule, ...(scheduledTasksProvided ? { scheduledTasks: taskRows } : {}) } };
     });
 
     if (updateResult.kind === 'open_work') {

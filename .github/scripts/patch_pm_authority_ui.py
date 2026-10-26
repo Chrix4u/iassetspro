@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 path = Path('src/components/modules/MaintenancePages.tsx')
 text = path.read_text()
@@ -107,7 +108,7 @@ text = text.replace(
     "{viewItem.recurrenceAuthority === 'task' ? (",
 )
 
-# Repair the first automated attempt's two malformed/non-null-safe expressions.
+# Repair the first automated attempt's malformed/non-null-safe expressions.
 text = text.replace(
     "`Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}`",
     "`Task-level · ${viewItem.scheduledTasks?.length ?? 0} independent task${viewItem.scheduledTasks?.length === 1 ? '' : 's'}`",
@@ -121,17 +122,19 @@ text = text.replace(
     "{(viewItem.scheduledTasks || []).map((task: any) => {",
 )
 
-# Safety assertions: reject only real row-presence authority patterns, not valid ?? fallbacks.
+# Safety assertions: reject actual row-presence ternaries, while allowing ?? fallbacks.
 for forbidden in (
     "editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0)",
     "if (Array.isArray(schedule.scheduledTasks) && schedule.scheduledTasks.length > 0)",
-    "{viewItem.scheduledTasks?.length ?",
     "viewItem.recurrenceAuthority === 'task' ??",
     "Staged · task engines pending",
     "Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.",
 ):
     if forbidden in text:
         raise SystemExit(f'forbidden stale UI authority expression remains: {forbidden}')
+
+if re.search(r"\{viewItem\.scheduledTasks\?\.length \?(?!\?)", text):
+    raise SystemExit('forbidden row-presence detail authority ternary remains')
 
 for required in (
     "editItem && editItem.recurrenceAuthority !== 'task'",

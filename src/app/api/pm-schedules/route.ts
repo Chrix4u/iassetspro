@@ -396,7 +396,7 @@ export async function POST(request: NextRequest) {
           assignedToId: assignedToId || null,
           departmentId: departmentId || null,
           templateId: effectiveTemplateId,
-          autoGenerateWO: scheduledTasksProvided ? false : (autoGenerateWO !== undefined ? autoGenerateWO : true),
+          autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
           leadDays: effectiveLeadDays,
           createdById: session.userId,
         },

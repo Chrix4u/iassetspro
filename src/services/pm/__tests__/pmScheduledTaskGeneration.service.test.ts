@@ -186,12 +186,30 @@ describe('pmScheduledTaskGeneration.service', () => {
   });
 
   it('filters already-generated non-cancelled task cycles before creating a WO', async () => {
-    mocks.tx.workOrderTaskExecution.findMany.mockResolvedValue([{ pmScheduleTaskId: 'task-1', pmDueCycleKey: 'tbm:task-1:2026-11-01T00:00:00.000Z' }]);
+    mocks.tx.workOrderTaskExecution.findMany.mockResolvedValue([{
+      id: 'execution-1', workOrderId: 'wo-existing', pmScheduleTaskId: 'task-1',
+      pmDueCycleKey: 'tbm:task-1:2026-11-01T00:00:00.000Z', status: 'completed',
+      workOrder: { status: 'closed' },
+    }]);
     const result = await run({ actorId: 'actor-1', scheduleIds: ['schedule-1'] });
     expect(result.generated).toBe(0);
     expect(result.skipped).toBeGreaterThanOrEqual(1);
     expect(mocks.tx.workOrder.create).not.toHaveBeenCalled();
     expect(mocks.materialize).not.toHaveBeenCalled();
+  });
+
+  it('regenerates a due cycle when its only prior execution was skipped in a closed WO', async () => {
+    mocks.tx.workOrderTaskExecution.findMany.mockResolvedValue([{
+      id: 'execution-skipped', workOrderId: 'wo-closed', pmScheduleTaskId: 'task-1',
+      pmDueCycleKey: 'tbm:task-1:2026-11-01T00:00:00.000Z', status: 'skipped',
+      workOrder: { status: 'closed' },
+    }]);
+
+    const result = await run({ actorId: 'actor-1', scheduleIds: ['schedule-1'] });
+
+    expect(result.generated).toBe(1);
+    expect(mocks.tx.workOrder.create).toHaveBeenCalledTimes(1);
+    expect(mocks.materialize).toHaveBeenCalledTimes(1);
   });
 
   it('requires autoGenerateWO for ordinary discovery but allows explicit scheduleIds for controlled UAT/internal eligibility', async () => {
@@ -220,7 +238,11 @@ describe('pmScheduledTaskGeneration.service', () => {
       return current;
     });
     mocks.tx.workOrderTaskExecution.findMany.mockImplementation(async () => generated
-      ? [{ pmScheduleTaskId: 'task-1', pmDueCycleKey: 'tbm:task-1:2026-11-01T00:00:00.000Z' }]
+      ? [{
+          id: 'execution-1', workOrderId: 'wo-existing', pmScheduleTaskId: 'task-1',
+          pmDueCycleKey: 'tbm:task-1:2026-11-01T00:00:00.000Z', status: 'completed',
+          workOrder: { status: 'in_progress' },
+        }]
       : []);
     mocks.materialize.mockImplementation(async (_tx: unknown, _woId: string, candidates: any[]) => {
       generated = true;

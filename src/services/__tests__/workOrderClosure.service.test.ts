@@ -10,6 +10,7 @@ const {
   mockIsAutoCalculableFrequency,
   mockSendRepairNotification,
   mockBuildAuditData,
+  mockAdvanceScheduledTaskRecurrence,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
@@ -29,6 +30,7 @@ const {
   mockIsAutoCalculableFrequency: vi.fn(),
   mockSendRepairNotification: vi.fn(),
   mockBuildAuditData: vi.fn(() => ({})),
+  mockAdvanceScheduledTaskRecurrence: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -44,6 +46,9 @@ vi.mock('@/lib/pm-utils', () => ({
 }));
 vi.mock('@/lib/repair-notifications', () => ({ sendRepairNotification: mockSendRepairNotification }));
 vi.mock('@/lib/audit-helpers', () => ({ buildAuditData: mockBuildAuditData }));
+vi.mock('@/services/pm/advancePmScheduledTaskRecurrence.service', () => ({
+  advanceClosedPmScheduledTaskRecurrence: mockAdvanceScheduledTaskRecurrence,
+}));
 
 import {
   closeRepairWorkOrder,
@@ -119,6 +124,9 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     mockDb.pmSchedule.update.mockResolvedValue({ id: 'pm-1' });
     mockDb.failureRecord.findFirst.mockResolvedValue(null);
     mockDb.failureRecord.upsert.mockResolvedValue({ id: 'wo-wo-1' });
+    mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
+      taskLevel: false, advancedTaskIds: [], skippedTaskIds: [],
+    });
   });
 
   it('advances an active recurring PM only after verified work is planner-closed', async () => {
@@ -137,6 +145,57 @@ describe('workOrderClosure PM lifecycle integrity', () => {
       where: { id: 'pm-1' },
       data: { lastCompletedDate: actualEnd, nextDueDate },
     });
+  });
+
+  it('advances task-level recurrence atomically and never advances the parent legacy schedule', async () => {
+    mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
+      taskLevel: true, advancedTaskIds: ['scheduled-1', 'scheduled-2'], skippedTaskIds: [],
+    });
+
+    const result = await closeRepairWorkOrder('wo-1', plannerSession, {});
+
+    expect(result.success).toBe(true);
+    expect(mockAdvanceScheduledTaskRecurrence).toHaveBeenCalledWith(expect.objectContaining({
+      tx: mockDb,
+      workOrderId: 'wo-1',
+      pmScheduleId: 'pm-1',
+      assetId: 'asset-1',
+      woNumber: 'WO-001',
+      woActualEnd: actualEnd,
+      actorId: 'planner-1',
+    }));
+    expect(mockDb.pmSchedule.findUnique).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
+    expect(mockCalculateNextDueDate).not.toHaveBeenCalled();
+    expect(mockBuildAuditData).toHaveBeenCalledWith(
+      'update', 'work_order', 'wo-1', 'planner-1', expect.any(Object),
+      expect.objectContaining({
+        pmScheduleAdvanced: false,
+        pmScheduledTasksAdvanced: 2,
+        pmScheduledTaskIdsAdvanced: ['scheduled-1', 'scheduled-2'],
+      }),
+      undefined,
+    );
+  });
+
+  it('suppresses legacy parent cadence even when task-level closeout advances zero tasks', async () => {
+    mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
+      taskLevel: true, advancedTaskIds: [], skippedTaskIds: ['scheduled-1'],
+    });
+
+    const result = await closeRepairWorkOrder('wo-1', plannerSession, {});
+
+    expect(result.success).toBe(true);
+    expect(mockDb.pmSchedule.findUnique).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
+    expect(mockBuildAuditData).toHaveBeenCalledWith(
+      'update', 'work_order', 'wo-1', 'planner-1', expect.any(Object),
+      expect.objectContaining({
+        pmScheduledTasksAdvanced: 0,
+        pmScheduledTaskIdsSkipped: ['scheduled-1'],
+      }),
+      undefined,
+    );
   });
 
   it('records completion history for usage-based PM without advancing a calendar due date', async () => {

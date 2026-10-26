@@ -3,7 +3,7 @@ import { materializePmScheduledTasks } from '@/services/pm/materializePmSchedule
 
 const tx = {
   workOrderTaskExecution: {
-    findFirst: vi.fn(),
+    findMany: vi.fn(),
     createMany: vi.fn(),
   },
 };
@@ -59,7 +59,7 @@ const due = (overrides: Record<string, unknown> = {}) => ({
 describe('materializePmScheduledTasks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    tx.workOrderTaskExecution.findFirst.mockResolvedValue(null);
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([]);
     tx.workOrderTaskExecution.createMany.mockResolvedValue({ count: 2 });
   });
 
@@ -90,15 +90,17 @@ describe('materializePmScheduledTasks', () => {
 
     const count = await materializePmScheduledTasks(tx as never, 'wo-1', candidates as never);
     expect(count).toBe(2);
-    expect(tx.workOrderTaskExecution.findFirst).toHaveBeenCalledWith({
+    expect(tx.workOrderTaskExecution.findMany).toHaveBeenCalledWith({
       where: {
         OR: [
           { pmScheduleTaskId: 'scheduled-1', pmDueCycleKey: 'tbm:scheduled-1:2026-11-01T00:00:00.000Z' },
           { pmScheduleTaskId: 'scheduled-3', pmDueCycleKey: 'tbm:scheduled-3:2026-11-01T00:00:00.000Z' },
         ],
-        workOrder: { status: { not: 'cancelled' } },
       },
-      select: { id: true, workOrderId: true, pmScheduleTaskId: true, pmDueCycleKey: true },
+      select: {
+        id: true, workOrderId: true, pmScheduleTaskId: true, pmDueCycleKey: true, status: true,
+        workOrder: { select: { status: true } },
+      },
     });
 
     const create = tx.workOrderTaskExecution.createMany.mock.calls[0][0];
@@ -138,19 +140,32 @@ describe('materializePmScheduledTasks', () => {
     }] as never);
 
     expect(count).toBe(0);
-    expect(tx.workOrderTaskExecution.findFirst).not.toHaveBeenCalled();
+    expect(tx.workOrderTaskExecution.findMany).not.toHaveBeenCalled();
     expect(tx.workOrderTaskExecution.createMany).not.toHaveBeenCalled();
   });
 
   it('rejects an already materialized non-cancelled task cycle before writing', async () => {
-    tx.workOrderTaskExecution.findFirst.mockResolvedValue({
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([{
       id: 'execution-1', workOrderId: 'wo-existing', pmScheduleTaskId: 'scheduled-1',
-      pmDueCycleKey: 'tbm:scheduled-1:2026-11-01T00:00:00.000Z',
-    });
+      pmDueCycleKey: 'tbm:scheduled-1:2026-11-01T00:00:00.000Z', status: 'completed',
+      workOrder: { status: 'closed' },
+    }]);
 
     await expect(materializePmScheduledTasks(tx as never, 'wo-2', [{ task: scheduledTask(), due: due() }] as never))
       .rejects.toThrow(/already materialized/i);
     expect(tx.workOrderTaskExecution.createMany).not.toHaveBeenCalled();
+  });
+
+  it('allows a closed skipped execution to materialize the same due cycle again', async () => {
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([{
+      id: 'execution-skipped', workOrderId: 'wo-closed', pmScheduleTaskId: 'scheduled-1',
+      pmDueCycleKey: 'tbm:scheduled-1:2026-11-01T00:00:00.000Z', status: 'skipped',
+      workOrder: { status: 'closed' },
+    }]);
+
+    await expect(materializePmScheduledTasks(tx as never, 'wo-new', [{ task: scheduledTask(), due: due() }] as never))
+      .resolves.toBe(1);
+    expect(tx.workOrderTaskExecution.createMany).toHaveBeenCalledTimes(1);
   });
 
   it('snapshots UBM/CBM planning and observed due evidence instead of mutable live references', async () => {

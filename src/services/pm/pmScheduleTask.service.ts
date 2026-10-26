@@ -160,7 +160,9 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
     const nextDueDate = rawNextDueDate;
 
     if (mode === 'tbm') {
-      if (frequencyInterval === null || frequencyInterval <= 0) return error(number, 'TBM interval must be greater than zero');
+      if (frequencyInterval === null || !Number.isInteger(frequencyInterval) || frequencyInterval <= 0) {
+        return error(number, 'TBM interval must be a positive whole number');
+      }
       if (!PM_SCHEDULE_TASK_TIME_UNITS.includes(frequencyUnit as PmScheduleTaskTimeUnit)) {
         return error(number, 'TBM unit must be days, weeks, months, or years');
       }

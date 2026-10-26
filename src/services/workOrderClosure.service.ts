@@ -6,6 +6,7 @@ import { normalizeWorkOrderTimeLogs } from '@/services/workOrderTimeLogNormaliza
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
+import { advanceClosedPmScheduledTaskRecurrence } from '@/services/pm/advancePmScheduledTaskRecurrence.service';
 
 export interface ClosureSessionContext {
   userId: string;
@@ -338,46 +339,67 @@ export async function closeRepairWorkOrder(
       }
 
       let pmScheduleAdvanced = false;
+      let pmScheduledTaskIdsAdvanced: string[] = [];
+      let pmScheduledTaskIdsSkipped: string[] = [];
       if (wo.pmScheduleId) {
-        const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
-        if (pmSchedule && pmSchedule.isActive) {
-          const pmCompletedAt = wo.actualEnd || closedAt;
-          const usesCalendarCadence = isAutoCalculableFrequency(pmSchedule.frequencyType);
-          const nextDueDate = usesCalendarCadence
-            ? calculateNextDueDate(
-                pmCompletedAt,
-                pmSchedule.frequencyType,
-                pmSchedule.frequencyValue,
-              )
-            : null;
-          await tx.pmSchedule.update({
-            where: { id: pmSchedule.id },
-            data: usesCalendarCadence
-              ? { lastCompletedDate: pmCompletedAt, nextDueDate }
-              : { lastCompletedDate: pmCompletedAt },
-          });
-          await tx.auditLog.create({
-            data: buildAuditData(
-              'update',
-              'pm_schedule',
-              pmSchedule.id,
-              session.userId,
-              {
-                lastCompletedDate: pmSchedule.lastCompletedDate,
-                nextDueDate: pmSchedule.nextDueDate,
-              },
-              {
-                lastCompletedDate: pmCompletedAt.toISOString(),
-                ...(usesCalendarCadence ? { nextDueDate: nextDueDate?.toISOString() ?? null } : {}),
-                reason: usesCalendarCadence
-                  ? `PM WO ${wo.woNumber} planner-closed after verification`
-                  : `Usage-based PM WO ${wo.woNumber} planner-closed; completion history recorded without calendar cadence`,
-                workOrderId,
-              },
-              options.auditCtx,
-            ),
-          });
-          pmScheduleAdvanced = usesCalendarCadence;
+        const taskRecurrence = await advanceClosedPmScheduledTaskRecurrence({
+          tx,
+          workOrderId,
+          pmScheduleId: wo.pmScheduleId,
+          assetId: wo.assetId,
+          woNumber: wo.woNumber,
+          woActualEnd: wo.actualEnd,
+          closedAt,
+          actorId: session.userId,
+          auditCtx: options.auditCtx,
+        });
+        pmScheduledTaskIdsAdvanced = taskRecurrence.advancedTaskIds;
+        pmScheduledTaskIdsSkipped = taskRecurrence.skippedTaskIds;
+
+        // Scheduled Tasks own recurrence once canonical task-level provenance exists.
+        // Legacy header cadence remains only for schedules whose generated WOs have
+        // no task-level provenance at all.
+        if (!taskRecurrence.taskLevel) {
+          const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
+          if (pmSchedule && pmSchedule.isActive) {
+            const pmCompletedAt = wo.actualEnd || closedAt;
+            const usesCalendarCadence = isAutoCalculableFrequency(pmSchedule.frequencyType);
+            const nextDueDate = usesCalendarCadence
+              ? calculateNextDueDate(
+                  pmCompletedAt,
+                  pmSchedule.frequencyType,
+                  pmSchedule.frequencyValue,
+                )
+              : null;
+            await tx.pmSchedule.update({
+              where: { id: pmSchedule.id },
+              data: usesCalendarCadence
+                ? { lastCompletedDate: pmCompletedAt, nextDueDate }
+                : { lastCompletedDate: pmCompletedAt },
+            });
+            await tx.auditLog.create({
+              data: buildAuditData(
+                'update',
+                'pm_schedule',
+                pmSchedule.id,
+                session.userId,
+                {
+                  lastCompletedDate: pmSchedule.lastCompletedDate,
+                  nextDueDate: pmSchedule.nextDueDate,
+                },
+                {
+                  lastCompletedDate: pmCompletedAt.toISOString(),
+                  ...(usesCalendarCadence ? { nextDueDate: nextDueDate?.toISOString() ?? null } : {}),
+                  reason: usesCalendarCadence
+                    ? `PM WO ${wo.woNumber} planner-closed after verification`
+                    : `Usage-based PM WO ${wo.woNumber} planner-closed; completion history recorded without calendar cadence`,
+                  workOrderId,
+                },
+                options.auditCtx,
+              ),
+            });
+            pmScheduleAdvanced = usesCalendarCadence;
+          }
         }
       }
 
@@ -440,6 +462,9 @@ export async function closeRepairWorkOrder(
             totalCost: costs.totalActualCost,
             failureRecordCreated: Boolean(failureMode && failureComponentId),
             pmScheduleAdvanced,
+            pmScheduledTasksAdvanced: pmScheduledTaskIdsAdvanced.length,
+            pmScheduledTaskIdsAdvanced,
+            pmScheduledTaskIdsSkipped,
             followUpRequired: options.followUpRequired ?? false,
             followUpNotes: options.followUpNotes ?? null,
             ...(authority.override ? { plannerCloseOverride: true, assignedPlannerId: wo.plannerId } : {}),

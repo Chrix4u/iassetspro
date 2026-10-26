@@ -101,7 +101,7 @@ describe('PM scheduled-task API contract', () => {
     mocks.tx.auditLog.create.mockResolvedValue({ id: 'audit-1' });
   });
 
-  it('creates a mixed task-level schedule without header cadence input and disables legacy automation', async () => {
+  it('creates a mixed task-level schedule with automatic generation enabled by default', async () => {
     mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
     const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
       title: 'Task-level PM', assetId: 'asset-1', scheduledTasks: taskPayload(),
@@ -110,10 +110,22 @@ describe('PM scheduled-task API contract', () => {
 
     expect(response.status).toBe(201);
     expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      autoGenerateWO: false, frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', nextDueDate: null, leadDays: 0,
+      autoGenerateWO: true, frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', nextDueDate: null, leadDays: 0,
     }) }));
     expect(mocks.tx.pmScheduleTask.create).toHaveBeenCalledTimes(3);
     expect(body.data.scheduledTasks).toHaveLength(3);
+  });
+
+  it('preserves an explicit automatic-generation opt-out on task-level create', async () => {
+    mocks.tx.pmSchedule.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
+    const response = await createSchedule(request('http://localhost/api/pm-schedules', 'POST', {
+      title: 'Manual Task-level PM', assetId: 'asset-1', scheduledTasks: taskPayload(), autoGenerateWO: false,
+    }) as never);
+
+    expect(response.status).toBe(201);
+    expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ autoGenerateWO: false }),
+    }));
   });
 
   it('rejects an explicitly empty scheduled-task list', async () => {
@@ -138,7 +150,7 @@ describe('PM scheduled-task API contract', () => {
     expect(response.status).toBe(201);
     expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
       frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', meterName: null,
-      nextDueDate: null, leadDays: 0, autoGenerateWO: false,
+      nextDueDate: null, leadDays: 0, autoGenerateWO: true,
     }) }));
     expect(mocks.tx.pmTrigger.create).not.toHaveBeenCalled();
   });
@@ -220,15 +232,30 @@ describe('PM scheduled-task API contract', () => {
     ]);
   });
 
-  it('rejects enabling the legacy generation engine on an existing task-level schedule', async () => {
-    const existing = schedule({ tasks: [{ id: 'scheduled-1' }] });
+  it('allows an existing task-level schedule to toggle automatic generation', async () => {
+    const existing = schedule({ autoGenerateWO: false, tasks: [{ id: 'scheduled-1' }] });
     mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
-    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule({ ...existing, ...data }));
+
+    const enabled = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
       autoGenerateWO: true,
     }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
-    expect(response.status).toBe(400);
-    expect((await response.json()).error).toMatch(/task-level|automatic generation|legacy/i);
-    expect(mocks.tx.pmSchedule.update).not.toHaveBeenCalled();
+    expect(enabled.status).toBe(200);
+    expect(mocks.tx.pmSchedule.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ autoGenerateWO: true }),
+    }));
+
+    mocks.tx.pmSchedule.update.mockClear();
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(schedule({ autoGenerateWO: true, tasks: [{ id: 'scheduled-1' }] }));
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(schedule({ autoGenerateWO: true, tasks: [{ id: 'scheduled-1' }] }));
+    const disabled = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      autoGenerateWO: false,
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+    expect(disabled.status).toBe(200);
+    expect(mocks.tx.pmSchedule.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ autoGenerateWO: false }),
+    }));
   });
 
   it('requires Scheduled Tasks to be resubmitted when a task-level target changes', async () => {
@@ -300,8 +327,8 @@ describe('PM scheduled-task API contract', () => {
     expect((await response.json()).error).toMatch(/template.*plant|same plant/i);
   });
 
-  it('updates task rows inside the schedule transaction and keeps legacy automation disabled', async () => {
-    const existing = schedule();
+  it('updates task rows without changing an omitted task-level automation setting', async () => {
+    const existing = schedule({ autoGenerateWO: true });
     mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
     mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
     mocks.tx.pmSchedule.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule(data));
@@ -314,7 +341,8 @@ describe('PM scheduled-task API contract', () => {
 
     expect(response.status).toBe(200);
     expect(mocks.db.$transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.tx.pmSchedule.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ autoGenerateWO: false }) }));
+    const scheduleUpdateData = mocks.tx.pmSchedule.update.mock.calls[0][0].data;
+    expect(scheduleUpdateData).not.toHaveProperty('autoGenerateWO');
     expect(mocks.tx.pmScheduleTask.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'scheduled-1' }, data: expect.objectContaining({ estimatedMinutes: 45 }) }));
     expect(body.data.scheduledTasks[0].id).toBe('scheduled-1');
   });

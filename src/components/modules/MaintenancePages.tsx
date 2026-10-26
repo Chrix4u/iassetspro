@@ -8612,6 +8612,7 @@ export function PmSchedulesPage() {
         assignedToId: formAssignedToId || null,
         departmentId: formDepartmentId || null,
         templateId: formTemplateId || null,
+        autoGenerateWO: formAutoGenWO,
       };
 
       if (isLegacyScheduleEdit) {
@@ -8621,7 +8622,6 @@ export function PmSchedulesPage() {
           frequencyValue: Number(formFreqValue),
           frequencyUnit: formFreqUnit,
           meterName: formFreqType === 'meter' ? formMeterName : null,
-          autoGenerateWO: formAutoGenWO,
           leadDays: formUsesCalendarCadence ? (formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)) : 0,
           nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
         });
@@ -9084,15 +9084,18 @@ export function PmSchedulesPage() {
                   {formUsesCalendarCadence && <div className="space-y-2"><Label className="text-sm font-semibold">Lead Days</Label><Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} /></div>}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-3 md:col-span-2 xl:col-span-12">
-                <div><p className="text-sm font-medium">Legacy Auto-generate Work Order</p><p className="text-[11px] text-muted-foreground">Applies only to this legacy header-cadence schedule.</p></div>
-                <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />
-              </div>
             </>
           )}
 
           <div className="md:col-span-2 xl:col-span-12"><Separator /></div>
           <div className="md:col-span-2 xl:col-span-12"><p className="text-sm font-semibold">Schedule Administration</p><p className="text-[11px] text-muted-foreground">Ownership and schedule-level planning metadata.</p></div>
+          <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-3 md:col-span-2 xl:col-span-12">
+            <div>
+              <p className="text-sm font-medium">Auto-generate Work Orders</p>
+              <p className="text-[11px] text-muted-foreground">{isLegacyScheduleEdit ? 'Generate preventive work orders from this legacy header cadence.' : 'Generate preventive work orders when individual Scheduled Tasks enter their due window or threshold.'}</p>
+            </div>
+            <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />
+          </div>
           <div className="space-y-2 md:col-span-1 xl:col-span-3">
             <Label className="text-sm font-semibold">Priority</Label>
             <Select value={formPriority} onValueChange={setFormPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['low', 'medium', 'high', 'critical'].map(priority => <SelectItem key={priority} value={priority}>{priority.charAt(0).toUpperCase() + priority.slice(1)}</SelectItem>)}</SelectContent></Select>

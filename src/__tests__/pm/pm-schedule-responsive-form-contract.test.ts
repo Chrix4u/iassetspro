@@ -14,16 +14,17 @@ const planner = fs.readFileSync(
 describe('PM schedule responsive form contract', () => {
   it('uses a compact responsive grid instead of full-width stacked desktop fields', () => {
     expect(source).toContain('data-testid="pm-schedule-form-grid"');
-    expect(source).toContain('grid gap-4 py-2 md:grid-cols-2 xl:grid-cols-12');
-    expect(source).toContain('md:col-span-2 xl:col-span-12');
-    expect(source).toContain('md:col-span-1 xl:col-span-3');
+    expect(source).toContain('grid gap-3 py-1 md:grid-cols-2 xl:grid-cols-12');
+    expect(source).toContain('data-testid="pm-schedule-identity-row"');
+    expect(source).toContain('data-testid="pm-schedule-source-row"');
+    expect(source).toContain('lg:grid-cols-2 xl:col-span-12');
     expect(source).toContain('<PmScheduleTaskPlanner');
   });
 
   it('keeps task-level planning primary and confines header recurrence to legacy compatibility mode', () => {
     expect(source).not.toContain('data-testid="pm-schedule-recurrence-grid"');
     expect(source).toContain('data-testid="pm-schedule-legacy-recurrence-grid"');
-    expect(source).toContain('grid gap-3 sm:grid-cols-2 xl:grid-cols-7');
+    expect(source).toContain('grid gap-2 sm:grid-cols-2 xl:grid-cols-7');
     expect(source).toContain('Legacy header cadence');
     expect(source).toContain('<PmScheduleTaskPlanner');
     expect(planner).toContain('Tasks & Planning');

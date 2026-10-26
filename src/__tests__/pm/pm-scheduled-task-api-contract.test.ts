@@ -50,16 +50,21 @@ const stamp = new Date('2026-10-25T00:00:00Z');
 const taskMaster = (id: string, taskNumber: number) => ({
   id, plantId: 'plant-1', taskNumber, description: `Task ${taskNumber}`, taskType: 'mechanical', isActive: true,
 });
-const schedule = (overrides: Record<string, unknown> = {}) => ({
-  id: 'schedule-1', title: 'Task-level PM', description: null, assetId: 'asset-1', componentId: null,
-  frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', meterName: null,
-  lastCompletedDate: null, nextDueDate: null, estimatedDuration: 1, priority: 'medium', assignedToId: null,
-  departmentId: null, templateId: null, autoGenerateWO: false, leadDays: 0, isActive: true, createdById: 'planner-1',
-  createdAt: stamp, updatedAt: stamp,
-  asset: { id: 'asset-1', name: 'Pump A', assetTag: 'P-001', status: 'active', plantId: 'plant-1' },
-  component: null, assignedTo: null, department: null, template: null,
-  createdBy: { id: 'planner-1', fullName: 'Planner', username: 'planner' }, trigger: null, tasks: [], ...overrides,
-});
+const schedule = (overrides: Record<string, unknown> = {}) => {
+  const taskRows = Array.isArray(overrides.tasks) ? overrides.tasks : [];
+  return {
+    id: 'schedule-1', title: 'Task-level PM', description: null, assetId: 'asset-1', componentId: null,
+    frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', meterName: null,
+    lastCompletedDate: null, nextDueDate: null, estimatedDuration: 1, priority: 'medium', assignedToId: null,
+    departmentId: null, templateId: null, autoGenerateWO: false,
+    recurrenceAuthority: taskRows.length > 0 ? 'task' : 'legacy_header',
+    leadDays: 0, isActive: true, createdById: 'planner-1',
+    createdAt: stamp, updatedAt: stamp,
+    asset: { id: 'asset-1', name: 'Pump A', assetTag: 'P-001', status: 'active', plantId: 'plant-1' },
+    component: null, assignedTo: null, department: null, template: null,
+    createdBy: { id: 'planner-1', fullName: 'Planner', username: 'planner' }, trigger: null, tasks: [], ...overrides,
+  };
+};
 const taskPayload = () => [
   { pmTaskId: 'task-1', sortOrder: 0, maintenanceMode: 'tbm', equipmentState: 'stopped', estimatedMinutes: 30, leadDays: 2, frequencyInterval: 30, frequencyUnit: 'days', nextDueDate: '2026-11-24T00:00:00.000Z' },
   { pmTaskId: 'task-2', sortOrder: 1, maintenanceMode: 'ubm', equipmentState: 'running', estimatedMinutes: 20, leadDays: 1, frequencyInterval: 500, frequencyUnit: 'hours', meterName: 'Operating Hours' },
@@ -317,5 +322,91 @@ describe('PM scheduled-task API contract', () => {
     expect(mocks.tx.pmSchedule.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ autoGenerateWO: false }) }));
     expect(mocks.tx.pmScheduleTask.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'scheduled-1' }, data: expect.objectContaining({ estimatedMinutes: 45 }) }));
     expect(body.data.scheduledTasks[0].id).toBe('scheduled-1');
+  });
+
+  it('preserves legacy automatic generation when migrated shadow tasks exist and only metadata changes', async () => {
+    const existing = schedule({
+      recurrenceAuthority: 'legacy_header',
+      autoGenerateWO: true,
+      lastCompletedDate: new Date('2026-09-30T00:00:00.000Z'),
+      nextDueDate: new Date('2026-10-30T00:00:00.000Z'),
+      leadDays: 3,
+      tasks: [{ id: 'shadow-1' }],
+    });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule({ ...existing, ...data }));
+
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      title: 'Renamed legacy PM',
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+
+    expect(response.status).toBe(200);
+    const updateArg = mocks.tx.pmSchedule.update.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> };
+    expect(updateArg.data).not.toHaveProperty('autoGenerateWO');
+    expect(updateArg.data).not.toHaveProperty('recurrenceAuthority');
+  });
+
+  it('allows legacy header cadence edits with shadow tasks and synchronizes their TBM cadence', async () => {
+    const existing = schedule({
+      recurrenceAuthority: 'legacy_header',
+      autoGenerateWO: true,
+      lastCompletedDate: new Date('2026-09-30T00:00:00.000Z'),
+      nextDueDate: new Date('2026-10-30T00:00:00.000Z'),
+      leadDays: 3,
+      tasks: [{ id: 'shadow-1' }],
+    });
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule({ ...existing, ...data }));
+
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      frequencyType: 'time_day', frequencyValue: 2, frequencyUnit: 'months',
+      nextDueDate: '2027-01-31T00:00:00.000Z', leadDays: 7,
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.tx.pmScheduleTask.updateMany).toHaveBeenCalledWith({
+      where: { scheduleId: 'schedule-1', maintenanceMode: 'tbm' },
+      data: expect.objectContaining({
+        frequencyInterval: 2, frequencyUnit: 'months', leadDays: 7,
+        nextDueDate: new Date('2027-01-31T00:00:00.000Z'), isActive: true,
+      }),
+    });
+  });
+
+  it('atomically converts a legacy shadow schedule to task recurrence when Scheduled Tasks are explicitly submitted', async () => {
+    const shadow = {
+      id: 'shadow-1', scheduleId: 'schedule-1', pmTaskId: 'task-1', sortOrder: 0,
+      maintenanceMode: 'tbm', equipmentState: 'stopped', estimatedMinutes: 30, leadDays: 3,
+      frequencyInterval: 30, frequencyUnit: 'days', meterName: null, nextDueReading: null,
+      conditionSourceType: null, conditionSourceId: null, conditionMetric: null, conditionOperator: null,
+      conditionThreshold: null, conditionThresholdMax: null, conditionUnit: null,
+      evaluationCadenceMinutes: null, lastCompletedAt: new Date('2026-09-30T00:00:00.000Z'),
+      nextDueDate: new Date('2026-10-30T00:00:00.000Z'), isActive: true, createdAt: stamp, updatedAt: stamp,
+    };
+    const existing = schedule({
+      recurrenceAuthority: 'legacy_header', autoGenerateWO: true,
+      lastCompletedDate: new Date('2026-09-30T00:00:00.000Z'),
+      nextDueDate: new Date('2026-10-30T00:00:00.000Z'), leadDays: 3,
+      tasks: [{ id: 'shadow-1' }],
+    });
+    mocks.createdRows.push(shadow);
+    mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(existing);
+    mocks.tx.pmSchedule.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => schedule({ ...existing, ...data }));
+
+    const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
+      title: 'Planner-owned task PM',
+      scheduledTasks: [{ ...taskPayload()[0], id: 'shadow-1' }],
+    }) as never, { params: Promise.resolve({ id: 'schedule-1' }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.tx.pmSchedule.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        recurrenceAuthority: 'task', autoGenerateWO: false,
+        lastCompletedDate: null, nextDueDate: null,
+      }),
+    }));
   });
 });

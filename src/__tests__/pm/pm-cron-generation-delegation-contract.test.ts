@@ -19,6 +19,14 @@ describe('PM cron generation delegation contract', () => {
     expect(cron.indexOf('generateDueWorkOrders(request)')).toBeLessThan(cron.indexOf('evaluateRuntimeTriggers(request)'));
   });
 
+  it('evaluates task-level TBM due state without introducing a second work-order generator', () => {
+    expect(cron).toContain('evaluateDueTbmScheduleTasks');
+    expect(cron).toContain('evaluateDueTbmScheduleTasks(db');
+    expect(cron).toContain('taskLevelTbm:');
+    expect(cron).toContain('dueTasks:');
+    expect(cron).not.toContain('db.workOrder.create');
+  });
+
   it('requires PM run authority for manual execution while preserving trusted cron', () => {
     expect(cron).toContain("request.headers.get('x-pm-cron-secret')");
     expect(cron).toContain("hasPermission(session, 'pm_schedules.run')");

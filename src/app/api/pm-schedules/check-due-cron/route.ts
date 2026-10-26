@@ -5,6 +5,7 @@ import { getPlantScope, type PlantScopeResult } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 import { POST as generateDueWorkOrders } from '../check-due/route';
 import { POST as evaluateRuntimeTriggers } from '../../pm-triggers/evaluate/route';
+import { evaluateDueTbmScheduleTasks } from '@/services/pm/tbmScheduleTaskEngine';
 
 /**
  * POST /api/pm-schedules/check-due-cron
@@ -67,6 +68,12 @@ function manualAssetPlantFilter(plantScope: PlantScopeResult | null) {
   };
 }
 
+function manualTbmPlantIds(plantScope: PlantScopeResult | null): string[] | undefined {
+  if (!plantScope || plantScope.isSystemWide) return undefined;
+  if (plantScope.isScoped && plantScope.plantId) return [plantScope.plantId];
+  return [...plantScope.accessiblePlantIds];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -118,6 +125,10 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
+    const taskLevelTbmEvaluation = await evaluateDueTbmScheduleTasks(db, {
+      now,
+      plantIds: manualTbmPlantIds(plantScope),
+    });
     const generatedDetails = generationPayload.data.results
       .filter((result) => !result.skipped)
       .map((result) => ({
@@ -135,6 +146,18 @@ export async function POST(request: NextRequest) {
       overdueAlertsSent: 0,
       generatedDetails,
       runtimeTriggers: triggerPayload.data,
+      taskLevelTbm: {
+        evaluated: taskLevelTbmEvaluation.evaluated,
+        due: taskLevelTbmEvaluation.due,
+        overdue: taskLevelTbmEvaluation.overdue,
+        dueTasks: taskLevelTbmEvaluation.results
+          .filter((task) => task.dueForGeneration)
+          .map((task) => ({
+            ...task,
+            nextDueDate: task.nextDueDate.toISOString(),
+            leadWindowEnd: task.leadWindowEnd.toISOString(),
+          })),
+      },
       overdueDetails: [] as Array<{
         scheduleId: string;
         scheduleTitle: string;

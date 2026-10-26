@@ -1,0 +1,33 @@
+name: PM Authority UI Patcher
+
+on:
+  push:
+    branches:
+      - fix/pm-recurrence-authority-current-main-20261026
+
+permissions:
+  contents: write
+
+jobs:
+  patch-ui:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/pm-recurrence-authority-current-main-20261026
+          fetch-depth: 0
+      - name: Patch PM UI authority semantics
+        run: python .github/scripts/patch_pm_authority_ui.py
+      - name: Commit PM UI update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/modules/MaintenancePages.tsx
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "PM UI authority patch already present."
+            exit 0
+          fi
+          git commit -m "fix(pm): render schedule authority explicitly in UI"
+          git push origin HEAD:fix/pm-recurrence-authority-current-main-20261026

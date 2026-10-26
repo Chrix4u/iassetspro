@@ -74,6 +74,7 @@ import { PmTaskBulkDialog } from '@/components/modules/pm/PmTaskBulkDialog';
 import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTaskPickerDialog';
 import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
 import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner';
+import { PmResourcePipelineCard, type PmResourceRequestCoverage } from '@/components/modules/pm/PmResourcePipelineCard';
 import {
   formatPmScheduleTaskPlanningSummary,
   pmScheduleTaskDraftFromApi,
@@ -163,6 +164,7 @@ type PmPlanningReadinessData = {
     mappedToolCount: number;
     unresolvedPartLabels: string[];
     unresolvedToolLabels: string[];
+    requestCoverage: PmResourceRequestCoverage;
   };
   schedule: {
     id: string;
@@ -5019,12 +5021,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // Viewers/read-only actors should not see execution buttons they cannot use.
   const canPerformWorkActions = !isReadOnly && isWorkerOnThisWO;
   const workActionDisabled = isWOFinalized || !canPerformWorkActions;
-  const pmPendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter(
-    (item: any) => !item.pipelineStatus || item.pipelineStatus === 'suggested'
-  ).length;
-  const pmSubmittedResourceCount = [...suggestedParts, ...suggestedTools].filter(
-    (item: any) => item.pipelineStatus && item.pipelineStatus !== 'suggested'
-  ).length;
   const hasPmAssignmentBlocker = pmPlanningReadiness?.blockingIssues.some((issue) =>
     ['planner_missing', 'technician_missing', 'supervisor_missing', 'department_missing'].includes(issue.code)
   ) || false;
@@ -6727,25 +6723,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       </div>
                     )}
 
-                    {(pmPendingSuggestedCount > 0 || pmSubmittedResourceCount > 0) && (
-                      <div className="flex flex-col gap-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-xs font-semibold text-violet-800">Planned resource pipeline</p>
-                          <p className="text-[10px] text-violet-700">
-                            {pmPendingSuggestedCount > 0
-                              ? `${pmPendingSuggestedCount} mapped resource${pmPendingSuggestedCount === 1 ? '' : 's'} awaiting execution submission`
-                              : 'All mapped resources have entered the approval workflow'}
-                            {pmSubmittedResourceCount > 0 ? ` · ${pmSubmittedResourceCount} already submitted` : ''}
-                          </p>
-                        </div>
-                        {canPerformWorkActions && !isWOFinalized && pmPendingSuggestedCount > 0 && (
-                          <Button size="sm" variant="outline" className="shrink-0 border-violet-300 bg-white text-violet-700 hover:bg-violet-50" onClick={handleSubmitSuggestedRecommendations}>
-                            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                            Submit Planned Resources
-                          </Button>
-                        )}
-                      </div>
-                    )}
+                    <PmResourcePipelineCard
+                      coverage={pmPlanningReadiness.resources.requestCoverage}
+                      inventoryOperational={pmPlanningReadiness.modules.inventory}
+                      toolsOperational={pmPlanningReadiness.modules.tools}
+                      canSubmit={canPerformWorkActions && !isWOFinalized}
+                      onSubmit={handleSubmitSuggestedRecommendations}
+                    />
 
                     {pmPlanningReadiness.warnings.some((warning) => warning.code === 'checklist_empty') && (
                       <p className="text-xs text-amber-700 flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" />No PM checklist is attached to this work order.</p>

@@ -40,7 +40,7 @@ vi.mock('lucide-react', () => {
   const icons = [
     'AlertTriangle', 'ArrowLeft', 'ArrowRight', 'BarChart3', 'Bell', 'BellRing',
     'BookOpen', 'Bot', 'Briefcase', 'Building2', 'Calendar', 'CalendarDays',
-    'Camera', 'Car', 'Check', 'CheckCircle', 'ChevronDown', 'ChevronLeft',
+    'Camera', 'Car', 'Check', 'CheckCircle', 'CheckCircle2', 'ChevronDown', 'ChevronLeft',
     'ChevronRight', 'CircleDot', 'ClipboardList', 'Clock', 'Close', 'Code',
     'Cog', 'Copy', 'Cpu', 'Database', 'Download', 'Edit', 'FileText',
     'Filter', 'Flag', 'Folder', 'GitBranch', 'Globe', 'Grid3X3', 'Hash',

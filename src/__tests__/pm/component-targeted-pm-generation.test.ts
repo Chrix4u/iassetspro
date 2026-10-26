@@ -73,7 +73,6 @@ describe('component-targeted PM work-order generation', () => {
       assetId: 'uat_asset_rotary_printer_01',
       componentId: 'component-guard-switch',
       isActive: true,
-      recurrenceAuthority: 'legacy_header',
       autoGenerateWO: true,
       recurrenceAuthority: 'legacy_header',
       frequencyType: 'weekly',

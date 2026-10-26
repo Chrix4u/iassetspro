@@ -134,7 +134,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
       await expect(scheduleDialog.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
 
-      const chooseTargetButton = scheduleDialog.getByRole('button', { name: /Choose PM Target|Change PM Target/i });
+      const chooseTargetButton = scheduleDialog.getByRole('button', { name: /Choose Target|Change Target/i });
       await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
       await chooseTargetButton.click();
       const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });

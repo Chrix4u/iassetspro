@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { db } from '../../src/lib/db';
-import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId, lookupUserByKey } from './helpers/api';
+import {
+  apiCall, apiCallWithPlant, assignWO, closeWO, completeWO, getToken, logTime,
+  lookupAssetId, lookupPlantId, lookupUserByKey, startWO, verifyWO,
+} from './helpers/api';
 
-test('UAT-21: mixed task-level PM generates only due compatible tasks without advancing recurrence', async () => {
+test('UAT-21: task-level PM generation advances recurrence only at verified planner closeout', async () => {
   const suffix = Date.now().toString().slice(-7);
   const scheduleTitle = `UAT Task-Level Generation ${suffix}`;
   const componentCode = `UAT-TASKGEN-${suffix}`;
@@ -10,6 +13,10 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
   const conditionMetric = `uat_vibration_${suffix}`;
   const plannerToken = await getToken('planner');
   const plannerId = await lookupUserByKey(plannerToken, 'planner');
+  const technicianToken = await getToken('tech_single');
+  const supervisorToken = await getToken('supervisor');
+  const technicianId = await lookupUserByKey(plannerToken, 'tech_single');
+  const supervisorId = await lookupUserByKey(plannerToken, 'supervisor');
   const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
   const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
   const generatedWoIds: string[] = [];
@@ -33,6 +40,7 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
       { key: 'tbm', description: `Inspect task-generation bearing ${suffix}`, taskType: 'mechanical' },
       { key: 'ubm', description: `Lubricate task-generation bearing ${suffix}`, taskType: 'lubrication' },
       { key: 'cbm', description: `Investigate task-generation vibration ${suffix}`, taskType: 'electrical' },
+      { key: 'skip', description: `Deferred task-generation inspection ${suffix}`, taskType: 'mechanical' },
       { key: 'future', description: `Future task-generation inspection ${suffix}`, taskType: 'mechanical' },
     ] as const;
     const taskIds = new Map<string, string>();
@@ -79,6 +87,7 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
       assetId,
       componentId,
       priority: 'high',
+      autoGenerateWO: true,
       scheduledTasks: [
         {
           pmTaskId: taskIds.get('tbm'), sortOrder: 0, maintenanceMode: 'tbm', equipmentState: 'stopped',
@@ -94,7 +103,11 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
           conditionSourceId: componentId, conditionMetric, conditionOperator: '>=', conditionThreshold: 5,
         },
         {
-          pmTaskId: taskIds.get('future'), sortOrder: 3, maintenanceMode: 'tbm', equipmentState: 'stopped',
+          pmTaskId: taskIds.get('skip'), sortOrder: 3, maintenanceMode: 'tbm', equipmentState: 'stopped',
+          estimatedMinutes: 10, leadDays: 0, frequencyInterval: 7, frequencyUnit: 'days', nextDueDate: dueDate,
+        },
+        {
+          pmTaskId: taskIds.get('future'), sortOrder: 4, maintenanceMode: 'tbm', equipmentState: 'stopped',
           estimatedMinutes: 10, leadDays: 0, frequencyInterval: 30, frequencyUnit: 'days', nextDueDate: futureDate,
         },
       ],
@@ -102,27 +115,26 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
     expect(createSchedule.status).toBe(201);
     scheduleId = String(createSchedule.data.data?.id || '');
     expect(scheduleId).toBeTruthy();
-    expect(createSchedule.data.data?.autoGenerateWO).toBe(false);
+    expect(createSchedule.data.data?.autoGenerateWO).toBe(true);
 
     const before = await db.pmSchedule.findUnique({
       where: { id: scheduleId },
       include: { tasks: { include: { pmTask: true }, orderBy: { sortOrder: 'asc' } } },
     });
-    expect(before?.tasks).toHaveLength(4);
+    expect(before?.tasks).toHaveLength(5);
     const scheduledByMaster = new Map((before?.tasks || []).map((task) => [task.pmTaskId, task]));
     const tbmTask = scheduledByMaster.get(taskIds.get('tbm')!);
     const ubmTask = scheduledByMaster.get(taskIds.get('ubm')!);
     const cbmTask = scheduledByMaster.get(taskIds.get('cbm')!);
+    const skippedTask = scheduledByMaster.get(taskIds.get('skip')!);
     const futureTask = scheduledByMaster.get(taskIds.get('future')!);
     expect(tbmTask?.id).toBeTruthy();
     expect(ubmTask?.id).toBeTruthy();
     expect(cbmTask?.id).toBeTruthy();
+    expect(skippedTask?.id).toBeTruthy();
     expect(futureTask?.id).toBeTruthy();
     expect(Number(ubmTask?.nextDueReading)).toBe(1100);
 
-    // Public task-level authoring remains fail-closed. This direct fixture toggle is
-    // deliberate UAT eligibility only, until verified Repairs closeout owns recurrence advancement.
-    await db.pmSchedule.update({ where: { id: scheduleId }, data: { autoGenerateWO: true } });
 
     await db.meterReading.create({
       data: {
@@ -162,7 +174,7 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
     const running = generated.find((row) => row.equipmentState === 'running');
     expect(stopped?.workOrderId).toBeTruthy();
     expect(running?.workOrderId).toBeTruthy();
-    expect(new Set(stopped.scheduledTaskIds)).toEqual(new Set([tbmTask!.id, ubmTask!.id]));
+    expect(new Set(stopped.scheduledTaskIds)).toEqual(new Set([tbmTask!.id, ubmTask!.id, skippedTask!.id]));
     expect(new Set(running.scheduledTaskIds)).toEqual(new Set([cbmTask!.id]));
     expect([...stopped.scheduledTaskIds, ...running.scheduledTaskIds]).not.toContain(futureTask!.id);
     generatedWoIds.push(String(stopped.workOrderId), String(running.workOrderId));
@@ -196,21 +208,82 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
     expect(secondRows.some((row) => row.scheduleId === scheduleId && row.skipped === false)).toBe(false);
     expect(await db.workOrder.count({ where: { pmScheduleId: scheduleId, type: 'preventive', status: { not: 'cancelled' } } })).toBe(2);
 
-    const after = await db.pmSchedule.findUnique({
+    const beforeById = new Map((before?.tasks || []).map((task) => [task.id, task]));
+    const preClose = await db.pmSchedule.findUnique({
       where: { id: scheduleId },
       include: { tasks: { orderBy: { sortOrder: 'asc' } } },
     });
-    const beforeById = new Map((before?.tasks || []).map((task) => [task.id, task]));
-    for (const task of after?.tasks || []) {
+    for (const task of preClose?.tasks || []) {
       const prior = beforeById.get(task.id)!;
       expect(task.lastCompletedAt?.toISOString() || null).toBe(prior.lastCompletedAt?.toISOString() || null);
       expect(task.nextDueDate?.toISOString() || null).toBe(prior.nextDueDate?.toISOString() || null);
       expect(task.nextDueReading ?? null).toBe(prior.nextDueReading ?? null);
     }
+
+    for (const row of generated) {
+      const woId = String(row.workOrderId);
+      await assignWO(plannerToken, woId, {
+        assignedTo: technicianId,
+        assignedSupervisorId: supervisorId,
+        teamLeaderId: technicianId,
+        teamMembers: [{ userId: technicianId, role: 'team_leader' }],
+      });
+      await startWO(technicianToken, woId);
+
+      const checklist = await apiCall(technicianToken, 'GET', `/api/work-orders/${woId}/tasks`);
+      expect(checklist.status).toBe(200);
+      for (const task of checklist.data.data as any[]) {
+        const shouldSkip = task.pmScheduleTaskId === skippedTask!.id;
+        const update = await apiCall(technicianToken, 'PATCH', `/api/work-orders/${woId}/tasks/${task.id}`, {
+          status: shouldSkip ? 'skipped' : 'completed',
+          ...(shouldSkip ? { notes: 'UAT-21 deliberate deferral to prove skipped-cycle regeneration' } : {}),
+        });
+        expect(update.status).toBe(200);
+      }
+
+      const stop = await apiCall(technicianToken, 'POST', `/api/work-orders/${woId}/time-logs/stop`, {});
+      expect(stop.status).toBe(200);
+      await logTime(technicianToken, woId, { action: 'start', manualHours: 0.5, notes: 'UAT-21 PM execution labor' });
+      await completeWO(technicianToken, woId, 'UAT-21 task-level PM work completed.');
+      await verifyWO(supervisorToken, woId, 5);
+      await closeWO(plannerToken, woId);
+    }
+
+    const closed = await db.pmSchedule.findUnique({
+      where: { id: scheduleId },
+      include: { tasks: { orderBy: { sortOrder: 'asc' } } },
+    });
+    const closedById = new Map((closed?.tasks || []).map((task) => [task.id, task]));
+    expect(closed?.lastCompletedDate?.toISOString() || null).toBe(before?.lastCompletedDate?.toISOString() || null);
+    expect(closed?.nextDueDate?.toISOString() || null).toBe(before?.nextDueDate?.toISOString() || null);
+    expect(closedById.get(tbmTask!.id)?.lastCompletedAt).toBeTruthy();
+    expect(closedById.get(tbmTask!.id)?.nextDueDate?.getTime()).toBeGreaterThan(tbmTask!.nextDueDate!.getTime());
+    expect(closedById.get(ubmTask!.id)?.lastCompletedAt).toBeTruthy();
+    expect(Number(closedById.get(ubmTask!.id)?.nextDueReading)).toBe(1200);
+    expect(closedById.get(cbmTask!.id)?.lastCompletedAt).toBeTruthy();
+    expect(closedById.get(skippedTask!.id)?.lastCompletedAt).toBeNull();
+    expect(closedById.get(skippedTask!.id)?.nextDueDate?.toISOString()).toBe(skippedTask!.nextDueDate?.toISOString());
+
+    const postClose = await apiCall(plannerToken, 'POST', '/api/pm-schedules/check-due', {});
+    expect(postClose.status).toBe(200);
+    const postCloseRows = (postClose.data.data?.engines?.scheduledTasks?.results as any[] | undefined) || [];
+    const regenerated = postCloseRows.filter((row) => row.scheduleId === scheduleId && row.skipped === false);
+    expect(regenerated).toHaveLength(1);
+    expect(regenerated[0].equipmentState).toBe('stopped');
+    expect(regenerated[0].scheduledTaskIds).toEqual([skippedTask!.id]);
+    generatedWoIds.push(String(regenerated[0].workOrderId));
+
+    const after = await db.pmSchedule.findUnique({
+      where: { id: scheduleId },
+      include: { tasks: { orderBy: { sortOrder: 'asc' } } },
+    });
     const afterById = new Map((after?.tasks || []).map((task) => [task.id, task]));
-    expect(afterById.get(tbmTask!.id)?.lastGeneratedCycleKey).toBeTruthy();
-    expect(afterById.get(ubmTask!.id)?.lastGeneratedCycleKey).toBeTruthy();
-    expect(afterById.get(cbmTask!.id)?.lastGeneratedCycleKey).toBeTruthy();
+    expect(afterById.get(tbmTask!.id)?.lastCompletedAt?.toISOString()).toBe(closedById.get(tbmTask!.id)?.lastCompletedAt?.toISOString());
+    expect(afterById.get(tbmTask!.id)?.nextDueDate?.toISOString()).toBe(closedById.get(tbmTask!.id)?.nextDueDate?.toISOString());
+    expect(afterById.get(ubmTask!.id)?.nextDueReading).toBe(closedById.get(ubmTask!.id)?.nextDueReading);
+    expect(afterById.get(cbmTask!.id)?.lastCompletedAt?.toISOString()).toBe(closedById.get(cbmTask!.id)?.lastCompletedAt?.toISOString());
+    expect(afterById.get(skippedTask!.id)?.lastCompletedAt).toBeNull();
+    expect(afterById.get(skippedTask!.id)?.lastGeneratedCycleKey).toBeTruthy();
     expect(afterById.get(futureTask!.id)?.lastGeneratedCycleKey).toBeNull();
   } finally {
     if (scheduleId) {

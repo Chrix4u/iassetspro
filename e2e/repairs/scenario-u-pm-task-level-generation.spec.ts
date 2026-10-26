@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { db } from '../../src/lib/db';
-import { apiCall, getToken, lookupAssetId, lookupPlantId, lookupUserByKey } from './helpers/api';
+import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId, lookupUserByKey } from './helpers/api';
 
 test('UAT-21: mixed task-level PM generates only due compatible tasks without advancing recurrence', async () => {
   const suffix = Date.now().toString().slice(-7);
@@ -37,7 +37,7 @@ test('UAT-21: mixed task-level PM generates only due compatible tasks without ad
     ] as const;
     const taskIds = new Map<string, string>();
     for (const spec of taskSpecs) {
-      const created = await apiCall(plannerToken, 'POST', '/api/pm-tasks', {
+      const created = await apiCallWithPlant(plannerToken, 'POST', '/api/pm-tasks', plantId, {
         description: spec.description,
         taskType: spec.taskType,
       });

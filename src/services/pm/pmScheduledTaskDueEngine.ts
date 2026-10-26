@@ -230,6 +230,13 @@ async function evaluateCbm(input: ScheduledTaskDueInput, now: Date): Promise<Sch
     return result(task, false, 'cbm_source_invalid', cycleKey);
   }
 
+  if (
+    task.lastCompletedAt
+    && (!source.observedAt || source.observedAt.getTime() <= task.lastCompletedAt.getTime())
+  ) {
+    return result(task, false, 'cbm_source_stale_since_completion', cycleKey, source.value, source);
+  }
+
   await recordCbmEvaluation(input, now);
   const due = conditionMatches(source.value, plan.operator, plan.threshold, plan.thresholdMax);
   return result(task, due, due ? 'cbm_due' : 'cbm_condition_clear', cycleKey, source.value, source);

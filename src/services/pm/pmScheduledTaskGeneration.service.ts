@@ -9,6 +9,7 @@ import {
   materializePmScheduledTasks,
   type MaterializablePmScheduledTask,
 } from '@/services/pm/materializePmScheduledTasks.service';
+import { findBlockingPmScheduledTaskCycles } from '@/services/pm/pmScheduledTaskCycleGuard.service';
 
 export interface PmScheduledTaskGenerationOptions {
   actorId: string;
@@ -164,16 +165,13 @@ export async function generateDueScheduledTaskWorkOrders(
         return [{ scheduleId: schedule.id, scheduleTitle: schedule.title, workOrderId: '', woNumber: '', skipped: true, reason: 'No Scheduled Tasks are due' }];
       }
 
-      const existing = await tx.workOrderTaskExecution.findMany({
-        where: {
-          OR: evaluated.map((entry) => ({
-            pmScheduleTaskId: entry.task.id,
-            pmDueCycleKey: entry.due.dueCycleKey!,
-          })),
-          workOrder: { status: { not: 'cancelled' } },
-        },
-        select: { pmScheduleTaskId: true, pmDueCycleKey: true },
-      });
+      const existing = await findBlockingPmScheduledTaskCycles(
+        tx,
+        evaluated.map((entry) => ({
+          pmScheduleTaskId: entry.task.id,
+          pmDueCycleKey: entry.due.dueCycleKey!,
+        })),
+      );
       const existingKeys = new Set(existing.map((row) => `${row.pmScheduleTaskId}:${row.pmDueCycleKey}`));
       const pending = evaluated.filter((entry) => !existingKeys.has(`${entry.task.id}:${entry.due.dueCycleKey}`));
       if (pending.length === 0) {

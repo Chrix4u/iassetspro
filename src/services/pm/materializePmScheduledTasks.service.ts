@@ -1,5 +1,6 @@
 import type { PmScheduleTask, Prisma } from '@prisma/client';
 import type { ScheduledTaskDueResult } from '@/services/pm/pmScheduledTaskDueEngine';
+import { findBlockingPmScheduledTaskCycles } from '@/services/pm/pmScheduledTaskCycleGuard.service';
 
 export interface MaterializablePmScheduledTask {
   task: PmScheduleTask & {
@@ -85,13 +86,7 @@ export async function materializePmScheduledTasks(
     pmDueCycleKey: candidate.due.dueCycleKey!,
   }));
 
-  const duplicate = await tx.workOrderTaskExecution.findFirst({
-    where: {
-      OR: identities,
-      workOrder: { status: { not: 'cancelled' } },
-    },
-    select: { id: true, workOrderId: true, pmScheduleTaskId: true, pmDueCycleKey: true },
-  });
+  const duplicate = (await findBlockingPmScheduledTaskCycles(tx, identities))[0];
   if (duplicate) {
     throw new PmScheduledTaskMaterializationError(
       `Scheduled Task cycle already materialized in work order ${duplicate.workOrderId}`,

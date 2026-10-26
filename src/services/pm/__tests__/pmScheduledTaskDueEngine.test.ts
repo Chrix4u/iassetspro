@@ -196,6 +196,48 @@ describe('pmScheduledTaskDueEngine', () => {
     });
   });
 
+  it('requires a fresh post-completion component observation before CBM can become due again', async () => {
+    const lastCompletedAt = new Date('2026-10-26T11:50:00Z');
+    client.componentConditionReading.findFirst.mockResolvedValue({
+      id: 'condition-stale', value: 8, unit: 'mm/s', recordedAt: new Date('2026-10-26T11:45:00Z'),
+    });
+    const planned = task({
+      maintenanceMode: 'cbm', nextDueDate: null, frequencyInterval: null, frequencyUnit: null,
+      conditionSourceType: 'component_condition', conditionSourceId: 'component-1',
+      conditionMetric: 'vibration', conditionOperator: '>=', conditionThreshold: 5, conditionUnit: 'mm/s',
+      lastCompletedAt,
+    });
+
+    const stale = await evaluate(baseInput({ componentId: 'component-1', task: planned }));
+    expect(stale).toMatchObject({
+      due: false, reason: 'cbm_source_stale_since_completion',
+      dueCycleKey: 'cbm:scheduled-1:2026-10-26T11:50:00.000Z', currentValue: 8,
+    });
+
+    client.componentConditionReading.findFirst.mockResolvedValue({
+      id: 'condition-fresh', value: 8, unit: 'mm/s', recordedAt: new Date('2026-10-26T11:55:00Z'),
+    });
+    const fresh = await evaluate(baseInput({ componentId: 'component-1', task: planned }));
+    expect(fresh).toMatchObject({ due: true, reason: 'cbm_due' });
+  });
+
+  it('treats missing or non-newer IoT observation timestamps as stale after CBM completion', async () => {
+    const lastCompletedAt = new Date('2026-10-26T11:50:00Z');
+    const planned = task({
+      maintenanceMode: 'cbm', nextDueDate: null, frequencyInterval: null, frequencyUnit: null,
+      conditionSourceType: 'iot_device', conditionSourceId: 'iot-1', conditionMetric: 'Temperature',
+      conditionOperator: '>', conditionThreshold: 80, conditionUnit: '°C', lastCompletedAt,
+    });
+    for (const lastSeen of [null, lastCompletedAt]) {
+      client.iotDevice.findUnique.mockResolvedValue({
+        id: 'iot-1', assetId: 'asset-1', plantId: 'plant-1', parameter: 'Temperature', unit: '°C',
+        lastReading: 85, lastSeen, isActive: true,
+      });
+      const result = await evaluate(baseInput({ task: planned }));
+      expect(result).toMatchObject({ due: false, reason: 'cbm_source_stale_since_completion', currentValue: 85 });
+    }
+  });
+
   it('fails closed when a component CBM source no longer matches the selected target', async () => {
     const result = await evaluate(baseInput({
       componentId: 'component-1',

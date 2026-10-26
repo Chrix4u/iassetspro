@@ -3,16 +3,32 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   formatPmScheduleTaskPlanningSummary,
+  isTaskAuthoritativePmSchedule,
   pmScheduleTaskDraftFromApi,
   pmScheduleTaskDraftFromMaster,
   pmScheduleTaskPayload,
 } from '@/lib/pm-schedule-task';
 
+const maintenanceSource = readFileSync(resolve(process.cwd(), 'src/components/modules/MaintenancePages.tsx'), 'utf8');
 const cardSource = readFileSync(resolve(process.cwd(), 'src/components/modules/pm/PmScheduleTaskCard.tsx'), 'utf8');
 const plannerSource = readFileSync(resolve(process.cwd(), 'src/components/modules/pm/PmScheduleTaskPlanner.tsx'), 'utf8');
 const pickerSource = readFileSync(resolve(process.cwd(), 'src/components/modules/pm/PmScheduleTaskPickerDialog.tsx'), 'utf8');
 
 describe('PM scheduled-task UI contract', () => {
+  it('uses explicit recurrence authority instead of Scheduled Task row presence', () => {
+    expect(isTaskAuthoritativePmSchedule({ recurrenceAuthority: 'task', scheduledTasks: [] })).toBe(true);
+    expect(isTaskAuthoritativePmSchedule({ recurrenceAuthority: 'legacy_header', scheduledTasks: [{ id: 'shadow-1' }] })).toBe(false);
+    expect(isTaskAuthoritativePmSchedule({ scheduledTasks: [{ id: 'legacy-shadow' }] })).toBe(false);
+    expect(isTaskAuthoritativePmSchedule(null)).toBe(false);
+  });
+
+  it('drives PM editor and due-date semantics from recurrence authority', () => {
+    expect(maintenanceSource).toContain("!isTaskAuthoritativePmSchedule(editItem)");
+    expect(maintenanceSource).toContain("if (isTaskAuthoritativePmSchedule(schedule) && Array.isArray(schedule.scheduledTasks)");
+    expect(maintenanceSource).toContain("isTaskAuthoritativePmSchedule(s)");
+    expect(maintenanceSource).toContain("isTaskAuthoritativePmSchedule(viewItem)");
+  });
+
   it('creates a schedule draft from an immutable Task Master identity', () => {
     expect(pmScheduleTaskDraftFromMaster({
       id: 'task-17', taskNumber: 17, description: 'Inspect drive coupling', taskType: 'mechanical', isActive: true,

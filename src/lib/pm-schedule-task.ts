@@ -62,6 +62,17 @@ export interface PmScheduleConditionSourceOption {
   currentValue: number | null;
 }
 
+export interface PmScheduleAuthorityLike {
+  recurrenceAuthority?: unknown;
+  scheduledTasks?: unknown;
+}
+
+export function isTaskAuthoritativePmSchedule(
+  schedule: PmScheduleAuthorityLike | null | undefined,
+): boolean {
+  return schedule?.recurrenceAuthority === 'task';
+}
+
 function text(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }

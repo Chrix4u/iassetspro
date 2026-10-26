@@ -28,6 +28,7 @@ describe('PM recurrence authority UI contract', () => {
   it('does not advertise task-level generation as staged or pending after the engines shipped', () => {
     expect(source).not.toContain('Staged · task engines pending');
     expect(source).not.toContain('Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.');
-    expect(source).toContain('TBM/UBM/CBM due logic');
+    expect(source).toContain('When each task becomes due');
+    expect(source).toContain('Each task is evaluated independently. Recurrence advances only after verified planner closeout');
   });
 });

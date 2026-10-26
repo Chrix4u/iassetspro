@@ -28,7 +28,8 @@ describe('PM schedule template linkage', () => {
     expect(ui).toContain("const [formTemplateId, setFormTemplateId] = useState('')");
     expect(ui).toContain("api.get('/api/pm-templates?active=true')");
     expect(ui).toContain('templateId: formTemplateId || null');
-    expect(ui).toContain('Optional — seed Task Library records from template...');
+    expect(ui).toContain('Optional — seed tasks from a PM template...');
+    expect(ui).toContain('Optional starter only; each scheduled task keeps its own planning settings.');
     expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
     expect(ui).toContain('id: task.pmTaskId');
     expect(ui).toContain('taskNumber: task.masterTaskNumber');

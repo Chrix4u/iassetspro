@@ -32,12 +32,20 @@ describe('PM schedule task-list workflow contract', () => {
     expect(detail).toContain('template: resolvedTemplate');
   });
 
-  it('shows Assigned To, Department and the Task Master planner in the schedule form', () => {
+  it('keeps modern PM schedule authoring focused on schedule definition rather than work-order assignment', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
-    expect(ui).toContain('>Assigned To</Label>');
-    expect(ui).toContain('>Department</Label>');
-    expect(ui).toContain('<PmScheduleTaskPlanner');
-    expect(ui).toContain('formScheduledTasks');
+    const formStart = ui.indexOf('data-testid="pm-schedule-form-grid"');
+    const formEnd = ui.indexOf('open={targetExplorerOpen}', formStart);
+    const form = ui.slice(formStart, formEnd);
+    expect(form).toContain('data-testid="pm-schedule-identity-row"');
+    expect(form).toContain('data-testid="pm-schedule-source-row"');
+    expect(form).toContain('data-testid="pm-schedule-summary"');
+    expect(form).toContain('<PmScheduleTaskPlanner');
+    expect(form).toContain('formScheduledTasks');
+    expect(form).not.toContain('>Assigned To</Label>');
+    expect(form).not.toContain('>Department</Label>');
+    expect(form).not.toContain('>Priority</Label>');
+    expect(form).not.toContain('Est. Duration (hrs)');
     expect(ui).toContain('payload.scheduledTasks = formScheduledTasks.map');
     expect(ui).toContain("api.get(`/api/pm-templates/${templateId}`)");
     expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
@@ -53,15 +61,22 @@ describe('PM schedule task-list workflow contract', () => {
     expect(ui).toContain('viewItem.department?.name');
   });
 
+  it('summarizes task-authority schedules with task count and total estimated time in the detail view', () => {
+    const ui = read('src/components/modules/MaintenancePages.tsx');
+    expect(ui).toContain('Task Count');
+    expect(ui).toContain('Total Estimated Time');
+    expect(ui).toContain('Math.round(Number(viewItem.estimatedDuration) * 60)');
+  });
+
   it('uses permanent Task Masters with task-level mode and ordering controls', () => {
     const ui = read('src/components/modules/MaintenancePages.tsx');
     const card = read('src/components/modules/pm/PmScheduleTaskCard.tsx');
     expect(ui).toContain('pmScheduleTaskDraftFromMaster');
     expect(ui).toContain('pmScheduleTaskDraftFromApi');
     expect(card).toContain('Task #');
-    expect(card).toContain('TBM');
-    expect(card).toContain('UBM');
-    expect(card).toContain('CBM');
+    expect(card).toContain('Time Based');
+    expect(card).toContain('Usage Based');
+    expect(card).toContain('Condition Based');
     expect(card).toContain('Move Task #');
     expect(card).toContain('Remove Task #');
   });

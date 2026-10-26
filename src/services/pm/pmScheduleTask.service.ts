@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 
 export const PM_MAINTENANCE_MODES = ['tbm', 'ubm', 'cbm'] as const;
 export const PM_EQUIPMENT_STATES = ['running', 'stopped'] as const;
-export const PM_SCHEDULE_TASK_TIME_UNITS = ['days', 'weeks', 'months', 'years'] as const;
+export const PM_SCHEDULE_TASK_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
 export const PM_CONDITION_OPERATORS = ['>', '>=', '<', '<=', '=', '!=', 'outside_range'] as const;
 export const PM_CONDITION_SOURCE_TYPES = ['component_condition', 'iot_device'] as const;
 
@@ -164,7 +164,7 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
         return error(number, 'TBM interval must be a positive whole number');
       }
       if (!PM_SCHEDULE_TASK_TIME_UNITS.includes(frequencyUnit as PmScheduleTaskTimeUnit)) {
-        return error(number, 'TBM unit must be days, weeks, months, or years');
+        return error(number, 'TBM unit must be minutes, hours, days, weeks, months, or years');
       }
       if (isActive && !nextDueDate) return error(number, 'TBM requires a next due date before activation');
     }

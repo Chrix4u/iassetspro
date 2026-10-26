@@ -203,7 +203,11 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await createLegacyPm(assemblyPmTitle, assembly.id);
     await createLegacyPm(partPmTitle, part.id, true);
 
+    // The legacy schedules were created out-of-band through the compatibility API while
+    // this SPA route was already mounted. Reload once so the list re-fetches server state
+    // before asserting that legacy and task-level schedules render together.
     await page.goto('/#/pm-schedules');
+    await page.reload();
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(assemblyPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(partPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });

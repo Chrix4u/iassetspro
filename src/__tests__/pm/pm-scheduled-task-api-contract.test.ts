@@ -54,7 +54,7 @@ const schedule = (overrides: Record<string, unknown> = {}) => ({
   id: 'schedule-1', title: 'Task-level PM', description: null, assetId: 'asset-1', componentId: null,
   frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', meterName: null,
   lastCompletedDate: null, nextDueDate: null, estimatedDuration: 1, priority: 'medium', assignedToId: null,
-  departmentId: null, templateId: null, autoGenerateWO: false, leadDays: 0, isActive: true, createdById: 'planner-1',
+  departmentId: null, templateId: null, autoGenerateWO: false, recurrenceAuthority: 'task', leadDays: 0, isActive: true, createdById: 'planner-1',
   createdAt: stamp, updatedAt: stamp,
   asset: { id: 'asset-1', name: 'Pump A', assetTag: 'P-001', status: 'active', plantId: 'plant-1' },
   component: null, assignedTo: null, department: null, template: null,
@@ -110,7 +110,7 @@ describe('PM scheduled-task API contract', () => {
 
     expect(response.status).toBe(201);
     expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      autoGenerateWO: true, frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', nextDueDate: null, leadDays: 0,
+      autoGenerateWO: true, recurrenceAuthority: 'task', frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', nextDueDate: null, leadDays: 0,
     }) }));
     expect(mocks.tx.pmScheduleTask.create).toHaveBeenCalledTimes(3);
     expect(body.data.scheduledTasks).toHaveLength(3);
@@ -194,7 +194,7 @@ describe('PM scheduled-task API contract', () => {
       title: 'Legacy daily PM', assetId: 'asset-1', frequencyType: 'time_day', frequencyValue: 1, frequencyUnit: 'days', autoGenerateWO: true,
     }) as never);
     expect(response.status).toBe(201);
-    expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ autoGenerateWO: true }) }));
+    expect(mocks.tx.pmSchedule.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ autoGenerateWO: true, recurrenceAuthority: 'legacy_header' }) }));
     expect(mocks.tx.pmScheduleTask.create).not.toHaveBeenCalled();
   });
 

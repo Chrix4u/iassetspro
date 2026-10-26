@@ -8673,8 +8673,10 @@ export function PmSchedulesPage() {
   };
 
   const scheduleDueDates = (schedule: any) => {
-    if (isTaskAuthoritativePmSchedule(schedule) && Array.isArray(schedule.scheduledTasks) && schedule.scheduledTasks.length > 0) {
-      return schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean);
+    if (isTaskAuthoritativePmSchedule(schedule)) {
+      return Array.isArray(schedule.scheduledTasks)
+        ? schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean)
+        : [];
     }
     return isAutoCalculableFrequency(schedule.frequencyType) && schedule.nextDueDate ? [schedule.nextDueDate] : [];
   };
@@ -8876,8 +8878,8 @@ export function PmSchedulesPage() {
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <Badge variant="outline" className="text-[10px] font-medium">
-                      {isTaskAuthoritativePmSchedule(s) && Array.isArray(s.scheduledTasks) && s.scheduledTasks.length > 0
-                        ? `Task-level · ${s.scheduledTasks.length} task${s.scheduledTasks.length === 1 ? '' : 's'}`
+                      {isTaskAuthoritativePmSchedule(s)
+                        ? `Task-level · ${s.scheduledTasks?.length ?? 0} task${s.scheduledTasks?.length === 1 ? '' : 's'}`
                         : freqLabel(s.frequencyType, s.frequencyValue, s.frequencyUnit, s.meterName)}
                     </Badge>
                   </TableCell>

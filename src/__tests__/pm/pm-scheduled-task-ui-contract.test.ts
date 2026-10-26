@@ -22,9 +22,10 @@ describe('PM scheduled-task UI contract', () => {
     expect(isTaskAuthoritativePmSchedule(null)).toBe(false);
   });
 
-  it('drives PM editor and due-date semantics from recurrence authority', () => {
+  it('drives PM editor and due-date semantics from recurrence authority even when task rows are absent', () => {
     expect(maintenanceSource).toContain("!isTaskAuthoritativePmSchedule(editItem)");
-    expect(maintenanceSource).toContain("if (isTaskAuthoritativePmSchedule(schedule) && Array.isArray(schedule.scheduledTasks)");
+    expect(maintenanceSource).toContain("if (isTaskAuthoritativePmSchedule(schedule))");
+    expect(maintenanceSource).not.toContain("isTaskAuthoritativePmSchedule(schedule) && Array.isArray(schedule.scheduledTasks)");
     expect(maintenanceSource).toContain("isTaskAuthoritativePmSchedule(s)");
     expect(maintenanceSource).toContain("isTaskAuthoritativePmSchedule(viewItem)");
   });

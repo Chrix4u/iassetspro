@@ -389,6 +389,11 @@ describe('PM scheduled-task API contract', () => {
       recurrenceAuthority: 'legacy_header', autoGenerateWO: true,
       lastCompletedDate: new Date('2026-09-30T00:00:00.000Z'),
       nextDueDate: new Date('2026-10-30T00:00:00.000Z'), leadDays: 3,
+      trigger: {
+        id: 'trigger-legacy-1', triggerType: 'meter', triggerValue: 500,
+        triggerConfig: JSON.stringify({ source: 'asset_meter_reading', meterName: 'Operating Hours', unit: 'hours' }),
+        isActive: true,
+      },
       tasks: [{ id: 'shadow-1' }],
     });
     mocks.createdRows.push(shadow);
@@ -408,5 +413,6 @@ describe('PM scheduled-task API contract', () => {
         lastCompletedDate: null, nextDueDate: null,
       }),
     }));
+    expect(mocks.tx.pmTrigger.delete).toHaveBeenCalledWith({ where: { id: 'trigger-legacy-1' } });
   });
 });

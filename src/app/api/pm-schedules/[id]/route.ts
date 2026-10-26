@@ -495,7 +495,12 @@ export async function PUT(
       let reconciledTriggerConfig: string | undefined;
       let reconciledTriggerValue: number | undefined;
 
-      if (lockedTriggerTargetChanged) {
+      if (scheduledTasksProvided && lockedSchedule.trigger) {
+        // Explicit Scheduled Task submission transfers recurrence authority away
+        // from the legacy trigger subsystem. Retire the stale trigger in the same
+        // transaction instead of carrying a dormant automation object forward.
+        triggerMutation = 'delete';
+      } else if (lockedTriggerTargetChanged) {
         const prospectiveSchedule = {
           id: lockedSchedule.id,
           assetId: lockedSchedule.assetId,

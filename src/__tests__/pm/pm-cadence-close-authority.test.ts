@@ -23,7 +23,9 @@ describe('PM cadence advances only after completed maintenance', () => {
     expect(legacyExecution).not.toContain('reason: `PM WO ${wo.woNumber} completed`');
   });
 
-  it('retains planner closure as the cadence advancement authority', () => {
+  it('retains planner closure as both task-level and legacy cadence advancement authority', () => {
+    expect(close).toContain('advanceClosedPmScheduledTaskRecurrence');
+    expect(close).toContain('taskLevel');
     expect(close).toContain('calculateNextDueDate(');
     expect(close).toContain('lastCompletedDate: pmCompletedAt');
     expect(close).toContain('nextDueDate');

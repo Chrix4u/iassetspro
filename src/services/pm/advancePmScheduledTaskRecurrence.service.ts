@@ -12,7 +12,7 @@ export interface AdvanceClosedPmScheduledTaskRecurrenceInput {
   tx: RecurrenceTx;
   workOrderId: string;
   pmScheduleId: string;
-  assetId: string;
+  assetId: string | null;
   woNumber: string;
   woActualEnd: Date | null;
   closedAt: Date;
@@ -127,6 +127,9 @@ export async function advanceClosedPmScheduledTaskRecurrence(
       auditDetails = { nextDueDate: nextDueDate.toISOString() };
     } else if (scheduledTask.maintenanceMode === 'ubm') {
       const interval = Number(scheduledTask.frequencyInterval);
+      if (!input.assetId) {
+        throw recurrenceError(`UBM Scheduled Task ${scheduledTask.id} has no work-order asset for meter recurrence`);
+      }
       if (!Number.isFinite(interval) || interval <= 0 || !scheduledTask.meterName || !scheduledTask.frequencyUnit) {
         throw recurrenceError(`UBM Scheduled Task ${scheduledTask.id} has invalid meter recurrence configuration`);
       }

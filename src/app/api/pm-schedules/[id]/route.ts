@@ -152,12 +152,6 @@ export async function PUT(
         { status: 400 },
       );
     }
-    if (existingHasScheduledTasks && body.autoGenerateWO === true) {
-      return NextResponse.json(
-        { success: false, error: 'Task-level schedules cannot enable the legacy automatic generation engine' },
-        { status: 400 },
-      );
-    }
     if (prospectiveTaskLevel && legacyRecurrenceFields.some((field) => body[field] !== undefined)) {
       return NextResponse.json(
         { success: false, error: 'Task-level recurrence is configured on Scheduled Tasks, not legacy schedule header fields' },
@@ -221,7 +215,6 @@ export async function PUT(
       }
       updateData.leadDays = normalizedLeadDays;
     }
-    if (scheduledTasksProvided || existingHasScheduledTasks) updateData.autoGenerateWO = false;
 
     if (body.estimatedDuration !== undefined) {
       const rawEstimatedDuration = body.estimatedDuration === null
@@ -435,9 +428,6 @@ export async function PUT(
       if (lockedHasScheduledTasks && inlineTasksProvided) {
         return { kind: 'task_level_conflict' as const, error: 'Existing task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' };
       }
-      if (lockedHasScheduledTasks && body.autoGenerateWO === true) {
-        return { kind: 'task_level_conflict' as const, error: 'Task-level schedules cannot enable the legacy automatic generation engine' };
-      }
       if (lockedProspectiveTaskLevel && legacyRecurrenceFields.some((field) => body[field] !== undefined)) {
         return { kind: 'task_level_conflict' as const, error: 'Task-level recurrence is configured on Scheduled Tasks, not legacy schedule header fields' };
       }
@@ -446,7 +436,6 @@ export async function PUT(
       }
 
       const lockedUpdateData: Record<string, unknown> = { ...updateData };
-      if (lockedProspectiveTaskLevel) lockedUpdateData.autoGenerateWO = false;
       const lockedProspectiveFrequencyType = storedFrequencyTypeForUpdate ?? lockedSchedule.frequencyType;
       const lockedProspectiveFrequencyValue = canonicalFrequencyForUpdate?.frequencyValue ?? Number(lockedSchedule.frequencyValue);
       const lockedProspectiveFrequencyUnit = frequencyFieldsChanging

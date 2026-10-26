@@ -1,0 +1,47 @@
+name: PM Authority Schema Patcher
+
+on:
+  push:
+    branches:
+      - fix/pm-recurrence-authority-current-main-20261026
+    paths:
+      - .github/workflows/pm-authority-schema-patcher.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/pm-recurrence-authority-current-main-20261026
+          fetch-depth: 0
+      - name: Apply exact Prisma authority patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('prisma/schema.prisma')
+          text = path.read_text()
+          old = '''  isActive          Boolean   @default(true)\n  autoGenerateWO    Boolean   @default(true)\n  leadDays          Int       @default(3)\n  woTypeId          String?\n'''
+          new = '''  isActive             Boolean   @default(true)\n  autoGenerateWO       Boolean   @default(true)\n  recurrenceAuthority  String    @default("legacy_header") // legacy_header, task\n  leadDays             Int       @default(3)\n  woTypeId             String?\n'''
+          if old not in text:
+              raise SystemExit('Expected PmSchedule field anchor not found; refusing unsafe patch')
+          text = text.replace(old, new, 1)
+
+          old_index = '''  @@index([componentId])\n  @@map("pm_schedules")\n'''
+          new_index = '''  @@index([componentId])\n  @@index([recurrenceAuthority, isActive])\n  @@map("pm_schedules")\n'''
+          if old_index not in text:
+              raise SystemExit('Expected PmSchedule index anchor not found; refusing unsafe patch')
+          text = text.replace(old_index, new_index, 1)
+          path.write_text(text)
+      - name: Commit schema patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prisma/schema.prisma
+          git diff --cached --check
+          git commit -m "feat(pm): apply recurrence authority schema patch"
+          git push origin HEAD:fix/pm-recurrence-authority-current-main-20261026

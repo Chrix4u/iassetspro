@@ -1234,10 +1234,11 @@ model PmSchedule {
   priority          String    @default("medium") // low, medium, high, critical
   assignedToId      String?
   departmentId      String?
-  isActive          Boolean   @default(true)
-  autoGenerateWO    Boolean   @default(true)
-  leadDays          Int       @default(3)
-  woTypeId          String?
+  isActive             Boolean   @default(true)
+  autoGenerateWO       Boolean   @default(true)
+  recurrenceAuthority  String    @default("legacy_header") // legacy_header, task
+  leadDays             Int       @default(3)
+  woTypeId             String?
   createdById       String
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1256,6 +1257,7 @@ model PmSchedule {
   trigger    PmTrigger?
 
   @@index([componentId])
+  @@index([recurrenceAuthority, isActive])
   @@map("pm_schedules")
 }
 

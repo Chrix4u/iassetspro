@@ -1,0 +1,35 @@
+name: PM Authority Test Fixture Patcher
+
+on:
+  push:
+    branches:
+      - fix/pm-recurrence-authority-current-main-20261026
+
+permissions:
+  contents: write
+
+jobs:
+  patch-fixtures:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/pm-recurrence-authority-current-main-20261026
+          fetch-depth: 0
+      - name: Patch recurrence-authority test fixtures
+        run: python .github/scripts/patch_pm_authority_test_fixtures.py
+      - name: Commit fixture updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/services/pm/__tests__/pmScheduledTaskGeneration.service.test.ts
+          git add src/__tests__/pm/component-targeted-pm-generation.test.ts
+          git add src/__tests__/pm/pm-scheduled-task-api-contract.test.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "Fixture patch already present."
+            exit 0
+          fi
+          git commit -m "test(pm): align fixtures with recurrence authority"
+          git push origin HEAD:fix/pm-recurrence-authority-current-main-20261026

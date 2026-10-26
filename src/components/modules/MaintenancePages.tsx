@@ -9170,7 +9170,7 @@ export function PmSchedulesPage() {
               </div>
             </div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Template</p><p className="mt-1 text-sm font-medium">{viewItem.template?.title || 'No template'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Planning Model</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? `Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Planning Model</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? `Task-level · ${viewItem.scheduledTasks?.length ?? 0} independent task${viewItem.scheduledTasks?.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Priority</p><div className="mt-1"><PriorityBadge priority={viewItem.priority} /></div></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Estimated Duration</p><p className="mt-1 text-sm font-medium">{viewItem.estimatedDuration != null ? `${viewItem.estimatedDuration} hrs` : '—'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Assigned To</p><p className="mt-1 text-sm font-medium">{viewItem.assignedTo?.fullName || 'Unassigned'}</p></div>
@@ -9182,11 +9182,11 @@ export function PmSchedulesPage() {
             <div className="sm:col-span-2 rounded-lg border p-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] uppercase text-muted-foreground">PM Task List</p>
-                <Badge variant="secondary" className="text-[10px]">{viewItem.recurrenceAuthority === 'task' ?? viewItem.template?.tasks?.length ?? 0} task{(viewItem.recurrenceAuthority === 'task' ?? viewItem.template?.tasks?.length) === 1 ? '' : 's'}</Badge>
+                <Badge variant="secondary" className="text-[10px]">{viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)} task{(viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)) === 1 ? '' : 's'}</Badge>
               </div>
               {viewItem.recurrenceAuthority === 'task' ? (
                 <div className="mt-3 space-y-2">
-                  {viewItem.scheduledTasks.map((task: any) => {
+                  {(viewItem.scheduledTasks || []).map((task: any) => {
                     const draft = pmScheduleTaskDraftFromApi(task);
                     return <div key={task.id} className="rounded-lg border bg-muted/20 p-2.5">
                       <div className="flex flex-wrap items-center gap-2">

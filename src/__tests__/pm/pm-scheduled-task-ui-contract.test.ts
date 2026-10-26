@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import * as pmScheduleTaskHelpers from '@/lib/pm-schedule-task';
 import {
+  PM_SCHEDULE_TASK_TIME_UNITS,
   formatPmScheduleTaskPlanningSummary,
   pmScheduleTaskDraftFromApi,
   pmScheduleTaskDraftFromMaster,
@@ -19,8 +21,27 @@ describe('PM scheduled-task UI contract', () => {
     })).toEqual(expect.objectContaining({
       clientId: 'task-17', id: null, pmTaskId: 'task-17', taskNumber: 17,
       description: 'Inspect drive coupling', taskType: 'mechanical', maintenanceMode: 'tbm',
-      equipmentState: 'stopped', frequencyInterval: '1', frequencyUnit: 'months',
+      equipmentState: 'stopped', frequencyType: 'time_day', frequencyInterval: '1', frequencyUnit: 'months',
     }));
+  });
+
+
+
+  it('offers the complete time/day unit set needed by task recurrence planning', () => {
+    expect(PM_SCHEDULE_TASK_TIME_UNITS).toEqual(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);
+  });
+
+  it('totals task estimated minutes for a compact schedule summary and persisted duration', () => {
+    const total = (pmScheduleTaskHelpers as any).totalPmScheduleEstimatedMinutes;
+    expect(total).toBeTypeOf('function');
+    const one = pmScheduleTaskDraftFromMaster({ id: 'task-1', taskNumber: 1, description: 'One', taskType: 'mechanical' });
+    const two = pmScheduleTaskDraftFromMaster({ id: 'task-2', taskNumber: 2, description: 'Two', taskType: 'mechanical' });
+    const three = pmScheduleTaskDraftFromMaster({ id: 'task-3', taskNumber: 3, description: 'Three', taskType: 'mechanical' });
+    one.estimatedMinutes = '30';
+    two.estimatedMinutes = '5';
+    three.estimatedMinutes = '3';
+    expect(total([one, two, three])).toBe(38);
+    expect(total([{ ...one, estimatedMinutes: '' }, { ...two, estimatedMinutes: '-1' }, { ...three, estimatedMinutes: 'abc' }])).toBe(0);
   });
 
   it('maps persisted scheduled-task planning into editable string fields without changing Task Number', () => {
@@ -35,6 +56,16 @@ describe('PM scheduled-task UI contract', () => {
       equipmentState: 'running', estimatedMinutes: '25', leadDays: '3', frequencyInterval: '500',
       frequencyUnit: 'hours', meterName: 'Operating Hours', nextDueReading: '1750',
     }));
+  });
+
+  it('preserves time-of-day when an hourly or minute TBM task is reopened for editing', () => {
+    const draft = pmScheduleTaskDraftFromApi({
+      id: 'scheduled-hourly', pmTaskId: 'task-18', maintenanceMode: 'tbm', equipmentState: 'running',
+      estimatedMinutes: 5, leadDays: 0, frequencyInterval: 2, frequencyUnit: 'hours',
+      nextDueDate: '2026-10-31T14:30:00.000Z', isActive: true,
+      pmTask: { id: 'task-18', taskNumber: 18, description: 'Check pressure', taskType: 'mechanical', isActive: true },
+    });
+    expect(draft.nextDueDate).toBe('2026-10-31T14:30');
   });
 
   it('serializes only planning fields and clears metadata from inactive modes', () => {
@@ -74,13 +105,20 @@ describe('PM scheduled-task UI contract', () => {
 
   it('renders mode-specific planning, execution-state and accessible reorder controls on every task card', () => {
     expect(cardSource).toContain('Task #');
-    expect(cardSource).toContain('TBM');
-    expect(cardSource).toContain('UBM');
-    expect(cardSource).toContain('CBM');
-    expect(cardSource).toContain('RUNNING');
-    expect(cardSource).toContain('STOPPED');
+    expect(cardSource).toContain('Time Based');
+    expect(cardSource).toContain('Usage Based');
+    expect(cardSource).toContain('Condition Based');
+    expect(cardSource).toContain('Running');
+    expect(cardSource).toContain('Stopped');
+    expect(cardSource).toContain('Frequency Type');
+    expect(cardSource).toContain('Frequency Unit');
+    expect(cardSource).toContain('Frequency Value');
+    expect(cardSource).toContain('Inspection Type');
+    expect(cardSource).toContain('Maintenance Mode');
     expect(cardSource).toContain('Estimated Minutes');
     expect(cardSource).toContain('Lead Days');
+    expect(cardSource).toContain('Next Due Date');
+    expect(cardSource).not.toContain('<Label>Equipment State</Label>');
     expect(cardSource).toContain('outside_range');
     expect(cardSource).toContain('Move Task #');
     expect(cardSource).toContain('Remove Task #');

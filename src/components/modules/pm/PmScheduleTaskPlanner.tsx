@@ -79,29 +79,29 @@ export function PmScheduleTaskPlanner({ tasks, onChange, assetId, componentId = 
   const remove = (index: number) => onChange(tasks.filter((_, taskIndex) => taskIndex !== index));
 
   return (
-    <div data-testid="pm-schedule-task-planner" className="space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div data-testid="pm-schedule-task-planner" className="space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">Tasks & Planning</p>
-          <p className="text-[11px] text-muted-foreground">Select Task Library records, then give each task its own TBM, UBM or CBM plan.</p>
+          <p className="text-[11px] text-muted-foreground">Add Task Library records, then define each task’s compact frequency and maintenance plan.</p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled} className="w-full sm:w-auto">
+        <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled} className="h-8 w-full text-xs sm:w-auto">
           <Plus className="mr-1.5 h-4 w-4" /> Add Task from Library
         </Button>
       </div>
 
       {!assetId && (
-        <div className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">Select an asset first so meter and condition sources can be validated.</div>
+        <div className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">Select an asset first so meter and condition sources can be validated.</div>
       )}
 
       {tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-6 text-center">
+        <div className="rounded-lg border border-dashed p-4 text-center">
           <LibraryBig className="mx-auto h-7 w-7 text-muted-foreground" />
           <p className="mt-2 text-sm font-medium">No scheduled tasks yet</p>
           <p className="mt-1 text-xs text-muted-foreground">Every active task-level PM schedule needs at least one Task Library record.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {sourcesLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing meter and condition sources…</div>}
           {tasks.map((task, index) => (
             <PmScheduleTaskCard

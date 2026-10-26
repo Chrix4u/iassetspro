@@ -2,11 +2,13 @@ import type { PmTaskType } from '@/lib/pm-task';
 
 export const PM_SCHEDULE_TASK_MODES = ['tbm', 'ubm', 'cbm'] as const;
 export const PM_SCHEDULE_TASK_EQUIPMENT_STATES = ['running', 'stopped'] as const;
-export const PM_SCHEDULE_TASK_TIME_UNITS = ['days', 'weeks', 'months', 'years'] as const;
+export const PM_SCHEDULE_TASK_FREQUENCY_TYPES = ['time_day', 'meter'] as const;
+export const PM_SCHEDULE_TASK_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
 export const PM_SCHEDULE_TASK_CONDITION_OPERATORS = ['>', '>=', '<', '<=', '=', '!=', 'outside_range'] as const;
 
 export type PmScheduleTaskMode = (typeof PM_SCHEDULE_TASK_MODES)[number];
 export type PmScheduleTaskEquipmentState = (typeof PM_SCHEDULE_TASK_EQUIPMENT_STATES)[number];
+export type PmScheduleTaskFrequencyType = (typeof PM_SCHEDULE_TASK_FREQUENCY_TYPES)[number];
 export type PmScheduleTaskTimeUnit = (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number];
 export type PmScheduleTaskConditionOperator = (typeof PM_SCHEDULE_TASK_CONDITION_OPERATORS)[number];
 export type PmScheduleTaskConditionSourceType = 'component_condition' | 'iot_device' | '';
@@ -28,6 +30,7 @@ export interface PmScheduleTaskDraft {
   taskType: PmTaskType;
   maintenanceMode: PmScheduleTaskMode;
   equipmentState: PmScheduleTaskEquipmentState;
+  frequencyType: PmScheduleTaskFrequencyType;
   estimatedMinutes: string;
   leadDays: string;
   frequencyInterval: string;
@@ -75,6 +78,15 @@ function dateOnly(value: unknown): string {
   return date.toISOString().slice(0, 10);
 }
 
+function dateTimeLocal(value: unknown): string {
+  if (!value) return '';
+  const raw = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) && !raw.endsWith('Z')) return raw.slice(0, 16);
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 16);
+}
+
 function numberOrNull(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number(value);
@@ -96,6 +108,7 @@ export function pmScheduleTaskDraftFromMaster(master: PmScheduleTaskMaster): PmS
     taskType: master.taskType,
     maintenanceMode: 'tbm',
     equipmentState: 'stopped',
+    frequencyType: 'time_day',
     estimatedMinutes: '',
     leadDays: '0',
     frequencyInterval: '1',
@@ -117,6 +130,8 @@ export function pmScheduleTaskDraftFromMaster(master: PmScheduleTaskMaster): PmS
 
 export function pmScheduleTaskDraftFromApi(row: any): PmScheduleTaskDraft {
   const master = row?.pmTask || {};
+  const frequencyUnit = text(row?.frequencyUnit);
+  const usesSubDayTime = String(row?.maintenanceMode || 'tbm') === 'tbm' && ['minutes', 'hours'].includes(frequencyUnit);
   return {
     clientId: String(row?.id || row?.pmTaskId || master.id || ''),
     id: row?.id ? String(row.id) : null,
@@ -126,13 +141,14 @@ export function pmScheduleTaskDraftFromApi(row: any): PmScheduleTaskDraft {
     taskType: String(master.taskType || 'mechanical') as PmTaskType,
     maintenanceMode: String(row?.maintenanceMode || 'tbm') as PmScheduleTaskMode,
     equipmentState: String(row?.equipmentState || 'stopped') as PmScheduleTaskEquipmentState,
+    frequencyType: String(row?.maintenanceMode || 'tbm') === 'ubm' ? 'meter' : 'time_day',
     estimatedMinutes: text(row?.estimatedMinutes),
     leadDays: text(row?.leadDays ?? 0),
     frequencyInterval: text(row?.frequencyInterval),
-    frequencyUnit: text(row?.frequencyUnit),
+    frequencyUnit,
     meterName: text(row?.meterName),
     nextDueReading: text(row?.nextDueReading),
-    nextDueDate: dateOnly(row?.nextDueDate),
+    nextDueDate: usesSubDayTime ? dateTimeLocal(row?.nextDueDate) : dateOnly(row?.nextDueDate),
     conditionSourceType: text(row?.conditionSourceType) as PmScheduleTaskConditionSourceType,
     conditionSourceId: text(row?.conditionSourceId),
     conditionMetric: text(row?.conditionMetric),
@@ -174,6 +190,16 @@ export function pmScheduleTaskPayload(task: PmScheduleTaskDraft, sortOrder: numb
     isActive: task.isActive,
   };
   return common;
+}
+
+
+
+export function totalPmScheduleEstimatedMinutes(tasks: ReadonlyArray<Pick<PmScheduleTaskDraft, 'estimatedMinutes'>>): number {
+  return tasks.reduce((total, task) => {
+    if (!task.estimatedMinutes.trim()) return total;
+    const minutes = Number(task.estimatedMinutes);
+    return Number.isInteger(minutes) && minutes >= 0 ? total + minutes : total;
+  }, 0);
 }
 
 export function formatPmScheduleTaskPlanningSummary(task: PmScheduleTaskDraft): string {

@@ -19,6 +19,12 @@ describe('PM recurrence authority UI contract', () => {
     expect(source).toContain("viewItem.recurrenceAuthority === 'task'");
   });
 
+  it('keeps task-authority detail counts null-safe and never turns the authority boolean into a task count', () => {
+    expect(source).toContain('viewItem.scheduledTasks?.length ?? 0');
+    expect(source).toContain('(viewItem.scheduledTasks || []).map');
+    expect(source).not.toContain("viewItem.recurrenceAuthority === 'task' ??");
+  });
+
   it('does not advertise task-level generation as staged or pending after the engines shipped', () => {
     expect(source).not.toContain('Staged · task engines pending');
     expect(source).not.toContain('Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.');

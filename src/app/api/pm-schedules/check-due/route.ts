@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         isActive: true,
         autoGenerateWO: true,
         nextDueDate: { not: null },
-        tasks: { none: {} },
+        recurrenceAuthority: 'legacy_header',
         asset: manualAssetPlantFilter(plantScope),
       },
       select: { id: true, assetId: true },
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
           };
         }
 
-        if (!schedule.isActive || !schedule.autoGenerateWO || !schedule.nextDueDate) {
+        if (schedule.recurrenceAuthority !== 'legacy_header' || !schedule.isActive || !schedule.autoGenerateWO || !schedule.nextDueDate) {
           return {
             scheduleId: schedule.id,
             scheduleTitle: schedule.title,

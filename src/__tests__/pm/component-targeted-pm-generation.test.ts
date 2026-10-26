@@ -74,6 +74,7 @@ describe('component-targeted PM work-order generation', () => {
       componentId: 'component-guard-switch',
       isActive: true,
       autoGenerateWO: true,
+      recurrenceAuthority: 'legacy_header',
       frequencyType: 'weekly',
       frequencyValue: 1,
       nextDueDate: now,

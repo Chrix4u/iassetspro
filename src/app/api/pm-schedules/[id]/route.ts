@@ -143,10 +143,10 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const existingHasScheduledTasks = existing.tasks.length > 0;
-    const prospectiveTaskLevel = existingHasScheduledTasks || scheduledTasksProvided;
+    const existingHasTaskAuthority = existing.recurrenceAuthority === 'task';
+    const prospectiveTaskLevel = existingHasTaskAuthority || scheduledTasksProvided;
     const legacyRecurrenceFields = ['frequencyType', 'frequencyValue', 'frequencyUnit', 'meterName', 'lastCompletedDate', 'nextDueDate', 'leadDays'];
-    if (existingHasScheduledTasks && inlineTasksProvided) {
+    if (existingHasTaskAuthority && inlineTasksProvided) {
       return NextResponse.json(
         { success: false, error: 'Existing task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' },
         { status: 400 },
@@ -159,7 +159,7 @@ export async function PUT(
       );
     }
     const requestedComponentId = body.componentId !== undefined ? (body.componentId || null) : existing.componentId;
-    if (existingHasScheduledTasks && body.componentId !== undefined && requestedComponentId !== existing.componentId && !scheduledTasksProvided) {
+    if (existingHasTaskAuthority && body.componentId !== undefined && requestedComponentId !== existing.componentId && !scheduledTasksProvided) {
       return NextResponse.json(
         { success: false, error: 'Changing a task-level PM target requires Scheduled Tasks to be resubmitted for source revalidation' },
         { status: 400 },
@@ -407,6 +407,7 @@ export async function PUT(
           frequencyValue: true,
           frequencyUnit: true,
           meterName: true,
+          recurrenceAuthority: true,
           assetId: true,
           asset: { select: { plantId: true } },
           trigger: {
@@ -423,19 +424,22 @@ export async function PUT(
       });
       if (!lockedSchedule) return { kind: 'not_found' as const };
 
-      const lockedHasScheduledTasks = lockedSchedule.tasks.length > 0;
-      const lockedProspectiveTaskLevel = lockedHasScheduledTasks || scheduledTasksProvided;
-      if (lockedHasScheduledTasks && inlineTasksProvided) {
+      const lockedHasTaskAuthority = lockedSchedule.recurrenceAuthority === 'task';
+      const lockedProspectiveTaskLevel = lockedHasTaskAuthority || scheduledTasksProvided;
+      if (lockedHasTaskAuthority && inlineTasksProvided) {
         return { kind: 'task_level_conflict' as const, error: 'Existing task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' };
       }
       if (lockedProspectiveTaskLevel && legacyRecurrenceFields.some((field) => body[field] !== undefined)) {
         return { kind: 'task_level_conflict' as const, error: 'Task-level recurrence is configured on Scheduled Tasks, not legacy schedule header fields' };
       }
-      if (lockedHasScheduledTasks && body.componentId !== undefined && (body.componentId || null) !== lockedSchedule.componentId && !scheduledTasksProvided) {
+      if (lockedHasTaskAuthority && body.componentId !== undefined && (body.componentId || null) !== lockedSchedule.componentId && !scheduledTasksProvided) {
         return { kind: 'task_level_conflict' as const, error: 'Changing a task-level PM target requires Scheduled Tasks to be resubmitted for source revalidation' };
       }
 
-      const lockedUpdateData: Record<string, unknown> = { ...updateData };
+      const lockedUpdateData: Record<string, unknown> = {
+        ...updateData,
+        ...(scheduledTasksProvided ? { recurrenceAuthority: 'task', lastCompletedDate: null, nextDueDate: null } : {}),
+      };
       const lockedProspectiveFrequencyType = storedFrequencyTypeForUpdate ?? lockedSchedule.frequencyType;
       const lockedProspectiveFrequencyValue = canonicalFrequencyForUpdate?.frequencyValue ?? Number(lockedSchedule.frequencyValue);
       const lockedProspectiveFrequencyUnit = frequencyFieldsChanging
@@ -473,7 +477,11 @@ export async function PUT(
       let reconciledTriggerConfig: string | undefined;
       let reconciledTriggerValue: number | undefined;
 
-      if (lockedTriggerTargetChanged) {
+      if (scheduledTasksProvided && lockedSchedule.trigger) {
+        // Explicit Scheduled Task submission transfers recurrence authority away
+        // from the legacy trigger subsystem in the same transaction.
+        triggerMutation = 'delete';
+      } else if (lockedTriggerTargetChanged) {
         const prospectiveSchedule = {
           id: lockedSchedule.id,
           assetId: lockedSchedule.assetId,
@@ -553,7 +561,7 @@ export async function PUT(
           if (!template || !template.isActive || template.tasks.length === 0) {
             return { kind: 'invalid_template' as const };
           }
-          if ((lockedHasScheduledTasks || scheduledTasksProvided) && template.plantId !== lockedSchedule.asset.plantId) {
+          if ((lockedHasTaskAuthority || scheduledTasksProvided) && template.plantId !== lockedSchedule.asset.plantId) {
             return { kind: 'invalid_template_plant' as const };
           }
         }

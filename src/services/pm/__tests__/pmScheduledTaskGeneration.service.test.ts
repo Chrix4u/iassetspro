@@ -83,6 +83,7 @@ const schedule = (tasks: any[], overrides: Record<string, unknown> = {}) => ({
   departmentId: null,
   estimatedDuration: 1,
   autoGenerateWO: false,
+  recurrenceAuthority: 'task',
   isActive: true,
   createdById: 'planner-1',
   asset: { id: 'asset-1', name: 'Pump 1', assetTag: 'P-001', plantId: 'plant-1', departmentId: 'dept-1' },
@@ -217,6 +218,7 @@ describe('pmScheduledTaskGeneration.service', () => {
     expect(mocks.db.pmSchedule.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         isActive: true,
+        recurrenceAuthority: 'task',
         autoGenerateWO: true,
         asset: { plantId: { in: ['plant-1'] } },
         tasks: { some: { isActive: true } },

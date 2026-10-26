@@ -8248,7 +8248,7 @@ export function PmSchedulesPage() {
   const [formNextDueDate, setFormNextDueDate] = useState('');
   const formUsesCalendarCadence = formFreqType === 'time_day';
   const isLegacyScheduleEdit = Boolean(
-    editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0),
+    editItem && editItem.recurrenceAuthority !== 'task',
   );
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
@@ -8672,8 +8672,10 @@ export function PmSchedulesPage() {
   };
 
   const scheduleDueDates = (schedule: any) => {
-    if (Array.isArray(schedule.scheduledTasks) && schedule.scheduledTasks.length > 0) {
-      return schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean);
+    if (schedule.recurrenceAuthority === 'task') {
+      return Array.isArray(schedule.scheduledTasks)
+        ? schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean)
+        : [];
     }
     return isAutoCalculableFrequency(schedule.frequencyType) && schedule.nextDueDate ? [schedule.nextDueDate] : [];
   };
@@ -8875,8 +8877,8 @@ export function PmSchedulesPage() {
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <Badge variant="outline" className="text-[10px] font-medium">
-                      {Array.isArray(s.scheduledTasks) && s.scheduledTasks.length > 0
-                        ? `Task-level · ${s.scheduledTasks.length} task${s.scheduledTasks.length === 1 ? '' : 's'}`
+                      {s.recurrenceAuthority === 'task'
+                        ? `Task-level · ${s.scheduledTasks?.length ?? 0} task${s.scheduledTasks?.length === 1 ? '' : 's'}`
                         : freqLabel(s.frequencyType, s.frequencyValue, s.frequencyUnit, s.meterName)}
                     </Badge>
                   </TableCell>
@@ -8886,7 +8888,7 @@ export function PmSchedulesPage() {
                       const due = earliestScheduleDueDate(s);
                       return <div>
                         <p className={`text-xs font-medium ${isOverdue(due) ? 'text-red-600 dark:text-red-400' : isDueSoon(due) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-                          {due ? formatDate(due) : (s.scheduledTasks?.length ? 'Per task / signal' : '—')}
+                          {due ? formatDate(due) : (s.recurrenceAuthority === 'task' ? 'Per task / signal' : '—')}
                         </p>
                         {isOverdue(due) && <p className="text-[10px] text-red-500">OVERDUE</p>}
                         {isDueSoon(due) && !isOverdue(due) && <p className="text-[10px] text-amber-500">DUE SOON</p>}
@@ -9037,8 +9039,8 @@ export function PmSchedulesPage() {
               </div>
 
               <div className="rounded-xl border bg-muted/20 p-3 md:col-span-2 xl:col-span-12">
-                <p className="text-sm font-semibold">Task-level automation is staged safely</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">Task-level schedules keep recurrence on each Task Library record. Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.</p>
+                <p className="text-sm font-semibold">Task-level automation</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Automatic work-order generation evaluates each Scheduled Task independently using TBM/UBM/CBM due logic; recurrence advances only after verified planner closeout.</p>
               </div>
             </>
           ) : (
@@ -9168,23 +9170,23 @@ export function PmSchedulesPage() {
               </div>
             </div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Template</p><p className="mt-1 text-sm font-medium">{viewItem.template?.title || 'No template'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Planning Model</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? `Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Planning Model</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? `Task-level · ${viewItem.scheduledTasks?.length ?? 0} independent task${viewItem.scheduledTasks?.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Priority</p><div className="mt-1"><PriorityBadge priority={viewItem.priority} /></div></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Estimated Duration</p><p className="mt-1 text-sm font-medium">{viewItem.estimatedDuration != null ? `${viewItem.estimatedDuration} hrs` : '—'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Assigned To</p><p className="mt-1 text-sm font-medium">{viewItem.assignedTo?.fullName || 'Unassigned'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Department</p><p className="mt-1 text-sm font-medium">{viewItem.department?.name || '—'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Next Due</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? (earliestScheduleDueDate(viewItem) ? formatDate(earliestScheduleDueDate(viewItem)) : 'Per task / signal') : (viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—')}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Last Completed</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Tracked per task' : (viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—')}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Lead Days</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Per task' : (viewItem.leadDays ?? 0)}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Automatic Generation</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Staged · task engines pending' : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Next Due</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? (earliestScheduleDueDate(viewItem) ? formatDate(earliestScheduleDueDate(viewItem)) : 'Per task / signal') : (viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—')}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Last Completed</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? 'Tracked per task' : (viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—')}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Lead Days</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? 'Per task' : (viewItem.leadDays ?? 0)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Automatic Generation</p><p className="mt-1 text-sm font-medium">{viewItem.recurrenceAuthority === 'task' ? (viewItem.autoGenerateWO ? 'Enabled · task due engine' : 'Disabled') : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}</p></div>
             <div className="sm:col-span-2 rounded-lg border p-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] uppercase text-muted-foreground">PM Task List</p>
-                <Badge variant="secondary" className="text-[10px]">{viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length ?? 0} task{(viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length) === 1 ? '' : 's'}</Badge>
+                <Badge variant="secondary" className="text-[10px]">{viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)} task{(viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)) === 1 ? '' : 's'}</Badge>
               </div>
-              {viewItem.scheduledTasks?.length ? (
+              {viewItem.recurrenceAuthority === 'task' ? (
                 <div className="mt-3 space-y-2">
-                  {viewItem.scheduledTasks.map((task: any) => {
+                  {(viewItem.scheduledTasks || []).map((task: any) => {
                     const draft = pmScheduleTaskDraftFromApi(task);
                     return <div key={task.id} className="rounded-lg border bg-muted/20 p-2.5">
                       <div className="flex flex-wrap items-center gap-2">

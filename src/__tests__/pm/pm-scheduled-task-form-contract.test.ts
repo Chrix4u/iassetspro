@@ -24,7 +24,8 @@ describe('PM task-level schedule form contract', () => {
     expect(page).toContain('{!isLegacyScheduleEdit ? (');
     expect(page).toContain('Legacy schedule compatibility mode');
     expect(page).not.toContain('Describe the maintenance tasks...');
-    expect(page).toContain('Task-level schedules keep recurrence on each Task Library record');
+    expect(page).toContain('Automatic work-order generation evaluates each Scheduled Task independently using TBM/UBM/CBM due logic');
+    expect(page).toContain('recurrence advances only after verified planner closeout.');
   });
 
   it('requires one or more scheduled Task Library records on the task-level path', () => {
@@ -52,9 +53,11 @@ describe('PM task-level schedule form contract', () => {
     expect(page).toContain('Asset is fixed after schedule creation. Create a new schedule to move this plan to another asset.');
   });
 
-  it('keeps task-level automatic generation fail-closed until the task engines land', () => {
-    expect(page).toContain('Task-level automation is staged safely');
-    expect(page).toContain('Legacy automatic generation stays disabled');
-    expect(page).not.toContain('checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />\n          </div>\n        </div>\n      </ResponsiveDialog>');
+  it('uses the shipped task engines for task-level automatic generation', () => {
+    expect(page).toContain('Task-level automation');
+    expect(page).toContain('TBM/UBM/CBM due logic');
+    expect(page).toContain("'Generate preventive work orders when individual Scheduled Tasks enter their due window or threshold.'");
+    expect(page).not.toContain('Task-level automation is staged safely');
+    expect(page).not.toContain('Legacy automatic generation stays disabled');
   });
 });

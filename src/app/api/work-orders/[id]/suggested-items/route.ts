@@ -758,8 +758,8 @@ export async function PUT(
         );
       }
 
-      const parts = parseSuggestions(wo.suggestedParts);
-      const tools = parseSuggestions(wo.suggestedTools);
+      const parts = inventoryResourcesOperational ? parseSuggestions(wo.suggestedParts) : [];
+      const tools = toolResourcesOperational ? parseSuggestions(wo.suggestedTools) : [];
       if (parts.length > 0 && !hasPermission(session, 'repair_material_requests.create')) {
         return NextResponse.json({ success: false, error: 'Insufficient permission to request recommended materials' }, { status: 403 });
       }

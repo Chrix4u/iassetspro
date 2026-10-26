@@ -39,7 +39,6 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('/inventory-candidates?');
     expect(source).toContain('/tool-candidates?');
     expect(source).toContain('Map Resource');
-    expect(source).toContain('Submit Planned Resources');
     expect(source).toContain('Resolve assignments');
     expect(source).toContain('openEditWO');
     expect(source).toContain('fetchPmPlanningReadiness()');

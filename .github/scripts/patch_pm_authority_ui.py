@@ -15,7 +15,7 @@ def replace_once(old: str, new: str, label: str) -> None:
     print(f'{label}: applied')
 
 
-# Apply the main authority changes when running against an unpatched checkout.
+# Apply authority semantics when running against an unpatched checkout.
 if "editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0)" in text:
     replace_once(
         """  const isLegacyScheduleEdit = Boolean(
@@ -81,35 +81,51 @@ text = text.replace(
 """,
 )
 
-# View/detail authority conversion.
-text = text.replace("viewItem.scheduledTasks?.length ?", "viewItem.recurrenceAuthority === 'task' ?")
+# Convert any still-unpatched detail-view authority checks using exact old forms only.
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? `Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}",
+    "{viewItem.recurrenceAuthority === 'task' ? `Task-level · ${viewItem.scheduledTasks?.length ?? 0} independent task${viewItem.scheduledTasks?.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}",
+)
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? (earliestScheduleDueDate(viewItem) ? formatDate(earliestScheduleDueDate(viewItem)) : 'Per task / signal') : (viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—')}",
+    "{viewItem.recurrenceAuthority === 'task' ? (earliestScheduleDueDate(viewItem) ? formatDate(earliestScheduleDueDate(viewItem)) : 'Per task / signal') : (viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—')}",
+)
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? 'Tracked per task' : (viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—')}",
+    "{viewItem.recurrenceAuthority === 'task' ? 'Tracked per task' : (viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—')}",
+)
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? 'Per task' : (viewItem.leadDays ?? 0)}",
+    "{viewItem.recurrenceAuthority === 'task' ? 'Per task' : (viewItem.leadDays ?? 0)}",
+)
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? 'Staged · task engines pending' : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}",
+    "{viewItem.recurrenceAuthority === 'task' ? (viewItem.autoGenerateWO ? 'Enabled · task due engine' : 'Disabled') : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}",
+)
+text = text.replace(
+    "{viewItem.scheduledTasks?.length ? (",
+    "{viewItem.recurrenceAuthority === 'task' ? (",
+)
+
+# Repair the first automated attempt's two malformed/non-null-safe expressions.
 text = text.replace(
     "`Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}`",
     "`Task-level · ${viewItem.scheduledTasks?.length ?? 0} independent task${viewItem.scheduledTasks?.length === 1 ? '' : 's'}`",
 )
 text = text.replace(
-    "{viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length ?? 0} task{(viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length) === 1 ? '' : 's'}",
-    "{viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)} task{(viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)) === 1 ? '' : 's'}",
-)
-# Repair the malformed expression produced by the first patch attempt, if present.
-text = text.replace(
     "{viewItem.recurrenceAuthority === 'task' ?? viewItem.template?.tasks?.length ?? 0} task{(viewItem.recurrenceAuthority === 'task' ?? viewItem.template?.tasks?.length) === 1 ? '' : 's'}",
     "{viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)} task{(viewItem.recurrenceAuthority === 'task' ? (viewItem.scheduledTasks?.length ?? 0) : (viewItem.template?.tasks?.length ?? 0)) === 1 ? '' : 's'}",
-)
-text = text.replace(
-    "{viewItem.recurrenceAuthority === 'task' ? 'Staged · task engines pending' : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}",
-    "{viewItem.recurrenceAuthority === 'task' ? (viewItem.autoGenerateWO ? 'Enabled · task due engine' : 'Disabled') : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}",
 )
 text = text.replace(
     "{viewItem.scheduledTasks.map((task: any) => {",
     "{(viewItem.scheduledTasks || []).map((task: any) => {",
 )
 
-# Safety assertions for this patcher itself.
+# Safety assertions: reject only real row-presence authority patterns, not valid ?? fallbacks.
 for forbidden in (
     "editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0)",
     "if (Array.isArray(schedule.scheduledTasks) && schedule.scheduledTasks.length > 0)",
-    "viewItem.scheduledTasks?.length ?",
+    "{viewItem.scheduledTasks?.length ?",
     "viewItem.recurrenceAuthority === 'task' ??",
     "Staged · task engines pending",
     "Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.",
@@ -122,6 +138,8 @@ for required in (
     "schedule.recurrenceAuthority === 'task'",
     "s.recurrenceAuthority === 'task'",
     "viewItem.recurrenceAuthority === 'task'",
+    "viewItem.scheduledTasks?.length ?? 0",
+    "(viewItem.scheduledTasks || []).map",
     "TBM/UBM/CBM due logic",
 ):
     if required not in text:

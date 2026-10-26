@@ -82,38 +82,29 @@ test('UAT-19: Planner PM template → generated WO → technician checklist → 
   expect(templateState.status).toBe(200);
   expect(templateState.data.data?.tasks).toHaveLength(3);
 
-  // Planner creates a schedule through the real UI and links the template to the seeded UAT pump.
-  await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('button', { name: /New Schedule/i }).click();
-  await page.getByPlaceholder('e.g., Monthly Motor Inspection').fill(scheduleTitle);
-
-  const templateLabel = page.locator('label').filter({ hasText: /PM Template$/ }).first();
-  await templateLabel.locator('..').getByRole('combobox').click();
-  await page.getByPlaceholder('Search PM templates...').fill(templateTitle);
-  await page.getByText(`${templateTitle} · 3 tasks`, { exact: true }).click();
-
-  // Template is a starter: its checklist is copied into this schedule form and
-  // can be customized without mutating the reusable template.
-  const scheduleTaskInputs = page.getByPlaceholder('Describe the maintenance task...');
-  await expect(scheduleTaskInputs).toHaveCount(3, { timeout: 10_000 });
-  await expect(scheduleTaskInputs.nth(0)).toHaveValue(templateTaskDescriptions[0]);
-  await expect(scheduleTaskInputs.nth(1)).toHaveValue(templateTaskDescriptions[1]);
-  await expect(scheduleTaskInputs.nth(2)).toHaveValue(templateTaskDescriptions[2]);
-  await page.getByRole('button', { name: 'Add Task', exact: true }).click();
-  await scheduleTaskInputs.last().fill(scheduleOnlyTask);
-
-  const assetLabel = page.locator('label').filter({ hasText: /^Asset/ }).first();
-  await assetLabel.locator('..').getByRole('combobox').click();
-  await page.getByPlaceholder('Search assets by name or tag...').fill('UAT-PUMP-001');
-  await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
-
-  const durationLabel = page.locator('label').filter({ hasText: /Est\. Duration/ }).first();
-  await durationLabel.locator('..').locator('input').fill('1');
-  const createScheduleResponse = page.waitForResponse((response) => response.url().includes('/api/pm-schedules') && response.request().method() === 'POST');
-  await page.getByRole('button', { name: /Create Schedule/i }).click();
-  expect((await createScheduleResponse).status()).toBe(201);
-  await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+  // New browser-authored schedules are task-level in slice 3 and deliberately cannot
+  // enter the legacy generation engine. This scenario validates legacy generation and
+  // schedule-owned checklist snapshots, so seed that compatibility schedule through
+  // the still-supported API path while keeping template/task creation above in the UI.
+  const createSchedule = await apiCall(plannerToken, 'POST', '/api/pm-schedules', {
+    title: scheduleTitle,
+    assetId,
+    frequencyType: 'time_day',
+    frequencyValue: 1,
+    frequencyUnit: 'months',
+    nextDueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    estimatedDuration: 1,
+    priority: 'medium',
+    autoGenerateWO: true,
+    leadDays: 3,
+    inlineTasks: [
+      { description: templateTaskDescriptions[0], taskType: 'inspect', estimatedMinutes: 15 },
+      { description: templateTaskDescriptions[1], taskType: 'measure', estimatedMinutes: 15 },
+      { description: templateTaskDescriptions[2], taskType: 'lubricate', estimatedMinutes: 15 },
+      { description: scheduleOnlyTask, taskType: 'record', estimatedMinutes: 15 },
+    ],
+  });
+  expect(createSchedule.status).toBe(201);
 
   const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
   expect(schedules.status).toBe(200);

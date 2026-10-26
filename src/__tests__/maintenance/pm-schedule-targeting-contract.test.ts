@@ -37,14 +37,16 @@ describe('PM schedule exact hierarchy targeting contract', () => {
     expect(source).toContain('Auto-generate Work Order');
   });
 
-  it('preserves the established PM asset-search and browser selector contracts', () => {
+  it('preserves the PM asset-search and task-level browser targeting contracts', () => {
     const scenario = fs.readFileSync(
       path.join(process.cwd(), 'e2e/repairs/scenario-n-frontend-hierarchy-pm.spec.ts'),
       'utf8',
     );
 
     expect(source).toContain('searchPlaceholder="Search assets by name or tag..."');
+    expect(scenario).toContain("scheduleDialog.getByPlaceholder('e.g., Drive System Preventive Maintenance')");
     expect(scenario).toContain("page.getByPlaceholder('Search assets by name or tag...')");
+    expect(scenario).toContain("page.getByPlaceholder('Search PM templates...')");
     expect(scenario).toContain('expandParentCode?: string');
     expect(scenario).toContain("filter({ hasText: expandParentCode }).first()");
     expect(scenario).toContain("filter({ hasText: /^Close$/ }).first().click()");

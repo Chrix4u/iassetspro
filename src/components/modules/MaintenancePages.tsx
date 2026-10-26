@@ -73,6 +73,14 @@ import { PmTaskFormDialog, type PmTaskFormRecord } from '@/components/modules/pm
 import { PmTaskBulkDialog } from '@/components/modules/pm/PmTaskBulkDialog';
 import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTaskPickerDialog';
 import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
+import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner';
+import {
+  formatPmScheduleTaskPlanningSummary,
+  pmScheduleTaskDraftFromApi,
+  pmScheduleTaskDraftFromMaster,
+  pmScheduleTaskPayload,
+  type PmScheduleTaskDraft,
+} from '@/lib/pm-schedule-task';
 import type { PmTaskType } from '@/lib/pm-task';
 // Local UrgencyBadge for WO detail page (same as RepairsPages)
 const URGENCY_CFG: Record<string, { label: string; color: string; dotColor: string }> = {
@@ -8197,41 +8205,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   );
 }
 // --- PmSchedulesPage separator ---
-type PmScheduleTaskDraft = {
-  id: string;
-  description: string;
-  taskType: string;
-  estimatedMinutes: string;
-  requiredPartsText: string;
-};
-
-const PM_SCHEDULE_TASK_TYPE_OPTIONS = [
-  { value: 'check', label: 'Check' },
-  { value: 'measure', label: 'Measure' },
-  { value: 'inspect', label: 'Inspect' },
-  { value: 'lubricate', label: 'Lubricate' },
-  { value: 'replace', label: 'Replace' },
-  { value: 'record', label: 'Record' },
-];
-
-function pmScheduleTaskDraft(task: any, index: number): PmScheduleTaskDraft {
-  let requiredParts: string[] = [];
-  if (Array.isArray(task?.requiredParts)) requiredParts = task.requiredParts;
-  else if (typeof task?.requiredParts === 'string' && task.requiredParts.trim()) {
-    try {
-      const parsed = JSON.parse(task.requiredParts);
-      if (Array.isArray(parsed)) requiredParts = parsed.filter((part) => typeof part === 'string');
-    } catch { /* malformed legacy optional metadata is displayed as empty */ }
-  }
-  return {
-    id: String(task?.id || `pm-task-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`),
-    description: String(task?.description || ''),
-    taskType: String(task?.taskType || 'check'),
-    estimatedMinutes: task?.estimatedMinutes ? String(task.estimatedMinutes) : '',
-    requiredPartsText: requiredParts.join(', '),
-  };
-}
-
 export function PmSchedulesPage() {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -8255,9 +8228,7 @@ export function PmSchedulesPage() {
   const [formDesc, setFormDesc] = useState('');
   const [formTemplateId, setFormTemplateId] = useState('');
   const [formTemplateStarterId, setFormTemplateStarterId] = useState('');
-  const [formTasks, setFormTasks] = useState<PmScheduleTaskDraft[]>([]);
-  const [formTasksDirty, setFormTasksDirty] = useState(false);
-  const [formTasksLoading, setFormTasksLoading] = useState(false);
+  const [formScheduledTasks, setFormScheduledTasks] = useState<PmScheduleTaskDraft[]>([]);
   const [formAssetId, setFormAssetId] = useState('');
   const [formComponentId, setFormComponentId] = useState('');
   const [pmComponentOptions, setPmComponentOptions] = useState<any[]>([]);
@@ -8276,6 +8247,9 @@ export function PmSchedulesPage() {
   const [formLeadDays, setFormLeadDays] = useState('3');
   const [formNextDueDate, setFormNextDueDate] = useState('');
   const formUsesCalendarCadence = formFreqType === 'time_day';
+  const isLegacyScheduleEdit = Boolean(
+    editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0),
+  );
 
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
   const [pmAutomationStatus, setPmAutomationStatus] = useState<any>(null);
@@ -8507,7 +8481,7 @@ export function PmSchedulesPage() {
 
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormTemplateId(''); setFormTemplateStarterId(''); setFormAssetId(''); setFormComponentId('');
-    setFormTasks([]); setFormTasksDirty(false); setFormTasksLoading(false);
+    setFormScheduledTasks([]);
     setFormFreqType('time_day'); setFormFreqValue('1'); setFormFreqUnit('months'); setFormMeterName('');
     setFormPriority('medium'); setFormEstDuration('');
     setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
@@ -8518,7 +8492,11 @@ export function PmSchedulesPage() {
   const handlePmTemplateStarterChange = async (templateId: string) => {
     setFormTemplateStarterId(templateId);
     if (!templateId) return;
-    setFormTasksLoading(true);
+    setFormTemplateId(templateId);
+    if (isLegacyScheduleEdit) {
+      toast.success('Legacy PM template link updated');
+      return;
+    }
     try {
       const res = await api.get(`/api/pm-templates/${templateId}`);
       if (!res.success || !res.data) {
@@ -8526,41 +8504,21 @@ export function PmSchedulesPage() {
         return;
       }
       const tasks = Array.isArray(res.data.tasks) ? res.data.tasks : [];
-      setFormTemplateId(templateId);
-      setFormTasks(tasks.map((task: any, index: number) => pmScheduleTaskDraft(task, index)));
-      setFormTasksDirty(false);
-      toast.success(`Loaded ${tasks.length} task${tasks.length === 1 ? '' : 's'} from template`);
+      const masters = tasks
+        .filter((task: any) => task.pmTaskId && task.masterTaskNumber !== null && task.discipline && task.masterIsActive !== false)
+        .map((task: any) => pmScheduleTaskDraftFromMaster({
+          id: task.pmTaskId,
+          taskNumber: task.masterTaskNumber,
+          description: task.description,
+          taskType: task.discipline,
+          isActive: task.masterIsActive !== false,
+        }));
+      setFormScheduledTasks(masters);
+      const skipped = tasks.length - masters.length;
+      toast.success(`Loaded ${masters.length} Task Library record${masters.length === 1 ? '' : 's'}${skipped > 0 ? ` · ${skipped} legacy template task${skipped === 1 ? '' : 's'} skipped` : ''}`);
     } catch {
       toast.error('Failed to load PM template tasks');
-    } finally {
-      setFormTasksLoading(false);
     }
-  };
-
-  const addPmTask = () => {
-    setFormTasks((current) => [...current, pmScheduleTaskDraft({ taskType: 'check' }, current.length)]);
-    setFormTasksDirty(true);
-  };
-
-  const updatePmTask = (id: string, patch: Partial<PmScheduleTaskDraft>) => {
-    setFormTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
-    setFormTasksDirty(true);
-  };
-
-  const movePmTask = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= formTasks.length) return;
-    setFormTasks((current) => {
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-    setFormTasksDirty(true);
-  };
-
-  const removePmTask = (id: string) => {
-    setFormTasks((current) => current.filter((task) => task.id !== id));
-    setFormTasksDirty(true);
   };
 
   const openCreate = () => { resetForm(); setCreateOpen(true); };
@@ -8569,9 +8527,7 @@ export function PmSchedulesPage() {
     setFormDesc(item.description || '');
     setFormTemplateId(item.templateId || '');
     setFormTemplateStarterId('');
-    setFormTasks([]);
-    setFormTasksDirty(false);
-    setFormTasksLoading(true);
+    setFormScheduledTasks(Array.isArray(item.scheduledTasks) ? item.scheduledTasks.map(pmScheduleTaskDraftFromApi) : []);
     setFormAssetId(item.assetId || '');
     setFormComponentId(item.componentId || '');
     const normalizedFrequency = normalizePmFrequency(item);
@@ -8593,56 +8549,85 @@ export function PmSchedulesPage() {
       const detail = res.data;
       setEditItem(detail);
       setFormTemplateId(detail.templateId || '');
-      setFormTasks((Array.isArray(detail.template?.tasks) ? detail.template.tasks : []).map((task: any, index: number) => pmScheduleTaskDraft(task, index)));
+      setFormScheduledTasks(Array.isArray(detail.scheduledTasks) ? detail.scheduledTasks.map(pmScheduleTaskDraftFromApi) : []);
       setFormAssignedToId(detail.assignedToId || '');
       setFormDepartmentId(detail.departmentId || '');
     }).catch(() => {
-      toast.error('Could not load the current PM task list');
-    }).finally(() => {
-      setFormTasksLoading(false);
+      toast.error('Could not load the current PM schedule plan');
     });
   };
 
   const handleSave = async () => {
     if (!formTitle || !formAssetId) { toast.error('Title and asset are required'); return; }
-    if (formTasks.some((task) => !task.description.trim())) { toast.error('Every PM task needs a description'); return; }
-    if (formTasks.some((task) => task.estimatedMinutes && (!Number.isInteger(Number(task.estimatedMinutes)) || Number(task.estimatedMinutes) <= 0))) {
-      toast.error('Task estimated minutes must be positive whole numbers'); return;
-    }
-    const parsedFrequencyValue = Number(formFreqValue);
-    if (!Number.isInteger(parsedFrequencyValue) || parsedFrequencyValue <= 0) {
-      toast.error('Frequency interval must be a positive whole number');
+
+    if (!isLegacyScheduleEdit && formScheduledTasks.length === 0) {
+      toast.error('Add at least one Task Library record to this schedule');
       return;
     }
-    if (formFreqType === 'meter' && (!formMeterName || !formFreqUnit)) {
-      toast.error('Select a meter recorded for this asset');
-      return;
+
+    if (!isLegacyScheduleEdit) {
+      for (const task of formScheduledTasks) {
+        const minutes = task.estimatedMinutes.trim() === '' ? 0 : Number(task.estimatedMinutes);
+        const leadDays = task.leadDays.trim() === '' ? 0 : Number(task.leadDays);
+        if (!Number.isInteger(minutes) || minutes < 0) { toast.error(`Task #${task.taskNumber}: estimated minutes must be a non-negative whole number`); return; }
+        if (!Number.isInteger(leadDays) || leadDays < 0) { toast.error(`Task #${task.taskNumber}: lead days must be a non-negative whole number`); return; }
+        const interval = Number(task.frequencyInterval);
+        if (task.maintenanceMode === 'tbm') {
+          if (!(interval > 0) || !task.nextDueDate) { toast.error(`Task #${task.taskNumber}: TBM needs a positive interval and next due date`); return; }
+        } else if (task.maintenanceMode === 'ubm') {
+          if (!(interval > 0) || !task.meterName || !task.frequencyUnit) { toast.error(`Task #${task.taskNumber}: UBM needs a valid asset meter and positive interval`); return; }
+        } else {
+          const threshold = Number(task.conditionThreshold);
+          if (!task.conditionSourceType || !task.conditionSourceId || !task.conditionMetric || !Number.isFinite(threshold)) {
+            toast.error(`Task #${task.taskNumber}: CBM needs a source, metric and numeric threshold`); return;
+          }
+          if (task.conditionOperator === 'outside_range') {
+            const upper = Number(task.conditionThresholdMax);
+            if (!Number.isFinite(upper) || upper <= threshold) { toast.error(`Task #${task.taskNumber}: CBM upper threshold must exceed the lower threshold`); return; }
+          }
+        }
+      }
     }
+
+    if (isLegacyScheduleEdit) {
+      const parsedFrequencyValue = Number(formFreqValue);
+      if (!Number.isInteger(parsedFrequencyValue) || parsedFrequencyValue <= 0) {
+        toast.error('Frequency interval must be a positive whole number');
+        return;
+      }
+      if (formFreqType === 'meter' && (!formMeterName || !formFreqUnit)) {
+        toast.error('Select a meter recorded for this asset');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const payload: any = {
-        title: formTitle, description: formDesc || null,
-        assetId: formAssetId, componentId: formComponentId || null, frequencyType: formFreqType,
-        frequencyValue: parsedFrequencyValue,
-        frequencyUnit: formFreqUnit,
-        meterName: formFreqType === 'meter' ? formMeterName : null,
+        title: formTitle,
+        assetId: formAssetId,
+        componentId: formComponentId || null,
         priority: formPriority,
         estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
         assignedToId: formAssignedToId || null,
         departmentId: formDepartmentId || null,
         templateId: formTemplateId || null,
-        autoGenerateWO: formAutoGenWO,
-        leadDays: formUsesCalendarCadence ? (formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)) : 0,
-        nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
-        ...(formTasksDirty ? {
-          inlineTasks: formTasks.map((task) => ({
-            description: task.description.trim(),
-            taskType: task.taskType,
-            estimatedMinutes: task.estimatedMinutes ? Number(task.estimatedMinutes) : null,
-            requiredParts: task.requiredPartsText.split(',').map((part) => part.trim()).filter(Boolean),
-          })),
-        } : {}),
       };
+
+      if (isLegacyScheduleEdit) {
+        Object.assign(payload, {
+          description: formDesc || null,
+          frequencyType: formFreqType,
+          frequencyValue: Number(formFreqValue),
+          frequencyUnit: formFreqUnit,
+          meterName: formFreqType === 'meter' ? formMeterName : null,
+          autoGenerateWO: formAutoGenWO,
+          leadDays: formUsesCalendarCadence ? (formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)) : 0,
+          nextDueDate: formUsesCalendarCadence ? (formNextDueDate || null) : null,
+        });
+      } else {
+        payload.scheduledTasks = formScheduledTasks.map((task, index) => pmScheduleTaskPayload(task, index));
+      }
 
       if (editItem) {
         const res = await api.put(`/api/pm-schedules/${editItem.id}`, payload);
@@ -8686,9 +8671,17 @@ export function PmSchedulesPage() {
     return new Date(d) < new Date();
   };
 
+  const scheduleDueDates = (schedule: any) => {
+    if (Array.isArray(schedule.scheduledTasks) && schedule.scheduledTasks.length > 0) {
+      return schedule.scheduledTasks.map((task: any) => task.nextDueDate).filter(Boolean);
+    }
+    return isAutoCalculableFrequency(schedule.frequencyType) && schedule.nextDueDate ? [schedule.nextDueDate] : [];
+  };
+  const earliestScheduleDueDate = (schedule: any) => scheduleDueDates(schedule)
+    .sort((a: string, b: string) => new Date(a).getTime() - new Date(b).getTime())[0] || null;
   const activeSchedules = schedules.filter(s => s.isActive);
-  const dueSoonCount = activeSchedules.filter(s => isAutoCalculableFrequency(s.frequencyType) && isDueSoon(s.nextDueDate)).length;
-  const overdueCount = activeSchedules.filter(s => isAutoCalculableFrequency(s.frequencyType) && isOverdue(s.nextDueDate)).length;
+  const dueSoonCount = activeSchedules.filter(s => scheduleDueDates(s).some((due: string) => isDueSoon(due))).length;
+  const overdueCount = activeSchedules.filter(s => scheduleDueDates(s).some((due: string) => isOverdue(due))).length;
 
   return (
     <div className="page-content">
@@ -8882,18 +8875,23 @@ export function PmSchedulesPage() {
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <Badge variant="outline" className="text-[10px] font-medium">
-                      {freqLabel(s.frequencyType, s.frequencyValue, s.frequencyUnit, s.meterName)}
+                      {Array.isArray(s.scheduledTasks) && s.scheduledTasks.length > 0
+                        ? `Task-level · ${s.scheduledTasks.length} task${s.scheduledTasks.length === 1 ? '' : 's'}`
+                        : freqLabel(s.frequencyType, s.frequencyValue, s.frequencyUnit, s.meterName)}
                     </Badge>
                   </TableCell>
                   <TableCell><PriorityBadge priority={s.priority} /></TableCell>
                   <TableCell>
-                    <div>
-                      <p className={`text-xs font-medium ${isOverdue(s.nextDueDate) ? 'text-red-600 dark:text-red-400' : isDueSoon(s.nextDueDate) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-                        {s.nextDueDate ? formatDate(s.nextDueDate) : '—'}
-                      </p>
-                      {isOverdue(s.nextDueDate) && <p className="text-[10px] text-red-500">OVERDUE</p>}
-                      {isDueSoon(s.nextDueDate) && !isOverdue(s.nextDueDate) && <p className="text-[10px] text-amber-500">DUE SOON</p>}
-                    </div>
+                    {(() => {
+                      const due = earliestScheduleDueDate(s);
+                      return <div>
+                        <p className={`text-xs font-medium ${isOverdue(due) ? 'text-red-600 dark:text-red-400' : isDueSoon(due) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                          {due ? formatDate(due) : (s.scheduledTasks?.length ? 'Per task / signal' : '—')}
+                        </p>
+                        {isOverdue(due) && <p className="text-[10px] text-red-500">OVERDUE</p>}
+                        {isDueSoon(due) && !isOverdue(due) && <p className="text-[10px] text-amber-500">DUE SOON</p>}
+                      </div>;
+                    })()}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <p className="text-xs">{s.assignedTo?.fullName || 'Unassigned'}</p>
@@ -8962,39 +8960,12 @@ export function PmSchedulesPage() {
         )}
       >
         <div data-testid="pm-schedule-form-grid" className="grid gap-4 py-2 md:grid-cols-2 xl:grid-cols-12">
-          <div className="space-y-2 md:col-span-2 xl:col-span-7">
+          <div className="space-y-2 md:col-span-2 xl:col-span-12">
             <Label className="text-sm font-semibold">Title *</Label>
-            <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Monthly Motor Inspection" />
-          </div>
-
-          <div className="space-y-2 md:col-span-2 xl:col-span-5">
-            <Label className="text-sm font-semibold">Start / Replace from PM Template</Label>
-            <AsyncSearchableSelect
-              value={formTemplateStarterId}
-              onValueChange={handlePmTemplateStarterChange}
-              fetchOptions={async () => {
-                const res = await api.get('/api/pm-templates?active=true');
-                if (res.success && res.data) {
-                  return (Array.isArray(res.data) ? res.data : []).map((template: any) => ({
-                    value: template.id,
-                    label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
-                    badge: template.type,
-                  }));
-                }
-                return [];
-              }}
-              placeholder="Optional — select PM template..."
-              searchPlaceholder="Search PM templates..."
-            />
-            <p className="text-[11px] text-muted-foreground">Loads a reusable template into this schedule's Task List. You can customize it without changing other schedules.</p>
+            <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Drive System Preventive Maintenance" />
           </div>
 
           <div className="space-y-2 md:col-span-2 xl:col-span-12">
-            <Label className="text-sm font-semibold">Description</Label>
-            <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance tasks..." rows={2} />
-          </div>
-
-          <div className="space-y-2 md:col-span-1 xl:col-span-6">
             <Label className="text-sm font-semibold">Asset *</Label>
             <AsyncSearchableSelect
               value={formAssetId}
@@ -9002,120 +8973,9 @@ export function PmSchedulesPage() {
               fetchOptions={fetchPmAssetOptions}
               placeholder="Select asset..."
               searchPlaceholder="Search assets by name or tag..."
+              disabled={Boolean(editItem)}
             />
-          </div>
-
-          <div className="space-y-2 md:col-span-1 xl:col-span-3">
-            <Label className="text-sm font-semibold">Assigned To</Label>
-            <AsyncSearchableSelect
-              value={formAssignedToId}
-              onValueChange={setFormAssignedToId}
-              fetchOptions={async () => {
-                const res = await api.get('/api/workers?role=technician');
-                if (res.success && res.data) {
-                  return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                    value: u.id,
-                    label: u.fullName,
-                  }));
-                }
-                return [];
-              }}
-              placeholder="Select technician..."
-              searchPlaceholder="Search technicians..."
-            />
-          </div>
-
-          <div className="space-y-2 md:col-span-1 xl:col-span-3">
-            <Label className="text-sm font-semibold">Department</Label>
-            <AsyncSearchableSelect
-              value={formDepartmentId}
-              onValueChange={setFormDepartmentId}
-              fetchOptions={async () => {
-                const res = await api.get('/api/departments?limit=100');
-                if (res.success && res.data) {
-                  return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                    value: d.id,
-                    label: d.name,
-                  }));
-                }
-                return [];
-              }}
-              placeholder="Select department..."
-              searchPlaceholder="Search departments..."
-            />
-          </div>
-
-          <div className="rounded-xl border bg-muted/15 p-4 md:col-span-2 xl:col-span-12">
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold">Task List</p>
-                <p className="text-[11px] text-muted-foreground">These tasks become the technician checklist on every work order generated by this schedule.</p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={addPmTask} disabled={formTasksLoading}>
-                <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Task
-              </Button>
-            </div>
-
-            {formTasksLoading ? (
-              <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading task list...</div>
-            ) : formTasks.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                No tasks yet. Add tasks here or load a reusable PM template above.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {formTasks.map((task, index) => (
-                  <div key={task.id} className="grid gap-2 rounded-lg border bg-card p-3 lg:grid-cols-12 lg:items-start">
-                    <div className="lg:col-span-5">
-                      <Label className="text-[10px] text-muted-foreground">Task {index + 1}</Label>
-                      <Input
-                        value={task.description}
-                        onChange={(event) => updatePmTask(task.id, { description: event.target.value })}
-                        placeholder="Describe the maintenance task..."
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="lg:col-span-2">
-                      <Label className="text-[10px] text-muted-foreground">Type</Label>
-                      <Select value={task.taskType} onValueChange={(value) => updatePmTask(task.id, { taskType: value })}>
-                        <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {PM_SCHEDULE_TASK_TYPE_OPTIONS.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="lg:col-span-2">
-                      <Label className="text-[10px] text-muted-foreground">Est. Minutes</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={task.estimatedMinutes}
-                        onChange={(event) => updatePmTask(task.id, { estimatedMinutes: event.target.value })}
-                        placeholder="15"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="lg:col-span-2">
-                      <Label className="text-[10px] text-muted-foreground">Required Parts</Label>
-                      <Input
-                        value={task.requiredPartsText}
-                        onChange={(event) => updatePmTask(task.id, { requiredPartsText: event.target.value })}
-                        placeholder="Grease, seal"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="flex items-end justify-end gap-1 lg:col-span-1 lg:pt-5">
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => movePmTask(index, -1)} disabled={index === 0} aria-label={`Move task ${index + 1} up`}>↑</Button>
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => movePmTask(index, 1)} disabled={index === formTasks.length - 1} aria-label={`Move task ${index + 1} down`}>↓</Button>
-                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-600" onClick={() => removePmTask(task.id)} aria-label={`Remove task ${index + 1}`}><Trash2 className="h-3.5 w-3.5" /></Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {editItem && <p className="text-[11px] text-muted-foreground">Asset is fixed after schedule creation. Create a new schedule to move this plan to another asset.</p>}
           </div>
 
           {formAssetId && (
@@ -9140,124 +9000,111 @@ export function PmSchedulesPage() {
                 </div>
                 {pmComponentsLoading && <p className="mt-2 text-[11px] text-muted-foreground">Loading complete machine hierarchy...</p>}
               </div>
-              <p className="text-[11px] text-muted-foreground">Open the machine explorer to drill from the asset into assemblies, subassemblies, components and parts. The node is only applied after Confirm Selection.</p>
             </div>
           )}
 
-          <div className="rounded-xl border bg-muted/15 p-4 md:col-span-2 xl:col-span-12">
-            <div className="mb-3">
-              <p className="text-sm font-semibold">Planning & recurrence</p>
-              <p className="text-[11px] text-muted-foreground">Set cadence, urgency, effort and due-cycle timing in one compact planning row.</p>
-            </div>
-            <div data-testid="pm-schedule-recurrence-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Frequency Type *</Label>
-                <Select value={formFreqType} onValueChange={handlePmFrequencyTypeChange}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PM_SCHEDULE_FREQUENCY_TYPES.map((frequency) => (
-                      <SelectItem key={frequency.value} value={frequency.value}>{frequency.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          {!isLegacyScheduleEdit ? (
+            <>
+              <div className="space-y-2 md:col-span-2 xl:col-span-12">
+                <Label className="text-sm font-semibold">Start / Replace Tasks from PM Template</Label>
+                <AsyncSearchableSelect
+                  value={formTemplateStarterId}
+                  onValueChange={handlePmTemplateStarterChange}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/pm-templates?active=true');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((template: any) => ({
+                        value: template.id,
+                        label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
+                        badge: template.type,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Optional — seed Task Library records from template..."
+                  searchPlaceholder="Search PM templates..."
+                />
+                <p className="text-[11px] text-muted-foreground">Template starters add permanent Task Masters; schedule planning stays independent per task.</p>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Interval *</Label>
-                <Input type="number" min="1" step="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} />
+              <div className="md:col-span-2 xl:col-span-12">
+                <PmScheduleTaskPlanner
+                  tasks={formScheduledTasks}
+                  onChange={setFormScheduledTasks}
+                  assetId={formAssetId}
+                  componentId={formComponentId || null}
+                />
               </div>
 
-              {formFreqType === 'time_day' && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold">Unit *</Label>
-                  <Select value={formFreqUnit} onValueChange={setFormFreqUnit}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {PM_TIME_UNITS.map((unit) => (
-                        <SelectItem key={unit.value} value={unit.value}>{unit.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {formFreqType === 'meter' && (
-                <>
+              <div className="rounded-xl border bg-muted/20 p-3 md:col-span-2 xl:col-span-12">
+                <p className="text-sm font-semibold">Task-level automation is staged safely</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Task-level schedules keep recurrence on each Task Library record. Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-xl border border-amber-300 bg-amber-50/50 p-3 md:col-span-2 xl:col-span-12 dark:border-amber-900/50 dark:bg-amber-950/10">
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Legacy schedule compatibility mode</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">This schedule predates task-level planning. Its legacy description, template link and header cadence remain editable until the task-level migration slice is released.</p>
+              </div>
+              <div className="space-y-2 md:col-span-2 xl:col-span-6">
+                <Label className="text-sm font-semibold">Linked PM Template</Label>
+                <AsyncSearchableSelect
+                  value={formTemplateStarterId || formTemplateId}
+                  onValueChange={handlePmTemplateStarterChange}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/pm-templates?active=true');
+                    return res.success && Array.isArray(res.data) ? res.data.map((template: any) => ({ value: template.id, label: template.title, badge: template.type })) : [];
+                  }}
+                  placeholder="Select PM template..."
+                  searchPlaceholder="Search PM templates..."
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2 xl:col-span-6">
+                <Label className="text-sm font-semibold">Legacy Schedule Description</Label>
+                <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Legacy schedule notes..." rows={2} />
+              </div>
+              <div className="rounded-xl border bg-muted/15 p-4 md:col-span-2 xl:col-span-12">
+                <p className="mb-3 text-sm font-semibold">Legacy header cadence</p>
+                <div data-testid="pm-schedule-legacy-recurrence-grid" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
                   <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Asset Meter *</Label>
-                    <Select
-                      value={formMeterName ? `${formMeterName}|||${formFreqUnit}` : ''}
-                      onValueChange={(key) => {
-                        const selected = pmMeterOptions.find((meter) => meter.key === key);
-                        if (!selected) return;
-                        setFormMeterName(selected.meterName);
-                        setFormFreqUnit(selected.unit);
-                      }}
-                      disabled={!formAssetId || pmMetersLoading || pmMeterOptions.length === 0}
-                    >
-                      <SelectTrigger><SelectValue placeholder={pmMetersLoading ? 'Loading meters...' : 'Select asset meter'} /></SelectTrigger>
-                      <SelectContent>
-                        {pmMeterOptions.map((meter) => (
-                          <SelectItem key={meter.key} value={meter.key}>{meter.meterName} · {meter.value} {meter.unit}</SelectItem>
-                        ))}
-                      </SelectContent>
+                    <Label className="text-sm font-semibold">Frequency Type *</Label>
+                    <Select value={formFreqType} onValueChange={handlePmFrequencyTypeChange}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{PM_SCHEDULE_FREQUENCY_TYPES.map((frequency) => <SelectItem key={frequency.value} value={frequency.value}>{frequency.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Unit</Label>
-                    <Input value={formFreqUnit} readOnly placeholder="From selected meter" className="bg-muted/40" />
-                  </div>
-                </>
-              )}
-
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Priority</Label>
-                <Select value={formPriority} onValueChange={setFormPriority}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['low', 'medium', 'high', 'critical'].map(p => (
-                      <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <div className="space-y-2"><Label className="text-sm font-semibold">Interval *</Label><Input type="number" min="1" step="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} /></div>
+                  {formFreqType === 'time_day' ? (
+                    <div className="space-y-2"><Label className="text-sm font-semibold">Unit *</Label><Select value={formFreqUnit} onValueChange={setFormFreqUnit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PM_TIME_UNITS.map((unit) => <SelectItem key={unit.value} value={unit.value}>{unit.label}</SelectItem>)}</SelectContent></Select></div>
+                  ) : (
+                    <div className="space-y-2 xl:col-span-2"><Label className="text-sm font-semibold">Asset Meter *</Label><Select value={formMeterName ? `${formMeterName}|||${formFreqUnit}` : ''} onValueChange={(key) => { const selected = pmMeterOptions.find((meter) => meter.key === key); if (selected) { setFormMeterName(selected.meterName); setFormFreqUnit(selected.unit); } }} disabled={!formAssetId || pmMetersLoading || pmMeterOptions.length === 0}><SelectTrigger><SelectValue placeholder="Select asset meter" /></SelectTrigger><SelectContent>{pmMeterOptions.map((meter) => <SelectItem key={meter.key} value={meter.key}>{meter.meterName} · {meter.value} {meter.unit}</SelectItem>)}</SelectContent></Select></div>
+                  )}
+                  {formUsesCalendarCadence && <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />}
+                  {formUsesCalendarCadence && <div className="space-y-2"><Label className="text-sm font-semibold">Lead Days</Label><Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} /></div>}
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Est. Duration (hrs)</Label>
-                <Input type="number" min="0" step="0.5" value={formEstDuration} onChange={e => setFormEstDuration(e.target.value)} placeholder="0" />
+              <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-3 md:col-span-2 xl:col-span-12">
+                <div><p className="text-sm font-medium">Legacy Auto-generate Work Order</p><p className="text-[11px] text-muted-foreground">Applies only to this legacy header-cadence schedule.</p></div>
+                <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />
               </div>
+            </>
+          )}
 
-              {formUsesCalendarCadence && (
-                <>
-                  <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Lead Days</Label>
-                    <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
-                    <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {formFreqType === 'meter' && (
-              <div className="mt-3 rounded-lg border bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-950/30 dark:text-slate-300">
-                {pmMetersLoading
-                  ? 'Loading meters recorded for this asset...'
-                  : pmMeterOptions.length === 0
-                    ? 'No meter readings are linked to this asset yet. Record an asset meter reading before creating a Meter PM schedule.'
-                    : formMeterName
-                      ? `This PM becomes due every ${formFreqValue || '—'} ${formFreqUnit} on ${formMeterName}. Calendar due dates and lead days do not apply.`
-                      : 'Select the asset meter that should drive this PM schedule. Its recorded unit is used automatically.'}
-              </div>
-            )}
+          <div className="md:col-span-2 xl:col-span-12"><Separator /></div>
+          <div className="md:col-span-2 xl:col-span-12"><p className="text-sm font-semibold">Schedule Administration</p><p className="text-[11px] text-muted-foreground">Ownership and schedule-level planning metadata.</p></div>
+          <div className="space-y-2 md:col-span-1 xl:col-span-3">
+            <Label className="text-sm font-semibold">Priority</Label>
+            <Select value={formPriority} onValueChange={setFormPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['low', 'medium', 'high', 'critical'].map(priority => <SelectItem key={priority} value={priority}>{priority.charAt(0).toUpperCase() + priority.slice(1)}</SelectItem>)}</SelectContent></Select>
           </div>
-
-          <div className="flex items-center justify-between gap-4 rounded-xl border bg-muted/30 p-3 md:col-span-2 xl:col-span-12">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Auto-generate Work Order</p>
-              <p className="text-[11px] text-muted-foreground">Automatically create a work order when the schedule or runtime trigger is due.</p>
-            </div>
-            <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} className="shrink-0" />
+          <div className="space-y-2 md:col-span-1 xl:col-span-3"><Label className="text-sm font-semibold">Est. Duration (hrs)</Label><Input type="number" min="0" step="0.5" value={formEstDuration} onChange={e => setFormEstDuration(e.target.value)} placeholder="0" /></div>
+          <div className="space-y-2 md:col-span-1 xl:col-span-3">
+            <Label className="text-sm font-semibold">Assigned To</Label>
+            <AsyncSearchableSelect value={formAssignedToId} onValueChange={setFormAssignedToId} fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); return res.success && Array.isArray(res.data) ? res.data.map((u: any) => ({ value: u.id, label: u.fullName })) : []; }} placeholder="Select technician..." searchPlaceholder="Search technicians..." />
+          </div>
+          <div className="space-y-2 md:col-span-1 xl:col-span-3">
+            <Label className="text-sm font-semibold">Department</Label>
+            <AsyncSearchableSelect value={formDepartmentId} onValueChange={setFormDepartmentId} fetchOptions={async () => { const res = await api.get('/api/departments?limit=100'); return res.success && Array.isArray(res.data) ? res.data.map((department: any) => ({ value: department.id, label: department.name })) : []; }} placeholder="Select department..." searchPlaceholder="Search departments..." />
           </div>
         </div>
       </ResponsiveDialog>
@@ -9318,33 +9165,44 @@ export function PmSchedulesPage() {
               </div>
             </div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Template</p><p className="mt-1 text-sm font-medium">{viewItem.template?.title || 'No template'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Frequency</p><p className="mt-1 text-sm font-medium">{freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Planning Model</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? `Task-level · ${viewItem.scheduledTasks.length} independent task${viewItem.scheduledTasks.length === 1 ? '' : 's'}` : freqLabel(viewItem.frequencyType, viewItem.frequencyValue, viewItem.frequencyUnit, viewItem.meterName)}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Priority</p><div className="mt-1"><PriorityBadge priority={viewItem.priority} /></div></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Estimated Duration</p><p className="mt-1 text-sm font-medium">{viewItem.estimatedDuration != null ? `${viewItem.estimatedDuration} hrs` : '—'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Assigned To</p><p className="mt-1 text-sm font-medium">{viewItem.assignedTo?.fullName || 'Unassigned'}</p></div>
             <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Department</p><p className="mt-1 text-sm font-medium">{viewItem.department?.name || '—'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Next Due</p><p className="mt-1 text-sm font-medium">{viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Last Completed</p><p className="mt-1 text-sm font-medium">{viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—'}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Lead Days</p><p className="mt-1 text-sm font-medium">{viewItem.leadDays ?? 0}</p></div>
-            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Auto-generate Work Order</p><p className="mt-1 text-sm font-medium">{viewItem.autoGenerateWO ? 'Enabled' : 'Disabled'}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Next Due</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? (earliestScheduleDueDate(viewItem) ? formatDate(earliestScheduleDueDate(viewItem)) : 'Per task / signal') : (viewItem.nextDueDate ? formatDate(viewItem.nextDueDate) : '—')}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Last Completed</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Tracked per task' : (viewItem.lastCompletedDate ? formatDate(viewItem.lastCompletedDate) : '—')}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Lead Days</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Per task' : (viewItem.leadDays ?? 0)}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-[11px] uppercase text-muted-foreground">Automatic Generation</p><p className="mt-1 text-sm font-medium">{viewItem.scheduledTasks?.length ? 'Staged · task engines pending' : (viewItem.autoGenerateWO ? 'Enabled' : 'Disabled')}</p></div>
             <div className="sm:col-span-2 rounded-lg border p-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] uppercase text-muted-foreground">PM Task List</p>
-                <Badge variant="secondary" className="text-[10px]">{viewItem.template?.tasks?.length ?? 0} task{viewItem.template?.tasks?.length === 1 ? '' : 's'}</Badge>
+                <Badge variant="secondary" className="text-[10px]">{viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length ?? 0} task{(viewItem.scheduledTasks?.length ?? viewItem.template?.tasks?.length) === 1 ? '' : 's'}</Badge>
               </div>
-              {viewItem.template?.tasks?.length ? (
+              {viewItem.scheduledTasks?.length ? (
+                <div className="mt-3 space-y-2">
+                  {viewItem.scheduledTasks.map((task: any) => {
+                    const draft = pmScheduleTaskDraftFromApi(task);
+                    return <div key={task.id} className="rounded-lg border bg-muted/20 p-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-semibold">Task #{draft.taskNumber}</span>
+                        <Badge variant="outline" className="text-[10px] uppercase">{draft.maintenanceMode}</Badge>
+                        <Badge variant="secondary" className="text-[10px] uppercase">{draft.equipmentState}</Badge>
+                      </div>
+                      <p className="mt-1 text-sm font-medium break-words">{draft.description}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{formatPmScheduleTaskPlanningSummary(draft)}</p>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                        <span>{draft.estimatedMinutes || '0'} min</span><span>· Lead {draft.leadDays || '0'} day{draft.leadDays === '1' ? '' : 's'}</span>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              ) : viewItem.template?.tasks?.length ? (
                 <div className="mt-3 space-y-2">
                   {viewItem.template.tasks.map((task: any, index: number) => (
-                    <div key={task.id || `${index}-${task.description}`} className="flex gap-3 rounded-lg border bg-muted/20 p-2.5">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">{index + 1}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium break-words">{task.description}</p>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
-                          <span className="capitalize">{String(task.taskType || 'check').replace(/_/g, ' ')}</span>
-                          {task.estimatedMinutes ? <span>· {task.estimatedMinutes} min</span> : null}
-                          {task.requiredParts ? <span>· Parts: {(() => { try { const parts = JSON.parse(task.requiredParts); return Array.isArray(parts) ? parts.join(', ') : String(task.requiredParts); } catch { return String(task.requiredParts); } })()}</span> : null}
-                        </div>
-                      </div>
+                    <div key={task.associationId || `${index}-${task.description}`} className="rounded-lg border bg-muted/20 p-2.5">
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">Sequence {task.sequence ?? index + 1}</Badge>{task.masterTaskNumber != null && <Badge variant="secondary">Task #{task.masterTaskNumber}</Badge>}</div>
+                      <p className="mt-1 text-sm font-medium break-words">{task.description}</p>
                     </div>
                   ))}
                 </div>

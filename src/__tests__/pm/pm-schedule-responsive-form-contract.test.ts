@@ -6,21 +6,27 @@ const source = fs.readFileSync(
   path.join(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
   'utf8',
 );
+const planner = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/modules/pm/PmScheduleTaskPlanner.tsx'),
+  'utf8',
+);
 
 describe('PM schedule responsive form contract', () => {
   it('uses a compact responsive grid instead of full-width stacked desktop fields', () => {
     expect(source).toContain('data-testid="pm-schedule-form-grid"');
     expect(source).toContain('grid gap-4 py-2 md:grid-cols-2 xl:grid-cols-12');
-    expect(source).toContain('md:col-span-2 xl:col-span-7');
-    expect(source).toContain('md:col-span-2 xl:col-span-5');
-    expect(source).toContain('md:col-span-1 xl:col-span-6');
+    expect(source).toContain('md:col-span-2 xl:col-span-12');
     expect(source).toContain('md:col-span-1 xl:col-span-3');
+    expect(source).toContain('<PmScheduleTaskPlanner');
   });
 
-  it('keeps recurrence controls dense on desktop while collapsing cleanly on smaller screens', () => {
-    expect(source).toContain('data-testid="pm-schedule-recurrence-grid"');
+  it('keeps task-level planning primary and confines header recurrence to legacy compatibility mode', () => {
+    expect(source).not.toContain('data-testid="pm-schedule-recurrence-grid"');
+    expect(source).toContain('data-testid="pm-schedule-legacy-recurrence-grid"');
     expect(source).toContain('grid gap-3 sm:grid-cols-2 xl:grid-cols-7');
-    expect(source).toContain('Planning & recurrence');
+    expect(source).toContain('Legacy header cadence');
+    expect(source).toContain('<PmScheduleTaskPlanner');
+    expect(planner).toContain('Tasks & Planning');
   });
 
   it('uses full-width mobile actions that return to compact buttons on larger screens', () => {

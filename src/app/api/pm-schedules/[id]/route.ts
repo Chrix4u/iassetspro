@@ -9,6 +9,7 @@ import { isCanonicalPmFrequencyType, normalizePmFrequency, validateCanonicalPmFr
 import { lockPmScheduleLifecycle, lockPmTemplateLifecycle } from '@/services/pm/templateLifecycle.service';
 import { createPmScheduleTaskSnapshot, normalizePmScheduleTasks } from '@/services/pm/scheduleTaskSnapshot.service';
 import { resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
+import { PmScheduleTaskValidationError, normalizePmScheduledTasks, syncPmScheduledTasks } from '@/services/pm/pmScheduleTask.service';
 
 export async function GET(
   request: NextRequest,
@@ -40,6 +41,7 @@ export async function GET(
         department: { select: { id: true, name: true, code: true } },
         template: { select: { id: true, title: true, type: true, category: true, tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true } }, _count: { select: { tasks: { where: { isActive: true } } } } } },
         createdBy: { select: { id: true, fullName: true, username: true } },
+        tasks: { where: { isActive: true }, include: { pmTask: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
       },
     });
 
@@ -61,6 +63,7 @@ export async function GET(
       success: true,
       data: {
         ...schedule,
+        scheduledTasks: schedule.tasks,
         template: resolvedTemplate,
         asset: {
           ...schedule.asset,
@@ -84,6 +87,17 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
     const body = await request.json();
+    const scheduledTasksProvided = body.scheduledTasks !== undefined;
+    if (scheduledTasksProvided && body.inlineTasks !== undefined) {
+      return NextResponse.json(
+        { success: false, error: 'Task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' },
+        { status: 400 },
+      );
+    }
+    const normalizedScheduledTasks = scheduledTasksProvided ? normalizePmScheduledTasks(body.scheduledTasks) : null;
+    if (normalizedScheduledTasks && !normalizedScheduledTasks.ok) {
+      return NextResponse.json({ success: false, error: normalizedScheduledTasks.error }, { status: 400 });
+    }
     const inlineTasksProvided = body.inlineTasks !== undefined;
     const normalizedInlineTasksResult = inlineTasksProvided ? normalizePmScheduleTasks(body.inlineTasks) : null;
     if (normalizedInlineTasksResult && !normalizedInlineTasksResult.ok) {
@@ -116,6 +130,7 @@ export async function PUT(
         trigger: {
           select: { id: true, triggerType: true, triggerValue: true, triggerConfig: true, isActive: true },
         },
+        tasks: { take: 1, select: { id: true } },
       },
     });
     if (!existing) {
@@ -126,6 +141,35 @@ export async function PUT(
     }
     if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    const existingHasScheduledTasks = existing.tasks.length > 0;
+    const prospectiveTaskLevel = existingHasScheduledTasks || scheduledTasksProvided;
+    const legacyRecurrenceFields = ['frequencyType', 'frequencyValue', 'frequencyUnit', 'meterName', 'lastCompletedDate', 'nextDueDate', 'leadDays'];
+    if (existingHasScheduledTasks && inlineTasksProvided) {
+      return NextResponse.json(
+        { success: false, error: 'Existing task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' },
+        { status: 400 },
+      );
+    }
+    if (existingHasScheduledTasks && body.autoGenerateWO === true) {
+      return NextResponse.json(
+        { success: false, error: 'Task-level schedules cannot enable the legacy automatic generation engine' },
+        { status: 400 },
+      );
+    }
+    if (prospectiveTaskLevel && legacyRecurrenceFields.some((field) => body[field] !== undefined)) {
+      return NextResponse.json(
+        { success: false, error: 'Task-level recurrence is configured on Scheduled Tasks, not legacy schedule header fields' },
+        { status: 400 },
+      );
+    }
+    const requestedComponentId = body.componentId !== undefined ? (body.componentId || null) : existing.componentId;
+    if (existingHasScheduledTasks && body.componentId !== undefined && requestedComponentId !== existing.componentId && !scheduledTasksProvided) {
+      return NextResponse.json(
+        { success: false, error: 'Changing a task-level PM target requires Scheduled Tasks to be resubmitted for source revalidation' },
+        { status: 400 },
+      );
     }
 
     const existingNormalizedFrequency = normalizePmFrequency(existing);
@@ -177,6 +221,8 @@ export async function PUT(
       }
       updateData.leadDays = normalizedLeadDays;
     }
+    if (scheduledTasksProvided || existingHasScheduledTasks) updateData.autoGenerateWO = false;
+
     if (body.estimatedDuration !== undefined) {
       const rawEstimatedDuration = body.estimatedDuration === null
         || (typeof body.estimatedDuration === 'string' && body.estimatedDuration.trim() === '')
@@ -379,11 +425,28 @@ export async function PUT(
               triggerConfig: true,
             },
           },
+          tasks: { take: 1, select: { id: true } },
         },
       });
       if (!lockedSchedule) return { kind: 'not_found' as const };
 
+      const lockedHasScheduledTasks = lockedSchedule.tasks.length > 0;
+      const lockedProspectiveTaskLevel = lockedHasScheduledTasks || scheduledTasksProvided;
+      if (lockedHasScheduledTasks && inlineTasksProvided) {
+        return { kind: 'task_level_conflict' as const, error: 'Existing task-level Scheduled Tasks cannot be combined with legacy inline task snapshots' };
+      }
+      if (lockedHasScheduledTasks && body.autoGenerateWO === true) {
+        return { kind: 'task_level_conflict' as const, error: 'Task-level schedules cannot enable the legacy automatic generation engine' };
+      }
+      if (lockedProspectiveTaskLevel && legacyRecurrenceFields.some((field) => body[field] !== undefined)) {
+        return { kind: 'task_level_conflict' as const, error: 'Task-level recurrence is configured on Scheduled Tasks, not legacy schedule header fields' };
+      }
+      if (lockedHasScheduledTasks && body.componentId !== undefined && (body.componentId || null) !== lockedSchedule.componentId && !scheduledTasksProvided) {
+        return { kind: 'task_level_conflict' as const, error: 'Changing a task-level PM target requires Scheduled Tasks to be resubmitted for source revalidation' };
+      }
+
       const lockedUpdateData: Record<string, unknown> = { ...updateData };
+      if (lockedProspectiveTaskLevel) lockedUpdateData.autoGenerateWO = false;
       const lockedProspectiveFrequencyType = storedFrequencyTypeForUpdate ?? lockedSchedule.frequencyType;
       const lockedProspectiveFrequencyValue = canonicalFrequencyForUpdate?.frequencyValue ?? Number(lockedSchedule.frequencyValue);
       const lockedProspectiveFrequencyUnit = frequencyFieldsChanging
@@ -493,12 +556,16 @@ export async function PUT(
             where: { id: effectiveTemplateId },
             select: {
               id: true,
+              plantId: true,
               isActive: true,
               tasks: { where: { isActive: true }, take: 1, select: { id: true } },
             },
           });
           if (!template || !template.isActive || template.tasks.length === 0) {
             return { kind: 'invalid_template' as const };
+          }
+          if ((lockedHasScheduledTasks || scheduledTasksProvided) && template.plantId !== lockedSchedule.asset.plantId) {
+            return { kind: 'invalid_template_plant' as const };
           }
         }
       }
@@ -580,7 +647,17 @@ export async function PUT(
         },
       });
 
-      return { kind: 'updated' as const, nextSchedule };
+      const taskRows = scheduledTasksProvided
+        ? await syncPmScheduledTasks(tx, {
+            scheduleId: id,
+            plantId: lockedSchedule.asset.plantId,
+            assetId: lockedSchedule.assetId,
+            componentId: lockedProspectiveComponentId,
+            tasks: body.scheduledTasks,
+          })
+        : [];
+
+      return { kind: 'updated' as const, nextSchedule: { ...nextSchedule, ...(scheduledTasksProvided ? { scheduledTasks: taskRows } : {}) } };
     });
 
     if (updateResult.kind === 'open_work') {
@@ -610,10 +687,22 @@ export async function PUT(
         { status: 400 },
       );
     }
+    if (updateResult.kind === 'invalid_template_plant') {
+      return NextResponse.json(
+        { success: false, error: 'Task-level PM template must belong to the same plant as the schedule asset' },
+        { status: 400 },
+      );
+    }
+    if (updateResult.kind === 'task_level_conflict') {
+      return NextResponse.json({ success: false, error: updateResult.error }, { status: 400 });
+    }
 
     return NextResponse.json({ success: true, data: updateResult.nextSchedule });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update PM schedule';
+    if (error instanceof PmScheduleTaskValidationError) {
+      return NextResponse.json({ success: false, error: message }, { status: 400 });
+    }
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

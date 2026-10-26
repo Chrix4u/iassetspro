@@ -52,8 +52,9 @@ describe('machine component hierarchy maintenance workflow contract', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('@relation("PmScheduleComponent"');
     expect(maintenancePages).toContain('PM Target — Machine / Assembly / Component / Part');
-    expect(maintenancePages).toContain('Open the machine explorer to drill from the asset into assemblies, subassemblies, components and parts.');
-    expect(maintenancePages).toContain('The node is only applied after Confirm Selection.');
+    expect(maintenancePages).toContain('Drill through the complete machine hierarchy, select the exact maintenance target, then confirm it.');
+    expect(maintenancePages).toContain('Confirm Selection');
+    expect(maintenancePages).toContain('onSelectionChange={setTargetDraftSelection}');
     expect(maintenancePages).toContain('componentId: formComponentId || null');
     expect(checkDue).toContain('Inherited from component-targeted PM schedule');
     expect(checkDueCron).toContain('generateDueWorkOrders(request)');

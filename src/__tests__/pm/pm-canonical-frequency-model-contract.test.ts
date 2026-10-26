@@ -59,9 +59,12 @@ describe('canonical PM frequency model contract', () => {
   });
 
   it('requires explicit dependent metadata for new canonical writes', () => {
-    expect(scheduleCollection).toContain('isCanonicalPmFrequencyType(frequencyType)');
+    expect(scheduleCollection).toContain('isCanonicalPmFrequencyType(effectiveFrequencyType)');
+    expect(scheduleCollection).toContain("const effectiveFrequencyType = scheduledTasksProvided ? 'time_day' : frequencyType");
+    expect(scheduleCollection).toContain("const effectiveFrequencyValue = scheduledTasksProvided ? 1 : frequencyValue");
+    expect(scheduleCollection).toContain("const effectiveFrequencyUnit = scheduledTasksProvided ? 'days' : frequencyUnit");
     expect(scheduleCollection).toContain('validateCanonicalPmFrequency({');
-    expect(scheduleCollection).toContain('frequencyUnit,');
+    expect(scheduleCollection).toContain('frequencyUnit: effectiveFrequencyUnit');
     expect(scheduleCollection).toContain('meterName,');
     expect(scheduleDetail).toContain('isCanonicalPmFrequencyType(rawFrequencyType)');
     expect(scheduleDetail).toContain('rawFrequencyUnit');

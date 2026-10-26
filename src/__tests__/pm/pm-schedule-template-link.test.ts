@@ -24,11 +24,14 @@ describe('PM schedule template linkage', () => {
     expect(itemRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
   });
 
-  it('exposes templates in the planner schedule form and list', () => {
+  it('uses templates as Task Master starters for task-level schedules while retaining the template link', () => {
     expect(ui).toContain("const [formTemplateId, setFormTemplateId] = useState('')");
     expect(ui).toContain("api.get('/api/pm-templates?active=true')");
     expect(ui).toContain('templateId: formTemplateId || null');
-    expect(ui).toContain('Optional — select PM template...');
+    expect(ui).toContain('Optional — seed Task Library records from template...');
+    expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
+    expect(ui).toContain('id: task.pmTaskId');
+    expect(ui).toContain('taskNumber: task.masterTaskNumber');
     expect(ui).toContain("Template · {s.template.title}");
   });
 

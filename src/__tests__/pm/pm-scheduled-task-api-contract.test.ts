@@ -282,7 +282,7 @@ describe('PM scheduled-task API contract', () => {
   });
 
   it('rejects legacy recurrence fields when a legacy schedule transitions to Scheduled Tasks', async () => {
-    const existing = schedule({ tasks: [] });
+    const existing = schedule({ recurrenceAuthority: 'legacy_header', tasks: [] });
     mocks.db.pmSchedule.findUnique.mockResolvedValue(existing);
     const response = await updateSchedule(request('http://localhost/api/pm-schedules/schedule-1', 'PUT', {
       scheduledTasks: [taskPayload()[0]],

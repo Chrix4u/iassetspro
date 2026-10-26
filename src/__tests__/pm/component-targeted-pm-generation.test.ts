@@ -75,6 +75,7 @@ describe('component-targeted PM work-order generation', () => {
       isActive: true,
       recurrenceAuthority: 'legacy_header',
       autoGenerateWO: true,
+      recurrenceAuthority: 'legacy_header',
       frequencyType: 'weekly',
       frequencyValue: 1,
       nextDueDate: now,

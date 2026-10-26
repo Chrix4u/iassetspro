@@ -97,6 +97,12 @@ describe('pmScheduleTask.service', () => {
     expect(normalizePmScheduledTasks([baseTbm({ equipmentState: 'sometimes' })])).toEqual(expect.objectContaining({ ok: false }));
   });
 
+  it('rejects fractional TBM calendar intervals instead of silently rounding recurrence', () => {
+    const result = normalizePmScheduledTasks([baseTbm({ frequencyInterval: 1.5, frequencyUnit: 'months' })]);
+    expect(result).toEqual(expect.objectContaining({ ok: false }));
+    if (!result.ok) expect(result.error).toMatch(/whole|integer|TBM interval/i);
+  });
+
   it('rejects a task-level plan with no active scheduled task', () => {
     expect(normalizePmScheduledTasks([baseTbm({ isActive: false })])).toEqual({
       ok: false,

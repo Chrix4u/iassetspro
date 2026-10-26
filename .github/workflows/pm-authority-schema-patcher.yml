@@ -1,9 +1,6 @@
-name: PM Authority Schema Patcher
+name: PM Authority Compatibility Patcher
 
 on:
-  push:
-    branches:
-      - fix/pm-recurrence-authority-current-main-20261026
   pull_request:
     branches:
       - main
@@ -12,44 +9,247 @@ permissions:
   contents: write
 
 jobs:
-  patch-schema:
-    if: github.event_name == 'push' || github.event.pull_request.head.ref == 'fix/pm-recurrence-authority-current-main-20261026'
+  patch-authority-consumers:
+    if: github.event.pull_request.head.ref == 'fix/pm-recurrence-authority-current-main-20261026'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fix/pm-recurrence-authority-current-main-20261026
           fetch-depth: 0
-      - name: Apply exact Prisma authority patch
+      - name: Apply exact recurrence-authority consumer patches
         shell: python
         run: |
           from pathlib import Path
 
-          path = Path('prisma/schema.prisma')
-          text = path.read_text()
-          if 'recurrenceAuthority  String    @default("legacy_header")' not in text:
-              old = '''  isActive          Boolean   @default(true)\n  autoGenerateWO    Boolean   @default(true)\n  leadDays          Int       @default(3)\n  woTypeId          String?\n'''
-              new = '''  isActive             Boolean   @default(true)\n  autoGenerateWO       Boolean   @default(true)\n  recurrenceAuthority  String    @default("legacy_header") // legacy_header, task\n  leadDays             Int       @default(3)\n  woTypeId             String?\n'''
+          def replace_once(path_str, old, new, label):
+              path = Path(path_str)
+              text = path.read_text()
+              if new in text:
+                  print(f'{label}: already applied')
+                  return
               if old not in text:
-                  raise SystemExit('Expected PmSchedule field anchor not found; refusing unsafe patch')
-              text = text.replace(old, new, 1)
+                  raise SystemExit(f'{label}: expected anchor not found; refusing unsafe patch')
+              path.write_text(text.replace(old, new, 1))
+              print(f'{label}: applied')
 
-          if '@@index([recurrenceAuthority, isActive])' not in text:
-              old_index = '''  @@index([componentId])\n  @@map("pm_schedules")\n'''
-              new_index = '''  @@index([componentId])\n  @@index([recurrenceAuthority, isActive])\n  @@map("pm_schedules")\n'''
-              if old_index not in text:
-                  raise SystemExit('Expected PmSchedule index anchor not found; refusing unsafe patch')
-              text = text.replace(old_index, new_index, 1)
-          path.write_text(text)
-      - name: Commit schema patch when needed
+          # Schedule creation: explicit Scheduled Tasks establish task authority.
+          replace_once(
+              'src/app/api/pm-schedules/route.ts',
+              "          autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,\n          leadDays: effectiveLeadDays,\n",
+              "          autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,\n          recurrenceAuthority: scheduledTasksProvided ? 'task' : 'legacy_header',\n          leadDays: effectiveLeadDays,\n",
+              'POST authority write',
+          )
+
+          # Task-level generation: task authority is mandatory both at discovery and after lock.
+          replace_once(
+              'src/services/pm/pmScheduledTaskGeneration.service.ts',
+              "  const where: any = {\n    isActive: true,\n    tasks: { some: { isActive: true } },\n  };\n",
+              "  const where: any = {\n    isActive: true,\n    recurrenceAuthority: 'task',\n    tasks: { some: { isActive: true } },\n  };\n",
+              'task generator discovery authority',
+          )
+          replace_once(
+              'src/services/pm/pmScheduledTaskGeneration.service.ts',
+              "      if (!schedule.isActive || (!explicitSchedules && !schedule.autoGenerateWO)) {\n",
+              "      if (schedule.recurrenceAuthority !== 'task' || !schedule.isActive || (!explicitSchedules && !schedule.autoGenerateWO)) {\n",
+              'task generator locked authority',
+          )
+
+          # Legacy generation: header authority is mandatory even when compatibility shadows exist.
+          replace_once(
+              'src/app/api/pm-schedules/check-due/route.ts',
+              "        tasks: { none: {} },\n",
+              "        recurrenceAuthority: 'legacy_header',\n",
+              'legacy generator discovery authority',
+          )
+          replace_once(
+              'src/app/api/pm-schedules/check-due/route.ts',
+              "        if (!schedule.isActive || !schedule.autoGenerateWO || !schedule.nextDueDate) {\n",
+              "        if (schedule.recurrenceAuthority !== 'legacy_header' || !schedule.isActive || !schedule.autoGenerateWO || !schedule.nextDueDate) {\n",
+              'legacy generator locked authority',
+          )
+
+          # Edit/cutover path: task-row presence is data, never recurrence authority.
+          update_path = Path('src/app/api/pm-schedules/[id]/route.ts')
+          update_text = update_path.read_text()
+          if "const existingHasTaskAuthority = existing.recurrenceAuthority === 'task';" not in update_text:
+              old = "    const existingHasScheduledTasks = existing.tasks.length > 0;\n"
+              if old not in update_text:
+                  raise SystemExit('PUT outer authority anchor not found; refusing unsafe patch')
+              update_text = update_text.replace(old, "    const existingHasTaskAuthority = existing.recurrenceAuthority === 'task';\n", 1)
+              update_text = update_text.replace('existingHasScheduledTasks', 'existingHasTaskAuthority')
+
+          if "          recurrenceAuthority: true,\n" not in update_text:
+              old = "          meterName: true,\n          assetId: true,\n"
+              if old not in update_text:
+                  raise SystemExit('PUT locked select anchor not found; refusing unsafe patch')
+              update_text = update_text.replace(old, "          meterName: true,\n          recurrenceAuthority: true,\n          assetId: true,\n", 1)
+
+          if "const lockedHasTaskAuthority = lockedSchedule.recurrenceAuthority === 'task';" not in update_text:
+              old = "      const lockedHasScheduledTasks = lockedSchedule.tasks.length > 0;\n"
+              if old not in update_text:
+                  raise SystemExit('PUT locked authority anchor not found; refusing unsafe patch')
+              update_text = update_text.replace(old, "      const lockedHasTaskAuthority = lockedSchedule.recurrenceAuthority === 'task';\n", 1)
+              update_text = update_text.replace('lockedHasScheduledTasks', 'lockedHasTaskAuthority')
+
+          cutover = """      const lockedUpdateData: Record<string, unknown> = {
+        ...updateData,
+        ...(scheduledTasksProvided ? { recurrenceAuthority: 'task', lastCompletedDate: null, nextDueDate: null } : {}),
+      };
+"""
+          if cutover not in update_text:
+              old = "      const lockedUpdateData: Record<string, unknown> = { ...updateData };\n"
+              if old not in update_text:
+                  raise SystemExit('PUT cutover data anchor not found; refusing unsafe patch')
+              update_text = update_text.replace(old, cutover, 1)
+
+          trigger_cutover = """      if (scheduledTasksProvided && lockedSchedule.trigger) {
+        // Explicit Scheduled Task submission transfers recurrence authority away
+        // from the legacy trigger subsystem in the same transaction.
+        triggerMutation = 'delete';
+      } else if (lockedTriggerTargetChanged) {
+"""
+          if trigger_cutover not in update_text:
+              old = "      if (lockedTriggerTargetChanged) {\n        const prospectiveSchedule = {\n"
+              new = trigger_cutover + "        const prospectiveSchedule = {\n"
+              if old not in update_text:
+                  raise SystemExit('PUT trigger cutover anchor not found; refusing unsafe patch')
+              update_text = update_text.replace(old, new, 1)
+
+          update_path.write_text(update_text)
+
+          # Closeout recurrence: authority is checked before provenance can advance tasks.
+          recurrence_path = Path('src/services/pm/advancePmScheduledTaskRecurrence.service.ts')
+          recurrence = recurrence_path.read_text()
+          if "'workOrderTaskExecution' | 'pmSchedule' | 'pmScheduleTask'" not in recurrence:
+              old = "  'workOrderTaskExecution' | 'pmScheduleTask' | 'meterReading' | 'auditLog'\n"
+              new = "  'workOrderTaskExecution' | 'pmSchedule' | 'pmScheduleTask' | 'meterReading' | 'auditLog'\n"
+              if old not in recurrence:
+                  raise SystemExit('closeout transaction type anchor not found')
+              recurrence = recurrence.replace(old, new, 1)
+
+          authority_guard = """  const schedule = await input.tx.pmSchedule.findUnique({
+    where: { id: input.pmScheduleId },
+    select: { recurrenceAuthority: true },
+  });
+  if (!schedule || schedule.recurrenceAuthority !== 'task') {
+    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+  }
+
+"""
+          function_anchor = "): Promise<AdvanceClosedPmScheduledTaskRecurrenceResult> {\n  const executions = await input.tx.workOrderTaskExecution.findMany({\n"
+          if authority_guard not in recurrence:
+              if function_anchor not in recurrence:
+                  raise SystemExit('closeout authority function anchor not found')
+              recurrence = recurrence.replace(
+                  function_anchor,
+                  "): Promise<AdvanceClosedPmScheduledTaskRecurrenceResult> {\n" + authority_guard + "  const executions = await input.tx.workOrderTaskExecution.findMany({\n",
+                  1,
+              )
+
+          old_empty = """  if (executions.length === 0) {
+    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+  }
+"""
+          new_empty = """  if (executions.length === 0) {
+    throw recurrenceError(`task-authority PM schedule ${input.pmScheduleId} has no task-level execution provenance`);
+  }
+"""
+          if new_empty not in recurrence:
+              if old_empty not in recurrence:
+                  raise SystemExit('closeout empty-provenance anchor not found')
+              recurrence = recurrence.replace(old_empty, new_empty, 1)
+          recurrence_path.write_text(recurrence)
+
+          # Existing API contract follows authority, not row presence.
+          contract_path = Path('src/__tests__/pm/pm-task-level-generation-api-contract.test.ts')
+          contract = contract_path.read_text()
+          old_contract = """  it('keeps schedules with Scheduled Tasks out of the legacy header-cadence generator', () => {
+    expect(route).toContain('tasks: { none: {} }');
+    expect(route).toContain('autoGenerateWO: true');
+    expect(route).toContain('nextDueDate: { not: null }');
+  });
+"""
+          new_contract = """  it('keeps task-authority schedules out of the legacy header-cadence generator even when legacy shadows exist', () => {
+    expect(route).toContain("recurrenceAuthority: 'legacy_header'");
+    expect(route).not.toContain('tasks: { none: {} }');
+    expect(route).toContain('autoGenerateWO: true');
+    expect(route).toContain('nextDueDate: { not: null }');
+  });
+"""
+          if new_contract not in contract:
+              if old_contract not in contract:
+                  raise SystemExit('generation API contract anchor not found')
+              contract = contract.replace(old_contract, new_contract, 1)
+          contract_path.write_text(contract)
+
+          # Behavioral closeout tests: task authority advances; legacy authority never does.
+          test_path = Path('src/services/pm/__tests__/advancePmScheduledTaskRecurrence.service.test.ts')
+          tests = test_path.read_text()
+          if "pmSchedule: { findUnique: vi.fn() }," not in tests:
+              old = "const tx = {\n  workOrderTaskExecution: { findMany: vi.fn() },\n"
+              new = "const tx = {\n  pmSchedule: { findUnique: vi.fn() },\n  workOrderTaskExecution: { findMany: vi.fn() },\n"
+              if old not in tests:
+                  raise SystemExit('recurrence test tx anchor not found')
+              tests = tests.replace(old, new, 1)
+
+          if "tx.pmSchedule.findUnique.mockResolvedValue({ recurrenceAuthority: 'task' });" not in tests:
+              old = "  beforeEach(() => {\n    vi.clearAllMocks();\n    tx.workOrderTaskExecution.findMany.mockResolvedValue([execution()]);\n"
+              new = "  beforeEach(() => {\n    vi.clearAllMocks();\n    tx.pmSchedule.findUnique.mockResolvedValue({ recurrenceAuthority: 'task' });\n    tx.workOrderTaskExecution.findMany.mockResolvedValue([execution()]);\n"
+              if old not in tests:
+                  raise SystemExit('recurrence test setup anchor not found')
+              tests = tests.replace(old, new, 1)
+
+          old_legacy = """  it('returns legacy ownership when the WO has no task-level PM provenance', async () => {
+    // The production query selects only task-level provenanced executions, so a
+    // legacy/template-only checklist resolves to an empty result set here.
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([]);
+
+    const result = await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(result).toEqual({ taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] });
+    expect(tx.pmScheduleTask.update).not.toHaveBeenCalled();
+  });
+"""
+          new_legacy = """  it('returns legacy ownership from persisted authority even when compatibility task provenance exists', async () => {
+    tx.pmSchedule.findUnique.mockResolvedValue({ recurrenceAuthority: 'legacy_header' });
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([execution()]);
+
+    const result = await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(result).toEqual({ taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] });
+    expect(tx.workOrderTaskExecution.findMany).not.toHaveBeenCalled();
+    expect(tx.pmScheduleTask.update).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a task-authority WO has lost all task-level execution provenance', async () => {
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([]);
+
+    await expect(advanceClosedPmScheduledTaskRecurrence(input()))
+      .rejects.toThrow(/task-authority|provenance/i);
+    expect(tx.pmScheduleTask.update).not.toHaveBeenCalled();
+  });
+"""
+          if new_legacy not in tests:
+              if old_legacy not in tests:
+                  raise SystemExit('legacy recurrence test anchor not found')
+              tests = tests.replace(old_legacy, new_legacy, 1)
+          test_path.write_text(tests)
+      - name: Commit compatibility patch
         run: |
-          if git diff --quiet -- prisma/schema.prisma; then
-            echo "Schema authority patch already present."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add prisma/schema.prisma
+          git add src/app/api/pm-schedules/route.ts \
+                  src/app/api/pm-schedules/check-due/route.ts \
+                  'src/app/api/pm-schedules/[id]/route.ts' \
+                  src/services/pm/pmScheduledTaskGeneration.service.ts \
+                  src/services/pm/advancePmScheduledTaskRecurrence.service.ts \
+                  src/services/pm/__tests__/advancePmScheduledTaskRecurrence.service.test.ts \
+                  src/__tests__/pm/pm-task-level-generation-api-contract.test.ts
           git diff --cached --check
-          git commit -m "feat(pm): apply recurrence authority schema patch"
+          if git diff --cached --quiet; then
+            echo "Compatibility patch already present."
+            exit 0
+          fi
+          git commit -m "fix(pm): enforce persisted recurrence authority"
           git push origin HEAD:fix/pm-recurrence-authority-current-main-20261026

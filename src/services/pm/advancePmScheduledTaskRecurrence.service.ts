@@ -5,7 +5,7 @@ import { PM_SCHEDULE_TASK_TIME_UNITS } from '@/services/pm/pmScheduleTask.servic
 
 type RecurrenceTx = Pick<
   Prisma.TransactionClient,
-  'workOrderTaskExecution' | 'pmScheduleTask' | 'meterReading' | 'auditLog'
+  'workOrderTaskExecution' | 'pmSchedule' | 'pmScheduleTask' | 'meterReading' | 'auditLog'
 >;
 
 export interface AdvanceClosedPmScheduledTaskRecurrenceInput {
@@ -41,6 +41,14 @@ function recurrenceError(message: string): Error {
 export async function advanceClosedPmScheduledTaskRecurrence(
   input: AdvanceClosedPmScheduledTaskRecurrenceInput,
 ): Promise<AdvanceClosedPmScheduledTaskRecurrenceResult> {
+  const schedule = await input.tx.pmSchedule.findUnique({
+    where: { id: input.pmScheduleId },
+    select: { recurrenceAuthority: true },
+  });
+  if (!schedule || schedule.recurrenceAuthority !== 'task') {
+    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+  }
+
   const executions = await input.tx.workOrderTaskExecution.findMany({
     where: {
       workOrderId: input.workOrderId,
@@ -76,7 +84,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
   });
 
   if (executions.length === 0) {
-    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+    throw recurrenceError(`task-authority PM schedule ${input.pmScheduleId} has no task-level execution provenance`);
   }
 
   const advancedTaskIds: string[] = [];

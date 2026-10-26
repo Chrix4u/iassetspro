@@ -397,6 +397,7 @@ export async function POST(request: NextRequest) {
           departmentId: departmentId || null,
           templateId: effectiveTemplateId,
           autoGenerateWO: autoGenerateWO !== undefined ? autoGenerateWO : true,
+          recurrenceAuthority: scheduledTasksProvided ? 'task' : 'legacy_header',
           leadDays: effectiveLeadDays,
           createdById: session.userId,
         },

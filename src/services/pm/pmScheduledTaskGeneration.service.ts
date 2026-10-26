@@ -81,6 +81,7 @@ export async function generateDueScheduledTaskWorkOrders(
   const explicitSchedules = Array.isArray(options.scheduleIds) && options.scheduleIds.length > 0;
   const where: any = {
     isActive: true,
+    recurrenceAuthority: 'task',
     tasks: { some: { isActive: true } },
   };
   if (explicitSchedules) where.id = { in: options.scheduleIds };
@@ -141,7 +142,7 @@ export async function generateDueScheduledTaskWorkOrders(
       if (!schedule) {
         return [{ scheduleId: candidate.id, scheduleTitle: 'Unknown PM schedule', workOrderId: '', woNumber: '', skipped: true, reason: 'PM schedule no longer exists' }];
       }
-      if (!schedule.isActive || (!explicitSchedules && !schedule.autoGenerateWO)) {
+      if (schedule.recurrenceAuthority !== 'task' || !schedule.isActive || (!explicitSchedules && !schedule.autoGenerateWO)) {
         return [{ scheduleId: schedule.id, scheduleTitle: schedule.title, workOrderId: '', woNumber: '', skipped: true, reason: 'PM schedule is not eligible for task-level generation' }];
       }
       if (options.plantIds?.length && (!schedule.asset.plantId || !options.plantIds.includes(schedule.asset.plantId))) {

@@ -12,8 +12,9 @@ describe('PM task-level generation API integration contract', () => {
     expect(route).toContain('plantIds: manualTaskLevelPlantIds(plantScope)');
   });
 
-  it('keeps schedules with Scheduled Tasks out of the legacy header-cadence generator', () => {
-    expect(route).toContain('tasks: { none: {} }');
+  it('keeps task-authority schedules out of the legacy header-cadence generator even when legacy shadows exist', () => {
+    expect(route).toContain("recurrenceAuthority: 'legacy_header'");
+    expect(route).not.toContain('tasks: { none: {} }');
     expect(route).toContain('autoGenerateWO: true');
     expect(route).toContain('nextDueDate: { not: null }');
   });

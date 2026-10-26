@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { advanceClosedPmScheduledTaskRecurrence } from '@/services/pm/advancePmScheduledTaskRecurrence.service';
 
 const tx = {
+  pmSchedule: { findUnique: vi.fn() },
   workOrderTaskExecution: { findMany: vi.fn() },
   pmScheduleTask: { update: vi.fn() },
   meterReading: { findFirst: vi.fn() },
@@ -60,6 +61,7 @@ function input(overrides: Record<string, unknown> = {}) {
 describe('advanceClosedPmScheduledTaskRecurrence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tx.pmSchedule.findUnique.mockResolvedValue({ recurrenceAuthority: 'task' });
     tx.workOrderTaskExecution.findMany.mockResolvedValue([execution()]);
     tx.pmScheduleTask.update.mockResolvedValue({ id: 'scheduled-1' });
     tx.auditLog.create.mockResolvedValue({ id: 'audit-1' });
@@ -183,14 +185,22 @@ describe('advanceClosedPmScheduledTaskRecurrence', () => {
     expect(tx.pmScheduleTask.update).toHaveBeenCalledTimes(1);
   });
 
-  it('returns legacy ownership when the WO has no task-level PM provenance', async () => {
-    // The production query selects only task-level provenanced executions, so a
-    // legacy/template-only checklist resolves to an empty result set here.
-    tx.workOrderTaskExecution.findMany.mockResolvedValue([]);
+  it('returns legacy ownership from persisted authority even when compatibility task provenance exists', async () => {
+    tx.pmSchedule.findUnique.mockResolvedValue({ recurrenceAuthority: 'legacy_header' });
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([execution()]);
 
     const result = await advanceClosedPmScheduledTaskRecurrence(input());
 
     expect(result).toEqual({ taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] });
+    expect(tx.workOrderTaskExecution.findMany).not.toHaveBeenCalled();
+    expect(tx.pmScheduleTask.update).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a task-authority WO has lost all task-level execution provenance', async () => {
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([]);
+
+    await expect(advanceClosedPmScheduledTaskRecurrence(input()))
+      .rejects.toThrow(/task-authority|provenance/i);
     expect(tx.pmScheduleTask.update).not.toHaveBeenCalled();
   });
 

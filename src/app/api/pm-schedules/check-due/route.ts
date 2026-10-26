@@ -11,6 +11,7 @@ import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
+import { generateDueScheduledTaskWorkOrders } from '@/services/pm/pmScheduledTaskGeneration.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -39,6 +40,14 @@ function manualAssetPlantFilter(plantScope: PlantScopeResult | null) {
         : [DENY_ACCESS_SENTINEL],
     },
   };
+}
+
+function manualTaskLevelPlantIds(plantScope: PlantScopeResult | null): string[] | undefined {
+  if (!plantScope || plantScope.isSystemWide) return undefined;
+  if (plantScope.isScoped && plantScope.plantId) return [plantScope.plantId];
+  return plantScope.accessiblePlantIds.length > 0
+    ? plantScope.accessiblePlantIds
+    : [DENY_ACCESS_SENTINEL];
 }
 
 export async function POST(request: NextRequest) {
@@ -70,12 +79,17 @@ export async function POST(request: NextRequest) {
       hasValidCronSecret ? undefined : session?.userId,
     );
     const now = new Date();
+    const scheduledTaskGeneration = await generateDueScheduledTaskWorkOrders({
+      actorId: automationActorId,
+      plantIds: manualTaskLevelPlantIds(plantScope),
+    });
 
     const dueSchedules = await db.pmSchedule.findMany({
       where: {
         isActive: true,
         autoGenerateWO: true,
         nextDueDate: { not: null },
+        tasks: { none: {} },
         asset: manualAssetPlantFilter(plantScope),
       },
       select: { id: true, assetId: true },
@@ -414,14 +428,24 @@ export async function POST(request: NextRequest) {
 
     const generated = results.filter((result) => !result.skipped);
     const skipped = results.filter((result) => result.skipped);
+    const legacyScheduleGeneration = {
+      checked: dueSchedules.length,
+      generated: generated.length,
+      skipped: skipped.length,
+      results,
+    };
 
     return NextResponse.json({
       success: true,
       data: {
-        checked: dueSchedules.length,
-        generated: generated.length,
-        skipped: skipped.length,
-        results,
+        checked: legacyScheduleGeneration.checked + scheduledTaskGeneration.checked,
+        generated: legacyScheduleGeneration.generated + scheduledTaskGeneration.generated,
+        skipped: legacyScheduleGeneration.skipped + scheduledTaskGeneration.skipped,
+        results: [...legacyScheduleGeneration.results, ...scheduledTaskGeneration.results],
+        engines: {
+          legacySchedule: legacyScheduleGeneration,
+          scheduledTasks: scheduledTaskGeneration,
+        },
       },
     });
   } catch (error: unknown) {

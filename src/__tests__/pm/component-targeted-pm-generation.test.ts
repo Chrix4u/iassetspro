@@ -29,6 +29,15 @@ vi.mock('@/lib/notifications', () => ({
   notifyUser: mocks.notifyUser,
 }));
 
+vi.mock('@/services/pm/pmScheduledTaskGeneration.service', () => ({
+  generateDueScheduledTaskWorkOrders: vi.fn().mockResolvedValue({
+    checked: 0,
+    generated: 0,
+    skipped: 0,
+    results: [],
+  }),
+}));
+
 vi.mock('@/lib/db', () => {
   const tx = {
     $executeRawUnsafe: mocks.executeRawUnsafe,

@@ -792,8 +792,11 @@ model WorkPackage {
 model WorkOrderTaskExecution {
   id              String    @id @default(cuid())
   workOrderId     String
-  templateTaskId  String?   // → PmTemplateTask (if from template)
-  taskNumber      Int
+  templateTaskId   String?   // → PmTemplateTask (if from template)
+  pmScheduleTaskId String?   // → PmScheduleTask snapshot provenance
+  pmDueCycleKey    String?   // stable PM task cycle identity at generation
+  pmPlanningSnapshot String? @db.Text // immutable JSON planning snapshot
+  taskNumber       Int
   description     String
   taskType        String    @default("check") // check, measure, inspect, lubricate, replace, record
   requiredParts   String?   @db.Text // JSON array of {partName, quantity, unit}
@@ -809,8 +812,10 @@ model WorkOrderTaskExecution {
 
   workOrder    WorkOrder       @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   completedBy  User?           @relation("TaskCompletedBy", fields: [completedById], references: [id])
-  templateTask PmTemplateTask? @relation(fields: [templateTaskId], references: [id])
+  templateTask   PmTemplateTask? @relation(fields: [templateTaskId], references: [id])
+  pmScheduleTask PmScheduleTask? @relation(fields: [pmScheduleTaskId], references: [id], onDelete: SetNull)
 
+  @@index([pmScheduleTaskId, pmDueCycleKey])
   @@map("wo_task_executions")
 }
 
@@ -1350,19 +1355,24 @@ model PmScheduleTask {
   conditionUnit             String?
   evaluationCadenceMinutes  Int?
   lastCompletedAt           DateTime?
+  lastEvaluatedAt           DateTime?
+  lastGeneratedAt           DateTime?
+  lastGeneratedCycleKey     String?
   nextDueDate               DateTime?
   isActive                  Boolean  @default(true)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  schedule PmSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  pmTask   PmTask     @relation(fields: [pmTaskId], references: [id], onDelete: Restrict)
+  schedule       PmSchedule               @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  pmTask         PmTask                   @relation(fields: [pmTaskId], references: [id], onDelete: Restrict)
+  taskExecutions WorkOrderTaskExecution[]
 
   @@unique([scheduleId, pmTaskId])
   @@index([scheduleId, isActive, sortOrder])
   @@index([maintenanceMode, isActive, nextDueDate])
   @@index([meterName, isActive])
   @@index([conditionSourceType, conditionSourceId, isActive])
+  @@index([scheduleId, isActive, lastGeneratedCycleKey])
   @@map("pm_schedule_tasks")
 }
 

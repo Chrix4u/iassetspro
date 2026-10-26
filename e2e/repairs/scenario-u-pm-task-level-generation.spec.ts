@@ -54,7 +54,11 @@ test('UAT-21: task-level PM generation advances recurrence only at verified plan
       expect(taskIds.get(spec.key)).toBeTruthy();
     }
 
-    const baseTime = Date.now();
+    // Keep all sensor observations unambiguously before checklist completion.
+    // UBM recurrence intentionally baselines from the latest authoritative meter
+    // reading at or before task completion, so future-dated fixture readings would
+    // correctly be excluded by the closeout service.
+    const baseTime = Date.now() - 60_000;
     await db.meterReading.create({
       data: {
         readingNumber: `UAT-TASKGEN-METER-${suffix}-0`,

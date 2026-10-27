@@ -1104,6 +1104,7 @@ model Asset {
   functionalLocationAssignments AssetFunctionalLocationAssignment[]
   pmSchedules         PmSchedule[]
   pmAssignments       PmScheduleTask[]      @relation("PmAssignmentAsset")
+  assetMeters         AssetMeter[]
   iotDevices          IotDevice[]
   bomAsParent         BillOfMaterial[]     @relation("BomParent")
   bomAsChild          BillOfMaterial[]     @relation("BomChild")
@@ -1375,6 +1376,7 @@ model PmScheduleTask {
   schedule       PmSchedule?              @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   asset          Asset                    @relation("PmAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
   component      ComponentRegistry?       @relation("PmAssignmentComponent", fields: [componentId], references: [id], onDelete: SetNull)
+  assetMeter     AssetMeter?              @relation(fields: [assetMeterId], references: [id], onDelete: SetNull)
   pmTask         PmTask                   @relation(fields: [pmTaskId], references: [id], onDelete: Restrict)
   taskExecutions WorkOrderTaskExecution[]
 
@@ -2181,10 +2183,33 @@ model ProductionBatch {
 // 21. OPERATIONS MANAGEMENT
 // ============================================================================
 
+model AssetMeter {
+  id            String   @id @default(cuid())
+  assetId       String
+  name          String
+  unit          String
+  meterType     String   @default("general") // runtime, distance, cycles, production, energy, general
+  currentValue  Float    @default(0)
+  lastReadingAt DateTime?
+  isActive      Boolean  @default(true)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  asset         Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  readings      MeterReading[]
+  pmAssignments PmScheduleTask[]
+
+  @@unique([assetId, name, unit])
+  @@index([assetId, isActive])
+  @@map("asset_meters")
+}
+
 model MeterReading {
   id            String   @id @default(cuid())
   readingNumber String   @unique // MR-OPS-YYYYMM-NNNN
   assetId       String?
+  assetMeterId  String?
   plantId       String?
   meterName     String
   value         Float
@@ -2197,8 +2222,10 @@ model MeterReading {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  readBy User @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
+  assetMeter AssetMeter? @relation(fields: [assetMeterId], references: [id], onDelete: SetNull)
+  readBy     User        @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
 
+  @@index([assetMeterId, readingDate])
   @@map("meter_readings")
 }
 

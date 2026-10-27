@@ -40,6 +40,7 @@ const existingRow = (overrides: Record<string, unknown> = {}) => ({
   estimatedMinutes: 20,
   leadDays: 2,
   recurrenceBasis: 'after_completion',
+  recurrenceAnchorDate: null,
   frequencyInterval: 30,
   frequencyUnit: 'days',
   meterName: null,
@@ -134,6 +135,38 @@ describe('pmScheduleTask.service', () => {
     expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       recurrenceBasis: 'fixed_schedule',
     }) });
+  });
+
+  it('creates a fixed-schedule task with an internal recurrence anchor equal to its initial due date', async () => {
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({ recurrenceBasis: 'fixed_schedule', nextDueDate: '2026-10-31T09:15:00.000Z' })],
+    });
+
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      recurrenceBasis: 'fixed_schedule',
+      recurrenceAnchorDate: new Date('2026-10-31T09:15:00.000Z'),
+    }) });
+  });
+
+  it('preserves an existing fixed-schedule anchor when the planner saves the unchanged current due cycle', async () => {
+    const anchor = new Date('2026-01-31T09:15:00.000Z');
+    const currentDue = new Date('2026-02-28T09:15:00.000Z');
+    tx.pmScheduleTask.findMany.mockResolvedValue([existingRow({
+      recurrenceBasis: 'fixed_schedule', recurrenceAnchorDate: anchor, nextDueDate: currentDue,
+    })]);
+
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({
+        id: 'scheduled-1', recurrenceBasis: 'fixed_schedule', nextDueDate: currentDue.toISOString(),
+      })],
+    });
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: expect.objectContaining({ recurrenceAnchorDate: anchor }),
+    });
   });
 
   it('rejects duplicate masters and invalid common planning values before database work', () => {

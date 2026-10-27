@@ -104,6 +104,18 @@ describe('pmScheduleTask.service', () => {
     }
   });
 
+  it.each(['minutes', 'hours'])('forces day-based lead time to zero for sub-day TBM unit %s', (frequencyUnit) => {
+    const result = normalizePmScheduledTasks([baseTbm({
+      leadDays: 2,
+      frequencyInterval: 3,
+      frequencyUnit,
+      nextDueDate: '2026-10-27T03:30:00.000Z',
+    })]);
+    expect(result).toEqual({ ok: true, tasks: [expect.objectContaining({
+      maintenanceMode: 'tbm', leadDays: 0, frequencyInterval: 3, frequencyUnit,
+    })] });
+  });
+
   it('rejects fractional TBM calendar intervals instead of silently rounding recurrence', () => {
     const result = normalizePmScheduledTasks([baseTbm({ frequencyInterval: 1.5, frequencyUnit: 'months' })]);
     expect(result).toEqual(expect.objectContaining({ ok: false }));

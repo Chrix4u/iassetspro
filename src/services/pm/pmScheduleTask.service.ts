@@ -138,6 +138,8 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
     if (rawInterval === undefined) return error(number, 'frequency interval must be numeric');
     const frequencyInterval = rawInterval;
     const frequencyUnit = optionalText(candidate.frequencyUnit);
+    const isSubDayTbm = mode === 'tbm' && (frequencyUnit === 'minutes' || frequencyUnit === 'hours');
+    const effectiveLeadDays = isSubDayTbm ? 0 : leadDays;
     const meterName = optionalText(candidate.meterName);
     const rawNextDueReading = optionalFiniteNumber(candidate.nextDueReading);
     if (rawNextDueReading === undefined) return error(number, 'next due reading must be numeric');
@@ -197,7 +199,7 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
       maintenanceMode: mode as PmMaintenanceMode,
       equipmentState: equipmentState as PmEquipmentState,
       estimatedMinutes,
-      leadDays,
+      leadDays: effectiveLeadDays,
       frequencyInterval: mode === 'cbm' ? null : frequencyInterval,
       frequencyUnit: mode === 'cbm' ? null : frequencyUnit,
       meterName: mode === 'ubm' ? meterName : null,

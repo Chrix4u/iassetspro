@@ -101,7 +101,8 @@ async function evaluateTbm(input: ScheduledTaskDueInput, now: Date): Promise<Sch
   if (!task.nextDueDate) return result(task, false, 'tbm_next_due_missing', null);
 
   const cycleKey = `tbm:${task.id}:${task.nextDueDate.toISOString()}`;
-  const leadDays = Math.max(0, Number(task.leadDays) || 0);
+  const isSubDayTbm = task.frequencyUnit === 'minutes' || task.frequencyUnit === 'hours';
+  const leadDays = isSubDayTbm ? 0 : Math.max(0, Number(task.leadDays) || 0);
   const dueAt = task.nextDueDate.getTime() - leadDays * DAY_MS;
   return result(task, now.getTime() >= dueAt, now.getTime() >= dueAt ? 'tbm_due' : 'tbm_not_due', cycleKey);
 }

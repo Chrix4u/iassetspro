@@ -68,6 +68,23 @@ describe('PM scheduled-task UI contract', () => {
     expect(draft.nextDueDate).toBe('2026-10-31T14:30');
   });
 
+  it('forces sub-day TBM lead days to zero and serializes the due time as an absolute instant', () => {
+    const draft = pmScheduleTaskDraftFromApi({
+      id: 'scheduled-hourly', pmTaskId: 'task-17', maintenanceMode: 'tbm', equipmentState: 'stopped',
+      estimatedMinutes: 10, leadDays: 4, frequencyInterval: 3, frequencyUnit: 'hours',
+      nextDueDate: '2026-10-27T03:30:00.000Z', isActive: true,
+      pmTask: { id: 'task-17', taskNumber: 17, description: 'Grease bearing', taskType: 'lubrication', isActive: true },
+    });
+    expect(draft.leadDays).toBe('0');
+    expect(draft.nextDueDate).toBe('2026-10-27T03:30');
+    const payload = pmScheduleTaskPayload(draft, 0);
+    expect(payload.leadDays).toBe(0);
+    expect(typeof payload.nextDueDate).toBe('string');
+    expect(payload.nextDueDate).toMatch(/Z$/);
+    expect(new Date(payload.nextDueDate as string).getTime()).toBe(new Date('2026-10-27T03:30').getTime());
+    expect(cardSource).toContain('Exact due time; no day lead.');
+  });
+
   it('serializes only planning fields and clears metadata from inactive modes', () => {
     const tbm = pmScheduleTaskDraftFromMaster({
       id: 'task-1', taskNumber: 1, description: 'Inspect', taskType: 'mechanical', isActive: true,

@@ -76,9 +76,12 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
     ? (task.nextDueDate ? (task.nextDueDate.includes('T') ? task.nextDueDate.slice(0, 16) : `${task.nextDueDate.slice(0, 10)}T00:00`) : '')
     : (task.nextDueDate ? task.nextDueDate.slice(0, 10) : '');
   const intervalValue = Number(task.frequencyInterval);
-  const nextMeterDuePreview = selectedMeter && Number.isFinite(intervalValue) && intervalValue > 0
-    ? selectedMeter.value + intervalValue
-    : null;
+  const persistedNextDueReading = Number(task.nextDueReading);
+  const nextMeterDuePreview = task.nextDueReading.trim() && Number.isFinite(persistedNextDueReading)
+    ? persistedNextDueReading
+    : (selectedMeter && Number.isFinite(intervalValue) && intervalValue > 0
+      ? selectedMeter.value + intervalValue
+      : null);
 
   React.useEffect(() => {
     if (task.frequencyType !== 'meter' || task.maintenanceMode === 'cbm' || sourcesLoading || meterOptions.length !== 1) return;

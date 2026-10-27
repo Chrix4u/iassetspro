@@ -4,7 +4,7 @@
 
 **Goal:** Add per-task Fixed Schedule vs After Completion recurrence semantics for task-authority PM schedules without changing existing tasks unexpectedly.
 
-**Architecture:** Persist a small `recurrenceBasis` discriminator on `PmScheduleTask`. Keep due evaluation and WO generation unchanged; only TBM recurrence advancement at verified planner closeout uses the new basis. Existing rows default to `after_completion`; new task-form drafts default to `fixed_schedule`.
+**Architecture:** Persist `recurrenceBasis` plus a hidden `recurrenceAnchorDate` on `PmScheduleTask`. Keep due evaluation and WO generation unchanged; only TBM recurrence advancement at verified planner closeout uses the new basis and anchor. Existing rows default to `after_completion`; new task-form drafts default to `fixed_schedule`.
 
 **Tech Stack:** Next.js 16, React 19, TypeScript, Prisma/PostgreSQL, Vitest, existing PM/Repairs closeout services.
 
@@ -38,8 +38,8 @@
 - Test: `src/services/pm/__tests__/pmScheduleTask.service.test.ts`
 
 **Interfaces:**
-- Produces: `PmRecurrenceBasis = 'after_completion' | 'fixed_schedule'` and normalized `recurrenceBasis` on Scheduled Tasks.
-- Database default/backfill: `after_completion`.
+- Produces: `PmRecurrenceBasis = 'after_completion' | 'fixed_schedule'`, normalized `recurrenceBasis`, and hidden `recurrenceAnchorDate` persistence for fixed TBM tasks.
+- Database default/backfill: `after_completion`; existing anchors remain null.
 
 - [ ] Write failing normalization tests for valid bases, invalid input, and omitted-field backward compatibility.
 - [ ] Run focused test and confirm RED because recurrence basis is not represented.

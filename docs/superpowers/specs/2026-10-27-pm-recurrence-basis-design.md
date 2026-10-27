@@ -6,11 +6,11 @@ Allow each task in a task-authority PM Schedule to choose whether time-based rec
 
 ## Behavior
 
-- `fixed_schedule`: TBM recurrence is anchored to the task's current due cycle. Planner closeout advances to the first cadence occurrence strictly after the verified task completion time, preserving the original minute/hour/day/week/month/year schedule rather than drifting with lateness.
+- `fixed_schedule`: TBM recurrence is anchored to a persisted internal `recurrenceAnchorDate`. Planner closeout advances to the first cadence occurrence strictly after the verified task completion time, preserving the original minute/hour/day/week/month/year schedule rather than drifting with lateness or short calendar months.
 - `after_completion`: TBM recurrence keeps the existing behavior and calculates the next due date from the verified completion timestamp.
 - UBM remains meter-baseline based and CBM remains condition-rearm based; recurrence basis does not alter those engines.
 - Existing persisted Scheduled Tasks must retain current behavior. Migration therefore backfills/defaults existing rows to `after_completion`.
-- Newly added calendar/TBM tasks in the modern PM schedule form default to `fixed_schedule`.
+- Newly added calendar/TBM tasks in the modern PM schedule form default to `fixed_schedule`; their initial next-due instant becomes the hidden recurrence anchor.
 - The planner may change a TBM task between Fixed Schedule and After Completion.
 
 ## Fixed-schedule catch-up rule

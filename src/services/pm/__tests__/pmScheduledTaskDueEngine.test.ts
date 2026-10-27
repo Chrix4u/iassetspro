@@ -89,6 +89,26 @@ describe('pmScheduledTaskDueEngine', () => {
     expect(client.pmScheduleTask.update).not.toHaveBeenCalled();
   });
 
+  it.each(['minutes', 'hours'])('does not apply day-based lead time to sub-day TBM unit %s', async (frequencyUnit) => {
+    const beforeDue = await evaluate(baseInput({
+      now: new Date('2026-10-26T14:59:59.999Z'),
+      task: task({
+        frequencyInterval: 3, frequencyUnit, leadDays: 5,
+        nextDueDate: new Date('2026-10-26T15:00:00.000Z'),
+      }),
+    }));
+    expect(beforeDue).toMatchObject({ due: false, reason: 'tbm_not_due' });
+
+    const atDue = await evaluate(baseInput({
+      now: new Date('2026-10-26T15:00:00.000Z'),
+      task: task({
+        frequencyInterval: 3, frequencyUnit, leadDays: 5,
+        nextDueDate: new Date('2026-10-26T15:00:00.000Z'),
+      }),
+    }));
+    expect(atDue).toMatchObject({ due: true, reason: 'tbm_due' });
+  });
+
   it.each([
     [1499, false, 'ubm_not_due'],
     [1500, true, 'ubm_due'],

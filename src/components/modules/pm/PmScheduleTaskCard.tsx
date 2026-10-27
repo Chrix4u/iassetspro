@@ -165,7 +165,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
               </SelectContent>
             </Select>
           ) : (
-            <Select value={isTimeUnit(task.frequencyUnit) ? task.frequencyUnit : 'months'} onValueChange={(value) => onChange({ frequencyUnit: value })} disabled={task.maintenanceMode === 'cbm'}>
+            <Select value={isTimeUnit(task.frequencyUnit) ? task.frequencyUnit : 'months'} onValueChange={(value) => onChange({ frequencyUnit: value, ...(value === 'minutes' || value === 'hours' ? { leadDays: '0' } : {}) })} disabled={task.maintenanceMode === 'cbm'}>
               <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
               <SelectContent>
                 {PM_SCHEDULE_TASK_TIME_UNITS.map((unit) => <SelectItem key={unit} value={unit}>{TIME_UNIT_LABELS[unit]}</SelectItem>)}
@@ -210,11 +210,12 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
 
         <div className={compactField}>
           <Label className={compactLabel}>Lead Days</Label>
-          <Input className={compactControl} type="number" min="0" step="1" value={task.leadDays} onChange={(event) => onChange({ leadDays: event.target.value })} />
+          <Input className={compactControl} type="number" min="0" step="1" value={usesSubDayTime ? '0' : task.leadDays} disabled={usesSubDayTime} onChange={(event) => onChange({ leadDays: event.target.value })} />
+          {usesSubDayTime && <p className="text-[9px] text-muted-foreground">Exact due time; no day lead.</p>}
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Next Due Date</Label>
+          <Label className={compactLabel}>Next Due Date/Time</Label>
           <Input className={compactControl} type={usesSubDayTime ? 'datetime-local' : 'date'} value={nextDueInputValue} onChange={(event) => onChange({ nextDueDate: event.target.value })} disabled={task.maintenanceMode !== 'tbm'} />
         </div>
       </div>

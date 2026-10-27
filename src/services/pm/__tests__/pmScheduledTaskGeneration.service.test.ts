@@ -186,6 +186,38 @@ describe('pmScheduledTaskGeneration.service', () => {
     expect(groups.flat()).not.toContain('task-4');
   });
 
+  it('keeps weekly, biweekly and three-hour tasks independent and materializes only the due pair', async () => {
+    const tasks = [
+      scheduledTask('task-101', {
+        equipmentState: 'stopped', sortOrder: 0, frequencyInterval: 1, frequencyUnit: 'weeks',
+        nextDueDate: new Date('2026-10-27T06:00:00.000Z'),
+      }),
+      scheduledTask('task-102', {
+        equipmentState: 'stopped', sortOrder: 1, frequencyInterval: 2, frequencyUnit: 'weeks',
+        nextDueDate: new Date('2026-11-05T08:00:00.000Z'),
+      }),
+      scheduledTask('task-103', {
+        equipmentState: 'stopped', sortOrder: 2, leadDays: 0, frequencyInterval: 3, frequencyUnit: 'hours',
+        nextDueDate: new Date('2026-10-27T06:00:00.000Z'),
+      }),
+    ];
+    mocks.tx.pmSchedule.findUnique.mockResolvedValue(schedule(tasks));
+    mocks.evaluate.mockImplementation(async ({ task }: any) => {
+      if (task.id === 'task-102') {
+        return due(task.id, { due: false, reason: 'tbm_not_due', dueCycleKey: 'tbm:task-102:2026-11-05T08:00:00.000Z' });
+      }
+      return due(task.id, { dueCycleKey: `tbm:${task.id}:2026-10-27T06:00:00.000Z` });
+    });
+
+    const result = await run({ actorId: 'actor-1', scheduleIds: ['schedule-1'] });
+
+    expect(result.generated).toBe(1);
+    expect(mocks.tx.workOrder.create).toHaveBeenCalledTimes(1);
+    expect(mocks.materialize).toHaveBeenCalledTimes(1);
+    expect(mocks.materialize.mock.calls[0][2].map((candidate: any) => candidate.task.id)).toEqual(['task-101', 'task-103']);
+    expect(mocks.materialize.mock.calls[0][2].map((candidate: any) => candidate.task.id)).not.toContain('task-102');
+  });
+
   it('filters already-generated non-cancelled task cycles before creating a WO', async () => {
     mocks.tx.workOrderTaskExecution.findMany.mockResolvedValue([{
       id: 'execution-1', workOrderId: 'wo-existing', pmScheduleTaskId: 'task-1',

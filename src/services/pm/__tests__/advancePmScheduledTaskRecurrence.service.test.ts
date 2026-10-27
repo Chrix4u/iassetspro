@@ -107,6 +107,20 @@ describe('advanceClosedPmScheduledTaskRecurrence', () => {
     });
   });
 
+  it('advances minute TBM recurrence from the task completion timestamp', async () => {
+    const completedAt = new Date('2026-10-26T10:30:00.000Z');
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([
+      execution({ completedAt, pmScheduleTask: task({ frequencyInterval: 90, frequencyUnit: 'minutes' }) }),
+    ]);
+
+    await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: { lastCompletedAt: completedAt, nextDueDate: new Date('2026-10-26T12:00:00.000Z') },
+    });
+  });
+
   it('uses WO actualEnd when an old completed execution has no task completion timestamp', async () => {
     tx.workOrderTaskExecution.findMany.mockResolvedValue([
       execution({ completedAt: null, pmScheduleTask: task({ frequencyInterval: 7, frequencyUnit: 'days' }) }),

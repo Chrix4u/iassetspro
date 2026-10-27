@@ -65,6 +65,10 @@ export interface PmScheduleConditionSourceOption {
   currentValue: number | null;
 }
 
+function isSubDayTimeUnit(value: unknown): boolean {
+  return value === 'minutes' || value === 'hours';
+}
+
 function text(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
@@ -85,6 +89,15 @@ function dateTimeLocal(value: unknown): string {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 16);
+}
+
+function absoluteDateTimeForServer(value: string): string | null {
+  if (!value) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
+  }
+  return value;
 }
 
 function numberOrNull(value: string): number | null {
@@ -143,7 +156,7 @@ export function pmScheduleTaskDraftFromApi(row: any): PmScheduleTaskDraft {
     equipmentState: String(row?.equipmentState || 'stopped') as PmScheduleTaskEquipmentState,
     frequencyType: String(row?.maintenanceMode || 'tbm') === 'ubm' ? 'meter' : 'time_day',
     estimatedMinutes: text(row?.estimatedMinutes),
-    leadDays: text(row?.leadDays ?? 0),
+    leadDays: usesSubDayTime ? '0' : text(row?.leadDays ?? 0),
     frequencyInterval: text(row?.frequencyInterval),
     frequencyUnit,
     meterName: text(row?.meterName),
@@ -169,14 +182,14 @@ export function pmScheduleTaskPayload(task: PmScheduleTaskDraft, sortOrder: numb
     maintenanceMode: task.maintenanceMode,
     equipmentState: task.equipmentState,
     estimatedMinutes: wholeNumberOrZero(task.estimatedMinutes),
-    leadDays: wholeNumberOrZero(task.leadDays),
+    leadDays: task.maintenanceMode === 'tbm' && isSubDayTimeUnit(task.frequencyUnit) ? 0 : wholeNumberOrZero(task.leadDays),
     frequencyInterval: task.maintenanceMode === 'cbm' ? null : numberOrNull(task.frequencyInterval),
     frequencyUnit: task.maintenanceMode === 'cbm' ? null : (task.frequencyUnit.trim() || null),
     meterName: task.maintenanceMode === 'ubm' ? (task.meterName.trim() || null) : null,
     // The server preserves the current threshold when source+interval are unchanged,
     // and recalculates it from the latest meter when planning changes.
     nextDueReading: null,
-    nextDueDate: task.maintenanceMode === 'tbm' ? (task.nextDueDate || null) : null,
+    nextDueDate: task.maintenanceMode === 'tbm' ? absoluteDateTimeForServer(task.nextDueDate) : null,
     conditionSourceType: task.maintenanceMode === 'cbm' ? (task.conditionSourceType || null) : null,
     conditionSourceId: task.maintenanceMode === 'cbm' ? (task.conditionSourceId || null) : null,
     conditionMetric: task.maintenanceMode === 'cbm' ? (task.conditionMetric || null) : null,

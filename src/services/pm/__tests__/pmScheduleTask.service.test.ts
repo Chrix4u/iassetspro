@@ -39,6 +39,8 @@ const existingRow = (overrides: Record<string, unknown> = {}) => ({
   equipmentState: 'stopped',
   estimatedMinutes: 20,
   leadDays: 2,
+  recurrenceBasis: 'after_completion',
+  recurrenceAnchorDate: null,
   frequencyInterval: 30,
   frequencyUnit: 'days',
   meterName: null,
@@ -88,6 +90,83 @@ describe('pmScheduleTask.service', () => {
       estimatedMinutes: 20, leadDays: 2, frequencyInterval: 30, frequencyUnit: 'days',
       nextDueDate: new Date('2026-10-31T00:00:00.000Z'), isActive: true,
     })] });
+  });
+
+  it('defaults an omitted recurrence basis to after_completion for backward compatibility', () => {
+    const result = normalizePmScheduledTasks([baseTbm()]);
+    expect(result).toEqual({ ok: true, tasks: [expect.objectContaining({
+      recurrenceBasis: 'after_completion',
+    })] });
+  });
+
+  it('accepts both recurrence bases and rejects unknown values', () => {
+    for (const recurrenceBasis of ['after_completion', 'fixed_schedule']) {
+      const result = normalizePmScheduledTasks([baseTbm({ recurrenceBasis })]);
+      expect(result).toEqual({ ok: true, tasks: [expect.objectContaining({ recurrenceBasis })] });
+    }
+
+    const invalid = normalizePmScheduledTasks([baseTbm({ recurrenceBasis: 'whenever' })]);
+    expect(invalid).toEqual(expect.objectContaining({ ok: false }));
+    if (!invalid.ok) expect(invalid.error).toMatch(/recurrence basis/i);
+  });
+
+  it('normalizes non-TBM recurrence basis to after_completion because UBM and CBM own their recurrence semantics', () => {
+    const ubm = normalizePmScheduledTasks([baseTbm({
+      maintenanceMode: 'ubm', recurrenceBasis: 'fixed_schedule', frequencyInterval: 500,
+      frequencyUnit: 'hours', meterName: 'Operating Hours', nextDueDate: null,
+    })]);
+    expect(ubm).toEqual({ ok: true, tasks: [expect.objectContaining({ recurrenceBasis: 'after_completion' })] });
+
+    const cbm = normalizePmScheduledTasks([baseTbm({
+      maintenanceMode: 'cbm', recurrenceBasis: 'fixed_schedule', frequencyInterval: null,
+      frequencyUnit: null, nextDueDate: null, conditionSourceType: 'iot_device',
+      conditionSourceId: 'iot-1', conditionMetric: 'Temperature', conditionOperator: '>',
+      conditionThreshold: 80,
+    })]);
+    expect(cbm).toEqual({ ok: true, tasks: [expect.objectContaining({ recurrenceBasis: 'after_completion' })] });
+  });
+
+  it('persists a fixed_schedule TBM recurrence basis', async () => {
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({ recurrenceBasis: 'fixed_schedule' })],
+    });
+
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      recurrenceBasis: 'fixed_schedule',
+    }) });
+  });
+
+  it('creates a fixed-schedule task with an internal recurrence anchor equal to its initial due date', async () => {
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({ recurrenceBasis: 'fixed_schedule', nextDueDate: '2026-10-31T09:15:00.000Z' })],
+    });
+
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      recurrenceBasis: 'fixed_schedule',
+      recurrenceAnchorDate: new Date('2026-10-31T09:15:00.000Z'),
+    }) });
+  });
+
+  it('preserves an existing fixed-schedule anchor when the planner saves the unchanged current due cycle', async () => {
+    const anchor = new Date('2026-01-31T09:15:00.000Z');
+    const currentDue = new Date('2026-02-28T09:15:00.000Z');
+    tx.pmScheduleTask.findMany.mockResolvedValue([existingRow({
+      recurrenceBasis: 'fixed_schedule', recurrenceAnchorDate: anchor, nextDueDate: currentDue,
+    })]);
+
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({
+        id: 'scheduled-1', recurrenceBasis: 'fixed_schedule', nextDueDate: currentDue.toISOString(),
+      })],
+    });
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: expect.objectContaining({ recurrenceAnchorDate: anchor }),
+    });
   });
 
   it('rejects duplicate masters and invalid common planning values before database work', () => {

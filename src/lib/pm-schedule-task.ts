@@ -3,12 +3,14 @@ import type { PmTaskType } from '@/lib/pm-task';
 export const PM_SCHEDULE_TASK_MODES = ['tbm', 'ubm', 'cbm'] as const;
 export const PM_SCHEDULE_TASK_EQUIPMENT_STATES = ['running', 'stopped'] as const;
 export const PM_SCHEDULE_TASK_FREQUENCY_TYPES = ['time_day', 'meter'] as const;
+export const PM_SCHEDULE_TASK_RECURRENCE_BASES = ['fixed_schedule', 'after_completion'] as const;
 export const PM_SCHEDULE_TASK_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
 export const PM_SCHEDULE_TASK_CONDITION_OPERATORS = ['>', '>=', '<', '<=', '=', '!=', 'outside_range'] as const;
 
 export type PmScheduleTaskMode = (typeof PM_SCHEDULE_TASK_MODES)[number];
 export type PmScheduleTaskEquipmentState = (typeof PM_SCHEDULE_TASK_EQUIPMENT_STATES)[number];
 export type PmScheduleTaskFrequencyType = (typeof PM_SCHEDULE_TASK_FREQUENCY_TYPES)[number];
+export type PmScheduleTaskRecurrenceBasis = (typeof PM_SCHEDULE_TASK_RECURRENCE_BASES)[number];
 export type PmScheduleTaskTimeUnit = (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number];
 export type PmScheduleTaskConditionOperator = (typeof PM_SCHEDULE_TASK_CONDITION_OPERATORS)[number];
 export type PmScheduleTaskConditionSourceType = 'component_condition' | 'iot_device' | '';
@@ -31,6 +33,7 @@ export interface PmScheduleTaskDraft {
   maintenanceMode: PmScheduleTaskMode;
   equipmentState: PmScheduleTaskEquipmentState;
   frequencyType: PmScheduleTaskFrequencyType;
+  recurrenceBasis: PmScheduleTaskRecurrenceBasis;
   estimatedMinutes: string;
   leadDays: string;
   frequencyInterval: string;
@@ -122,6 +125,7 @@ export function pmScheduleTaskDraftFromMaster(master: PmScheduleTaskMaster): PmS
     maintenanceMode: 'tbm',
     equipmentState: 'stopped',
     frequencyType: 'time_day',
+    recurrenceBasis: 'fixed_schedule',
     estimatedMinutes: '',
     leadDays: '0',
     frequencyInterval: '1',
@@ -155,6 +159,9 @@ export function pmScheduleTaskDraftFromApi(row: any): PmScheduleTaskDraft {
     maintenanceMode: String(row?.maintenanceMode || 'tbm') as PmScheduleTaskMode,
     equipmentState: String(row?.equipmentState || 'stopped') as PmScheduleTaskEquipmentState,
     frequencyType: String(row?.maintenanceMode || 'tbm') === 'ubm' ? 'meter' : 'time_day',
+    recurrenceBasis: String(row?.maintenanceMode || 'tbm') === 'tbm' && row?.recurrenceBasis === 'fixed_schedule'
+      ? 'fixed_schedule'
+      : 'after_completion',
     estimatedMinutes: text(row?.estimatedMinutes),
     leadDays: usesSubDayTime ? '0' : text(row?.leadDays ?? 0),
     frequencyInterval: text(row?.frequencyInterval),
@@ -183,6 +190,7 @@ export function pmScheduleTaskPayload(task: PmScheduleTaskDraft, sortOrder: numb
     equipmentState: task.equipmentState,
     estimatedMinutes: wholeNumberOrZero(task.estimatedMinutes),
     leadDays: task.maintenanceMode === 'tbm' && isSubDayTimeUnit(task.frequencyUnit) ? 0 : wholeNumberOrZero(task.leadDays),
+    recurrenceBasis: task.maintenanceMode === 'tbm' ? task.recurrenceBasis : 'after_completion',
     frequencyInterval: task.maintenanceMode === 'cbm' ? null : numberOrNull(task.frequencyInterval),
     frequencyUnit: task.maintenanceMode === 'cbm' ? null : (task.frequencyUnit.trim() || null),
     meterName: task.maintenanceMode === 'ubm' ? (task.meterName.trim() || null) : null,

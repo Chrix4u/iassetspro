@@ -19,6 +19,8 @@ function task(overrides: Record<string, unknown> = {}) {
     scheduleId: 'schedule-1',
     pmTaskId: 'master-1',
     maintenanceMode: 'tbm',
+    recurrenceBasis: 'after_completion',
+    recurrenceAnchorDate: null,
     frequencyInterval: 1,
     frequencyUnit: 'months',
     meterName: null,
@@ -91,6 +93,79 @@ describe('advanceClosedPmScheduledTaskRecurrence', () => {
       },
     });
     expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a weekly fixed schedule on its original weekday and time after late completion', async () => {
+    const completedAt = new Date('2026-10-27T10:30:00.000Z');
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([
+      execution({
+        completedAt,
+        pmScheduleTask: task({
+          recurrenceBasis: 'fixed_schedule',
+          frequencyInterval: 1,
+          frequencyUnit: 'weeks',
+          nextDueDate: new Date('2026-10-26T08:00:00.000Z'),
+        }),
+      }),
+    ]);
+
+    await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: { lastCompletedAt: completedAt, nextDueDate: new Date('2026-11-02T08:00:00.000Z') },
+    });
+    expect(tx.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        newValues: expect.stringContaining('fixed_schedule'),
+      }),
+    }));
+  });
+
+  it('skips missed fixed-schedule cycles and chooses the first anchored occurrence after completion', async () => {
+    const completedAt = new Date('2026-10-27T10:30:00.000Z');
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([
+      execution({
+        completedAt,
+        pmScheduleTask: task({
+          recurrenceBasis: 'fixed_schedule',
+          frequencyInterval: 1,
+          frequencyUnit: 'weeks',
+          nextDueDate: new Date('2026-10-05T08:00:00.000Z'),
+        }),
+      }),
+    ]);
+
+    await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: { lastCompletedAt: completedAt, nextDueDate: new Date('2026-11-02T08:00:00.000Z') },
+    });
+  });
+
+  it('preserves a month-end fixed anchor instead of drifting through a clamped month', async () => {
+    const completedAt = new Date('2026-03-01T10:00:00.000Z');
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([
+      execution({
+        completedAt,
+        pmScheduleTask: task({
+          recurrenceBasis: 'fixed_schedule',
+          recurrenceAnchorDate: new Date('2026-01-31T09:15:00.000Z'),
+          frequencyInterval: 1,
+          frequencyUnit: 'months',
+          // This is the clamped current cycle; the hidden anchor must remain Jan 31.
+          nextDueDate: new Date('2026-02-28T09:15:00.000Z'),
+        }),
+      }),
+    ]);
+
+    await advanceClosedPmScheduledTaskRecurrence(input());
+
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith({
+      where: { id: 'scheduled-1' },
+      data: { lastCompletedAt: completedAt, nextDueDate: new Date('2026-03-31T09:15:00.000Z') },
+    });
   });
 
   it('advances sub-day TBM recurrence without losing the completion time', async () => {

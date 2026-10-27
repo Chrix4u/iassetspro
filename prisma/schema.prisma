@@ -1344,6 +1344,8 @@ model PmScheduleTask {
   equipmentState            String   // running, stopped
   estimatedMinutes          Int      @default(0)
   leadDays                  Int      @default(0)
+  recurrenceBasis           String   @default("after_completion") // after_completion, fixed_schedule
+  recurrenceAnchorDate      DateTime? // original fixed-calendar anchor; hidden from planner UI
   frequencyInterval         Float?
   frequencyUnit             String?
   meterName                 String?

@@ -215,6 +215,49 @@ export function calculateTimeDayNextDueDate(fromDate: Date, frequencyValue: numb
   }
 }
 
+export function calculateFixedScheduleNextDueDate(
+  anchorDueDate: Date,
+  completedAt: Date,
+  frequencyValue: number,
+  frequencyUnit: PmTimeUnit,
+): Date {
+  const value = positiveWholeNumber(frequencyValue, 1);
+  const anchor = new Date(anchorDueDate);
+  const completed = new Date(completedAt);
+
+  let step = 1;
+  if (frequencyUnit === 'minutes' || frequencyUnit === 'hours' || frequencyUnit === 'days' || frequencyUnit === 'weeks') {
+    const unitMs = frequencyUnit === 'minutes'
+      ? 60 * 1000
+      : frequencyUnit === 'hours'
+        ? 60 * 60 * 1000
+        : frequencyUnit === 'days'
+          ? 24 * 60 * 60 * 1000
+          : 7 * 24 * 60 * 60 * 1000;
+    const intervalMs = value * unitMs;
+    if (completed.getTime() >= anchor.getTime()) {
+      step = Math.floor((completed.getTime() - anchor.getTime()) / intervalMs) + 1;
+    }
+    return new Date(anchor.getTime() + step * intervalMs);
+  }
+
+  if (frequencyUnit === 'months') {
+    const monthDelta = (completed.getUTCFullYear() - anchor.getUTCFullYear()) * 12
+      + completed.getUTCMonth() - anchor.getUTCMonth();
+    if (monthDelta > 0) step = Math.max(1, Math.floor(monthDelta / value));
+  } else {
+    const yearDelta = completed.getUTCFullYear() - anchor.getUTCFullYear();
+    if (yearDelta > 0) step = Math.max(1, Math.floor(yearDelta / value));
+  }
+
+  let candidate = calculateTimeDayNextDueDate(anchor, value * step, frequencyUnit);
+  while (candidate.getTime() <= completed.getTime()) {
+    step += 1;
+    candidate = calculateTimeDayNextDueDate(anchor, value * step, frequencyUnit);
+  }
+  return candidate;
+}
+
 export function formatPmFrequencyLabel(input: PmFrequencyInput): string {
   const normalized = normalizePmFrequency(input);
   const value = normalized.frequencyValue;

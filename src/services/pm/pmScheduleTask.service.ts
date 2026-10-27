@@ -244,7 +244,32 @@ interface SyncPmScheduledTasksInput {
   tasks: unknown;
 }
 
-function persistedPlanningData(task: NormalizedPmScheduledTask) {
+function sameInstant(left: Date | null | undefined, right: Date | null | undefined): boolean {
+  return Boolean(left && right && left.getTime() === right.getTime());
+}
+
+function recurrenceAnchorForPlanning(
+  task: NormalizedPmScheduledTask,
+  existing?: {
+    maintenanceMode: string;
+    recurrenceBasis?: string | null;
+    recurrenceAnchorDate?: Date | null;
+    nextDueDate?: Date | null;
+  },
+): Date | null {
+  if (task.maintenanceMode !== 'tbm' || task.recurrenceBasis !== 'fixed_schedule' || !task.nextDueDate) return null;
+  if (
+    existing?.maintenanceMode === 'tbm'
+    && existing.recurrenceBasis === 'fixed_schedule'
+    && existing.recurrenceAnchorDate
+    && sameInstant(existing.nextDueDate, task.nextDueDate)
+  ) {
+    return existing.recurrenceAnchorDate;
+  }
+  return task.nextDueDate;
+}
+
+function persistedPlanningData(task: NormalizedPmScheduledTask, recurrenceAnchorDate: Date | null) {
   return {
     pmTaskId: task.pmTaskId,
     sortOrder: task.sortOrder,
@@ -253,6 +278,7 @@ function persistedPlanningData(task: NormalizedPmScheduledTask) {
     estimatedMinutes: task.estimatedMinutes,
     leadDays: task.leadDays,
     recurrenceBasis: task.recurrenceBasis,
+    recurrenceAnchorDate,
     frequencyInterval: task.frequencyInterval,
     frequencyUnit: task.frequencyUnit,
     meterName: task.meterName,
@@ -348,7 +374,8 @@ export async function syncPmScheduledTasks(
       }
     }
 
-    const data = persistedPlanningData(task);
+    const recurrenceAnchorDate = recurrenceAnchorForPlanning(task, existing);
+    const data = persistedPlanningData(task, recurrenceAnchorDate);
     if (existing) {
       keptIds.add(existing.id);
       await tx.pmScheduleTask.update({ where: { id: existing.id }, data });

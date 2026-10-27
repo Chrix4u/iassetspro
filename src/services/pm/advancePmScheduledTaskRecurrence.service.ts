@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { buildAuditData, type AuditContext } from '@/lib/audit-helpers';
-import { calculateTimeDayNextDueDate } from '@/lib/pm-frequency';
+import { calculateFixedScheduleNextDueDate, calculateTimeDayNextDueDate } from '@/lib/pm-frequency';
 import { PM_SCHEDULE_TASK_TIME_UNITS } from '@/services/pm/pmScheduleTask.service';
 
 type RecurrenceTx = Pick<
@@ -70,6 +70,8 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           id: true,
           scheduleId: true,
           maintenanceMode: true,
+          recurrenceBasis: true,
+          recurrenceAnchorDate: true,
           frequencyInterval: true,
           frequencyUnit: true,
           meterName: true,
@@ -126,13 +128,22 @@ export async function advanceClosedPmScheduledTaskRecurrence(
       if (!unit || !(PM_SCHEDULE_TASK_TIME_UNITS as readonly string[]).includes(unit)) {
         throw recurrenceError(`TBM Scheduled Task ${scheduledTask.id} has an invalid calendar unit`);
       }
-      const nextDueDate = calculateTimeDayNextDueDate(
-        completedAt,
-        interval,
-        unit as (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number],
-      );
+      const typedUnit = unit as (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number];
+      const recurrenceBasis = scheduledTask.recurrenceBasis === 'fixed_schedule'
+        ? 'fixed_schedule'
+        : 'after_completion';
+      let nextDueDate: Date;
+      if (recurrenceBasis === 'fixed_schedule') {
+        const anchor = scheduledTask.recurrenceAnchorDate || scheduledTask.nextDueDate;
+        if (!anchor) {
+          throw recurrenceError(`TBM Scheduled Task ${scheduledTask.id} has fixed recurrence without a calendar anchor`);
+        }
+        nextDueDate = calculateFixedScheduleNextDueDate(anchor, completedAt, interval, typedUnit);
+      } else {
+        nextDueDate = calculateTimeDayNextDueDate(completedAt, interval, typedUnit);
+      }
       updateData = { lastCompletedAt: completedAt, nextDueDate };
-      auditDetails = { nextDueDate: nextDueDate.toISOString() };
+      auditDetails = { recurrenceBasis, nextDueDate: nextDueDate.toISOString() };
     } else if (scheduledTask.maintenanceMode === 'ubm') {
       const interval = Number(scheduledTask.frequencyInterval);
       if (!input.assetId) {

@@ -25,8 +25,6 @@ describe('PM scheduled-task UI contract', () => {
     }));
   });
 
-
-
   it('offers the complete time/day unit set needed by task recurrence planning', () => {
     expect(PM_SCHEDULE_TASK_TIME_UNITS).toEqual(['minutes', 'hours', 'days', 'weeks', 'months', 'years']);
   });
@@ -129,10 +127,10 @@ describe('PM scheduled-task UI contract', () => {
     expect(cardSource).toContain('Stopped');
     expect(cardSource).toContain('Frequency Type');
     expect(cardSource).toContain('Frequency Unit');
-    expect(cardSource).toContain('Frequency Value');
+    expect(cardSource).toContain('Value / Interval');
     expect(cardSource).toContain('Inspection Type');
     expect(cardSource).toContain('Maintenance Mode');
-    expect(cardSource).toContain('Estimated Minutes');
+    expect(cardSource).toContain('Est. Minutes');
     expect(cardSource).toContain('Lead Days');
     expect(cardSource).toContain('Next Due Date');
     expect(cardSource).not.toContain('<Label>Equipment State</Label>');

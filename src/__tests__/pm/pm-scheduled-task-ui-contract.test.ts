@@ -21,7 +21,7 @@ describe('PM scheduled-task UI contract', () => {
     })).toEqual(expect.objectContaining({
       clientId: 'task-17', id: null, pmTaskId: 'task-17', taskNumber: 17,
       description: 'Inspect drive coupling', taskType: 'mechanical', maintenanceMode: 'tbm',
-      equipmentState: 'stopped', frequencyType: 'time_day', frequencyInterval: '1', frequencyUnit: 'months',
+      equipmentState: 'stopped', frequencyType: 'time_day', recurrenceBasis: 'fixed_schedule', frequencyInterval: '1', frequencyUnit: 'months',
     }));
   });
 
@@ -56,6 +56,20 @@ describe('PM scheduled-task UI contract', () => {
       equipmentState: 'running', estimatedMinutes: '25', leadDays: '3', frequencyInterval: '500',
       frequencyUnit: 'hours', meterName: 'Operating Hours', nextDueReading: '1750',
     }));
+  });
+
+  it('hydrates recurrence basis safely for legacy and fixed-schedule task rows', () => {
+    const master = { id: 'task-17', taskNumber: 17, description: 'Inspect drive coupling', taskType: 'mechanical', isActive: true };
+    const legacy = pmScheduleTaskDraftFromApi({
+      id: 'scheduled-legacy', pmTaskId: 'task-17', maintenanceMode: 'tbm', frequencyUnit: 'weeks',
+      frequencyInterval: 1, nextDueDate: '2026-11-02T08:00:00.000Z', pmTask: master,
+    });
+    const fixed = pmScheduleTaskDraftFromApi({
+      id: 'scheduled-fixed', pmTaskId: 'task-17', maintenanceMode: 'tbm', recurrenceBasis: 'fixed_schedule',
+      frequencyUnit: 'weeks', frequencyInterval: 1, nextDueDate: '2026-11-02T08:00:00.000Z', pmTask: master,
+    });
+    expect(legacy.recurrenceBasis).toBe('after_completion');
+    expect(fixed.recurrenceBasis).toBe('fixed_schedule');
   });
 
   it('preserves time-of-day when an hourly or minute TBM task is reopened for editing', () => {
@@ -99,12 +113,21 @@ describe('PM scheduled-task UI contract', () => {
 
     expect(pmScheduleTaskPayload(tbm, 4)).toEqual({
       pmTaskId: 'task-1', sortOrder: 4, maintenanceMode: 'tbm', equipmentState: 'stopped',
-      estimatedMinutes: 20, leadDays: 2, frequencyInterval: 6, frequencyUnit: 'months',
+      estimatedMinutes: 20, leadDays: 2, recurrenceBasis: 'fixed_schedule', frequencyInterval: 6, frequencyUnit: 'months',
       meterName: null, nextDueReading: null, nextDueDate: '2026-12-01',
       conditionSourceType: null, conditionSourceId: null, conditionMetric: null, conditionOperator: null,
       conditionThreshold: null, conditionThresholdMax: null, conditionUnit: null, evaluationCadenceMinutes: null,
       isActive: true,
     });
+  });
+
+  it('serializes TBM recurrence basis and removes calendar-basis semantics from UBM payloads', () => {
+    const tbm = pmScheduleTaskDraftFromMaster({ id: 'task-9', taskNumber: 9, description: 'Lubricate', taskType: 'lubrication' });
+    tbm.nextDueDate = '2026-11-02';
+    expect(pmScheduleTaskPayload(tbm, 0).recurrenceBasis).toBe('fixed_schedule');
+
+    const ubm = { ...tbm, maintenanceMode: 'ubm' as const, frequencyType: 'meter' as const, meterName: 'Hours', frequencyUnit: 'hours' };
+    expect(pmScheduleTaskPayload(ubm, 0).recurrenceBasis).toBe('after_completion');
   });
 
   it('formats planner-readable TBM, UBM and CBM summaries', () => {
@@ -135,6 +158,9 @@ describe('PM scheduled-task UI contract', () => {
     expect(cardSource).toContain('Estimated Minutes');
     expect(cardSource).toContain('Lead Days');
     expect(cardSource).toContain('Next Due Date');
+    expect(cardSource).toContain('Recurrence Basis');
+    expect(cardSource).toContain('Fixed Schedule');
+    expect(cardSource).toContain('After Completion');
     expect(cardSource).not.toContain('<Label>Equipment State</Label>');
     expect(cardSource).toContain('outside_range');
     expect(cardSource).toContain('Move Task #');

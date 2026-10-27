@@ -75,14 +75,26 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
   const nextDueInputValue = usesSubDayTime
     ? (task.nextDueDate ? (task.nextDueDate.includes('T') ? task.nextDueDate.slice(0, 16) : `${task.nextDueDate.slice(0, 10)}T00:00`) : '')
     : (task.nextDueDate ? task.nextDueDate.slice(0, 10) : '');
+  const intervalValue = Number(task.frequencyInterval);
+  const nextMeterDuePreview = selectedMeter && Number.isFinite(intervalValue) && intervalValue > 0
+    ? selectedMeter.value + intervalValue
+    : null;
+
+  React.useEffect(() => {
+    if (task.frequencyType !== 'meter' || task.maintenanceMode === 'cbm' || sourcesLoading || meterOptions.length !== 1) return;
+    const meter = meterOptions[0];
+    if (task.meterName === meter.meterName && task.frequencyUnit === meter.unit) return;
+    onChange({ meterName: meter.meterName, frequencyUnit: meter.unit, nextDueReading: '' });
+  }, [meterOptions, onChange, sourcesLoading, task.frequencyType, task.frequencyUnit, task.maintenanceMode, task.meterName]);
 
   const changeFrequencyType = (value: PmScheduleTaskDraft['frequencyType']) => {
     if (value === 'meter') {
+      const meter = meterOptions.length === 1 ? meterOptions[0] : null;
       onChange({
         frequencyType: 'meter',
         maintenanceMode: 'ubm',
-        frequencyUnit: '',
-        meterName: '',
+        frequencyUnit: meter?.unit || '',
+        meterName: meter?.meterName || '',
         nextDueReading: '',
         nextDueDate: '',
       });
@@ -109,11 +121,14 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
       return;
     }
     if (value === 'ubm') {
+      const meter = task.frequencyType === 'meter'
+        ? selectedMeter
+        : (meterOptions.length === 1 ? meterOptions[0] : null);
       onChange({
         maintenanceMode: 'ubm',
         frequencyType: 'meter',
-        frequencyUnit: task.frequencyType === 'meter' ? task.frequencyUnit : '',
-        meterName: task.frequencyType === 'meter' ? task.meterName : '',
+        frequencyUnit: meter?.unit || '',
+        meterName: meter?.meterName || '',
         nextDueDate: '',
       });
       return;
@@ -149,7 +164,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Frequency Unit</Label>
+          <Label className={compactLabel}>{task.frequencyType === 'meter' ? 'Meter / Unit' : 'Frequency Unit'}</Label>
           {task.frequencyType === 'meter' ? (
             <Select
               value={task.meterName && task.frequencyUnit ? `${task.meterName}|||${task.frequencyUnit}` : undefined}
@@ -159,7 +174,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
               }}
               disabled={task.maintenanceMode === 'cbm' || sourcesLoading || meterOptions.length === 0}
             >
-              <SelectTrigger className={compactControl}><SelectValue placeholder={sourcesLoading ? 'Loading…' : 'Meter / unit'} /></SelectTrigger>
+              <SelectTrigger className={compactControl}><SelectValue placeholder={sourcesLoading ? 'Loading…' : 'Select meter'} /></SelectTrigger>
               <SelectContent>
                 {meterOptions.map((meter) => <SelectItem key={meterKey(meter)} value={meterKey(meter)}>{meter.meterName} · {meter.unit}</SelectItem>)}
               </SelectContent>
@@ -172,11 +187,17 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
               </SelectContent>
             </Select>
           )}
-          {task.frequencyType === 'meter' && selectedMeter && task.maintenanceMode !== 'cbm' && <p className="truncate text-[9px] text-muted-foreground" title={`${selectedMeter.meterName}: ${selectedMeter.value} ${selectedMeter.unit}`}>Now {selectedMeter.value} {selectedMeter.unit}</p>}
+          {task.frequencyType === 'meter' && selectedMeter && task.maintenanceMode !== 'cbm' && (
+            <div className="flex flex-wrap gap-x-2 text-[9px] text-muted-foreground">
+              <span title={`${selectedMeter.meterName}: ${selectedMeter.value} ${selectedMeter.unit}`}>Current {selectedMeter.value} {selectedMeter.unit}</span>
+              {nextMeterDuePreview != null && <span className="font-medium">Next due {nextMeterDuePreview} {selectedMeter.unit}</span>}
+            </div>
+          )}
+          {task.frequencyType === 'meter' && !sourcesLoading && meterOptions.length === 0 && task.maintenanceMode !== 'cbm' && <p className="text-[9px] text-amber-600">No meter is configured for this asset.</p>}
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Frequency Value</Label>
+          <Label className={compactLabel}>Value / Interval</Label>
           <Input className={compactControl} type="number" min="0.000001" step={task.frequencyType === 'time_day' ? '1' : 'any'} value={task.frequencyInterval} onChange={(event) => onChange({ frequencyInterval: event.target.value, nextDueReading: '' })} disabled={task.maintenanceMode === 'cbm'} />
         </div>
 
@@ -204,7 +225,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Estimated Minutes</Label>
+          <Label className={compactLabel}>Est. Minutes</Label>
           <Input className={compactControl} type="number" min="0" step="1" value={task.estimatedMinutes} onChange={(event) => onChange({ estimatedMinutes: event.target.value })} placeholder="0" />
         </div>
 
@@ -215,7 +236,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Next Due Date/Time</Label>
+          <Label className={compactLabel}>Next Due Date</Label>
           <Input className={compactControl} type={usesSubDayTime ? 'datetime-local' : 'date'} value={nextDueInputValue} onChange={(event) => onChange({ nextDueDate: event.target.value })} disabled={task.maintenanceMode !== 'tbm'} />
         </div>
       </div>

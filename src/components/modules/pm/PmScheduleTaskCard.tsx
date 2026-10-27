@@ -220,6 +220,25 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
         </div>
       </div>
 
+      {task.maintenanceMode === 'tbm' && (
+        <div data-testid="pm-task-recurrence-basis" className="mt-2 flex flex-col gap-2 rounded-md border bg-muted/10 p-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <Label className={compactLabel}>Recurrence Basis</Label>
+            <p className="text-[10px] text-muted-foreground">Fixed Schedule keeps the planned calendar clock; After Completion restarts the interval from verified completion.</p>
+          </div>
+          <Select
+            value={task.recurrenceBasis}
+            onValueChange={(value) => onChange({ recurrenceBasis: value as PmScheduleTaskDraft['recurrenceBasis'] })}
+          >
+            <SelectTrigger className="h-8 w-full text-xs sm:w-[170px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed_schedule">Fixed Schedule</SelectItem>
+              <SelectItem value="after_completion">After Completion</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {task.maintenanceMode === 'cbm' && (
         <div data-testid="pm-task-condition-planning-grid" className="mt-2 grid gap-2 rounded-md border bg-muted/15 p-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           <div className={`${compactField} sm:col-span-2`}>

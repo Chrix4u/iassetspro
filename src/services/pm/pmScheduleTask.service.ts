@@ -2,12 +2,14 @@ import type { Prisma } from '@prisma/client';
 
 export const PM_MAINTENANCE_MODES = ['tbm', 'ubm', 'cbm'] as const;
 export const PM_EQUIPMENT_STATES = ['running', 'stopped'] as const;
+export const PM_RECURRENCE_BASES = ['after_completion', 'fixed_schedule'] as const;
 export const PM_SCHEDULE_TASK_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
 export const PM_CONDITION_OPERATORS = ['>', '>=', '<', '<=', '=', '!=', 'outside_range'] as const;
 export const PM_CONDITION_SOURCE_TYPES = ['component_condition', 'iot_device'] as const;
 
 export type PmMaintenanceMode = (typeof PM_MAINTENANCE_MODES)[number];
 export type PmEquipmentState = (typeof PM_EQUIPMENT_STATES)[number];
+export type PmRecurrenceBasis = (typeof PM_RECURRENCE_BASES)[number];
 export type PmScheduleTaskTimeUnit = (typeof PM_SCHEDULE_TASK_TIME_UNITS)[number];
 export type PmConditionOperator = (typeof PM_CONDITION_OPERATORS)[number];
 export type PmConditionSourceType = (typeof PM_CONDITION_SOURCE_TYPES)[number];
@@ -27,6 +29,7 @@ export interface PmScheduledTaskInput {
   equipmentState?: unknown;
   estimatedMinutes?: unknown;
   leadDays?: unknown;
+  recurrenceBasis?: unknown;
   frequencyInterval?: unknown;
   frequencyUnit?: unknown;
   meterName?: unknown;
@@ -51,6 +54,7 @@ export interface NormalizedPmScheduledTask {
   equipmentState: PmEquipmentState;
   estimatedMinutes: number;
   leadDays: number;
+  recurrenceBasis: PmRecurrenceBasis;
   frequencyInterval: number | null;
   frequencyUnit: string | null;
   meterName: string | null;
@@ -134,6 +138,13 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
     if (sortOrder === null || sortOrder < 0) return error(number, 'sort order must be a non-negative whole number');
 
     const isActive = candidate.isActive !== false;
+    const requestedRecurrenceBasis = optionalText(candidate.recurrenceBasis)?.toLowerCase() || 'after_completion';
+    if (!PM_RECURRENCE_BASES.includes(requestedRecurrenceBasis as PmRecurrenceBasis)) {
+      return error(number, 'has an invalid recurrence basis');
+    }
+    const recurrenceBasis: PmRecurrenceBasis = mode === 'tbm'
+      ? requestedRecurrenceBasis as PmRecurrenceBasis
+      : 'after_completion';
     const rawInterval = optionalFiniteNumber(candidate.frequencyInterval);
     if (rawInterval === undefined) return error(number, 'frequency interval must be numeric');
     const frequencyInterval = rawInterval;
@@ -200,6 +211,7 @@ export function normalizePmScheduledTasks(input: unknown): NormalizePmScheduledT
       equipmentState: equipmentState as PmEquipmentState,
       estimatedMinutes,
       leadDays: effectiveLeadDays,
+      recurrenceBasis,
       frequencyInterval: mode === 'cbm' ? null : frequencyInterval,
       frequencyUnit: mode === 'cbm' ? null : frequencyUnit,
       meterName: mode === 'ubm' ? meterName : null,
@@ -240,6 +252,7 @@ function persistedPlanningData(task: NormalizedPmScheduledTask) {
     equipmentState: task.equipmentState,
     estimatedMinutes: task.estimatedMinutes,
     leadDays: task.leadDays,
+    recurrenceBasis: task.recurrenceBasis,
     frequencyInterval: task.frequencyInterval,
     frequencyUnit: task.frequencyUnit,
     meterName: task.meterName,

@@ -130,13 +130,6 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
 
-      const taskCombobox = assignmentDialog.getByRole('combobox', { name: 'Select Task Library task' });
-      await expect(taskCombobox).toBeEnabled({ timeout: 10_000 });
-      await taskCombobox.click();
-      const taskSearch = page.getByPlaceholder('Search Task # or description...');
-      await taskSearch.fill(taskDescription);
-      await page.getByText(taskDescription, { exact: false }).last().click();
-
       const chooseTargetButton = assignmentDialog.getByRole('button', { name: /Choose PM Target/i });
       await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
       await chooseTargetButton.click();
@@ -158,11 +151,24 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
       await expect(assignmentDialog.getByText(targetCode, { exact: false }).first()).toBeVisible();
 
+      // Exercise the restored template-first path: selecting the template populates
+      // all Task Library-backed rows, which remain independently configurable.
+      const templateCombobox = assignmentDialog.getByRole('combobox', { name: 'Select Task Template' });
+      await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
+      await templateCombobox.click();
+      const templateSearch = page.getByPlaceholder('Search PM templates...');
+      await templateSearch.fill(templateTitle);
+      await page.getByText(templateTitle, { exact: false }).last().click();
+      await expect(assignmentDialog.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(assignmentDialog.getByText('Tasks:', { exact: false })).toBeVisible();
+
       const nextDue = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const dueInput = assignmentDialog.locator('input[type="date"]');
-      await expect(dueInput).toHaveCount(1);
-      await dueInput.fill(nextDue);
-      await assignmentDialog.getByRole('button', { name: 'Create PM Assignment', exact: true }).click();
+      const dueInputs = assignmentDialog.locator('input[type="date"]');
+      await expect(dueInputs).toHaveCount(templateTaskDescriptions.length);
+      for (let index = 0; index < templateTaskDescriptions.length; index += 1) {
+        await dueInputs.nth(index).fill(nextDue);
+      }
+      await assignmentDialog.getByRole('button', { name: /Create PM Assignments?/ }).click();
       await expect(assignmentHeading).toBeHidden({ timeout: 20_000 });
       await expect(page.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();

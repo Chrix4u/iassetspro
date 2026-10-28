@@ -22,12 +22,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2, Plus, X,
+  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2, Plus, X, Gauge,
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
 import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel';
+import { AssetMetersPanel } from '@/components/assets/AssetMetersPanel';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -58,6 +59,9 @@ export function AssetDetailPage({ id }: { id: string }) {
   const pageParams = useNavigationStore((state) => state.pageParams);
   const navigate = useNavigationStore((state) => state.navigate);
   const canViewFunctionalLocations = isAdmin() || hasPermission('assets.functional_locations.view');
+  const canViewMeters = isAdmin() || hasPermission('meters.view');
+  const canCreateMeters = isAdmin() || hasPermission('meters.create');
+  const canRecordMeterReadings = isAdmin() || hasPermission('meters.update') || canCreateMeters;
   const canCreateComponent = isAdmin()
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
@@ -191,12 +195,13 @@ export function AssetDetailPage({ id }: { id: string }) {
       'visual-explorer',
       'bom',
       'components',
+      ...(canViewMeters ? ['meters'] : []),
       'digital-twin',
       'diagrams',
     ].includes(requestedTab)) {
       setActiveTab(requestedTab);
     }
-  }, [id, pageParams]);
+  }, [id, pageParams, canViewMeters]);
 
   // Reload components
   const reloadComponents = useCallback(() => {
@@ -631,6 +636,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     { id: 'hierarchy', label: 'Hierarchy', icon: GitBranch, badge: hasEquipmentHierarchy ? (asset.children?.length || 0) + (asset.parent ? 1 : 0) : 0 },
     { id: 'bom', label: 'BOM', icon: Layers },
     { id: 'components', label: 'Components', icon: Cpu, badge: components.length || 0 },
+    ...(canViewMeters ? [{ id: 'meters', label: 'Meters', icon: Gauge }] : []),
     { id: 'visual-explorer', label: 'Visual Explorer', icon: Monitor },
     { id: 'condition', label: 'Monitoring', icon: Activity, badge: hasIoT ? asset.iotDevices.length : 0 },
     { id: 'digital-twin', label: 'Digital Twin', icon: Monitor },
@@ -1375,6 +1381,24 @@ export function AssetDetailPage({ id }: { id: string }) {
             </TabsContent>
 
             {/* ==================== CONDITION MONITORING TAB ==================== */}
+            {canViewMeters && (
+              <TabsContent value="meters" className="mt-4 space-y-4">
+                <Card className="border-0 shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2"><Gauge className="h-4 w-4 text-emerald-600" />Asset Meters</CardTitle>
+                    <CardDescription>Define machine meters and record their authoritative readings here. Meter-based PM tasks select from these meters and inherit their units.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <AssetMetersPanel
+                      assetId={id}
+                      canCreate={canCreateMeters}
+                      canRecordReading={canRecordMeterReadings}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+
             <TabsContent value="condition" className="mt-4 space-y-4">
               {!hasIoT ? (
                 <EmptyTab icon={Activity} title="No Monitoring Devices" description="No IoT sensors or monitoring devices are connected to this asset. Add monitoring points to track condition in real-time." />

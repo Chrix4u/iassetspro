@@ -7,53 +7,74 @@ function source(path: string) {
 }
 
 const formSource = source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
+const plannerSource = source('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
+const rowSource = source('src/components/modules/pm/PmAssignmentTaskCard.tsx');
 const targetSource = source('src/components/modules/pm/PmTargetTreePicker.tsx');
 const maintenanceSource = source('src/components/modules/MaintenancePages.tsx');
-const legacyCardSource = source('src/components/modules/pm/PmScheduleTaskCard.tsx');
 
 describe('direct PM assignment authoring UI contract', () => {
-  it('authors PM directly against an exact machine target without requiring a schedule title', () => {
+  it('keeps direct part-level assignments while restoring template-or-library task authoring', () => {
     expect(formSource).toContain('/api/pm-assignments');
-    expect(formSource).toContain('Task Library');
-    expect(formSource).toContain('PM Target');
+    expect(formSource).toContain('Task Template');
+    expect(formSource).toContain('PmAssignmentTaskPlanner');
+    expect(plannerSource).toContain('Add Task from Library');
     expect(formSource).not.toContain('Schedule Title');
     expect(targetSource).toContain('MachineVisualExplorer');
     expect(targetSource).toContain('Whole machine');
-    expect(targetSource).toContain('Location Path');
-    expect(targetSource).toContain('Technical Path');
   });
 
-  it('exposes the engineer-approved planning vocabulary and a visible calendar control', () => {
-    expect(formSource).toContain('>Value</Label>');
-    expect(formSource).toContain('Activity Mode');
-    expect(formSource).toContain('Inspection Type');
-    expect(formSource).toContain('Running');
-    expect(formSource).toContain('Standstill');
-    expect(formSource).toContain('Est. Minutes');
-    expect(formSource).toContain("type={usesSubDayTime ? 'datetime-local' : 'date'}");
-    expect(formSource).toContain('TBM');
-    expect(formSource).toContain('UBM');
-    expect(formSource).toContain('CBM');
-    expect(formSource).toContain('FBM');
+  it('uses the compact per-task planning row from yesterday with meeting vocabulary added', () => {
+    for (const label of [
+      'Frequency Type',
+      'Frequency Unit',
+      'Value',
+      'PM Type',
+      'Activity Mode',
+      'Inspection Type',
+      'Est. Minutes',
+      'Lead Days',
+      'Next Due Date',
+    ]) expect(rowSource).toContain(label);
+    expect(rowSource).toContain('Running');
+    expect(rowSource).toContain('Standstill');
+    expect(rowSource).toContain('TBM');
+    expect(rowSource).toContain('UBM');
+    expect(rowSource).toContain('CBM');
+    expect(rowSource).toContain('FBM');
+    expect(plannerSource).toContain('Total estimated time');
   });
 
-  it('inherits UBM unit and current reading from the selected first-class asset meter', () => {
-    expect(formSource).toContain('/meters');
-    expect(formSource).toContain('assetMeterId');
-    expect(formSource).toContain('Current');
-    expect(formSource).toContain('meter.unit');
+  it('allows the same Task Library task to be added again as an independent row', () => {
+    expect(plannerSource).toContain('excludedTaskIds={[]}');
+    expect(plannerSource).toMatch(/clientId/);
+    expect(plannerSource).not.toContain('Already scheduled');
   });
 
-  it('makes direct assignments the primary new-PM workflow while retaining legacy schedule history', () => {
+  it('uses first-class asset meters only as selectable UBM sources and does not manage meters inline', () => {
+    expect(plannerSource).toContain('/api/assets/');
+    expect(plannerSource).toContain('/meters');
+    expect(rowSource).toContain('assetMeterId');
+    expect(rowSource).toContain('Current');
+    expect(rowSource).toContain('meter.unit');
+    expect(formSource).not.toContain('AssetMetersPanel');
+    expect(formSource).not.toContain('Meter Action');
+    expect(formSource).not.toContain('Add Meter');
+    expect(formSource).not.toContain('Manage Meter');
+  });
+
+  it('puts target selection before full-width Location Path and Technical Path rows', () => {
+    const choose = targetSource.indexOf('Choose PM Target');
+    const location = targetSource.indexOf('Location Path');
+    const technical = targetSource.indexOf('Technical Path');
+    expect(choose).toBeGreaterThan(-1);
+    expect(location).toBeGreaterThan(choose);
+    expect(technical).toBeGreaterThan(location);
+    expect(targetSource).toContain('space-y-');
+  });
+
+  it('keeps direct assignments primary while retaining legacy PM schedule history', () => {
     expect(maintenanceSource).toContain('PmAssignmentFormDialog');
     expect(maintenanceSource).toContain('New PM Assignment');
-    expect(maintenanceSource).toContain('/api/pm-assignments');
     expect(maintenanceSource).toContain('Legacy PM Schedules');
-  });
-
-  it('uses the new planner wording even inside the retained legacy task card', () => {
-    expect(legacyCardSource).toContain('>Value</Label>');
-    expect(legacyCardSource).toContain('Standstill');
-    expect(legacyCardSource).not.toContain('>Value / Interval</Label>');
   });
 });

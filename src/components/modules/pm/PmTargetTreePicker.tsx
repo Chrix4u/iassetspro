@@ -57,23 +57,21 @@ export function PmTargetTreePicker({ asset, componentId, technicalPath = [], onC
 
   return (
     <>
-      <div className="rounded-lg border bg-muted/15 p-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3 w-3" />Location Path</p>
-              <p className="mt-1 truncate text-xs font-medium" title={locationPath}>{locationPath}</p>
-              {locationCode && <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{locationCode}</p>}
-            </div>
-            <div className="min-w-0">
-              <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><Network className="h-3 w-3" />Technical Path</p>
-              <p className="mt-1 truncate text-xs font-medium" title={technicalLabel}>{technicalLabel}</p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">{componentId ? 'Exact maintainable node selected' : 'Whole machine target'}</p>
-            </div>
-          </div>
-          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={openPicker} disabled={!asset}>
+      <div className="space-y-3 rounded-lg border bg-muted/15 p-3">
+        <div className="flex justify-end">
+          <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto" onClick={openPicker} disabled={!asset}>
             <Target className="mr-1.5 h-3.5 w-3.5" />Choose PM Target
           </Button>
+        </div>
+        <div className="min-w-0 rounded-md border bg-background/70 px-3 py-2">
+          <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3 w-3" />Location Path</p>
+          <p className="mt-1 break-words text-xs font-medium" title={locationPath}>{locationPath}</p>
+          {locationCode && <p className="mt-0.5 break-all font-mono text-[10px] text-muted-foreground">{locationCode}</p>}
+        </div>
+        <div className="min-w-0 rounded-md border bg-background/70 px-3 py-2">
+          <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"><Network className="h-3 w-3" />Technical Path</p>
+          <p className="mt-1 break-words text-xs font-medium" title={technicalLabel}>{technicalLabel}</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">{componentId ? 'Exact maintainable node selected' : 'Whole machine target'}</p>
         </div>
       </div>
 

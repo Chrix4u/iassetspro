@@ -8,6 +8,9 @@ function source(path: string) {
 
 const panelSource = source('src/components/assets/AssetMetersPanel.tsx');
 const pmFormSource = source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
+const pmPlannerSource = source('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
+const pmRowSource = source('src/components/modules/pm/PmAssignmentTaskCard.tsx');
+const assetDetailSource = source('src/components/modules/AssetDetailPage.tsx');
 
 describe('first-class asset meter UI contract', () => {
   it('manages meter definitions directly on the selected asset', () => {
@@ -20,25 +23,36 @@ describe('first-class asset meter UI contract', () => {
     expect(panelSource).toContain('Current Reading');
   });
 
+  it('provides a permission-gated Meters tab on Asset Details for meter administration', () => {
+    expect(assetDetailSource).toContain('AssetMetersPanel');
+    expect(assetDetailSource).toContain("id: 'meters'");
+    expect(assetDetailSource).toContain('value="meters"');
+    expect(assetDetailSource).toContain("hasPermission('meters.view')");
+    expect(assetDetailSource).toContain("hasPermission('meters.create')");
+    expect(assetDetailSource).toContain("hasPermission('meters.update')");
+  });
+
   it('records a new authoritative reading against a specific asset meter', () => {
     expect(panelSource).toContain('api.patch');
     expect(panelSource).toContain('readingDate');
     expect(panelSource).toContain('Record Reading');
   });
 
-  it('lets an authorized PM author add a missing meter without leaving the assignment flow', () => {
-    expect(pmFormSource).toContain('AssetMetersPanel');
-    expect(pmFormSource).toContain('Add Meter');
+  it('keeps meter administration on the asset instead of embedding it in PM assignment authoring', () => {
+    expect(pmFormSource).not.toContain('AssetMetersPanel');
+    expect(pmFormSource).not.toContain('Add Meter');
+    expect(pmFormSource).not.toContain('Manage Meter');
+    expect(pmPlannerSource).toContain('/api/assets/');
+    expect(pmPlannerSource).toContain('/meters');
+    expect(pmRowSource).toContain('assetMeterId');
   });
 
   it('fails closed for meter master mutations while preserving read-only UBM selection', () => {
-    expect(pmFormSource).toContain("hasPermission('meters.create')");
-    expect(pmFormSource).toContain("hasPermission('meters.update')");
-    expect(pmFormSource).toContain('canCreateMeter');
-    expect(pmFormSource).toContain('canRecordMeterReading');
     expect(panelSource).toContain('canCreate');
     expect(panelSource).toContain('canRecordReading');
     expect(panelSource).toContain('{canCreate && (');
     expect(panelSource).toContain('{canRecordReading && (');
+    expect(pmRowSource).toContain('Current');
+    expect(pmRowSource).toContain('meter.unit');
   });
 });

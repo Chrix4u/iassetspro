@@ -29,3 +29,75 @@ ALTER TABLE "meter_readings"
 ALTER TABLE "pm_schedule_tasks"
   ADD CONSTRAINT "pm_schedule_tasks_assetMeterId_fkey"
   FOREIGN KEY ("assetMeterId") REFERENCES "asset_meters"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Backfill one stable AssetMeter per historical (asset, meter name, unit), using
+-- the latest persisted reading as the authoritative current baseline.
+WITH latest_meter_readings AS (
+  SELECT DISTINCT ON ("assetId", "meterName", "unit")
+    "assetId",
+    "meterName",
+    "unit",
+    "value",
+    "readingDate",
+    "readById"
+  FROM "meter_readings"
+  WHERE "assetId" IS NOT NULL
+  ORDER BY "assetId", "meterName", "unit", "readingDate" DESC, "createdAt" DESC
+)
+INSERT INTO "asset_meters" (
+  "id", "assetId", "name", "unit", "meterType", "currentValue", "lastReadingAt",
+  "isActive", "createdById", "createdAt", "updatedAt"
+)
+SELECT
+  'am_' || substr(md5(lmr."assetId" || E'\x1f' || lmr."meterName" || E'\x1f' || lmr."unit"), 1, 24),
+  lmr."assetId",
+  lmr."meterName",
+  lmr."unit",
+  'general',
+  lmr."value",
+  lmr."readingDate",
+  true,
+  lmr."readById",
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+FROM latest_meter_readings lmr
+ON CONFLICT ("assetId", "name", "unit") DO UPDATE
+SET
+  "currentValue" = EXCLUDED."currentValue",
+  "lastReadingAt" = EXCLUDED."lastReadingAt",
+  "updatedAt" = CURRENT_TIMESTAMP;
+
+UPDATE "meter_readings" mr
+SET "assetMeterId" = am."id"
+FROM "asset_meters" am
+WHERE mr."assetMeterId" IS NULL
+  AND mr."assetId" = am."assetId"
+  AND mr."meterName" = am."name"
+  AND mr."unit" = am."unit";
+
+UPDATE "pm_schedule_tasks" pst
+SET "assetMeterId" = am."id"
+FROM "asset_meters" am
+WHERE pst."assetMeterId" IS NULL
+  AND pst."maintenanceMode" = 'ubm'
+  AND pst."assetId" = am."assetId"
+  AND pst."meterName" = am."name"
+  AND pst."frequencyUnit" = am."unit";
+
+-- Canonical meeting vocabulary while retaining legacy schedule provenance.
+UPDATE "pm_schedule_tasks"
+SET "equipmentState" = 'standstill'
+WHERE lower("equipmentState") = 'stopped';
+
+UPDATE "pm_schedule_tasks"
+SET
+  "pmType" = CASE
+    WHEN lower("maintenanceMode") IN ('tbm', 'ubm', 'cbm', 'fbm') THEN lower("maintenanceMode")
+    ELSE 'tbm'
+  END,
+  "basis" = CASE
+    WHEN lower("maintenanceMode") = 'tbm' THEN 'calendar'
+    WHEN lower("maintenanceMode") = 'ubm' THEN 'meter'
+    ELSE NULL
+  END,
+  "activityMode" = COALESCE(NULLIF("activityMode", ''), 'inspection');

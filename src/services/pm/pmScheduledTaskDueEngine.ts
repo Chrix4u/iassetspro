@@ -6,8 +6,10 @@ import type {
 
 type ScheduledTaskDueClient = Pick<
   Prisma.TransactionClient,
-  'meterReading' | 'componentConditionReading' | 'iotDevice' | 'pmScheduleTask'
+  'assetMeter' | 'meterReading' | 'componentConditionReading' | 'iotDevice' | 'pmScheduleTask'
 >;
+
+type ScheduledTaskMaintenanceMode = PmMaintenanceMode | 'fbm';
 
 export interface ScheduledTaskDueInput {
   client: ScheduledTaskDueClient;
@@ -30,7 +32,7 @@ export interface ScheduledTaskDueSource {
 export interface ScheduledTaskDueResult {
   due: boolean;
   reason: string;
-  maintenanceMode: PmMaintenanceMode;
+  maintenanceMode: ScheduledTaskMaintenanceMode;
   dueCycleKey: string | null;
   currentValue: number | null;
   source: ScheduledTaskDueSource | null;
@@ -49,7 +51,7 @@ function result(
   return {
     due,
     reason,
-    maintenanceMode: task.maintenanceMode as PmMaintenanceMode,
+    maintenanceMode: task.maintenanceMode as ScheduledTaskMaintenanceMode,
     dueCycleKey,
     currentValue,
     source,
@@ -115,6 +117,27 @@ async function evaluateUbm(input: ScheduledTaskDueInput): Promise<ScheduledTaskD
   }
 
   const cycleKey = `ubm:${task.id}:${threshold}`;
+  if (task.assetMeterId) {
+    const meter = await input.client.assetMeter.findUnique({
+      where: { id: task.assetMeterId },
+      select: { id: true, assetId: true, name: true, unit: true, currentValue: true, lastReadingAt: true, isActive: true },
+    });
+    const value = finiteNumber(meter?.currentValue);
+    if (!meter || !meter.isActive || meter.assetId !== input.assetId || meter.name !== task.meterName || meter.unit !== task.frequencyUnit || value === null) {
+      return result(task, false, 'ubm_source_unavailable', cycleKey);
+    }
+    const source: ScheduledTaskDueSource = {
+      type: 'meter',
+      sourceId: meter.id,
+      metric: meter.name,
+      unit: meter.unit,
+      value,
+      observedAt: meter.lastReadingAt,
+    };
+    const due = value >= threshold;
+    return result(task, due, due ? 'ubm_due' : 'ubm_not_due', cycleKey, value, source);
+  }
+
   const reading = await input.client.meterReading.findFirst({
     where: { assetId: input.assetId, meterName: task.meterName, unit: task.frequencyUnit },
     orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
@@ -253,6 +276,7 @@ export async function evaluateScheduledTaskDue(input: ScheduledTaskDueInput): Pr
     case 'tbm': return evaluateTbm(input, now);
     case 'ubm': return evaluateUbm(input);
     case 'cbm': return evaluateCbm(input, now);
+    case 'fbm': return result(input.task, false, 'fbm_waiting_for_failure', `fbm:${input.task.id}:${input.task.lastCompletedAt?.toISOString() || 'initial'}`);
     default: return result(input.task, false, 'unsupported_mode', null);
   }
 }

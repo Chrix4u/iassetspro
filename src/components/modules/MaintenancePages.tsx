@@ -74,6 +74,8 @@ import { PmTaskBulkDialog } from '@/components/modules/pm/PmTaskBulkDialog';
 import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTaskPickerDialog';
 import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
 import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner';
+import { PmAssignmentFormDialog } from '@/components/modules/pm/PmAssignmentFormDialog';
+import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
 import {
   formatPmScheduleTaskPlanningSummary,
   pmScheduleTaskDraftFromApi,
@@ -8208,6 +8210,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 // --- PmSchedulesPage separator ---
 export function PmSchedulesPage() {
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(true);
+  const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
@@ -8459,6 +8464,15 @@ export function PmSchedulesPage() {
     }
   };
 
+  const fetchAssignments = useCallback(async () => {
+    setAssignmentsLoading(true);
+    try {
+      const res = await api.get('/api/pm-assignments?isActive=true');
+      if (res.success) setAssignments(Array.isArray(res.data) ? res.data : []);
+    } catch { /* direct PM list must not block legacy history */ }
+    setAssignmentsLoading(false);
+  }, []);
+
   const fetchSchedules = useCallback(async () => {
     setLoading(true);
     try {
@@ -8470,6 +8484,7 @@ export function PmSchedulesPage() {
     setLoading(false);
   }, [dueSoonFilter]);
 
+  useEffect(() => { void fetchAssignments(); }, [fetchAssignments]);
   useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
 
   useEffect(() => {
@@ -8686,8 +8701,8 @@ export function PmSchedulesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Preventive Maintenance</p>
-          <h1 className="text-2xl font-bold tracking-tight">PM Schedules</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage preventive maintenance schedules for your assets</p>
+          <h1 className="text-2xl font-bold tracking-tight">PM Planning</h1>
+          <p className="text-sm text-muted-foreground mt-1">Assign preventive maintenance directly to machines and exact maintainable nodes.</p>
           {pmAutomationStatus && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="font-medium text-muted-foreground">PM Automation</span>
@@ -8717,8 +8732,8 @@ export function PmSchedulesPage() {
             Due Soon
           </Button>
           {canCreateSchedule && (
-            <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              <Plus className="h-3.5 w-3.5 mr-1.5" /> New Schedule
+            <Button size="sm" onClick={() => setAssignmentOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> New PM Assignment
             </Button>
           )}
         </div>
@@ -8811,8 +8826,40 @@ export function PmSchedulesPage() {
         ))}
       </div>
 
-      {/* Table */}
+      <PmMachineRollupPanel />
+
+      {/* Canonical direct PM assignments */}
       <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><CardTitle className="text-sm">Direct PM Assignments</CardTitle><CardDescription>Canonical task-to-machine / maintainable-node planning. Each task owns its own recurrence.</CardDescription></div>
+            <Badge variant="outline">{assignments.length} active</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow><TableHead className="text-xs">Target</TableHead><TableHead className="text-xs">Task</TableHead><TableHead className="text-xs">PM / Activity</TableHead><TableHead className="text-xs">Value</TableHead><TableHead className="text-xs">Inspection Type</TableHead><TableHead className="text-xs">Due State</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {assignmentsLoading ? Array.from({ length: 3 }).map((_, index) => <TableRow key={index}><TableCell><Skeleton className="h-4 w-36" /></TableCell><TableCell><Skeleton className="h-4 w-44" /></TableCell><TableCell><Skeleton className="h-4 w-24" /></TableCell><TableCell><Skeleton className="h-4 w-20" /></TableCell><TableCell><Skeleton className="h-4 w-20" /></TableCell><TableCell><Skeleton className="h-4 w-28" /></TableCell></TableRow>) : assignments.length === 0 ? (
+                <TableRow><TableCell colSpan={6}><EmptyState icon={ClipboardList} title="No direct PM assignments yet" description="Create a PM assignment directly against a machine or exact maintainable node." /></TableCell></TableRow>
+              ) : assignments.map((assignment: any) => (
+                <TableRow key={assignment.id}>
+                  <TableCell><p className="text-xs font-medium">{assignment.asset?.name || '—'}</p><p className="text-[10px] text-muted-foreground">{assignment.component ? `${assignment.component.componentCode || assignment.component.name} · ${assignment.component.name}` : 'Whole machine'}</p></TableCell>
+                  <TableCell><p className="font-mono text-[10px] text-muted-foreground">Task #{assignment.pmTask?.taskNumber ?? '—'}</p><p className="max-w-[260px] truncate text-xs font-medium" title={assignment.pmTask?.description || ''}>{assignment.pmTask?.description || '—'}</p></TableCell>
+                  <TableCell><div className="flex flex-wrap gap-1"><Badge variant="outline" className="text-[10px] uppercase">{assignment.pmType || assignment.maintenanceMode}</Badge><Badge variant="secondary" className="text-[10px] capitalize">{String(assignment.activityMode || 'inspection')}</Badge></div></TableCell>
+                  <TableCell className="text-xs">{assignment.pmType === 'ubm' ? `${assignment.frequencyInterval ?? '—'} ${assignment.assetMeter?.unit || assignment.frequencyUnit || ''}` : assignment.pmType === 'tbm' ? `${assignment.frequencyInterval ?? '—'} ${assignment.frequencyUnit || ''}` : 'Signal / event'}</TableCell>
+                  <TableCell><Badge variant="outline" className="text-[10px]">{String(assignment.equipmentState || 'standstill').toLowerCase() === 'running' ? 'Running' : 'Standstill'}</Badge></TableCell>
+                  <TableCell><p className="text-xs font-medium">{assignment.pmType === 'ubm' ? (assignment.nextDueReading != null ? `${assignment.nextDueReading} ${assignment.assetMeter?.unit || assignment.frequencyUnit || ''}` : 'Meter driven') : assignment.nextDueDate ? formatDate(assignment.nextDueDate) : assignment.pmType === 'cbm' ? 'Condition driven' : assignment.pmType === 'fbm' ? 'Failure driven' : '—'}</p><p className="text-[10px] text-muted-foreground">{assignment.estimatedMinutes ?? 0} min</p></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Legacy schedule history retained during the additive migration */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3"><CardTitle className="text-sm">Legacy PM Schedules</CardTitle><CardDescription>Historical schedule containers remain available for continuity and provenance while direct assignments become authoritative.</CardDescription></CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -8938,7 +8985,13 @@ export function PmSchedulesPage() {
         </CardContent>
       </Card>
 
-      {/* Create/Edit Dialog */}
+      <PmAssignmentFormDialog
+        open={assignmentOpen}
+        onOpenChange={setAssignmentOpen}
+        onSaved={() => void fetchAssignments()}
+      />
+
+      {/* Legacy schedule editor retained for migrated historical records */}
       <ResponsiveDialog
         open={createOpen || !!editItem}
         onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); setTargetExplorerOpen(false); } }}

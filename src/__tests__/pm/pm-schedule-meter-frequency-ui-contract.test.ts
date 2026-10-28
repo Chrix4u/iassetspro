@@ -6,7 +6,7 @@ const cardSource = readFileSync(resolve(process.cwd(), 'src/components/modules/p
 
 describe('PM meter frequency schedule form UX', () => {
   it('uses compact planner-facing labels and an explicit calendar due-date control', () => {
-    expect(cardSource).toContain('>Value / Interval</Label>');
+    expect(cardSource).toContain('>Value</Label>');
     expect(cardSource).toContain('>Est. Minutes</Label>');
     expect(cardSource).toContain('>Next Due Date</Label>');
     expect(cardSource).toContain("type={usesSubDayTime ? 'datetime-local' : 'date'}");

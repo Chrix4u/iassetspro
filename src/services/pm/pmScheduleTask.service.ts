@@ -335,7 +335,14 @@ export async function syncPmScheduledTasks(
       }
     }
 
-    const data = persistedPlanningData(task);
+    const data = {
+      ...persistedPlanningData(task),
+      assetId: input.assetId,
+      componentId: input.componentId,
+      pmType: task.maintenanceMode,
+      activityMode: 'inspection',
+      basis: task.maintenanceMode === 'ubm' ? 'meter' : task.maintenanceMode === 'tbm' ? 'calendar' : null,
+    };
     if (existing) {
       keptIds.add(existing.id);
       await tx.pmScheduleTask.update({ where: { id: existing.id }, data });

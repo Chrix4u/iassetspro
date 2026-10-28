@@ -67,6 +67,19 @@ describe('advanceClosedPmScheduledTaskRecurrence', () => {
     tx.auditLog.create.mockResolvedValue({ id: 'audit-1' });
   });
 
+  it('advances a direct PM assignment even when there is no legacy PM schedule container', async () => {
+    tx.workOrderTaskExecution.findMany.mockResolvedValue([
+      execution({ pmScheduleTask: task({ scheduleId: null }) }),
+    ]);
+
+    const result = await advanceClosedPmScheduledTaskRecurrence(input({ pmScheduleId: null }));
+
+    expect(result.taskLevel).toBe(true);
+    expect(result.advancedTaskIds).toEqual(['scheduled-1']);
+    expect(tx.pmSchedule.findUnique).not.toHaveBeenCalled();
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledTimes(1);
+  });
+
   it('advances only the completed TBM task from its own completion timestamp using calendar-safe recurrence', async () => {
     const completedAt = new Date('2026-01-31T09:15:00.000Z');
     tx.workOrderTaskExecution.findMany.mockResolvedValue([

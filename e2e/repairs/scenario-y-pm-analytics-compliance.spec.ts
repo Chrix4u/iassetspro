@@ -103,7 +103,7 @@ test('UAT-24: PM compliance analytics reflect real planned-window outcomes acros
     );
     await page.goto('/#/pm-schedules');
     expect((await schedulesAnalyticsResponse).status()).toBe(200);
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
     const complianceRateCard = page.getByText('Compliance Rate', { exact: true }).locator('..');
     await expect(complianceRateCard).toContainText(expectedRate, { timeout: 15_000 });
 

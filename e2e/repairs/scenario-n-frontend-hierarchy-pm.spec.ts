@@ -3,7 +3,7 @@ import { authenticateAs } from './helpers/auth';
 import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } from './helpers/api';
 
 test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
-  test('planner commissions assembly/part in UI and targets both with PM schedules', async ({ page, context }) => {
+  test('planner commissions assembly/part in UI, creates a direct PM assignment, and preserves legacy schedule compatibility', async ({ page, context }) => {
     const plannerToken = await getToken('planner');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
@@ -12,7 +12,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     const partCode = `UAT-FE-PRT-${suffix}`;
     const assemblyPmTitle = `UAT Frontend Assembly PM ${suffix}`;
     const partPmTitle = `UAT Frontend Part PM ${suffix}`;
-    const partTaskLevelPmTitle = `UAT Frontend Task-Level Part PM ${suffix}`;
+    const directTaskDescription = `Inspect frontend test bearing ${suffix}`;
     const templateTitle = `UAT Frontend Bearing 500h Service ${suffix}`;
     const cycleA = `UAT-FE-CYCLE-A-${suffix}`;
     const cycleB = `UAT-FE-CYCLE-B-${suffix}`;
@@ -86,12 +86,12 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(templateId).toBeTruthy();
 
     const templateTaskDescriptions = [
-      'Inspect bearing housing and seals',
-      'Measure bearing temperature and vibration',
-      'Check shaft runout and alignment',
-      'Lubricate bearing to specification',
-      'Verify fastener torque',
-      'Record readings and recommendations',
+      directTaskDescription,
+      `Measure frontend bearing temperature and vibration ${suffix}`,
+      `Check frontend shaft runout and alignment ${suffix}`,
+      `Lubricate frontend bearing to specification ${suffix}`,
+      `Verify frontend fastener torque ${suffix}`,
+      `Record frontend readings and recommendations ${suffix}`,
     ];
     const taskCreate = await apiCallWithPlant(
       plannerToken,
@@ -109,32 +109,35 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(seededTemplate?.title).toBe(templateTitle);
     expect(seededTemplate?._count?.tasks).toBe(6);
 
-    // Keep browser coverage on the new task-level authoring path: asset search,
-    // exact hierarchy selection and Task Library seeding from a PM template.
-    const createTaskLevelPmViaUi = async (
-      title: string,
+    // Keep browser coverage on the canonical direct-assignment authoring path:
+    // machine search, exact hierarchy selection and Task Library reuse.
+    const createDirectPmAssignmentViaUi = async (
+      taskDescription: string,
       targetCode: string,
       expandParentCode?: string,
     ) => {
       await page.goto('/#/pm-schedules');
-      const pmHeading = page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true });
-      await expect(pmHeading).toBeVisible({ timeout: 20_000 });
-      await page.getByRole('button', { name: /New Schedule/i }).click();
-      const scheduleHeading = page.getByRole('heading', { name: 'New PM Schedule', exact: true });
-      await expect(scheduleHeading).toBeVisible({ timeout: 10_000 });
-      const scheduleDialog = page.getByRole('dialog').filter({ has: scheduleHeading });
-      await scheduleDialog.getByPlaceholder('e.g., Drive System Preventive Maintenance').fill(title);
+      await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
+      await page.getByRole('button', { name: /New PM Assignment/i }).click();
+      const assignmentHeading = page.getByRole('heading', { name: 'New PM Assignment', exact: true });
+      await expect(assignmentHeading).toBeVisible({ timeout: 10_000 });
+      const assignmentDialog = page.getByRole('dialog').filter({ has: assignmentHeading });
 
-      const assetLabel = scheduleDialog.locator('label').filter({ hasText: /^Asset/ }).first();
-      const assetCombobox = assetLabel.locator('..').getByRole('combobox');
+      const assetCombobox = assignmentDialog.getByRole('combobox', { name: 'Select machine / asset' });
       await expect(assetCombobox).toBeEnabled({ timeout: 10_000 });
       await assetCombobox.click();
-      const assetSearch = page.getByPlaceholder('Search assets by name or tag...');
+      const assetSearch = page.getByPlaceholder('Search asset name or tag...');
       await assetSearch.fill('UAT-PUMP-001');
       await page.getByText('UAT Test Pump [UAT-PUMP-001]', { exact: true }).click();
-      await expect(scheduleDialog.getByText('PM Target — Machine / Assembly / Component / Part')).toBeVisible({ timeout: 10_000 });
 
-      const chooseTargetButton = scheduleDialog.getByRole('button', { name: /Choose Target|Change Target/i });
+      const taskCombobox = assignmentDialog.getByRole('combobox', { name: 'Select Task Library task' });
+      await expect(taskCombobox).toBeEnabled({ timeout: 10_000 });
+      await taskCombobox.click();
+      const taskSearch = page.getByPlaceholder('Search Task # or description...');
+      await taskSearch.fill(taskDescription);
+      await page.getByText(taskDescription, { exact: false }).last().click();
+
+      const chooseTargetButton = assignmentDialog.getByRole('button', { name: /Choose PM Target/i });
       await expect(chooseTargetButton).toBeEnabled({ timeout: 10_000 });
       await chooseTargetButton.click();
       const explorerHeading = page.getByRole('heading', { name: 'Choose PM Target', exact: true });
@@ -151,35 +154,39 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       const targetNode = explorerDialog.getByRole('button').filter({ hasText: targetCode }).first();
       await expect(targetNode).toBeVisible({ timeout: 20_000 });
       await targetNode.click();
-      await explorerDialog.getByRole('button', { name: 'Confirm Selection', exact: true }).click();
+      await explorerDialog.getByRole('button', { name: 'Use Selected Target', exact: true }).click();
       await expect(explorerHeading).toBeHidden({ timeout: 10_000 });
-      await expect(scheduleDialog.getByText(targetCode, { exact: false }).first()).toBeVisible();
-
-      const templateLabel = scheduleDialog.locator('label').filter({ hasText: /Start \/ Replace Tasks from PM Template/ }).first();
-      const templateCombobox = templateLabel.locator('..').getByRole('combobox');
-      await expect(templateCombobox).toBeEnabled({ timeout: 10_000 });
-      await templateCombobox.click();
-      const templateSearch = page.getByPlaceholder('Search PM templates...');
-      await templateSearch.fill(templateTitle);
-      await page.getByText(`${templateTitle} · 6 tasks`, { exact: true }).click();
-      await expect(scheduleDialog.getByText('Tasks & Planning', { exact: true })).toBeVisible();
-      await expect(scheduleDialog.getByText(/Task #/)).toHaveCount(6, { timeout: 15_000 });
+      await expect(assignmentDialog.getByText(targetCode, { exact: false }).first()).toBeVisible();
 
       const nextDue = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const dueInputs = scheduleDialog.locator('input[type="date"]');
-      await expect(dueInputs).toHaveCount(6, { timeout: 10_000 });
-      for (let index = 0; index < 6; index += 1) await dueInputs.nth(index).fill(nextDue);
-
-      await scheduleDialog.getByRole('button', { name: /Create Schedule/i }).click();
-      await expect(scheduleHeading).toBeHidden({ timeout: 20_000 });
-      await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 20_000 });
+      const dueInput = assignmentDialog.locator('input[type="date"]');
+      await expect(dueInput).toHaveCount(1);
+      await dueInput.fill(nextDue);
+      await assignmentDialog.getByRole('button', { name: 'Create PM Assignment', exact: true }).click();
+      await expect(assignmentHeading).toBeHidden({ timeout: 20_000 });
+      await expect(page.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
     };
 
-    await createTaskLevelPmViaUi(partTaskLevelPmTitle, partCode, assemblyCode);
+    await createDirectPmAssignmentViaUi(directTaskDescription, partCode, assemblyCode);
 
-    // Slice 3 deliberately keeps the legacy generation engine fail-closed for new
-    // task-level schedules. Seed separate compatibility schedules through the API so
+    const directAssignments = await apiCallWithPlant(
+      plannerToken,
+      'GET',
+      `/api/pm-assignments?assetId=${encodeURIComponent(assetId)}`,
+      plantId,
+    );
+    expect(directAssignments.status).toBe(200);
+    const directAssignment = (directAssignments.data.data as any[]).find(
+      (item) => item.pmTask?.description === directTaskDescription,
+    );
+    expect(directAssignment?.scheduleId).toBeNull();
+    expect(directAssignment?.assetId).toBe(assetId);
+    expect(directAssignment?.componentId).toBe(part.id);
+    expect(directAssignment?.pmType).toBe('tbm');
+
+    // Keep the legacy generation engine covered separately from canonical direct assignments.
+    // Seed compatibility schedules through the API so
     // this UAT can continue protecting the legacy generation runtime as well.
     const createLegacyPm = async (title: string, componentId: string, useTemplate = false) => {
       const created = await apiCall(plannerToken, 'POST', '/api/pm-schedules', {
@@ -204,26 +211,16 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await createLegacyPm(partPmTitle, part.id, true);
 
     // The legacy schedules were created out-of-band through the compatibility API while
-    // this SPA route was already mounted. Reload once so the list re-fetches server state
-    // before asserting that legacy and task-level schedules render together.
+    // this SPA route was already mounted. Reload once so the page re-fetches server state
+    // before asserting direct assignments and legacy schedule history render together.
     await page.goto('/#/pm-schedules');
     await page.reload();
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Direct PM Assignments', { exact: true })).toBeVisible();
+    await expect(page.getByText('Legacy PM Schedules', { exact: true })).toBeVisible();
+    await expect(page.getByText(directTaskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(assemblyPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(partPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(partTaskLevelPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
-
-    const taskLevelScheduleRow = page.getByRole('row').filter({ hasText: partTaskLevelPmTitle });
-    await expect(taskLevelScheduleRow).toBeVisible();
-    await taskLevelScheduleRow.getByRole('button').last().click();
-    await page.getByRole('menuitem', { name: 'View', exact: true }).click();
-    const viewHeading = page.getByRole('heading', { name: `PM Schedule · ${partTaskLevelPmTitle}`, exact: true });
-    await expect(viewHeading).toBeVisible({ timeout: 10_000 });
-    const viewDialog = page.getByRole('dialog').filter({ has: viewHeading });
-    await expect(viewDialog.getByText('PM Target', { exact: true })).toBeVisible();
-    await expect(viewDialog.getByText(partCode, { exact: false })).toBeVisible();
-    await viewDialog.getByRole('button', { name: 'Close', exact: true }).filter({ hasText: /^Close$/ }).first().click();
-    await expect(viewHeading).toBeHidden();
 
     const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
     expect(schedules.status).toBe(200);

@@ -37,19 +37,27 @@ describe('PM schedule exact hierarchy targeting contract', () => {
     expect(source).toContain('Auto-generate Work Order');
   });
 
-  it('preserves the PM asset-search and task-level browser targeting contracts', () => {
+  it('preserves the direct-assignment asset, Task Library and exact-target browser contracts', () => {
+    const assignmentSource = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/modules/pm/PmAssignmentFormDialog.tsx'),
+      'utf8',
+    );
     const scenario = fs.readFileSync(
       path.join(process.cwd(), 'e2e/repairs/scenario-n-frontend-hierarchy-pm.spec.ts'),
       'utf8',
     );
 
-    expect(source).toContain('searchPlaceholder="Search assets by name or tag..."');
-    expect(scenario).toContain("scheduleDialog.getByPlaceholder('e.g., Drive System Preventive Maintenance')");
-    expect(scenario).toContain("page.getByPlaceholder('Search assets by name or tag...')");
-    expect(scenario).toContain("page.getByPlaceholder('Search PM templates...')");
+    expect(assignmentSource).toContain('searchPlaceholder="Search asset name or tag..."');
+    expect(assignmentSource).toContain('searchPlaceholder="Search Task # or description..."');
+    expect(assignmentSource).toContain('title="New PM Assignment"');
+    expect(scenario).toContain("getByRole('button', { name: /New PM Assignment/i })");
+    expect(scenario).toContain("page.getByPlaceholder('Search asset name or tag...')");
+    expect(scenario).toContain("page.getByPlaceholder('Search Task # or description...')");
     expect(scenario).toContain('expandParentCode?: string');
     expect(scenario).toContain("filter({ hasText: expandParentCode }).first()");
-    expect(scenario).toContain("filter({ hasText: /^Close$/ }).first().click()");
+    expect(scenario).toContain("getByRole('button', { name: 'Use Selected Target', exact: true })");
+    expect(scenario).toContain('/api/pm-assignments?assetId=${encodeURIComponent(assetId)}');
+    expect(scenario).toContain("getByText('Legacy PM Schedules', { exact: true })");
   });
 
 });

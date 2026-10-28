@@ -124,10 +124,10 @@ describe('PM scheduled-task UI contract', () => {
     expect(cardSource).toContain('Usage Based');
     expect(cardSource).toContain('Condition Based');
     expect(cardSource).toContain('Running');
-    expect(cardSource).toContain('Stopped');
+    expect(cardSource).toContain('Standstill');
     expect(cardSource).toContain('Frequency Type');
     expect(cardSource).toContain('Frequency Unit');
-    expect(cardSource).toContain('Value / Interval');
+    expect(cardSource).toContain('Value');
     expect(cardSource).toContain('Inspection Type');
     expect(cardSource).toContain('Maintenance Mode');
     expect(cardSource).toContain('Est. Minutes');

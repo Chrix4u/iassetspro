@@ -200,7 +200,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Value / Interval</Label>
+          <Label className={compactLabel}>Value</Label>
           <Input className={compactControl} type="number" min="0.000001" step={task.frequencyType === 'time_day' ? '1' : 'any'} value={task.frequencyInterval} onChange={(event) => onChange({ frequencyInterval: event.target.value, nextDueReading: '' })} disabled={task.maintenanceMode === 'cbm'} />
         </div>
 
@@ -210,7 +210,7 @@ export function PmScheduleTaskCard({ task, index, total, meterOptions, condition
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="running">Running</SelectItem>
-              <SelectItem value="stopped">Stopped</SelectItem>
+              <SelectItem value="stopped">Standstill</SelectItem>
             </SelectContent>
           </Select>
         </div>

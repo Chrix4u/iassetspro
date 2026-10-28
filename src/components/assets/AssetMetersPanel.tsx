@@ -24,9 +24,17 @@ interface Props {
   assetId: string;
   onChanged?: () => void;
   compact?: boolean;
+  canCreate?: boolean;
+  canRecordReading?: boolean;
 }
 
-export function AssetMetersPanel({ assetId, onChanged, compact = false }: Props) {
+export function AssetMetersPanel({
+  assetId,
+  onChanged,
+  compact = false,
+  canCreate = false,
+  canRecordReading = false,
+}: Props) {
   const [meters, setMeters] = useState<AssetMeterRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,12 +118,14 @@ export function AssetMetersPanel({ assetId, onChanged, compact = false }: Props)
         </Button>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto]">
-        <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Meter name</Label><Input className="h-8 text-xs" value={name} onChange={(event) => setName(event.target.value)} placeholder="Operating Hours" /></div>
-        <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Unit</Label><Input className="h-8 text-xs" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="hours" /></div>
-        <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Initial reading</Label><Input className="h-8 text-xs" type="number" step="any" value={initialReading} onChange={(event) => setInitialReading(event.target.value)} /></div>
-        <div className="flex items-end"><Button type="button" size="sm" className="h-8 w-full" onClick={addMeter} disabled={saving || !assetId}><Plus className="mr-1 h-3.5 w-3.5" />Add Meter</Button></div>
-      </div>
+      {canCreate && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto]">
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Meter name</Label><Input className="h-8 text-xs" value={name} onChange={(event) => setName(event.target.value)} placeholder="Operating Hours" /></div>
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Unit</Label><Input className="h-8 text-xs" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="hours" /></div>
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Initial reading</Label><Input className="h-8 text-xs" type="number" step="any" value={initialReading} onChange={(event) => setInitialReading(event.target.value)} /></div>
+          <div className="flex items-end"><Button type="button" size="sm" className="h-8 w-full" onClick={addMeter} disabled={saving || !assetId}><Plus className="mr-1 h-3.5 w-3.5" />Add Meter</Button></div>
+        </div>
+      )}
 
       <div className="mt-3 space-y-2">
         {loading ? <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading meters…</div> : meters.length === 0 ? (
@@ -124,9 +134,14 @@ export function AssetMetersPanel({ assetId, onChanged, compact = false }: Props)
           <div key={meter.id} className="rounded-md border p-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0"><p className="truncate text-xs font-semibold">{meter.name}</p><p className="text-[10px] text-muted-foreground">Current Reading: <strong>{Number(meter.currentValue)} {meter.unit}</strong>{meter.lastReadingAt ? ` · ${new Date(meter.lastReadingAt).toLocaleString()}` : ''}</p></div>
-              <div className="flex items-center gap-2"><Badge variant="outline" className="text-[10px]">{meter.unit}</Badge><Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => { setReadingMeterId(readingMeterId === meter.id ? null : meter.id); setReadingValue(String(meter.currentValue)); }}>Record Reading</Button></div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px]">{meter.unit}</Badge>
+                {canRecordReading && (
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => { setReadingMeterId(readingMeterId === meter.id ? null : meter.id); setReadingValue(String(meter.currentValue)); }}>Record Reading</Button>
+                )}
+              </div>
             </div>
-            {readingMeterId === meter.id && (
+            {canRecordReading && readingMeterId === meter.id && (
               <div className="mt-2 grid gap-2 border-t pt-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]">
                 <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">New reading</Label><Input className="h-8 text-xs" type="number" step="any" value={readingValue} onChange={(event) => setReadingValue(event.target.value)} /></div>
                 <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Reading date</Label><Input className="h-8 text-xs" type="datetime-local" value={readingDate} onChange={(event) => setReadingDate(event.target.value)} /></div>

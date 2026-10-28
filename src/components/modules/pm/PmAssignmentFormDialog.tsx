@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAuthStore } from '@/stores/authStore';
 
 interface Props {
   open: boolean;
@@ -28,6 +29,11 @@ const ACTIVITY_MODES = [
 ] as const;
 
 export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
+  const hasPermission = useAuthStore((state) => state.hasPermission);
+  const isAdmin = useAuthStore((state) => state.isAdmin);
+  const canCreateMeter = isAdmin() || hasPermission('meters.create');
+  const canRecordMeterReading = isAdmin() || hasPermission('meters.update') || canCreateMeter;
+  const canManageMeter = canCreateMeter || canRecordMeterReading;
   const [assetId, setAssetId] = useState('');
   const [assetCache, setAssetCache] = useState<Record<string, PmTargetAsset>>({});
   const [componentId, setComponentId] = useState<string | null>(null);
@@ -193,7 +199,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
           <div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Value</Label><Input className="h-8 text-xs" type="number" min="0.000001" step={pmType === 'tbm' ? '1' : 'any'} value={value} onChange={(event) => setValue(event.target.value)} /></div>
             {pmType === 'tbm' ? <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Unit</Label><Select value={unit} onValueChange={(next) => { setUnit(next); if (next === 'minutes' || next === 'hours') setLeadDays('0'); }}><SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{TIME_UNITS.map((item) => <SelectItem key={item} value={item}>{item[0].toUpperCase() + item.slice(1)}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Asset Meter / Unit</Label><Select value={assetMeterId} onValueChange={setAssetMeterId} disabled={metersLoading || meters.length === 0}><SelectTrigger className="h-8 text-xs"><SelectValue placeholder={metersLoading ? 'Loading…' : 'Select meter'} /></SelectTrigger><SelectContent>{meters.map((meter) => <SelectItem key={meter.id} value={meter.id}>{meter.name} · {meter.unit}</SelectItem>)}</SelectContent></Select>{selectedMeter && <p className="text-[9px] text-muted-foreground">Current {Number(selectedMeter.currentValue)} {selectedMeter.unit} · Unit inherited: {selectedMeter.unit}</p>}</div>}
-            {pmType === 'tbm' ? <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Next Due Date</Label><Input className="h-8 text-xs" type={usesSubDayTime ? 'datetime-local' : 'date'} value={nextDueDate} onChange={(event) => setNextDueDate(event.target.value)} /></div> : <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Meter Action</Label><Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => setShowMeterManager((current) => !current)} disabled={!assetId}><Plus className="mr-1 h-3.5 w-3.5" />Add Meter</Button></div>}
+            {pmType === 'tbm' ? <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Next Due Date</Label><Input className="h-8 text-xs" type={usesSubDayTime ? 'datetime-local' : 'date'} value={nextDueDate} onChange={(event) => setNextDueDate(event.target.value)} /></div> : <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Meter Action</Label>{canManageMeter ? <Button type="button" variant="outline" size="sm" className="h-8 w-full text-xs" onClick={() => setShowMeterManager((current) => !current)} disabled={!assetId}><Plus className="mr-1 h-3.5 w-3.5" />{canCreateMeter ? 'Add Meter' : 'Manage Meter'}</Button> : <div className="flex h-8 items-center rounded-md border bg-muted/20 px-2 text-[10px] text-muted-foreground">Read-only meter access</div>}</div>}
             <div className="space-y-1"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Lead Days</Label><Input className="h-8 text-xs" type="number" min="0" step="1" value={usesSubDayTime ? '0' : leadDays} disabled={usesSubDayTime} onChange={(event) => setLeadDays(event.target.value)} /></div>
           </div>
         )}
@@ -205,8 +211,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
           <div className="rounded-md border bg-muted/15 p-2 sm:col-span-1 lg:col-span-2"><p className="text-[10px] font-semibold uppercase text-muted-foreground">Due State</p><p className="mt-1 text-xs font-medium">{dueState}</p></div>
         </div>
 
-        {pmType === 'ubm' && meters.length === 0 && !metersLoading && <div className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-800">No first-class meter is assigned to this asset. Use Add Meter to define one before saving UBM.</div>}
-        {showMeterManager && assetId && <AssetMetersPanel assetId={assetId} compact onChanged={() => void loadMeters()} />}
+        {pmType === 'ubm' && meters.length === 0 && !metersLoading && <div className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-800">No first-class meter is assigned to this asset. {canCreateMeter ? 'Use Add Meter to define one before saving UBM.' : 'A meter-authorized user must define one before this UBM assignment can be saved.'}</div>}
+        {showMeterManager && assetId && canManageMeter && <AssetMetersPanel assetId={assetId} compact canCreate={canCreateMeter} canRecordReading={canRecordMeterReading} onChanged={() => void loadMeters()} />}
         <div className="flex items-start gap-2 rounded-lg border bg-muted/15 p-2.5 text-[10px] text-muted-foreground"><Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0" /><p>Each assignment owns its recurrence and exact technical target. Work-order priority, team and materials remain execution planning concerns.</p></div>
       </div>
     </ResponsiveDialog>

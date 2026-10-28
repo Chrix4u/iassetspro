@@ -154,7 +154,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
 
     // The planner must not be able to retarget/re-interval this active trigger while its generated WO is still open.
     await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
     const openWoScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
     await expect(openWoScheduleRow).toBeVisible({ timeout: 15_000 });
     await openWoScheduleRow.hover();
@@ -218,7 +218,7 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     expect(cancelReplacement.data.cancellation?.pmTriggerRearmed).toBe(true);
 
     await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
     const unlockedScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
     await expect(unlockedScheduleRow).toBeVisible({ timeout: 15_000 });
     await unlockedScheduleRow.hover();

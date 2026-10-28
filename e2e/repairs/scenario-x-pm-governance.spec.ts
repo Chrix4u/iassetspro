@@ -142,7 +142,7 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
 
     // Deactivate the schedule from the real schedule UI, then template deactivation becomes valid.
     await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedules', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
     const scheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
     await expect(scheduleRow).toBeVisible({ timeout: 15_000 });
     await scheduleRow.hover();

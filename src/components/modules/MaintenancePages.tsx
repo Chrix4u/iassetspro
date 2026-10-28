@@ -75,6 +75,7 @@ import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTa
 import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
 import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner';
 import { PmAssignmentFormDialog } from '@/components/modules/pm/PmAssignmentFormDialog';
+import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
 import {
   formatPmScheduleTaskPlanningSummary,
   pmScheduleTaskDraftFromApi,
@@ -8824,6 +8825,8 @@ export function PmSchedulesPage() {
           </div>
         ))}
       </div>
+
+      <PmMachineRollupPanel />
 
       {/* Canonical direct PM assignments */}
       <Card className="border-0 shadow-sm">

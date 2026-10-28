@@ -5,13 +5,13 @@ import { PM_SCHEDULE_TASK_TIME_UNITS } from '@/services/pm/pmScheduleTask.servic
 
 type RecurrenceTx = Pick<
   Prisma.TransactionClient,
-  'workOrderTaskExecution' | 'pmSchedule' | 'pmScheduleTask' | 'meterReading' | 'auditLog'
+  'workOrderTaskExecution' | 'pmSchedule' | 'pmScheduleTask' | 'assetMeter' | 'meterReading' | 'auditLog'
 >;
 
 export interface AdvanceClosedPmScheduledTaskRecurrenceInput {
   tx: RecurrenceTx;
   workOrderId: string;
-  pmScheduleId: string;
+  pmScheduleId: string | null;
   assetId: string | null;
   woNumber: string;
   woActualEnd: Date | null;
@@ -41,12 +41,14 @@ function recurrenceError(message: string): Error {
 export async function advanceClosedPmScheduledTaskRecurrence(
   input: AdvanceClosedPmScheduledTaskRecurrenceInput,
 ): Promise<AdvanceClosedPmScheduledTaskRecurrenceResult> {
-  const schedule = await input.tx.pmSchedule.findUnique({
-    where: { id: input.pmScheduleId },
-    select: { recurrenceAuthority: true },
-  });
-  if (!schedule || schedule.recurrenceAuthority !== 'task') {
-    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+  if (input.pmScheduleId) {
+    const schedule = await input.tx.pmSchedule.findUnique({
+      where: { id: input.pmScheduleId },
+      select: { recurrenceAuthority: true },
+    });
+    if (!schedule || schedule.recurrenceAuthority !== 'task') {
+      return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
+    }
   }
 
   const executions = await input.tx.workOrderTaskExecution.findMany({
@@ -73,6 +75,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           frequencyInterval: true,
           frequencyUnit: true,
           meterName: true,
+          assetMeterId: true,
           lastCompletedAt: true,
           nextDueDate: true,
           nextDueReading: true,
@@ -84,7 +87,10 @@ export async function advanceClosedPmScheduledTaskRecurrence(
   });
 
   if (executions.length === 0) {
-    throw recurrenceError(`task-authority PM schedule ${input.pmScheduleId} has no task-level execution provenance`);
+    if (input.pmScheduleId) {
+      throw recurrenceError(`task-authority PM schedule ${input.pmScheduleId} has no task-level execution provenance`);
+    }
+    return { taskLevel: false, advancedTaskIds: [], skippedTaskIds: [] };
   }
 
   const advancedTaskIds: string[] = [];
@@ -102,7 +108,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
         `completed execution ${execution.id} has task-level provenance but its live Scheduled Task is missing`,
       );
     }
-    if (scheduledTask.scheduleId !== input.pmScheduleId) {
+    if (input.pmScheduleId && scheduledTask.scheduleId !== input.pmScheduleId) {
       throw recurrenceError(
         `completed execution ${execution.id} points to Scheduled Task ${scheduledTask.id} from a different PM schedule`,
       );
@@ -141,16 +147,40 @@ export async function advanceClosedPmScheduledTaskRecurrence(
       if (!Number.isFinite(interval) || interval <= 0 || !scheduledTask.meterName || !scheduledTask.frequencyUnit) {
         throw recurrenceError(`UBM Scheduled Task ${scheduledTask.id} has invalid meter recurrence configuration`);
       }
-      const baseline = await input.tx.meterReading.findFirst({
-        where: {
-          assetId: input.assetId,
-          meterName: scheduledTask.meterName,
-          unit: scheduledTask.frequencyUnit,
-          readingDate: { lte: completedAt },
-        },
-        orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
-        select: { id: true, value: true, meterName: true, unit: true, readingDate: true },
-      });
+      let baseline: { id: string; value: number; meterName: string; unit: string; readingDate: Date } | null = null;
+      if (scheduledTask.assetMeterId) {
+        baseline = await input.tx.meterReading.findFirst({
+          where: { assetMeterId: scheduledTask.assetMeterId, readingDate: { lte: completedAt } },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { id: true, value: true, meterName: true, unit: true, readingDate: true },
+        });
+        if (!baseline) {
+          const meter = await input.tx.assetMeter.findUnique({
+            where: { id: scheduledTask.assetMeterId },
+            select: { id: true, assetId: true, name: true, unit: true, currentValue: true, lastReadingAt: true, isActive: true },
+          });
+          if (meter && meter.isActive && meter.assetId === input.assetId && meter.lastReadingAt && meter.lastReadingAt.getTime() <= completedAt.getTime()) {
+            baseline = {
+              id: meter.id,
+              value: Number(meter.currentValue),
+              meterName: meter.name,
+              unit: meter.unit,
+              readingDate: meter.lastReadingAt,
+            };
+          }
+        }
+      } else {
+        baseline = await input.tx.meterReading.findFirst({
+          where: {
+            assetId: input.assetId,
+            meterName: scheduledTask.meterName,
+            unit: scheduledTask.frequencyUnit,
+            readingDate: { lte: completedAt },
+          },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { id: true, value: true, meterName: true, unit: true, readingDate: true },
+        });
+      }
       if (!baseline || !Number.isFinite(Number(baseline.value))) {
         throw recurrenceError(
           `UBM Scheduled Task ${scheduledTask.id} has no authoritative meter reading at or before completion`,
@@ -168,7 +198,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           readingDate: baseline.readingDate.toISOString(),
         },
       };
-    } else if (scheduledTask.maintenanceMode === 'cbm') {
+    } else if (scheduledTask.maintenanceMode === 'cbm' || scheduledTask.maintenanceMode === 'fbm') {
       updateData = { lastCompletedAt: completedAt };
     } else {
       throw recurrenceError(

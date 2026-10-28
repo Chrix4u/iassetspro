@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const NOW = new Date('2026-10-26T12:00:00.000Z');
 
 const client = {
+  assetMeter: { findUnique: vi.fn() },
   meterReading: { findFirst: vi.fn() },
   componentConditionReading: { findFirst: vi.fn() },
   iotDevice: { findUnique: vi.fn() },
@@ -129,6 +130,26 @@ describe('pmScheduledTaskDueEngine', () => {
     }));
     expect(result).toMatchObject({
       due, reason, currentValue: value, dueCycleKey: 'ubm:scheduled-1:1500', maintenanceMode: 'ubm',
+    });
+  });
+
+  it('evaluates direct UBM from the assigned AssetMeter stable identity and current value', async () => {
+    client.assetMeter.findUnique.mockResolvedValue({
+      id: 'meter-1', assetId: 'asset-1', name: 'Running Hours', unit: 'h',
+      currentValue: 3740, lastReadingAt: new Date('2026-10-26T11:30:00Z'), isActive: true,
+    });
+    const result = await evaluate(baseInput({
+      task: task({
+        scheduleId: null, assetId: 'asset-1', assetMeterId: 'meter-1',
+        maintenanceMode: 'ubm', meterName: 'Running Hours', frequencyUnit: 'h',
+        nextDueReading: 3740, nextDueDate: null,
+      }),
+    }));
+    expect(client.assetMeter.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'meter-1' } }));
+    expect(client.meterReading.findFirst).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      due: true, reason: 'ubm_due', currentValue: 3740,
+      source: { sourceId: 'meter-1', metric: 'Running Hours', unit: 'h' },
     });
   });
 

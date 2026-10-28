@@ -341,25 +341,24 @@ export async function closeRepairWorkOrder(
       let pmScheduleAdvanced = false;
       let pmScheduledTaskIdsAdvanced: string[] = [];
       let pmScheduledTaskIdsSkipped: string[] = [];
-      if (wo.pmScheduleId) {
-        const taskRecurrence = await advanceClosedPmScheduledTaskRecurrence({
-          tx,
-          workOrderId,
-          pmScheduleId: wo.pmScheduleId,
-          assetId: wo.assetId,
-          woNumber: wo.woNumber,
-          woActualEnd: wo.actualEnd,
-          closedAt,
-          actorId: session.userId,
-          auditCtx: options.auditCtx,
-        });
-        pmScheduledTaskIdsAdvanced = taskRecurrence.advancedTaskIds;
-        pmScheduledTaskIdsSkipped = taskRecurrence.skippedTaskIds;
+      const taskRecurrence = await advanceClosedPmScheduledTaskRecurrence({
+        tx,
+        workOrderId,
+        pmScheduleId: wo.pmScheduleId,
+        assetId: wo.assetId,
+        woNumber: wo.woNumber,
+        woActualEnd: wo.actualEnd,
+        closedAt,
+        actorId: session.userId,
+        auditCtx: options.auditCtx,
+      });
+      pmScheduledTaskIdsAdvanced = taskRecurrence.advancedTaskIds;
+      pmScheduledTaskIdsSkipped = taskRecurrence.skippedTaskIds;
 
-        // Scheduled Tasks own recurrence once canonical task-level provenance exists.
-        // Legacy header cadence remains only for schedules whose generated WOs have
-        // no task-level provenance at all.
-        if (!taskRecurrence.taskLevel) {
+      // Direct PM assignments are identified by task execution provenance and do
+      // not require a legacy PM Schedule container. Legacy header cadence remains
+      // only for schedule-backed WOs with no task-level provenance.
+      if (wo.pmScheduleId && !taskRecurrence.taskLevel) {
           const pmSchedule = await tx.pmSchedule.findUnique({ where: { id: wo.pmScheduleId } });
           if (pmSchedule && pmSchedule.isActive) {
             const pmCompletedAt = wo.actualEnd || closedAt;
@@ -401,7 +400,6 @@ export async function closeRepairWorkOrder(
             pmScheduleAdvanced = usesCalendarCadence;
           }
         }
-      }
 
       if (failureMode && failureComponentId) {
         const existingFailure = await tx.failureRecord.findFirst({

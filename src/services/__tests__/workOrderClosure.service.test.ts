@@ -178,6 +178,22 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     );
   });
 
+  it('advances direct PM task recurrence when the work order has no legacy PM schedule id', async () => {
+    mockDb.workOrder.findUnique.mockResolvedValue(verifiedWorkOrder({ pmScheduleId: null }));
+    mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
+      taskLevel: true, advancedTaskIds: ['direct-1'], skippedTaskIds: [],
+    });
+
+    const result = await closeRepairWorkOrder('wo-1', plannerSession, {});
+
+    expect(result.success).toBe(true);
+    expect(mockAdvanceScheduledTaskRecurrence).toHaveBeenCalledWith(expect.objectContaining({
+      workOrderId: 'wo-1', pmScheduleId: null, assetId: 'asset-1', actorId: 'planner-1',
+    }));
+    expect(mockDb.pmSchedule.findUnique).not.toHaveBeenCalled();
+    expect(mockDb.pmSchedule.update).not.toHaveBeenCalled();
+  });
+
   it('suppresses legacy parent cadence even when task-level closeout advances zero tasks', async () => {
     mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
       taskLevel: true, advancedTaskIds: [], skippedTaskIds: ['scheduled-1'],

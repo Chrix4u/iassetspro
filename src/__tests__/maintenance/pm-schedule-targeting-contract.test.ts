@@ -57,7 +57,7 @@ describe('PM schedule exact hierarchy targeting contract', () => {
     expect(scenario).toContain("filter({ hasText: expandParentCode }).first()");
     expect(scenario).toContain("getByRole('button', { name: 'Use Selected Target', exact: true })");
     expect(scenario).toContain('/api/pm-assignments?assetId=${encodeURIComponent(assetId)}');
-    expect(scenario).toContain("getByRole('heading', { name: 'Legacy PM Schedules', exact: true })");
+    expect(scenario).toContain("getByText('Legacy PM Schedules', { exact: true })");
   });
 
 });

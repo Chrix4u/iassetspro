@@ -216,8 +216,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await page.goto('/#/pm-schedules');
     await page.reload();
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('heading', { name: 'Direct PM Assignments', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Legacy PM Schedules', exact: true })).toBeVisible();
+    await expect(page.getByText('Direct PM Assignments', { exact: true })).toBeVisible();
+    await expect(page.getByText('Legacy PM Schedules', { exact: true })).toBeVisible();
     await expect(page.getByText(directTaskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(assemblyPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(partPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });

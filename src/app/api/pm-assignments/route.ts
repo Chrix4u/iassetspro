@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
-import { createPmAssignment } from '@/services/pm/pmAssignment.service';
+import { createPmAssignment, createPmAssignmentBatch } from '@/services/pm/pmAssignment.service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,6 +54,18 @@ export async function POST(request: NextRequest) {
     const asset = await db.asset.findUnique({ where: { id: assetId }, select: { id: true, plantId: true } });
     if (!asset) return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
     if (!canAccessPlantStrict(scope, asset.plantId)) return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+
+    if (Array.isArray(body.assignments)) {
+      const componentId = typeof body.componentId === 'string' && body.componentId.trim() ? body.componentId.trim() : null;
+      const assignments = await createPmAssignmentBatch(db, {
+        plantId: asset.plantId,
+        actorId: session.userId,
+        assetId,
+        componentId,
+        assignments: body.assignments,
+      });
+      return NextResponse.json({ success: true, data: assignments }, { status: 201 });
+    }
 
     const assignment = await createPmAssignment(db, { plantId: asset.plantId, actorId: session.userId, input: body });
     await db.auditLog.create({

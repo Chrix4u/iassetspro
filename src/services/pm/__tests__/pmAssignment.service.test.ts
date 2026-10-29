@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPmAssignment, normalizePmAssignmentInput } from '@/services/pm/pmAssignment.service';
+import { createPmAssignment, createPmAssignmentBatch, normalizePmAssignmentInput } from '@/services/pm/pmAssignment.service';
 
 const tx = {
   asset: { findUnique: vi.fn() },
@@ -64,6 +64,36 @@ describe('direct PM assignment service', () => {
       assetMeterId: 'meter-1', maintenanceMode: 'ubm', basis: 'meter', meterName: 'Running Hours',
       frequencyUnit: 'h', frequencyInterval: 500, nextDueReading: 3740,
     }) });
+  });
+
+  it('creates repeated Task Library identities atomically for one selected asset/component target', async () => {
+    const batchTx = {
+      ...tx,
+      auditLog: { create: vi.fn() },
+    };
+    let sequence = 0;
+    batchTx.pmScheduleTask.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: `assignment-${++sequence}`, ...data }));
+    const host = {
+      $transaction: vi.fn(async (callback: (transaction: typeof batchTx) => Promise<unknown>) => callback(batchTx)),
+    };
+
+    const result = await createPmAssignmentBatch(host as never, {
+      plantId: 'plant-1',
+      actorId: 'planner-1',
+      assetId: 'asset-1',
+      componentId: 'component-1',
+      assignments: [
+        { ...base, assetId: 'asset-other', componentId: 'component-other', pmTaskId: 'task-1', value: 30 },
+        { ...base, assetId: 'asset-other', componentId: 'component-other', pmTaskId: 'task-1', value: 90 },
+      ],
+    });
+
+    expect(host.$transaction).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(2);
+    expect(batchTx.pmScheduleTask.create).toHaveBeenCalledTimes(2);
+    expect(batchTx.pmScheduleTask.create.mock.calls[0][0].data).toEqual(expect.objectContaining({ assetId: 'asset-1', componentId: 'component-1', pmTaskId: 'task-1', frequencyInterval: 30 }));
+    expect(batchTx.pmScheduleTask.create.mock.calls[1][0].data).toEqual(expect.objectContaining({ assetId: 'asset-1', componentId: 'component-1', pmTaskId: 'task-1', frequencyInterval: 90 }));
+    expect(batchTx.auditLog.create).toHaveBeenCalledTimes(2);
   });
 
   it('rejects a meter assigned to another machine', async () => {

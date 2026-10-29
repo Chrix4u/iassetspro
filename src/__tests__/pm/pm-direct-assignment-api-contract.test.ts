@@ -14,6 +14,17 @@ describe('direct PM assignment API contract', () => {
     expect(source).not.toMatch(/title\s+is required/i);
   });
 
+  it('supports an atomic multi-row assignment request for one selected target', () => {
+    const file = resolve(process.cwd(), 'src/app/api/pm-assignments/route.ts');
+    expect(existsSync(file)).toBe(true);
+    if (!existsSync(file)) return;
+    const source = readFileSync(file, 'utf8');
+    expect(source).toContain('assignments');
+    expect(source).toContain('createPmAssignmentBatch');
+    const service = readFileSync(resolve(process.cwd(), 'src/services/pm/pmAssignment.service.ts'), 'utf8');
+    expect(service).toContain('$transaction');
+  });
+
   it('exposes item update/deactivate route', () => {
     const file = resolve(process.cwd(), 'src/app/api/pm-assignments/[id]/route.ts');
     expect(existsSync(file)).toBe(true);

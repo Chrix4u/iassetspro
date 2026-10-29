@@ -209,6 +209,53 @@ export async function createPmAssignment(client: PmAssignmentClient, args: { pla
   return client.pmScheduleTask.create({ data });
 }
 
+
+export async function createPmAssignmentBatch(client: {
+  $transaction: <T>(callback: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
+}, args: {
+  plantId: string;
+  actorId: string;
+  assetId: string;
+  componentId: string | null;
+  assignments: unknown[];
+}) {
+  if (!args.assetId.trim()) throw new Error('Asset is required');
+  if (!Array.isArray(args.assignments) || args.assignments.length === 0) throw new Error('At least one PM assignment is required');
+
+  return client.$transaction(async (tx) => {
+    const created: Array<Awaited<ReturnType<typeof createPmAssignment>>> = [];
+    for (const raw of args.assignments) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PM assignment row is invalid');
+      const input = {
+        ...(raw as Record<string, unknown>),
+        assetId: args.assetId,
+        componentId: args.componentId,
+      };
+      const assignment = await createPmAssignment(tx as PmAssignmentClient, {
+        plantId: args.plantId,
+        actorId: args.actorId,
+        input,
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: args.actorId,
+          action: 'create',
+          entityType: 'pm_assignment',
+          entityId: assignment.id,
+          newValues: JSON.stringify({
+            assetId: assignment.assetId,
+            componentId: assignment.componentId,
+            pmTaskId: assignment.pmTaskId,
+            pmType: assignment.pmType,
+          }),
+        },
+      });
+      created.push(assignment);
+    }
+    return created;
+  });
+}
+
 export async function updatePmAssignment(client: PmAssignmentClient, args: { id: string; plantId: string; actorId: string; input: unknown }) {
   const data = await buildPersistenceData(client, args.plantId, args.input);
   return client.pmScheduleTask.update({ where: { id: args.id }, data });

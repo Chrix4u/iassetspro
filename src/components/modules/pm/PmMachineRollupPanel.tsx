@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CalendarRange, Loader2, Network, PackageCheck, PlayCircle, Power, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { buildPmComplianceKpis, sortPmComplianceCycles } from '@/lib/pm-compliance-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,10 +54,46 @@ interface RollupResponse {
   bundleGroups: BundleGroup[];
 }
 
+interface ComplianceCycle {
+  identity: string;
+  pmScheduleTaskId: string;
+  pmDueCycleKey: string | null;
+  taskNumber: number;
+  description: string;
+  pmType: string;
+  maintenanceMode: string;
+  dueAt: string;
+  outcome: 'completed' | 'overdue_open' | 'missed';
+  completedAt: string | null;
+  delayMinutes: number | null;
+  workOrderId: string;
+  workOrderNumber: string;
+  workOrderStatus: string;
+}
+
+interface ComplianceResponse {
+  window: { days: number; start: string; end: string };
+  summary: {
+    maturedCycles: number;
+    completed: number;
+    openOverdue: number;
+    missed: number;
+    completionCompliancePct: number | null;
+  };
+  cycles: ComplianceCycle[];
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function formatDelay(minutes: number | null) {
+  if (minutes == null) return '—';
+  if (minutes >= 1440) return `${Math.round((minutes / 1440) * 10) / 10} d`;
+  if (minutes >= 60) return `${Math.round((minutes / 60) * 10) / 10} h`;
+  return `${minutes} min`;
 }
 
 function dueBadge(status: RollupAssignment['dueStatus']) {
@@ -65,12 +102,22 @@ function dueBadge(status: RollupAssignment['dueStatus']) {
   return <Badge variant="outline">Later</Badge>;
 }
 
+function complianceOutcomeBadge(outcome: ComplianceCycle['outcome']) {
+  if (outcome === 'completed') return <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300">Completed</Badge>;
+  if (outcome === 'overdue_open') return <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300">Open Overdue</Badge>;
+  return <Badge className="bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300">Missed</Badge>;
+}
+
 export function PmMachineRollupPanel() {
   const [assetId, setAssetId] = useState('');
   const [planningWindowDays, setPlanningWindowDays] = useState('7');
   const [data, setData] = useState<RollupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [bundlingKey, setBundlingKey] = useState<string | null>(null);
+  const [complianceWindowDays, setComplianceWindowDays] = useState('30');
+  const [complianceData, setComplianceData] = useState<ComplianceResponse | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceError, setComplianceError] = useState<string | null>(null);
 
   const fetchAssets = async (query: string) => {
     const response = await api.get(`/api/assets?search=${encodeURIComponent(query)}&limit=100`);
@@ -98,7 +145,29 @@ export function PmMachineRollupPanel() {
     }
   }, [assetId, planningWindowDays]);
 
+  const loadCompliance = useCallback(async () => {
+    if (!assetId) {
+      setComplianceData(null);
+      setComplianceError(null);
+      return;
+    }
+    setComplianceLoading(true);
+    setComplianceError(null);
+    try {
+      const params = new URLSearchParams({ assetId, windowDays: complianceWindowDays });
+      const response = await api.get<ComplianceResponse>(`/api/pm-assignments/compliance?${params.toString()}`);
+      if (!response.success) throw new Error(response.error || 'Failed to load PM compliance');
+      setComplianceData(response.data || null);
+    } catch (error) {
+      setComplianceData(null);
+      setComplianceError(error instanceof Error ? error.message : 'Failed to load PM compliance');
+    } finally {
+      setComplianceLoading(false);
+    }
+  }, [assetId, complianceWindowDays]);
+
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadCompliance(); }, [loadCompliance]);
 
   const createBundle = async (group: BundleGroup) => {
     if (!assetId) return;
@@ -113,12 +182,20 @@ export function PmMachineRollupPanel() {
       const woNumber = (response.data as any)?.workOrder?.woNumber;
       toast.success(woNumber ? `PM work bundle ${woNumber} created` : 'PM work bundle created');
       await load();
+      await loadCompliance();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create PM work bundle');
     } finally {
       setBundlingKey(null);
     }
   };
+
+  const refreshAll = () => {
+    void load();
+    void loadCompliance();
+  };
+
+  const recentComplianceCycles = complianceData ? sortPmComplianceCycles(complianceData.cycles).slice(0, 10) : [];
 
   return (
     <Card className="border-0 shadow-sm">
@@ -128,8 +205,8 @@ export function PmMachineRollupPanel() {
             <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4 text-emerald-600" />Machine PM Roll-up</CardTitle>
             <CardDescription>See whole-machine and descendant PM together, then bundle compatible due work without mixing Running and Standstill.</CardDescription>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={!assetId || loading}>
-            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Refresh
+          <Button type="button" variant="outline" size="sm" onClick={refreshAll} disabled={!assetId || loading || complianceLoading}>
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading || complianceLoading ? 'animate-spin' : ''}`} />Refresh
           </Button>
         </div>
       </CardHeader>
@@ -180,6 +257,64 @@ export function PmMachineRollupPanel() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold">PM Compliance</p>
+                  <p className="text-[10px] text-muted-foreground">Historical completion, open-overdue exposure, and missed direct-PM cycles. This is completion compliance, not an on-time SLA.</p>
+                </div>
+                <div className="w-full space-y-1 sm:w-40">
+                  <Label className="text-[10px] font-semibold">Reporting Window</Label>
+                  <Select value={complianceWindowDays} onValueChange={setComplianceWindowDays}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="30">30 days</SelectItem><SelectItem value="90">90 days</SelectItem><SelectItem value="180">180 days</SelectItem><SelectItem value="365">365 days</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {complianceLoading && !complianceData ? (
+                <div className="flex min-h-20 items-center justify-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading PM compliance…</div>
+              ) : complianceError ? (
+                <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><div><p className="font-semibold">Compliance history could not be loaded.</p><p className="mt-0.5 opacity-80">{complianceError}</p></div></div>
+              ) : complianceData ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+                    {buildPmComplianceKpis(complianceData.summary).map((kpi) => (
+                      <div key={kpi.key} className="rounded-md border bg-muted/10 p-2.5">
+                        <p className="text-[9px] uppercase text-muted-foreground">{kpi.label}</p>
+                        <p className={`mt-1 text-base font-bold ${kpi.key === 'overdue' ? 'text-amber-600' : kpi.key === 'missed' ? 'text-red-600' : kpi.key === 'completed' ? 'text-emerald-600' : ''}`}>{kpi.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>{formatDateTime(complianceData.window.start)} → {formatDateTime(complianceData.window.end)}</span>
+                    {complianceLoading && <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Refreshing…</span>}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader><TableRow><TableHead className="text-xs">Due</TableHead><TableHead className="text-xs">Task</TableHead><TableHead className="text-xs">PM Type</TableHead><TableHead className="text-xs">Outcome</TableHead><TableHead className="text-xs">Work Order</TableHead><TableHead className="text-xs">Delay</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {recentComplianceCycles.length === 0 ? (
+                          <TableRow><TableCell colSpan={6} className="py-6 text-center text-xs text-muted-foreground">No PM cycles matured in this reporting window.</TableCell></TableRow>
+                        ) : recentComplianceCycles.map((cycle) => (
+                          <TableRow key={cycle.identity}>
+                            <TableCell className="whitespace-nowrap text-[10px]">{formatDateTime(cycle.dueAt)}</TableCell>
+                            <TableCell><p className="font-mono text-[10px] text-muted-foreground">Task #{cycle.taskNumber}</p><p className="max-w-[260px] truncate text-xs" title={cycle.description}>{cycle.description}</p></TableCell>
+                            <TableCell><Badge variant="outline" className="text-[10px] uppercase">{cycle.pmType}</Badge><p className="mt-1 text-[9px] capitalize text-muted-foreground">{cycle.maintenanceMode}</p></TableCell>
+                            <TableCell>{complianceOutcomeBadge(cycle.outcome)}{cycle.completedAt && <p className="mt-1 text-[9px] text-muted-foreground">{formatDateTime(cycle.completedAt)}</p>}</TableCell>
+                            <TableCell><p className="text-xs font-medium">{cycle.workOrderNumber}</p><p className="text-[9px] capitalize text-muted-foreground">{cycle.workOrderStatus.replace(/_/g, ' ')}</p></TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">{formatDelay(cycle.delayMinutes)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="overflow-x-auto rounded-lg border">

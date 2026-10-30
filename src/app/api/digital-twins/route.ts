@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
+    const assetId = searchParams.get('assetId');
     let page = parseInt(searchParams.get('page') || '1', 10);
     let limit = parseInt(searchParams.get('limit') || '50', 10);
     page = Math.max(1, isNaN(page) ? 1 : page);
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {
       asset: { is: assetPlantWhere },
     };
+    if (assetId) where.assetId = assetId;
 
     if (search) {
       where.OR = [

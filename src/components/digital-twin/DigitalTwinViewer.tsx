@@ -80,6 +80,8 @@ export interface DigitalTwinViewerProps {
   loadingComponent?: React.ReactNode;
   /** Custom error component */
   errorComponent?: (error: string, retry: () => void) => React.ReactNode;
+  /** Called when a mesh explicitly mapped to a maintainable component is selected. */
+  onComponentSelect?: (componentId: string, meshName: string) => void;
 }
 
 // ============================================================================
@@ -334,6 +336,7 @@ export function DigitalTwinViewer({
   showToolbar = true,
   loadingComponent,
   errorComponent,
+  onComponentSelect,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -621,8 +624,26 @@ export function DigitalTwinViewer({
     <ErrorStateOverlay error={effectiveError ?? 'Unknown error'} onRetry={handleRetry} />
   );
 
-  // ── Bindings for exploded view ─────────────────────────────────────────
-  const effectiveBindings = propBindings.length > 0 ? propBindings : [];
+  // ── Bindings for exploded view and maintenance-component handoff ───────
+  const effectiveBindings: AssetMeshBinding[] = propBindings.length > 0
+    ? propBindings
+    : (currentScene?.meshBindings ?? []);
+  const selectedBinding = useMemo(
+    () => effectiveBindings.find((binding) => binding.meshName === selectedMeshName) ?? null,
+    [effectiveBindings, selectedMeshName],
+  );
+  const lastComponentSelectionRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedBinding?.componentId || !onComponentSelect) {
+      lastComponentSelectionRef.current = null;
+      return;
+    }
+    const selectionKey = `${selectedBinding.meshName}:${selectedBinding.componentId}`;
+    if (lastComponentSelectionRef.current === selectionKey) return;
+    lastComponentSelectionRef.current = selectionKey;
+    onComponentSelect(selectedBinding.componentId, selectedBinding.meshName);
+  }, [onComponentSelect, selectedBinding, selectedMeshName]);
 
   return (
     <div

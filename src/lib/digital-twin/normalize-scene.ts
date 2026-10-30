@@ -2,6 +2,7 @@ import type {
   CameraPreset,
   DigitalTwinAnnotation,
   DigitalTwinHotspot,
+  DigitalTwinMeshBinding,
   DigitalTwinScene,
 } from '@/stores/digitalTwinStore';
 
@@ -66,6 +67,33 @@ export function normalizeDigitalTwinScene(raw: unknown): DigitalTwinScene {
     if (bindingId && meshName) meshNameByBindingId.set(bindingId, meshName);
   }
 
+  const normalizedMeshBindings = meshBindings
+    .map((bindingValue): DigitalTwinMeshBinding | null => {
+      const binding = asRecord(bindingValue);
+      if (!binding) return null;
+      const meshName = asOptionalString(binding.meshName);
+      const assetId = asOptionalString(binding.assetId);
+      if (!meshName || !assetId) return null;
+      const asset = asRecord(binding.asset);
+      const component = asRecord(binding.component);
+      const rawExplodeOffset = binding.explodeOffset;
+      return {
+        id: asOptionalString(binding.id),
+        meshName,
+        assetId,
+        assetName: asOptionalString(asset?.name) ?? assetId,
+        componentId: asOptionalString(binding.componentId) ?? asOptionalString(component?.id) ?? null,
+        componentName: asOptionalString(component?.name),
+        componentCode: asOptionalString(component?.componentCode),
+        componentType: asOptionalString(component?.componentType),
+        isClickable: binding.isClickable !== false,
+        isVisible: binding.isVisible !== false,
+        colorOverride: asOptionalString(binding.colorOverride),
+        explodeOffset: rawExplodeOffset == null ? undefined : parseVector3(rawExplodeOffset),
+      } satisfies DigitalTwinMeshBinding;
+    })
+    .filter((binding): binding is DigitalTwinMeshBinding => binding !== null);
+
   const cameraPresets: CameraPreset[] = (Array.isArray(scene.cameraPresets) ? scene.cameraPresets : [])
     .map((presetValue) => {
       const preset = asRecord(presetValue);
@@ -123,9 +151,12 @@ export function normalizeDigitalTwinScene(raw: unknown): DigitalTwinScene {
       ?? asOptionalString(twin?.assetId)
       ?? asOptionalString(twinAsset?.id)
       ?? '',
-    modelId: asOptionalString(scene.modelId) ?? asOptionalString(model?.id),
+    ...(asOptionalString(scene.modelId) ?? asOptionalString(model?.id)
+      ? { modelId: asOptionalString(scene.modelId) ?? asOptionalString(model?.id) }
+      : {}),
     description: asOptionalString(scene.description),
     modelUrl: asOptionalString(scene.modelUrl) ?? asOptionalString(model?.filePath),
+    meshBindings: normalizedMeshBindings,
     cameraPresets,
     hotspots,
     annotations,

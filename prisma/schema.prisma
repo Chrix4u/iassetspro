@@ -2545,7 +2545,8 @@ model AssetModel {
 model AssetMeshBinding {
   id            String   @id @default(cuid())
   modelId       String // → AssetModel
-  assetId       String // → Asset (component asset)
+  assetId       String // → Asset (machine asset)
+  componentId   String? // → ComponentRegistry (exact maintainable target, optional)
   meshName      String // name of the mesh in the 3D model
   meshPath      String? // path in scene graph (e.g. "Pump/Motor/Rotor")
   meshType      String   @default("component") // component, assembly, subassembly, auxiliary
@@ -2559,13 +2560,15 @@ model AssetMeshBinding {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  model    AssetModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  asset    Asset         @relation("MeshBoundAsset", fields: [assetId], references: [id])
-  hotspots TwinHotspot[]
+  model     AssetModel         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  asset     Asset              @relation("MeshBoundAsset", fields: [assetId], references: [id])
+  component ComponentRegistry? @relation("MeshBoundComponent", fields: [componentId], references: [id], onDelete: SetNull)
+  hotspots  TwinHotspot[]
 
   @@unique([modelId, meshName])
   @@index([modelId])
   @@index([assetId])
+  @@index([componentId])
   @@map("asset_mesh_bindings")
 }
 
@@ -3239,6 +3242,7 @@ model ComponentRegistry {
   replacementHistory       ComponentReplacementHistory[]
   installedSpareParts      InstalledSparePart[] @relation("InstalledSpareComponent")
   visuals                  ComponentVisual[]
+  meshBindings             AssetMeshBinding[] @relation("MeshBoundComponent")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems              BomRevisionItem[]    @relation("BomItemComponent")

@@ -114,7 +114,7 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
+    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'componentId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -137,9 +137,10 @@ export async function PUT(
       }
     }
 
+    const targetAssetId = (updateData.assetId as string | undefined) || existing.assetId;
     if (updateData.assetId) {
       const asset = await db.asset.findUnique({
-        where: { id: updateData.assetId as string },
+        where: { id: targetAssetId },
         select: { plantId: true },
       });
       if (!asset) {
@@ -153,12 +154,27 @@ export async function PUT(
       }
     }
 
+    const targetComponentId = body.componentId !== undefined ? body.componentId : existing.componentId;
+    if (targetComponentId) {
+      const component = await db.componentRegistry.findUnique({
+        where: { id: String(targetComponentId) },
+        select: { id: true, assetId: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+      }
+      if (component.assetId !== targetAssetId) {
+        return NextResponse.json({ success: false, error: 'Bound component must belong to the selected machine asset' }, { status: 400 });
+      }
+    }
+
     const updated = await db.assetMeshBinding.update({
       where: { id },
       data: updateData,
       include: {
         model: { select: { id: true, name: true, format: true } },
         asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
+        component: { select: { id: true, componentCode: true, name: true, componentType: true, assetId: true } },
       },
     });
 

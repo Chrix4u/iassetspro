@@ -35,6 +35,22 @@ export interface CameraPreset {
   fov?: number;
 }
 
+/** Normalized mesh binding used by the viewer and maintenance explorer. */
+export interface DigitalTwinMeshBinding {
+  id?: string;
+  meshName: string;
+  assetId: string;
+  assetName: string;
+  componentId?: string | null;
+  componentName?: string;
+  componentCode?: string;
+  componentType?: string;
+  isClickable?: boolean;
+  isVisible?: boolean;
+  colorOverride?: string;
+  explodeOffset?: [number, number, number];
+}
+
 /** Scene data from the digital twin API */
 export interface DigitalTwinScene {
   id: string;
@@ -43,6 +59,7 @@ export interface DigitalTwinScene {
   modelId?: string;
   description?: string;
   modelUrl?: string;
+  meshBindings?: DigitalTwinMeshBinding[];
   cameraPresets?: CameraPreset[];
   hotspots?: DigitalTwinHotspot[];
   annotations?: DigitalTwinAnnotation[];

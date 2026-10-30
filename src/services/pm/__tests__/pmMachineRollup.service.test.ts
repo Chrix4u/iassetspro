@@ -75,9 +75,13 @@ describe('PM machine roll-up', () => {
     const result = await getPmMachineRollup({ client: client as never, assetId: 'asset-1', now: new Date('2026-10-28T00:00:00.000Z'), planningWindowDays: 7 });
 
     expect(result.summary).toMatchObject({ total: 3, due: 1, nearDue: 1, later: 1 });
-    expect(result.assignments.find((item) => item.id === 'due')?.dueStatus).toBe('due');
-    expect(result.assignments.find((item) => item.id === 'near')?.dueStatus).toBe('near_due');
-    expect(result.assignments.find((item) => item.id === 'later')?.dueStatus).toBe('not_due');
+    expect(result.assignments.find((item) => item.id === 'due')).toEqual(expect.objectContaining({ dueStatus: 'due', isBundleEligible: true }));
+    expect(result.assignments.find((item) => item.id === 'near')).toEqual(expect.objectContaining({
+      dueStatus: 'near_due',
+      isBundleEligible: true,
+      planningAt: new Date('2026-11-02T00:00:00.000Z'),
+    }));
+    expect(result.assignments.find((item) => item.id === 'later')).toEqual(expect.objectContaining({ dueStatus: 'not_due', isBundleEligible: false }));
   });
 
   it('normalizes legacy stopped to Standstill while preserving Running as a separate execution state', async () => {

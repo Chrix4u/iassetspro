@@ -174,15 +174,18 @@ export async function getPmMachineRollup(input: {
       dueCycleKey: due.dueCycleKey,
       currentValue: due.currentValue,
       planningAt: planningAt(row as PmScheduleTask, due, now),
-      isBundleEligible: due.due && Boolean(due.dueCycleKey),
+      isBundleEligible: Boolean(due.dueCycleKey) && (
+        status === 'due'
+        || (status === 'near_due' && row.maintenanceMode === 'tbm')
+      ),
       blockingWorkOrderId: null,
     });
   }
 
-  const dueIdentities = assignments
-    .filter((item) => item.dueStatus === 'due' && item.dueCycleKey)
+  const bundleCandidateIdentities = assignments
+    .filter((item) => item.isBundleEligible && item.dueCycleKey)
     .map((item) => ({ pmScheduleTaskId: item.id, pmDueCycleKey: item.dueCycleKey! }));
-  const blockers = await findBlockingPmScheduledTaskCycles(input.client, dueIdentities);
+  const blockers = await findBlockingPmScheduledTaskCycles(input.client, bundleCandidateIdentities);
   const blockerMap = new Map(blockers.map((row) => [`${row.pmScheduleTaskId}:${row.pmDueCycleKey}`, row.workOrderId]));
   for (const item of assignments) {
     if (!item.dueCycleKey) continue;

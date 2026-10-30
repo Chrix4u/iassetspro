@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CalendarRange, Loader2, Network, PackageCheck, PlayCircle, Power, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { defaultPmBundleMaintenanceDate, toPmDateInputValue } from '@/lib/pm-bundle-planning';
 import { buildPmComplianceKpis, sortPmComplianceCycles } from '@/lib/pm-compliance-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -89,6 +90,18 @@ function formatDateTime(value: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 }
 
+function plannedExecutionIso(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  if (!year || !month || !day) return null;
+  const proposed = new Date(year, month - 1, day, 8, 0, 0, 0);
+  if (Number.isNaN(proposed.getTime())) return null;
+  const now = new Date();
+  const sameLocalDay = proposed.getFullYear() === now.getFullYear()
+    && proposed.getMonth() === now.getMonth()
+    && proposed.getDate() === now.getDate();
+  return (sameLocalDay && proposed.getTime() < now.getTime() ? now : proposed).toISOString();
+}
+
 function formatDelay(minutes: number | null) {
   if (minutes == null) return '—';
   if (minutes >= 1440) return `${Math.round((minutes / 1440) * 10) / 10} d`;
@@ -114,6 +127,7 @@ export function PmMachineRollupPanel() {
   const [data, setData] = useState<RollupResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [bundlingKey, setBundlingKey] = useState<string | null>(null);
+  const [bundleDates, setBundleDates] = useState<Record<string, string>>({});
   const [complianceWindowDays, setComplianceWindowDays] = useState('30');
   const [complianceData, setComplianceData] = useState<ComplianceResponse | null>(null);
   const [complianceLoading, setComplianceLoading] = useState(false);
@@ -170,13 +184,24 @@ export function PmMachineRollupPanel() {
   useEffect(() => { void loadCompliance(); }, [loadCompliance]);
 
   const createBundle = async (group: BundleGroup) => {
-    if (!assetId) return;
+    if (!assetId || !data) return;
+    const maintenanceDate = defaultPmBundleMaintenanceDate({
+      candidate: bundleDates[group.key] || group.planningEnd || group.planningStart,
+      windowStart: data.planningWindow.start,
+      windowEnd: data.planningWindow.end,
+    });
+    const plannedExecutionAt = plannedExecutionIso(maintenanceDate);
+    if (!plannedExecutionAt) {
+      toast.error('Choose a valid maintenance date');
+      return;
+    }
     setBundlingKey(group.key);
     try {
       const response = await api.post('/api/pm-assignments/bundle', {
         assetId,
         assignmentIds: group.assignmentIds,
         planningWindowDays: Number(planningWindowDays),
+        plannedExecutionAt,
       });
       if (!response.success) throw new Error(response.error || 'Failed to create PM work bundle');
       const woNumber = (response.data as any)?.workOrder?.woNumber;
@@ -203,7 +228,7 @@ export function PmMachineRollupPanel() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4 text-emerald-600" />Machine PM Roll-up</CardTitle>
-            <CardDescription>See whole-machine and descendant PM together, then bundle compatible due work without mixing Running and Standstill.</CardDescription>
+            <CardDescription>See whole-machine and descendant PM together, then consolidate compatible due and due-soon work without mixing Running and Standstill.</CardDescription>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={refreshAll} disabled={!assetId || loading || complianceLoading}>
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading || complianceLoading ? 'animate-spin' : ''}`} />Refresh
@@ -244,15 +269,34 @@ export function PmMachineRollupPanel() {
                 <Badge variant="outline">{data.machine.name} · {data.machine.assetTag}</Badge>
               </div>
               {data.bundleGroups.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No currently due assignments form a bundle-ready group.</p>
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No due or due-soon assignments form a bundle-ready group in this planning window.</p>
               ) : (
                 <div className="grid gap-2 lg:grid-cols-2">
                   {data.bundleGroups.map((group) => (
-                    <div key={group.key} className="flex flex-col gap-2 rounded-md border bg-background p-2.5 sm:flex-row sm:items-center sm:justify-between">
-                      <div><p className="text-xs font-semibold">{group.inspectionType === 'standstill' ? 'Standstill / Shutdown' : 'Running'} · {group.assignmentIds.length} task{group.assignmentIds.length === 1 ? '' : 's'}</p><p className="text-[10px] text-muted-foreground">{group.totalEstimatedMinutes} min · {formatDateTime(group.planningStart)}{group.planningEnd && group.planningEnd !== group.planningStart ? ` → ${formatDateTime(group.planningEnd)}` : ''}</p></div>
-                      <Button type="button" size="sm" className="h-8 shrink-0" onClick={() => void createBundle(group)} disabled={Boolean(bundlingKey)}>
-                        {bundlingKey === group.key ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="mr-1 h-3.5 w-3.5" />}Create Work Bundle
-                      </Button>
+                    <div key={group.key} className="rounded-md border bg-background p-2.5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div className="min-w-0"><p className="text-xs font-semibold">{group.inspectionType === 'standstill' ? 'Standstill / Shutdown' : 'Running'} · {group.assignmentIds.length} task{group.assignmentIds.length === 1 ? '' : 's'}</p><p className="text-[10px] text-muted-foreground">{group.totalEstimatedMinutes} min · due range {formatDateTime(group.planningStart)}{group.planningEnd && group.planningEnd !== group.planningStart ? ` → ${formatDateTime(group.planningEnd)}` : ''}</p></div>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-semibold">Maintenance Date</Label>
+                            <input
+                              type="date"
+                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                              min={toPmDateInputValue(data.planningWindow.start)}
+                              max={toPmDateInputValue(data.planningWindow.end)}
+                              value={defaultPmBundleMaintenanceDate({
+                                candidate: bundleDates[group.key] || group.planningEnd || group.planningStart,
+                                windowStart: data.planningWindow.start,
+                                windowEnd: data.planningWindow.end,
+                              })}
+                              onChange={(event) => setBundleDates((current) => ({ ...current, [group.key]: event.target.value }))}
+                            />
+                          </div>
+                          <Button type="button" size="sm" className="h-8 shrink-0" onClick={() => void createBundle(group)} disabled={Boolean(bundlingKey)}>
+                            {bundlingKey === group.key ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="mr-1 h-3.5 w-3.5" />}Create Work Bundle
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

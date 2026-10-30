@@ -27,7 +27,7 @@ describe('direct PM assignment authoring UI contract', () => {
     for (const label of [
       'Frequency Type',
       'Frequency Unit',
-      'Value',
+      'Value or Interval',
       'PM Type',
       'Activity Mode',
       'Inspection Type',
@@ -42,6 +42,20 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(rowSource).toContain('CBM');
     expect(rowSource).toContain('FBM');
     expect(plannerSource).toContain('Total estimated time');
+  });
+
+  it('repeats the live total estimated time beside the final create action', () => {
+    expect(formSource).toContain('totalPmAssignmentEstimatedMinutes');
+    expect(formSource).toContain('formatPmAssignmentEstimatedTime');
+    expect(formSource).toContain('Total estimated time');
+  });
+
+  it('requires an explicit PM target before task authoring, including deliberate whole-machine selection', () => {
+    expect(formSource).toContain('targetConfirmed');
+    expect(formSource).toContain('Select a PM target');
+    expect(formSource).toContain('targetConfirmed={targetConfirmed}');
+    expect(plannerSource).toContain('targetConfirmed');
+    expect(plannerSource).toContain('disabled={disabled || !assetId || !targetConfirmed}');
   });
 
   it('allows the same Task Library task to be added again as an independent row', () => {

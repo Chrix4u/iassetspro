@@ -17,7 +17,7 @@ vi.mock('@/services/pm/pmScheduledTaskCycleGuard.service', () => ({
   findBlockingPmScheduledTaskCycles: mocks.blockers,
 }));
 
-import { assertCompatiblePmBundle, buildPmBundleGroups, createPmAssignmentBundle } from '@/services/pm/pmBundling.service';
+import { assertCompatiblePmBundle, buildPmBundleGroups, createPmAssignmentBundle, normalizePmPlannedStart } from '@/services/pm/pmBundling.service';
 
 function item(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,6 +52,13 @@ describe('PM shutdown bundling', () => {
     mocks.liveLocation.mockResolvedValue(new Map());
     mocks.materialize.mockResolvedValue(1);
     mocks.blockers.mockResolvedValue([]);
+  });
+
+  it('normalizes request-latency drift to now but still rejects genuinely past maintenance dates', () => {
+    const now = new Date('2026-10-30T18:00:00.000Z');
+    expect(normalizePmPlannedStart(now, new Date('2026-10-30T17:59:59.500Z'), 7)).toEqual(now);
+    expect(() => normalizePmPlannedStart(now, new Date('2026-10-30T17:55:00.000Z'), 7)).toThrow(/past/i);
+    expect(() => normalizePmPlannedStart(now, new Date('2026-11-07T18:00:01.000Z'), 7)).toThrow(/planning window/i);
   });
 
   it('bundles compatible Standstill work on one machine inside the planning window', () => {
@@ -96,13 +103,36 @@ describe('PM shutdown bundling', () => {
     expect(groups[0].assignmentIds).toEqual(['fresh']);
   });
 
+  it('includes near-due TBM work as a planned-early bundle candidate inside the planning window', () => {
+    const groups = buildPmBundleGroups([
+      item({ id: 'due-now', dueStatus: 'due', planningAt: '2026-10-28T00:00:00.000Z', isBundleEligible: true }),
+      item({ id: 'due-friday', dueStatus: 'near_due', planningAt: '2026-10-30T00:00:00.000Z', isBundleEligible: true }),
+    ], 7);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].assignmentIds).toEqual(['due-now', 'due-friday']);
+  });
+
+  it('accepts an explicit bundle containing due and planned-early work inside the planning window', () => {
+    expect(() => assertCompatiblePmBundle([
+      item({ id: 'due-now', dueStatus: 'due', planningAt: '2026-10-28T00:00:00.000Z' }),
+      item({ id: 'due-friday', dueStatus: 'near_due', planningAt: '2026-10-30T00:00:00.000Z' }),
+    ], 7)).not.toThrow();
+  });
+
   it('rejects an explicit bundle that mixes machine or inspection state', () => {
     expect(() => assertCompatiblePmBundle([item({ id: 'a' }), item({ id: 'b', assetId: 'asset-2' })], 7)).toThrow(/same machine/i);
     expect(() => assertCompatiblePmBundle([item({ id: 'a' }), item({ id: 'b', inspectionType: 'running' })], 7)).toThrow(/Running.*Standstill|inspection/i);
   });
 
-  it('creates a Standstill WO through canonical task materialization and exact component links', async () => {
+  it('creates one Standstill WO for due and planned-early TBM work with original due provenance', async () => {
     const row = assignment();
+    const plannedEarlyRow = assignment({
+      id: 'pm-2',
+      pmTaskId: 'task-2',
+      nextDueDate: new Date('2026-11-02T00:00:00.000Z'),
+      pmTask: { id: 'task-2', taskNumber: 102, description: 'Lubricate bearing', taskType: 'lubrication' },
+    });
     const tx = {
       $executeRawUnsafe: vi.fn().mockResolvedValue(1),
       asset: { findUnique: vi.fn().mockResolvedValue({ id: 'asset-1', name: 'Crusher 01', assetTag: 'CR-01', plantId: 'plant-1', departmentId: 'dept-1' }) },
@@ -111,7 +141,7 @@ describe('PM shutdown bundling', () => {
         { id: 'bearing', assetId: 'asset-1', parentId: 'drive', name: 'Bearing', componentCode: 'BRG', componentType: 'part' },
       ]) },
       pmScheduleTask: {
-        findMany: vi.fn().mockResolvedValue([row]),
+        findMany: vi.fn().mockResolvedValue([row, plannedEarlyRow]),
         update: vi.fn().mockResolvedValue({}),
       },
       assetMeter: { findUnique: vi.fn() }, meterReading: { findFirst: vi.fn() },
@@ -127,21 +157,47 @@ describe('PM shutdown bundling', () => {
     };
     const client = { $transaction: vi.fn(async (fn: any) => fn(tx)) };
 
+    mocks.materialize.mockResolvedValue(2);
     const result = await createPmAssignmentBundle(client as never, {
-      actorId: 'planner-1', assetId: 'asset-1', assignmentIds: ['pm-1'],
+      actorId: 'planner-1', assetId: 'asset-1', assignmentIds: ['pm-1', 'pm-2'],
       now: new Date('2026-10-28T00:00:00.000Z'), planningWindowDays: 7,
+      plannedExecutionAt: new Date('2026-11-01T08:00:00.000Z'),
     });
 
     expect(tx.workOrder.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       assetId: 'asset-1', type: 'preventive', status: 'waiting_shutdown', plannerId: 'planner-1',
+      plannedStart: new Date('2026-11-01T08:00:00.000Z'),
     }) });
     expect(tx.workOrderComponent.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ workOrderId: 'wo-1', componentRegistryId: 'bearing' }),
     }));
-    expect(mocks.materialize).toHaveBeenCalledWith(tx, 'wo-1', [expect.objectContaining({ task: expect.objectContaining({ id: 'pm-1' }) })]);
+    expect(mocks.materialize).toHaveBeenCalledWith(tx, 'wo-1', expect.arrayContaining([
+      expect.objectContaining({
+        task: expect.objectContaining({ id: 'pm-1' }),
+        planningDisposition: 'due',
+        plannedExecutionAt: new Date('2026-11-01T08:00:00.000Z'),
+      }),
+      expect.objectContaining({
+        task: expect.objectContaining({ id: 'pm-2' }),
+        due: expect.objectContaining({ due: false, reason: 'tbm_not_due' }),
+        planningDisposition: 'planned_early',
+        plannedExecutionAt: new Date('2026-11-01T08:00:00.000Z'),
+      }),
+    ]));
     expect(tx.pmScheduleTask.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'pm-1' }, data: expect.objectContaining({ lastGeneratedCycleKey: 'tbm:pm-1:2026-10-27T00:00:00.000Z' }),
     }));
+    expect(tx.pmScheduleTask.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'pm-2' }, data: expect.objectContaining({ lastGeneratedCycleKey: 'tbm:pm-2:2026-11-02T00:00:00.000Z' }),
+    }));
+    const auditPayload = JSON.parse(tx.auditLog.create.mock.calls[0][0].data.newValues);
+    expect(auditPayload).toMatchObject({
+      plannedExecutionAt: '2026-11-01T08:00:00.000Z',
+      planningDispositionByAssignment: expect.arrayContaining([
+        expect.objectContaining({ pmAssignmentId: 'pm-1', disposition: 'due', originalDueDate: '2026-10-27T00:00:00.000Z' }),
+        expect.objectContaining({ pmAssignmentId: 'pm-2', disposition: 'planned_early', originalDueDate: '2026-11-02T00:00:00.000Z' }),
+      ]),
+    });
     expect(result.workOrder).toEqual(expect.objectContaining({ id: 'wo-1' }));
   });
 });

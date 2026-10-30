@@ -35,10 +35,22 @@ function itemPlanningMs(item: BundleCompatibleItem): number {
   return Number.isFinite(value) ? value : 0;
 }
 
+export function normalizePmPlannedStart(now: Date, plannedExecutionAt: Date | undefined, planningWindowDays = 7): Date {
+  const horizonEnd = new Date(now.getTime() + normalizedWindowDays(planningWindowDays) * 24 * 60 * 60 * 1000);
+  const requested = plannedExecutionAt ? new Date(plannedExecutionAt) : new Date(now);
+  if (!Number.isFinite(requested.getTime())) throw new Error('Planned execution date is invalid');
+  if (requested.getTime() < now.getTime()) {
+    if (now.getTime() - requested.getTime() <= 60_000) return new Date(now);
+    throw new Error('Planned execution date cannot be in the past');
+  }
+  if (requested.getTime() > horizonEnd.getTime()) throw new Error('Planned execution date is outside the selected planning window');
+  return requested;
+}
+
 export function buildPmBundleGroups(items: BundleCompatibleItem[], planningWindowDays = 7): PmBundleGroup[] {
   const spanMs = normalizedWindowDays(planningWindowDays) * 24 * 60 * 60 * 1000;
   const eligible = [...items]
-    .filter((item) => item.dueStatus === 'due' && item.isBundleEligible !== false)
+    .filter((item) => (item.dueStatus === 'due' || item.dueStatus === 'near_due') && item.isBundleEligible !== false)
     .sort((left, right) => left.assetId.localeCompare(right.assetId)
       || left.inspectionType.localeCompare(right.inspectionType)
       || itemPlanningMs(left) - itemPlanningMs(right)
@@ -87,7 +99,7 @@ export function assertCompatiblePmBundle(items: BundleCompatibleItem[], planning
   if (items.some((item) => item.inspectionType !== inspectionType)) {
     throw new Error('Running and Standstill PM assignments cannot be mixed in the same bundle');
   }
-  if (items.some((item) => item.dueStatus !== 'due')) throw new Error('Only due PM assignments can be materialized into a work bundle');
+  if (items.some((item) => item.dueStatus !== 'due' && item.dueStatus !== 'near_due')) throw new Error('Only due or planned-early PM assignments can be materialized into a work bundle');
   const times = items.map(itemPlanningMs).filter((value) => value > 0).sort((a, b) => a - b);
   if (times.length > 1) {
     const allowed = normalizedWindowDays(planningWindowDays) * 24 * 60 * 60 * 1000;
@@ -113,7 +125,9 @@ async function allocatePmWorkOrderNumber(tx: Prisma.TransactionClient, now: Date
 
 function taskLine(candidate: MaterializablePmScheduledTask, item: PmMachineRollupItem): string {
   const target = item.technicalPathLabel || 'Whole machine';
-  return `Task #${candidate.task.pmTask.taskNumber}: ${candidate.task.pmTask.description} | ${target}`;
+  const disposition = candidate.planningDisposition === 'planned_early' && !candidate.due.due ? 'PLANNED EARLY' : 'DUE';
+  const originalDue = candidate.task.nextDueDate ? ` | original due ${candidate.task.nextDueDate.toISOString()}` : '';
+  return `[${disposition}] Task #${candidate.task.pmTask.taskNumber}: ${candidate.task.pmTask.description} | ${target}${originalDue}`;
 }
 
 export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T> }, input: {
@@ -122,6 +136,7 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
   assignmentIds: string[];
   now?: Date;
   planningWindowDays?: number;
+  plannedExecutionAt?: Date;
 }) {
   const assetId = String(input.assetId || '').trim();
   const assignmentIds = [...new Set((input.assignmentIds || []).map((id) => String(id || '').trim()).filter(Boolean))].sort();
@@ -129,6 +144,8 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
   if (assignmentIds.length === 0) throw new Error('At least one PM assignment is required');
   const now = input.now ? new Date(input.now) : new Date();
   const planningWindowDays = normalizedWindowDays(input.planningWindowDays);
+  const planningHorizonEnd = new Date(now.getTime() + planningWindowDays * 24 * 60 * 60 * 1000);
+  const plannedStart = normalizePmPlannedStart(now, input.plannedExecutionAt, planningWindowDays);
   const locationMap = await getAssetLiveLocationMap([assetId]);
   const locationSnapshot = buildMaintenanceLocationSnapshot(locationMap.get(assetId) ?? null);
 
@@ -162,8 +179,21 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
         componentId: row.componentId,
         now,
       });
-      if (!due.due || !due.dueCycleKey) throw new Error(`PM assignment ${row.id} is no longer due`);
-      candidates.push({ task: row, due });
+      const rollupItem = itemMap.get(row.id)!;
+      if (!due.dueCycleKey) throw new Error(`PM assignment ${row.id} has no stable due-cycle identity`);
+
+      if (due.due) {
+        candidates.push({ task: row, due, planningDisposition: 'due', plannedExecutionAt: plannedStart });
+        continue;
+      }
+
+      const canPlanEarly = rollupItem.dueStatus === 'near_due'
+        && row.maintenanceMode === 'tbm'
+        && row.nextDueDate
+        && row.nextDueDate.getTime() <= planningHorizonEnd.getTime();
+      if (!canPlanEarly) throw new Error(`PM assignment ${row.id} is no longer due or eligible for planned-early execution`);
+
+      candidates.push({ task: row, due, planningDisposition: 'planned_early', plannedExecutionAt: plannedStart });
     }
 
     const blockers = await findBlockingPmScheduledTaskCycles(tx, candidates.map((entry) => ({
@@ -180,8 +210,6 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
 
     const totalMinutes = candidates.reduce((sum, entry) => sum + Math.max(0, Number(entry.task.estimatedMinutes) || 0), 0);
     const estimatedHours = roundHours(totalMinutes);
-    const planningDates = selectedItems.map((item) => item.planningAt?.getTime()).filter((value): value is number => Number.isFinite(value));
-    const plannedStart = planningDates.length ? new Date(Math.min(...planningDates)) : now;
     const plannedEnd = calculatePmPlannedEnd(plannedStart, estimatedHours);
     const inspectionType = selectedItems[0].inspectionType;
     const woNumber = await allocatePmWorkOrderNumber(tx, now);
@@ -191,7 +219,7 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
       data: {
         woNumber,
         title: `PM Bundle: ${asset.name} · ${inspectionType === 'standstill' ? 'STANDSTILL' : 'RUNNING'}`,
-        description: `Direct PM work bundle for ${asset.name || asset.assetTag}.\n\nDue PM Assignments:\n${lines.join('\n')}`,
+        description: `Direct PM work bundle for ${asset.name || asset.assetTag}.\n\nPM Assignments:\n${lines.join('\n')}`,
         type: 'preventive',
         priority: 'medium',
         status: inspectionType === 'standstill' ? 'waiting_shutdown' : 'draft',
@@ -243,7 +271,14 @@ export async function createPmAssignmentBundle(client: { $transaction: <T>(fn: (
           inspectionType,
           pmAssignmentIds: assignmentIds,
           componentIds,
+          plannedExecutionAt: plannedStart.toISOString(),
           dueCycles: candidates.map((candidate) => candidate.due.dueCycleKey),
+          planningDispositionByAssignment: candidates.map((candidate) => ({
+            pmAssignmentId: candidate.task.id,
+            disposition: candidate.planningDisposition === 'planned_early' && !candidate.due.due ? 'planned_early' : 'due',
+            originalDueDate: candidate.task.nextDueDate?.toISOString() ?? null,
+            dueCycleKey: candidate.due.dueCycleKey,
+          })),
         }),
       },
     });

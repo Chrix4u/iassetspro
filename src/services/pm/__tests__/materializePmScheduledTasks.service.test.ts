@@ -133,7 +133,37 @@ describe('materializePmScheduledTasks', () => {
     });
   });
 
-  it('returns zero without touching persistence when no task is due', async () => {
+  it('materializes an explicitly planned-early TBM candidate without falsifying due state', async () => {
+    tx.workOrderTaskExecution.createMany.mockResolvedValue({ count: 1 });
+    const count = await materializePmScheduledTasks(tx as never, 'wo-early', [{
+      task: scheduledTask(),
+      due: due({ due: false, reason: 'tbm_not_due' }),
+      planningDisposition: 'planned_early',
+      plannedExecutionAt: new Date('2026-10-30T00:00:00.000Z'),
+    }] as never);
+
+    expect(count).toBe(1);
+    const create = tx.workOrderTaskExecution.createMany.mock.calls[0][0];
+    expect(create.data).toHaveLength(1);
+    const snapshot = JSON.parse(create.data[0].pmPlanningSnapshot);
+    expect(snapshot).toMatchObject({
+      executionBasis: 'planned_early',
+      originalDueDate: '2026-11-01T00:00:00.000Z',
+      plannedExecutionAt: '2026-10-30T00:00:00.000Z',
+      due: { reason: 'tbm_not_due' },
+    });
+  });
+
+  it('rejects planned-early materialization without an explicit maintenance execution date', async () => {
+    await expect(materializePmScheduledTasks(tx as never, 'wo-early', [{
+      task: scheduledTask(),
+      due: due({ due: false, reason: 'tbm_not_due' }),
+      planningDisposition: 'planned_early',
+    }] as never)).rejects.toThrow(/execution date/i);
+    expect(tx.workOrderTaskExecution.createMany).not.toHaveBeenCalled();
+  });
+
+  it('returns zero without touching persistence when no task is due or explicitly planned early', async () => {
     const count = await materializePmScheduledTasks(tx as never, 'wo-1', [{
       task: scheduledTask(),
       due: due({ due: false, reason: 'tbm_not_due' }),

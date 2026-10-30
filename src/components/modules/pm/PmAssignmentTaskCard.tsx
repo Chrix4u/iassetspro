@@ -172,7 +172,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
         </div>
 
         <div className={compactField}>
-          <Label className={compactLabel}>Value</Label>
+          <Label className={compactLabel}>Value or Interval</Label>
           <Input className={compactControl} type="number" min="0.000001" step={task.pmType === 'tbm' ? '1' : 'any'} value={task.value} onChange={(event) => onChange({ value: event.target.value })} disabled={cadenceDisabled} />
         </div>
 

@@ -7,8 +7,10 @@ import { api } from '@/lib/api';
 import type { PmTaskType } from '@/lib/pm-task';
 import {
   clearPmAssignmentConditionBinding,
+  formatPmAssignmentEstimatedTime,
   pmAssignmentDraftFromMaster,
   pmAssignmentTaskPayload,
+  totalPmAssignmentEstimatedMinutes,
   validatePmAssignmentTaskDraft,
   type PmAssignmentTaskDraft,
 } from '@/lib/pm-assignment-draft';
@@ -30,6 +32,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
   const [assetCache, setAssetCache] = useState<Record<string, PmTargetAsset>>({});
   const [componentId, setComponentId] = useState<string | null>(null);
   const [technicalPath, setTechnicalPath] = useState<Array<{ id: string; name: string; componentCode?: string | null }>>([]);
+  const [targetConfirmed, setTargetConfirmed] = useState(false);
   const [templateId, setTemplateId] = useState('');
   const [tasks, setTasks] = useState<PmAssignmentTaskDraft[]>([]);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -37,11 +40,14 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
   const templateSequence = useRef(0);
 
   const asset = assetCache[assetId] || null;
+  const totalEstimatedMinutes = totalPmAssignmentEstimatedMinutes(tasks);
+  const totalEstimatedLabel = formatPmAssignmentEstimatedTime(totalEstimatedMinutes);
 
   const reset = useCallback(() => {
     setAssetId('');
     setComponentId(null);
     setTechnicalPath([]);
+    setTargetConfirmed(false);
     setTemplateId('');
     setTasks([]);
     setTemplateLoading(false);
@@ -126,6 +132,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
     setAssetId(nextAssetId);
     setComponentId(null);
     setTechnicalPath([]);
+    setTargetConfirmed(false);
     setTemplateId('');
     setTasks([]);
   };
@@ -133,6 +140,10 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
   const save = async () => {
     if (!assetId) {
       toast.error('Select an asset');
+      return;
+    }
+    if (!targetConfirmed) {
+      toast.error('Select a PM target and confirm it');
       return;
     }
     if (tasks.length === 0) {
@@ -173,12 +184,19 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
       title="New PM Assignment"
       description="Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions."
       footer={(
-        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" onClick={save} disabled={saving || templateLoading}>
-            {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-            Create PM Assignment{tasks.length === 1 ? '' : 's'}
-          </Button>
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs" data-testid="pm-assignment-footer-total">
+            <span className="text-muted-foreground">Total estimated time:</span>{' '}
+            <strong>{totalEstimatedLabel}</strong>
+            <span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
+              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Create PM Assignment{tasks.length === 1 ? '' : 's'}
+            </Button>
+          </div>
         </div>
       )}
     >
@@ -206,6 +224,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
               }
               setComponentId(id);
               setTechnicalPath(path);
+              setTargetConfirmed(true);
             }}
           />
         </div>
@@ -233,6 +252,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
           onChange={setTasks}
           assetId={assetId}
           componentId={componentId}
+          targetConfirmed={targetConfirmed}
           disabled={saving || templateLoading}
         />
       </div>

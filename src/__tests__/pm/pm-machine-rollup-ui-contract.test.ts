@@ -28,6 +28,21 @@ describe('PM machine roll-up UI contract', () => {
     expect(panelSource).toContain('/api/pm-assignments/bundle');
   });
 
+  it('lets the planner choose a maintenance execution date and sends it to bundle creation', () => {
+    expect(panelSource).toContain('Maintenance Date');
+    expect(panelSource).toContain('type="date"');
+    expect(panelSource).toContain('plannedExecutionAt');
+    expect(bundleRoute).toContain('plannedExecutionAt');
+    expect(bundleRoute).toContain('new Date');
+    expect(bundleRoute).toMatch(/past/i);
+  });
+
+  it('preserves an explicit zero-day planning window instead of replacing it with the seven-day default', () => {
+    expect(panelSource).toContain('<SelectItem value="0">Due now only</SelectItem>');
+    expect(bundleRoute).toContain('body.planningWindowDays ?? 7');
+    expect(bundleRoute).not.toContain('body.planningWindowDays || 7');
+  });
+
   it('is mounted on PM Planning and backed by scoped roll-up/bundle APIs', () => {
     expect(maintenanceSource).toContain('PmMachineRollupPanel');
     expect(rollupRoute).toContain('getPmMachineRollup');

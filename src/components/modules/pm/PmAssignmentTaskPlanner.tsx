@@ -21,10 +21,11 @@ interface Props {
   onChange: (tasks: PmAssignmentTaskDraft[]) => void;
   assetId: string;
   componentId?: string | null;
+  targetConfirmed?: boolean;
   disabled?: boolean;
 }
 
-export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, disabled = false }: Props) {
+export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
   const [conditions, setConditions] = useState<PmAssignmentConditionSourceOption[]>([]);
@@ -104,12 +105,13 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
           <p className="text-[11px] text-muted-foreground">Configure each task independently. The same Task Library task can be added again with different planning conditions.</p>
           <p className="mt-1 text-xs"><span className="text-muted-foreground">Tasks:</span> <strong>{tasks.length}</strong> <span className="mx-1.5 text-muted-foreground">·</span> <span className="text-muted-foreground">Total estimated time:</span> <strong>{formatPmAssignmentEstimatedTime(totalMinutes)}</strong>{totalMinutes > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({(totalMinutes / 60).toFixed(2)} h)</span>}</p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId} className="h-8 w-full text-xs sm:w-auto">
+        <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId || !targetConfirmed} className="h-8 w-full text-xs sm:w-auto">
           <Plus className="mr-1.5 h-4 w-4" /> Add Task from Library
         </Button>
       </div>
 
       {!assetId && <div className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">Select an asset first.</div>}
+      {assetId && !targetConfirmed && <div className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">Confirm the PM target before adding tasks.</div>}
 
       {tasks.length === 0 ? (
         <div className="rounded-lg border border-dashed p-4 text-center">

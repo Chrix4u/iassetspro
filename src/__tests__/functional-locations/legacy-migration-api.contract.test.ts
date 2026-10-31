@@ -43,4 +43,16 @@ describe('legacy functional-location migration API contract', () => {
     expect(service).toContain('!existingByCode.has(node.locationCode)');
     expect(service).toContain('conflictingNodes: conflicts');
   });
+
+  it('passes a reviewed company-name fallback through preview and import when the profile table is empty', () => {
+    const preview = read('src/app/api/admin/functional-location-migration/preview/route.ts');
+    const execute = read('src/app/api/admin/functional-location-migration/import/route.ts');
+    const service = read('src/lib/functional-location/legacy-migration-service.ts');
+    expect(preview).toContain('companyName?: string');
+    expect(preview).toContain('companyName: body.companyName');
+    expect(execute).toContain('companyName?: string');
+    expect(execute).toContain('companyName: body.companyName');
+    expect(service).toContain('companyName?: string | null');
+    expect(service).toContain('resolveLegacyMigrationCompanyName');
+  });
 });

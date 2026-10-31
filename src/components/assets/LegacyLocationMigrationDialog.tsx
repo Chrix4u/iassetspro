@@ -38,6 +38,7 @@ type HierarchySystem = {
 }
 
 type Plant = { id: string; name: string; code?: string | null }
+type CompanyProfileSummary = { id: string; companyName: string; tradingName?: string | null }
 
 type PreviewRow = {
   assetId: string
@@ -96,13 +97,27 @@ export function LegacyLocationMigrationDialog({
   const [previewing, setPreviewing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [confirmation, setConfirmation] = useState('')
+  const [companyName, setCompanyName] = useState('')
+  const [companyProfileMissing, setCompanyProfileMissing] = useState(false)
+  const [companyProfileLoading, setCompanyProfileLoading] = useState(false)
 
   const orderedLevels = useMemo(
     () => [...hierarchySystem.levels].sort((a, b) => a.order - b.order),
     [hierarchySystem.levels],
   )
 
-  const runPreview = useCallback(async (mappingOverride?: LegacyMapping, plantOverride?: string, inferMapping = false) => {
+  const runPreview = useCallback(async (
+    mappingOverride?: LegacyMapping,
+    plantOverride?: string,
+    inferMapping = false,
+    companyNameOverride?: string,
+  ) => {
+    const reviewedCompanyName = companyNameOverride?.trim() || ''
+    if (!reviewedCompanyName) {
+      toast.error('Enter your company name to build the migration preview')
+      return
+    }
+
     setPreviewing(true)
     try {
       const reviewedMapping = inferMapping ? undefined : mappingOverride ?? (Object.keys(mapping).length ? mapping : undefined)
@@ -111,6 +126,7 @@ export function LegacyLocationMigrationDialog({
         hierarchySystemId: hierarchySystem.id,
         plantId: reviewedPlantId === '__all__' ? undefined : reviewedPlantId,
         mapping: reviewedMapping,
+        companyName: reviewedCompanyName,
       })
       if (!response.success || !response.data) throw new Error(response.error || 'Legacy location preview failed')
       setPreview(response.data)
@@ -126,11 +142,32 @@ export function LegacyLocationMigrationDialog({
 
   useEffect(() => {
     if (!open) return
+    let cancelled = false
+
     setPlantId('__all__')
     setMapping({})
     setPreview(null)
     setConfirmation('')
-    void runPreview(undefined, '__all__', true)
+    setCompanyName('')
+    setCompanyProfileMissing(false)
+    setCompanyProfileLoading(true)
+
+    void api.get<CompanyProfileSummary>('/api/company-profile').then(response => {
+      if (cancelled) return
+      const profile = response.success && response.data ? response.data : null
+      const persistedName = profile?.id
+        ? profile.tradingName?.trim() || profile.companyName?.trim() || ''
+        : ''
+      setCompanyName(persistedName)
+      setCompanyProfileMissing(!profile?.id)
+      if (persistedName) void runPreview(undefined, '__all__', true, persistedName)
+    }).catch(() => {
+      if (!cancelled) setCompanyProfileMissing(true)
+    }).finally(() => {
+      if (!cancelled) setCompanyProfileLoading(false)
+    })
+
+    return () => { cancelled = true }
     // run once for each dialog/system opening; mapping returned by server is authoritative.
   }, [open, hierarchySystem.id])
 
@@ -148,6 +185,7 @@ export function LegacyLocationMigrationDialog({
 
   const executeImport = async () => {
     if (!preview?.previewFingerprint) return toast.error('Run and review a fresh preview first')
+    if (!companyName.trim()) return toast.error('Enter your company name to continue')
     if (confirmation !== 'IMPORT READY LEGACY LOCATIONS') return toast.error('Enter the exact migration confirmation phrase')
     setImporting(true)
     try {
@@ -155,6 +193,7 @@ export function LegacyLocationMigrationDialog({
         hierarchySystemId: hierarchySystem.id,
         plantId: plantId === '__all__' ? undefined : plantId,
         mapping,
+        companyName: companyName.trim(),
         previewFingerprint: preview.previewFingerprint,
         confirmation,
       })
@@ -179,7 +218,7 @@ export function LegacyLocationMigrationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-5xl overflow-hidden p-0">
+      <DialogContent className="max-h-[94dvh] overflow-hidden p-0 sm:max-w-6xl xl:max-w-7xl">
         <DialogHeader className="border-b px-6 py-5">
           <DialogTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-emerald-600" />Migrate legacy locations</DialogTitle>
           <DialogDescription>
@@ -187,7 +226,7 @@ export function LegacyLocationMigrationDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[72vh] space-y-5 overflow-y-auto px-6 py-5">
+        <div className="max-h-[78dvh] space-y-5 overflow-y-auto px-4 py-5 sm:px-6">
           <div className="rounded-xl border bg-muted/20 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -198,7 +237,34 @@ export function LegacyLocationMigrationDialog({
             </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(13rem,.45fr)_minmax(0,1fr)]">
+          {companyProfileLoading ? (
+            <div className="flex items-center gap-2 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading company profile…</div>
+          ) : companyProfileMissing ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-amber-950 dark:text-amber-100">Company profile has not been saved yet</div>
+                  <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-100/80">Enter your company name to build the migration preview. This lets the migration continue safely without inventing a company identity.</p>
+                  <Label className="mt-3 block">Company / organisation name</Label>
+                  <Input
+                    className="mt-1.5 max-w-xl bg-background"
+                    value={companyName}
+                    onChange={event => { setCompanyName(event.target.value); setPreview(null); setConfirmation('') }}
+                    placeholder="e.g. Acme Manufacturing Ltd"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border bg-muted/20 p-4">
+              <Label>Company / organisation name</Label>
+              <Input className="mt-1.5 max-w-xl" value={companyName} readOnly />
+              <p className="mt-1 text-xs text-muted-foreground">Loaded from the saved Company Profile and used for any company-level hierarchy node.</p>
+            </div>
+          )}
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(15rem,.38fr)_minmax(0,1fr)]">
             <div>
               <Label>Plant scope</Label>
               <Select value={plantId} onValueChange={updatePlant}>
@@ -213,11 +279,11 @@ export function LegacyLocationMigrationDialog({
             <div>
               <div className="flex items-center justify-between gap-3">
                 <div><Label>Legacy source mapping</Label><p className="mt-1 text-xs text-muted-foreground">Map each customer-defined hierarchy level to the legacy field that contains that part of the path.</p></div>
-                <Button variant="outline" size="sm" onClick={() => void runPreview()} disabled={previewing}>{previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Preview migration</Button>
+                <Button variant="outline" size="sm" onClick={() => void runPreview(undefined, undefined, false, companyName)} disabled={previewing || companyProfileLoading || !companyName.trim()}>{previewing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Preview migration</Button>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2 lg:grid-cols-2">
                 {orderedLevels.map(level => (
-                  <div key={level.id} className="grid grid-cols-[minmax(0,1fr)_minmax(9rem,.9fr)] items-center gap-2 rounded-lg border p-2.5">
+                  <div key={level.id} className="grid gap-2 rounded-lg border p-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,.9fr)] sm:items-center">
                     <div className="min-w-0"><div className="truncate text-sm font-medium">{level.label}</div><div className="text-[11px] text-muted-foreground">{level.isRequired ? 'Required' : 'Optional'} · {level.allowAssetAssignment ? 'Asset-ready' : 'Structural'}</div></div>
                     <Select value={mapping[level.id] || '__none__'} onValueChange={value => updateMapping(level.id, value)}>
                       <SelectTrigger className="h-9"><SelectValue placeholder="Not mapped" /></SelectTrigger>

@@ -49,14 +49,24 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(formSource).toContain('desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"');
   });
 
-  it('uses compact mobile rows, a three-column tablet grid, and a full desktop planning row', () => {
-    expect(rowSource).toContain('grid-cols-6 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9');
-    expect(rowSource).toContain("const thirdWidthField = `${compactField} col-span-2 md:col-span-1`");
-    expect(rowSource).toContain("const halfWidthField = `${compactField} col-span-3 md:col-span-1`");
+  it('uses proportioned responsive tracks so short numeric fields yield space to PM type and the due date', () => {
+    expect(rowSource).toContain('grid-cols-12 gap-2 md:grid-cols-12 lg:grid-cols-4 xl:grid-cols-[1.15fr_1.1fr_.55fr_1.45fr_1.15fr_1.1fr_.75fr_.65fr_1.8fr]');
+    expect(rowSource).toContain("const intervalField = `${compactField} col-span-2 md:col-span-4 lg:col-span-1 xl:col-span-1`");
+    expect(rowSource).toContain("const estimatedMinutesField = `${compactField} col-span-5 md:col-span-4 lg:col-span-1 xl:col-span-1`");
+    expect(rowSource).toContain("const leadDaysField = `${compactField} col-span-4 md:col-span-4 lg:col-span-1 xl:col-span-1`");
+    expect(rowSource).toContain("const nextDueDateField = `${compactField} col-span-8 md:col-span-4 lg:col-span-2 xl:col-span-1`");
   });
 
-  it('keeps compact controls inside narrow mobile grid cells', () => {
-    expect(rowSource).toContain("const compactControl = 'h-8 w-full min-w-0 px-2 text-xs'");
+  it('uses one professional control height for both native inputs and select triggers', () => {
+    expect(rowSource).toContain("const compactControl = 'h-9 w-full min-w-0 px-2 text-xs'");
+  });
+
+  it('renders Ghana-style due dates while keeping the native picker as the interactive surface', () => {
+    expect(rowSource).toContain("import { displayDate } from '@/components/ui/datetime-picker'");
+    expect(rowSource).toContain('displayDate(task.nextDueDate)');
+    expect(rowSource).toContain("lang=\"en-GB\"");
+    expect(rowSource).toContain('opacity-0');
+    expect(rowSource).toContain("'dd/mm/yyyy'");
   });
 
   it('opens the native due-date picker when the date field itself is clicked', () => {

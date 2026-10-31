@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   inferLegacyLevelMapping,
   planLegacyFunctionalLocationMigration,
+  resolveLegacyMigrationCompanyName,
   type LegacyMigrationHierarchy,
 } from '@/lib/functional-location/legacy-migration';
 
@@ -173,5 +174,18 @@ describe('legacy functional-location migration planner', () => {
 
     expect(result.rows[0].status).toBe('blocked');
     expect(result.rows[0].blockers.join(' ')).toMatch(/asset plant|plant-scoped/i);
+  });
+
+  it('uses a reviewed company-name override only when the persisted profile is missing', () => {
+    expect(resolveLegacyMigrationCompanyName(
+      { companyName: 'Legal Manufacturing Ltd', tradingName: 'FactoryCo' },
+      'Temporary Override',
+    )).toBe('FactoryCo');
+    expect(resolveLegacyMigrationCompanyName(
+      { companyName: 'Legal Manufacturing Ltd', tradingName: '   ' },
+      'Temporary Override',
+    )).toBe('Legal Manufacturing Ltd');
+    expect(resolveLegacyMigrationCompanyName(null, '  Tema Manufacturing  ')).toBe('Tema Manufacturing');
+    expect(() => resolveLegacyMigrationCompanyName(null, '   ')).toThrow(/company.*name|required/i);
   });
 });

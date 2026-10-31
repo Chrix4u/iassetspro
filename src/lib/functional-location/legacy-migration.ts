@@ -115,6 +115,19 @@ function clean(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+export function resolveLegacyMigrationCompanyName(
+  company: { companyName: string; tradingName?: string | null } | null | undefined,
+  reviewedOverride?: string | null,
+): string {
+  const persistedName = clean(company?.tradingName) || clean(company?.companyName);
+  if (persistedName) return persistedName;
+
+  const fallbackName = clean(reviewedOverride);
+  if (fallbackName) return fallbackName;
+
+  throw new Error('Company name is required before migrating legacy functional locations');
+}
+
 function codeSegment(value: string): string {
   const segment = value
     .normalize('NFKD')

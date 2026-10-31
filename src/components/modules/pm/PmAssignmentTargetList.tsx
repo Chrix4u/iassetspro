@@ -38,6 +38,8 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
   const filtered = useMemo(() => filterPmAssignmentTargets(groups, filters), [filters, groups]);
   const assets = useMemo(() => [...new Map(groups.map((group) => [group.assetId, group.asset])).values()].sort((a, b) => a.name.localeCompare(b.name)), [groups]);
   const targets = useMemo(() => groups.filter((group) => !filters.assetId || group.assetId === filters.assetId), [filters.assetId, groups]);
+  const hasWholeMachineTarget = useMemo(() => targets.some((group) => group.componentId === null), [targets]);
+  const componentTargets = useMemo(() => [...new Map(targets.filter((group) => group.componentId).map((group) => [group.componentId!, group])).values()], [targets]);
   const set = (patch: Partial<PmAssignmentTargetFilters>) => setFilters((current) => ({ ...current, ...patch }));
   const selectValue = (value: string) => value === ALL ? '' : value;
   const hasFilters = Object.values(filters).some(Boolean);
@@ -47,7 +49,7 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <div className="sm:col-span-2 xl:col-span-2"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Search</Label><div className="relative mt-1"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"/><Input className="h-9 pl-8 text-xs" value={filters.search || ''} onChange={(e) => set({ search: e.target.value })} placeholder="Search part, asset or task…"/></div></div>
         <FilterSelect label="Asset" value={filters.assetId || ALL} onChange={(v) => set({ assetId: selectValue(v), componentId: '' })}>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name}{asset.assetTag ? ` [${asset.assetTag}]` : ''}</SelectItem>)}</FilterSelect>
-        <FilterSelect label="Part / Target" value={filters.componentId || ALL} onChange={(v) => set({ componentId: selectValue(v) })}>{targets.map((group) => <SelectItem key={group.key} value={group.componentId || '__machine__'}>{group.targetName}</SelectItem>)}</FilterSelect>
+        <FilterSelect label="Part / Target" value={filters.componentId || ALL} onChange={(v) => set({ componentId: selectValue(v) })}>{hasWholeMachineTarget && <SelectItem value="__machine__">Whole machine</SelectItem>}{componentTargets.map((group) => <SelectItem key={group.componentId!} value={group.componentId!}>{group.targetName}</SelectItem>)}</FilterSelect>
         <FilterSelect label="PM Type" value={filters.pmType || ALL} onChange={(v) => set({ pmType: selectValue(v) })}><SelectItem value="tbm">TBM · Time Based</SelectItem><SelectItem value="ubm">UBM · Usage Based</SelectItem><SelectItem value="cbm">CBM · Condition Based</SelectItem><SelectItem value="fbm">FBM · Failure Based</SelectItem></FilterSelect>
         <FilterSelect label="Activity Mode" value={filters.activityMode || ALL} onChange={(v) => set({ activityMode: selectValue(v) })}><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="lubrication">Lubrication</SelectItem><SelectItem value="servicing">Servicing</SelectItem><SelectItem value="replacement">Replacement</SelectItem></FilterSelect>
         <FilterSelect label="Inspection Type" value={filters.inspectionType || ALL} onChange={(v) => set({ inspectionType: selectValue(v) })}><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill</SelectItem></FilterSelect>

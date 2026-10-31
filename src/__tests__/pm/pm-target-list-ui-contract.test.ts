@@ -23,6 +23,8 @@ describe('PM target-centered planning UI', () => {
     expect(source).toContain('View');
     expect(source).toContain('Edit');
     expect(source).toContain('Delete');
+    expect(source).toContain('hasWholeMachineTarget');
+    expect(source).toContain('value="__machine__"');
   });
 
   it('opens full task conditions in View instead of expanding the list row', () => {

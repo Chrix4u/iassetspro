@@ -1,34 +1,23 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const source = readFileSync(
-  resolve(process.cwd(), 'src/components/modules/MaintenancePages.tsx'),
-  'utf8',
-);
-
-describe('PM recurrence authority UI contract', () => {
-  it('uses persisted authority rather than Scheduled Task row presence for edit mode', () => {
-    expect(source).toContain("editItem.recurrenceAuthority !== 'task'");
-    expect(source).not.toContain("editItem && (!Array.isArray(editItem.scheduledTasks) || editItem.scheduledTasks.length === 0)");
+const source=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('PM recurrence authority UI contract',()=>{
+  it('uses direct task assignments as the canonical visible recurrence authority',()=>{
+    const page=source('src/components/modules/pm/PmPlanningPage.tsx');
+    expect(page).toContain("api.get('/api/pm-assignments?isActive=true')");
+    expect(page).not.toContain('/api/pm-schedules?');
+    expect(page).not.toContain('recurrenceAuthority');
   });
-
-  it('uses persisted authority for due-date aggregation and schedule labels', () => {
-    expect(source).toContain("schedule.recurrenceAuthority === 'task'");
-    expect(source).toContain("s.recurrenceAuthority === 'task'");
-    expect(source).toContain("viewItem.recurrenceAuthority === 'task'");
+  it('groups canonical task assignments by target while preserving all task conditions',()=>{
+    const helper=source('src/lib/pm-assignment-target-list.ts');
+    expect(helper).toContain('groupPmAssignmentTargets');
+    expect(helper).toContain('assignments: rows');
+    expect(helper).toContain('taskCount: rows.length');
   });
-
-  it('keeps task-authority detail counts null-safe and never turns the authority boolean into a task count', () => {
-    expect(source).toContain('viewItem.scheduledTasks?.length ?? 0');
-    expect(source).toContain('(viewItem.scheduledTasks || []).map');
-    expect(source).not.toContain("viewItem.recurrenceAuthority === 'task' ??");
-  });
-
-  it('does not advertise task-level generation as staged or pending after the engines shipped', () => {
-    expect(source).not.toContain('Staged · task engines pending');
-    expect(source).not.toContain('Legacy automatic generation stays disabled until the dedicated TBM/UBM/CBM task engines are released.');
-    expect(source).toContain('When each task becomes due');
-    expect(source).toContain('Each task is evaluated independently. Recurrence advances only after verified planner closeout');
+  it('does not advertise direct task generation as staged or pending',()=>{
+    const page=source('src/components/modules/pm/PmPlanningPage.tsx');
+    expect(page.toLowerCase()).not.toContain('task-level generation is staged');
+    expect(page.toLowerCase()).not.toContain('coming soon');
   });
 });

@@ -37,8 +37,6 @@ export interface PmAssignmentConditionSourceOption {
 export interface PmAssignmentTaskDraft {
   clientId: string;
   assignmentId?: string;
-  assignmentId?: string;
-  assignmentId?: string;
   pmTaskId: string;
   taskNumber: number;
   description: string;

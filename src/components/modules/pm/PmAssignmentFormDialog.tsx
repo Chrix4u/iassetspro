@@ -9,16 +9,12 @@ import {
   clearPmAssignmentConditionBinding,
   formatPmAssignmentEstimatedTime,
   pmAssignmentDraftFromApi,
-  pmAssignmentDraftFromApi,
-  pmAssignmentDraftFromApi,
   pmAssignmentDraftFromMaster,
   pmAssignmentTaskPayload,
   totalPmAssignmentEstimatedMinutes,
   validatePmAssignmentTaskDraft,
   type PmAssignmentTaskDraft,
 } from '@/lib/pm-assignment-draft';
-import type { PmAssignmentTargetGroup } from '@/lib/pm-assignment-target-list';
-import type { PmAssignmentTargetGroup } from '@/lib/pm-assignment-target-list';
 import type { PmAssignmentTargetGroup } from '@/lib/pm-assignment-target-list';
 import { PmAssignmentTaskPlanner } from '@/components/modules/pm/PmAssignmentTaskPlanner';
 import { PmTargetTreePicker, type PmTargetAsset } from '@/components/modules/pm/PmTargetTreePicker';
@@ -63,30 +59,6 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
   React.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
-
-  React.useEffect(() => {
-    if (!open || !editTarget) return;
-    const editAsset: PmTargetAsset = { id: editTarget.asset.id, name: editTarget.asset.name, assetTag: editTarget.asset.assetTag || undefined };
-    setAssetCache((current) => ({ ...current, [editAsset.id]: editAsset }));
-    setAssetId(editTarget.assetId);
-    setComponentId(editTarget.componentId);
-    setTechnicalPath([]);
-    setTargetConfirmed(true);
-    setTemplateId('');
-    setTasks(editTarget.assignments.map((assignment, index) => pmAssignmentDraftFromApi(assignment, index)));
-  }, [editTarget, open]);
-
-  React.useEffect(() => {
-    if (!open || !editTarget) return;
-    const editAsset: PmTargetAsset = { id: editTarget.asset.id, name: editTarget.asset.name, assetTag: editTarget.asset.assetTag || undefined };
-    setAssetCache((current) => ({ ...current, [editAsset.id]: editAsset }));
-    setAssetId(editTarget.assetId);
-    setComponentId(editTarget.componentId);
-    setTechnicalPath([]);
-    setTargetConfirmed(true);
-    setTemplateId('');
-    setTasks(editTarget.assignments.map((assignment, index) => pmAssignmentDraftFromApi(assignment, index)));
-  }, [editTarget, open]);
 
   React.useEffect(() => {
     if (!open || !editTarget) return;
@@ -237,8 +209,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
             <span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
               {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               {editTarget ? 'Update PM Schedule' : `Create PM Assignment${tasks.length === 1 ? '' : 's'}`}
             </Button>

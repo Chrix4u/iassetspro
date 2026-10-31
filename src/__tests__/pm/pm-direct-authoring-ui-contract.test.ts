@@ -11,6 +11,7 @@ const plannerSource = source('src/components/modules/pm/PmAssignmentTaskPlanner.
 const rowSource = source('src/components/modules/pm/PmAssignmentTaskCard.tsx');
 const targetSource = source('src/components/modules/pm/PmTargetTreePicker.tsx');
 const maintenanceSource = source('src/components/modules/MaintenancePages.tsx');
+const planningSource = source('src/components/modules/pm/PmPlanningPage.tsx');
 
 describe('direct PM assignment authoring UI contract', () => {
   it('keeps direct part-level assignments while restoring template-or-library task authoring', () => {
@@ -116,9 +117,12 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(targetSource).toContain('space-y-');
   });
 
-  it('keeps direct assignments primary while retaining legacy PM schedule history', () => {
-    expect(maintenanceSource).toContain('PmAssignmentFormDialog');
-    expect(maintenanceSource).toContain('New PM Assignment');
-    expect(maintenanceSource).toContain('Legacy PM Schedules');
+  it('keeps direct assignments primary while removing legacy PM schedule history from the planning page', () => {
+    expect(maintenanceSource).toContain('PmPlanningPage');
+    expect(planningSource).toContain('PmAssignmentFormDialog');
+    expect(planningSource).toContain('New PM Assignment');
+    expect(planningSource).toContain("api.get('/api/pm-assignments?isActive=true')");
+    expect(maintenanceSource).not.toContain('Legacy PM Schedules');
+    expect(planningSource).not.toContain('Legacy PM Schedules');
   });
 });

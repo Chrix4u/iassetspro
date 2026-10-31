@@ -43,6 +43,13 @@ describe('PM assignment target list projection', () => {
     expect(groups.find((group) => group.componentId === null)?.targetName).toBe('Crusher 1');
   });
 
+  it('can filter whole-machine targets separately from component targets', () => {
+    const groups = groupPmAssignmentTargets([base({ id: 'whole-filter', componentId: null, component: null }), base({ id: 'part-filter' })]);
+    const filtered = filterPmAssignmentTargets(groups, { componentId: '__machine__' });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].componentId).toBeNull();
+  });
+
   it('filters a target when one task matches but retains all target tasks for View', () => {
     const groups = groupPmAssignmentTargets([
       base({ id: 'tbm' }),

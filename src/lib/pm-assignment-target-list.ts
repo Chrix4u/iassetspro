@@ -153,7 +153,11 @@ export function filterPmAssignmentTargets(
   const search = filters.search?.trim().toLowerCase() || '';
   return groups.filter((group) => {
     if (filters.assetId && group.assetId !== filters.assetId) return false;
-    if (filters.componentId && group.componentId !== filters.componentId) return false;
+    if (filters.componentId) {
+      if (filters.componentId === '__machine__') {
+        if (group.componentId !== null) return false;
+      } else if (group.componentId !== filters.componentId) return false;
+    }
     if (search) {
       const haystack = [
         group.targetName,

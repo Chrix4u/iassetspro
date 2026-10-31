@@ -181,6 +181,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
       open={open}
       onOpenChange={onOpenChange}
       size="extra-wide"
+      desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
       title="New PM Assignment"
       description="Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions."
       footer={(

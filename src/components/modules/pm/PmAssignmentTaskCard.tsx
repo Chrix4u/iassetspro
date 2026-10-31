@@ -54,8 +54,10 @@ const CONDITION_OPERATORS = [
 ] as const;
 
 const compactField = 'min-w-0 space-y-1';
+const thirdWidthField = `${compactField} col-span-2 md:col-span-1`;
+const halfWidthField = `${compactField} col-span-3 md:col-span-1`;
 const compactLabel = 'text-[10px] font-semibold uppercase tracking-wide text-muted-foreground';
-const compactControl = 'h-8 text-xs';
+const compactControl = 'h-8 w-full min-w-0 px-2 text-xs';
 
 function conditionKey(source: PmAssignmentConditionSourceOption) {
   return `${source.sourceType}|||${source.sourceId}|||${source.metric}`;
@@ -131,8 +133,8 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
         </div>
       </div>
 
-      <div data-testid="pm-assignment-task-planning-grid" className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
-        <div className={compactField}>
+      <div data-testid="pm-assignment-task-planning-grid" className="mt-2 grid grid-cols-6 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
+        <div className={thirdWidthField}>
           <Label className={compactLabel}>Frequency Type</Label>
           <Select value={task.frequencyType} onValueChange={(value) => setFrequencyType(value as PmAssignmentTaskDraft['frequencyType'])} disabled={cadenceDisabled}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -143,7 +145,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={compactField}>
+        <div className={thirdWidthField}>
           <Label className={compactLabel}>Frequency Unit</Label>
           {task.frequencyType === 'meter' && !cadenceDisabled ? (
             <Select
@@ -171,12 +173,12 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           {task.frequencyType === 'meter' && !sourcesLoading && meters.length === 0 && !cadenceDisabled && <p className="text-[9px] text-amber-600">No meter is configured for this asset.</p>}
         </div>
 
-        <div className={compactField}>
-          <Label className={compactLabel}>Value or Interval</Label>
+        <div className={thirdWidthField}>
+          <Label className={compactLabel}>Interval</Label>
           <Input className={compactControl} type="number" min="0.000001" step={task.pmType === 'tbm' ? '1' : 'any'} value={task.value} onChange={(event) => onChange({ value: event.target.value })} disabled={cadenceDisabled} />
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>PM Type</Label>
           <Select value={task.pmType} onValueChange={(value) => setPmType(value as PmAssignmentTaskDraft['pmType'])}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -189,7 +191,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>Activity Mode</Label>
           <Select value={task.activityMode} onValueChange={(activityMode) => onChange({ activityMode: activityMode as PmAssignmentTaskDraft['activityMode'] })}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -197,7 +199,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>Inspection Type</Label>
           <Select value={task.inspectionType} onValueChange={(inspectionType) => onChange({ inspectionType: inspectionType as PmAssignmentTaskDraft['inspectionType'] })}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -205,19 +207,29 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>Est. Minutes</Label>
           <Input className={compactControl} type="number" min="0" step="1" value={task.estimatedMinutes} onChange={(event) => onChange({ estimatedMinutes: event.target.value })} placeholder="0" />
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>Lead Days</Label>
           <Input className={compactControl} type="number" min="0" step="1" value={usesSubDayTime ? '0' : task.leadDays} disabled={usesSubDayTime || task.pmType === 'fbm'} onChange={(event) => onChange({ leadDays: event.target.value })} />
         </div>
 
-        <div className={compactField}>
+        <div className={halfWidthField}>
           <Label className={compactLabel}>Next Due Date</Label>
-          <Input className={compactControl} type={usesSubDayTime ? 'datetime-local' : 'date'} value={task.nextDueDate} onChange={(event) => onChange({ nextDueDate: event.target.value })} disabled={task.pmType !== 'tbm'} />
+          <Input
+            className={`${compactControl} cursor-pointer`}
+            type={usesSubDayTime ? 'datetime-local' : 'date'}
+            value={task.nextDueDate}
+            onClick={(event) => {
+              const input = event.currentTarget as HTMLInputElement & { showPicker?: () => void };
+              if (typeof input.showPicker === 'function') input.showPicker();
+            }}
+            onChange={(event) => onChange({ nextDueDate: event.target.value })}
+            disabled={task.pmType !== 'tbm'}
+          />
         </div>
       </div>
 

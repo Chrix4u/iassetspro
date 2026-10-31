@@ -27,7 +27,7 @@ describe('direct PM assignment authoring UI contract', () => {
     for (const label of [
       'Frequency Type',
       'Frequency Unit',
-      'Value or Interval',
+      'Interval',
       'PM Type',
       'Activity Mode',
       'Inspection Type',
@@ -35,6 +35,7 @@ describe('direct PM assignment authoring UI contract', () => {
       'Lead Days',
       'Next Due Date',
     ]) expect(rowSource).toContain(label);
+    expect(rowSource).not.toContain('Value or Interval');
     expect(rowSource).toContain('Running');
     expect(rowSource).toContain('Standstill');
     expect(rowSource).toContain('TBM');
@@ -42,6 +43,25 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(rowSource).toContain('CBM');
     expect(rowSource).toContain('FBM');
     expect(plannerSource).toContain('Total estimated time');
+  });
+
+  it('uses a wider desktop assignment modal so dense planning controls do not collide', () => {
+    expect(formSource).toContain('desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"');
+  });
+
+  it('uses compact mobile rows, a three-column tablet grid, and a full desktop planning row', () => {
+    expect(rowSource).toContain('grid-cols-6 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9');
+    expect(rowSource).toContain("const thirdWidthField = `${compactField} col-span-2 md:col-span-1`");
+    expect(rowSource).toContain("const halfWidthField = `${compactField} col-span-3 md:col-span-1`");
+  });
+
+  it('keeps compact controls inside narrow mobile grid cells', () => {
+    expect(rowSource).toContain("const compactControl = 'h-8 w-full min-w-0 px-2 text-xs'");
+  });
+
+  it('opens the native due-date picker when the date field itself is clicked', () => {
+    expect(rowSource).toContain('showPicker');
+    expect(rowSource).toContain('cursor-pointer');
   });
 
   it('repeats the live total estimated time beside the final create action', () => {

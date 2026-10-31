@@ -12,6 +12,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { displayDate } from '@/components/ui/datetime-picker';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -54,10 +55,16 @@ const CONDITION_OPERATORS = [
 ] as const;
 
 const compactField = 'min-w-0 space-y-1';
-const thirdWidthField = `${compactField} col-span-2 md:col-span-1`;
-const halfWidthField = `${compactField} col-span-3 md:col-span-1`;
+const frequencyTypeField = `${compactField} col-span-5 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const frequencyUnitField = `${compactField} col-span-5 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const intervalField = `${compactField} col-span-2 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const standardField = `${compactField} col-span-6 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const inspectionTypeField = `${compactField} col-span-7 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const estimatedMinutesField = `${compactField} col-span-5 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const leadDaysField = `${compactField} col-span-4 md:col-span-4 lg:col-span-1 xl:col-span-1`;
+const nextDueDateField = `${compactField} col-span-8 md:col-span-4 lg:col-span-2 xl:col-span-1`;
 const compactLabel = 'text-[10px] font-semibold uppercase tracking-wide text-muted-foreground';
-const compactControl = 'h-8 w-full min-w-0 px-2 text-xs';
+const compactControl = 'h-9 w-full min-w-0 px-2 text-xs';
 
 function conditionKey(source: PmAssignmentConditionSourceOption) {
   return `${source.sourceType}|||${source.sourceId}|||${source.metric}`;
@@ -73,6 +80,10 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
   const cadenceDisabled = task.pmType === 'cbm' || task.pmType === 'fbm';
   const interval = Number(task.value);
   const nextMeterDue = selectedMeter && Number.isFinite(interval) && interval > 0 ? Number(selectedMeter.currentValue) + interval : null;
+  const dueTime = task.nextDueDate.includes('T') ? task.nextDueDate.split('T')[1]?.slice(0, 5) || '' : '';
+  const dueDateDisplay = task.nextDueDate
+    ? `${displayDate(task.nextDueDate)}${usesSubDayTime ? ` ${dueTime || '00:00'}` : ''}`
+    : usesSubDayTime ? 'dd/mm/yyyy hh:mm' : 'dd/mm/yyyy';
 
   useEffect(() => {
     if (task.pmType !== 'ubm' || task.assetMeterId || sourcesLoading || meters.length !== 1) return;
@@ -133,8 +144,8 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
         </div>
       </div>
 
-      <div data-testid="pm-assignment-task-planning-grid" className="mt-2 grid grid-cols-6 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
-        <div className={thirdWidthField}>
+      <div data-testid="pm-assignment-task-planning-grid" className="mt-2 grid grid-cols-12 gap-2 md:grid-cols-12 lg:grid-cols-4 xl:grid-cols-[1.15fr_1.1fr_.55fr_1.45fr_1.15fr_1.1fr_.75fr_.65fr_1.8fr]">
+        <div className={frequencyTypeField}>
           <Label className={compactLabel}>Frequency Type</Label>
           <Select value={task.frequencyType} onValueChange={(value) => setFrequencyType(value as PmAssignmentTaskDraft['frequencyType'])} disabled={cadenceDisabled}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -145,7 +156,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={thirdWidthField}>
+        <div className={frequencyUnitField}>
           <Label className={compactLabel}>Frequency Unit</Label>
           {task.frequencyType === 'meter' && !cadenceDisabled ? (
             <Select
@@ -173,12 +184,12 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           {task.frequencyType === 'meter' && !sourcesLoading && meters.length === 0 && !cadenceDisabled && <p className="text-[9px] text-amber-600">No meter is configured for this asset.</p>}
         </div>
 
-        <div className={thirdWidthField}>
+        <div className={intervalField}>
           <Label className={compactLabel}>Interval</Label>
           <Input className={compactControl} type="number" min="0.000001" step={task.pmType === 'tbm' ? '1' : 'any'} value={task.value} onChange={(event) => onChange({ value: event.target.value })} disabled={cadenceDisabled} />
         </div>
 
-        <div className={halfWidthField}>
+        <div className={standardField}>
           <Label className={compactLabel}>PM Type</Label>
           <Select value={task.pmType} onValueChange={(value) => setPmType(value as PmAssignmentTaskDraft['pmType'])}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -191,7 +202,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={halfWidthField}>
+        <div className={standardField}>
           <Label className={compactLabel}>Activity Mode</Label>
           <Select value={task.activityMode} onValueChange={(activityMode) => onChange({ activityMode: activityMode as PmAssignmentTaskDraft['activityMode'] })}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -199,7 +210,7 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={halfWidthField}>
+        <div className={inspectionTypeField}>
           <Label className={compactLabel}>Inspection Type</Label>
           <Select value={task.inspectionType} onValueChange={(inspectionType) => onChange({ inspectionType: inspectionType as PmAssignmentTaskDraft['inspectionType'] })}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
@@ -207,29 +218,36 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           </Select>
         </div>
 
-        <div className={halfWidthField}>
+        <div className={estimatedMinutesField}>
           <Label className={compactLabel}>Est. Minutes</Label>
           <Input className={compactControl} type="number" min="0" step="1" value={task.estimatedMinutes} onChange={(event) => onChange({ estimatedMinutes: event.target.value })} placeholder="0" />
         </div>
 
-        <div className={halfWidthField}>
+        <div className={leadDaysField}>
           <Label className={compactLabel}>Lead Days</Label>
           <Input className={compactControl} type="number" min="0" step="1" value={usesSubDayTime ? '0' : task.leadDays} disabled={usesSubDayTime || task.pmType === 'fbm'} onChange={(event) => onChange({ leadDays: event.target.value })} />
         </div>
 
-        <div className={halfWidthField}>
+        <div className={nextDueDateField}>
           <Label className={compactLabel}>Next Due Date</Label>
-          <Input
-            className={`${compactControl} cursor-pointer`}
-            type={usesSubDayTime ? 'datetime-local' : 'date'}
-            value={task.nextDueDate}
-            onClick={(event) => {
-              const input = event.currentTarget as HTMLInputElement & { showPicker?: () => void };
-              if (typeof input.showPicker === 'function') input.showPicker();
-            }}
-            onChange={(event) => onChange({ nextDueDate: event.target.value })}
-            disabled={task.pmType !== 'tbm'}
-          />
+          <div className={`relative h-9 w-full min-w-0 rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 ${task.pmType !== 'tbm' ? 'opacity-50' : ''}`}>
+            <div aria-hidden="true" className="pointer-events-none flex h-9 min-w-0 items-center truncate px-2 text-xs">
+              {dueDateDisplay}
+            </div>
+            <input
+              aria-label="Next Due Date"
+              className="absolute inset-0 h-9 w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+              lang="en-GB"
+              type={usesSubDayTime ? 'datetime-local' : 'date'}
+              value={task.nextDueDate}
+              onClick={(event) => {
+                const input = event.currentTarget as HTMLInputElement & { showPicker?: () => void };
+                if (typeof input.showPicker === 'function') input.showPicker();
+              }}
+              onChange={(event) => onChange({ nextDueDate: event.target.value })}
+              disabled={task.pmType !== 'tbm'}
+            />
+          </div>
         </div>
       </div>
 

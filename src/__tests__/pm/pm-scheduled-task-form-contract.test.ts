@@ -1,63 +1,36 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const source = readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
-const start = source.indexOf('export function PmSchedulesPage()');
-const end = source.indexOf('export function MaintenanceDashboardPage()', start);
-const page = source.slice(start, end > start ? end : source.length);
-
-describe('PM task-level schedule form contract', () => {
-  it('uses the reusable task-level planner and serializes ordered Scheduled Tasks', () => {
-    expect(source).toContain("import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner'");
-    expect(source).toContain("pmScheduleTaskDraftFromApi");
-    expect(source).toContain("pmScheduleTaskDraftFromMaster");
-    expect(source).toContain("pmScheduleTaskPayload");
-    expect(page).toContain('const [formScheduledTasks, setFormScheduledTasks]');
-    expect(page).toContain('<PmScheduleTaskPlanner');
-    expect(page).toContain('payload.scheduledTasks = formScheduledTasks.map((task, index) => pmScheduleTaskPayload(task, index))');
-    expect(page).not.toContain('inlineTasks:');
-    expect(page).not.toContain('requiredPartsText');
+const source=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('canonical direct PM assignment form contract',()=>{
+  const form=source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
+  const planner=source('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
+  it('uses the reusable task planner and serializes ordered direct assignments',()=>{
+    expect(form).toContain('PmAssignmentTaskPlanner');
+    expect(form).toContain('tasks.map');
+    expect(form).toContain('pmAssignmentTaskPayload');
+    expect(form).toContain("api.post('/api/pm-assignments'");
   });
-
-  it('does not author Schedule Description or header cadence for a new task-level schedule', () => {
-    expect(page).toContain('const isLegacyScheduleEdit =');
-    expect(page).toContain('{!isLegacyScheduleEdit ? (');
-    expect(page).toContain('Legacy schedule compatibility mode');
-    expect(page).not.toContain('Describe the maintenance tasks...');
-    expect(page).toContain('Each task is evaluated independently. Recurrence advances only after verified planner closeout');
-    expect(page).toContain('technician assignment and work-order priority are set on the generated work order, not on this schedule.');
+  it('authors recurrence on each task rather than a schedule header',()=>{
+    expect(form).not.toContain('formFreqType');
+    expect(form).not.toContain('Schedule Description');
+    expect(planner).toContain('PmAssignmentTaskCard');
   });
-
-  it('requires one or more scheduled Task Library records on the task-level path', () => {
-    expect(page).toContain('if (!isLegacyScheduleEdit && formScheduledTasks.length === 0)');
-    expect(page).toContain("toast.error('Add at least one Task Library record to this schedule')");
+  it('requires at least one Task Library record',()=>{
+    expect(form).toContain('tasks.length === 0');
+    expect(form).toContain('add at least one Task Library task');
   });
-
-  it('seeds template starters from permanent Task Masters instead of copied checklist text', () => {
-    expect(page).toContain('task.pmTaskId && task.masterTaskNumber !== null && task.discipline');
-    expect(page).toContain('pmScheduleTaskDraftFromMaster({');
-    expect(page).toContain('id: task.pmTaskId');
-    expect(page).toContain('taskNumber: task.masterTaskNumber');
-    expect(page).not.toContain('pmScheduleTaskDraft(task, index)');
+  it('loads template starters from Task Masters',()=>{
+    expect(form).toContain("api.get('/api/pm-templates?active=true')");
+    expect(form).toContain('pmAssignmentDraftFromMaster');
   });
-
-  it('loads persisted Scheduled Tasks for task-level edits and leaves legacy schedules in compatibility mode', () => {
-    expect(page).toContain('detail.scheduledTasks');
-    expect(page).toContain('pmScheduleTaskDraftFromApi');
-    expect(page).toContain('isLegacyScheduleEdit');
-    expect(page).toContain('Legacy header cadence');
+  it('loads persisted direct assignments for target edits and fixes target identity',()=>{
+    expect(form).toContain('pmAssignmentDraftFromApi');
+    expect(form).toContain('editTarget.assignments.map');
+    expect(form).toContain('disabled={Boolean(editTarget)}');
   });
-
-  it('locks the asset identity while editing an existing schedule', () => {
-    expect(page).toContain('disabled={Boolean(editItem)}');
-    expect(page).toContain('Asset is fixed after schedule creation.');
-  });
-
-  it('uses the shipped task engines for task-level automatic generation', () => {
-    expect(page).toContain('Auto-generate Work Orders');
-    expect(page).toContain('When each task becomes due');
-    expect(page).toContain('Each task is evaluated independently. Recurrence advances only after verified planner closeout');
-    expect(page).not.toContain('Task-level automation is staged safely');
-    expect(page).not.toContain('Legacy automatic generation stays disabled');
+  it('updates a target atomically through the target endpoint',()=>{
+    expect(form).toContain("api.patch('/api/pm-assignments/target'");
+    expect(form).toContain('assignmentId');
   });
 });

@@ -1,5 +1,5 @@
 import type { PmTaskType } from '@/lib/pm-task';
-import type { PmActivityMode, PmAssignmentType, PmInspectionType } from '@/lib/pm-assignment';
+import { normalizePmInspectionType, type PmActivityMode, type PmAssignmentType, type PmInspectionType } from '@/lib/pm-assignment';
 
 export const PM_ASSIGNMENT_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
 export const PM_ASSIGNMENT_FREQUENCY_TYPES = ['time_day', 'meter'] as const;
@@ -36,6 +36,7 @@ export interface PmAssignmentConditionSourceOption {
 
 export interface PmAssignmentTaskDraft {
   clientId: string;
+  assignmentId?: string;
   pmTaskId: string;
   taskNumber: number;
   description: string;
@@ -98,6 +99,40 @@ export function pmAssignmentDraftFromMaster(master: PmAssignmentTaskMaster, clie
     conditionUnit: '',
     evaluationCadenceMinutes: '',
     isActive: true,
+  };
+}
+
+export function pmAssignmentDraftFromApi(assignment: any, index = 0): PmAssignmentTaskDraft {
+  const pmType = String(assignment.pmType || assignment.maintenanceMode || 'tbm') as PmAssignmentType;
+  const subDay = pmType === 'tbm' && (assignment.frequencyUnit === 'minutes' || assignment.frequencyUnit === 'hours');
+  const rawDue = assignment.nextDueDate ? String(assignment.nextDueDate) : '';
+  const nextDueDate = rawDue ? rawDue.slice(0, subDay ? 16 : 10) : '';
+  return {
+    clientId: `${assignment.id || assignment.pmTaskId || 'assignment'}:edit:${index}`,
+    assignmentId: assignment.id ? String(assignment.id) : undefined,
+    pmTaskId: String(assignment.pmTaskId || assignment.pmTask?.id || ''),
+    taskNumber: Number(assignment.pmTask?.taskNumber || 0),
+    description: String(assignment.pmTask?.description || ''),
+    taskType: String(assignment.pmTask?.taskType || 'mechanical') as PmTaskType,
+    frequencyType: pmType === 'ubm' ? 'meter' : 'time_day',
+    frequencyUnit: String(assignment.frequencyUnit || assignment.assetMeter?.unit || (pmType === 'tbm' ? 'months' : '')),
+    value: assignment.frequencyInterval == null ? '' : String(assignment.frequencyInterval),
+    pmType,
+    activityMode: String(assignment.activityMode || 'inspection') as PmActivityMode,
+    inspectionType: normalizePmInspectionType(assignment.equipmentState || assignment.inspectionType) || 'standstill',
+    assetMeterId: String(assignment.assetMeterId || assignment.assetMeter?.id || ''),
+    nextDueDate,
+    estimatedMinutes: String(assignment.estimatedMinutes ?? 0),
+    leadDays: String(assignment.leadDays ?? 0),
+    conditionSourceType: (assignment.conditionSourceType || '') as PmAssignmentTaskDraft['conditionSourceType'],
+    conditionSourceId: String(assignment.conditionSourceId || ''),
+    conditionMetric: String(assignment.conditionMetric || ''),
+    conditionOperator: (assignment.conditionOperator || '>=') as PmAssignmentConditionOperator,
+    conditionThreshold: assignment.conditionThreshold == null ? '' : String(assignment.conditionThreshold),
+    conditionThresholdMax: assignment.conditionThresholdMax == null ? '' : String(assignment.conditionThresholdMax),
+    conditionUnit: String(assignment.conditionUnit || ''),
+    evaluationCadenceMinutes: assignment.evaluationCadenceMinutes == null ? '' : String(assignment.evaluationCadenceMinutes),
+    isActive: assignment.isActive !== false,
   };
 }
 

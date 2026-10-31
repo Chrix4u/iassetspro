@@ -1,16 +1,15 @@
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const maintenancePages = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
-
-describe('PM schedule lead-days form contract', () => {
-  it('preserves an explicit zero lead-days value when loading a schedule for edit', () => {
-    expect(maintenancePages).not.toContain("setFormLeadDays(String(item.leadDays || 3))");
-    expect(maintenancePages).toContain("setFormLeadDays(String(item.leadDays ?? 3))");
+const source=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('PM lead-days form contract',()=>{
+  it('preserves explicit zero lead days when loading an assignment for edit',()=>{
+    const draft=source('src/lib/pm-assignment-draft.ts');
+    expect(draft).toContain("leadDays: String(assignment.leadDays ?? 0)");
   });
-
-  it('does not coerce an explicit zero back to the three-day default on save', () => {
-    expect(maintenancePages).not.toContain("parseInt(formLeadDays, 10) || 3");
-    expect(maintenancePages).toContain("formLeadDays.trim() === '' ? 3 : parseInt(formLeadDays, 10)");
+  it('serializes zero rather than replacing it with a default',()=>{
+    const draft=source('src/lib/pm-assignment-draft.ts');
+    expect(draft).toContain('leadDays: subDay ? 0 : wholeOrZero(task.leadDays)');
+    expect(draft).not.toContain('Number(task.leadDays) || 3');
   });
 });

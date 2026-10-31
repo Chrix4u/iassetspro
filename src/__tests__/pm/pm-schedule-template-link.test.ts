@@ -1,43 +1,14 @@
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const listRoute = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
-const itemRoute = fs.readFileSync('src/app/api/pm-schedules/[id]/route.ts', 'utf8');
-const ui = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
-const dueRoute = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'utf8');
-
-describe('PM schedule template linkage', () => {
-  it('accepts, validates, persists and returns templateId on create', () => {
-    expect(listRoute).toContain('templateId,');
-    expect(listRoute).toContain("where: { id: templateId }");
-    expect(listRoute).toContain("error: 'PM template must be active and contain at least one active task'");
-    expect(listRoute).toContain('let effectiveTemplateId = templateId || null');
-    expect(listRoute).toContain('templateId: effectiveTemplateId');
-    expect(listRoute).toContain('if (inlineTasksProvided)');
-    expect(listRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
-  });
-
-  it('allows template assignment changes on schedule update', () => {
-    expect(itemRoute).toContain("'templateId'");
-    expect(itemRoute).toContain('body.templateId !== undefined');
-    expect(itemRoute).toContain("error: 'PM template must be active and contain at least one active task'");
-    expect(itemRoute).toContain("template: { select: { id: true, title: true, type: true, _count: { select: { tasks: { where: { isActive: true } } } } } }");
-  });
-
-  it('uses templates as Task Master starters for task-level schedules while retaining the template link', () => {
-    expect(ui).toContain("const [formTemplateId, setFormTemplateId] = useState('')");
-    expect(ui).toContain("api.get('/api/pm-templates?active=true')");
-    expect(ui).toContain('templateId: formTemplateId || null');
-    expect(ui).toContain('Optional — seed tasks from a PM template...');
-    expect(ui).toContain('Optional starter only; each scheduled task keeps its own planning settings.');
-    expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
-    expect(ui).toContain('id: task.pmTaskId');
-    expect(ui).toContain('taskNumber: task.masterTaskNumber');
-    expect(ui).toContain("Template · {s.template.title}");
-  });
-
-  it('keeps due-work-order generation connected to template tasks', () => {
-    expect(dueRoute).toContain('schedule.template?.tasks');
-    expect(dueRoute).toContain('Task Checklist:');
+const source=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('PM template starter linkage',()=>{
+  it('loads active templates as Task Library starters for canonical direct PM assignments',()=>{
+    const form=source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
+    expect(form).toContain("api.get('/api/pm-templates?active=true')");
+    expect(form).toContain('PmAssignmentTaskPlanner');
+    expect(form).toContain('setTasks(rows)');
+    expect(form).toContain("api.post('/api/pm-assignments'");
+    expect(form).not.toContain("api.post('/api/pm-schedules'");
   });
 });

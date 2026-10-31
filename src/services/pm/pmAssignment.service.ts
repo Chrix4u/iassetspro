@@ -260,3 +260,101 @@ export async function updatePmAssignment(client: PmAssignmentClient, args: { id:
   const data = await buildPersistenceData(client, args.plantId, args.input);
   return client.pmScheduleTask.update({ where: { id: args.id }, data });
 }
+
+type PmAssignmentTargetTransactionHost = {
+  $transaction: <T>(callback: (tx: Prisma.TransactionClient) => Promise<T>) => Promise<T>;
+};
+
+async function validatePmAssignmentTarget(
+  tx: Prisma.TransactionClient,
+  plantId: string,
+  assetId: string,
+  componentId: string | null,
+) {
+  const asset = await tx.asset.findUnique({ where: { id: assetId }, select: { id: true, plantId: true } });
+  if (!asset || asset.plantId !== plantId) throw new Error('Asset is unavailable in the selected plant');
+  if (componentId) {
+    const component = await tx.componentRegistry.findUnique({ where: { id: componentId }, select: { id: true, assetId: true } });
+    if (!component || component.assetId !== assetId) throw new Error('Selected component must belong to the selected asset/machine');
+  }
+}
+
+export async function replacePmAssignmentTarget(
+  client: PmAssignmentTargetTransactionHost,
+  args: { plantId: string; actorId: string; assetId: string; componentId: string | null; assignments: unknown[] },
+) {
+  if (!args.assetId.trim()) throw new Error('Asset is required');
+  if (!Array.isArray(args.assignments) || args.assignments.length === 0) throw new Error('At least one PM assignment is required');
+
+  return client.$transaction(async (tx) => {
+    await validatePmAssignmentTarget(tx, args.plantId, args.assetId, args.componentId);
+    const current = await tx.pmScheduleTask.findMany({
+      where: { scheduleId: null, assetId: args.assetId, componentId: args.componentId, isActive: true },
+    });
+    const currentById = new Map(current.map((row) => [row.id, row]));
+    const retained = new Set<string>();
+    const saved = [];
+
+    for (const raw of args.assignments) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PM assignment row is invalid');
+      const row = raw as Record<string, unknown>;
+      const id = typeof row.id === 'string' && row.id.trim() ? row.id.trim() : null;
+      const input = { ...row, assetId: args.assetId, componentId: args.componentId, isActive: true };
+      if (id) {
+        const existing = currentById.get(id);
+        if (!existing) throw new Error(`PM assignment ${id} does not belong to this PM target`);
+        const updated = await updatePmAssignment(tx as unknown as PmAssignmentClient, {
+          id, plantId: args.plantId, actorId: args.actorId, input,
+        });
+        await tx.auditLog.create({ data: {
+          userId: args.actorId, action: 'update', entityType: 'pm_assignment', entityId: id,
+          oldValues: JSON.stringify({ pmTaskId: existing.pmTaskId, pmType: existing.pmType, isActive: existing.isActive }),
+          newValues: JSON.stringify({ pmTaskId: updated.pmTaskId, pmType: updated.pmType, isActive: updated.isActive }),
+        } });
+        retained.add(id);
+        saved.push(updated);
+      } else {
+        const created = await createPmAssignment(tx as unknown as PmAssignmentClient, {
+          plantId: args.plantId, actorId: args.actorId, input,
+        });
+        await tx.auditLog.create({ data: {
+          userId: args.actorId, action: 'create', entityType: 'pm_assignment', entityId: created.id,
+          newValues: JSON.stringify({ assetId: created.assetId, componentId: created.componentId, pmTaskId: created.pmTaskId, pmType: created.pmType }),
+        } });
+        saved.push(created);
+      }
+    }
+
+    for (const existing of current) {
+      if (retained.has(existing.id)) continue;
+      await tx.pmScheduleTask.update({ where: { id: existing.id }, data: { isActive: false } });
+      await tx.auditLog.create({ data: {
+        userId: args.actorId, action: 'deactivate', entityType: 'pm_assignment', entityId: existing.id,
+        oldValues: JSON.stringify({ isActive: existing.isActive }), newValues: JSON.stringify({ isActive: false }),
+      } });
+    }
+    return saved;
+  });
+}
+
+export async function deactivatePmAssignmentTarget(
+  client: PmAssignmentTargetTransactionHost,
+  args: { plantId: string; actorId: string; assetId: string; componentId: string | null },
+) {
+  if (!args.assetId.trim()) throw new Error('Asset is required');
+  return client.$transaction(async (tx) => {
+    await validatePmAssignmentTarget(tx, args.plantId, args.assetId, args.componentId);
+    const current = await tx.pmScheduleTask.findMany({
+      where: { scheduleId: null, assetId: args.assetId, componentId: args.componentId, isActive: true },
+    });
+    for (const existing of current) {
+      await tx.pmScheduleTask.update({ where: { id: existing.id }, data: { isActive: false } });
+      await tx.auditLog.create({ data: {
+        userId: args.actorId, action: 'deactivate', entityType: 'pm_assignment', entityId: existing.id,
+        oldValues: JSON.stringify({ isActive: existing.isActive }), newValues: JSON.stringify({ isActive: false }),
+      } });
+    }
+    return { count: current.length };
+  });
+}
+

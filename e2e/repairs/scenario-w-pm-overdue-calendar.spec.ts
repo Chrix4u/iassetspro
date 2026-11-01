@@ -72,8 +72,7 @@ test('UAT-22: overdue PM appears in Calendar and notifies the assigned technicia
 
   const now = new Date();
   if (dueDate.getFullYear() !== now.getFullYear() || dueDate.getMonth() !== now.getMonth()) {
-    const previousMonthButton = page.locator('button').filter({ has: page.locator('svg.lucide-chevron-left') }).first();
-    await previousMonthButton.click();
+    await page.getByRole('button', { name: 'Previous month', exact: true }).click();
   }
 
   const scheduleButton = page.getByRole('button', { name: new RegExp(scheduleTitle) });

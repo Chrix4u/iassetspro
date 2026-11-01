@@ -140,47 +140,24 @@ test('UAT-23: PM plan governance preserves lifecycle locks and editable template
     expect(stillActive.data.data?.isActive).toBe(true);
     expect(stillActive.data.data?.tasks).toHaveLength(1);
 
-    // Deactivate the schedule from the real schedule UI, then template deactivation becomes valid.
-    await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    const scheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
-    await expect(scheduleRow).toBeVisible({ timeout: 15_000 });
-    await scheduleRow.hover();
-    await scheduleRow.getByRole('button').last().click();
-    const scheduleDeactivate = page.waitForResponse((response) =>
-      response.url().includes(`/api/pm-schedules/${scheduleId}`)
-      && response.request().method() === 'DELETE',
-    );
-    await page.getByRole('menuitem', { name: 'Deactivate', exact: true }).click();
-    expect((await scheduleDeactivate).status()).toBe(200);
+    // The canonical PM Planning page now presents direct target assignments only. This template is
+    // intentionally linked to a compatibility schedule, so verify its lifecycle through that schedule API.
+    // Once the linked schedule is inactive, template deactivation must become valid.
+    const scheduleDeactivate = await apiCall(plannerToken, 'DELETE', `/api/pm-schedules/${scheduleId}`);
+    expect(scheduleDeactivate.status).toBe(200);
 
     const scheduleState = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${scheduleId}`);
     expect(scheduleState.status).toBe(200);
     expect(scheduleState.data.data?.isActive).toBe(false);
 
-    // Inactive schedules remain governable: reactivate through the UI, verify, then deactivate again.
-    const inactiveScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
-    await inactiveScheduleRow.hover();
-    await inactiveScheduleRow.getByRole('button').last().click();
-    const scheduleReactivate = page.waitForResponse((response) =>
-      response.url().includes(`/api/pm-schedules/${scheduleId}`)
-      && response.request().method() === 'PUT'
-      && response.request().postDataJSON()?.isActive === true,
-    );
-    await page.getByRole('menuitem', { name: 'Activate', exact: true }).click();
-    expect((await scheduleReactivate).status()).toBe(200);
+    // Inactive compatibility schedules remain governable: reactivate, verify, then deactivate again.
+    const scheduleReactivate = await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${scheduleId}`, { isActive: true });
+    expect(scheduleReactivate.status).toBe(200);
     const reactivatedSchedule = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${scheduleId}`);
     expect(reactivatedSchedule.data.data?.isActive).toBe(true);
 
-    const reactivatedRow = page.getByRole('row').filter({ hasText: scheduleTitle });
-    await reactivatedRow.hover();
-    await reactivatedRow.getByRole('button').last().click();
-    const secondDeactivate = page.waitForResponse((response) =>
-      response.url().includes(`/api/pm-schedules/${scheduleId}`)
-      && response.request().method() === 'DELETE',
-    );
-    await page.getByRole('menuitem', { name: 'Deactivate', exact: true }).click();
-    expect((await secondDeactivate).status()).toBe(200);
+    const secondDeactivate = await apiCall(plannerToken, 'DELETE', `/api/pm-schedules/${scheduleId}`);
+    expect(secondDeactivate.status).toBe(200);
 
     await page.goto('/#/pm-templates');
     await page.getByPlaceholder('Search templates...').fill(templateTitle);

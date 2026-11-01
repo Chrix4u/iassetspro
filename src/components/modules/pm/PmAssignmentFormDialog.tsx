@@ -8,12 +8,14 @@ import type { PmTaskType } from '@/lib/pm-task';
 import {
   clearPmAssignmentConditionBinding,
   formatPmAssignmentEstimatedTime,
+  pmAssignmentDraftFromApi,
   pmAssignmentDraftFromMaster,
   pmAssignmentTaskPayload,
   totalPmAssignmentEstimatedMinutes,
   validatePmAssignmentTaskDraft,
   type PmAssignmentTaskDraft,
 } from '@/lib/pm-assignment-draft';
+import type { PmAssignmentTargetGroup } from '@/lib/pm-assignment-target-list';
 import { PmAssignmentTaskPlanner } from '@/components/modules/pm/PmAssignmentTaskPlanner';
 import { PmTargetTreePicker, type PmTargetAsset } from '@/components/modules/pm/PmTargetTreePicker';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
@@ -25,9 +27,10 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  editTarget?: PmAssignmentTargetGroup | null;
 }
 
-export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
+export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget = null }: Props) {
   const [assetId, setAssetId] = useState('');
   const [assetCache, setAssetCache] = useState<Record<string, PmTargetAsset>>({});
   const [componentId, setComponentId] = useState<string | null>(null);
@@ -57,11 +60,35 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
     if (!open) reset();
   }, [open, reset]);
 
+  React.useEffect(() => {
+    if (!open || !editTarget) return;
+    const editAsset: PmTargetAsset = { id: editTarget.asset.id, name: editTarget.asset.name, assetTag: editTarget.asset.assetTag || '' };
+    setAssetCache((current) => ({ ...current, [editAsset.id]: editAsset }));
+    setAssetId(editTarget.assetId);
+    setComponentId(editTarget.componentId);
+    setTechnicalPath([]);
+    setTargetConfirmed(true);
+    setTemplateId('');
+    setTasks(editTarget.assignments.map((assignment, index) => pmAssignmentDraftFromApi(assignment, index)));
+  }, [editTarget, open]);
+
   const fetchAssets = async (query: string) => {
-    const response = await api.get(`/api/assets?search=${encodeURIComponent(query)}&limit=100`);
-    if (!response.success || !Array.isArray(response.data)) return [];
+    const assets: any[] = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const response = await api.get(`/api/assets?search=${encodeURIComponent(query)}&page=${page}&limit=100`);
+      if (!response.success) break;
+      if (Array.isArray(response.data)) assets.push(...response.data);
+      const reportedTotalPages = Number(response.pagination?.totalPages || 1);
+      totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0
+        ? Math.min(reportedTotalPages, 1000)
+        : 1;
+      page += 1;
+    } while (page <= totalPages);
+
     const next: Record<string, PmTargetAsset> = {};
-    for (const item of response.data as any[]) {
+    for (const item of assets) {
       next[item.id] = {
         id: item.id,
         name: item.name,
@@ -78,7 +105,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
       };
     }
     setAssetCache((current) => ({ ...current, ...next }));
-    return (response.data as any[]).map((item) => ({ value: item.id, label: `${item.name} [${item.assetTag}]`, badge: item.status }));
+    return assets.map((item) => ({ value: item.id, label: `${item.name} [${item.assetTag}]`, badge: item.status }));
   };
 
   const fetchTemplates = async (query: string) => {
@@ -160,13 +187,15 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
 
     setSaving(true);
     try {
-      const response = await api.post('/api/pm-assignments', {
-        assetId,
-        componentId,
-        assignments: tasks.map(pmAssignmentTaskPayload),
-      });
-      if (!response.success) throw new Error(response.error || 'Failed to create PM assignments');
-      toast.success(`${tasks.length} PM assignment${tasks.length === 1 ? '' : 's'} created`);
+      const assignments = tasks.map((task) => ({
+        ...pmAssignmentTaskPayload(task),
+        ...(task.assignmentId ? { id: task.assignmentId } : {}),
+      }));
+      const response = editTarget
+        ? await api.patch('/api/pm-assignments/target', { assetId, componentId, assignments })
+        : await api.post('/api/pm-assignments', { assetId, componentId, assignments });
+      if (!response.success) throw new Error(response.error || (editTarget ? 'Failed to update PM schedule' : 'Failed to create PM assignments'));
+      toast.success(editTarget ? 'PM schedule updated' : `${tasks.length} PM assignment${tasks.length === 1 ? '' : 's'} created`);
       onOpenChange(false);
       onSaved?.();
     } catch (error) {
@@ -182,8 +211,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
       onOpenChange={onOpenChange}
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
-      title="New PM Assignment"
-      description="Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions."
+      title={editTarget ? 'Edit PM Schedule' : 'New PM Assignment'}
+      description={editTarget ? 'Update the tasks and planning conditions defined on this target. The asset and part remain fixed.' : 'Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions.'}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs" data-testid="pm-assignment-footer-total">
@@ -192,10 +221,10 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
             <span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
               {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Create PM Assignment{tasks.length === 1 ? '' : 's'}
+              {editTarget ? 'Update PM Schedule' : `Create PM Assignment${tasks.length === 1 ? '' : 's'}`}
             </Button>
           </div>
         </div>
@@ -210,24 +239,30 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved }: Props) {
             fetchOptions={fetchAssets}
             placeholder="Select machine / asset..."
             searchPlaceholder="Search asset name or tag..."
+            disabled={Boolean(editTarget)}
           />
         </div>
 
         <div>
           <Label className="mb-1.5 block text-xs font-semibold">PM Target</Label>
-          <PmTargetTreePicker
-            asset={asset}
-            componentId={componentId}
-            technicalPath={technicalPath}
-            onChange={(id, path) => {
-              if (id !== componentId) {
-                setTasks((current) => current.map(clearPmAssignmentConditionBinding));
-              }
-              setComponentId(id);
-              setTechnicalPath(path);
-              setTargetConfirmed(true);
-            }}
-          />
+          {editTarget ? (
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <p className="text-sm font-semibold">{editTarget.targetName}</p>
+              <p className="text-xs text-muted-foreground">{editTarget.component ? `${editTarget.component.componentCode || ''} · ${editTarget.asset.name}` : `${editTarget.asset.name} · Whole machine`}</p>
+            </div>
+          ) : (
+            <PmTargetTreePicker
+              asset={asset}
+              componentId={componentId}
+              technicalPath={technicalPath}
+              onChange={(id, path) => {
+                if (id !== componentId) setTasks((current) => current.map(clearPmAssignmentConditionBinding));
+                setComponentId(id);
+                setTechnicalPath(path);
+                setTargetConfirmed(true);
+              }}
+            />
+          )}
         </div>
 
         <div className="space-y-1.5 rounded-lg border bg-muted/10 p-3">

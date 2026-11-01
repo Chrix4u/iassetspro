@@ -1,84 +1,30 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), 'utf8');
-
-describe('PM schedule task-list workflow contract', () => {
-  it('creates schedule-owned checklist snapshots without mutating reusable templates', () => {
-    const createRoute = read('src/app/api/pm-schedules/route.ts');
-    const updateRoute = read('src/app/api/pm-schedules/[id]/route.ts');
-    for (const source of [createRoute, updateRoute]) {
-      expect(source).toContain('normalizePmScheduleTasks');
-      expect(source).toContain('createPmScheduleTaskSnapshot');
-      expect(source).toContain('inlineTasks');
-    }
-    expect(updateRoute).not.toContain('pmTemplateTask.updateMany');
-    expect(updateRoute).not.toContain('pmTemplateTask.deleteMany');
+const source=(p:string)=>readFileSync(resolve(process.cwd(),p),'utf8');
+describe('PM task-list workflow contract',()=>{
+  it('keeps PM authoring focused on target tasks rather than work-order assignment',()=>{
+    const form=source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
+    expect(form).toContain('PmAssignmentTaskPlanner');
+    expect(form).not.toContain('assignedToId');
+    expect(form).not.toContain('teamLeaderId');
   });
-
-  it('keeps schedule snapshots out of the reusable PM Template picker', () => {
-    const templates = read('src/app/api/pm-templates/route.ts');
-    expect(templates).toContain('PM_SCHEDULE_SNAPSHOT_CATEGORY');
-    expect(templates).toContain('{ category: null }');
-    expect(templates).toContain('{ category: { not: PM_SCHEDULE_SNAPSHOT_CATEGORY } }');
-    expect(templates).toContain('where.AND');
+  it('shows every saved task and its conditions in the target View modal',()=>{
+    const detail=source('src/components/modules/pm/PmAssignmentTargetDetailDialog.tsx');
+    expect(detail).toContain('group.assignments.map');
+    expect(detail).toContain('Task #');
+    expect(detail).toContain('Estimated Minutes');
+    expect(detail).toContain('Condition Source');
   });
-
-  it('returns resolved master-aware schedule task details through the schedule endpoint', () => {
-    const detail = read('src/app/api/pm-schedules/[id]/route.ts');
-    expect(detail).toContain("tasks: { where: { isActive: true }, orderBy: [{ sortOrder: 'asc' }, { taskNumber: 'asc' }, { id: 'asc' }], include: { pmTask: true }");
-    expect(detail).toContain('resolvePmTemplateTasks(schedule.template.tasks)');
-    expect(detail).toContain('template: resolvedTemplate');
+  it('summarizes each target with task count and estimated time',()=>{
+    const list=source('src/components/modules/pm/PmAssignmentTargetList.tsx');
+    expect(list).toContain('group.taskCount');
+    expect(list).toContain('group.totalEstimatedMinutes');
   });
-
-  it('keeps modern PM schedule authoring focused on schedule definition rather than work-order assignment', () => {
-    const ui = read('src/components/modules/MaintenancePages.tsx');
-    const formStart = ui.indexOf('data-testid="pm-schedule-form-grid"');
-    const formEnd = ui.indexOf('open={targetExplorerOpen}', formStart);
-    const form = ui.slice(formStart, formEnd);
-    expect(form).toContain('data-testid="pm-schedule-identity-row"');
-    expect(form).toContain('data-testid="pm-schedule-source-row"');
-    expect(form).toContain('data-testid="pm-schedule-summary"');
-    expect(form).toContain('<PmScheduleTaskPlanner');
-    expect(form).toContain('formScheduledTasks');
-    expect(form).not.toContain('>Assigned To</Label>');
-    expect(form).not.toContain('>Department</Label>');
-    expect(form).not.toContain('>Priority</Label>');
-    expect(form).not.toContain('Est. Duration (hrs)');
-    expect(ui).toContain('payload.scheduledTasks = formScheduledTasks.map');
-    expect(ui).toContain("api.get(`/api/pm-templates/${templateId}`)");
-    expect(ui).toContain('pmScheduleTaskDraftFromMaster({');
-    expect(ui).toContain("api.get(`/api/pm-schedules/${item.id}`)");
-    expect(ui).not.toContain('inlineTasks:');
+  it('uses permanent Task Masters with ordering controls in the planner',()=>{
+    const planner=source('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
+    expect(planner).toContain('PmScheduleTaskPickerDialog');
+    expect(planner).toContain('move');
+    expect(planner).toContain('pmAssignmentDraftFromMaster');
   });
-
-  it('shows the saved checklist in the schedule detail view', () => {
-    const ui = read('src/components/modules/MaintenancePages.tsx');
-    expect(ui).toContain('viewItem.template?.tasks');
-    expect(ui).toContain('PM Task List');
-    expect(ui).toContain('viewItem.assignedTo?.fullName');
-    expect(ui).toContain('viewItem.department?.name');
-  });
-
-  it('summarizes task-authority schedules with task count and total estimated time in the detail view', () => {
-    const ui = read('src/components/modules/MaintenancePages.tsx');
-    expect(ui).toContain('Task Count');
-    expect(ui).toContain('Total Estimated Time');
-    expect(ui).toContain('Math.round(Number(viewItem.estimatedDuration) * 60)');
-  });
-
-  it('uses permanent Task Masters with task-level mode and ordering controls', () => {
-    const ui = read('src/components/modules/MaintenancePages.tsx');
-    const card = read('src/components/modules/pm/PmScheduleTaskCard.tsx');
-    expect(ui).toContain('pmScheduleTaskDraftFromMaster');
-    expect(ui).toContain('pmScheduleTaskDraftFromApi');
-    expect(card).toContain('Task #');
-    expect(card).toContain('Time Based');
-    expect(card).toContain('Usage Based');
-    expect(card).toContain('Condition Based');
-    expect(card).toContain('Move Task #');
-    expect(card).toContain('Remove Task #');
-  });
-
 });

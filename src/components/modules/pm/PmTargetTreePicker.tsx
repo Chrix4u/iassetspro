@@ -5,13 +5,15 @@ import { MapPin, Network, Target } from 'lucide-react';
 import { MachineVisualExplorer, type MachineExplorerSelection } from '@/components/digital-twin/MachineVisualExplorer';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { Button } from '@/components/ui/button';
+import { formatFunctionalLocationDisplay } from '@/lib/functional-location/display';
+import type { FunctionalLocationProjection } from '@/types';
 
 export type PmTargetAsset = {
   id: string;
   name: string;
   assetTag: string;
   location?: string | null;
-  functionalLocation?: { path?: string | null; locationCode?: string | null } | null;
+  functionalLocation?: FunctionalLocationProjection | null;
   description?: string | null;
   imageUrl?: string | null;
   manufacturer?: string | null;
@@ -31,8 +33,9 @@ interface Props {
 export function PmTargetTreePicker({ asset, componentId, technicalPath = [], onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<MachineExplorerSelection>({ component: null, path: [] });
-  const locationPath = asset?.functionalLocation?.path?.trim() || asset?.location?.trim() || 'No functional location assigned';
-  const locationCode = asset?.functionalLocation?.locationCode?.trim() || null;
+  const locationDisplay = formatFunctionalLocationDisplay(asset);
+  const locationPath = locationDisplay.path === '—' ? 'No functional location assigned' : locationDisplay.path;
+  const locationCode = locationDisplay.code;
   const technicalLabel = useMemo(() => {
     if (!asset) return 'Select an asset first';
     if (!componentId || technicalPath.length === 0) return `${asset.name} · Whole machine`;

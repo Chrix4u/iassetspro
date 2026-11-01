@@ -9,6 +9,11 @@ const maintenancePagesSource = fs.readFileSync(
   'utf8',
 );
 
+const pmTargetSource = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/modules/pm/PmTargetTreePicker.tsx'),
+  'utf8',
+);
+
 const typesSource = fs.readFileSync(
   path.join(process.cwd(), 'src/types/index.ts'),
   'utf8',
@@ -48,9 +53,12 @@ describe('maintenance live functional-location display', () => {
     expect(typesSource).toContain('export interface FunctionalLocationProjection');
     expect(typesSource).toMatch(/functionalLocation\?: FunctionalLocationProjection \| null/);
     expect(maintenancePagesSource).toContain("from '@/lib/functional-location/display'");
-    expect((maintenancePagesSource.match(/formatFunctionalLocationDisplay\(/g) || []).length).toBeGreaterThanOrEqual(3);
+    expect((maintenancePagesSource.match(/formatMaintenanceLocationDisplay\(/g) || []).length).toBeGreaterThanOrEqual(2);
     expect((maintenancePagesSource.match(/Functional Location/g) || []).length).toBeGreaterThanOrEqual(3);
     expect(maintenancePagesSource).toContain('Location Code');
+    expect(pmTargetSource).toContain("import { formatFunctionalLocationDisplay } from '@/lib/functional-location/display';");
+    expect(pmTargetSource).toContain('formatFunctionalLocationDisplay(asset)');
+    expect(pmTargetSource).toContain('Location Path');
     expect(maintenancePagesSource).not.toContain("{(mr as any).asset?.location || '-'}");
   });
 });

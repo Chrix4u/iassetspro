@@ -170,8 +170,11 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       }
       await assignmentDialog.getByRole('button', { name: /Create PM Assignments?/ }).click();
       await expect(assignmentHeading).toBeHidden({ timeout: 20_000 });
+      const targetRow = page.getByRole('row').filter({ hasText: targetCode }).first();
+      await expect(targetRow).toBeVisible({ timeout: 20_000 });
+      await targetRow.getByRole('button', { name: 'View', exact: true }).click();
       await expect(page.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByText(targetCode, { exact: false }).first()).toBeVisible();
+      await page.keyboard.press('Escape');
     };
 
     await createDirectPmAssignmentViaUi(directTaskDescription, partCode, assemblyCode);
@@ -216,17 +219,13 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await createLegacyPm(assemblyPmTitle, assembly.id);
     await createLegacyPm(partPmTitle, part.id, true);
 
-    // The legacy schedules were created out-of-band through the compatibility API while
-    // this SPA route was already mounted. Reload once so the page re-fetches server state
-    // before asserting direct assignments and legacy schedule history render together.
+    // The canonical planning page now presents direct target assignments only.
+    // Legacy compatibility schedules remain covered through their API and generation engine below.
     await page.goto('/#/pm-schedules');
     await page.reload();
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText('Direct PM Assignments', { exact: true })).toBeVisible();
-    await expect(page.getByText('Legacy PM Schedules', { exact: true })).toBeVisible();
-    await expect(page.getByText(directTaskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(assemblyPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(partPmTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+    const refreshedTargetRow = page.getByRole('row').filter({ hasText: partCode }).first();
+    await expect(refreshedTargetRow).toBeVisible({ timeout: 20_000 });
 
     const schedules = await apiCall(plannerToken, 'GET', `/api/pm-schedules?assetId=${encodeURIComponent(assetId)}`);
     expect(schedules.status).toBe(200);

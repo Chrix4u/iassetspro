@@ -7,7 +7,8 @@ const convertDialog = fs.readFileSync('src/components/shared/ConvertMRToWODialog
 const planning = fs.readFileSync('src/services/repairPlanning.service.ts', 'utf8');
 const woComponents = fs.readFileSync('src/app/api/work-orders/[id]/components/route.ts', 'utf8');
 const pmApi = fs.readFileSync('src/app/api/pm-schedules/route.ts', 'utf8');
-const pmPage = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
+const pmAssignment = fs.readFileSync('src/components/modules/pm/PmAssignmentFormDialog.tsx', 'utf8');
+const pmTarget = fs.readFileSync('src/components/modules/pm/PmTargetTreePicker.tsx', 'utf8');
 const pmDue = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'utf8');
 
 describe('machine component maintenance hierarchy contract', () => {
@@ -41,10 +42,11 @@ describe('machine component maintenance hierarchy contract', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('pmSchedules              PmSchedule[] @relation("PmScheduleComponent")');
     expect(pmApi).toContain('Selected component does not belong to the selected asset');
-    expect(pmPage).toContain('PM Target — Machine / Assembly / Component / Part');
-    expect(pmPage).toContain('Drill through the complete machine hierarchy, select the exact maintenance target, then confirm it.');
-    expect(pmPage).toContain('Confirm Selection');
-    expect(pmPage).toContain('onSelectionChange={setTargetDraftSelection}');
+    expect(pmTarget).toContain('Choose PM Target');
+    expect(pmTarget).toContain('Select the exact coded maintainable node.');
+    expect(pmTarget).toContain('Use Selected Target');
+    expect(pmTarget).toContain('onSelectionChange={setDraft}');
+    expect(pmAssignment).toContain("api.post('/api/pm-assignments', { assetId, componentId, assignments })");
     expect(pmDue).toContain('Inherited from component-targeted PM schedule');
     expect(pmDue).toContain('workOrderId_componentRegistryId');
   });

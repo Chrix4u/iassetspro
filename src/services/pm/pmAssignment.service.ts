@@ -293,7 +293,7 @@ export async function replacePmAssignmentTarget(
     });
     const currentById = new Map(current.map((row) => [row.id, row]));
     const retained = new Set<string>();
-    const saved = [];
+    const saved: Awaited<ReturnType<typeof createPmAssignment>>[] = [];
 
     for (const raw of args.assignments) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('PM assignment row is invalid');

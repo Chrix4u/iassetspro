@@ -62,7 +62,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
 
   React.useEffect(() => {
     if (!open || !editTarget) return;
-    const editAsset: PmTargetAsset = { id: editTarget.asset.id, name: editTarget.asset.name, assetTag: editTarget.asset.assetTag || undefined };
+    const editAsset: PmTargetAsset = { id: editTarget.asset.id, name: editTarget.asset.name, assetTag: editTarget.asset.assetTag || '' };
     setAssetCache((current) => ({ ...current, [editAsset.id]: editAsset }));
     setAssetId(editTarget.assetId);
     setComponentId(editTarget.componentId);
@@ -73,10 +73,22 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
   }, [editTarget, open]);
 
   const fetchAssets = async (query: string) => {
-    const response = await api.get(`/api/assets?search=${encodeURIComponent(query)}&limit=100`);
-    if (!response.success || !Array.isArray(response.data)) return [];
+    const assets: any[] = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const response = await api.get(`/api/assets?search=${encodeURIComponent(query)}&page=${page}&limit=100`);
+      if (!response.success) break;
+      if (Array.isArray(response.data)) assets.push(...response.data);
+      const reportedTotalPages = Number(response.pagination?.totalPages || 1);
+      totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0
+        ? Math.min(reportedTotalPages, 1000)
+        : 1;
+      page += 1;
+    } while (page <= totalPages);
+
     const next: Record<string, PmTargetAsset> = {};
-    for (const item of response.data as any[]) {
+    for (const item of assets) {
       next[item.id] = {
         id: item.id,
         name: item.name,
@@ -93,7 +105,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       };
     }
     setAssetCache((current) => ({ ...current, ...next }));
-    return (response.data as any[]).map((item) => ({ value: item.id, label: `${item.name} [${item.assetTag}]`, badge: item.status }));
+    return assets.map((item) => ({ value: item.id, label: `${item.name} [${item.assetTag}]`, badge: item.status }));
   };
 
   const fetchTemplates = async (query: string) => {

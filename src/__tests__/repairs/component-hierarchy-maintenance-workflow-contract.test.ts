@@ -4,6 +4,8 @@ import fs from 'node:fs';
 const schema = fs.readFileSync('prisma/schema.prisma', 'utf8');
 const assetPage = fs.readFileSync('src/components/modules/AssetDetailPage.tsx', 'utf8');
 const maintenancePages = fs.readFileSync('src/components/modules/MaintenancePages.tsx', 'utf8');
+const pmAssignment = fs.readFileSync('src/components/modules/pm/PmAssignmentFormDialog.tsx', 'utf8');
+const pmTarget = fs.readFileSync('src/components/modules/pm/PmTargetTreePicker.tsx', 'utf8');
 const convertDialog = fs.readFileSync('src/components/shared/ConvertMRToWODialog.tsx', 'utf8');
 const planningService = fs.readFileSync('src/services/repairPlanning.service.ts', 'utf8');
 const checkDue = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'utf8');
@@ -51,11 +53,11 @@ describe('machine component hierarchy maintenance workflow contract', () => {
   it('allows PM schedules to target a component and carries it to generated PM work orders', () => {
     expect(schema).toContain('componentId       String?');
     expect(schema).toContain('@relation("PmScheduleComponent"');
-    expect(maintenancePages).toContain('PM Target — Machine / Assembly / Component / Part');
-    expect(maintenancePages).toContain('Drill through the complete machine hierarchy, select the exact maintenance target, then confirm it.');
-    expect(maintenancePages).toContain('Confirm Selection');
-    expect(maintenancePages).toContain('onSelectionChange={setTargetDraftSelection}');
-    expect(maintenancePages).toContain('componentId: formComponentId || null');
+    expect(pmTarget).toContain('Choose PM Target');
+    expect(pmTarget).toContain('Select the exact coded maintainable node.');
+    expect(pmTarget).toContain('Use Selected Target');
+    expect(pmTarget).toContain('onSelectionChange={setDraft}');
+    expect(pmAssignment).toContain("api.post('/api/pm-assignments', { assetId, componentId, assignments })");
     expect(checkDue).toContain('Inherited from component-targeted PM schedule');
     expect(checkDueCron).toContain('generateDueWorkOrders(request)');
     expect(checkDue).toContain('componentRegistryId: schedule.componentId');

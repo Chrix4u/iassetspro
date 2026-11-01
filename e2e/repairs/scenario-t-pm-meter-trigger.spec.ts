@@ -219,8 +219,10 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     const reconciledTrigger = (unlockedTriggerState.data.data as any[]).find((row) => row.id === triggerId);
     expect(Number(reconciledTrigger?.triggerValue)).toBe(125);
 
+    // The schedule mutation above was intentionally performed out-of-band through the API, so refresh
+    // the already-mounted PM Triggers screen before asserting its editor reflects the reconciled value.
     // With no generated WO open, direct meter-trigger edits succeed and keep the owning schedule interval truthful.
-    await page.goto('/#/pm-triggers');
+    await page.reload();
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Triggers', exact: true })).toBeVisible({ timeout: 20_000 });
     await page.getByPlaceholder('Search by schedule, asset, department...').fill(scheduleTitle);
     await expect(page.getByText(scheduleTitle, { exact: true })).toBeVisible({ timeout: 15_000 });

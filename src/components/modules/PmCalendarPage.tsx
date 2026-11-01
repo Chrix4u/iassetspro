@@ -440,13 +440,13 @@ export default function PmCalendarPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           {/* Navigation */}
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={goToPrev} className="h-8 w-8">
+            <Button variant="outline" size="icon" onClick={goToPrev} className="h-8 w-8" aria-label={view === "month" ? "Previous month" : "Previous week"}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <h2 className="text-base sm:text-lg font-semibold min-w-[180px] text-center">
               {getHeaderTitle()}
             </h2>
-            <Button variant="outline" size="icon" onClick={goToNext} className="h-8 w-8">
+            <Button variant="outline" size="icon" onClick={goToNext} className="h-8 w-8" aria-label={view === "month" ? "Next month" : "Next week"}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={goToToday} className="h-8 px-3">

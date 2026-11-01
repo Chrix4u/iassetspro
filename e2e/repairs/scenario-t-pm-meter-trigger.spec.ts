@@ -152,27 +152,16 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     expect(duplicateEvaluation.status).toBe(200);
     expect((duplicateEvaluation.data.data.results as any[]).some((row) => row.triggerId === triggerId && row.skipped === false)).toBe(false);
 
-    // The planner must not be able to retarget/re-interval this active trigger while its generated WO is still open.
-    await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    const openWoScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
-    await expect(openWoScheduleRow).toBeVisible({ timeout: 15_000 });
-    await openWoScheduleRow.hover();
-    await openWoScheduleRow.getByRole('button').last().click();
-    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    await expect(page.getByText('Edit PM Schedule', { exact: true })).toBeVisible();
-    const blockedFrequency = page.locator('label').filter({ hasText: /^Interval \*/ }).first().locator('..').locator('input');
-    await blockedFrequency.fill('125');
-    const blockedUpdateResponse = page.waitForResponse((response) =>
-      response.url().includes(`/api/pm-schedules/${scheduleId}`)
-      && response.request().method() === 'PUT',
-    );
-    await page.getByRole('button', { name: 'Update Schedule', exact: true }).click();
-    expect((await blockedUpdateResponse).status()).toBe(409);
-    await expect(page.getByText(/Cannot change this PM schedule target while runtime-generated work order/i)).toBeVisible();
+    // Compatibility schedules are no longer rendered in the canonical target-centered Planning list.
+    // Their runtime lifecycle lock remains part of the supported API contract: an open generated WO
+    // must prevent re-interval/retarget mutations until that WO is completed or cancelled.
+    const blockedScheduleUpdate = await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${scheduleId}`, {
+      frequencyValue: 125,
+    });
+    expect(blockedScheduleUpdate.status).toBe(409);
+    expect(String(blockedScheduleUpdate.data?.error || '')).toMatch(/Cannot change this PM schedule target while runtime-generated work order/i);
     const blockedScheduleState = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${scheduleId}`);
     expect(Number(blockedScheduleState.data.data?.frequencyValue)).toBe(100);
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     // Direct meter-trigger reconfiguration is also blocked while the same generated WO is open.
     await page.goto('/#/pm-triggers');
@@ -210,30 +199,18 @@ test('UAT-20: meter PM threshold generates once, respects plant scope, and cance
     const replacementWoId = String(replacement.workOrderId);
     generatedWoIds.push(replacementWoId);
 
-    // Once the active generated WO is cancelled, the same schedule edit becomes valid and the linked trigger reconciles atomically.
+    // Once the active generated WO is cancelled, the same compatibility-schedule mutation becomes valid
+    // and the linked runtime trigger must reconcile atomically.
     const cancelReplacement = await apiCall(plannerToken, 'POST', `/api/work-orders/${replacementWoId}/cancel`, {
       reason: 'UAT proves PM schedule mutation unlock after generated WO cancellation',
     });
     expect(cancelReplacement.status).toBe(200);
     expect(cancelReplacement.data.cancellation?.pmTriggerRearmed).toBe(true);
 
-    await page.goto('/#/pm-schedules');
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    const unlockedScheduleRow = page.getByRole('row').filter({ hasText: scheduleTitle });
-    await expect(unlockedScheduleRow).toBeVisible({ timeout: 15_000 });
-    await unlockedScheduleRow.hover();
-    await unlockedScheduleRow.getByRole('button').last().click();
-    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click();
-    const unlockedFrequency = page.locator('label').filter({ hasText: /^Interval \*/ }).first().locator('..').locator('input');
-    await expect(unlockedFrequency).toHaveValue('100');
-    await unlockedFrequency.fill('125');
-    const unlockedUpdateResponse = page.waitForResponse((response) =>
-      response.url().includes(`/api/pm-schedules/${scheduleId}`)
-      && response.request().method() === 'PUT',
-    );
-    await page.getByRole('button', { name: 'Update Schedule', exact: true }).click();
-    expect((await unlockedUpdateResponse).status()).toBe(200);
-    await expect(page.getByText('Schedule updated', { exact: true })).toBeVisible();
+    const unlockedScheduleUpdate = await apiCall(plannerToken, 'PUT', `/api/pm-schedules/${scheduleId}`, {
+      frequencyValue: 125,
+    });
+    expect(unlockedScheduleUpdate.status).toBe(200);
 
     const unlockedScheduleState = await apiCall(plannerToken, 'GET', `/api/pm-schedules/${scheduleId}`);
     expect(Number(unlockedScheduleState.data.data?.frequencyValue)).toBe(125);

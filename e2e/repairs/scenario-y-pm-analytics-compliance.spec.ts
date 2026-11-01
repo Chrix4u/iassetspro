@@ -12,7 +12,7 @@ import {
   startWO,
 } from './helpers/api';
 
-test('UAT-24: PM compliance analytics reflect real planned-window outcomes across PM surfaces', async ({ page, context }) => {
+test('UAT-24: PM compliance analytics reflect real planned-window outcomes in the canonical API and Maintenance Analytics UI', async ({ page, context }) => {
   const suffix = Date.now().toString().slice(-7);
   const plannerToken = await getToken('planner');
   const technicianToken = await getToken('tech_single');
@@ -98,15 +98,9 @@ test('UAT-24: PM compliance analytics reflect real planned-window outcomes acros
 
     await authenticateAs(context, 'planner');
 
-    const schedulesAnalyticsResponse = page.waitForResponse((response) =>
-      response.url().includes('/api/pm-analytics') && response.request().method() === 'GET',
-    );
-    await page.goto('/#/pm-schedules');
-    expect((await schedulesAnalyticsResponse).status()).toBe(200);
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-    const complianceRateCard = page.getByText('Compliance Rate', { exact: true }).locator('..');
-    await expect(complianceRateCard).toContainText(expectedRate, { timeout: 15_000 });
-
+    // PM Planning is now target-centered and intentionally no longer duplicates analytics KPIs.
+    // The canonical compliance API above remains the source of truth; its user-facing KPI is
+    // presented on Maintenance Analytics.
     const maintenanceAnalyticsResponse = page.waitForResponse((response) =>
       response.url().includes('/api/pm-analytics') && response.request().method() === 'GET',
     );

@@ -47,6 +47,7 @@ export async function GET(
             bindings: {
               include: {
                 asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true } },
+                component: { select: { id: true, componentCode: true, name: true, componentType: true, assetId: true } },
               },
               orderBy: { meshName: 'asc' },
             },

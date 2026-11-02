@@ -6,36 +6,47 @@ const {
   mockGetSession,
   mockAuthorizePlant,
   mockCanViewWorkOrder,
+  mockCanManageWorkOrder,
+  mockIsWorkOrderExecutionMember,
+  mockHasPermission,
+  mockIsAdmin,
   mockGetUnavailableOperationalModules,
 } = vi.hoisted(() => ({
   mockDb: {
     workOrder: { findUnique: vi.fn() },
     inventoryItem: { findMany: vi.fn() },
+    repairMaterialRequest: { findMany: vi.fn() },
+    repairToolRequest: { findMany: vi.fn() },
   },
   mockGetSession: vi.fn(),
   mockAuthorizePlant: vi.fn(),
   mockCanViewWorkOrder: vi.fn(),
+  mockCanManageWorkOrder: vi.fn(),
+  mockIsWorkOrderExecutionMember: vi.fn(),
+  mockHasPermission: vi.fn(),
+  mockIsAdmin: vi.fn(),
   mockGetUnavailableOperationalModules: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
 vi.mock('@/lib/auth', () => ({
   getSession: mockGetSession,
-  hasPermission: vi.fn(),
-  isAdmin: vi.fn(),
+  hasPermission: mockHasPermission,
+  isAdmin: mockIsAdmin,
 }));
 vi.mock('@/lib/plant-auth-helpers', () => ({
   authorizeWorkOrderExecutionAccess: mockAuthorizePlant,
 }));
 vi.mock('@/services/workOrderAccess.service', () => ({
-  canManageWorkOrder: vi.fn(),
+  canManageWorkOrder: mockCanManageWorkOrder,
   canViewWorkOrder: mockCanViewWorkOrder,
+  isWorkOrderExecutionMember: mockIsWorkOrderExecutionMember,
 }));
 vi.mock('@/lib/module-access.server', () => ({
   getUnavailableOperationalModules: mockGetUnavailableOperationalModules,
 }));
 
-import { GET } from '../route';
+import { GET, PUT } from '../route';
 
 const session = {
   userId: 'planner-1',
@@ -48,13 +59,27 @@ function request(): NextRequest {
   return new NextRequest('http://localhost/api/work-orders/wo-1/suggested-items');
 }
 
+function submitRequest(): NextRequest {
+  return new NextRequest('http://localhost/api/work-orders/wo-1/suggested-items', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'submit_recommendations' }),
+  });
+}
+
 describe('GET /api/work-orders/[id]/suggested-items material reconciliation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetSession.mockReturnValue(session);
     mockAuthorizePlant.mockResolvedValue({ ok: true });
     mockCanViewWorkOrder.mockReturnValue(true);
+    mockCanManageWorkOrder.mockReturnValue(false);
+    mockIsWorkOrderExecutionMember.mockReturnValue(false);
+    mockIsAdmin.mockReturnValue(false);
+    mockHasPermission.mockReturnValue(false);
     mockGetUnavailableOperationalModules.mockResolvedValue([]);
+    mockDb.repairMaterialRequest.findMany.mockResolvedValue([]);
+    mockDb.repairToolRequest.findMany.mockResolvedValue([]);
     mockDb.inventoryItem.findMany.mockResolvedValue([
       { id: 'item-1', itemCode: 'BRG-001', unitOfMeasure: 'each' },
     ]);
@@ -239,4 +264,66 @@ describe('GET /api/work-orders/[id]/suggested-items material reconciliation', ()
     ]);
   });
 
+});
+
+describe('PUT /api/work-orders/[id]/suggested-items module-aware submission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetSession.mockReturnValue(session);
+    mockAuthorizePlant.mockResolvedValue({ ok: true });
+    mockCanManageWorkOrder.mockReturnValue(false);
+    mockIsWorkOrderExecutionMember.mockReturnValue(true);
+    mockIsAdmin.mockReturnValue(false);
+    mockDb.workOrder.findUnique.mockResolvedValue({
+      id: 'wo-1',
+      woNumber: 'WO-001',
+      title: 'PM Work Order',
+      plantId: 'plant-1',
+      suggestedParts: JSON.stringify([
+        { itemId: 'item-1', itemName: 'Bearing 6205', quantity: 1 },
+      ]),
+      suggestedTools: JSON.stringify([
+        { toolId: 'tool-1', toolName: 'Torque Wrench', quantity: 1 },
+      ]),
+      isLocked: false,
+      status: 'assigned',
+      assignedTo: 'tech-1',
+      teamLeaderId: null,
+      assignedSupervisorId: 'sup-1',
+      plannerId: 'planner-1',
+      teamMembers: [],
+    });
+  });
+
+  it.each([
+    {
+      unavailableModule: 'inventory',
+      allowedPermission: 'repair_tool_requests.create',
+      materialRequests: [],
+      toolRequests: [{ toolId: 'tool-1', items: [] }],
+    },
+    {
+      unavailableModule: 'tools',
+      allowedPermission: 'repair_material_requests.create',
+      materialRequests: [{ itemId: 'item-1' }],
+      toolRequests: [],
+    },
+  ])(
+    'does not require $unavailableModule request permission when that module is unavailable',
+    async ({ unavailableModule, allowedPermission, materialRequests, toolRequests }) => {
+      mockGetUnavailableOperationalModules.mockResolvedValue([unavailableModule]);
+      mockHasPermission.mockImplementation((_session: unknown, permission: string) => permission === allowedPermission);
+      mockDb.repairMaterialRequest.findMany.mockResolvedValue(materialRequests);
+      mockDb.repairToolRequest.findMany.mockResolvedValue(toolRequests);
+
+      const response = await PUT(submitRequest(), { params: Promise.resolve({ id: 'wo-1' }) });
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json).toEqual(expect.objectContaining({
+        success: true,
+        data: { materialCount: 0, toolCount: 0 },
+      }));
+    },
+  );
 });

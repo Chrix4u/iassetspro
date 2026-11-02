@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const routePath = path.resolve(process.cwd(), 'src/app/api/work-orders/[id]/pm-planning-readiness/route.ts');
 const uiPath = path.resolve(process.cwd(), 'src/components/modules/MaintenancePages.tsx');
+const resourcePipelinePath = path.resolve(process.cwd(), 'src/components/modules/pm/PmResourcePipelineCard.tsx');
 
 describe('PM planning readiness integration contract', () => {
   it('exposes an authenticated work-order planning readiness endpoint with canonical Repairs request coverage', () => {
@@ -39,7 +40,10 @@ describe('PM planning readiness integration contract', () => {
     expect(source).toContain('/inventory-candidates?');
     expect(source).toContain('/tool-candidates?');
     expect(source).toContain('Map Resource');
-    expect(source).toContain('Submit Planned Resources');
+    expect(source).toContain('PmResourcePipelineCard');
+    expect(source).toContain('coverage={pmPlanningReadiness.resources.requestCoverage}');
+    const resourcePipeline = fs.readFileSync(resourcePipelinePath, 'utf8');
+    expect(resourcePipeline).toContain('Submit Outstanding Planned Resources');
     expect(source).toContain('Resolve assignments');
     expect(source).toContain('openEditWO');
     expect(source).toContain('fetchPmPlanningReadiness()');

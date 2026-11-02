@@ -64,6 +64,21 @@ A release is not considered deployed until all of the following match the intend
 - PM2 cutover succeeded;
 - local and public post-cutover health checks succeeded.
 
+## Preventive-maintenance automation commissioning
+
+PM due checks are primarily scheduled inside the application through the `maintenance-scheduling` BullMQ queue. The server-owned scheduler uses `PM_AUTOMATION_INTERVAL_MS` (default 60 seconds), and its worker calls the canonical localhost PM automation endpoint. The repository-owned host cron is a five-minute watchdog, not a second normal-path scheduler: it reads `PM_CRON_SECRET`, checks `/api/pm-automation/status`, skips when BullMQ is healthy, and calls `/api/pm-schedules/check-due-cron` only when the primary automation is degraded, starting, unavailable, or otherwise not confirmed healthy. The watchdog uses `flock` and writes Africa/Accra timestamps to `/home/lightworld/logs/iassetspro-pm/cron.log`.
+
+After the first release containing the tracked runner is active, preview and install the cron definition once:
+
+```bash
+sudo /home/lightworld/webapps/iassetspro/scripts/install-iassetspro-pm-cron.sh --render
+sudo /home/lightworld/webapps/iassetspro/scripts/install-iassetspro-pm-cron.sh
+sudo cat /etc/cron.d/iassetspro-pm
+sudo tail -n 20 /home/lightworld/logs/iassetspro-pm/cron.log
+```
+
+The installer is idempotent. During migration it removes only the legacy root-crontab line carrying the exact `# iassetspro-pm-cron` marker and preserves every unrelated root cron entry. The watchdog cadence remains every five minutes with `CRON_TZ=Africa/Accra`; BullMQ remains the primary scheduler. Never put the cron secret in the crontab or documentation; if the secret is missing, the watchdog fails closed before making an HTTP request.
+
 ## Rollback
 
 The artifact deployment wrapper verifies production after any core failure. If cutover has occurred and the new runtime is unhealthy, it restores the immediately previous release and restarts PM2. During the first PostgreSQL cutover, the previous MariaDB-backed release remains independently usable until PostgreSQL canary/cutover succeeds.

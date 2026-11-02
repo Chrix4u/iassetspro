@@ -286,6 +286,7 @@ export default async function proxy(request: NextRequest) {
     '/api/pm-schedules/check-due',
     '/api/pm-schedules/check-due-cron',
     '/api/pm-triggers/evaluate',
+    '/api/pm-automation/status',
   ]);
   if (internalPmPaths.has(pathname)) {
     const cronSecret = request.headers.get('x-pm-cron-secret') || '';

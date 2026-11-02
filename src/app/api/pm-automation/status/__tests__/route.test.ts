@@ -33,7 +33,9 @@ import { GET } from '../route';
 
 const session = { userId: 'planner-1', permissions: ['pm_schedules.view'], roles: ['planner'] };
 const queueStatus = { name: 'maintenance-scheduling', total: 0, waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
-const request = () => new NextRequest('http://localhost/api/pm-automation/status');
+const request = (cronSecret?: string) => new NextRequest('http://localhost/api/pm-automation/status', {
+  headers: cronSecret ? { 'x-pm-cron-secret': cronSecret } : undefined,
+});
 
 describe('GET /api/pm-automation/status', () => {
   beforeEach(() => {
@@ -60,6 +62,22 @@ describe('GET /api/pm-automation/status', () => {
     const response = await GET(request());
     expect(response.status).toBe(401);
     expect(getJobs).not.toHaveBeenCalled();
+  });
+
+  it('allows the trusted cron watchdog to read automation health without a user session', async () => {
+    getSession.mockReturnValue(null);
+    getJobs.mockResolvedValue([{
+      id: 'pm-automation-1', name: 'pm-automation-tick', status: 'completed',
+      createdAt: '2026-10-20T17:59:00.000Z', completedAt: '2026-10-20T17:59:30.000Z',
+    }]);
+
+    const response = await GET(request('configured-secret'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.health).toBe('healthy');
+    expect(getJobs).toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toContain('configured-secret');
   });
 
   it('rejects actors without PM schedule view permission', async () => {

@@ -186,9 +186,9 @@ jobs:
           cp prisma/schema.prisma .release-bundle/prisma/schema.prisma
           cp prisma/seed-constants.ts prisma/seed-reference-data.ts prisma/seed-permissions-only.ts prisma/seed-trades.ts .release-bundle/prisma/
           cp prisma.config.ts package.json bun.lock .release-bundle/
-          cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh scripts/production-redis-preflight.mjs .release-bundle/scripts/
+          cp scripts/seed-transitions.ts scripts/bootstrap-postgresql-staging.sh scripts/production-redis-preflight.mjs scripts/iassetspro-pm-cron.sh scripts/install-iassetspro-pm-cron.sh .release-bundle/scripts/
           cp src/lib/create-postgres-adapter.ts .release-bundle/src/lib/create-postgres-adapter.ts
-          chmod 755 .release-bundle/scripts/bootstrap-postgresql-staging.sh
+          chmod 755 .release-bundle/scripts/bootstrap-postgresql-staging.sh .release-bundle/scripts/iassetspro-pm-cron.sh .release-bundle/scripts/install-iassetspro-pm-cron.sh
           printf '%s\n' "${GITHUB_SHA}" > .release-bundle/RELEASE_SHA
 
           PRISMA_VERSION="$(node -p "require('./node_modules/prisma/package.json').version")"
@@ -208,6 +208,8 @@ jobs:
           test -f .release-bundle/node_modules/@prisma/driver-adapter-utils/package.json
           node --input-type=module -e "await import('./.release-bundle/node_modules/@prisma/adapter-pg/dist/index.mjs')"
           test -f .release-bundle/scripts/production-redis-preflight.mjs
+          test -x .release-bundle/scripts/iassetspro-pm-cron.sh
+          test -x .release-bundle/scripts/install-iassetspro-pm-cron.sh
           test -f .release-bundle/node_modules/bullmq/package.json
           test -f .release-bundle/node_modules/ioredis/package.json
           test -f .release-bundle/node_modules/nodemailer/package.json

@@ -75,4 +75,16 @@ describe('production deployment workflow gate', () => {
     expect(workflow).toContain('release artifact contains link entry');
     expect(workflow).toContain('substr($1,1,1) == "l" || substr($1,1,1) == "h"');
   });
+
+  it('ships the repository-owned PM cron runner and installer in the immutable production artifact', async () => {
+    const workflow = await readFile(
+      join(process.cwd(), '.github/workflows/ci.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('scripts/iassetspro-pm-cron.sh');
+    expect(workflow).toContain('scripts/install-iassetspro-pm-cron.sh');
+    expect(workflow).toContain('test -x .release-bundle/scripts/iassetspro-pm-cron.sh');
+    expect(workflow).toContain('test -x .release-bundle/scripts/install-iassetspro-pm-cron.sh');
+  });
 });

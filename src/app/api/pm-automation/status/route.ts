@@ -19,14 +19,18 @@ function eventTime(job: JobRecord | undefined): number {
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session) {
+    const cronSecret = process.env.PM_CRON_SECRET?.trim() || '';
+    const suppliedCronSecret = request.headers.get('x-pm-cron-secret') || '';
+    const cronAuthorized = Boolean(cronSecret && suppliedCronSecret === cronSecret);
+
+    if (!session && !cronAuthorized) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'pm_schedules.view') && !isAdmin(session)) {
+    if (session && !cronAuthorized && !hasPermission(session, 'pm_schedules.view') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const configured = Boolean(process.env.PM_CRON_SECRET?.trim());
+    const configured = Boolean(cronSecret);
     const schedulerStarted = isPmAutomationSchedulerStarted();
     const intervalMs = resolvePmAutomationIntervalMs();
     const [queueStatus, jobs] = await Promise.all([

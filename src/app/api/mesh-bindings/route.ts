@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
       include: {
         model: { select: { id: true, name: true, format: true } },
         asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true } },
+        component: { select: { id: true, componentCode: true, name: true, componentType: true, assetId: true } },
       },
       orderBy: { meshName: 'asc' },
     });
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { modelId, meshName, meshPath, meshType, assetId, colorOverride, opacity, isClickable, isVisible, explodeOffset, metadata } = body;
+    const { modelId, meshName, meshPath, meshType, assetId, componentId, colorOverride, opacity, isClickable, isVisible, explodeOffset, metadata } = body;
 
     if (!modelId) {
       return NextResponse.json({ success: false, error: 'Model ID is required' }, { status: 400 });
@@ -120,6 +121,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Bound asset must belong to the model plant' }, { status: 400 });
     }
 
+    if (componentId) {
+      const component = await db.componentRegistry.findUnique({
+        where: { id: componentId },
+        select: { id: true, assetId: true },
+      });
+      if (!component) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+      }
+      if (component.assetId !== assetId) {
+        return NextResponse.json({ success: false, error: 'Bound component must belong to the selected machine asset' }, { status: 400 });
+      }
+    }
+
     const existing = await db.assetMeshBinding.findFirst({
       where: { modelId, meshName },
     });
@@ -134,6 +148,7 @@ export async function POST(request: NextRequest) {
         meshPath: meshPath || null,
         meshType: meshType || 'component',
         assetId,
+        componentId: componentId || null,
         colorOverride: colorOverride || null,
         opacity: opacity !== undefined ? parseFloat(String(opacity)) : null,
         isClickable: isClickable !== undefined ? isClickable : true,
@@ -144,6 +159,7 @@ export async function POST(request: NextRequest) {
       include: {
         model: { select: { id: true, name: true, format: true } },
         asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true } },
+        component: { select: { id: true, componentCode: true, name: true, componentType: true, assetId: true } },
       },
     });
 
@@ -153,7 +169,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'asset_mesh_binding',
         entityId: binding.id,
-        newValues: JSON.stringify({ modelId, meshName, assetId }),
+        newValues: JSON.stringify({ modelId, meshName, assetId, componentId: componentId || null }),
       },
     });
 

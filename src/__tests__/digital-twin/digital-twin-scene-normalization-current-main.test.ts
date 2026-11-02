@@ -41,7 +41,7 @@ describe('Digital Twin persisted scene normalization', () => {
         twin: { assetId: 'asset-1' },
         model: {
           filePath: '/generated-assets/models/pump.glb',
-          meshBindings: [{ id: 'binding-1', meshName: 'BearingMesh' }],
+          meshBindings: [{ id: 'binding-1', meshName: 'BearingMesh', assetId: 'asset-1', componentId: 'component-bearing', asset: { name: 'Pump 01' }, component: { id: 'component-bearing', name: 'Drive-end bearing', componentCode: 'BRG-01', componentType: 'part', assetId: 'asset-1' } }],
         },
         cameraPresets: [
           {
@@ -89,6 +89,22 @@ describe('Digital Twin persisted scene normalization', () => {
       assetId: 'asset-1',
       description: 'Persisted scene',
       modelUrl: '/generated-assets/models/pump.glb',
+      meshBindings: [
+        {
+          id: 'binding-1',
+          meshName: 'BearingMesh',
+          assetId: 'asset-1',
+          assetName: 'Pump 01',
+          componentId: 'component-bearing',
+          componentName: 'Drive-end bearing',
+          componentCode: 'BRG-01',
+          componentType: 'part',
+          isClickable: true,
+          isVisible: true,
+          colorOverride: undefined,
+          explodeOffset: undefined,
+        },
+      ],
       cameraPresets: [
         {
           name: 'Front',

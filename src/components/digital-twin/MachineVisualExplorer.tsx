@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { DigitalTwinViewer } from './DigitalTwinViewer';
 
 type MachineComponent = {
   id: string;
@@ -469,6 +470,9 @@ export function MachineVisualExplorer({
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; dragging: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [twinId, setTwinId] = useState<string | null>(null);
+  const [twinName, setTwinName] = useState<string | null>(null);
+  const [twinLoading, setTwinLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -488,6 +492,29 @@ export function MachineVisualExplorer({
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
+  useEffect(() => {
+    let cancelled = false;
+    setTwinLoading(true);
+    setTwinId(null);
+    setTwinName(null);
+    api.get<Array<{ id: string; name: string }>>('/api/digital-twins?assetId=' + encodeURIComponent(asset.id) + '&limit=1')
+      .then((response) => {
+        if (cancelled || !response.success) return;
+        const twin = response.data?.[0];
+        if (twin) {
+          setTwinId(twin.id);
+          setTwinName(twin.name);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTwinId(null);
+          setTwinName(null);
+        }
+      })
+      .finally(() => { if (!cancelled) setTwinLoading(false); });
+    return () => { cancelled = true; };
+  }, [asset.id]);
   useEffect(() => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -564,6 +591,13 @@ export function MachineVisualExplorer({
   }, [selectedId]);
 
   const componentMap = useMemo(() => new Map(components.map((item) => [item.id, item])), [components]);
+  const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
+    if (!componentMap.has(componentId)) {
+      toast.error(`3D mesh ${meshName} is not mapped to a registered component on this machine`);
+      return;
+    }
+    setSelectedId(componentId);
+  }, [componentMap]);
   const childrenByParent = useMemo(() => {
     const map = new Map<string, MachineComponent[]>();
     components.forEach((item) => {
@@ -740,12 +774,42 @@ export function MachineVisualExplorer({
         </CardHeader>
         <CardContent className="pt-0">
           <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
+              <TabsTrigger value="model3d" className="cursor-pointer"><Box className="mr-1.5 h-3.5 w-3.5" />3D Model</TabsTrigger>
               <TabsTrigger value="realistic" className="cursor-pointer"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />AI Realistic</TabsTrigger>
               <TabsTrigger value="diagram" className="cursor-pointer"><Network className="mr-1.5 h-3.5 w-3.5" />Diagram</TabsTrigger>
               <TabsTrigger value="technical2d" className="cursor-pointer"><Focus className="mr-1.5 h-3.5 w-3.5" />Engineering 2D</TabsTrigger>
               <TabsTrigger value="exploded" className="cursor-pointer"><Layers3 className="mr-1.5 h-3.5 w-3.5" />Exploded</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="model3d" className="mt-3 space-y-2">
+              <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
+                3D meshes are maintenance targets only when explicitly mapped to the registered machine hierarchy. Unmapped geometry stays visual and cannot silently become a PM or repair component.
+              </div>
+              {twinLoading ? (
+                <div className="flex min-h-[480px] items-center justify-center rounded-xl border bg-slate-950">
+                  <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
+                </div>
+              ) : twinId ? (
+                <div className="overflow-hidden rounded-xl border bg-slate-950">
+                  <DigitalTwinViewer
+                    twinId={twinId}
+                    twinName={twinName}
+                    assetId={asset.id}
+                    height={selectionMode ? '480px' : '620px'}
+                    showSceneTree={false}
+                    showInfoPanel={false}
+                    onComponentSelect={handle3DComponentSelect}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-[480px] flex-col items-center justify-center rounded-xl border border-dashed bg-slate-950 p-8 text-center text-slate-400">
+                  <Box className="h-10 w-10 text-cyan-400" />
+                  <div className="mt-3 text-sm font-semibold text-slate-200">No 3D model commissioned for this machine</div>
+                  <p className="mt-1 max-w-md text-xs leading-relaxed">Upload or link a GLB/glTF model in Digital Twin and bind its meshes to verified machine components. Diagram, Engineering 2D, Exploded and image views remain available now.</p>
+                </div>
+              )}
+            </TabsContent>
 
             <TabsContent value="diagram" className="mt-3">
               <div className="relative">

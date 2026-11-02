@@ -16,6 +16,10 @@ export interface AssetMeshBinding {
   meshName: string;
   assetId: string;
   assetName: string;
+  componentId?: string | null;
+  componentName?: string;
+  componentCode?: string;
+  componentType?: string;
   isClickable?: boolean;
   isVisible?: boolean;
   colorOverride?: string;

@@ -1,5 +1,5 @@
 import type { PmScheduleTask, Prisma } from '@prisma/client';
-import { evaluateScheduledTaskDue, type ScheduledTaskDueResult } from '@/services/pm/pmScheduledTaskDueEngine';
+import { evaluateScheduledTaskDue, type ScheduledTaskDueResult, type ScheduledTaskDueSource } from '@/services/pm/pmScheduledTaskDueEngine';
 import { findBlockingPmScheduledTaskCycles } from '@/services/pm/pmScheduledTaskCycleGuard.service';
 
 type RollupClient = Pick<
@@ -39,6 +39,7 @@ export interface PmMachineRollupItem {
   dueReason: string;
   dueCycleKey: string | null;
   currentValue: number | null;
+  dueSource: ScheduledTaskDueSource | null;
   planningAt: Date | null;
   isBundleEligible: boolean;
   blockingWorkOrderId: string | null;
@@ -173,6 +174,7 @@ export async function getPmMachineRollup(input: {
       dueReason: due.reason,
       dueCycleKey: due.dueCycleKey,
       currentValue: due.currentValue,
+      dueSource: due.source,
       planningAt: planningAt(row as PmScheduleTask, due, now),
       isBundleEligible: Boolean(due.dueCycleKey) && (
         status === 'due'

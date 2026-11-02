@@ -17,7 +17,7 @@ vi.mock('@/services/pm/pmScheduledTaskCycleGuard.service', () => ({
   findBlockingPmScheduledTaskCycles: mocks.blockers,
 }));
 
-import { assertCompatiblePmBundle, buildPmBundleGroups, createPmAssignmentBundle, normalizePmPlannedStart } from '@/services/pm/pmBundling.service';
+import { assertCompatiblePmBundle, buildPmBundleGroups, createPmAssignmentBundle, generateDueDirectPmAssignmentWorkOrders, normalizePmPlannedStart } from '@/services/pm/pmBundling.service';
 
 function item(overrides: Record<string, unknown> = {}) {
   return {
@@ -200,4 +200,146 @@ describe('PM shutdown bundling', () => {
     });
     expect(result.workOrder).toEqual(expect.objectContaining({ id: 'wo-1' }));
   });
+
+  it('auto-generates due direct PM assignments by machine and inspection type without pulling future work', async () => {
+    const standstill = assignment({
+      id: 'pm-standstill',
+      equipmentState: 'standstill',
+      nextDueDate: new Date('2026-10-31T20:00:00.000Z'),
+    });
+    const running = assignment({
+      id: 'pm-running',
+      pmTaskId: 'task-running',
+      equipmentState: 'running',
+      nextDueDate: new Date('2026-10-31T20:00:00.000Z'),
+      pmTask: { id: 'task-running', taskNumber: 102, description: 'Inspect while running', taskType: 'mechanical' },
+    });
+    const future = assignment({
+      id: 'pm-future',
+      pmTaskId: 'task-future',
+      equipmentState: 'standstill',
+      leadDays: 0,
+      nextDueDate: new Date('2026-12-01T20:00:00.000Z'),
+      pmTask: { id: 'task-future', taskNumber: 103, description: 'Future inspection', taskType: 'mechanical' },
+    });
+    const rows = [standstill, running, future];
+    const tx = {
+      $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+      asset: { findUnique: vi.fn().mockResolvedValue({ id: 'asset-1', name: 'Crusher 01', assetTag: 'CR-01', plantId: 'plant-1', departmentId: 'dept-1' }) },
+      componentRegistry: { findMany: vi.fn().mockResolvedValue([
+        { id: 'drive', assetId: 'asset-1', parentId: null, name: 'Drive', componentCode: 'DRV', componentType: 'assembly' },
+        { id: 'bearing', assetId: 'asset-1', parentId: 'drive', name: 'Bearing', componentCode: 'BRG', componentType: 'part' },
+      ]) },
+      pmScheduleTask: {
+        findMany: vi.fn().mockImplementation(async ({ where }: any) => {
+          const ids = where?.id?.in as string[] | undefined;
+          return ids ? rows.filter((row) => ids.includes(row.id)) : rows;
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      assetMeter: { findUnique: vi.fn() }, meterReading: { findFirst: vi.fn() },
+      componentConditionReading: { findFirst: vi.fn() }, iotDevice: { findUnique: vi.fn() },
+      workOrderTaskExecution: { findMany: vi.fn().mockResolvedValue([]) },
+      workOrder: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockImplementation(async ({ data }: any) => ({ id: `wo-${data.status}`, ...data })),
+      },
+      workOrderComponent: { upsert: vi.fn().mockResolvedValue({}) },
+      workOrderComment: { create: vi.fn().mockResolvedValue({}) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const rootFindMany = vi.fn().mockResolvedValue([{ assetId: 'asset-1' }]);
+    const client = {
+      pmScheduleTask: { findMany: rootFindMany },
+      $transaction: vi.fn(async (fn: any) => fn(tx)),
+    };
+
+    const result = await generateDueDirectPmAssignmentWorkOrders(client as never, {
+      actorId: 'automation-1',
+      plantIds: ['plant-1'],
+      now: new Date('2026-11-02T01:00:00.000Z'),
+    });
+
+    expect(rootFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        scheduleId: null,
+        isActive: true,
+        asset: { plantId: { in: ['plant-1'] } },
+      }),
+    }));
+    expect(result.checked).toBe(3);
+    expect(result.generated).toBe(2);
+    expect(tx.workOrder.create).toHaveBeenCalledTimes(2);
+    expect(tx.workOrder.create.mock.calls.map((call: any[]) => call[0].data.status).sort()).toEqual(['draft', 'waiting_shutdown']);
+    const materializedIds = mocks.materialize.mock.calls.flatMap((call) => call[2].map((candidate: any) => candidate.task.id)).sort();
+    expect(materializedIds).toEqual(['pm-running', 'pm-standstill']);
+    expect(materializedIds).not.toContain('pm-future');
+  });
+
+
+  it('evaluates a due direct CBM assignment once before materialization so cadence cannot suppress its own generation', async () => {
+    const cbm = assignment({
+      id: 'pm-cbm',
+      pmTaskId: 'task-cbm',
+      pmType: 'cbm',
+      maintenanceMode: 'cbm',
+      basis: 'condition',
+      equipmentState: 'running',
+      nextDueDate: null,
+      conditionSourceType: 'component_condition',
+      conditionSourceId: 'bearing',
+      conditionMetric: 'temperature',
+      conditionOperator: '>=',
+      conditionThreshold: 80,
+      conditionThresholdMax: null,
+      conditionUnit: 'C',
+      evaluationCadenceMinutes: 5,
+      lastEvaluatedAt: null,
+      pmTask: { id: 'task-cbm', taskNumber: 104, description: 'Inspect hot bearing', taskType: 'mechanical' },
+    });
+    const tx = {
+      $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+      asset: { findUnique: vi.fn().mockResolvedValue({ id: 'asset-1', name: 'Crusher 01', assetTag: 'CR-01', plantId: 'plant-1', departmentId: 'dept-1' }) },
+      componentRegistry: { findMany: vi.fn().mockResolvedValue([
+        { id: 'drive', assetId: 'asset-1', parentId: null, name: 'Drive', componentCode: 'DRV', componentType: 'assembly' },
+        { id: 'bearing', assetId: 'asset-1', parentId: 'drive', name: 'Bearing', componentCode: 'BRG', componentType: 'part' },
+      ]) },
+      pmScheduleTask: {
+        findMany: vi.fn().mockResolvedValue([cbm]),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      assetMeter: { findUnique: vi.fn() }, meterReading: { findFirst: vi.fn() },
+      componentConditionReading: { findFirst: vi.fn().mockResolvedValue({ id: 'reading-1', value: 92, unit: 'C', recordedAt: new Date('2026-11-02T00:59:00.000Z') }) },
+      iotDevice: { findUnique: vi.fn() },
+      workOrderTaskExecution: { findMany: vi.fn().mockResolvedValue([]) },
+      workOrder: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockImplementation(async ({ data }: any) => ({ id: 'wo-cbm', ...data })),
+      },
+      workOrderComponent: { upsert: vi.fn().mockResolvedValue({}) },
+      workOrderComment: { create: vi.fn().mockResolvedValue({}) },
+      auditLog: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const client = {
+      pmScheduleTask: { findMany: vi.fn().mockResolvedValue([{ assetId: 'asset-1' }]) },
+      $transaction: vi.fn(async (fn: any) => fn(tx)),
+    };
+
+    const result = await generateDueDirectPmAssignmentWorkOrders(client as never, {
+      actorId: 'automation-1', now: new Date('2026-11-02T01:00:00.000Z'),
+    });
+
+    expect(result.generated).toBe(1);
+    const evaluationUpdates = tx.pmScheduleTask.update.mock.calls.filter((call: any[]) => call[0]?.data?.lastEvaluatedAt);
+    expect(evaluationUpdates).toHaveLength(1);
+    expect(mocks.materialize).toHaveBeenCalledWith(tx, 'wo-cbm', [expect.objectContaining({
+      task: expect.objectContaining({ id: 'pm-cbm' }),
+      due: expect.objectContaining({
+        due: true,
+        reason: 'cbm_due',
+        source: expect.objectContaining({ type: 'component_condition', sourceId: 'reading-1', value: 92 }),
+      }),
+    })]);
+  });
+
 });

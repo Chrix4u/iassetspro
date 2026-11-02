@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const runnerPath = join(repoRoot, 'scripts/iassetspro-pm-cron.sh');
@@ -78,7 +79,10 @@ async function makeRuntime(secret = 'pm-test-secret-never-log-this') {
   };
 }
 
-function runtimeEnv(runtime: Awaited<ReturnType<typeof makeRuntime>>, extra: NodeJS.ProcessEnv = {}) {
+function runtimeEnv(
+  runtime: Awaited<ReturnType<typeof makeRuntime>>,
+  extra: Partial<NodeJS.ProcessEnv> = {},
+): NodeJS.ProcessEnv {
   return {
     ...process.env,
     DEPLOY_PATH: runtime.app,

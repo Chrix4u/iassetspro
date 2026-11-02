@@ -8,7 +8,7 @@
  */
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const CRON_SECRET = process.env.PM_CRON_SECRET?.trim();
+const CRON_SECRET = process.env.PM_CRON_SECRET?.trim() || '';
 if (!CRON_SECRET) {
   console.error('[PM Cron] PM_CRON_SECRET is required; refusing to start');
   process.exit(1);

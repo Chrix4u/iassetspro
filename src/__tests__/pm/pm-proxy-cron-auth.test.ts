@@ -10,10 +10,11 @@ describe('PM internal proxy authentication', () => {
     expect(proxy).not.toContain('pm-scheduler-internal-2025');
   });
 
-  it('allows all three intended PM automation endpoints through the secret gate', () => {
+  it('allows the trusted PM automation and watchdog endpoints through the secret gate', () => {
     expect(proxy).toContain("'/api/pm-schedules/check-due'");
     expect(proxy).toContain("'/api/pm-schedules/check-due-cron'");
     expect(proxy).toContain("'/api/pm-triggers/evaluate'");
+    expect(proxy).toContain("'/api/pm-automation/status'");
     expect(proxy).toContain('internalSecret && cronSecret === internalSecret');
   });
 

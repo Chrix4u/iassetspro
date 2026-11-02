@@ -8,8 +8,14 @@
  */
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const CRON_SECRET = process.env.PM_CRON_SECRET || 'pm-scheduler-internal-2025';
-const TARGET_URL = 'http://localhost:3000/api/pm-schedules/check-due-cron';
+const CRON_SECRET = process.env.PM_CRON_SECRET?.trim() || '';
+if (!CRON_SECRET) {
+  console.error('[PM Cron] PM_CRON_SECRET is required; refusing to start');
+  process.exit(1);
+}
+const PRODUCTION_PORT = process.env.PRODUCTION_PORT?.trim() || '3001';
+const TARGET_URL = process.env.PM_CRON_TARGET_URL?.trim()
+  || `http://127.0.0.1:${PRODUCTION_PORT}/api/pm-schedules/check-due-cron`;
 const SERVICE_PORT = 3010;
 
 console.log(`[PM Cron] Starting on port ${SERVICE_PORT}`);

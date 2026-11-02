@@ -26,7 +26,7 @@ describe('legacy functional-location migration UI', () => {
     expect(dialog).toContain('previewFingerprint');
     expect(dialog).toContain("IMPORT READY LEGACY LOCATIONS");
     expect(dialog).toContain('setPreview(null)');
-    expect(dialog).toContain("runPreview(undefined, '__all__', true)");
+    expect(dialog).toContain("runPreview(undefined, '__all__', true, persistedName)");
   });
 
   it('shows ready, blocked, already-assigned and node-create/reuse counts before execution', () => {
@@ -36,5 +36,22 @@ describe('legacy functional-location migration UI', () => {
     expect(dialog).toContain('Already assigned');
     expect(dialog).toContain('Nodes to create');
     expect(dialog).toContain('Nodes to reuse');
+  });
+
+  it('lets an administrator supply the company name when no persisted company profile exists', () => {
+    const dialog = read('src/components/assets/LegacyLocationMigrationDialog.tsx');
+    expect(dialog).toContain("'/api/company-profile'");
+    expect(dialog).toContain('Company / organisation name');
+    expect(dialog).toContain('companyName');
+    expect(dialog).toContain('Enter your company name to build the migration preview');
+  });
+
+  it('uses genuinely wide responsive dialogs for migration and hierarchy authoring', () => {
+    const dialog = read('src/components/assets/LegacyLocationMigrationDialog.tsx');
+    const page = read('src/components/modules/FunctionalLocationHierarchyPage.tsx');
+    expect(dialog).toContain('sm:max-w-6xl');
+    expect(dialog).toContain('xl:max-w-7xl');
+    expect(page).toContain('sm:max-w-6xl');
+    expect(page).toContain('xl:max-w-7xl');
   });
 });

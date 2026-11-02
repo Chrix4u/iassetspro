@@ -4,6 +4,7 @@ import {
   LEGACY_LOCATION_SOURCES,
   inferLegacyLevelMapping,
   planLegacyFunctionalLocationMigration,
+  resolveLegacyMigrationCompanyName,
   type LegacyAssetLocationRecord,
   type LegacyLevelMapping,
   type LegacyLocationSource,
@@ -16,6 +17,7 @@ export interface PreviewLegacyFunctionalLocationMigrationInput {
   hierarchySystemId?: string | null;
   mapping?: LegacyLevelMapping | null;
   plantIds?: string[] | null;
+  companyName?: string | null;
 }
 
 export interface LegacyMigrationPreview extends LegacyMigrationPlan {
@@ -212,9 +214,8 @@ export async function previewLegacyFunctionalLocationMigration(
     db.companyProfile.findFirst({ select: { companyName: true, tradingName: true } }),
     loadLegacyAssets(hierarchy.id, input.plantIds),
   ]);
-  if (!company) throw new Error('Company profile is required before migrating legacy functional locations');
 
-  const companyName = company.tradingName?.trim() || company.companyName.trim();
+  const companyName = resolveLegacyMigrationCompanyName(company, input.companyName);
   const plan = planLegacyFunctionalLocationMigration({
     hierarchy,
     mapping,

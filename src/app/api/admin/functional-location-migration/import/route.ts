@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       hierarchySystemId?: string;
       plantId?: string;
       mapping?: LegacyLevelMapping;
+      companyName?: string;
       previewFingerprint?: string;
       confirmation?: string;
     };
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest) {
       hierarchySystemId: body.hierarchySystemId || null,
       mapping: body.mapping,
       plantIds,
+      companyName: body.companyName,
       previewFingerprint,
     });
     return NextResponse.json({ success: true, data: result });

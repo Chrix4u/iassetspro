@@ -38,6 +38,16 @@ vi.mock('@/services/pm/pmScheduledTaskGeneration.service', () => ({
   }),
 }));
 
+vi.mock('@/services/pm/pmBundling.service', () => ({
+  generateDueDirectPmAssignmentWorkOrders: vi.fn().mockResolvedValue({
+    checked: 0,
+    generated: 0,
+    skipped: 0,
+    materializedAssignments: 0,
+    results: [],
+  }),
+}));
+
 vi.mock('@/lib/db', () => {
   const tx = {
     $executeRawUnsafe: mocks.executeRawUnsafe,

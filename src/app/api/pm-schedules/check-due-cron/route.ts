@@ -41,6 +41,19 @@ type GenerationPayload = {
     generated: number;
     skipped: number;
     results: GenerationResult[];
+    engines?: {
+      directAssignments?: {
+        results: Array<{
+          assetId: string;
+          inspectionType: 'running' | 'standstill';
+          assignmentIds: string[];
+          workOrderId: string;
+          woNumber: string;
+          skipped: boolean;
+          reason?: string;
+        }>;
+      };
+    };
   };
 };
 
@@ -126,6 +139,15 @@ export async function POST(request: NextRequest) {
         workOrderId: result.workOrderId,
         woNumber: result.woNumber,
       }));
+    const directGeneratedDetails = generationPayload.data.engines?.directAssignments?.results
+      .filter((result) => !result.skipped)
+      .map((result) => ({
+        assetId: result.assetId,
+        inspectionType: result.inspectionType,
+        assignmentIds: result.assignmentIds,
+        workOrderId: result.workOrderId,
+        woNumber: result.woNumber,
+      })) ?? [];
 
     const results = {
       dueSchedulesChecked: generationPayload.data.checked,
@@ -134,6 +156,7 @@ export async function POST(request: NextRequest) {
       overdueSchedulesFound: 0,
       overdueAlertsSent: 0,
       generatedDetails,
+      directGeneratedDetails,
       runtimeTriggers: triggerPayload.data,
       overdueDetails: [] as Array<{
         scheduleId: string;

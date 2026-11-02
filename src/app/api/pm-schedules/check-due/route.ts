@@ -12,6 +12,7 @@ import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { generateDueScheduledTaskWorkOrders } from '@/services/pm/pmScheduledTaskGeneration.service';
+import { generateDueDirectPmAssignmentWorkOrders } from '@/services/pm/pmBundling.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -82,6 +83,11 @@ export async function POST(request: NextRequest) {
     const scheduledTaskGeneration = await generateDueScheduledTaskWorkOrders({
       actorId: automationActorId,
       plantIds: manualTaskLevelPlantIds(plantScope),
+    });
+    const directAssignmentGeneration = await generateDueDirectPmAssignmentWorkOrders(db as never, {
+      actorId: automationActorId,
+      plantIds: manualTaskLevelPlantIds(plantScope),
+      now,
     });
 
     const dueSchedules = await db.pmSchedule.findMany({
@@ -438,13 +444,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        checked: legacyScheduleGeneration.checked + scheduledTaskGeneration.checked,
-        generated: legacyScheduleGeneration.generated + scheduledTaskGeneration.generated,
-        skipped: legacyScheduleGeneration.skipped + scheduledTaskGeneration.skipped,
+        checked: legacyScheduleGeneration.checked + scheduledTaskGeneration.checked + directAssignmentGeneration.checked,
+        generated: legacyScheduleGeneration.generated + scheduledTaskGeneration.generated + directAssignmentGeneration.generated,
+        skipped: legacyScheduleGeneration.skipped + scheduledTaskGeneration.skipped + directAssignmentGeneration.skipped,
         results: [...legacyScheduleGeneration.results, ...scheduledTaskGeneration.results],
         engines: {
           legacySchedule: legacyScheduleGeneration,
           scheduledTasks: scheduledTaskGeneration,
+          directAssignments: directAssignmentGeneration,
         },
       },
     });

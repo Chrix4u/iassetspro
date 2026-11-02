@@ -13,6 +13,7 @@ import { PmAssignmentFormDialog } from '@/components/modules/pm/PmAssignmentForm
 import { PmAssignmentTargetDetailDialog } from '@/components/modules/pm/PmAssignmentTargetDetailDialog';
 import { PmAssignmentTargetList } from '@/components/modules/pm/PmAssignmentTargetList';
 import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
+import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';
 
 function taskOverdue(row: PmAssignmentTargetListRecord, now: Date) {
   if (row.pmType === 'ubm') return row.nextDueReading != null && row.assetMeter ? Number(row.assetMeter.currentValue) >= Number(row.nextDueReading) : false;
@@ -82,6 +83,7 @@ export function PmPlanningPage() {
       <Stat label="PM Targets" value={groups.length} icon={ClipboardList}/><Stat label="Active Tasks" value={assignments.length} icon={Activity}/><Stat label="Due Soon" value={dueSoonTargets} icon={Clock}/><Stat label="Overdue" value={overdueTargets} icon={AlertTriangle}/>
     </div>
 
+    <PmPortfolioCompliancePanel />
     <PmMachineRollupPanel />
     <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={setEditTarget} onDelete={setDeleteTarget}/>
 

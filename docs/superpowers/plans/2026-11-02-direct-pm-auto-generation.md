@@ -36,7 +36,7 @@
 
 **Interfaces:**
 - Consumes: `getPmMachineRollup()`, existing direct-PM bundle compatibility/cycle guards, `materializePmScheduledTasks()`.
-- Produces: `generateDueDirectPmAssignmentWorkOrders(input: { actorId: string; plantIds?: string[]; now?: Date }): Promise<DirectPmAutoGenerationResult>`.
+- Produces: `generateDueDirectPmAssignmentWorkOrders(client, input: { actorId: string; plantIds?: string[]; now?: Date }): Promise<DirectPmAutoGenerationResult>` so tests and route supply the existing Prisma client explicitly.
 
 - [ ] **Step 1: Write failing tests** proving due direct assignments are discovered without a schedule, Running/Standstill are split, near-due assignments are excluded, blocked cycles are skipped, and plant scope is applied.
 - [ ] **Step 2: Run focused bundling tests and confirm RED** because the automatic entrypoint does not exist.

@@ -207,6 +207,13 @@ describe('PM shutdown bundling', () => {
       equipmentState: 'standstill',
       nextDueDate: new Date('2026-10-31T20:00:00.000Z'),
     });
+    const olderStandstill = assignment({
+      id: 'pm-standstill-old',
+      pmTaskId: 'task-standstill-old',
+      equipmentState: 'standstill',
+      nextDueDate: new Date('2026-10-01T20:00:00.000Z'),
+      pmTask: { id: 'task-standstill-old', taskNumber: 100, description: 'Older standstill inspection', taskType: 'mechanical' },
+    });
     const running = assignment({
       id: 'pm-running',
       pmTaskId: 'task-running',
@@ -222,7 +229,7 @@ describe('PM shutdown bundling', () => {
       nextDueDate: new Date('2026-12-01T20:00:00.000Z'),
       pmTask: { id: 'task-future', taskNumber: 103, description: 'Future inspection', taskType: 'mechanical' },
     });
-    const rows = [standstill, running, future];
+    const rows = [olderStandstill, standstill, running, future];
     const tx = {
       $executeRawUnsafe: vi.fn().mockResolvedValue(1),
       asset: { findUnique: vi.fn().mockResolvedValue({ id: 'asset-1', name: 'Crusher 01', assetTag: 'CR-01', plantId: 'plant-1', departmentId: 'dept-1' }) },
@@ -267,12 +274,12 @@ describe('PM shutdown bundling', () => {
         asset: { plantId: { in: ['plant-1'] } },
       }),
     }));
-    expect(result.checked).toBe(3);
-    expect(result.generated).toBe(2);
-    expect(tx.workOrder.create).toHaveBeenCalledTimes(2);
-    expect(tx.workOrder.create.mock.calls.map((call: any[]) => call[0].data.status).sort()).toEqual(['draft', 'waiting_shutdown']);
+    expect(result.checked).toBe(4);
+    expect(result.generated).toBe(3);
+    expect(tx.workOrder.create).toHaveBeenCalledTimes(3);
+    expect(tx.workOrder.create.mock.calls.map((call: any[]) => call[0].data.status).sort()).toEqual(['draft', 'waiting_shutdown', 'waiting_shutdown']);
     const materializedIds = mocks.materialize.mock.calls.flatMap((call) => call[2].map((candidate: any) => candidate.task.id)).sort();
-    expect(materializedIds).toEqual(['pm-running', 'pm-standstill']);
+    expect(materializedIds).toEqual(['pm-running', 'pm-standstill', 'pm-standstill-old']);
     expect(materializedIds).not.toContain('pm-future');
   });
 

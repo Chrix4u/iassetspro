@@ -393,17 +393,16 @@ export async function generateDueDirectPmAssignmentWorkOrders(
       );
       const rollup = await getPmMachineRollup({ client: tx, assetId, now, planningWindowDays: 0 });
       const dueItems = rollup.assignments.filter((item) => item.dueStatus === 'due' && item.isBundleEligible && item.dueCycleKey);
-      const groups = new Map<PmRollupInspectionType, PmMachineRollupItem[]>();
-      for (const item of dueItems) {
-        const group = groups.get(item.inspectionType) || [];
-        group.push(item);
-        groups.set(item.inspectionType, group);
-      }
+      // Reuse the same compatibility window as planner bundling. This keeps an older
+      // overdue cycle from blocking newer due work on the same machine/state: cycles
+      // too far apart are materialized as separate work orders instead of one invalid bundle.
+      const groups = buildPmBundleGroups(dueItems, 7);
 
       const generated: DirectPmAutoGenerationResultItem[] = [];
       let materialized = 0;
-      for (const [inspectionType, items] of groups) {
-        const assignmentIds = items.map((item) => item.id).sort();
+      for (const group of groups) {
+        const inspectionType = group.inspectionType;
+        const assignmentIds = [...group.assignmentIds].sort();
         await lockDirectPmAssignments(tx, assignmentIds);
         try {
           const bundle = await materializePmAssignmentBundleInTransaction(tx, {
@@ -411,7 +410,7 @@ export async function generateDueDirectPmAssignmentWorkOrders(
             assetId,
             assignmentIds,
             now,
-            planningWindowDays: 0,
+            planningWindowDays: 7,
             plannedStart: now,
             rollup,
             locationSnapshot: buildMaintenanceLocationSnapshot(locationMap.get(assetId) ?? null),

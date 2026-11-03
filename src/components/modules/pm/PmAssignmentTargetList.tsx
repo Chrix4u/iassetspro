@@ -46,8 +46,8 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
 
   return <div className="space-y-3">
     <div className="rounded-xl border bg-card p-3">
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-        <div className="sm:col-span-2 xl:col-span-2"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Search</Label><div className="relative mt-1"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"/><Input className="h-9 pl-8 text-xs" value={filters.search || ''} onChange={(e) => set({ search: e.target.value })} placeholder="Search part, asset or task…"/></div></div>
+      <div className="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        <div className="sm:col-span-2 xl:col-span-2 self-end"><Label className="text-[10px] font-semibold uppercase text-muted-foreground">Search</Label><div className="relative mt-1"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"/><Input className="h-9 pl-8 text-xs" value={filters.search || ''} onChange={(e) => set({ search: e.target.value })} placeholder="Search part, asset or task…"/></div></div>
         <FilterSelect label="Asset" className="xl:col-span-2" value={filters.assetId || ALL} onChange={(v) => set({ assetId: selectValue(v), componentId: '' })}>{assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.name}{asset.assetTag ? ` [${asset.assetTag}]` : ''}</SelectItem>)}</FilterSelect>
         <FilterSelect label="Part / Target" className="xl:col-span-2" value={filters.componentId || ALL} onChange={(v) => set({ componentId: selectValue(v) })}>{hasWholeMachineTarget && <SelectItem value="__machine__">Whole machine</SelectItem>}{componentTargets.map((group) => <SelectItem key={group.componentId!} value={group.componentId!}>{group.targetName}</SelectItem>)}</FilterSelect>
         <FilterSelect label="PM Type" value={filters.pmType || ALL} onChange={(v) => set({ pmType: selectValue(v) })}><SelectItem value="tbm">TBM · Time Based</SelectItem><SelectItem value="ubm">UBM · Usage Based</SelectItem><SelectItem value="cbm">CBM · Condition Based</SelectItem><SelectItem value="fbm">FBM · Failure Based</SelectItem></FilterSelect>
@@ -82,5 +82,5 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
 }
 
 function FilterSelect({ label, value, onChange, children, className = '' }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode; className?: string }) {
-  return <div className={`min-w-0 ${className}`}><Label className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger className="mt-1 h-9 w-full min-w-0 overflow-hidden text-xs [&>span]:truncate"><SelectValue/></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem>{children}</SelectContent></Select></div>;
+  return <div className={`min-w-0 self-end ${className}`}><Label className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger className="mt-1 h-9 w-full min-w-0 overflow-hidden text-xs [&>span]:truncate"><SelectValue/></SelectTrigger><SelectContent><SelectItem value={ALL}>All</SelectItem>{children}</SelectContent></Select></div>;
 }

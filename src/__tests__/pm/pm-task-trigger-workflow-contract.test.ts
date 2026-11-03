@@ -6,7 +6,6 @@ const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf
 
 const form = source('src/components/modules/pm/PmAssignmentFormDialog.tsx');
 const planner = source('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
-const card = source('src/components/modules/pm/PmAssignmentTaskCard.tsx');
 const list = source('src/components/modules/pm/PmAssignmentTargetList.tsx');
 const page = source('src/components/modules/pm/PmPlanningPage.tsx');
 
@@ -21,9 +20,10 @@ describe('PM direct assignment task trigger workflow', () => {
 
   it('keeps task selection separate from per-task trigger configuration', () => {
     expect(planner).toContain("stage?: 'tasks' | 'triggers'");
-    expect(planner).toContain("planningVisible={stage === 'triggers'}");
-    expect(card).toContain('planningVisible?: boolean');
-    expect(card).toContain('{planningVisible && (');
+    expect(planner).toContain("stage === 'tasks'");
+    expect(planner).toContain('pm-assignment-task-planning-grid');
+    expect(planner).toContain('pm-assignment-condition-planning-grid');
+    expect(planner).toContain("stage === 'triggers'");
   });
 
   it('lets planners reopen a target directly in trigger configuration', () => {

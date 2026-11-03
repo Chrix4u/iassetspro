@@ -83,6 +83,14 @@ export function normalizePmAssignmentInput(input: unknown): NormalizePmAssignmen
   let leadDays = whole(raw.leadDays, 0);
   if (leadDays === null) return { ok: false, error: 'Lead Days must be a non-negative whole number' };
 
+  const rawFrequencyType = text(raw.frequencyType)?.toLowerCase();
+  const frequencyType = rawFrequencyType === 'time_day' || rawFrequencyType === 'meter' || rawFrequencyType === 'event'
+    ? rawFrequencyType
+    : pmType === 'ubm'
+      ? 'meter'
+      : pmType === 'cbm' || pmType === 'fbm'
+        ? 'event'
+        : 'time_day';
   const rawValue = finite(raw.value ?? raw.frequencyInterval);
   if (Number.isNaN(rawValue)) return { ok: false, error: 'Value must be numeric' };
   const rawUnit = text(raw.unit ?? raw.frequencyUnit);
@@ -92,19 +100,19 @@ export function normalizePmAssignmentInput(input: unknown): NormalizePmAssignmen
   let unit: string | null = rawUnit;
   let nextDueDate: Date | null = null;
 
-  if (pmType === 'tbm') {
+  if (frequencyType === 'time_day') {
     basis = 'calendar';
-    if (value === null || !Number.isInteger(value) || value <= 0) return { ok: false, error: 'TBM Value must be a positive whole number' };
-    if (!unit || !(PM_SCHEDULE_TASK_TIME_UNITS as readonly string[]).includes(unit)) return { ok: false, error: 'TBM unit is invalid' };
+    if (value === null || !Number.isInteger(value) || value <= 0) return { ok: false, error: 'Time/Day Value must be a positive whole number' };
+    if (!unit || !(PM_SCHEDULE_TASK_TIME_UNITS as readonly string[]).includes(unit)) return { ok: false, error: 'Time/Day unit is invalid' };
     const due = text(raw.nextDueDate);
-    if (!due) return { ok: false, error: 'TBM Next Due Date is required' };
+    if (!due) return { ok: false, error: 'Time/Day Next Due Date is required' };
     nextDueDate = new Date(due);
-    if (Number.isNaN(nextDueDate.getTime())) return { ok: false, error: 'TBM Next Due Date is invalid' };
+    if (Number.isNaN(nextDueDate.getTime())) return { ok: false, error: 'Time/Day Next Due Date is invalid' };
     if (unit === 'minutes' || unit === 'hours') leadDays = 0;
-  } else if (pmType === 'ubm') {
+  } else if (frequencyType === 'meter') {
     basis = 'meter';
-    if (value === null || value <= 0) return { ok: false, error: 'UBM Value must be greater than zero' };
-    if (!assetMeterId) return { ok: false, error: 'UBM requires an assigned asset meter' };
+    if (value === null || value <= 0) return { ok: false, error: 'Meter Value must be greater than zero' };
+    if (!assetMeterId) return { ok: false, error: 'Meter frequency requires an assigned asset meter' };
     unit = null; // authoritative unit is inherited from AssetMeter
   } else {
     basis = null;
@@ -129,7 +137,7 @@ export function normalizePmAssignmentInput(input: unknown): NormalizePmAssignmen
       basis,
       value,
       unit,
-      assetMeterId: pmType === 'ubm' ? assetMeterId : null,
+      assetMeterId: basis === 'meter' ? assetMeterId : null,
       nextDueDate,
       estimatedMinutes,
       leadDays,
@@ -163,7 +171,7 @@ async function buildPersistenceData(client: PmAssignmentClient, plantId: string,
   let meterName: string | null = null;
   let frequencyUnit = plan.unit;
   let nextDueReading: number | null = null;
-  if (plan.pmType === 'ubm') {
+  if (plan.basis === 'meter') {
     const meter = await client.assetMeter.findUnique({
       where: { id: plan.assetMeterId! },
       select: { id: true, assetId: true, name: true, unit: true, currentValue: true, isActive: true },
@@ -174,11 +182,12 @@ async function buildPersistenceData(client: PmAssignmentClient, plantId: string,
     nextDueReading = Number(meter.currentValue) + Number(plan.value);
   }
 
+  const usesConditionTrigger = plan.pmType === 'cbm' && plan.basis === null;
   return {
     scheduleId: null,
     assetId: plan.assetId,
     componentId: plan.componentId,
-    assetMeterId: plan.assetMeterId,
+    assetMeterId: plan.basis === 'meter' ? plan.assetMeterId : null,
     pmTaskId: plan.pmTaskId,
     pmType: plan.pmType,
     activityMode: plan.activityMode,
@@ -192,14 +201,14 @@ async function buildPersistenceData(client: PmAssignmentClient, plantId: string,
     meterName,
     nextDueReading,
     nextDueDate: plan.nextDueDate,
-    conditionSourceType: plan.pmType === 'cbm' ? plan.conditionSourceType : null,
-    conditionSourceId: plan.pmType === 'cbm' ? plan.conditionSourceId : null,
-    conditionMetric: plan.pmType === 'cbm' ? plan.conditionMetric : null,
-    conditionOperator: plan.pmType === 'cbm' ? plan.conditionOperator : null,
-    conditionThreshold: plan.pmType === 'cbm' ? plan.conditionThreshold : null,
-    conditionThresholdMax: plan.pmType === 'cbm' ? plan.conditionThresholdMax : null,
-    conditionUnit: plan.pmType === 'cbm' ? plan.conditionUnit : null,
-    evaluationCadenceMinutes: plan.pmType === 'cbm' ? plan.evaluationCadenceMinutes : null,
+    conditionSourceType: usesConditionTrigger ? plan.conditionSourceType : null,
+    conditionSourceId: usesConditionTrigger ? plan.conditionSourceId : null,
+    conditionMetric: usesConditionTrigger ? plan.conditionMetric : null,
+    conditionOperator: usesConditionTrigger ? plan.conditionOperator : null,
+    conditionThreshold: usesConditionTrigger ? plan.conditionThreshold : null,
+    conditionThresholdMax: usesConditionTrigger ? plan.conditionThresholdMax : null,
+    conditionUnit: usesConditionTrigger ? plan.conditionUnit : null,
+    evaluationCadenceMinutes: usesConditionTrigger ? plan.evaluationCadenceMinutes : null,
     isActive: plan.isActive,
   };
 }
@@ -357,4 +366,3 @@ export async function deactivatePmAssignmentTarget(
     return { count: current.length };
   });
 }
-

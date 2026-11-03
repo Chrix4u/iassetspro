@@ -4,7 +4,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, ClipboardList, Clock, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { groupPmAssignmentTargets, type PmAssignmentTargetGroup, type PmAssignmentTargetListRecord } from '@/lib/pm-assignment-target-list';
+import {
+  groupPmAssignmentAssets,
+  groupPmAssignmentTargets,
+  pmAssignmentFrequencyType,
+  type PmAssignmentTargetGroup,
+  type PmAssignmentTargetListRecord,
+} from '@/lib/pm-assignment-target-list';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,11 +22,12 @@ import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPan
 import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';
 
 function taskOverdue(row: PmAssignmentTargetListRecord, now: Date) {
-  if (row.pmType === 'ubm') return row.nextDueReading != null && row.assetMeter ? Number(row.assetMeter.currentValue) >= Number(row.nextDueReading) : false;
+  if (pmAssignmentFrequencyType(row) === 'meter') return row.nextDueReading != null && row.assetMeter ? Number(row.assetMeter.currentValue) >= Number(row.nextDueReading) : false;
+  if (pmAssignmentFrequencyType(row) !== 'time_day') return false;
   return row.nextDueDate ? new Date(row.nextDueDate).getTime() < now.getTime() : false;
 }
 function taskDueSoon(row: PmAssignmentTargetListRecord, now: Date) {
-  if (!row.nextDueDate) return false;
+  if (pmAssignmentFrequencyType(row) !== 'time_day' || !row.nextDueDate) return false;
   const due = new Date(row.nextDueDate).getTime();
   return due >= now.getTime() && due <= now.getTime() + 7 * 86400000;
 }
@@ -55,6 +62,7 @@ export function PmPlanningPage() {
   useEffect(() => { api.get('/api/pm-automation/status').then((response) => { if (response.success) setAutomationStatus(response.data); }).catch(() => {}); }, []);
 
   const groups = useMemo(() => groupPmAssignmentTargets(assignments), [assignments]);
+  const machines = useMemo(() => groupPmAssignmentAssets(groups), [groups]);
   const now = new Date();
   const overdueTargets = groups.filter((group) => group.assignments.some((row) => taskOverdue(row, now))).length;
   const dueSoonTargets = groups.filter((group) => group.assignments.some((row) => taskDueSoon(row, now))).length;
@@ -82,12 +90,12 @@ export function PmPlanningPage() {
 
   return <div className="page-content space-y-4">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p><h1 className="text-2xl font-bold tracking-tight">PM Planning</h1><p className="mt-1 text-sm text-muted-foreground">One schedule row per machine or maintainable part. Assign tasks first, then configure the trigger and cadence for each task independently.</p>{automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}</div>
+      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p><h1 className="text-2xl font-bold tracking-tight">PM Planning</h1><p className="mt-1 text-sm text-muted-foreground">PM schedules are grouped by parent machine. Expand a machine to see each scheduled part and configure every task's PM Type and Frequency Type independently.</p>{automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}</div>
       {canCreate && <Button size="sm" onClick={() => { setEditTarget(null); setTriggerTarget(null); setAssignmentOpen(true); }}><Plus className="mr-1.5 h-4 w-4"/>New PM Assignment</Button>}
     </div>
 
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Stat label="PM Targets" value={groups.length} icon={ClipboardList}/><Stat label="Active Tasks" value={assignments.length} icon={Activity}/><Stat label="Due Soon" value={dueSoonTargets} icon={Clock}/><Stat label="Overdue" value={overdueTargets} icon={AlertTriangle}/>
+      <Stat label="Machines" value={machines.length} icon={ClipboardList}/><Stat label="Active Tasks" value={assignments.length} icon={Activity}/><Stat label="Due Soon Targets" value={dueSoonTargets} icon={Clock}/><Stat label="Overdue Targets" value={overdueTargets} icon={AlertTriangle}/>
     </div>
 
     <PmPortfolioCompliancePanel />

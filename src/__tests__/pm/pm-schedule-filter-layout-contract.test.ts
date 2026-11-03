@@ -20,4 +20,10 @@ describe('PM schedule filter layout contract', () => {
     expect(list).toContain('w-full min-w-0 overflow-hidden');
     expect(list).toContain('[&>span]:truncate');
   });
+
+  it('bottom-aligns wrapped filter controls so every row stays visually aligned', () => {
+    expect(list).toContain('grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6');
+    expect(list).toContain('sm:col-span-2 xl:col-span-2 self-end');
+    expect(list).toContain("className={`min-w-0 self-end ${className}`}");
+  });
 });

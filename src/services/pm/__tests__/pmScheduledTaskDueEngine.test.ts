@@ -140,7 +140,7 @@ describe('pmScheduledTaskDueEngine', () => {
     });
     const result = await evaluate(baseInput({
       task: task({
-        scheduleId: null, assetId: 'asset-1', assetMeterId: 'meter-1',
+        scheduleId: null, assetId: 'asset-1', assetMeterId: 'meter-1', basis: 'meter',
         maintenanceMode: 'ubm', meterName: 'Running Hours', frequencyUnit: 'h',
         nextDueReading: 3740, nextDueDate: null,
       }),

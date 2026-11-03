@@ -164,12 +164,7 @@ export function formatPmAssignmentEstimatedTime(minutes: number): string {
   return remainder ? `${hours} h ${remainder} min` : `${hours} h`;
 }
 
-export function validatePmAssignmentTaskDraft(task: PmAssignmentTaskDraft): string | null {
-  const minutes = Number(task.estimatedMinutes || 0);
-  const leads = Number(task.leadDays || 0);
-  if (!Number.isInteger(minutes) || minutes < 0) return `Task #${task.taskNumber}: Est. Minutes must be a non-negative whole number`;
-  if (!Number.isInteger(leads) || leads < 0) return `Task #${task.taskNumber}: Lead Days must be a non-negative whole number`;
-
+export function validatePmAssignmentTriggerDraft(task: PmAssignmentTaskDraft): string | null {
   if (task.pmType === 'tbm') {
     const value = Number(task.value);
     if (!Number.isInteger(value) || value <= 0) return `Task #${task.taskNumber}: TBM Value must be a positive whole number`;
@@ -195,6 +190,14 @@ export function validatePmAssignmentTaskDraft(task: PmAssignmentTaskDraft): stri
   }
 
   return null;
+}
+
+export function validatePmAssignmentTaskDraft(task: PmAssignmentTaskDraft): string | null {
+  const minutes = Number(task.estimatedMinutes || 0);
+  const leads = Number(task.leadDays || 0);
+  if (!Number.isInteger(minutes) || minutes < 0) return `Task #${task.taskNumber}: Est. Minutes must be a non-negative whole number`;
+  if (!Number.isInteger(leads) || leads < 0) return `Task #${task.taskNumber}: Lead Days must be a non-negative whole number`;
+  return validatePmAssignmentTriggerDraft(task);
 }
 
 export function pmAssignmentTaskPayload(task: PmAssignmentTaskDraft) {

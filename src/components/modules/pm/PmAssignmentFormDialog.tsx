@@ -81,9 +81,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       if (!response.success) break;
       if (Array.isArray(response.data)) assets.push(...response.data);
       const reportedTotalPages = Number(response.pagination?.totalPages || 1);
-      totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0
-        ? Math.min(reportedTotalPages, 1000)
-        : 1;
+      totalPages = Number.isFinite(reportedTotalPages) && reportedTotalPages > 0 ? Math.min(reportedTotalPages, 1000) : 1;
       page += 1;
     } while (page <= totalPages);
 
@@ -114,11 +112,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     const needle = query.trim().toLowerCase();
     return (response.data as any[])
       .filter((template) => !needle || String(template.title || '').toLowerCase().includes(needle))
-      .map((template) => ({
-        value: template.id,
-        label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`,
-        badge: template.type,
-      }));
+      .map((template) => ({ value: template.id, label: `${template.title} · ${template._count?.tasks ?? 0} task${template._count?.tasks === 1 ? '' : 's'}`, badge: template.type }));
   };
 
   const loadTemplate = async (nextTemplateId: string) => {
@@ -187,10 +181,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
 
     setSaving(true);
     try {
-      const assignments = tasks.map((task) => ({
-        ...pmAssignmentTaskPayload(task),
-        ...(task.assignmentId ? { id: task.assignmentId } : {}),
-      }));
+      const assignments = tasks.map((task) => ({ ...pmAssignmentTaskPayload(task), ...(task.assignmentId ? { id: task.assignmentId } : {}) }));
       const response = editTarget
         ? await api.patch('/api/pm-assignments/target', { assetId, componentId, assignments })
         : await api.post('/api/pm-assignments', { assetId, componentId, assignments });
@@ -215,11 +206,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       description={editTarget ? 'Update the tasks and planning conditions defined on this target. The asset and part remain fixed.' : 'Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions.'}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs" data-testid="pm-assignment-footer-total">
-            <span className="text-muted-foreground">Total estimated time:</span>{' '}
-            <strong>{totalEstimatedLabel}</strong>
-            <span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
-          </div>
+          <div className="text-xs" data-testid="pm-assignment-footer-total"><span className="text-muted-foreground">Total estimated time:</span>{' '}<strong>{totalEstimatedLabel}</strong><span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span></div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="button" className="w-full sm:w-auto" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
@@ -233,54 +220,24 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       <div className="space-y-4 py-1">
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold">Asset *</Label>
-          <AsyncSearchableSelect
-            value={assetId}
-            onValueChange={changeAsset}
-            fetchOptions={fetchAssets}
-            placeholder="Select machine / asset..."
-            searchPlaceholder="Search asset name or tag..."
-            disabled={Boolean(editTarget)}
-          />
+          <AsyncSearchableSelect value={assetId} onValueChange={changeAsset} fetchOptions={fetchAssets} placeholder="Select machine / asset..." searchPlaceholder="Search asset name or tag..." disabled={Boolean(editTarget)} />
         </div>
 
         <div>
           <Label className="mb-1.5 block text-xs font-semibold">PM Target</Label>
           {editTarget ? (
-            <div className="rounded-lg border bg-muted/20 px-3 py-2">
-              <p className="text-sm font-semibold">{editTarget.targetName}</p>
-              <p className="text-xs text-muted-foreground">{editTarget.component ? `${editTarget.component.componentCode || ''} · ${editTarget.asset.name}` : `${editTarget.asset.name} · Whole machine`}</p>
-            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2"><p className="text-sm font-semibold">{editTarget.targetName}</p><p className="text-xs text-muted-foreground">{editTarget.component ? `${editTarget.component.componentCode || ''} · ${editTarget.asset.name}` : `${editTarget.asset.name} · Whole machine`}</p></div>
           ) : (
-            <PmTargetTreePicker
-              asset={asset}
-              componentId={componentId}
-              technicalPath={technicalPath}
-              onChange={(id, path) => {
-                if (id !== componentId) setTasks((current) => current.map(clearPmAssignmentConditionBinding));
-                setComponentId(id);
-                setTechnicalPath(path);
-                setTargetConfirmed(true);
-              }}
-            />
+            <PmTargetTreePicker asset={asset} componentId={componentId} technicalPath={technicalPath} onChange={(id, path) => { if (id !== componentId) setTasks((current) => current.map(clearPmAssignmentConditionBinding)); setComponentId(id); setTechnicalPath(path); setTargetConfirmed(true); }} />
           )}
         </div>
 
         <div className="space-y-1.5 rounded-lg border bg-muted/10 p-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <Label className="text-xs font-semibold">Task Template</Label>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">Optional. Selecting a template populates/replaces the task rows below; you can still add Task Library tasks afterward.</p>
-            </div>
+            <div><Label className="text-xs font-semibold">Task Template</Label><p className="mt-0.5 text-[10px] text-muted-foreground">Optional. Selecting a template populates/replaces the task rows below; you can still add Task Library tasks afterward.</p></div>
             {templateLoading && <span className="flex items-center gap-1 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Loading template tasks…</span>}
           </div>
-          <AsyncSearchableSelect
-            value={templateId}
-            onValueChange={(value) => void loadTemplate(value)}
-            fetchOptions={fetchTemplates}
-            placeholder="Select Task Template..."
-            searchPlaceholder="Search PM templates..."
-            disabled={!assetId || templateLoading}
-          />
+          <AsyncSearchableSelect value={templateId} onValueChange={(value) => void loadTemplate(value)} fetchOptions={fetchTemplates} placeholder="Select Task Template..." searchPlaceholder="Search PM templates..." disabled={!assetId || templateLoading} />
         </div>
 
         <PmAssignmentTaskPlanner
@@ -290,6 +247,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
           componentId={componentId}
           targetConfirmed={targetConfirmed}
           disabled={saving || templateLoading}
+          mode="tasks"
         />
       </div>
     </ResponsiveDialog>

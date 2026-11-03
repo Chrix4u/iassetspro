@@ -76,8 +76,8 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
     () => conditions.find((source) => source.sourceType === task.conditionSourceType && source.sourceId === task.conditionSourceId && source.metric === task.conditionMetric) || null,
     [conditions, task.conditionMetric, task.conditionSourceId, task.conditionSourceType],
   );
-  const usesSubDayTime = task.pmType === 'tbm' && (task.frequencyUnit === 'minutes' || task.frequencyUnit === 'hours');
-  const cadenceDisabled = task.pmType === 'cbm' || task.pmType === 'fbm';
+  const usesSubDayTime = task.frequencyType === 'time_day' && (task.frequencyUnit === 'minutes' || task.frequencyUnit === 'hours');
+  const isEventFrequency = task.frequencyType === 'event';
   const interval = Number(task.value);
   const nextMeterDue = selectedMeter && Number.isFinite(interval) && interval > 0 ? Number(selectedMeter.currentValue) + interval : null;
   const dueTime = task.nextDueDate.includes('T') ? task.nextDueDate.split('T')[1]?.slice(0, 5) || '' : '';
@@ -86,47 +86,43 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
     : usesSubDayTime ? 'dd/mm/yyyy hh:mm' : 'dd/mm/yyyy';
 
   useEffect(() => {
-    if (task.pmType !== 'ubm' || task.assetMeterId || sourcesLoading || meters.length !== 1) return;
+    if (task.frequencyType !== 'meter' || task.assetMeterId || sourcesLoading || meters.length !== 1) return;
     const meter = meters[0];
     onChange({ assetMeterId: meter.id, frequencyUnit: meter.unit });
-  }, [meters, onChange, sourcesLoading, task.assetMeterId, task.pmType]);
+  }, [meters, onChange, sourcesLoading, task.assetMeterId, task.frequencyType]);
 
   const setFrequencyType = (frequencyType: PmAssignmentTaskDraft['frequencyType']) => {
     if (frequencyType === 'meter') {
-      const meter = meters.length === 1 ? meters[0] : null;
+      const meter = selectedMeter || (meters.length === 1 ? meters[0] : null);
       onChange({
-        frequencyType: 'meter',
-        pmType: 'ubm',
+        frequencyType,
         assetMeterId: meter?.id || '',
         frequencyUnit: meter?.unit || '',
         nextDueDate: '',
       });
       return;
     }
+    if (frequencyType === 'event') {
+      onChange({
+        frequencyType,
+        assetMeterId: '',
+        frequencyUnit: '',
+        value: '',
+        nextDueDate: '',
+        leadDays: '0',
+      });
+      return;
+    }
     onChange({
-      frequencyType: 'time_day',
-      pmType: 'tbm',
+      frequencyType,
       assetMeterId: '',
       frequencyUnit: (PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit) ? task.frequencyUnit : 'months',
+      value: task.value || '1',
     });
   };
 
   const setPmType = (pmType: PmAssignmentTaskDraft['pmType']) => {
-    if (pmType === 'tbm') {
-      onChange({
-        pmType,
-        frequencyType: 'time_day',
-        assetMeterId: '',
-        frequencyUnit: (PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit) ? task.frequencyUnit : 'months',
-      });
-      return;
-    }
-    if (pmType === 'ubm') {
-      const meter = selectedMeter || (meters.length === 1 ? meters[0] : null);
-      onChange({ pmType, frequencyType: 'meter', assetMeterId: meter?.id || '', frequencyUnit: meter?.unit || '', nextDueDate: '' });
-      return;
-    }
-    onChange({ pmType, assetMeterId: '', nextDueDate: '' });
+    onChange({ pmType });
   };
 
   return (
@@ -147,18 +143,19 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
       <div data-testid="pm-assignment-task-planning-grid" className="mt-2 grid grid-cols-12 gap-2 md:grid-cols-12 lg:grid-cols-4 xl:grid-cols-[1.15fr_1.1fr_.55fr_1.45fr_1.15fr_1.1fr_.75fr_.65fr_1.8fr]">
         <div className={frequencyTypeField}>
           <Label className={compactLabel}>Frequency Type</Label>
-          <Select value={task.frequencyType} onValueChange={(value) => setFrequencyType(value as PmAssignmentTaskDraft['frequencyType'])} disabled={cadenceDisabled}>
+          <Select value={task.frequencyType} onValueChange={(value) => setFrequencyType(value as PmAssignmentTaskDraft['frequencyType'])}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="time_day">Time / Day</SelectItem>
               <SelectItem value="meter">Meter Based</SelectItem>
+              <SelectItem value="event">Event / Condition</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <div className={frequencyUnitField}>
           <Label className={compactLabel}>Frequency Unit</Label>
-          {task.frequencyType === 'meter' && !cadenceDisabled ? (
+          {task.frequencyType === 'meter' ? (
             <Select
               value={task.assetMeterId || undefined}
               onValueChange={(assetMeterId) => {
@@ -170,23 +167,25 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
               <SelectTrigger className={compactControl}><SelectValue placeholder={sourcesLoading ? 'Loading…' : 'Select meter'} /></SelectTrigger>
               <SelectContent>{meters.map((meter) => <SelectItem key={meter.id} value={meter.id}>{meter.name} · {meter.unit}</SelectItem>)}</SelectContent>
             </Select>
-          ) : (
-            <Select value={(PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit) ? task.frequencyUnit : 'months'} onValueChange={(frequencyUnit) => onChange({ frequencyUnit, ...(frequencyUnit === 'minutes' || frequencyUnit === 'hours' ? { leadDays: '0' } : {}) })} disabled={cadenceDisabled}>
+          ) : task.frequencyType === 'time_day' ? (
+            <Select value={(PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit) ? task.frequencyUnit : 'months'} onValueChange={(frequencyUnit) => onChange({ frequencyUnit, ...(frequencyUnit === 'minutes' || frequencyUnit === 'hours' ? { leadDays: '0' } : {}) })}>
               <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
               <SelectContent>{PM_ASSIGNMENT_TIME_UNITS.map((unit) => <SelectItem key={unit} value={unit}>{TIME_UNIT_LABELS[unit]}</SelectItem>)}</SelectContent>
             </Select>
+          ) : (
+            <Input className={compactControl} value="Event / Condition" disabled />
           )}
-          {task.frequencyType === 'meter' && selectedMeter && !cadenceDisabled && (
+          {task.frequencyType === 'meter' && selectedMeter && (
             <p className="truncate text-[9px] text-muted-foreground" title={`${selectedMeter.name}: ${selectedMeter.currentValue} ${selectedMeter.unit}`}>
               Current {selectedMeter.currentValue} {selectedMeter.unit}{nextMeterDue == null ? '' : ` · Next due ${nextMeterDue} ${selectedMeter.unit}`}
             </p>
           )}
-          {task.frequencyType === 'meter' && !sourcesLoading && meters.length === 0 && !cadenceDisabled && <p className="text-[9px] text-amber-600">No meter is configured for this asset.</p>}
+          {task.frequencyType === 'meter' && !sourcesLoading && meters.length === 0 && <p className="text-[9px] text-amber-600">No meter is configured for this asset.</p>}
         </div>
 
         <div className={intervalField}>
           <Label className={compactLabel}>Interval</Label>
-          <Input className={compactControl} type="number" min="0.000001" step={task.pmType === 'tbm' ? '1' : 'any'} value={task.value} onChange={(event) => onChange({ value: event.target.value })} disabled={cadenceDisabled} />
+          <Input className={compactControl} type="number" min="0.000001" step={task.frequencyType === 'time_day' ? '1' : 'any'} value={task.value} onChange={(event) => onChange({ value: event.target.value })} disabled={isEventFrequency} />
         </div>
 
         <div className={standardField}>
@@ -194,10 +193,10 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
           <Select value={task.pmType} onValueChange={(value) => setPmType(value as PmAssignmentTaskDraft['pmType'])}>
             <SelectTrigger className={compactControl}><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="tbm">TBM · Time Based</SelectItem>
-              <SelectItem value="ubm">UBM · Usage Based</SelectItem>
-              <SelectItem value="cbm">CBM · Condition Based</SelectItem>
-              <SelectItem value="fbm">FBM · Failure Based</SelectItem>
+              <SelectItem value="tbm">TBM</SelectItem>
+              <SelectItem value="ubm">UBM</SelectItem>
+              <SelectItem value="cbm">CBM</SelectItem>
+              <SelectItem value="fbm">FBM</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -225,12 +224,12 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
 
         <div className={leadDaysField}>
           <Label className={compactLabel}>Lead Days</Label>
-          <Input className={compactControl} type="number" min="0" step="1" value={usesSubDayTime ? '0' : task.leadDays} disabled={usesSubDayTime || task.pmType === 'fbm'} onChange={(event) => onChange({ leadDays: event.target.value })} />
+          <Input className={compactControl} type="number" min="0" step="1" value={task.frequencyType === 'time_day' && !usesSubDayTime ? task.leadDays : '0'} disabled={task.frequencyType !== 'time_day' || usesSubDayTime} onChange={(event) => onChange({ leadDays: event.target.value })} />
         </div>
 
         <div className={nextDueDateField}>
           <Label className={compactLabel}>Next Due Date</Label>
-          <div className={`relative h-9 w-full min-w-0 rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 ${task.pmType !== 'tbm' ? 'opacity-50' : ''}`}>
+          <div className={`relative h-9 w-full min-w-0 rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 ${task.frequencyType !== 'time_day' ? 'opacity-50' : ''}`}>
             <div aria-hidden="true" className="pointer-events-none flex h-9 min-w-0 items-center truncate px-2 text-xs">
               {dueDateDisplay}
             </div>
@@ -245,13 +244,13 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
                 if (typeof input.showPicker === 'function') input.showPicker();
               }}
               onChange={(event) => onChange({ nextDueDate: event.target.value })}
-              disabled={task.pmType !== 'tbm'}
+              disabled={task.frequencyType !== 'time_day'}
             />
           </div>
         </div>
       </div>
 
-      {task.pmType === 'cbm' && (
+      {task.pmType === 'cbm' && task.frequencyType === 'event' && (
         <div data-testid="pm-assignment-condition-planning-grid" className="mt-2 grid gap-2 rounded-md border bg-muted/15 p-2 sm:grid-cols-2 lg:grid-cols-5">
           <div className={`${compactField} sm:col-span-2`}>
             <Label className={compactLabel}>Condition Source</Label>

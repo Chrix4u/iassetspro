@@ -95,6 +95,7 @@ function asDate(value: string | Date | null | undefined): Date | null {
 function earliestDue(assignments: PmAssignmentTargetListRecord[]): string | Date | null {
   let earliest: { value: string | Date; time: number } | null = null;
   for (const assignment of assignments) {
+    if (pmAssignmentFrequencyType(assignment) !== 'time_day') continue;
     const due = asDate(assignment.nextDueDate);
     if (!due) continue;
     if (!earliest || due.getTime() < earliest.time) earliest = { value: assignment.nextDueDate!, time: due.getTime() };
@@ -173,11 +174,13 @@ export function groupPmAssignmentAssets(groups: PmAssignmentTargetGroup[]): PmAs
 }
 
 function isOverdue(assignment: PmAssignmentTargetListRecord, now: Date): boolean {
-  if (pmAssignmentFrequencyType(assignment) === 'meter') {
+  const frequencyType = pmAssignmentFrequencyType(assignment);
+  if (frequencyType === 'meter') {
     return assignment.nextDueReading != null && assignment.assetMeter?.currentValue != null
       ? Number(assignment.assetMeter.currentValue) >= Number(assignment.nextDueReading)
       : false;
   }
+  if (frequencyType !== 'time_day') return false;
   const due = asDate(assignment.nextDueDate);
   return Boolean(due && due.getTime() < now.getTime());
 }

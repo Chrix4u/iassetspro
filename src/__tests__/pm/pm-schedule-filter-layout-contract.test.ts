@@ -16,7 +16,7 @@ describe('PM schedule filter layout contract', () => {
   });
 
   it('keeps long selected values inside their filter cell', () => {
-    expect(list).toContain("className={`min-w-0 ${className}`}");
+    expect(list).toContain("className={`min-w-0 self-end ${className}`}");
     expect(list).toContain('w-full min-w-0 overflow-hidden');
     expect(list).toContain('[&>span]:truncate');
   });

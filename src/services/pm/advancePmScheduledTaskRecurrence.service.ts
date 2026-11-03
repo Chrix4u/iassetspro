@@ -130,7 +130,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
         ? 'tbm'
         : scheduledTask.basis === 'meter'
           ? 'ubm'
-          : scheduledTask.maintenanceMode
+          : 'event'
       : scheduledTask.maintenanceMode;
 
     if (recurrenceMode === 'tbm') {
@@ -217,7 +217,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           readingDate: baseline.readingDate.toISOString(),
         },
       };
-    } else if (recurrenceMode === 'cbm' || recurrenceMode === 'fbm') {
+    } else if (recurrenceMode === 'event' || recurrenceMode === 'cbm' || recurrenceMode === 'fbm') {
       updateData = { lastCompletedAt: completedAt };
     } else {
       throw recurrenceError(

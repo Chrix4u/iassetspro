@@ -27,7 +27,7 @@ describe('canonical direct PM assignment form contract',()=>{
   it('loads persisted direct assignments for target edits and fixes target identity',()=>{
     expect(form).toContain('pmAssignmentDraftFromApi');
     expect(form).toContain('editTarget.assignments.map');
-    expect(form).toContain('disabled={Boolean(editTarget)}');
+    expect(form).toContain("disabled={Boolean(editTarget) || step === 'triggers'}");
   });
   it('updates a target atomically through the target endpoint',()=>{
     expect(form).toContain("api.patch('/api/pm-assignments/target'");

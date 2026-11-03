@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Eye, Pencil, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { ClipboardList, Eye, Pencil, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
 import { filterPmAssignmentTargets, type PmAssignmentTargetFilters, type PmAssignmentTargetGroup } from '@/lib/pm-assignment-target-list';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState } from '@/components/shared/helpers';
-import { ClipboardList } from 'lucide-react';
 
 const ALL = '__all__';
 const pmLabels: Record<string, string> = { tbm: 'TBM', ubm: 'UBM', cbm: 'CBM', fbm: 'FBM' };
@@ -30,9 +29,9 @@ function dueSummary(group: PmAssignmentTargetGroup) {
   return { label: 'Event / condition', className: '' };
 }
 
-export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onDelete }: {
+export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onConfigureTriggers, onDelete }: {
   groups: PmAssignmentTargetGroup[]; loading: boolean; canEdit: boolean; canDelete: boolean;
-  onView: (group: PmAssignmentTargetGroup) => void; onEdit: (group: PmAssignmentTargetGroup) => void; onDelete: (group: PmAssignmentTargetGroup) => void;
+  onView: (group: PmAssignmentTargetGroup) => void; onEdit: (group: PmAssignmentTargetGroup) => void; onConfigureTriggers: (group: PmAssignmentTargetGroup) => void; onDelete: (group: PmAssignmentTargetGroup) => void;
 }) {
   const [filters, setFilters] = useState<PmAssignmentTargetFilters>({});
   const filtered = useMemo(() => filterPmAssignmentTargets(groups, filters), [filters, groups]);
@@ -72,7 +71,7 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
               <TableCell className="hidden md:table-cell"><div className="flex flex-wrap gap-1">{group.pmTypes.map((type) => <Badge key={type} variant="outline" className="text-[10px]">{pmLabels[type] || type.toUpperCase()}</Badge>)}</div></TableCell>
               <TableCell><p className={`text-xs font-semibold ${due.className}`}>{due.label}</p>{due.sub && <p className="text-[10px] text-muted-foreground">{due.sub}</p>}</TableCell>
               <TableCell className="hidden lg:table-cell text-xs">{group.totalEstimatedMinutes} min</TableCell>
-              <TableCell><div className="flex justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onView(group)}><Eye className="mr-1 h-3.5 w-3.5"/>View</Button>{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onEdit(group)}><Pencil className="mr-1 h-3.5 w-3.5"/>Edit</Button>}{canDelete && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-red-600 hover:text-red-700" onClick={() => onDelete(group)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Delete</Button>}</div></TableCell>
+              <TableCell><div className="flex flex-wrap justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onView(group)}><Eye className="mr-1 h-3.5 w-3.5"/>View</Button>{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onConfigureTriggers(group)} title="Configure the trigger and cadence for each task"><Settings2 className="mr-1 h-3.5 w-3.5"/>Configure Triggers</Button>}{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onEdit(group)}><Pencil className="mr-1 h-3.5 w-3.5"/>Edit</Button>}{canDelete && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-red-600 hover:text-red-700" onClick={() => onDelete(group)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Delete</Button>}</div></TableCell>
             </TableRow>;
           })}
         </TableBody>

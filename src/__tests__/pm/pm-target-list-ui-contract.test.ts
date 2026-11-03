@@ -42,6 +42,7 @@ describe('PM target-centered planning UI', () => {
     expect(source).toContain('editTarget');
     expect(source).toContain("api.patch('/api/pm-assignments/target'");
     expect(source).toContain('assignmentId');
-    expect(source).toContain('Update PM Schedule');
+    expect(source).toContain('Configure PM Triggers');
+    expect(source).toContain('Save Trigger Changes');
   });
 });

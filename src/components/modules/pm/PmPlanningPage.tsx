@@ -30,6 +30,7 @@ export function PmPlanningPage() {
   const [loading, setLoading] = useState(true);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<PmAssignmentTargetGroup | null>(null);
+  const [triggerTarget, setTriggerTarget] = useState<PmAssignmentTargetGroup | null>(null);
   const [viewTarget, setViewTarget] = useState<PmAssignmentTargetGroup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PmAssignmentTargetGroup | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -73,10 +74,16 @@ export function PmPlanningPage() {
     finally { setDeleting(false); }
   };
 
+  const closeAssignmentDialog = () => {
+    setAssignmentOpen(false);
+    setEditTarget(null);
+    setTriggerTarget(null);
+  };
+
   return <div className="page-content space-y-4">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p><h1 className="text-2xl font-bold tracking-tight">PM Planning</h1><p className="mt-1 text-sm text-muted-foreground">One schedule row per machine or maintainable part. Open View for the full task plan and conditions.</p>{automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}</div>
-      {canCreate && <Button size="sm" onClick={() => setAssignmentOpen(true)}><Plus className="mr-1.5 h-4 w-4"/>New PM Assignment</Button>}
+      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p><h1 className="text-2xl font-bold tracking-tight">PM Planning</h1><p className="mt-1 text-sm text-muted-foreground">One schedule row per machine or maintainable part. Assign tasks first, then configure the trigger and cadence for each task independently.</p>{automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}</div>
+      {canCreate && <Button size="sm" onClick={() => { setEditTarget(null); setTriggerTarget(null); setAssignmentOpen(true); }}><Plus className="mr-1.5 h-4 w-4"/>New PM Assignment</Button>}
     </div>
 
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -85,9 +92,15 @@ export function PmPlanningPage() {
 
     <PmPortfolioCompliancePanel />
     <PmMachineRollupPanel />
-    <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={setEditTarget} onDelete={setDeleteTarget}/>
+    <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
 
-    <PmAssignmentFormDialog open={assignmentOpen || Boolean(editTarget)} editTarget={editTarget} onOpenChange={(open) => { if (!open) { setAssignmentOpen(false); setEditTarget(null); } }} onSaved={() => { setAssignmentOpen(false); setEditTarget(null); void fetchAssignments(); }}/>
+    <PmAssignmentFormDialog
+      open={assignmentOpen || Boolean(editTarget) || Boolean(triggerTarget)}
+      editTarget={triggerTarget || editTarget}
+      initialStep={triggerTarget ? 'triggers' : 'tasks'}
+      onOpenChange={(open) => { if (!open) closeAssignmentDialog(); }}
+      onSaved={() => { closeAssignmentDialog(); void fetchAssignments(); }}
+    />
     <PmAssignmentTargetDetailDialog open={Boolean(viewTarget)} group={viewTarget} onOpenChange={(open) => { if (!open) setViewTarget(null); }}/>
     <ResponsiveDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }} title="Delete PM Schedule" description="This deactivates every active PM task on the selected part. Historical records remain available for audit." footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button><Button variant="destructive" onClick={() => void deleteSchedule()} disabled={deleting}>{deleting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin"/> : <Trash2 className="mr-1.5 h-4 w-4"/>}Delete</Button></div>}>
       {deleteTarget && <p className="text-sm">Delete the PM schedule for <strong>{deleteTarget.targetName}</strong> on <strong>{deleteTarget.asset.name}</strong>? This will deactivate {deleteTarget.taskCount} task{deleteTarget.taskCount === 1 ? '' : 's'}.</p>}

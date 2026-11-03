@@ -23,9 +23,10 @@ interface Props {
   componentId?: string | null;
   targetConfirmed?: boolean;
   disabled?: boolean;
+  mode: 'tasks' | 'triggers';
 }
 
-export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false }: Props) {
+export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false, mode }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
   const [conditions, setConditions] = useState<PmAssignmentConditionSourceOption[]>([]);
@@ -101,13 +102,19 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
     <div data-testid="pm-assignment-task-planner" className="space-y-2">
       <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-semibold">Tasks & Planning</p>
-          <p className="text-[11px] text-muted-foreground">Configure each task independently. The same Task Library task can be added again with different planning conditions.</p>
+          <p className="text-sm font-semibold">{mode === 'tasks' ? 'Tasks & Execution' : 'Task Triggers'}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {mode === 'tasks'
+              ? 'Choose the work for this target and define how each task is performed.'
+              : 'Define when each assigned task becomes due. Every task keeps its own trigger.'}
+          </p>
           <p className="mt-1 text-xs"><span className="text-muted-foreground">Tasks:</span> <strong>{tasks.length}</strong> <span className="mx-1.5 text-muted-foreground">·</span> <span className="text-muted-foreground">Total estimated time:</span> <strong>{formatPmAssignmentEstimatedTime(totalMinutes)}</strong>{totalMinutes > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({(totalMinutes / 60).toFixed(2)} h)</span>}</p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId || !targetConfirmed} className="h-8 w-full text-xs sm:w-auto">
-          <Plus className="mr-1.5 h-4 w-4" /> Add Task from Library
-        </Button>
+        {mode === 'tasks' && (
+          <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId || !targetConfirmed} className="h-8 w-full text-xs sm:w-auto">
+            <Plus className="mr-1.5 h-4 w-4" /> Add Task from Library
+          </Button>
+        )}
       </div>
 
       {!assetId && <div className="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">Select an asset first.</div>}
@@ -117,11 +124,11 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
         <div className="rounded-lg border border-dashed p-4 text-center">
           <LibraryBig className="mx-auto h-7 w-7 text-muted-foreground" />
           <p className="mt-2 text-sm font-medium">No PM tasks added yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Load a Task Template above or add Task Library records here.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{mode === 'tasks' ? 'Load a Task Template above or add Task Library records here.' : 'Return to Tasks and add at least one task before configuring triggers.'}</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {sourcesLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing asset meters and condition sources…</div>}
+          {mode === 'triggers' && sourcesLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing asset meters and condition sources…</div>}
           {tasks.map((task, index) => (
             <PmAssignmentTaskCard
               key={task.clientId}
@@ -131,6 +138,7 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
               meters={meters}
               conditions={conditions}
               sourcesLoading={sourcesLoading}
+              mode={mode}
               onChange={(values) => patch(index, values)}
               onMove={(direction) => move(index, direction)}
               onRemove={() => remove(index)}
@@ -139,12 +147,14 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
         </div>
       )}
 
-      <PmScheduleTaskPickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        excludedTaskIds={[]}
-        onConfirm={addTasks}
-      />
+      {mode === 'tasks' && (
+        <PmScheduleTaskPickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          excludedTaskIds={[]}
+          onConfirm={addTasks}
+        />
+      )}
     </div>
   );
 }

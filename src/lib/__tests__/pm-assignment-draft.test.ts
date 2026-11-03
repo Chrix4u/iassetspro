@@ -75,10 +75,13 @@ describe('direct PM assignment task drafts', () => {
     expect(clearPmAssignmentConditionBinding(tbm)).toBe(tbm);
   });
 
-  it('keeps CBM and FBM recurrence semantics separate from time/meter cadence', () => {
+  it('keeps CBM and FBM event recurrence semantics explicit and independent from time/meter cadence', () => {
     const cbm = {
       ...pmAssignmentDraftFromMaster(master, '1'),
       pmType: 'cbm' as const,
+      frequencyType: 'event' as const,
+      frequencyUnit: '',
+      value: '',
       conditionSourceType: 'iot_device' as const,
       conditionSourceId: 'device-1',
       conditionMetric: 'temperature',
@@ -86,7 +89,13 @@ describe('direct PM assignment task drafts', () => {
       conditionThreshold: '80',
       conditionUnit: '°C',
     };
-    const fbm = { ...pmAssignmentDraftFromMaster(master, '2'), pmType: 'fbm' as const };
+    const fbm = {
+      ...pmAssignmentDraftFromMaster(master, '2'),
+      pmType: 'fbm' as const,
+      frequencyType: 'event' as const,
+      frequencyUnit: '',
+      value: '',
+    };
     expect(validatePmAssignmentTaskDraft(cbm)).toBeNull();
     expect(validatePmAssignmentTaskDraft(fbm)).toBeNull();
     expect(pmAssignmentTaskPayload(cbm)).toEqual(expect.objectContaining({ value: null, unit: null, conditionThreshold: 80 }));

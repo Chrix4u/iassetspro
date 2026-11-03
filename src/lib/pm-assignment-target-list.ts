@@ -8,6 +8,7 @@ export interface PmAssignmentTargetListRecord {
   componentId: string | null;
   isActive: boolean;
   pmType: string | null;
+  basis?: string | null;
   activityMode: string | null;
   equipmentState: string | null;
   frequencyInterval: number | null;
@@ -48,6 +49,17 @@ export interface PmAssignmentTargetGroup {
   earliestDueDate: string | Date | null;
 }
 
+export interface PmAssignmentAssetGroup {
+  assetId: string;
+  asset: PmAssignmentTargetGroup['asset'];
+  targets: PmAssignmentTargetGroup[];
+  targetCount: number;
+  taskCount: number;
+  totalEstimatedMinutes: number;
+  pmTypes: string[];
+  earliestDueDate: string | Date | null;
+}
+
 export interface PmAssignmentTargetFilters {
   search?: string;
   assetId?: string;
@@ -59,10 +71,15 @@ export interface PmAssignmentTargetFilters {
   dueState?: PmAssignmentListDueState | '';
 }
 
-export function pmAssignmentFrequencyType(assignment: Pick<PmAssignmentTargetListRecord, 'pmType'>): PmAssignmentListFrequencyType {
-  if (assignment.pmType === 'tbm') return 'time_day';
+export function pmAssignmentFrequencyType(
+  assignment: Pick<PmAssignmentTargetListRecord, 'pmType' | 'basis'>,
+): PmAssignmentListFrequencyType {
+  if (assignment.basis === 'calendar') return 'time_day';
+  if (assignment.basis === 'meter') return 'meter';
+  if (assignment.basis === null) return 'event';
   if (assignment.pmType === 'ubm') return 'meter';
-  return 'event';
+  if (assignment.pmType === 'cbm' || assignment.pmType === 'fbm') return 'event';
+  return 'time_day';
 }
 
 function targetKey(assignment: Pick<PmAssignmentTargetListRecord, 'assetId' | 'componentId'>): string {
@@ -78,9 +95,20 @@ function asDate(value: string | Date | null | undefined): Date | null {
 function earliestDue(assignments: PmAssignmentTargetListRecord[]): string | Date | null {
   let earliest: { value: string | Date; time: number } | null = null;
   for (const assignment of assignments) {
+    if (pmAssignmentFrequencyType(assignment) !== 'time_day') continue;
     const due = asDate(assignment.nextDueDate);
     if (!due) continue;
     if (!earliest || due.getTime() < earliest.time) earliest = { value: assignment.nextDueDate!, time: due.getTime() };
+  }
+  return earliest?.value ?? null;
+}
+
+function earliestTargetDue(targets: PmAssignmentTargetGroup[]): string | Date | null {
+  let earliest: { value: string | Date; time: number } | null = null;
+  for (const target of targets) {
+    const due = asDate(target.earliestDueDate);
+    if (!due || !target.earliestDueDate) continue;
+    if (!earliest || due.getTime() < earliest.time) earliest = { value: target.earliestDueDate, time: due.getTime() };
   }
   return earliest?.value ?? null;
 }
@@ -117,28 +145,61 @@ export function groupPmAssignmentTargets(assignments: PmAssignmentTargetListReco
   }).sort((a, b) => a.asset.name.localeCompare(b.asset.name) || a.targetName.localeCompare(b.targetName));
 }
 
+export function groupPmAssignmentAssets(groups: PmAssignmentTargetGroup[]): PmAssignmentAssetGroup[] {
+  const grouped = new Map<string, PmAssignmentTargetGroup[]>();
+  for (const group of groups) {
+    const current = grouped.get(group.assetId) || [];
+    current.push(group);
+    grouped.set(group.assetId, current);
+  }
+
+  return [...grouped.entries()].map(([assetId, targets]) => {
+    const orderedTargets = [...targets].sort((a, b) => {
+      if (a.componentId === null && b.componentId !== null) return -1;
+      if (a.componentId !== null && b.componentId === null) return 1;
+      return a.targetName.localeCompare(b.targetName);
+    });
+    const asset = orderedTargets[0].asset;
+    return {
+      assetId,
+      asset,
+      targets: orderedTargets,
+      targetCount: orderedTargets.length,
+      taskCount: orderedTargets.reduce((sum, target) => sum + target.taskCount, 0),
+      totalEstimatedMinutes: orderedTargets.reduce((sum, target) => sum + target.totalEstimatedMinutes, 0),
+      pmTypes: [...new Set(orderedTargets.flatMap((target) => target.pmTypes))],
+      earliestDueDate: earliestTargetDue(orderedTargets),
+    };
+  }).sort((a, b) => a.asset.name.localeCompare(b.asset.name));
+}
+
 function isOverdue(assignment: PmAssignmentTargetListRecord, now: Date): boolean {
-  if (assignment.pmType === 'ubm') {
+  const frequencyType = pmAssignmentFrequencyType(assignment);
+  if (frequencyType === 'meter') {
     return assignment.nextDueReading != null && assignment.assetMeter?.currentValue != null
       ? Number(assignment.assetMeter.currentValue) >= Number(assignment.nextDueReading)
       : false;
   }
+  if (frequencyType !== 'time_day') return false;
   const due = asDate(assignment.nextDueDate);
   return Boolean(due && due.getTime() < now.getTime());
 }
 
 function isDueSoon(assignment: PmAssignmentTargetListRecord, now: Date): boolean {
+  if (pmAssignmentFrequencyType(assignment) !== 'time_day') return false;
   const due = asDate(assignment.nextDueDate);
   if (!due || due.getTime() < now.getTime()) return false;
   return due.getTime() <= now.getTime() + 7 * 24 * 60 * 60 * 1000;
 }
 
 function matchesDueState(assignment: PmAssignmentTargetListRecord, dueState: PmAssignmentListDueState, now: Date): boolean {
+  const frequencyType = pmAssignmentFrequencyType(assignment);
   if (dueState === 'overdue') return isOverdue(assignment, now);
   if (dueState === 'due_soon') return isDueSoon(assignment, now);
-  if (dueState === 'meter') return assignment.pmType === 'ubm';
-  if (dueState === 'event') return assignment.pmType === 'cbm' || assignment.pmType === 'fbm';
+  if (dueState === 'meter') return frequencyType === 'meter';
+  if (dueState === 'event') return frequencyType === 'event';
   if (dueState === 'scheduled') {
+    if (frequencyType !== 'time_day') return false;
     const due = asDate(assignment.nextDueDate);
     return Boolean(due && due.getTime() >= now.getTime());
   }

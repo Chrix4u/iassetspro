@@ -272,6 +272,18 @@ export async function evaluateScheduledTaskDue(input: ScheduledTaskDueInput): Pr
     return result(input.task, false, 'inactive', null);
   }
 
+  // Direct PM assignments own their cadence independently from the PM classification.
+  // Legacy schedule-backed tasks intentionally retain maintenance-mode-driven behavior.
+  if (input.task.scheduleId === null) {
+    if (input.task.basis === 'calendar') return evaluateTbm(input, now);
+    if (input.task.basis === 'meter') return evaluateUbm(input);
+    if (input.task.maintenanceMode === 'cbm') return evaluateCbm(input, now);
+    if (input.task.maintenanceMode === 'fbm') {
+      return result(input.task, false, 'fbm_waiting_for_failure', `fbm:${input.task.id}:${input.task.lastCompletedAt?.toISOString() || 'initial'}`);
+    }
+    return result(input.task, false, 'event_waiting_for_signal', `event:${input.task.id}:${input.task.lastCompletedAt?.toISOString() || 'initial'}`);
+  }
+
   switch (input.task.maintenanceMode) {
     case 'tbm': return evaluateTbm(input, now);
     case 'ubm': return evaluateUbm(input);

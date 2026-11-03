@@ -72,6 +72,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           id: true,
           scheduleId: true,
           maintenanceMode: true,
+          basis: true,
           recurrenceBasis: true,
           recurrenceAnchorDate: true,
           frequencyInterval: true,
@@ -124,8 +125,15 @@ export async function advanceClosedPmScheduledTaskRecurrence(
     };
     let updateData: Prisma.PmScheduleTaskUpdateInput;
     let auditDetails: Record<string, unknown> = {};
+    const recurrenceMode = scheduledTask.scheduleId === null
+      ? scheduledTask.basis === 'calendar'
+        ? 'tbm'
+        : scheduledTask.basis === 'meter'
+          ? 'ubm'
+          : 'event'
+      : scheduledTask.maintenanceMode;
 
-    if (scheduledTask.maintenanceMode === 'tbm') {
+    if (recurrenceMode === 'tbm') {
       const interval = Number(scheduledTask.frequencyInterval);
       const unit = scheduledTask.frequencyUnit;
       if (!Number.isInteger(interval) || interval <= 0) {
@@ -150,7 +158,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
       }
       updateData = { lastCompletedAt: completedAt, nextDueDate };
       auditDetails = { recurrenceBasis, nextDueDate: nextDueDate.toISOString() };
-    } else if (scheduledTask.maintenanceMode === 'ubm') {
+    } else if (recurrenceMode === 'ubm') {
       const interval = Number(scheduledTask.frequencyInterval);
       if (!input.assetId) {
         throw recurrenceError(`UBM Scheduled Task ${scheduledTask.id} has no work-order asset for meter recurrence`);
@@ -209,7 +217,7 @@ export async function advanceClosedPmScheduledTaskRecurrence(
           readingDate: baseline.readingDate.toISOString(),
         },
       };
-    } else if (scheduledTask.maintenanceMode === 'cbm' || scheduledTask.maintenanceMode === 'fbm') {
+    } else if (recurrenceMode === 'event' || recurrenceMode === 'cbm' || recurrenceMode === 'fbm') {
       updateData = { lastCompletedAt: completedAt };
     } else {
       throw recurrenceError(

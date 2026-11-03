@@ -109,6 +109,14 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     expect(seededTemplate?.title).toBe(templateTitle);
     expect(seededTemplate?._count?.tasks).toBe(6);
 
+    const expandPmMachine = async () => {
+      const machineAccordion = page.getByTestId('pm-machine-accordion');
+      await expect(machineAccordion).toBeVisible({ timeout: 20_000 });
+      const machineTrigger = machineAccordion.getByRole('button').filter({ hasText: 'UAT-PUMP-001' }).first();
+      await expect(machineTrigger).toBeVisible({ timeout: 20_000 });
+      if (await machineTrigger.getAttribute('aria-expanded') !== 'true') await machineTrigger.click();
+    };
+
     // Keep browser coverage on the canonical direct-assignment authoring path:
     // machine search, exact hierarchy selection and Task Library reuse.
     const createDirectPmAssignmentViaUi = async (
@@ -175,6 +183,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       }
       await assignmentDialog.getByRole('button', { name: /Create PM Assignments?/ }).click();
       await expect(assignmentHeading).toBeHidden({ timeout: 20_000 });
+      await expandPmMachine();
       const targetRow = page.getByRole('row').filter({ hasText: targetCode }).first();
       await expect(targetRow).toBeVisible({ timeout: 20_000 });
       await targetRow.getByRole('button', { name: 'View', exact: true }).click();
@@ -229,6 +238,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     await page.goto('/#/pm-schedules');
     await page.reload();
     await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expandPmMachine();
     const refreshedTargetRow = page.getByRole('row').filter({ hasText: partCode }).first();
     await expect(refreshedTargetRow).toBeVisible({ timeout: 20_000 });
 

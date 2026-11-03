@@ -46,6 +46,21 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(plannerSource).toContain('Total estimated time');
   });
 
+  it('keeps PM Type and Frequency Type independent and uses acronym-only PM labels', () => {
+    expect(rowSource).toContain('<SelectItem value="tbm">TBM</SelectItem>');
+    expect(rowSource).toContain('<SelectItem value="ubm">UBM</SelectItem>');
+    expect(rowSource).toContain('<SelectItem value="cbm">CBM</SelectItem>');
+    expect(rowSource).toContain('<SelectItem value="fbm">FBM</SelectItem>');
+    expect(rowSource).not.toContain('TBM · Time Based');
+    expect(rowSource).not.toContain('UBM · Usage Based');
+    expect(rowSource).not.toContain('CBM · Condition Based');
+    expect(rowSource).not.toContain('FBM · Failure Based');
+    expect(rowSource).toContain('<SelectItem value="event">Event / Condition</SelectItem>');
+    expect(rowSource).toContain('const setPmType =');
+    expect(rowSource).toContain('onChange({ pmType });');
+    expect(rowSource).not.toMatch(/setPmType[\s\S]*?onChange\(\{\s*pmType,[\s\S]*?frequencyType/);
+  });
+
   it('uses a wider desktop assignment modal so dense planning controls do not collide', () => {
     expect(formSource).toContain('desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"');
   });
@@ -95,7 +110,7 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(plannerSource).not.toContain('Already scheduled');
   });
 
-  it('uses first-class asset meters only as selectable UBM sources and does not manage meters inline', () => {
+  it('uses first-class asset meters as selectable meter-frequency sources and does not manage meters inline', () => {
     expect(plannerSource).toContain('/api/assets/');
     expect(plannerSource).toContain('/meters');
     expect(rowSource).toContain('assetMeterId');

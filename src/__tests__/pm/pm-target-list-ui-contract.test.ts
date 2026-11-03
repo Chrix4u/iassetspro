@@ -12,7 +12,7 @@ describe('PM target-centered planning UI', () => {
     expect(maintenance).not.toContain('Direct PM Assignments');
   });
 
-  it('shows one target list with the requested asset and PM condition filters', () => {
+  it('shows the requested asset and PM condition filters above a machine-first accordion', () => {
     const file = resolve(process.cwd(), 'src/components/modules/pm/PmAssignmentTargetList.tsx');
     expect(existsSync(file)).toBe(true);
     if (!existsSync(file)) return;
@@ -20,14 +20,29 @@ describe('PM target-centered planning UI', () => {
     for (const label of ['Asset', 'Part / Target', 'PM Type', 'Activity Mode', 'Inspection Type', 'Frequency Type', 'Due State']) {
       expect(source).toContain(label);
     }
+    expect(source).toContain("from '@/components/ui/accordion'");
+    expect(source).toContain('groupPmAssignmentAssets(filtered)');
+    expect(source).toContain('data-testid="pm-machine-accordion"');
+    expect(source).toContain('Parent machine');
+    expect(source).toContain('machine.targets.map');
     expect(source).toContain('View');
+    expect(source).toContain('Configure Triggers');
     expect(source).toContain('Edit');
     expect(source).toContain('Delete');
     expect(source).toContain('hasWholeMachineTarget');
     expect(source).toContain('value="__machine__"');
   });
 
-  it('opens full task conditions in View instead of expanding the list row', () => {
+  it('shows acronym-only PM Type choices in the list filters', () => {
+    const source = read('src/components/modules/pm/PmAssignmentTargetList.tsx');
+    expect(source).toContain('<SelectItem value="tbm">TBM</SelectItem>');
+    expect(source).toContain('<SelectItem value="ubm">UBM</SelectItem>');
+    expect(source).toContain('<SelectItem value="cbm">CBM</SelectItem>');
+    expect(source).toContain('<SelectItem value="fbm">FBM</SelectItem>');
+    expect(source).not.toContain('TBM · Time Based');
+  });
+
+  it('opens full task conditions in View instead of expanding individual target rows', () => {
     const file = resolve(process.cwd(), 'src/components/modules/pm/PmAssignmentTargetDetailDialog.tsx');
     expect(existsSync(file)).toBe(true);
     if (!existsSync(file)) return;

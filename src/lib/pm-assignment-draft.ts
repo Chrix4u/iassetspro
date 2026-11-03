@@ -2,7 +2,7 @@ import type { PmTaskType } from '@/lib/pm-task';
 import { normalizePmInspectionType, type PmActivityMode, type PmAssignmentType, type PmInspectionType } from '@/lib/pm-assignment';
 
 export const PM_ASSIGNMENT_TIME_UNITS = ['minutes', 'hours', 'days', 'weeks', 'months', 'years'] as const;
-export const PM_ASSIGNMENT_FREQUENCY_TYPES = ['time_day', 'meter'] as const;
+export const PM_ASSIGNMENT_FREQUENCY_TYPES = ['time_day', 'meter', 'event'] as const;
 export const PM_ASSIGNMENT_CONDITION_OPERATORS = ['>', '>=', '<', '<=', '=', '!=', 'outside_range'] as const;
 
 export type PmAssignmentFrequencyType = (typeof PM_ASSIGNMENT_FREQUENCY_TYPES)[number];
@@ -102,9 +102,19 @@ export function pmAssignmentDraftFromMaster(master: PmAssignmentTaskMaster, clie
   };
 }
 
+function assignmentFrequencyType(assignment: any, pmType: PmAssignmentType): PmAssignmentFrequencyType {
+  if (assignment.basis === 'meter') return 'meter';
+  if (assignment.basis === 'calendar') return 'time_day';
+  if (assignment.basis === null) return 'event';
+  if (pmType === 'ubm') return 'meter';
+  if (pmType === 'cbm' || pmType === 'fbm') return 'event';
+  return 'time_day';
+}
+
 export function pmAssignmentDraftFromApi(assignment: any, index = 0): PmAssignmentTaskDraft {
   const pmType = String(assignment.pmType || assignment.maintenanceMode || 'tbm') as PmAssignmentType;
-  const subDay = pmType === 'tbm' && (assignment.frequencyUnit === 'minutes' || assignment.frequencyUnit === 'hours');
+  const frequencyType = assignmentFrequencyType(assignment, pmType);
+  const subDay = frequencyType === 'time_day' && (assignment.frequencyUnit === 'minutes' || assignment.frequencyUnit === 'hours');
   const rawDue = assignment.nextDueDate ? String(assignment.nextDueDate) : '';
   const nextDueDate = rawDue ? rawDue.slice(0, subDay ? 16 : 10) : '';
   return {
@@ -114,8 +124,8 @@ export function pmAssignmentDraftFromApi(assignment: any, index = 0): PmAssignme
     taskNumber: Number(assignment.pmTask?.taskNumber || 0),
     description: String(assignment.pmTask?.description || ''),
     taskType: String(assignment.pmTask?.taskType || 'mechanical') as PmTaskType,
-    frequencyType: pmType === 'ubm' ? 'meter' : 'time_day',
-    frequencyUnit: String(assignment.frequencyUnit || assignment.assetMeter?.unit || (pmType === 'tbm' ? 'months' : '')),
+    frequencyType,
+    frequencyUnit: String(assignment.frequencyUnit || assignment.assetMeter?.unit || (frequencyType === 'time_day' ? 'months' : '')),
     value: assignment.frequencyInterval == null ? '' : String(assignment.frequencyInterval),
     pmType,
     activityMode: String(assignment.activityMode || 'inspection') as PmActivityMode,
@@ -170,23 +180,23 @@ export function validatePmAssignmentTaskDraft(task: PmAssignmentTaskDraft): stri
   if (!Number.isInteger(minutes) || minutes < 0) return `Task #${task.taskNumber}: Est. Minutes must be a non-negative whole number`;
   if (!Number.isInteger(leads) || leads < 0) return `Task #${task.taskNumber}: Lead Days must be a non-negative whole number`;
 
-  if (task.pmType === 'tbm') {
+  if (task.frequencyType === 'time_day') {
     const value = Number(task.value);
-    if (!Number.isInteger(value) || value <= 0) return `Task #${task.taskNumber}: TBM Value must be a positive whole number`;
-    if (!(PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit)) return `Task #${task.taskNumber}: TBM Frequency Unit is required`;
-    if (!task.nextDueDate) return `Task #${task.taskNumber}: TBM Next Due Date is required`;
+    if (!Number.isInteger(value) || value <= 0) return `Task #${task.taskNumber}: Time/Day Value must be a positive whole number`;
+    if (!(PM_ASSIGNMENT_TIME_UNITS as readonly string[]).includes(task.frequencyUnit)) return `Task #${task.taskNumber}: Time/Day Frequency Unit is required`;
+    if (!task.nextDueDate) return `Task #${task.taskNumber}: Time/Day Next Due Date is required`;
   }
 
-  if (task.pmType === 'ubm') {
+  if (task.frequencyType === 'meter') {
     const value = Number(task.value);
-    if (!(value > 0)) return `Task #${task.taskNumber}: UBM Value must be greater than zero`;
-    if (!task.assetMeterId) return `Task #${task.taskNumber}: UBM requires an asset meter`;
+    if (!(value > 0)) return `Task #${task.taskNumber}: Meter Value must be greater than zero`;
+    if (!task.assetMeterId) return `Task #${task.taskNumber}: Meter frequency requires an asset meter`;
   }
 
-  if (task.pmType === 'cbm') {
+  if (task.pmType === 'cbm' && task.frequencyType === 'event') {
     const threshold = Number(task.conditionThreshold);
     if (!task.conditionSourceType || !task.conditionSourceId || !task.conditionMetric || !Number.isFinite(threshold)) {
-      return `Task #${task.taskNumber}: CBM requires a condition source, metric and numeric threshold`;
+      return `Task #${task.taskNumber}: CBM event frequency requires a condition source, metric and numeric threshold`;
     }
     if (task.conditionOperator === 'outside_range') {
       const upper = Number(task.conditionThresholdMax);
@@ -198,27 +208,28 @@ export function validatePmAssignmentTaskDraft(task: PmAssignmentTaskDraft): stri
 }
 
 export function pmAssignmentTaskPayload(task: PmAssignmentTaskDraft) {
-  const subDay = task.pmType === 'tbm' && (task.frequencyUnit === 'minutes' || task.frequencyUnit === 'hours');
+  const subDay = task.frequencyType === 'time_day' && (task.frequencyUnit === 'minutes' || task.frequencyUnit === 'hours');
+  const conditionDriven = task.pmType === 'cbm' && task.frequencyType === 'event';
   return {
     pmTaskId: task.pmTaskId,
     pmType: task.pmType,
     activityMode: task.activityMode,
     inspectionType: task.inspectionType,
     frequencyType: task.frequencyType,
-    value: task.pmType === 'tbm' || task.pmType === 'ubm' ? finiteOrNull(task.value) : null,
-    unit: task.pmType === 'tbm' ? task.frequencyUnit : null,
-    assetMeterId: task.pmType === 'ubm' ? (task.assetMeterId || null) : null,
-    nextDueDate: task.pmType === 'tbm' ? (task.nextDueDate || null) : null,
+    value: task.frequencyType === 'time_day' || task.frequencyType === 'meter' ? finiteOrNull(task.value) : null,
+    unit: task.frequencyType === 'time_day' ? task.frequencyUnit : null,
+    assetMeterId: task.frequencyType === 'meter' ? (task.assetMeterId || null) : null,
+    nextDueDate: task.frequencyType === 'time_day' ? (task.nextDueDate || null) : null,
     estimatedMinutes: wholeOrZero(task.estimatedMinutes),
     leadDays: subDay ? 0 : wholeOrZero(task.leadDays),
-    conditionSourceType: task.pmType === 'cbm' ? (task.conditionSourceType || null) : null,
-    conditionSourceId: task.pmType === 'cbm' ? (task.conditionSourceId || null) : null,
-    conditionMetric: task.pmType === 'cbm' ? (task.conditionMetric || null) : null,
-    conditionOperator: task.pmType === 'cbm' ? task.conditionOperator : null,
-    conditionThreshold: task.pmType === 'cbm' ? finiteOrNull(task.conditionThreshold) : null,
-    conditionThresholdMax: task.pmType === 'cbm' && task.conditionOperator === 'outside_range' ? finiteOrNull(task.conditionThresholdMax) : null,
-    conditionUnit: task.pmType === 'cbm' ? (task.conditionUnit || null) : null,
-    evaluationCadenceMinutes: task.pmType === 'cbm' ? finiteOrNull(task.evaluationCadenceMinutes) : null,
+    conditionSourceType: conditionDriven ? (task.conditionSourceType || null) : null,
+    conditionSourceId: conditionDriven ? (task.conditionSourceId || null) : null,
+    conditionMetric: conditionDriven ? (task.conditionMetric || null) : null,
+    conditionOperator: conditionDriven ? task.conditionOperator : null,
+    conditionThreshold: conditionDriven ? finiteOrNull(task.conditionThreshold) : null,
+    conditionThresholdMax: conditionDriven && task.conditionOperator === 'outside_range' ? finiteOrNull(task.conditionThresholdMax) : null,
+    conditionUnit: conditionDriven ? (task.conditionUnit || null) : null,
+    evaluationCadenceMinutes: conditionDriven ? finiteOrNull(task.evaluationCadenceMinutes) : null,
     isActive: task.isActive,
   };
 }

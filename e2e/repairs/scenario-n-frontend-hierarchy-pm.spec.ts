@@ -162,6 +162,11 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await expect(assignmentDialog.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(assignmentDialog.getByText('Tasks:', { exact: false })).toBeVisible();
 
+      const continueButton = assignmentDialog.getByRole('button', { name: 'Continue to Triggers', exact: true });
+      await expect(continueButton).toBeEnabled();
+      await continueButton.click();
+      await expect(assignmentDialog.getByText('Step 2: give every assigned task its own trigger and cadence.', { exact: false })).toBeVisible();
+
       const nextDue = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const dueInputs = assignmentDialog.locator('input[type="date"]');
       await expect(dueInputs).toHaveCount(templateTaskDescriptions.length);

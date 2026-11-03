@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { PmTaskType } from '@/lib/pm-task';
@@ -23,14 +23,17 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
+type PmAssignmentAuthoringStep = 'tasks' | 'triggers';
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
   editTarget?: PmAssignmentTargetGroup | null;
+  initialStep?: PmAssignmentAuthoringStep;
 }
 
-export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget = null }: Props) {
+export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget = null, initialStep = 'tasks' }: Props) {
   const [assetId, setAssetId] = useState('');
   const [assetCache, setAssetCache] = useState<Record<string, PmTargetAsset>>({});
   const [componentId, setComponentId] = useState<string | null>(null);
@@ -40,6 +43,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
   const [tasks, setTasks] = useState<PmAssignmentTaskDraft[]>([]);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [step, setStep] = useState<PmAssignmentAuthoringStep>(initialStep);
   const templateSequence = useRef(0);
 
   const asset = assetCache[assetId] || null;
@@ -54,11 +58,17 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     setTemplateId('');
     setTasks([]);
     setTemplateLoading(false);
-  }, []);
+    setStep(initialStep);
+  }, [initialStep]);
 
   React.useEffect(() => {
     if (!open) reset();
   }, [open, reset]);
+
+  React.useEffect(() => {
+    if (!open || editTarget) return;
+    setStep(initialStep);
+  }, [editTarget, initialStep, open]);
 
   React.useEffect(() => {
     if (!open || !editTarget) return;
@@ -70,7 +80,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     setTargetConfirmed(true);
     setTemplateId('');
     setTasks(editTarget.assignments.map((assignment, index) => pmAssignmentDraftFromApi(assignment, index)));
-  }, [editTarget, open]);
+    setStep(initialStep);
+  }, [editTarget, initialStep, open]);
 
   const fetchAssets = async (query: string) => {
     const assets: any[] = [];
@@ -162,6 +173,23 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     setTargetConfirmed(false);
     setTemplateId('');
     setTasks([]);
+    setStep('tasks');
+  };
+
+  const continueToTriggers = () => {
+    if (!assetId) {
+      toast.error('Select an asset');
+      return;
+    }
+    if (!targetConfirmed) {
+      toast.error('Select a PM target and confirm it');
+      return;
+    }
+    if (tasks.length === 0) {
+      toast.error('Load a Task Template or add at least one Task Library task');
+      return;
+    }
+    setStep('triggers');
   };
 
   const save = async () => {
@@ -211,8 +239,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       onOpenChange={onOpenChange}
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
-      title={editTarget ? 'Edit PM Schedule' : 'New PM Assignment'}
-      description={editTarget ? 'Update the tasks and planning conditions defined on this target. The asset and part remain fixed.' : 'Select the machine and exact PM target, then load a Task Template or add Task Library tasks. Each task keeps its own planning conditions.'}
+      title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
+      description={step === 'tasks' ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.' : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs" data-testid="pm-assignment-footer-total">
@@ -221,16 +249,34 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
             <span className="ml-1 text-muted-foreground">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" className="w-full sm:w-auto" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
-              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              {editTarget ? 'Update PM Schedule' : `Create PM Assignment${tasks.length === 1 ? '' : 's'}`}
-            </Button>
+            {step === 'tasks' ? (
+              <>
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => onOpenChange(false)}>Cancel</Button>
+                <Button type="button" className="w-full sm:w-auto" onClick={continueToTriggers} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>Continue to Triggers</Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep('tasks')} disabled={saving}>Back to Tasks</Button>
+                <Button type="button" className="w-full sm:w-auto" onClick={save} disabled={saving || templateLoading || !targetConfirmed || tasks.length === 0}>
+                  {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+                  {editTarget ? 'Save Trigger Changes' : `Create PM Assignment${tasks.length === 1 ? '' : 's'}`}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
     >
       <div className="space-y-4 py-1">
+        <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/15 p-2" data-testid="pm-assignment-authoring-steps">
+          <button type="button" onClick={() => setStep('tasks')} className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors ${step === 'tasks' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:bg-background/60'}`}>
+            {step === 'triggers' ? <Check className="h-3.5 w-3.5" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[10px]">1</span>} 1. Tasks
+          </button>
+          <button type="button" onClick={continueToTriggers} disabled={!targetConfirmed || tasks.length === 0} className={`flex items-center justify-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${step === 'triggers' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:bg-background/60'}`}>
+            <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[10px]">2</span> 2. Triggers
+          </button>
+        </div>
+
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold">Asset *</Label>
           <AsyncSearchableSelect
@@ -239,7 +285,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
             fetchOptions={fetchAssets}
             placeholder="Select machine / asset..."
             searchPlaceholder="Search asset name or tag..."
-            disabled={Boolean(editTarget)}
+            disabled={Boolean(editTarget) || step === 'triggers'}
           />
         </div>
 
@@ -265,7 +311,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
           )}
         </div>
 
-        <div className="space-y-1.5 rounded-lg border bg-muted/10 p-3">
+        {step === 'tasks' && <div className="space-y-1.5 rounded-lg border bg-muted/10 p-3">
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <Label className="text-xs font-semibold">Task Template</Label>
@@ -281,7 +327,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
             searchPlaceholder="Search PM templates..."
             disabled={!assetId || templateLoading}
           />
-        </div>
+        </div>}
 
         <PmAssignmentTaskPlanner
           tasks={tasks}
@@ -290,6 +336,7 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
           componentId={componentId}
           targetConfirmed={targetConfirmed}
           disabled={saving || templateLoading}
+          stage={step}
         />
       </div>
     </ResponsiveDialog>

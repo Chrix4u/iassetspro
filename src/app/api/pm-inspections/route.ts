@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const method = q.get('method')?.trim();
     const dueState = q.get('dueState')?.trim();
     const result = q.get('result')?.trim();
+    const followUp = q.get('followUp')?.trim();
     const search = q.get('search')?.trim().slice(0, 120);
     const page = Math.max(1, Number.parseInt(q.get('page') || '1', 10) || 1);
     const limit = Math.min(100, Math.max(1, Number.parseInt(q.get('limit') || '50', 10) || 50));
@@ -38,6 +39,9 @@ export async function GET(request: NextRequest) {
     }
     if (result && !['pass', 'fail', 'needs_attention', 'not_inspected'].includes(result)) {
       return NextResponse.json({ success: false, error: 'Invalid result filter' }, { status: 400 });
+    }
+    if (followUp && !['open', 'none'].includes(followUp)) {
+      return NextResponse.json({ success: false, error: 'Invalid corrective follow-up filter' }, { status: 400 });
     }
 
     const now = new Date();
@@ -60,6 +64,14 @@ export async function GET(request: NextRequest) {
     if (dueState === 'unscheduled') where.nextInspection = null;
     if (result === 'not_inspected') where.records = { none: {} };
     else if (result) where.records = { some: { result } };
+
+    // A later passing re-inspection must not hide an unfinished corrective WO.
+    // Compose with the historical outcome filter rather than overwriting it.
+    const openCorrective: Prisma.ComponentInspectionRecordWhereInput = {
+      workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
+    };
+    if (followUp === 'open') where.AND = [{ records: { some: openCorrective } }];
+    else if (followUp === 'none') where.AND = [{ records: { none: openCorrective } }];
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -91,12 +103,32 @@ export async function GET(request: NextRequest) {
       }),
       db.componentInspectionPoint.count({ where }),
     ]);
+    // Query only the already plant-authorized page's point IDs. The latest
+    // observation may be a Pass while an earlier defect's corrective WO is open.
+    const outstanding = points.length ? await db.componentInspectionRecord.findMany({
+      where: {
+        inspectionPointId: { in: points.map((point) => point.id) },
+        workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
+      },
+      select: {
+        inspectionPointId: true,
+        workOrder: { select: { id: true, woNumber: true, status: true } },
+      },
+      orderBy: [{ inspectedAt: 'desc' }, { id: 'desc' }],
+    }) : [];
+    const openCorrectiveByPoint = new Map<string, { id: string; woNumber: string; status: string }>();
+    for (const record of outstanding) {
+      if (record.workOrder && !openCorrectiveByPoint.has(record.inspectionPointId)) {
+        openCorrectiveByPoint.set(record.inspectionPointId, record.workOrder);
+      }
+    }
     return NextResponse.json({
       success: true,
       data: points.map((point) => ({
         ...point,
         dueState: inspectionDueState(point.nextInspection, now),
         latestRecord: point.records[0] || null,
+        openCorrectiveWorkOrder: openCorrectiveByPoint.get(point.id) || null,
         records: undefined,
       })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },

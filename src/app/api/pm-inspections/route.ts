@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!isAdmin(session) && !hasPermission(session, 'pm_schedules.view') && !hasPermission(session, 'work_orders.view')
+    if (!isAdmin(session) && !hasPermission(session, 'pm_schedules.view') && !hasPermission(session, 'pm_schedules.create') && !hasPermission(session, 'pm_schedules.update')
+      && !hasPermission(session, 'work_orders.view')
       && !hasPermission(session, 'work_orders.view_own') && !hasPermission(session, 'digital_twin.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     if (scope.denyAccess) return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     const q = new URL(request.url).searchParams;
     const plantId = q.get('plantId')?.trim();
-    if (plantId && !canAccessPlantStrict(scope, plantId)) {
+    if (plantId && (!canAccessPlantStrict(scope, plantId) || (scope.isScoped && scope.plantId && scope.plantId !== plantId))) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
     const assetId = q.get('assetId')?.trim();
@@ -110,7 +111,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!isAdmin(session) && !hasPermission(session, 'pm_schedules.create')) {
+    if (!isAdmin(session) && !hasPermission(session, 'pm_schedules.create') && !hasPermission(session, 'work_orders.create')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
     const scope = await getPlantScope(request, session);

@@ -579,6 +579,7 @@ model WorkOrder {
 
   // PM Schedule relation
   pmSchedule PmSchedule? @relation(fields: [pmScheduleId], references: [id])
+  inspectionTriggerRecord ComponentInspectionRecord? @relation("InspectionTriggerWO")
 
   // User relations
   assignee           User? @relation("WOAssignedTo", fields: [assignedTo], references: [id])
@@ -3590,10 +3591,12 @@ model ComponentInspectionRecord {
   recommendation    String?  @db.Text
   inspectorId       String
   inspectedAt       DateTime @default(now())
+  workOrderId       String?  @unique // automatically generated corrective WO from this specific failed inspection
 
   inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)
   component       ComponentRegistry          @relation(fields: [componentId], references: [id], onDelete: Cascade)
   inspector       User                       @relation("InspectionRecorded", fields: [inspectorId], references: [id])
+  workOrder       WorkOrder?                 @relation("InspectionTriggerWO", fields: [workOrderId], references: [id], onDelete: SetNull)
 
   @@index([inspectionPointId])
   @@index([componentId])

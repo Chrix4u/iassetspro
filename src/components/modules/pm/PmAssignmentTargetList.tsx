@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ClipboardList, Eye, Pencil, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
+import { ClipboardList, Eye, MoreHorizontal, Pencil, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
 import {
   filterPmAssignmentTargets,
   groupPmAssignmentAssets,
@@ -12,6 +12,7 @@ import {
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,7 +39,7 @@ function dueSummary(group: PmAssignmentTargetGroup) {
   if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: new Intl.DateTimeFormat('en-GB').format(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
   if (first) return { label: new Intl.DateTimeFormat('en-GB').format(first), className: '' };
   if (frequencies.includes('meter')) return { label: 'Meter driven', className: '' };
-  return { label: 'Event / condition', className: '' };
+  return { label: 'Not scheduled', className: '' };
 }
 
 export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onConfigureTriggers, onDelete }: {
@@ -94,17 +95,40 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
             <AccordionContent className="border-t px-0 pb-0">
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Part / Target</TableHead><TableHead>Tasks</TableHead><TableHead className="hidden md:table-cell">PM Coverage</TableHead><TableHead>Next Due</TableHead><TableHead className="hidden lg:table-cell">Est. Time</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Part / Target</TableHead><TableHead>Tasks</TableHead><TableHead className="hidden md:table-cell">PM Coverage</TableHead><TableHead>Next Due</TableHead><TableHead className="hidden lg:table-cell">Est. Time</TableHead><TableHead className="w-12 px-2 text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {machine.targets.map((group) => {
                       const due = dueSummary(group);
                       return <TableRow key={group.key}>
-                        <TableCell><p className="text-sm font-semibold">{group.targetName}</p><p className="text-[10px] text-muted-foreground">{group.component ? `${titleCase(group.targetType)}${group.targetCode ? ` · ${group.targetCode}` : ''}` : 'Whole machine'}</p></TableCell>
+                        <TableCell className="max-w-[10rem] whitespace-normal px-2 sm:max-w-none"><p className="break-words text-sm font-semibold">{group.targetName}</p><p className="text-[10px] text-muted-foreground">{group.component ? `${titleCase(group.targetType)}${group.targetCode ? ` · ${group.targetCode}` : ''}` : 'Whole machine'}</p></TableCell>
                         <TableCell><Badge variant="secondary">{group.taskCount} task{group.taskCount === 1 ? '' : 's'}</Badge></TableCell>
                         <TableCell className="hidden md:table-cell"><div className="flex flex-wrap gap-1">{group.pmTypes.map((type) => <Badge key={type} variant="outline" className="text-[10px]">{pmLabels[type] || type.toUpperCase()}</Badge>)}</div></TableCell>
                         <TableCell><p className={`text-xs font-semibold ${due.className}`}>{due.label}</p>{due.sub && <p className="text-[10px] text-muted-foreground">{due.sub}</p>}</TableCell>
                         <TableCell className="hidden lg:table-cell text-xs">{group.totalEstimatedMinutes} min</TableCell>
-                        <TableCell><div className="flex flex-wrap justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onView(group)}><Eye className="mr-1 h-3.5 w-3.5"/>View</Button>{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onConfigureTriggers(group)} title="Configure the trigger and cadence for each task"><Settings2 className="mr-1 h-3.5 w-3.5"/>Configure Triggers</Button>}{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onEdit(group)}><Pencil className="mr-1 h-3.5 w-3.5"/>Edit</Button>}{canDelete && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-red-600 hover:text-red-700" onClick={() => onDelete(group)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Delete</Button>}</div></TableCell>
+                        <TableCell className="w-12 px-2 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label={`Actions for ${group.targetName}`} title="Schedule actions">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
+                              <DropdownMenuItem onSelect={() => onView(group)}>
+                                <Eye className="h-4 w-4" />View
+                              </DropdownMenuItem>
+                              {canEdit && <DropdownMenuItem onSelect={() => onConfigureTriggers(group)}>
+                                <Settings2 className="h-4 w-4" />Configure Triggers
+                              </DropdownMenuItem>}
+                              {canEdit && <DropdownMenuItem onSelect={() => onEdit(group)}>
+                                <Pencil className="h-4 w-4" />Edit
+                              </DropdownMenuItem>}
+                              {canDelete && <DropdownMenuSeparator />}
+                              {canDelete && <DropdownMenuItem variant="destructive" onSelect={() => onDelete(group)}>
+                                <Trash2 className="h-4 w-4" />Delete
+                              </DropdownMenuItem>}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>;
                     })}
                   </TableBody>

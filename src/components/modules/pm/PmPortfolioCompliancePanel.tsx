@@ -129,8 +129,15 @@ export function PmPortfolioCompliancePanel() {
           throw new Error(response.error || 'Failed to load plants');
         }
         if (!active) return;
-        setPlants(response.data);
-        setPlantId((current) => current || response.data?.[0]?.id || '');
+        const availablePlants = response.data;
+        setPlants(availablePlants);
+        setPlantId((current) => {
+          if (current && availablePlants.some((plant) => plant.id === current)) return current;
+          // Keep the report aligned with the active plant in the top navigation.
+          // A user may still switch to another plant accessible to their account.
+          const activePlant = typeof window !== 'undefined' ? window.localStorage.getItem('user_plant_id') : null;
+          return availablePlants.find((plant) => plant.id === activePlant)?.id || availablePlants[0]?.id || '';
+        });
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Failed to load plants');
       } finally {
@@ -150,7 +157,10 @@ export function PmPortfolioCompliancePanel() {
     const loadDepartments = async () => {
       setLoadingDepartments(true);
       try {
-        const response = await api.get<DepartmentRecord[]>(`/api/departments?plantId=${encodeURIComponent(plantId)}`);
+        const response = await api.get<DepartmentRecord[]>(
+          `/api/departments?plantId=${encodeURIComponent(plantId)}`,
+          { headers: { 'x-plant-id': plantId } },
+        );
         if (!response.success || !Array.isArray(response.data)) {
           throw new Error(response.error || 'Failed to load departments');
         }
@@ -175,7 +185,12 @@ export function PmPortfolioCompliancePanel() {
     try {
       const params = new URLSearchParams({ plantId, windowDays });
       if (departmentId) params.set('departmentId', departmentId);
-      const response = await api.get<PortfolioResponse>(`/api/pm-assignments/compliance/portfolio?${params.toString()}`);
+      // The global plant context can differ from the plant chosen in this report.
+      // Scope this read to the chosen plant; the API still validates membership.
+      const response = await api.get<PortfolioResponse>(
+        `/api/pm-assignments/compliance/portfolio?${params.toString()}`,
+        { headers: { 'x-plant-id': plantId } },
+      );
       if (!response.success) throw new Error(response.error || 'Failed to load PM portfolio compliance');
       setData(response.data || null);
     } catch (loadError) {

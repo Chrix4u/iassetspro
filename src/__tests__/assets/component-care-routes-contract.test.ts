@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const condition = fs.readFileSync('src/app/api/component-registry/[id]/condition/route.ts', 'utf8');
 const inspections = fs.readFileSync('src/app/api/component-registry/[id]/inspections/route.ts', 'utf8');
+const pmInspectionCapture = fs.readFileSync('src/app/api/pm-inspections/[pointId]/records/route.ts', 'utf8');
 const lubrication = fs.readFileSync('src/app/api/component-registry/[id]/lubrication/route.ts', 'utf8');
 const runtime = fs.readFileSync('src/app/api/component-registry/[id]/runtime/route.ts', 'utf8');
 
@@ -16,7 +17,8 @@ describe('component care route contracts', () => {
 
   it('uses current inspection and lubrication Prisma relation/field names', () => {
     expect(inspections).toContain('records: {');
-    expect(inspections).toContain('inspectorId: session.userId');
+    expect(inspections).toContain('recordPmInspection(delegatedRequest');
+    expect(pmInspectionCapture).toContain('inspectorId: session.userId');
     expect(inspections).not.toContain('inspectionRecords: {');
     expect(inspections).not.toContain('inspectedBy:');
     expect(inspections).not.toContain('inspectionIntervalDays');

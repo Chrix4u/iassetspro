@@ -34,7 +34,8 @@ describe('PM schedule exact hierarchy targeting contract', () => {
   });
 
   it('keeps View universally available and opens the target-level read-only detail dialog', () => {
-    expect(targetListSource).toContain('onClick={() => onView(group)}');
+    expect(targetListSource).toContain('onSelect={() => onView(group)}');
+    expect(targetListSource).toContain('<DropdownMenuItem onSelect={() => onView(group)}>');
     expect(targetListSource).toContain('<Eye');
     expect(planningSource).toContain('onView={setViewTarget}');
     expect(planningSource).toContain('<PmAssignmentTargetDetailDialog');

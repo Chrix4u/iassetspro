@@ -10,6 +10,8 @@ const planning = source('src/components/modules/pm/PmPlanningPage.tsx');
 const proxy = source('src/proxy.ts');
 const closure = source('src/services/workOrderClosure.service.ts');
 const recurrence = source('src/services/pm/advancePmScheduledTaskRecurrence.service.ts');
+const assignmentApi = source('src/app/api/pm-assignments/route.ts');
+const assignmentList = source('src/components/modules/pm/PmAssignmentTargetList.tsx');
 
 describe('PM inspection-to-corrective-work-order integration contracts', () => {
   it('restricts both listing and recording to authenticated plant-scoped actors', () => {
@@ -53,6 +55,14 @@ describe('PM inspection-to-corrective-work-order integration contracts', () => {
     expect(recurrence).toContain("execution.status !== 'completed'");
     expect(recurrence).toContain('nextDueDate');
     expect(recurrence).toContain('nextDueReading');
+  });
+
+  it('shows open generated work orders next to due state without treating technician completion as closure', () => {
+    expect(assignmentApi).toContain("where: { workOrder: { status: { notIn: ['closed', 'cancelled'] } } }");
+    expect(assignmentApi).toContain('taskExecutions:');
+    expect(assignmentList).toContain('openOrderMap');
+    expect(assignmentList).toContain('order.woNumber');
+    expect(assignmentList).toContain('titleCase(order.status)');
   });
 
   it('does not introduce Event/Condition as an inspection frequency', () => {

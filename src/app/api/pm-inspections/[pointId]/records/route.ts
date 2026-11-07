@@ -6,6 +6,7 @@ import { evaluateInspectionResult, nextInspectionDate, parseInspectionLimits } f
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
+import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -182,6 +183,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             return Number.isFinite(n) ? Math.max(max, n) : max;
           }, 0);
           const woNumber = `${prefix}-${String(highest + 1).padStart(4, '0')}`;
+          // Technician inspection evidence creates a draft for the plant's
+          // authorized planner; the technician must never become the planner.
+          const plannerId = await resolveCorrectiveInspectionPlanner(tx, asset.plantId);
           const created = await tx.workOrder.create({
             data: {
               woNumber,
@@ -197,13 +201,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               type: 'corrective',
               priority: inspection.outcome === 'fail' || point.component.criticality === 'critical' ? 'high' : 'medium',
               status: 'draft',
+              plannerId,
               assetId: asset.id,
               assetName: asset.name,
               departmentId: asset.departmentId,
               plantId: asset.plantId,
               failureDescription: findings,
               ...snapshot,
-              notes: `Automatically drafted from inspection record ${record.id}. Planner review and assignment required.`,
+              notes: `Automatically drafted from inspection record ${record.id}. ${plannerId
+                ? 'Assigned to the plant planner for review and execution assignment.'
+                : 'No eligible active plant planner found; maintenance management must assign an accountable planner before execution.'}`,
             },
           });
           await tx.workOrderComponent.upsert({
@@ -219,7 +226,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             data: {
               userId: session.userId, action: 'create', entityType: 'work_order', entityId: created.id,
               plantId: asset.plantId,
-              newValues: JSON.stringify({ woNumber, inspectionPointId: pointId, inspectionRecordId: record.id, status: 'draft', reason: 'failed_inspection' }),
+              newValues: JSON.stringify({ woNumber, inspectionPointId: pointId, inspectionRecordId: record.id, status: 'draft', plannerId, plannerAssignment: plannerId ? 'plant_planner' : 'management_attention_required', reason: 'failed_inspection' }),
             },
           });
         }

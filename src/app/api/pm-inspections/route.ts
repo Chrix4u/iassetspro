@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
     const assetId = q.get('assetId')?.trim();
+    const departmentId = q.get('departmentId')?.trim();
     const componentId = q.get('componentId')?.trim();
     const method = q.get('method')?.trim();
     const dueState = q.get('dueState')?.trim();
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
     const where: Prisma.ComponentInspectionPointWhereInput = { isActive: true };
     const assetWhere: Prisma.AssetWhereInput = {};
     if (assetId) assetWhere.id = assetId;
+    if (departmentId) assetWhere.departmentId = departmentId;
     if (plantId) assetWhere.plantId = plantId;
     else if (!scope.isSystemWide) {
       assetWhere.plantId = { in: scope.isScoped && scope.plantId ? [scope.plantId] : scope.accessiblePlantIds };

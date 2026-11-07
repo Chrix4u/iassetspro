@@ -36,7 +36,7 @@ describe('PM portfolio plant context and compact actions', () => {
   });
 
   it('restricts frequency types to the two engineer-approved options', () => {
-    const frequencyFilter = assignmentList.match(/<FilterSelect label="Frequency Type"[\\s\\S]*?<\\/FilterSelect>/)?.[0] || '';
+    const frequencyFilter = assignmentList.split('\n').find((line) => line.includes('<FilterSelect label="Frequency Type"')) || '';
     expect(frequencyFilter).toContain('<SelectItem value="time_day">Time / Day</SelectItem>');
     expect(frequencyFilter).toContain('<SelectItem value="meter">Meter Based</SelectItem>');
     expect(frequencyFilter).not.toContain('<SelectItem value="event">');

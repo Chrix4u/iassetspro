@@ -39,6 +39,21 @@ interface InspectionPoint {
   } | null;
 }
 
+interface ScheduledInspection {
+  id: string;
+  asset: { id: string; name: string; assetTag: string };
+  component: { id: string; name: string; componentCode: string } | null;
+  pmTask: { taskNumber: number; description: string; taskType: string };
+  pmType: string;
+  basis: 'calendar' | 'meter';
+  nextDueDate: string | null;
+  nextDueReading: number | null;
+  currentReading: number | null;
+  meterUnit: string | null;
+  equipmentState: string;
+  dueState: InspectionPoint['dueState'];
+}
+
 interface InspectionResponse {
   success: boolean;
   data?: InspectionPoint[];
@@ -78,6 +93,8 @@ export function PmInspectionWorksheetPanel() {
   const [filters, setFilters] = useState(emptyFilters);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<InspectionPoint[]>([]);
+  const [scheduledRows, setScheduledRows] = useState<ScheduledInspection[]>([]);
+  const [scheduledWarning, setScheduledWarning] = useState('');
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -102,8 +119,22 @@ export function PmInspectionWorksheetPanel() {
       setRows(Array.isArray(response.data) ? response.data : []);
       setTotal(response.pagination?.total || 0);
       setPageCount(response.pagination?.totalPages || 1);
+      // Bring existing direct PM inspection assignments into this worksheet,
+      // including those that have not yet had instrument/sight points configured.
+      const scheduledParams = new URLSearchParams();
+      if (filters.assetId) scheduledParams.set('assetId', filters.assetId);
+      if (filters.search) scheduledParams.set('search', filters.search);
+      const scheduled = await api.get<ScheduledInspection[]>(`/api/pm-inspections/scheduled?${scheduledParams.toString()}`);
+      if (scheduled.success && Array.isArray(scheduled.data)) {
+        setScheduledRows(scheduled.data);
+        setScheduledWarning('');
+      } else {
+        setScheduledRows([]);
+        setScheduledWarning(scheduled.error || 'Scheduled PM tasks could not be loaded');
+      }
     } catch (error) {
       setRows([]);
+      setScheduledRows([]);
       toast.error(error instanceof Error ? error.message : 'Could not generate PM inspection list');
     } finally {
       setLoading(false);
@@ -184,6 +215,10 @@ export function PmInspectionWorksheetPanel() {
     } finally { setSavingRecord(false); }
   };
 
+  const visibleScheduled = useMemo(
+    () => scheduledRows.filter((task) => filters.dueState === 'all' || task.dueState === filters.dueState),
+    [scheduledRows, filters.dueState],
+  );
   const stats = useMemo(() => ({
     overdue: rows.filter((row) => row.dueState === 'overdue').length,
     due: rows.filter((row) => row.dueState === 'due_today').length,
@@ -206,7 +241,8 @@ export function PmInspectionWorksheetPanel() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline">{total} planned points</Badge>
+          <Badge variant="outline">{total} inspection points</Badge>
+          <Badge variant="outline">{scheduledRows.length} scheduled PM inspection tasks</Badge>
           <Badge variant="outline">{stats.overdue} overdue on page</Badge>
           <Badge variant="outline">{stats.due} due today on page</Badge>
           <Badge variant="outline">{stats.instrument} instrument checks on page</Badge>
@@ -262,6 +298,39 @@ export function PmInspectionWorksheetPanel() {
             })}
           </div>
         }
+        <section className="space-y-2 border-t pt-4" aria-label="Scheduled inspection assignments">
+          <div>
+            <p className="text-sm font-semibold">Scheduled PM inspection tasks</p>
+            <p className="text-xs text-muted-foreground">
+              These are generated from active calendar- and meter-based PM assignments. Configure a sight or instrument point for the exact part before capturing readings.
+            </p>
+          </div>
+          {scheduledWarning && <p className="text-xs text-amber-700">{scheduledWarning}</p>}
+          {!scheduledWarning && visibleScheduled.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No scheduled inspection tasks match the machine/due filters.</p>}
+          <div className="grid gap-2">
+            {visibleScheduled.map((task) => <div key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold">{task.asset.name} <span className="text-muted-foreground">{task.asset.assetTag}</span></p>
+                <p className="text-sm">{task.component?.name || 'Whole machine'} · Task #{task.pmTask.taskNumber}: {task.pmTask.description}</p>
+                <p className="text-xs text-muted-foreground">
+                  {task.pmType.toUpperCase()} · {task.equipmentState} · {task.basis === 'meter'
+                    ? `Meter: ${task.currentReading ?? '—'} / ${task.nextDueReading ?? '—'} ${task.meterUnit || ''}`
+                    : `Due: ${displayDue(task.nextDueDate)}`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={badgeVariant(task.dueState)}>{dueLabel(task.dueState)}</Badge>
+                {canPlan && task.component && <Button type="button" size="sm" variant="outline" onClick={() => {
+                  setPlanAssetId(task.asset.id);
+                  setPlanComponentId(task.component!.id);
+                  setPlan({ ...DEFAULT_PLAN, name: task.pmTask.description, method: task.pmTask.taskType === 'measure' ? 'measurement' : 'visual' });
+                  setPlanOpen(true);
+                }}>Configure Check</Button>}
+              </div>
+              {!task.component && <p className="w-full text-xs text-amber-700">Assign the PM task to a specific part to configure point-level instrument or sight readings.</p>}
+            </div>)}
+          </div>
+        </section>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>Page {page} of {pageCount} · {total} matching points</span>
           <div className="flex gap-2">

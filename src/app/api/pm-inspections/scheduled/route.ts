@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     if (!isAdmin(session) && !hasPermission(session, 'pm_schedules.view')
+      && !hasPermission(session, 'pm_schedules.create') && !hasPermission(session, 'pm_schedules.update')
       && !hasPermission(session, 'work_orders.view') && !hasPermission(session, 'work_orders.view_own')
       && !hasPermission(session, 'digital_twin.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     if (scope.denyAccess) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     const q = new URL(request.url).searchParams;
     const assetId = q.get('assetId')?.trim();
+    const componentId = q.get('componentId')?.trim();
     const search = q.get('search')?.trim().slice(0, 120);
     const where: Prisma.PmScheduleTaskWhereInput = {
       scheduleId: null,
@@ -26,6 +28,7 @@ export async function GET(request: NextRequest) {
       activityMode: 'inspection',
     };
     if (assetId) where.assetId = assetId;
+    if (componentId) where.componentId = componentId;
     if (!scope.isSystemWide) {
       where.asset = { plantId: { in: scope.isScoped && scope.plantId ? [scope.plantId] : scope.accessiblePlantIds } };
     }

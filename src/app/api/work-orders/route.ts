@@ -49,6 +49,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const search = searchParams.get('search');
     const overdue = searchParams.get('overdue');
+    const pmPlannerState = searchParams.get('pmPlannerState');
+    if (pmPlannerState && pmPlannerState !== 'unassigned') {
+      return NextResponse.json({ success: false, error: 'Invalid PM planner state filter' }, { status: 400 });
+    }
+    if (pmPlannerState === 'unassigned' && ((status && status !== 'draft') || overdue === 'true')) {
+      return NextResponse.json({ success: false, error: 'Unassigned PM draft filter cannot be combined with another lifecycle status or overdue filter' }, { status: 400 });
+    }
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
@@ -60,6 +67,14 @@ export async function GET(request: NextRequest) {
       where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
     }
     if (priority) where.priority = priority;
+    if (pmPlannerState === 'unassigned') {
+      // Only actionable, unlocked PM drafts without an accountable planner.
+      // Role and plant scoping are still applied below to this SAME query.
+      where.pmScheduleId = { not: null };
+      where.plannerId = null;
+      where.status = 'draft';
+      where.isLocked = false;
+    }
     if (type) where.type = type;
     if (overdue === 'true') {
       where.plannedEnd = { lt: new Date() };

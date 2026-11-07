@@ -8,7 +8,9 @@ import {
   type PmInspectionMethod,
 } from '@/lib/pm-inspection';
 
-const CLOSED_STATUSES = ['completed', 'verified', 'closed', 'cancelled'];
+// Technicians may complete a corrective WO before supervisor verification/closure.
+// Keep that WO active for deduplication until formally closed or cancelled.
+const CLOSED_STATUSES = ['closed', 'cancelled'];
 const MAX_ASSIGNMENTS = 500;
 
 function canRead(session: NonNullable<ReturnType<typeof getSession>>) {

@@ -97,28 +97,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
       }
 
-      let workOrder: { id: string; woNumber: string; status: string } | null = null;
-      let reusedWorkOrder = false;
+      // A later passing re-inspection must not prematurely clear an existing
+      // corrective WO. Only verified planner closeout can release that due cycle.
+      const outstanding = await tx.componentInspectionRecord.findFirst({
+        where: {
+          inspectionPointId: pointId,
+          workOrder: { is: { status: { notIn: ['closed', 'cancelled'] } } },
+        },
+        orderBy: { inspectedAt: 'desc' },
+        select: { workOrder: { select: { id: true, woNumber: true, status: true } } },
+      });
+      let workOrder: { id: string; woNumber: string; status: string } | null = outstanding?.workOrder || null;
+      let reusedWorkOrder = Boolean(workOrder);
       let nextInspection: Date | null = null;
-      if (!inspection.isAlarm) {
+      if (!inspection.isAlarm && !workOrder) {
         nextInspection = nextInspectionDate(inspectedAt, refreshedPoint.frequency);
         if (!nextInspection) throw new Error('Unsupported inspection recurrence; update the inspection plan');
         await tx.componentInspectionPoint.update({
           where: { id: pointId }, data: { lastInspected: inspectedAt, nextInspection },
         });
+      } else if (!inspection.isAlarm) {
+        // Keep the inspector's pass observation, but retain the outstanding
+        // corrective due until the linked work order is verified and closed.
+        await tx.componentInspectionPoint.update({
+          where: { id: pointId }, data: { lastInspected: inspectedAt },
+        });
       } else {
         // A failed inspection does not reset due date. Its corrective WO must be
         // technician-completed, verified and planner-closed before resetting it.
-        const open = await tx.componentInspectionRecord.findFirst({
-          where: {
-            inspectionPointId: pointId,
-            workOrder: { is: { status: { notIn: ['closed', 'cancelled'] } } },
-          },
-          orderBy: { inspectedAt: 'desc' },
-          select: { workOrder: { select: { id: true, woNumber: true, status: true } } },
-        });
-        if (open?.workOrder) {
-          workOrder = open.workOrder;
+        if (workOrder) {
           reusedWorkOrder = true;
         } else {
           const prefix = `WO-${inspectedAt.getFullYear()}${String(inspectedAt.getMonth() + 1).padStart(2, '0')}`;
@@ -188,7 +195,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           }),
         },
       });
-      return { record, workOrder, reusedWorkOrder, nextInspection };
+      return { record, workOrder, reusedWorkOrder, nextInspection, awaitingCloseout: Boolean(workOrder) };
     });
     return NextResponse.json({ success: true, data: outcome }, { status: 201 });
   } catch (error: unknown) {

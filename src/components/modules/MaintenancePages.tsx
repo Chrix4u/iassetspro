@@ -2253,12 +2253,18 @@ export function WorkOrdersPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [pmNeedsPlannerOnly, setPmNeedsPlannerOnly] = useState(false);
+  const [pmDraftPage, setPmDraftPage] = useState(1);
+  const [pmDraftTotal, setPmDraftTotal] = useState(0);
+  const [pmDraftPages, setPmDraftPages] = useState(1);
   const { hasPermission, isAdmin, user } = useAuthStore();
   const { navigate, pageParams } = useNavigationStore();
 
   // WO IDs that have pending team member requests (for planner/admin indicator badges)
   const [woIdsWithPendingTeamReqs, setWoIdsWithPendingTeamReqs] = useState<Set<string>>(new Set());
   const isPlannerOrAdmin = isAdmin() || hasPermission('work_orders.assign_supervisor');
+  const canReviewUnownedPm = isAdmin() || (hasPermission('work_orders.update')
+    && user?.roles?.some((role: any) => ['planner', 'maintenance_planner', 'maintenance_manager', 'plant_manager'].includes(role.slug)));
 
   // WO KPI state
   const [woKpi, setWoKpi] = useState<{
@@ -2333,17 +2339,39 @@ export function WorkOrdersPage() {
   useEffect(() => {
     let active = true;
     const params = new URLSearchParams();
-    if (filterStatus !== 'all') params.set('status', filterStatus);
+    if (pmNeedsPlannerOnly) {
+      params.set('pmPlannerState', 'unassigned');
+      params.set('page', String(pmDraftPage));
+      params.set('limit', '50');
+    } else {
+      if (filterStatus !== 'all') params.set('status', filterStatus);
+      if (overdueOnly) params.set('overdue', 'true');
+    }
     if (filterPriority !== 'all') params.set('priority', filterPriority);
-    if (overdueOnly) params.set('overdue', 'true');
     api.get<WorkOrder[]>(`/api/work-orders?${params}`).then(res => {
       if (active) {
-        if (res.success && res.data) setWorkOrders(res.data);
+        if (res.success && res.data) {
+          setWorkOrders(res.data);
+          if (pmNeedsPlannerOnly) {
+            const pagination = (res as typeof res & { pagination?: { total: number; totalPages: number } }).pagination;
+            setPmDraftTotal(pagination?.total ?? res.data.length);
+            setPmDraftPages(Math.max(1, pagination?.totalPages || 1));
+          }
+        } else {
+          setWorkOrders([]);
+          if (res.error) toast.error(res.error);
+        }
         setLoading(false);
+      }
+    }).catch(() => {
+      if (active) {
+        setWorkOrders([]);
+        setLoading(false);
+        toast.error('Could not load work orders');
       }
     });
     return () => { active = false; };
-  }, [filterStatus, filterPriority, overdueOnly, refreshKey]);
+  }, [filterStatus, filterPriority, overdueOnly, pmNeedsPlannerOnly, pmDraftPage, refreshKey]);
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
@@ -2448,6 +2476,8 @@ export function WorkOrdersPage() {
           <button
             key={s.label}
             onClick={() => {
+              setPmNeedsPlannerOnly(false);
+              setPmDraftPage(1);
               if (s.overdue) { setOverdueOnly(!overdueOnly); setFilterStatus('all'); }
               else { setFilterStatus(s.status || 'all'); setOverdueOnly(false); }
             }}
@@ -2458,13 +2488,34 @@ export function WorkOrdersPage() {
         ))}
       </div>
 
+      {canReviewUnownedPm && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant={pmNeedsPlannerOnly ? 'default' : 'outline'}
+            aria-pressed={pmNeedsPlannerOnly}
+            onClick={() => {
+              setPmNeedsPlannerOnly((current) => !current);
+              setPmDraftPage(1);
+              setFilterStatus('all');
+              setFilterPriority('all');
+              setOverdueOnly(false);
+              setSearchText('');
+            }}>
+            <UserCheck className="mr-1.5 h-4 w-4" />
+            PM drafts awaiting planner {pmNeedsPlannerOnly ? `(${pmDraftTotal})` : ''}
+          </Button>
+          {pmNeedsPlannerOnly && <p role="status" className="text-xs text-muted-foreground">
+            These PM work orders are still Draft and have no planner. Open one and use Claim PM Planning if authorized for its plant.
+          </p>}
+        </div>
+      )}
+
       {/* Filters */}
       <div className="filter-row flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search work orders..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterStatus} onValueChange={(value) => { setPmNeedsPlannerOnly(false); setPmDraftPage(1); setFilterStatus(value); }}>
           <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
@@ -2548,6 +2599,14 @@ export function WorkOrdersPage() {
           </Table>
         </Card>
       )}
+
+      {pmNeedsPlannerOnly && !loading && <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>Page {pmDraftPage} of {pmDraftPages} · {pmDraftTotal} PM drafts awaiting planner</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={pmDraftPage <= 1} onClick={() => setPmDraftPage((page) => Math.max(1, page - 1))}>Previous</Button>
+          <Button size="sm" variant="outline" disabled={pmDraftPage >= pmDraftPages} onClick={() => setPmDraftPage((page) => page + 1)}>Next</Button>
+        </div>
+      </div>}
 
       {/* WO Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>

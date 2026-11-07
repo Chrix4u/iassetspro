@@ -22,6 +22,7 @@ type Row = {
   assetName: string;
   assetTag: string;
   departmentId: string | null;
+  departmentName: string;
   componentId: string | null;
   componentName: string;
   componentCode: string;
@@ -44,8 +45,8 @@ type Row = {
   latestFindings: string | null;
 };
 type Payload = { rows: Row[]; truncated: boolean; summary: { total: number; overdue: number; unconfigured: number; attention: number } };
-type Filters = { search: string; assetId: string; componentId: string; method: string; dueState: string; result: string };
-const EMPTY_FILTERS: Filters = { search: '', assetId: '', componentId: '', method: '', dueState: '', result: '' };
+type Filters = { search: string; departmentId: string; assetId: string; componentId: string; method: string; dueState: string; result: string };
+const EMPTY_FILTERS: Filters = { search: '', departmentId: '', assetId: '', componentId: '', method: '', dueState: '', result: '' };
 const METHODS = [
   { value: 'visual', label: 'Sight / Visual' },
   { value: 'measurement', label: 'Instrument / Measurement' },
@@ -116,12 +117,14 @@ export function PmInspectionChecklistPanel() {
   useEffect(() => { void load(); }, [load]);
 
   const rows = payload?.rows || [];
+  const departments = useMemo(() => [...new Map(rows.filter((row) => row.departmentId).map((row) => [row.departmentId!, { value: row.departmentId!, label: row.departmentName }])).values()], [rows]);
   const machines = useMemo(() => [...new Map(rows.map((row) => [row.assetId, { value: row.assetId, label: row.assetName + ' [' + row.assetTag + ']' }])).values()], [rows]);
   const parts = useMemo(() => [...new Map(rows.filter((row) => row.componentId && (!filters.assetId || row.assetId === filters.assetId)).map((row) =>
     [row.componentId!, { value: row.componentId!, label: row.componentName + (row.componentCode ? ' [' + row.componentCode + ']' : '') }]
   )).values()], [rows, filters.assetId]);
   const filtered = useMemo(() => rows.filter((row) =>
-    (!filters.assetId || row.assetId === filters.assetId)
+    (!filters.departmentId || row.departmentId === filters.departmentId)
+    && (!filters.assetId || row.assetId === filters.assetId)
     && (!filters.componentId || row.componentId === filters.componentId)
     && (!filters.method || row.method === filters.method)
     && (!filters.dueState || row.dueState === filters.dueState)
@@ -205,6 +208,7 @@ export function PmInspectionChecklistPanel() {
               <Label className="text-xs font-medium">Search</Label>
               <Input className="h-9 text-xs" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilter('search', event.target.value)} />
             </div>
+            <MiniFilter label="Department" value={filters.departmentId} options={departments} onChange={(value) => updateFilter('departmentId', value)} />
             <MiniFilter label="Machine" value={filters.assetId} options={machines} onChange={(value) => updateFilter('assetId', value)} />
             <MiniFilter label="Part" value={filters.componentId} options={parts} onChange={(value) => updateFilter('componentId', value)} />
             <MiniFilter label="Inspection Method" value={filters.method} options={[...METHODS, { value: 'unconfigured', label: 'Needs configuration' }]} onChange={(value) => updateFilter('method', value)} />

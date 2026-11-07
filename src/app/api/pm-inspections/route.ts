@@ -208,12 +208,16 @@ export async function POST(request: NextRequest) {
     if (!/^pmir_[0-9a-f-]{36}$/i.test(submissionId)) return ERROR('Valid unique submission ID required', 400);
     const result: InspectionResult = input.result;
     if (!INSPECTION_RESULTS.includes(result)) return ERROR('Valid inspection outcome required', 400);
-    const findings = String(input.findings || '').trim().slice(0, 2000);
+    let findings = String(input.findings || '').trim().slice(0, 2000);
     const recommendation = String(input.recommendation || '').trim().slice(0, 1000);
     const point = await db.componentInspectionPoint.findFirst({
       where: { id: pointId, componentId: assignment.componentId, isActive: true },
     });
     if (!point || !INSPECTION_METHODS.includes(point.inspectionType as InspectionMethod)) return ERROR('Invalid inspection point for this part', 404);
+    if ((point.inspectionType === 'measurement' || point.inspectionType === 'dimensional')
+      && point.normalRange && !parseInspectionRange(point.normalRange)) {
+      return ERROR('Inspection range configuration is invalid; ask the planner to correct it', 409);
+    }
 
     let evaluated: ReturnType<typeof classifyInspection>;
     try {
@@ -223,6 +227,12 @@ export async function POST(request: NextRequest) {
       });
     } catch (error: unknown) { return ERROR(error instanceof Error ? error.message : 'Invalid inspection value', 400); }
 
+    if (evaluated.exceededLimit && !findings) {
+      findings = 'Instrument reading ' + evaluated.value
+        + ' outside acceptable range ('
+        + (evaluated.range?.min ?? '—') + ' to ' + (evaluated.range?.max ?? '—')
+        + ' ' + (evaluated.range?.unit || '') + ')';
+    }
     if (isCorrectiveInspectionResult(evaluated.result) && !findings) {
       return ERROR('Findings are required when an inspection needs corrective work', 400);
     }

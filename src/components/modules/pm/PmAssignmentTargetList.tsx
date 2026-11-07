@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { ClipboardList, Eye, Pencil, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
+import { ClipboardList, Eye, MoreHorizontal, Pencil, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
 import {
   filterPmAssignmentTargets,
   groupPmAssignmentAssets,
@@ -12,6 +12,7 @@ import {
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -38,7 +39,7 @@ function dueSummary(group: PmAssignmentTargetGroup) {
   if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: new Intl.DateTimeFormat('en-GB').format(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
   if (first) return { label: new Intl.DateTimeFormat('en-GB').format(first), className: '' };
   if (frequencies.includes('meter')) return { label: 'Meter driven', className: '' };
-  return { label: 'Event / condition', className: '' };
+  return { label: 'No due date', className: '' };
 }
 
 export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onConfigureTriggers, onDelete }: {
@@ -66,7 +67,7 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
         <FilterSelect label="Activity Mode" value={filters.activityMode || ALL} onChange={(v) => set({ activityMode: selectValue(v) })}><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="lubrication">Lubrication</SelectItem><SelectItem value="servicing">Servicing</SelectItem><SelectItem value="replacement">Replacement</SelectItem></FilterSelect>
         <FilterSelect label="Inspection Type" value={filters.inspectionType || ALL} onChange={(v) => set({ inspectionType: selectValue(v) })}><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill</SelectItem></FilterSelect>
         <FilterSelect label="Frequency Type" value={filters.frequencyType || ALL} onChange={(v) => set({ frequencyType: selectValue(v) as PmAssignmentTargetFilters['frequencyType'] })}><SelectItem value="time_day">Time / Day</SelectItem><SelectItem value="meter">Meter Based</SelectItem></FilterSelect>
-        <FilterSelect label="Due State" className="xl:col-span-2" value={filters.dueState || ALL} onChange={(v) => set({ dueState: selectValue(v) as PmAssignmentTargetFilters['dueState'] })}><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_soon">Due Soon · 7 days</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="meter">Meter Driven</SelectItem><SelectItem value="event">Condition / Event</SelectItem></FilterSelect>
+        <FilterSelect label="Due State" className="xl:col-span-2" value={filters.dueState || ALL} onChange={(v) => set({ dueState: selectValue(v) as PmAssignmentTargetFilters['dueState'] })}><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_soon">Due Soon · 7 days</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="meter">Meter Driven</SelectItem></FilterSelect>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2"><p className="text-[11px] text-muted-foreground">{machineGroups.length} machine{machineGroups.length === 1 ? '' : 's'} · {filtered.length} scheduled target{filtered.length === 1 ? '' : 's'} shown</p>{hasFilters && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters({})}><RotateCcw className="mr-1 h-3.5 w-3.5"/>Clear Filters</Button>}</div>
     </div>
@@ -94,17 +95,40 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
             <AccordionContent className="border-t px-0 pb-0">
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Part / Target</TableHead><TableHead>Tasks</TableHead><TableHead className="hidden md:table-cell">PM Coverage</TableHead><TableHead>Next Due</TableHead><TableHead className="hidden lg:table-cell">Est. Time</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Part / Target</TableHead><TableHead>Tasks</TableHead><TableHead className="hidden md:table-cell">PM Coverage</TableHead><TableHead>Next Due</TableHead><TableHead className="hidden lg:table-cell">Est. Time</TableHead><TableHead className="w-12 px-2 text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {machine.targets.map((group) => {
                       const due = dueSummary(group);
                       return <TableRow key={group.key}>
-                        <TableCell><p className="text-sm font-semibold">{group.targetName}</p><p className="text-[10px] text-muted-foreground">{group.component ? `${titleCase(group.targetType)}${group.targetCode ? ` · ${group.targetCode}` : ''}` : 'Whole machine'}</p></TableCell>
+                        <TableCell className="max-w-[10rem] whitespace-normal px-2 sm:max-w-none"><p className="break-words text-sm font-semibold">{group.targetName}</p><p className="text-[10px] text-muted-foreground">{group.component ? `${titleCase(group.targetType)}${group.targetCode ? ` · ${group.targetCode}` : ''}` : 'Whole machine'}</p></TableCell>
                         <TableCell><Badge variant="secondary">{group.taskCount} task{group.taskCount === 1 ? '' : 's'}</Badge></TableCell>
                         <TableCell className="hidden md:table-cell"><div className="flex flex-wrap gap-1">{group.pmTypes.map((type) => <Badge key={type} variant="outline" className="text-[10px]">{pmLabels[type] || type.toUpperCase()}</Badge>)}</div></TableCell>
                         <TableCell><p className={`text-xs font-semibold ${due.className}`}>{due.label}</p>{due.sub && <p className="text-[10px] text-muted-foreground">{due.sub}</p>}</TableCell>
                         <TableCell className="hidden lg:table-cell text-xs">{group.totalEstimatedMinutes} min</TableCell>
-                        <TableCell><div className="flex flex-wrap justify-end gap-1"><Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onView(group)}><Eye className="mr-1 h-3.5 w-3.5"/>View</Button>{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onConfigureTriggers(group)} title="Configure the trigger and cadence for each task"><Settings2 className="mr-1 h-3.5 w-3.5"/>Configure Triggers</Button>}{canEdit && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onEdit(group)}><Pencil className="mr-1 h-3.5 w-3.5"/>Edit</Button>}{canDelete && <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-red-600 hover:text-red-700" onClick={() => onDelete(group)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Delete</Button>}</div></TableCell>
+                        <TableCell className="w-12 px-2 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" aria-label={`Actions for ${group.targetName}`} title="Schedule actions">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
+                              <DropdownMenuItem onSelect={() => onView(group)}>
+                                <Eye className="h-4 w-4" />View
+                              </DropdownMenuItem>
+                              {canEdit && <DropdownMenuItem onSelect={() => onConfigureTriggers(group)}>
+                                <Settings2 className="h-4 w-4" />Configure Triggers
+                              </DropdownMenuItem>}
+                              {canEdit && <DropdownMenuItem onSelect={() => onEdit(group)}>
+                                <Pencil className="h-4 w-4" />Edit
+                              </DropdownMenuItem>}
+                              {canDelete && <DropdownMenuSeparator />}
+                              {canDelete && <DropdownMenuItem variant="destructive" onSelect={() => onDelete(group)}>
+                                <Trash2 className="h-4 w-4" />Delete
+                              </DropdownMenuItem>}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>;
                     })}
                   </TableBody>

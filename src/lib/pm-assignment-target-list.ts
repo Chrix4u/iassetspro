@@ -29,6 +29,11 @@ export interface PmAssignmentTargetListRecord {
   component: { id: string; name: string; componentCode?: string | null; componentType?: string | null; parentId?: string | null } | null;
   assetMeter: { id: string; name: string; unit: string; currentValue: number; lastReadingAt?: string | Date | null; isActive?: boolean } | null;
   pmTask: { id: string; taskNumber: number; description: string; taskType?: string | null };
+  taskExecutions?: Array<{
+    id: string;
+    pmDueCycleKey: string | null;
+    workOrder: { id: string; woNumber: string; status: string };
+  }>;
 }
 
 export interface PmAssignmentTargetGroup {

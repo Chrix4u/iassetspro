@@ -209,11 +209,12 @@ export function PmInspectionWorksheetPanel() {
         workOrder: { id: string; woNumber: string; status: string } | null;
         reusedWorkOrder: boolean;
         nextInspection: string | null;
+        awaitingCloseout: boolean;
       }>(`/api/pm-inspections/${encodeURIComponent(recordPoint.id)}/records`, record);
       if (!response.success) throw new Error(response.error || 'Could not record inspection');
       const wo = response.data?.workOrder;
       toast.success(wo
-        ? `Inspection recorded. ${wo.woNumber} ${response.data?.reusedWorkOrder ? 'already covers this defect' : 'drafted for planner review'}.`
+        ? `Inspection recorded. ${wo.woNumber} ${response.data?.reusedWorkOrder ? 'remains open pending corrective closeout' : 'drafted for planner review'}.`
         : 'Inspection passed and next inspection date updated.');
       setRecordPoint(null);
       setRecord(emptyRecord);

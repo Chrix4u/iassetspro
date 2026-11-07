@@ -99,11 +99,23 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
                   <TableBody>
                     {machine.targets.map((group) => {
                       const due = dueSummary(group);
+                      const openOrderMap = new Map<string, { id: string; woNumber: string; status: string }>();
+                      for (const assignment of group.assignments) {
+                        for (const execution of assignment.taskExecutions || []) {
+                          openOrderMap.set(execution.workOrder.id, execution.workOrder);
+                        }
+                      }
+                      const openOrders = [...openOrderMap.values()];
                       return <TableRow key={group.key}>
                         <TableCell className="max-w-[10rem] whitespace-normal px-2 sm:max-w-none"><p className="break-words text-sm font-semibold">{group.targetName}</p><p className="text-[10px] text-muted-foreground">{group.component ? `${titleCase(group.targetType)}${group.targetCode ? ` · ${group.targetCode}` : ''}` : 'Whole machine'}</p></TableCell>
                         <TableCell><Badge variant="secondary">{group.taskCount} task{group.taskCount === 1 ? '' : 's'}</Badge></TableCell>
                         <TableCell className="hidden md:table-cell"><div className="flex flex-wrap gap-1">{group.pmTypes.map((type) => <Badge key={type} variant="outline" className="text-[10px]">{pmLabels[type] || type.toUpperCase()}</Badge>)}</div></TableCell>
-                        <TableCell><p className={`text-xs font-semibold ${due.className}`}>{due.label}</p>{due.sub && <p className="text-[10px] text-muted-foreground">{due.sub}</p>}</TableCell>
+                        <TableCell className="max-w-40 whitespace-normal"><p className={`text-xs font-semibold ${due.className}`}>{due.label}</p>{due.sub && <p className="text-[10px] text-muted-foreground">{due.sub}</p>}
+                          {openOrders.slice(0, 2).map((order) => <p key={order.id} className="mt-1 break-words text-[10px] text-muted-foreground">
+                            <span className="font-semibold text-foreground">{order.woNumber}</span> · {titleCase(order.status)}
+                          </p>)}
+                          {openOrders.length > 2 && <p className="text-[10px] text-muted-foreground">+{openOrders.length - 2} more active WO{openOrders.length - 2 === 1 ? '' : 's'}</p>}
+                        </TableCell>
                         <TableCell className="hidden lg:table-cell text-xs">{group.totalEstimatedMinutes} min</TableCell>
                         <TableCell className="w-12 px-2 text-right">
                           <DropdownMenu>

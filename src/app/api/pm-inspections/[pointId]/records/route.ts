@@ -210,7 +210,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               ...snapshot,
               notes: `Automatically drafted from inspection record ${record.id}. ${plannerId
                 ? 'Assigned to the plant planner for review and execution assignment.'
-                : 'No eligible active plant planner found; maintenance management must assign an accountable planner before execution.'}`,
+                : 'No eligible active plant planner found; maintenance management intervention is required to establish accountable ownership before execution.'}`,
             },
           });
           await tx.workOrderComponent.upsert({

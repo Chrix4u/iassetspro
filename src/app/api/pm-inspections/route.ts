@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import {
@@ -23,12 +24,12 @@ export async function GET(request: NextRequest) {
     const plantId = query.get('plantId') || '';
     if (plantId && !canAccessPlantStrict(scope, plantId)) return ERROR('Access denied', 403);
 
-    const assetWhere: Record<string, unknown> = {};
+    const assetWhere: Prisma.AssetWhereInput = {};
     if (plantId) assetWhere.plantId = plantId;
     else if (scope.isScoped && scope.plantId) assetWhere.plantId = scope.plantId;
     else if (!scope.isSystemWide) assetWhere.plantId = { in: scope.accessiblePlantIds };
     if (query.get('departmentId')) assetWhere.departmentId = query.get('departmentId');
-    const where: Record<string, unknown> = {
+    const where: Prisma.PmScheduleTaskWhereInput = {
       isActive: true,
       activityMode: 'inspection',
       asset: assetWhere,

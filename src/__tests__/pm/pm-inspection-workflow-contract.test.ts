@@ -36,7 +36,9 @@ describe('PM inspection lifecycle integration contracts', () => {
   });
 
   it('only advances passed sight/instrument inspection immediately; a failed check creates a deduplicated draft WO', () => {
-    expect(entryRoute).toContain('if (!inspection.isAlarm)');
+    expect(entryRoute).toContain('if (!inspection.isAlarm && !workOrder)');
+    expect(entryRoute).toContain('} else if (!inspection.isAlarm) {');
+    expect(entryRoute).toContain('awaitingCloseout: Boolean(workOrder)');
     expect(entryRoute).toContain("status: { notIn: ['closed', 'cancelled'] }");
     expect(entryRoute).toContain("type: 'corrective'");
     expect(entryRoute).toContain("status: 'draft'");

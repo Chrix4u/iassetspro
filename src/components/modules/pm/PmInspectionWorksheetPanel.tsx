@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, Gauge, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, Download, Gauge, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ interface InspectionPoint {
     id: string; result: Result; value: string | null; findings: string | null; inspectedAt: string;
     workOrder: { id: string; woNumber: string; status: string } | null;
   } | null;
+  openCorrectiveWorkOrder: { id: string; woNumber: string; status: string } | null;
 }
 
 interface ScheduledInspection {
@@ -61,7 +63,7 @@ interface InspectionResponse {
   error?: string;
 }
 
-const emptyFilters = { search: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all' };
+const emptyFilters = { search: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all', followUp: 'all' };
 const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
 const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '' };
 
@@ -224,6 +226,23 @@ export function PmInspectionWorksheetPanel() {
     } finally { setSavingRecord(false); }
   };
 
+  const exportVisiblePage = () => {
+    if (rows.length === 0) return;
+    try {
+      const csv = buildPmInspectionPageCsv(rows);
+      const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pm-inspections-page-${page}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      toast.error('Could not export this inspection page');
+    }
+  };
+
   const visibleScheduled = useMemo(
     () => scheduledRows.filter((task) => filters.dueState === 'all' || task.dueState === filters.dueState),
     [scheduledRows, filters.dueState],
@@ -232,6 +251,7 @@ export function PmInspectionWorksheetPanel() {
     overdue: rows.filter((row) => row.dueState === 'overdue').length,
     due: rows.filter((row) => row.dueState === 'due_today').length,
     instrument: rows.filter((row) => row.inspectionType === 'measurement').length,
+    openCorrective: rows.filter((row) => Boolean(row.openCorrectiveWorkOrder)).length,
   }), [rows]);
 
   return (
@@ -246,6 +266,9 @@ export function PmInspectionWorksheetPanel() {
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
               <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Generate List
             </Button>
+            <Button type="button" size="sm" variant="outline" onClick={exportVisiblePage} disabled={loading || rows.length === 0} title="Export only the filtered inspection points shown on this page">
+              <Download className="mr-1.5 h-4 w-4"/>Export Page CSV
+            </Button>
             {canPlan && <Button size="sm" onClick={() => setPlanOpen(true)}><Plus className="mr-1 h-4 w-4"/>Plan Inspection</Button>}
           </div>
         </div>
@@ -255,16 +278,18 @@ export function PmInspectionWorksheetPanel() {
           <Badge variant="outline">{stats.overdue} overdue on page</Badge>
           <Badge variant="outline">{stats.due} due today on page</Badge>
           <Badge variant="outline">{stats.instrument} instrument checks on page</Badge>
+          <Badge variant="outline">{stats.openCorrective} open corrective WOs on page</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-7">
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Part / Instrument</Label><div className="mt-1"><AsyncSearchableSelect value={filters.componentId} onValueChange={(componentId) => updateFilters({ componentId })} fetchOptions={fetchFilterComponents} placeholder={filters.assetId ? 'All parts' : 'Select machine first'} disabled={!filters.assetId}/></div></div>
           <div><Label className="text-xs">Method</Label><Select value={filters.method} onValueChange={(method) => updateFilters({ method })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="visual">Sight / Visual</SelectItem><SelectItem value="measurement">Instrument / Reading</SelectItem></SelectContent></Select></div>
           <div><Label className="text-xs">Due</Label><Select value={filters.dueState} onValueChange={(dueState) => updateFilters({ dueState })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All due states</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_today">Due Today</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="unscheduled">Unscheduled</SelectItem></SelectContent></Select></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Recorded outcome (history)</Label><Select value={filters.result} onValueChange={(result) => updateFilters({ result })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="not_inspected">Never inspected</SelectItem><SelectItem value="pass">Has passed</SelectItem><SelectItem value="fail">Has failed</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem></SelectContent></Select></div>
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Corrective follow-up</Label><Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All follow-ups</SelectItem><SelectItem value="open">Open corrective WO</SelectItem><SelectItem value="none">No open corrective WO</SelectItem></SelectContent></Select></div>
         </div>
 
         {loading && rows.length === 0 ? <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Generating inspection list…</div> : rows.length === 0 ?
@@ -287,6 +312,7 @@ export function PmInspectionWorksheetPanel() {
                     <div className="flex shrink-0 flex-wrap items-center gap-1">
                       <Badge variant="outline">{point.inspectionType === 'measurement' ? <Gauge className="mr-1 h-3 w-3"/> : <Eye className="mr-1 h-3 w-3"/>}{point.inspectionType === 'measurement' ? 'Instrument' : 'Sight'}</Badge>
                       <Badge variant={badgeVariant(point.dueState)}>{dueLabel(point.dueState)}</Badge>
+                      {point.openCorrectiveWorkOrder && <Badge variant="secondary">Corrective pending</Badge>}
                     </div>
                   </div>
                   <div className="mt-2 grid gap-2 rounded-md bg-muted/30 p-2 text-xs sm:grid-cols-3">
@@ -297,7 +323,12 @@ export function PmInspectionWorksheetPanel() {
                     <div><span className="text-muted-foreground">Latest result</span><p className="font-medium">{latest
                       ? `${latest.result.replace('_', ' ')}${latest.value !== null ? ` · ${latest.value} ${limits.unit}` : ''}`
                       : 'Not inspected yet'}</p>
-                      {latest?.workOrder && <p className="text-amber-700 dark:text-amber-300">{latest.workOrder.woNumber} · {latest.workOrder.status}</p>}</div>
+                      {point.openCorrectiveWorkOrder
+                        ? <p className="break-words text-amber-700 dark:text-amber-300" role="status">
+                            Outstanding corrective: {point.openCorrectiveWorkOrder.woNumber} · {point.openCorrectiveWorkOrder.status}.
+                            Next inspection remains due until verified planner closeout.
+                          </p>
+                        : latest?.workOrder && <p className="text-muted-foreground">{latest.workOrder.woNumber} · {latest.workOrder.status}</p>}</div>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-muted-foreground">{latest ? `Recorded ${new Date(latest.inspectedAt).toLocaleDateString('en-GB')}` : 'Awaiting first inspection'}</span>

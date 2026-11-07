@@ -19,6 +19,7 @@ import { PmAssignmentFormDialog } from '@/components/modules/pm/PmAssignmentForm
 import { PmAssignmentTargetDetailDialog } from '@/components/modules/pm/PmAssignmentTargetDetailDialog';
 import { PmAssignmentTargetList } from '@/components/modules/pm/PmAssignmentTargetList';
 import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
+import { PmInspectionListPanel } from '@/components/modules/pm/PmInspectionListPanel';
 import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';
 
 function taskOverdue(row: PmAssignmentTargetListRecord, now: Date) {
@@ -100,6 +101,7 @@ export function PmPlanningPage() {
 
     <PmPortfolioCompliancePanel />
     <PmMachineRollupPanel />
+    <PmInspectionListPanel canRecord={canEdit} canConfigure={hasPermission('pm_schedules.update') || hasPermission('digital_twin.manage') || isAdmin()} />
     <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
 
     <PmAssignmentFormDialog

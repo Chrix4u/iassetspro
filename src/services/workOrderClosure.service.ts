@@ -7,6 +7,7 @@ import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils'
 import { sendRepairNotification } from '@/lib/repair-notifications';
 import { buildAuditData } from '@/lib/audit-helpers';
 import { advanceClosedPmScheduledTaskRecurrence } from '@/services/pm/advancePmScheduledTaskRecurrence.service';
+import { advanceClosedInspectionPoint } from '@/services/pm/advanceClosedInspectionPoint.service';
 
 export interface ClosureSessionContext {
   userId: string;
@@ -354,6 +355,19 @@ export async function closeRepairWorkOrder(
       });
       pmScheduledTaskIdsAdvanced = taskRecurrence.advancedTaskIds;
       pmScheduledTaskIdsSkipped = taskRecurrence.skippedTaskIds;
+
+      // Corrective WOs raised from failed sight/instrument inspections do not
+      // reset that inspection's due date at capture or technician sign-off.
+      // Reset only inside this verified planner-close transaction.
+      await advanceClosedInspectionPoint({
+        tx,
+        workOrderId,
+        woNumber: wo.woNumber,
+        woActualEnd: wo.actualEnd,
+        closedAt,
+        actorId: session.userId,
+        auditCtx: options.auditCtx,
+      });
 
       // Direct PM assignments are identified by task execution provenance and do
       // not require a legacy PM Schedule container. Legacy header cadence remains

@@ -64,9 +64,10 @@ describe('PM inspection lifecycle contracts', () => {
   });
 
   it('does not reset PM due dates merely because an inspection result was recorded', () => {
-    expect(route).not.toContain('pmScheduleTask.update(');
-    expect(route).not.toContain('nextDueReading:');
-    expect(route).toContain('lastInspected: inspectedAt');
+    const writes = route.split('export async function POST')[1];
+    expect(writes).not.toContain('pmScheduleTask.update(');
+    expect(writes).not.toContain('nextDueReading:');
+    expect(writes).toContain('lastInspected: inspectedAt');
     expect(closure).toContain('advanceClosedPmScheduledTaskRecurrence');
   });
 

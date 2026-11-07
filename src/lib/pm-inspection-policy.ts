@@ -26,6 +26,9 @@ export function parseInspectionRange(value: unknown): { min: number | null; max:
           : null;
     const min = parseBound(item.min);
     const max = parseBound(item.max);
+    const minSpecified = item.min !== null && item.min !== undefined && item.min !== '';
+    const maxSpecified = item.max !== null && item.max !== undefined && item.max !== '';
+    if ((minSpecified && min === null) || (maxSpecified && max === null)) return null;
     if (min === null && max === null) return null;
     if (min !== null && max !== null && min > max) return null;
     return { min, max, unit: String(item.unit || '').slice(0, 40) };

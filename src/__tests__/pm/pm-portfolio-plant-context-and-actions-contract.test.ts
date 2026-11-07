@@ -35,7 +35,10 @@ describe('PM portfolio plant context and compact actions', () => {
     expect(assignmentList).not.toContain('flex flex-wrap justify-end gap-1');
   });
 
-  it('does not present Event/Condition as a frequency type', () => {
-    expect(assignmentList).not.toContain('<SelectItem value="event">');
+  it('restricts frequency types to the two engineer-approved options', () => {
+    const frequencyFilter = assignmentList.match(/<FilterSelect label="Frequency Type"[\\s\\S]*?<\\/FilterSelect>/)?.[0] || '';
+    expect(frequencyFilter).toContain('<SelectItem value="time_day">Time / Day</SelectItem>');
+    expect(frequencyFilter).toContain('<SelectItem value="meter">Meter Based</SelectItem>');
+    expect(frequencyFilter).not.toContain('<SelectItem value="event">');
   });
 });

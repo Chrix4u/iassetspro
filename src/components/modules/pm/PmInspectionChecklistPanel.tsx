@@ -43,8 +43,9 @@ type Row = {
   lastValue: string | null;
   lastInspectedAt: string | null;
   latestFindings: string | null;
+  openCorrective: { id: string; woNumber: string; status: string } | null;
 };
-type Payload = { rows: Row[]; truncated: boolean; summary: { total: number; overdue: number; unconfigured: number; attention: number } };
+type Payload = { rows: Row[]; truncated: boolean; summary: { total: number; overdue: number; unconfigured: number; attention: number; openCorrective: number } };
 type Filters = { search: string; departmentId: string; assetId: string; componentId: string; method: string; dueState: string; result: string };
 const EMPTY_FILTERS: Filters = { search: '', departmentId: '', assetId: '', componentId: '', method: '', dueState: '', result: '' };
 const METHODS = [
@@ -202,6 +203,7 @@ export function PmInspectionChecklistPanel() {
             <Badge variant="outline">{payload.summary.overdue} due / overdue</Badge>
             <Badge variant="outline">{payload.summary.unconfigured} need setup</Badge>
             <Badge variant="outline">{payload.summary.attention} with findings</Badge>
+            <Badge variant="outline">{payload.summary.openCorrective || 0} linked open corrective WOs</Badge>
           </div>}
           <div className="flex items-end gap-2 overflow-x-auto pb-2">
             <div className="min-w-[11rem] flex-[2] space-y-1">
@@ -228,6 +230,7 @@ export function PmInspectionChecklistPanel() {
                       <Badge variant="secondary">{row.method === 'visual' ? <Eye className="mr-1 h-3 w-3" /> : <Gauge className="mr-1 h-3 w-3" />}{methodLabel(row.method)}</Badge>
                       <Badge variant="outline">{dueLabel(row.dueState)}</Badge>
                       {row.lastResult && <Badge variant={row.lastResult === 'pass' ? 'secondary' : 'destructive'}>{outcomeLabel(row.lastResult)}</Badge>}
+                      {row.openCorrective && <Badge variant="outline">Corrective {row.openCorrective.woNumber} · {row.openCorrective.status}</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {row.equipmentState === 'standstill' ? 'Standstill / Shutdown' : 'Running'} · {row.departmentName}

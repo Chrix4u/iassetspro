@@ -25,6 +25,24 @@ describe('PM inspection lifecycle integration contracts', () => {
     expect(listRoute).toContain('getPlantScope(request, session)');
   });
 
+  it('shows an unresolved corrective WO after a later pass without broadening plant access', () => {
+    expect(listRoute).toContain("const followUp = q.get('followUp')");
+    expect(listRoute).toContain("followUp === 'open'");
+    expect(listRoute).toContain("followUp === 'none'");
+    expect(listRoute).toContain("status: { notIn: ['closed', 'cancelled'] }");
+    expect(listRoute).toContain('inspectionPointId: { in: points.map((point) => point.id) }');
+    expect(listRoute).toContain('openCorrectiveWorkOrder: openCorrectiveByPoint.get(point.id) || null');
+    expect(worksheet).toContain('Corrective follow-up');
+    expect(worksheet).toContain('point.openCorrectiveWorkOrder');
+    expect(worksheet).toContain('Next inspection remains due until verified planner closeout.');
+  });
+
+  it('exports only the displayed, filtered worksheet page to a spreadsheet-safe CSV', () => {
+    expect(worksheet).toContain('buildPmInspectionPageCsv(rows)');
+    expect(worksheet).toContain('Export Page CSV');
+    expect(worksheet).toContain('rows.length === 0');
+  });
+
   it('records measured values as condition history and does not invent instrument readings', () => {
     expect(entryRoute).toContain('evaluateInspectionResult');
     expect(entryRoute).toContain('componentConditionReading.create');

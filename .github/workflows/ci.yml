@@ -387,7 +387,7 @@ jobs:
   # platform-test infrastructure from reaching main and blocking deployments.
   e2e-tests:
     name: E2E Tests (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: [build, container-build]
 

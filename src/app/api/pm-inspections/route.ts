@@ -212,13 +212,15 @@ export async function POST(request: NextRequest) {
         inspectionType: method,
         parameterKey,
         normalRange: range ? JSON.stringify(range) : null,
-        // The assignment calendar/meter is the sole PM frequency authority.
-        frequency: 'per_start',
-        nextInspection: null,
       };
       const point = pointId
+        // Do not rewrite independent component-inspection cadence on edit.
         ? await db.componentInspectionPoint.update({ where: { id: pointId }, data: payload })
-        : await db.componentInspectionPoint.create({ data: { ...payload, componentId: assignment.componentId } });
+        // PM-owned checklist points inherit their due point from the PM assignment.
+        : await db.componentInspectionPoint.create({ data: {
+            ...payload, componentId: assignment.componentId,
+            frequency: 'per_start', nextInspection: null,
+          } });
       await db.auditLog.create({
         data: {
           userId: session.userId, action: pointId ? 'update' : 'create',

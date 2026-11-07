@@ -5,6 +5,7 @@ import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { evaluateInspectionResult, nextInspectionDate, parseInspectionLimits } from '@/lib/pm-inspection';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
+import { isSameInspectionSubmission } from '@/lib/pm-inspection-submission';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Use sight or instrument inspection for this PM worksheet' }, { status: 400 });
     }
     const body = await request.json();
+    const submissionKey = typeof body.requestKey === 'string' ? body.requestKey.trim() : '';
+    if (submissionKey && !/^[a-zA-Z0-9_-]{8,120}$/.test(submissionKey)) {
+      return NextResponse.json({ success: false, error: 'Invalid inspection submission key' }, { status: 400 });
+    }
     const choice = body.outcome;
     if (!['pass', 'fail', 'needs_attention'].includes(choice)) {
       return NextResponse.json({ success: false, error: 'Select Pass, Fail, or Needs Attention' }, { status: 400 });
@@ -62,6 +67,42 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const outcome = await db.$transaction(async (tx) => {
       // This lock prevents repeated failed submissions creating parallel WOs.
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', `iassetspro:pm-inspection:${pointId}`);
+      // A mobile retry after an uncertain network response must never write
+      // another inspection, condition reading or corrective work order.
+      if (submissionKey) {
+        const previous = await tx.componentInspectionRecord.findUnique({
+          where: { requestKey: submissionKey },
+          include: { workOrder: { select: { id: true, woNumber: true, status: true } } },
+        });
+        if (previous) {
+          if (!isSameInspectionSubmission(previous, {
+            inspectionPointId: pointId,
+            inspectorId: session.userId,
+            result: inspection.outcome,
+            value: inspection.value,
+            findings: findings || null,
+            recommendation: recommendation || null,
+          })) {
+            throw new Error('Inspection submission key conflict');
+          }
+          const outstanding = previous.workOrder || (await tx.componentInspectionRecord.findFirst({
+            where: {
+              inspectionPointId: pointId,
+              workOrder: { is: { status: { notIn: ['closed', 'cancelled'] } } },
+            },
+            orderBy: { inspectedAt: 'desc' },
+            select: { workOrder: { select: { id: true, woNumber: true, status: true } } },
+          }))?.workOrder || null;
+          return {
+            record: previous,
+            workOrder: outstanding,
+            reusedWorkOrder: Boolean(outstanding),
+            nextInspection: null,
+            awaitingCloseout: Boolean(outstanding),
+            duplicate: true,
+          };
+        }
+      }
       const refreshedPoint = await tx.componentInspectionPoint.findUnique({
         where: { id: pointId }, select: { isActive: true, frequency: true, nextInspection: true },
       });
@@ -71,6 +112,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         data: {
           inspectionPointId: pointId,
           componentId: point.component.id,
+          requestKey: submissionKey || null,
           value: inspection.value,
           result: inspection.outcome,
           findings: findings || null,
@@ -197,10 +239,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       });
       return { record, workOrder, reusedWorkOrder, nextInspection, awaitingCloseout: Boolean(workOrder) };
     });
-    return NextResponse.json({ success: true, data: outcome }, { status: 201 });
+    return NextResponse.json({ success: true, data: outcome }, { status: 'duplicate' in outcome ? 200 : 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to record PM inspection';
     const clientError = /invalid|require|select|unsupported|deactivated|defect|observation/i.test(message);
-    return NextResponse.json({ success: false, error: message }, { status: clientError ? 400 : 500 });
+    return NextResponse.json({ success: false, error: message }, { status: message === 'Inspection submission key conflict' ? 409 : clientError ? 400 : 500 });
   }
 }

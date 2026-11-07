@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSameInspectionSubmission, type InspectionSubmissionSnapshot } from '../pm-inspection-submission';
+import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder, type InspectionSubmissionSnapshot } from '../pm-inspection-submission';
 
 const original: InspectionSubmissionSnapshot = {
   inspectionPointId: 'point-1',
@@ -11,6 +11,15 @@ const original: InspectionSubmissionSnapshot = {
 };
 
 describe('PM inspection idempotent retry payload', () => {
+  it('does not leave closed or cancelled corrective work pending on replay', () => {
+    expect(isPendingCorrectiveWorkOrder({ status: 'draft' })).toBe(true);
+    expect(isPendingCorrectiveWorkOrder({ status: 'in_progress' })).toBe(true);
+    expect(isPendingCorrectiveWorkOrder({ status: 'completed' })).toBe(true);
+    expect(isPendingCorrectiveWorkOrder({ status: 'closed' })).toBe(false);
+    expect(isPendingCorrectiveWorkOrder({ status: 'cancelled' })).toBe(false);
+    expect(isPendingCorrectiveWorkOrder(null)).toBe(false);
+  });
+
   it('accepts an exact retry, including nullable empty text', () => {
     expect(isSameInspectionSubmission(original, { ...original })).toBe(true);
     expect(isSameInspectionSubmission(

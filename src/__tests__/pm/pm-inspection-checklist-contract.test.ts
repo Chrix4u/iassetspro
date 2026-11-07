@@ -70,6 +70,7 @@ describe('PM inspection lifecycle contracts', () => {
     expect(writes).not.toContain('pmScheduleTask.update(');
     expect(writes).not.toContain('nextDueReading:');
     expect(writes).toContain('lastInspected: inspectedAt');
+    expect(writes).toContain('Do not rewrite independent component-inspection cadence on edit.');
     expect(closure).toContain('advanceClosedPmScheduledTaskRecurrence');
   });
 

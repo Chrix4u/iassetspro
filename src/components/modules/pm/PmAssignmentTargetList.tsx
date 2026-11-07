@@ -39,7 +39,7 @@ function dueSummary(group: PmAssignmentTargetGroup) {
   if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: new Intl.DateTimeFormat('en-GB').format(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
   if (first) return { label: new Intl.DateTimeFormat('en-GB').format(first), className: '' };
   if (frequencies.includes('meter')) return { label: 'Meter driven', className: '' };
-  return { label: 'No due date', className: '' };
+  return { label: 'Event / condition', className: '' };
 }
 
 export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onConfigureTriggers, onDelete }: {
@@ -67,7 +67,7 @@ export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, on
         <FilterSelect label="Activity Mode" value={filters.activityMode || ALL} onChange={(v) => set({ activityMode: selectValue(v) })}><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="lubrication">Lubrication</SelectItem><SelectItem value="servicing">Servicing</SelectItem><SelectItem value="replacement">Replacement</SelectItem></FilterSelect>
         <FilterSelect label="Inspection Type" value={filters.inspectionType || ALL} onChange={(v) => set({ inspectionType: selectValue(v) })}><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill</SelectItem></FilterSelect>
         <FilterSelect label="Frequency Type" value={filters.frequencyType || ALL} onChange={(v) => set({ frequencyType: selectValue(v) as PmAssignmentTargetFilters['frequencyType'] })}><SelectItem value="time_day">Time / Day</SelectItem><SelectItem value="meter">Meter Based</SelectItem></FilterSelect>
-        <FilterSelect label="Due State" className="xl:col-span-2" value={filters.dueState || ALL} onChange={(v) => set({ dueState: selectValue(v) as PmAssignmentTargetFilters['dueState'] })}><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_soon">Due Soon · 7 days</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="meter">Meter Driven</SelectItem></FilterSelect>
+        <FilterSelect label="Due State" className="xl:col-span-2" value={filters.dueState || ALL} onChange={(v) => set({ dueState: selectValue(v) as PmAssignmentTargetFilters['dueState'] })}><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_soon">Due Soon · 7 days</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="meter">Meter Driven</SelectItem><SelectItem value="event">Condition / Event</SelectItem></FilterSelect>
       </div>
       <div className="mt-2 flex items-center justify-between gap-2"><p className="text-[11px] text-muted-foreground">{machineGroups.length} machine{machineGroups.length === 1 ? '' : 's'} · {filtered.length} scheduled target{filtered.length === 1 ? '' : 's'} shown</p>{hasFilters && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters({})}><RotateCcw className="mr-1 h-3.5 w-3.5"/>Clear Filters</Button>}</div>
     </div>

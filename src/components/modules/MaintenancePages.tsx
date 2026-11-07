@@ -3285,6 +3285,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [actionLoading, setActionLoading] = useState(false);
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
+  const [claimPmPlanningOpen, setClaimPmPlanningOpen] = useState(false);
+  const [claimPmPlanningLoading, setClaimPmPlanningLoading] = useState(false);
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [pendingRequestCancel, setPendingRequestCancel] = useState<{
     type: 'material' | 'tool';
@@ -4950,6 +4952,25 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setAddTaskLoading(false);
   };
 
+  const handleClaimPmPlanning = async () => {
+    setClaimPmPlanningLoading(true);
+    try {
+      const res = await api.post<{ plannerId: string; duplicate: boolean }>(
+        `/api/work-orders/${id}/claim-planning`, {},
+      );
+      if (!res.success) throw new Error(res.error || 'Could not claim PM planning responsibility');
+      toast.success(res.data?.duplicate
+        ? 'This work order is already assigned to you for planning.'
+        : 'You are now the accountable planner. Review readiness before assigning technicians.');
+      setClaimPmPlanningOpen(false);
+      await Promise.all([fetchWO(), fetchPmPlanningReadiness()]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not claim PM planning responsibility');
+    } finally {
+      setClaimPmPlanningLoading(false);
+    }
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (!wo) return <div className="p-6">Work order not found</div>;
 
@@ -5004,6 +5025,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isWOFinalized = ['completed', 'verified', 'closed', 'cancelled'].includes(wo.status) || wo.isLocked;
   const isWOReadOnly = isWOFinalized; // alias for clarity
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
+  const canClaimUnownedPmPlanning = Boolean(
+    wo.pmScheduleId
+    && wo.status === 'draft'
+    && !wo.plannerId
+    && !wo.isLocked
+    && hasPermission('work_orders.update')
+    && user?.roles?.some((role: any) => ['planner', 'maintenance_planner'].includes(role.slug)),
+  );
   // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
   // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
   const canEdit = !['completed', 'closed', 'cancelled', 'verified'].includes(wo.status) && (
@@ -5062,8 +5091,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         </SheetDescription>
       </SheetHeader>
 
+      {wo.pmScheduleId && wo.status === 'draft' && !wo.plannerId && (
+        <p role="status" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+          This draft PM work order has no accountable planner. An authorized planner with write access to its plant
+          can claim responsibility before reviewing resources and assigning technicians.
+        </p>
+      )}
       {/* Actions Bar */}
-      <div className="pb-4 flex items-center gap-2">
+      <div className="pb-4 flex flex-wrap items-center gap-2">
+        {canClaimUnownedPmPlanning && (
+          <Button type="button" variant="outline" disabled={claimPmPlanningLoading}
+            onClick={() => setClaimPmPlanningOpen(true)}>
+            <UserCheck className="mr-1.5 h-4 w-4" />
+            Claim PM Planning
+          </Button>
+        )}
         {/* When permanently locked or user has no action permission, hide the entire Actions dropdown */}
         {!isWOPermanentlyLocked && !isReadOnly && (canEdit || transitionActions.length > 0) && (
           <DropdownMenu>
@@ -6337,6 +6379,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </Button>
           </div>
       </ResponsiveDialog>
+
+      <ConfirmDialog
+        open={claimPmPlanningOpen}
+        onOpenChange={(open) => { if (!claimPmPlanningLoading) setClaimPmPlanningOpen(open); }}
+        title="Claim PM planning responsibility"
+        description="You will become the accountable planner for this unassigned draft PM work order. Existing approval, resource, technician and closure checks remain in force. Continue?"
+        confirmLabel="Claim Work Order"
+        loading={claimPmPlanningLoading}
+        onConfirm={() => { void handleClaimPmPlanning(); }}
+      />
 
       {/* WO Action Confirmation Dialog */}
       <ConfirmDialog

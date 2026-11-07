@@ -3583,6 +3583,7 @@ model ComponentInspectionPoint {
 
 model ComponentInspectionRecord {
   id                String   @id @default(cuid())
+  requestKey        String?  @unique @map("request_key") // idempotent mobile inspection submission
   inspectionPointId String
   componentId       String
   value             String?  @db.Text // measurement value

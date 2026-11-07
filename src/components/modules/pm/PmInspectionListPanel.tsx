@@ -46,7 +46,7 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
   const [payload, setPayload] = useState<InspectionPayload>({ items: [], totalAssignments: 0, truncated: false });
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
-  const [recordTarget, setRecordTarget] = useState<{ group: InspectionGroup; point: Point } | null>(null);
+  const [recordTarget, setRecordTarget] = useState<{ group: InspectionGroup; point: Point; assignmentId: string } | null>(null);
   const [configTarget, setConfigTarget] = useState<InspectionGroup | null>(null);
   const [saving, setSaving] = useState(false);
   const [recordKey, setRecordKey] = useState('');
@@ -99,7 +99,7 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
     setRecord({ result: 'pass', value: '', findings: '', recommendation: '' });
     // Keep this key stable if a mobile submission needs to be retried.
     setRecordKey('inspect_' + Date.now() + '_' + Math.random().toString(36).slice(2, 14));
-    setRecordTarget({ group, point: inspectionPoint });
+    setRecordTarget({ group, point: inspectionPoint, assignmentId: group.tasks[0]?.assignmentId || '' });
   };
 
   const saveRecord = async () => {
@@ -109,7 +109,7 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
       const response = await api.post<{ record: unknown; workOrder: { woNumber: string } | null; outsideRange: boolean }>(
         '/api/pm-inspections', {
           action: 'record',
-          assignmentId: recordTarget.group.tasks[0]?.assignmentId,
+          assignmentId: recordTarget.assignmentId,
           pointId: recordTarget.point.id,
           requestKey: recordKey,
           ...record,
@@ -289,6 +289,10 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
       footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setRecordTarget(null)}>Cancel</Button>
         <Button onClick={() => void saveRecord()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}Save inspection</Button></div>}>
       <div className="space-y-3">
+        {recordTarget && recordTarget.group.tasks.length > 1 && <Filter label="Scheduled PM task" allOption={false}
+          value={recordTarget.assignmentId} onChange={(assignmentId) => setRecordTarget((current) => current ? { ...current, assignmentId } : null)}>
+          {recordTarget.group.tasks.map((task) => <SelectItem key={task.assignmentId} value={task.assignmentId}>#{task.taskNumber} {task.description}</SelectItem>)}
+        </Filter>}
         {recordTarget?.point.method === 'instrument' && <div className="space-y-1"><Label>Parameter value ({recordTarget.point.range.unit || 'unit'})</Label>
           <Input type="number" step="any" inputMode="decimal" value={record.value} onChange={(e) => setRecord((v) => ({ ...v, value: e.target.value }))} placeholder="Enter measured value"/>
           <p className="text-xs text-muted-foreground">Acceptable: {recordTarget.point.range.min ?? '—'} to {recordTarget.point.range.max ?? '—'} {recordTarget.point.range.unit || ''}. Out-of-range readings are always recorded as Fail.</p>

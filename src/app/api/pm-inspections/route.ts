@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       take: 501,
       orderBy: [{ nextDueDate: 'asc' }, { createdAt: 'asc' }],
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true } },
+        asset: { select: { id: true, name: true, assetTag: true, plantId: true, departmentId: true, department: { select: { name: true } } } },
         component: {
           select: {
             id: true, name: true, componentCode: true, componentType: true,
@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
           assetTag: assignment.asset.assetTag,
           plantId: assignment.asset.plantId,
           departmentId: assignment.asset.departmentId,
+          departmentName: assignment.asset.department?.name || 'Unassigned',
           componentId: assignment.componentId,
           componentName: assignment.component?.name || 'Whole machine',
           componentCode: assignment.component?.componentCode || '',

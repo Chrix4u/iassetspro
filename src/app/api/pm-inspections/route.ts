@@ -34,8 +34,10 @@ export async function GET(request: NextRequest) {
       activityMode: 'inspection',
       asset: assetWhere,
     };
-    if (query.get('assetId')) where.assetId = query.get('assetId');
-    if (query.get('componentId')) where.componentId = query.get('componentId');
+    const assetId = query.get('assetId');
+    const componentId = query.get('componentId');
+    if (assetId) where.assetId = assetId;
+    if (componentId) where.componentId = componentId;
 
     const assignments = await db.pmScheduleTask.findMany({
       where,

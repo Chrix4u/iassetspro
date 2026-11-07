@@ -11,6 +11,7 @@ const {
   mockSendRepairNotification,
   mockBuildAuditData,
   mockAdvanceScheduledTaskRecurrence,
+  mockAdvanceClosedInspection,
 } = vi.hoisted(() => ({
   mockDb: {
     $transaction: vi.fn(),
@@ -31,6 +32,7 @@ const {
   mockSendRepairNotification: vi.fn(),
   mockBuildAuditData: vi.fn(() => ({})),
   mockAdvanceScheduledTaskRecurrence: vi.fn(),
+  mockAdvanceClosedInspection: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: mockDb }));
@@ -48,6 +50,9 @@ vi.mock('@/lib/repair-notifications', () => ({ sendRepairNotification: mockSendR
 vi.mock('@/lib/audit-helpers', () => ({ buildAuditData: mockBuildAuditData }));
 vi.mock('@/services/pm/advancePmScheduledTaskRecurrence.service', () => ({
   advanceClosedPmScheduledTaskRecurrence: mockAdvanceScheduledTaskRecurrence,
+}));
+vi.mock('@/services/pm/advanceClosedInspectionPoint.service', () => ({
+  advanceClosedInspectionPoint: mockAdvanceClosedInspection,
 }));
 
 import {
@@ -127,6 +132,7 @@ describe('workOrderClosure PM lifecycle integrity', () => {
     mockAdvanceScheduledTaskRecurrence.mockResolvedValue({
       taskLevel: false, advancedTaskIds: [], skippedTaskIds: [],
     });
+    mockAdvanceClosedInspection.mockResolvedValue({ advanced: false, inspectionPointId: null, nextInspection: null });
   });
 
   it('advances an active recurring PM only after verified work is planner-closed', async () => {

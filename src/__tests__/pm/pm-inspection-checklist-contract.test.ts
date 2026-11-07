@@ -59,6 +59,7 @@ describe('PM inspection lifecycle contracts', () => {
     expect(route).toContain('pg_advisory_xact_lock');
     expect(route).toContain('componentInspectionRecord.findUnique({ where: { id: submissionId } })');
     expect(route).toContain('status: { notIn: CLOSED_WO_STATES }');
+    expect(route).toContain("['completed', 'verified', 'closed', 'cancelled']");
     expect(route).toContain("status: 'draft'");
     expect(route).toContain("type: 'corrective'");
     expect(route).toContain('openByPoint');

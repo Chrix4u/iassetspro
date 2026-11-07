@@ -30,6 +30,16 @@ export async function GET(request: NextRequest) {
         component: { select: { id: true, name: true, componentCode: true, componentType: true, parentId: true } },
         assetMeter: { select: { id: true, name: true, unit: true, currentValue: true, lastReadingAt: true, isActive: true } },
         pmTask: true,
+        taskExecutions: {
+          where: { workOrder: { status: { notIn: ['closed', 'cancelled'] } } },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            pmDueCycleKey: true,
+            workOrder: { select: { id: true, woNumber: true, status: true } },
+          },
+        },
       },
       orderBy: [{ nextDueDate: 'asc' }, { createdAt: 'asc' }],
     });

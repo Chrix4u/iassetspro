@@ -6,6 +6,7 @@ import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateT
 import { formatResolvedPmTemplateTaskComment, resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
+import { resolvePmGeneratedWorkOrderPlanner } from '@/services/pm/resolvePmGeneratedWorkOrderPlanner.service';
 
 export function conditionMatches(current: number, operator: string, target: number): boolean {
   switch (operator) {
@@ -313,6 +314,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
       const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
 
       const plannedEnd = calculatePmPlannedEnd(woDate, schedule.estimatedDuration);
+const plannerId = await resolvePmGeneratedWorkOrderPlanner(tx, schedule.asset.plantId, schedule.createdById);
       const wo = await tx.workOrder.create({
         data: {
           woNumber,
@@ -325,7 +327,7 @@ export async function evaluateConditionProductionPmTriggers(options: { plantIds?
           assetName: schedule.asset.name,
           departmentId: schedule.asset.departmentId || schedule.departmentId || null,
           assignedTo: schedule.assignedToId,
-          plannerId: schedule.createdById,
+          plannerId,
           plantId: schedule.asset.plantId,
           estimatedHours: schedule.estimatedDuration,
           pmScheduleId: schedule.id,

@@ -61,7 +61,7 @@ interface InspectionResponse {
   error?: string;
 }
 
-const emptyFilters = { search: '', assetId: '', method: 'all', dueState: 'all', result: 'all' };
+const emptyFilters = { search: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all' };
 const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
 const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '' };
 
@@ -144,7 +144,7 @@ export function PmInspectionWorksheetPanel() {
   useEffect(() => { void refresh(); }, [refresh]);
   const updateFilters = (patch: Partial<typeof filters>) => {
     setPage(1);
-    setFilters((current) => ({ ...current, ...patch }));
+    setFilters((current) => ({ ...current, ...patch, ...(Object.hasOwn(patch, 'assetId') ? { componentId: '' } : {}) }));
   };
 
   const fetchAssets = useCallback(async (search: string): Promise<SearchableOption[]> => {
@@ -153,6 +153,13 @@ export function PmInspectionWorksheetPanel() {
     return response.success && Array.isArray(response.data)
       ? response.data.map((asset) => ({ value: asset.id, label: `${asset.name} [${asset.assetTag}]` })) : [];
   }, []);
+  const fetchFilterComponents = useCallback(async (search: string): Promise<SearchableOption[]> => {
+    if (!filters.assetId) return [];
+    const response = await api.get<{ id: string; name: string; componentCode: string }[]>(
+      `/api/component-registry?assetId=${encodeURIComponent(filters.assetId)}&search=${encodeURIComponent(search)}&limit=100`);
+    return response.success && Array.isArray(response.data)
+      ? response.data.map((component) => ({ value: component.id, label: `${component.name} [${component.componentCode}]` })) : [];
+  }, [filters.assetId]);
   const fetchComponents = useCallback(async (search: string): Promise<SearchableOption[]> => {
     if (!planAssetId) return [];
     const response = await api.get<{ id: string; name: string; componentCode: string }[]>(
@@ -249,12 +256,13 @@ export function PmInspectionWorksheetPanel() {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-          <div className="col-span-2 lg:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
-          <div className="col-span-2 lg:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-6">
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Part / Instrument</Label><div className="mt-1"><AsyncSearchableSelect value={filters.componentId} onValueChange={(componentId) => updateFilters({ componentId })} fetchOptions={fetchFilterComponents} placeholder={filters.assetId ? 'All parts' : 'Select machine first'} disabled={!filters.assetId}/></div></div>
           <div><Label className="text-xs">Method</Label><Select value={filters.method} onValueChange={(method) => updateFilters({ method })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="visual">Sight / Visual</SelectItem><SelectItem value="measurement">Instrument / Reading</SelectItem></SelectContent></Select></div>
           <div><Label className="text-xs">Due</Label><Select value={filters.dueState} onValueChange={(dueState) => updateFilters({ dueState })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All due states</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_today">Due Today</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="unscheduled">Unscheduled</SelectItem></SelectContent></Select></div>
-          <div className="col-span-2 lg:col-span-1"><Label className="text-xs">Recorded outcome (history)</Label><Select value={filters.result} onValueChange={(result) => updateFilters({ result })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="not_inspected">Never inspected</SelectItem><SelectItem value="pass">Has passed</SelectItem><SelectItem value="fail">Has failed</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem></SelectContent></Select></div>
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Recorded outcome (history)</Label><Select value={filters.result} onValueChange={(result) => updateFilters({ result })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="not_inspected">Never inspected</SelectItem><SelectItem value="pass">Has passed</SelectItem><SelectItem value="fail">Has failed</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem></SelectContent></Select></div>
         </div>
 
         {loading && rows.length === 0 ? <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Generating inspection list…</div> : rows.length === 0 ?

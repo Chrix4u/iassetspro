@@ -4,6 +4,7 @@ import { materializePmTemplateTasks } from '@/services/pm/materializePmTemplateT
 import { formatResolvedPmTemplateTaskComment, resolvePmTemplateTasks } from '@/services/pm/resolvePmTemplateTasks.service';
 import { calculatePmPlannedEnd } from '@/services/pm/plannedWindow.service';
 import { lockPmScheduleLifecycle } from '@/services/pm/templateLifecycle.service';
+import { resolvePmGeneratedWorkOrderPlanner } from '@/services/pm/resolvePmGeneratedWorkOrderPlanner.service';
 
 export interface MeterThresholdResult {
   due: boolean;
@@ -271,6 +272,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
         ? `${component.componentCode} - ${component.name}`
         : `${schedule.asset.assetTag} - ${schedule.asset.name}`;
       const plannedEnd = calculatePmPlannedEnd(woDate, schedule.estimatedDuration);
+const plannerId = await resolvePmGeneratedWorkOrderPlanner(tx, schedule.asset.plantId, schedule.createdById);
       const wo = await tx.workOrder.create({
         data: {
           woNumber,
@@ -283,7 +285,7 @@ export async function evaluateMeterPmTriggers(options: { plantIds?: string[]; ac
           assetName: schedule.asset.name,
           departmentId: schedule.asset.departmentId || schedule.departmentId || null,
           assignedTo: schedule.assignedToId,
-          plannerId: schedule.createdById,
+          plannerId,
           plantId: schedule.asset.plantId,
           estimatedHours: schedule.estimatedDuration,
           pmScheduleId: schedule.id,

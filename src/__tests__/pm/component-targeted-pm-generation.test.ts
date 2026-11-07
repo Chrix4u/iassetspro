@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   notifyUser: vi.fn(),
   auditCreate: vi.fn(),
   userFindUnique: vi.fn(),
+  userPlantFindFirst: vi.fn(),
   executeRawUnsafe: vi.fn(),
   getPlantScope: vi.fn(),
 }));
@@ -52,6 +53,7 @@ vi.mock('@/lib/db', () => {
   const tx = {
     $executeRawUnsafe: mocks.executeRawUnsafe,
     pmSchedule: { findUnique: mocks.pmFindUnique },
+    userPlant: { findFirst: mocks.userPlantFindFirst },
     workOrder: {
       findFirst: mocks.woFindFirst,
       findMany: mocks.woFindMany,
@@ -79,6 +81,7 @@ describe('component-targeted PM work-order generation', () => {
     const now = new Date();
     const schedule = {
       id: 'pm-guard-switch',
+      createdById: 'uat_planner',
       title: 'RP-01 Guard Safety Switch Weekly Functional Test',
       assetId: 'uat_asset_rotary_printer_01',
       componentId: 'component-guard-switch',
@@ -155,6 +158,7 @@ describe('component-targeted PM work-order generation', () => {
     mocks.auditCreate.mockResolvedValue({});
     mocks.executeRawUnsafe.mockResolvedValue([]);
     mocks.userFindUnique.mockResolvedValue({ id: 'uat_planner', status: 'active' });
+    mocks.userPlantFindFirst.mockResolvedValue({ userId: 'uat_planner' });
   });
 
   it('inherits component-linked spare parts and tools into planner-visible suggestions', async () => {

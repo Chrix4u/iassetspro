@@ -13,6 +13,7 @@ import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { generateDueScheduledTaskWorkOrders } from '@/services/pm/pmScheduledTaskGeneration.service';
 import { generateDueDirectPmAssignmentWorkOrders } from '@/services/pm/pmBundling.service';
+import { resolvePmGeneratedWorkOrderPlanner } from '@/services/pm/resolvePmGeneratedWorkOrderPlanner.service';
 
 /**
  * POST /api/pm-schedules/check-due
@@ -320,7 +321,8 @@ export async function POST(request: NextRequest) {
         const woNumber = `${prefix}-${String(highestNumber + 1).padStart(4, '0')}`;
 
         const plannedEnd = calculatePmPlannedEnd(nextDueDate, estimatedHours);
-        const wo = await tx.workOrder.create({
+    const plannerId = await resolvePmGeneratedWorkOrderPlanner(tx, schedule.asset.plantId, schedule.createdById);
+      const wo = await tx.workOrder.create({
           data: {
             woNumber,
             title: `PM: ${schedule.title}`,
@@ -332,7 +334,7 @@ export async function POST(request: NextRequest) {
             assetName: schedule.asset.name,
             ...maintenanceLocationSnapshot,
             assignedTo: schedule.assignedToId,
-            plannerId: schedule.createdById,
+            plannerId,
             departmentId: schedule.asset.departmentId || schedule.departmentId || null,
             plantId: schedule.asset.plantId || null,
             estimatedHours,

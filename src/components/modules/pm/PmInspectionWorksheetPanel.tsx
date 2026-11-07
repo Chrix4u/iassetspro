@@ -88,7 +88,7 @@ function dueLabel(value: InspectionPoint['dueState']) {
 /** A generated, filterable technician inspection list sourced from approved machine-part points. */
 export function PmInspectionWorksheetPanel() {
   const { hasPermission, isAdmin } = useAuthStore();
-  const canPlan = isAdmin() || hasPermission('pm_schedules.create');
+  const canPlan = isAdmin() || hasPermission('pm_schedules.create') || hasPermission('work_orders.create');
   const canRecord = isAdmin() || hasPermission('pm_schedules.update') || hasPermission('work_orders.update') || hasPermission('digital_twin.manage');
   const [filters, setFilters] = useState(emptyFilters);
   const [page, setPage] = useState(1);
@@ -123,6 +123,7 @@ export function PmInspectionWorksheetPanel() {
       // including those that have not yet had instrument/sight points configured.
       const scheduledParams = new URLSearchParams();
       if (filters.assetId) scheduledParams.set('assetId', filters.assetId);
+      if (filters.componentId) scheduledParams.set('componentId', filters.componentId);
       if (filters.search) scheduledParams.set('search', filters.search);
       const scheduled = await api.get<ScheduledInspection[]>(`/api/pm-inspections/scheduled?${scheduledParams.toString()}`);
       if (scheduled.success && Array.isArray(scheduled.data)) {
@@ -144,7 +145,7 @@ export function PmInspectionWorksheetPanel() {
   useEffect(() => { void refresh(); }, [refresh]);
   const updateFilters = (patch: Partial<typeof filters>) => {
     setPage(1);
-    setFilters((current) => ({ ...current, ...patch, ...(Object.hasOwn(patch, 'assetId') ? { componentId: '' } : {}) }));
+    setFilters((current) => ({ ...current, ...patch, ...('assetId' in patch ? { componentId: '' } : {}) }));
   };
 
   const fetchAssets = useCallback(async (search: string): Promise<SearchableOption[]> => {

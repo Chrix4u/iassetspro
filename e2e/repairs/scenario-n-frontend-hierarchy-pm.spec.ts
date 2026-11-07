@@ -186,7 +186,9 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await expandPmMachine();
       const targetRow = page.getByRole('row').filter({ hasText: targetCode }).first();
       await expect(targetRow).toBeVisible({ timeout: 20_000 });
-      await targetRow.getByRole('button', { name: 'View', exact: true }).click();
+      // View is intentionally in the responsive, role-aware Actions dropdown.
+      await targetRow.getByRole('button', { name: /Actions for/ }).click();
+      await page.getByRole('menuitem', { name: 'View', exact: true }).click();
       await expect(page.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
       await page.keyboard.press('Escape');
     };

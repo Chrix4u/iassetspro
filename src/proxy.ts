@@ -56,6 +56,7 @@ const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
   { prefix: '/api/work-orders', modules: ['work_orders'] },
   { prefix: '/api/inventory', modules: ['inventory'] },
   { prefix: '/api/tools', modules: ['tools'] },
+  { prefix: '/api/pm-inspections', modules: ['pm_schedules'] },
   { prefix: '/api/pm-schedules', modules: ['pm_schedules'] },
   { prefix: '/api/pm-templates', modules: ['pm_schedules'] },
   { prefix: '/api/pm-triggers', modules: ['pm_schedules'] },

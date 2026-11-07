@@ -287,7 +287,7 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
       title={'Record ' + (recordTarget?.point.method === 'instrument' ? 'Instrument' : 'Sight') + ' Inspection'}
       description={recordTarget ? recordTarget.group.assetName + ' / ' + recordTarget.group.componentName + ' / ' + recordTarget.point.name : ''}
       footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setRecordTarget(null)}>Cancel</Button>
-        <Button onClick={() => void saveRecord()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>Save inspection</Button></div>}>
+        <Button onClick={() => void saveRecord()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}Save inspection</Button></div>}>
       <div className="space-y-3">
         {recordTarget?.point.method === 'instrument' && <div className="space-y-1"><Label>Parameter value ({recordTarget.point.range.unit || 'unit'})</Label>
           <Input type="number" step="any" inputMode="decimal" value={record.value} onChange={(e) => setRecord((v) => ({ ...v, value: e.target.value }))} placeholder="Enter measured value"/>
@@ -310,7 +310,7 @@ export function PmInspectionListPanel({ canRecord, canConfigure }: { canRecord: 
     <ResponsiveDialog open={Boolean(configTarget)} onOpenChange={(open) => { if (!open && !saving) setConfigTarget(null); }}
       title="Configure Inspection Point" description={configTarget?.assetName + ' / ' + configTarget?.componentName}
       footer={<div className="flex w-full justify-end gap-2"><Button variant="outline" disabled={saving} onClick={() => setConfigTarget(null)}>Cancel</Button>
-        <Button onClick={() => void savePoint()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>Add inspection point</Button></div>}>
+        <Button onClick={() => void savePoint()} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}Add inspection point</Button></div>}>
       <div className="space-y-3">
         <div className="space-y-1"><Label>Inspection point / parameter name</Label>
           <Input value={point.name} onChange={(e) => setPoint((v) => ({ ...v, name: e.target.value }))} placeholder="Bearing temperature, vibration, cracks, oil leakage"/>

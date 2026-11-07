@@ -28,7 +28,7 @@ describe('PM inspection lifecycle integration contracts', () => {
   it('records measured values as condition history and does not invent instrument readings', () => {
     expect(entryRoute).toContain('evaluateInspectionResult');
     expect(entryRoute).toContain('componentConditionReading.create');
-    expect(entryRoute).toContain('pmScheduleTask');
+    expect(entryRoute).not.toContain('pmScheduleTask.update');
     expect(entryRoute).not.toContain('nextDueDate:');
     expect(worksheet).toContain('Measured value');
     expect(worksheet).toContain('Minimum acceptable');

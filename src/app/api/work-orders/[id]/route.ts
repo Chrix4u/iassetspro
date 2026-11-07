@@ -5,6 +5,7 @@ import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { authorizeWorkOrderPlant } from '@/lib/plant-auth-helpers';
 import { canManageWorkOrder, canViewWorkOrder } from '@/services/workOrderAccess.service';
+import { canViewUnownedPmDraftForClaim } from '@/services/pm/canViewUnownedPmDraftForClaim.service';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 
 export async function GET(
@@ -135,10 +136,16 @@ export async function GET(
     }
 
     if (!canViewWorkOrder(session, wo)) {
-      return NextResponse.json(
-        { success: false, error: 'Access denied — you are not part of this work order workflow' },
-        { status: 403 },
-      );
+      // A plant-authorized planner cannot already be linked to an unassigned
+      // PM draft. Permit only the narrowly verified pre-claim read, never a
+      // broad work-order access override.
+      const canViewForClaim = await canViewUnownedPmDraftForClaim(db, session, wo);
+      if (!canViewForClaim) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied — you are not part of this work order workflow' },
+          { status: 403 },
+        );
+      }
     }
 
     // Embedded cross-module data follows the same licensing contract as its

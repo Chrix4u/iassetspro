@@ -14,6 +14,11 @@ export interface InspectionSubmissionSnapshot {
 
 const normalized = (value: string | null): string => value ?? '';
 
+/** A completed or cancelled corrective WO must not appear as pending on retry. */
+export function isPendingCorrectiveWorkOrder(order: { status: string } | null | undefined): boolean {
+  return Boolean(order && order.status !== 'closed' && order.status !== 'cancelled');
+}
+
 export function isSameInspectionSubmission(
   original: InspectionSubmissionSnapshot,
   incoming: InspectionSubmissionSnapshot,

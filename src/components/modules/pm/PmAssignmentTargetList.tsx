@@ -39,7 +39,7 @@ function dueSummary(group: PmAssignmentTargetGroup) {
   if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: new Intl.DateTimeFormat('en-GB').format(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
   if (first) return { label: new Intl.DateTimeFormat('en-GB').format(first), className: '' };
   if (frequencies.includes('meter')) return { label: 'Meter driven', className: '' };
-  return { label: 'Event / condition', className: '' };
+  return { label: 'Not scheduled', className: '' };
 }
 
 export function PmAssignmentTargetList({ groups, loading, canEdit, canDelete, onView, onEdit, onConfigureTriggers, onDelete }: {

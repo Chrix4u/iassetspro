@@ -230,6 +230,11 @@ export function PmInspectionChecklistPanel() {
                       {row.lastResult && <Badge variant={row.lastResult === 'pass' ? 'secondary' : 'destructive'}>{outcomeLabel(row.lastResult)}</Badge>}
                     </div>
                     <p className="text-xs text-muted-foreground">
+                      {row.equipmentState === 'standstill' ? 'Standstill / Shutdown' : 'Running'} · {row.departmentName}
+                      {row.nextDueDate ? ' · Due ' + new Date(row.nextDueDate).toLocaleDateString() : ''}
+                      {row.nextDueReading != null ? ' · Meter ' + (row.currentMeterValue ?? '—') + ' / ' + row.nextDueReading + ' ' + (row.meterUnit || '') : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
                       {row.inspectionPointName || 'Inspection point not configured'}
                       {row.parameterKey ? ' · ' + row.parameterKey : ''}
                       {row.normalRange ? ' · Acceptable ' + (row.normalRange.min ?? '—') + ' to ' + (row.normalRange.max ?? '—') + ' ' + row.normalRange.unit : ''}

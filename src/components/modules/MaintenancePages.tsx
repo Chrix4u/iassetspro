@@ -2338,6 +2338,7 @@ export function WorkOrdersPage() {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
     const params = new URLSearchParams();
     if (pmNeedsPlannerOnly) {
       params.set('pmPlannerState', 'unassigned');
@@ -2528,7 +2529,7 @@ export function WorkOrdersPage() {
             <SelectItem value="closed">Closed</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={filterPriority} onValueChange={setFilterPriority}>
+        <Select value={filterPriority} onValueChange={(value) => { setPmDraftPage(1); setFilterPriority(value); }}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Priority</SelectItem>

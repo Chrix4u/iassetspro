@@ -75,7 +75,10 @@ export async function GET(request: NextRequest) {
       : [];
     const openByPoint = new Map<string, { id: string; woNumber: string; status: string }>();
     for (const wo of openWorkOrders) {
-      const pointId = /\\[pm-inspection-point:([^\\]]+)\\]/.exec(wo.notes || '')?.[1];
+      const marker = '[pm-inspection-point:';
+      const start = (wo.notes || '').indexOf(marker);
+      const end = start < 0 ? -1 : (wo.notes || '').indexOf(']', start + marker.length);
+      const pointId = end < 0 ? null : (wo.notes || '').slice(start + marker.length, end);
       if (!pointId || !wo.assetId) continue;
       const key = wo.assetId + ':' + pointId;
       if (!openByPoint.has(key)) openByPoint.set(key, { id: wo.id, woNumber: wo.woNumber, status: wo.status });

@@ -61,6 +61,8 @@ describe('PM inspection lifecycle contracts', () => {
     expect(route).toContain('status: { notIn: CLOSED_WO_STATES }');
     expect(route).toContain("status: 'draft'");
     expect(route).toContain("type: 'corrective'");
+    expect(route).toContain('openByPoint');
+    expect(checklist).toContain('row.openCorrective');
   });
 
   it('does not reset PM due dates merely because an inspection result was recorded', () => {

@@ -20,6 +20,7 @@ import { PmAssignmentTargetDetailDialog } from '@/components/modules/pm/PmAssign
 import { PmAssignmentTargetList } from '@/components/modules/pm/PmAssignmentTargetList';
 import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
 import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';
+import { PmInspectionWorksheetPanel } from '@/components/modules/pm/PmInspectionWorksheetPanel';
 
 function taskOverdue(row: PmAssignmentTargetListRecord, now: Date) {
   if (pmAssignmentFrequencyType(row) === 'meter') return row.nextDueReading != null && row.assetMeter ? Number(row.assetMeter.currentValue) >= Number(row.nextDueReading) : false;
@@ -99,6 +100,7 @@ export function PmPlanningPage() {
     </div>
 
     <PmPortfolioCompliancePanel />
+    <PmInspectionWorksheetPanel />
     <PmMachineRollupPanel />
     <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
 

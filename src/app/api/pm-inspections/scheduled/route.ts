@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     if (scope.denyAccess) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     const q = new URL(request.url).searchParams;
     const assetId = q.get('assetId')?.trim();
+    const departmentId = q.get('departmentId')?.trim();
     const componentId = q.get('componentId')?.trim();
     const search = q.get('search')?.trim().slice(0, 120);
     const where: Prisma.PmScheduleTaskWhereInput = {
@@ -29,9 +30,13 @@ export async function GET(request: NextRequest) {
     };
     if (assetId) where.assetId = assetId;
     if (componentId) where.componentId = componentId;
+    // Compose the department filter with the mandatory plant restriction.
+    const assetWhere: Prisma.AssetWhereInput = {};
+    if (departmentId) assetWhere.departmentId = departmentId;
     if (!scope.isSystemWide) {
-      where.asset = { plantId: { in: scope.isScoped && scope.plantId ? [scope.plantId] : scope.accessiblePlantIds } };
+      assetWhere.plantId = { in: scope.isScoped && scope.plantId ? [scope.plantId] : scope.accessiblePlantIds };
     }
+    if (Object.keys(assetWhere).length > 0) where.asset = assetWhere;
     if (search) {
       where.OR = [
         { pmTask: { description: { contains: search, mode: 'insensitive' } } },

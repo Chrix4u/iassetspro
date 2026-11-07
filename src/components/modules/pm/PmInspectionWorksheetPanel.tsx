@@ -23,7 +23,7 @@ interface InspectionPoint {
   id: string;
   name: string;
   description: string | null;
-  inspectionType: InspectionMethod;
+  inspectionType: string;
   parameterKey: string | null;
   normalRange: string | null;
   frequency: string;
@@ -63,7 +63,7 @@ interface InspectionResponse {
   error?: string;
 }
 
-const emptyFilters = { search: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all', followUp: 'all' };
+const emptyFilters = { search: '', departmentId: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all', followUp: 'all' };
 const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
 const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '', requestKey: '' };
 
@@ -124,7 +124,8 @@ export function PmInspectionWorksheetPanel() {
       // Bring existing direct PM inspection assignments into this worksheet,
       // including those that have not yet had instrument/sight points configured.
       const scheduledParams = new URLSearchParams();
-      if (filters.assetId) scheduledParams.set('assetId', filters.assetId);
+      if (filters.departmentId) scheduledParams.set('departmentId', filters.departmentId);
+       if (filters.assetId) scheduledParams.set('assetId', filters.assetId);
       if (filters.componentId) scheduledParams.set('componentId', filters.componentId);
       if (filters.search) scheduledParams.set('search', filters.search);
       const scheduled = await api.get<ScheduledInspection[]>(`/api/pm-inspections/scheduled?${scheduledParams.toString()}`);
@@ -147,15 +148,25 @@ export function PmInspectionWorksheetPanel() {
   useEffect(() => { void refresh(); }, [refresh]);
   const updateFilters = (patch: Partial<typeof filters>) => {
     setPage(1);
-    setFilters((current) => ({ ...current, ...patch, ...('assetId' in patch ? { componentId: '' } : {}) }));
+    setFilters((current) => ({
+       ...current, ...patch,
+       ...('departmentId' in patch ? { assetId: '', componentId: '' } : 'assetId' in patch ? { componentId: '' } : {}),
+     }));
   };
 
+  const fetchDepartments = useCallback(async (search: string): Promise<SearchableOption[]> => {
+    const response = await api.get<{ id: string; name: string; code: string }[]>('/api/departments');
+    return response.success && Array.isArray(response.data)
+      ? response.data.filter((department) => `${department.name} ${department.code}`.toLowerCase().includes(search.toLowerCase()))
+        .slice(0, 100).map((department) => ({ value: department.id, label: `${department.name} [${department.code}]` })) : [];
+  }, []);
   const fetchAssets = useCallback(async (search: string): Promise<SearchableOption[]> => {
-    const response = await api.get<{ id: string; name: string; assetTag: string }[]>(
-      `/api/assets?limit=100&search=${encodeURIComponent(search)}`);
+    const params = new URLSearchParams({ limit: '100', search });
+    if (filters.departmentId) params.set('departmentId', filters.departmentId);
+    const response = await api.get<{ id: string; name: string; assetTag: string }[]>(`/api/assets?${params.toString()}`);
     return response.success && Array.isArray(response.data)
       ? response.data.map((asset) => ({ value: asset.id, label: `${asset.name} [${asset.assetTag}]` })) : [];
-  }, []);
+  }, [filters.departmentId]);
   const fetchFilterComponents = useCallback(async (search: string): Promise<SearchableOption[]> => {
     if (!filters.assetId) return [];
     const response = await api.get<{ id: string; name: string; componentCode: string }[]>(
@@ -288,8 +299,9 @@ export function PmInspectionWorksheetPanel() {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-8">
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
+          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Department</Label><div className="mt-1"><AsyncSearchableSelect value={filters.departmentId} onValueChange={(departmentId) => updateFilters({ departmentId })} fetchOptions={fetchDepartments} placeholder="All departments"/></div></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Part / Instrument</Label><div className="mt-1"><AsyncSearchableSelect value={filters.componentId} onValueChange={(componentId) => updateFilters({ componentId })} fetchOptions={fetchFilterComponents} placeholder={filters.assetId ? 'All parts' : 'Select machine first'} disabled={!filters.assetId}/></div></div>
           <div><Label className="text-xs">Method</Label><Select value={filters.method} onValueChange={(method) => updateFilters({ method })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="visual">Sight / Visual</SelectItem><SelectItem value="measurement">Instrument / Reading</SelectItem></SelectContent></Select></div>
@@ -316,7 +328,7 @@ export function PmInspectionWorksheetPanel() {
                       {point.description && <p className="text-xs text-muted-foreground">{point.description}</p>}
                     </div>
                     <div className="flex shrink-0 flex-wrap items-center gap-1">
-                      <Badge variant="outline">{point.inspectionType === 'measurement' ? <Gauge className="mr-1 h-3 w-3"/> : <Eye className="mr-1 h-3 w-3"/>}{point.inspectionType === 'measurement' ? 'Instrument' : 'Sight'}</Badge>
+                      <Badge variant="outline">{point.inspectionType === 'measurement' ? <Gauge className="mr-1 h-3 w-3"/> : point.inspectionType === 'visual' ? <Eye className="mr-1 h-3 w-3"/> : <AlertTriangle className="mr-1 h-3 w-3"/>}{point.inspectionType === 'measurement' ? 'Instrument' : point.inspectionType === 'visual' ? 'Sight' : `Legacy (${point.inspectionType})`}</Badge>
                       <Badge variant={badgeVariant(point.dueState)}>{dueLabel(point.dueState)}</Badge>
                       {point.openCorrectiveWorkOrder && <Badge variant="secondary">Corrective pending</Badge>}
                     </div>
@@ -324,7 +336,7 @@ export function PmInspectionWorksheetPanel() {
                   <div className="mt-2 grid gap-2 rounded-md bg-muted/30 p-2 text-xs sm:grid-cols-3">
                     <div><span className="text-muted-foreground">Parameter / acceptance</span><p className="font-medium">{point.inspectionType === 'measurement'
                       ? `${point.parameterKey}: ${limits.min ?? '—'} to ${limits.max ?? '—'} ${limits.unit}`
-                      : 'Observe condition, leaks, wear, noise or other visible defects'}</p></div>
+                      : point.inspectionType === 'visual' ? 'Observe condition, leaks, wear, noise or other visible defects' : 'Legacy method: configure a sight or instrument check to record here'}</p></div>
                     <div><span className="text-muted-foreground">Schedule</span><p className="font-medium">{point.frequency} · next {displayDue(point.nextInspection)}</p></div>
                     <div><span className="text-muted-foreground">Latest result</span><p className="font-medium">{latest
                       ? `${latest.result.replace('_', ' ')}${latest.value !== null ? ` · ${latest.value} ${limits.unit}` : ''}`
@@ -338,7 +350,17 @@ export function PmInspectionWorksheetPanel() {
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-muted-foreground">{latest ? `Recorded ${new Date(latest.inspectedAt).toLocaleDateString('en-GB')}` : 'Awaiting first inspection'}</span>
-                    {canRecord && <Button size="sm" variant="outline" onClick={() => { setRecordPoint(point); setRecord(emptyRecord); }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>}
+                    {point.inspectionType === 'visual' || point.inspectionType === 'measurement'
+                      ? canRecord && <Button size="sm" variant="outline" onClick={() => { setRecordPoint(point); setRecord(emptyRecord); }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>
+                      : <div className="flex flex-wrap items-center justify-end gap-2">
+                          <span className="text-xs text-amber-700 dark:text-amber-300">This legacy method cannot be recorded in the sight/instrument worksheet.</span>
+                          {canPlan && point.component.asset && <Button size="sm" variant="outline" onClick={() => {
+                            setPlanAssetId(point.component.asset!.id);
+                            setPlanComponentId(point.component.id);
+                            setPlan({ ...DEFAULT_PLAN, name: point.name, description: point.description || '' });
+                            setPlanOpen(true);
+                          }}>Configure Sight / Instrument</Button>}
+                        </div>}
                   </div>
                 </div>
               );

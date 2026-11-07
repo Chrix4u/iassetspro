@@ -46,6 +46,15 @@ describe('PM inspection lifecycle integration contracts', () => {
     expect(entryRoute).toContain('pg_advisory_xact_lock');
   });
 
+  it('deduplicates mobile retries before writing inspections, readings or work orders', () => {
+    expect(schema).toContain('requestKey        String?  @unique @map("request_key")');
+    expect(entryRoute).toContain('componentInspectionRecord.findUnique');
+    expect(entryRoute).toContain('isSameInspectionSubmission');
+    expect(entryRoute).toContain('requestKey: submissionKey || null');
+    expect(worksheet).toContain('crypto.randomUUID()');
+    expect(worksheet).toContain("requestKey: ''");
+  });
+
   it('resets a failed inspection due only after the verified authoritative closeout', () => {
     expect(closeout).toContain('await advanceClosedInspectionPoint({');
     expect(closeout).toContain('await advanceClosedPmScheduledTaskRecurrence({');

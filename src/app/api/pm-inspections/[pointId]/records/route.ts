@@ -5,7 +5,7 @@ import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { evaluateInspectionResult, nextInspectionDate, parseInspectionLimits } from '@/lib/pm-inspection';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
-import { isSameInspectionSubmission } from '@/lib/pm-inspection-submission';
+import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -85,10 +85,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           })) {
             throw new Error('Inspection submission key conflict');
           }
-          const outstanding = previous.workOrder || (await tx.componentInspectionRecord.findFirst({
+          // A later verified closeout must not be presented as still pending.
+          const previousOpen = isPendingCorrectiveWorkOrder(previous.workOrder) ? previous.workOrder : null;
+          const outstanding = previousOpen || (await tx.componentInspectionRecord.findFirst({
             where: {
               inspectionPointId: pointId,
-              workOrder: { is: { status: { notIn: ['closed', 'cancelled'] } } },
+              workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
             },
             orderBy: { inspectedAt: 'desc' },
             select: { workOrder: { select: { id: true, woNumber: true, status: true } } },
@@ -144,7 +146,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const outstanding = await tx.componentInspectionRecord.findFirst({
         where: {
           inspectionPointId: pointId,
-          workOrder: { is: { status: { notIn: ['closed', 'cancelled'] } } },
+          workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
         },
         orderBy: { inspectedAt: 'desc' },
         select: { workOrder: { select: { id: true, woNumber: true, status: true } } },

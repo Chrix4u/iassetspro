@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   pointFind: vi.fn(), pointUpdate: vi.fn(),
   recordFind: vi.fn(), recordFindFirst: vi.fn(), recordCreate: vi.fn(), recordUpdate: vi.fn(),
   readingCreate: vi.fn(), woFindMany: vi.fn(), woCreate: vi.fn(),
-  componentUpsert: vi.fn(), auditCreate: vi.fn(), lock: vi.fn(),
+  componentUpsert: vi.fn(), auditCreate: vi.fn(), lock: vi.fn(), plannerFind: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ getSession: mocks.getSession, isAdmin: () => false, hasPermission: () => true }));
 vi.mock('@/lib/plant-scope', () => ({ getPlantScope: mocks.getScope, canAccessPlantStrict: mocks.access }));
@@ -16,6 +16,7 @@ vi.mock('@/lib/functional-location/maintenance-snapshot', () => ({ buildMaintena
 function tx() {
   return {
     $executeRawUnsafe: mocks.lock,
+    userPlant: { findFirst: mocks.plannerFind },
     componentInspectionPoint: { findUnique: mocks.pointFind, update: mocks.pointUpdate },
     componentInspectionRecord: { findUnique: mocks.recordFind, findFirst: mocks.recordFindFirst, create: mocks.recordCreate, update: mocks.recordUpdate },
     componentConditionReading: { create: mocks.readingCreate },
@@ -37,7 +38,7 @@ interface RecordState {
   workOrderId: string | null; requestKey: string | null; result: string;
   value: string | null; findings: string | null; recommendation: string | null;
 }
-interface Wo { id: string; woNumber: string; status: string; type: 'corrective' }
+interface Wo { id: string; woNumber: string; status: string; type: 'corrective'; plannerId: string | null }
 let records: RecordState[];
 let orders: Map<string, Wo>;
 let point: {
@@ -73,6 +74,7 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     mocks.getSession.mockReturnValue({ userId: 'technician-1' });
     mocks.getScope.mockResolvedValue({ denyAccess: false, plantId: 'plant-1', isScoped: true, accessiblePlantIds: ['plant-1'] });
     mocks.access.mockReturnValue(true);
+    mocks.plannerFind.mockResolvedValue({ userId: 'plant-planner-1' });
     mocks.pointFind.mockImplementation(async () => point);
     mocks.pointUpdate.mockImplementation(async (args: { data: { nextInspection?: Date; lastInspected?: Date } }) => {
       Object.assign(point, args.data); return point;
@@ -98,8 +100,8 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
       const r = records.find((x) => x.id === args.where.id)!; r.workOrderId = args.data.workOrderId; return r;
     });
     mocks.woFindMany.mockImplementation(async () => [...orders.values()].map((x) => ({ woNumber: x.woNumber })));
-    mocks.woCreate.mockImplementation(async (args: { data: { woNumber: string; status: string } }) => {
-      const wo: Wo = { id: 'wo-' + (orders.size + 1), woNumber: args.data.woNumber, status: args.data.status, type: 'corrective' };
+    mocks.woCreate.mockImplementation(async (args: { data: { woNumber: string; status: string; plannerId: string | null } }) => {
+      const wo: Wo = { id: 'wo-' + (orders.size + 1), woNumber: args.data.woNumber, status: args.data.status, type: 'corrective', plannerId: args.data.plannerId };
       orders.set(wo.id, wo); return wo;
     });
     mocks.lock.mockResolvedValue([]);
@@ -150,6 +152,10 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(failed.status).toBe(201);
     expect(failed.body.data.record.result).toBe('fail');
     expect(failed.body.data.workOrder.status).toBe('draft');
+    expect(orders.get(failed.body.data.workOrder.id)?.plannerId).toBe('plant-planner-1');
+    expect(mocks.plannerFind).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ plantId: 'plant-1', accessLevel: { in: ['write', 'admin'] } }),
+    }));
     expect(failed.body.data.awaitingCloseout).toBe(true);
     expect(mocks.readingCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ value: 120, isAlarm: true, parameterKey: 'Temperature' }),

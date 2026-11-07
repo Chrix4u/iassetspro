@@ -59,6 +59,27 @@ export async function GET(request: NextRequest) {
     });
 
     const now = new Date();
+    const assetIds = [...new Set(assignments.map((row) => row.assetId))];
+    const openWorkOrders = assetIds.length
+      ? await db.workOrder.findMany({
+          where: {
+            assetId: { in: assetIds },
+            type: 'corrective',
+            status: { notIn: CLOSED_WO_STATES },
+            notes: { contains: '[pm-inspection-point:' },
+          },
+          select: { id: true, woNumber: true, status: true, notes: true, assetId: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1000,
+        })
+      : [];
+    const openByPoint = new Map<string, { id: string; woNumber: string; status: string }>();
+    for (const wo of openWorkOrders) {
+      const pointId = /\\[pm-inspection-point:([^\\]]+)\\]/.exec(wo.notes || '')?.[1];
+      if (!pointId || !wo.assetId) continue;
+      const key = wo.assetId + ':' + pointId;
+      if (!openByPoint.has(key)) openByPoint.set(key, { id: wo.id, woNumber: wo.woNumber, status: wo.status });
+    }
     const rows = assignments.slice(0, 500).flatMap((assignment) => {
       const points = assignment.component?.inspectionPoints || [];
       const records = points.length ? points : [null];
@@ -101,6 +122,7 @@ export async function GET(request: NextRequest) {
           lastValue: latest?.value || null,
           lastInspectedAt: latest?.inspectedAt?.toISOString() || null,
           latestFindings: latest?.findings || null,
+          openCorrective: point ? openByPoint.get(assignment.assetId + ':' + point.id) || null : null,
         };
       });
     });
@@ -126,6 +148,7 @@ export async function GET(request: NextRequest) {
           overdue: filtered.filter((row) => row.dueState === 'overdue' || row.dueState === 'meter_due').length,
           unconfigured: filtered.filter((row) => row.method === 'unconfigured').length,
           attention: filtered.filter((row) => row.lastResult === 'fail' || row.lastResult === 'needs_attention').length,
+          openCorrective: filtered.filter((row) => Boolean(row.openCorrective)).length,
         },
       },
     });

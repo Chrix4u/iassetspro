@@ -55,7 +55,9 @@ describe('direct PM assignment authoring UI contract', () => {
     expect(rowSource).not.toContain('UBM · Usage Based');
     expect(rowSource).not.toContain('CBM · Condition Based');
     expect(rowSource).not.toContain('FBM · Failure Based');
-    expect(rowSource).toContain('<SelectItem value="event">Event / Condition</SelectItem>');
+    expect(rowSource).toContain('<SelectItem value="time_day">Time / Day</SelectItem>');
+    expect(rowSource).toContain('<SelectItem value="meter">Meter Based</SelectItem>');
+    expect(rowSource).not.toContain('<SelectItem value="event">');
     expect(rowSource).toContain('const setPmType =');
     expect(rowSource).toContain('onChange({ pmType });');
     expect(rowSource).not.toMatch(/setPmType[\s\S]*?onChange\(\{\s*pmType,[\s\S]*?frequencyType/);

@@ -308,8 +308,15 @@ export async function POST(request: NextRequest) {
       // Serialize submissions to one point, including repeated mobile retries.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'iassetspro:inspection-record:' + pointId}))`;
       const priorAudit = await tx.auditLog.findFirst({
-        where: { entityType: 'component_inspection_record', plantId: assignment.asset.plantId,
-          newValues: { contains: '"requestKey":"' + requestKey + '"' } },
+        where: {
+          entityType: 'component_inspection_record',
+          userId: session.userId,
+          plantId: assignment.asset.plantId,
+          AND: [
+            { newValues: { contains: '"requestKey":"' + requestKey + '"' } },
+            { newValues: { contains: '"pointId":"' + pointId + '"' } },
+          ],
+        },
         select: { entityId: true },
       });
       if (priorAudit?.entityId) {

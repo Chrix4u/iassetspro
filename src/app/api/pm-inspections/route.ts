@@ -10,7 +10,7 @@ import {
 } from '@/lib/pm-inspection-policy';
 
 const ERROR = (error: string, status: number) => NextResponse.json({ success: false, error }, { status });
-const CLOSED_WO_STATES = ['closed', 'cancelled'];
+const CLOSED_WO_STATES = ['completed', 'verified', 'closed', 'cancelled'];
 
 // The inspection register is a PM-owned view of exact component inspection points.
 // These readings NEVER advance PM recurrence. The PM closure service alone does that.

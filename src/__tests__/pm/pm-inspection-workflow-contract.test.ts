@@ -38,6 +38,7 @@ describe('PM inspection-to-corrective-work-order integration contracts', () => {
     expect(route).toContain('requestKey');
     expect(route).toContain("entityType: 'component_inspection_record'");
     expect(route).toContain('status: { notIn: CLOSED_STATUSES }');
+    expect(route).toContain("const CLOSED_STATUSES = ['closed', 'cancelled'];");
     expect(route).toContain("type: 'corrective'");
     expect(route).toContain("status: 'draft'");
     expect(route).toContain('workOrderComponents: { create:');

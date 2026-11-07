@@ -63,7 +63,7 @@ interface InspectionResponse {
 
 const emptyFilters = { search: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all' };
 const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
-const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '' };
+const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '', requestKey: '' };
 
 function readLimits(point: InspectionPoint) {
   try {
@@ -203,6 +203,9 @@ export function PmInspectionWorksheetPanel() {
   const saveRecord = async () => {
     if (!recordPoint) return;
     setSavingRecord(true);
+    // Keep this key across network failures; regenerate it whenever the form changes.
+    const requestKey = record.requestKey || crypto.randomUUID();
+    if (!record.requestKey) setRecord((current) => ({ ...current, requestKey }));
     try {
       const response = await api.post<{
         record: { id: string; result: Result };
@@ -210,12 +213,15 @@ export function PmInspectionWorksheetPanel() {
         reusedWorkOrder: boolean;
         nextInspection: string | null;
         awaitingCloseout: boolean;
-      }>(`/api/pm-inspections/${encodeURIComponent(recordPoint.id)}/records`, record);
+        duplicate?: boolean;
+      }>(`/api/pm-inspections/${encodeURIComponent(recordPoint.id)}/records`, { ...record, requestKey });
       if (!response.success) throw new Error(response.error || 'Could not record inspection');
       const wo = response.data?.workOrder;
-      toast.success(wo
-        ? `Inspection recorded. ${wo.woNumber} ${response.data?.reusedWorkOrder ? 'remains open pending corrective closeout' : 'drafted for planner review'}.`
-        : 'Inspection passed and next inspection date updated.');
+      toast.success(response.data?.duplicate
+        ? 'This inspection was already saved; no duplicate record was created.'
+        : wo
+          ? `Inspection recorded. ${wo.woNumber} ${response.data?.reusedWorkOrder ? 'remains open pending corrective closeout' : 'drafted for planner review'}.`
+          : 'Inspection passed and next inspection date updated.');
       setRecordPoint(null);
       setRecord(emptyRecord);
       await refresh();
@@ -377,11 +383,11 @@ export function PmInspectionWorksheetPanel() {
         {recordPoint && <div className="space-y-3">
           {recordPoint.inspectionType === 'measurement' ? <>
             <p className="rounded-md bg-muted/40 p-2 text-xs">Parameter: <strong>{recordPoint.parameterKey}</strong> · Allowed range: {readLimits(recordPoint).min ?? '—'} to {readLimits(recordPoint).max ?? '—'} {readLimits(recordPoint).unit}</p>
-            <div><Label>Measured value ({readLimits(recordPoint).unit})</Label><Input type="number" step="any" value={record.value} onChange={(e) => setRecord({ ...record, value: e.target.value })} placeholder="Enter instrument reading"/></div>
+            <div><Label>Measured value ({readLimits(recordPoint).unit})</Label><Input type="number" step="any" value={record.value} onChange={(e) => setRecord({ ...record, value: e.target.value, requestKey: '' })} placeholder="Enter instrument reading"/></div>
           </> : <p className="flex items-center gap-2 text-sm"><Eye className="h-4 w-4"/>Confirm the condition you observed visually.</p>}
-          <div><Label>Inspection outcome</Label><Select value={record.outcome} onValueChange={(outcome) => setRecord({ ...record, outcome: outcome as Result })}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="needs_attention">Needs Attention</SelectItem><SelectItem value="fail">Fail</SelectItem></SelectContent></Select></div>
-          <div><Label>Findings / defects</Label><Textarea value={record.findings} onChange={(e) => setRecord({ ...record, findings: e.target.value })} placeholder="Describe leakage, worn bearing, abnormal vibration or other findings"/></div>
-          <div><Label>Recommended action</Label><Textarea value={record.recommendation} onChange={(e) => setRecord({ ...record, recommendation: e.target.value })} placeholder="Suggested corrective action for the planner"/></div>
+          <div><Label>Inspection outcome</Label><Select value={record.outcome} onValueChange={(outcome) => setRecord({ ...record, outcome: outcome as Result, requestKey: '' })}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="needs_attention">Needs Attention</SelectItem><SelectItem value="fail">Fail</SelectItem></SelectContent></Select></div>
+          <div><Label>Findings / defects</Label><Textarea value={record.findings} onChange={(e) => setRecord({ ...record, findings: e.target.value, requestKey: '' })} placeholder="Describe leakage, worn bearing, abnormal vibration or other findings"/></div>
+          <div><Label>Recommended action</Label><Textarea value={record.recommendation} onChange={(e) => setRecord({ ...record, recommendation: e.target.value, requestKey: '' })} placeholder="Suggested corrective action for the planner"/></div>
           {record.outcome !== 'pass' && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
         </div>}
       </ResponsiveDialog>

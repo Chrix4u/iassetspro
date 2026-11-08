@@ -89,13 +89,35 @@ describe('deep machine visual explorer', () => {
     const pointerMoveIndex = explorer.indexOf('onPointerMove:');
     const captureIndex = explorer.indexOf('setPointerCapture');
 
-    expect(explorer).toContain('<g key={component.id} onClick={() => onSelect(component.id)}');
+    expect(explorer).toContain('onClick={() => onSelect(component.id)}');
     expect(explorer).toContain('<g onClick={() => onSelect(null)}');
     expect(explorer).toContain('dragging: false');
     expect(explorer).toContain('Math.hypot(deltaX, deltaY) < 5');
     expect(pointerDownIndex).toBeGreaterThanOrEqual(0);
     expect(pointerMoveIndex).toBeGreaterThan(pointerDownIndex);
     expect(captureIndex).toBeGreaterThan(pointerMoveIndex);
+  });
+
+  it('keeps long breadcrumbs, nodes and drill-down labels readable on narrow screens', () => {
+    expect(explorer).toContain('wrapSchematicLabel(asset.name, 28)');
+    expect(explorer).toContain('wrapSchematicLabel(component.name, 27)');
+    expect(explorer).toContain('rootNameLines.map(');
+    expect(explorer).toContain('pos.names.map(');
+    expect(explorer).toContain('max-w-full whitespace-normal break-words');
+    expect(explorer).toContain('min-w-0 flex-1 whitespace-normal break-words');
+    expect(explorer).not.toContain("component.name.slice(0, 24) + '…'");
+  });
+
+  it('exposes diagram fit and zoom controls plus touch pinch/pan without hijacking page scroll', () => {
+    expect(explorer).toContain('aria-label="Diagram zoom controls"');
+    expect(explorer).toContain('aria-label="Fit diagram to screen"');
+    expect(explorer).toContain('aria-label="Zoom in diagram"');
+    expect(explorer).toContain('aria-label="Zoom out diagram"');
+    expect(explorer).toContain('touchPointersRef.current.set(event.pointerId');
+    expect(explorer).toContain('touchPointersRef.current.size >= 2');
+    expect(explorer).toContain('pinchRef.current');
+    expect(explorer).toContain('if (!event.ctrlKey) return;');
+    expect(explorer).toContain('onWheel:');
   });
 
   it('uses an explicit image provider and normalizes provider image payloads', () => {

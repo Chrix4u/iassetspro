@@ -1153,25 +1153,27 @@ export function AssetDetailPage({ id }: { id: string }) {
                   } : undefined}
                 />
               ) : !showComponentForm && !showHierarchyCommissioning && canCreateComponent && (
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:justify-end">
                   <Button
                     variant="outline"
                     size="sm"
+                    className="min-w-0 w-full px-2 text-xs sm:w-auto sm:px-3"
                     onClick={() => {
                       setShowComponentForm(false);
                       setShowHierarchyCommissioning(true);
                     }}
                   >
-                    <Layers className="h-3.5 w-3.5 mr-1.5" />Commission Hierarchy
+                    <Layers className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5" /><span className="sm:hidden">Commission</span><span className="hidden sm:inline">Commission Hierarchy</span>
                   </Button>
                   <Button
                     size="sm"
+                    className="min-w-0 w-full px-2 text-xs sm:w-auto sm:px-3"
                     onClick={() => {
                       setShowHierarchyCommissioning(false);
                       setShowComponentForm(true);
                     }}
                   >
-                    <Plus className="h-3.5 w-3.5 mr-1.5" />Add Hierarchy Item
+                    <Plus className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5" /><span className="sm:hidden">Add Item</span><span className="hidden sm:inline">Add Hierarchy Item</span>
                   </Button>
                 </div>
               )}
@@ -1428,7 +1430,7 @@ export function AssetDetailPage({ id }: { id: string }) {
             </TabsContent>
 
             {/* ==================== VISUAL EXPLORER TAB ==================== */}
-            <TabsContent value="visual-explorer" className="mt-4 space-y-4">
+            <TabsContent value="visual-explorer" className="-mx-2 mt-4 min-w-0 space-y-4 sm:mx-0">
               <MachineVisualExplorer
                 asset={asset}
                 initialComponentId={visualFocusId}

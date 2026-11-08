@@ -15,7 +15,8 @@ describe('asset detail full viewport layout', () => {
     expect(detail).not.toContain("import { ScrollArea } from '@/components/ui/scroll-area'");
 
     const explorer = fs.readFileSync('src/components/digital-twin/MachineVisualExplorer.tsx', 'utf8');
-    expect(explorer).toContain('w-full min-w-0 min-h-[500px] h-auto');
+    expect(explorer).toContain('mx-auto h-[330px] w-full min-w-0 sm:h-auto sm:min-h-[500px]');
+    expect(explorer).toContain('preserveAspectRatio="xMidYMid meet"');
     expect(explorer).not.toContain('min-w-[860px]');
   });
 });

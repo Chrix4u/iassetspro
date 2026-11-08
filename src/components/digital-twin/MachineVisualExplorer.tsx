@@ -522,6 +522,13 @@ export function MachineVisualExplorer({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; dragging: boolean } | null>(null);
+  const touchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    distance: number;
+    zoom: number;
+    pan: { x: number; y: number };
+    midpoint: { x: number; y: number };
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [twinId, setTwinId] = useState<string | null>(null);
@@ -581,19 +588,45 @@ export function MachineVisualExplorer({
 
   const panHandlers = useMemo(() => ({
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      const target = event.target as HTMLElement;
-      if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
-      dragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        originX: pan.x,
-        originY: pan.y,
-        dragging: false,
-      };
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if ((event.target as Element).closest('button, a, input, textarea, select')) return;
+      touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPointersRef.current.size >= 2) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        pinchRef.current = {
+          distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+          zoom,
+          pan: { ...pan },
+          midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+        };
+        dragRef.current = null;
+      } else {
+        dragRef.current = {
+          pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+          originX: pan.x, originY: pan.y, dragging: false,
+        };
+      }
     },
     onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!touchPointersRef.current.has(event.pointerId)) return;
+      touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPointersRef.current.size >= 2 && pinchRef.current) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        const midpoint = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+        const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y));
+        const gesture = pinchRef.current;
+        const nextZoom = Math.min(4, Math.max(0.5, gesture.zoom * distance / gesture.distance));
+        const ratio = nextZoom / gesture.zoom;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setZoom(nextZoom);
+        setPan({
+          x: gesture.pan.x + midpoint.x - gesture.midpoint.x
+            + (1 - ratio) * (gesture.midpoint.x - bounds.left - bounds.width / 2 - gesture.pan.x),
+          y: gesture.pan.y + midpoint.y - gesture.midpoint.y
+            + (1 - ratio) * (gesture.midpoint.y - bounds.top - bounds.height / 2 - gesture.pan.y),
+        });
+        return;
+      }
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       const deltaX = event.clientX - drag.startX;
@@ -603,21 +636,34 @@ export function MachineVisualExplorer({
         drag.dragging = true;
         event.currentTarget.setPointerCapture(event.pointerId);
       }
-      setPan({
-        x: drag.originX + deltaX,
-        y: drag.originY + deltaY,
-      });
+      setPan({ x: drag.originX + deltaX, y: drag.originY + deltaY });
     },
     onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      touchPointersRef.current.delete(event.pointerId);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
+      if (touchPointersRef.current.size < 2) {
+        pinchRef.current = null;
+        const remaining = [...touchPointersRef.current.entries()][0];
+        dragRef.current = remaining
+          ? { pointerId: remaining[0], startX: remaining[1].x, startY: remaining[1].y,
+              originX: pan.x, originY: pan.y, dragging: false }
+          : null;
+      }
     },
     onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      touchPointersRef.current.delete(event.pointerId);
+      pinchRef.current = null;
+      dragRef.current = null;
     },
-  }), [pan.x, pan.y]);
+    // Ctrl/trackpad pinch works without stealing ordinary wheel-based page scrolling.
+    onWheel: (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      setZoom((current) => Math.max(0.5, Math.min(4, +(current * (event.deltaY > 0 ? 0.9 : 1.1)).toFixed(2))));
+    },
+  }), [pan.x, pan.y, zoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -724,7 +770,7 @@ export function MachineVisualExplorer({
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
   const renderDrillOverlay = () => (
-    <div className="relative mt-2 w-full min-w-0 rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
+    <div className="relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
         {selectedId && (
@@ -739,8 +785,8 @@ export function MachineVisualExplorer({
           {drillChildren.map((child) => (
             <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
               className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
-              <span className="min-w-0 truncate">{child.name}</span>
-              <Badge variant="outline" className="border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
+              <span className="min-w-0 flex-1 whitespace-normal break-words leading-relaxed">{child.name}</span>
+              <Badge variant="outline" className="shrink-0 border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
             </button>
           ))}
         </div>
@@ -808,33 +854,42 @@ export function MachineVisualExplorer({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 overflow-hidden border-0 shadow-sm xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
-        <CardHeader className="px-2 pb-2 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+      <Card className="w-full min-w-0 max-w-full overflow-hidden border-0 shadow-sm xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
+        <CardHeader className="min-w-0 px-2 pb-2 sm:px-6">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
               <CardTitle className="text-sm flex items-center gap-2"><Focus className="h-4 w-4" />Deep visual explorer</CardTitle>
-              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
-                <button className="hover:text-foreground cursor-pointer" onClick={() => setSelectedId(null)}>{asset.name}</button>
-                {path.map((item) => <React.Fragment key={item.id}><ChevronRight className="h-3 w-3" /><button className="hover:text-foreground cursor-pointer" onClick={() => setSelectedId(item.id)}>{item.name}</button></React.Fragment>)}
+              <div className="mt-1 flex min-w-0 max-w-full flex-wrap items-center gap-1 text-[11px] leading-snug text-muted-foreground">
+                <button type="button" className="min-w-0 max-w-full whitespace-normal break-words text-left hover:text-foreground cursor-pointer" onClick={() => setSelectedId(null)}>{asset.name}</button>
+                {path.map((item) => <React.Fragment key={item.id}><ChevronRight className="h-3 w-3 shrink-0" /><button type="button" className="min-w-0 max-w-full whitespace-normal break-words text-left hover:text-foreground cursor-pointer" onClick={() => setSelectedId(item.id)}>{item.name}</button></React.Fragment>)}
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.max(0.6, +(v - 0.2).toFixed(2)))}><ZoomOut className="h-3.5 w-3.5" /></Button>
-              <span className="min-w-12 text-center text-[11px] text-muted-foreground">{Math.round(zoom * 100)}%</span>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.min(4, +(v + 0.2).toFixed(2)))}><ZoomIn className="h-3.5 w-3.5" /></Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={resetViewport} title="Reset zoom and pan"><RefreshCw className="h-3.5 w-3.5" /></Button>
-            </div>
+
           </div>
         </CardHeader>
-        <CardContent className="min-w-0 px-1.5 pt-0 sm:px-6">
-          <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
-              <TabsTrigger value="model3d" className="cursor-pointer"><Box className="mr-1.5 h-3.5 w-3.5" />3D Model</TabsTrigger>
-              <TabsTrigger value="realistic" className="cursor-pointer"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />AI Realistic</TabsTrigger>
-              <TabsTrigger value="diagram" className="cursor-pointer"><Network className="mr-1.5 h-3.5 w-3.5" />Diagram</TabsTrigger>
-              <TabsTrigger value="technical2d" className="cursor-pointer"><Focus className="mr-1.5 h-3.5 w-3.5" />Engineering 2D</TabsTrigger>
-              <TabsTrigger value="exploded" className="cursor-pointer"><Layers3 className="mr-1.5 h-3.5 w-3.5" />Exploded</TabsTrigger>
+        <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
+          <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
+            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-5">
+              <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
+              <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
+              <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
+              <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
+              <TabsTrigger value="exploded" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Layers3 className="mr-1 h-3.5 w-3.5 shrink-0" />Exploded</TabsTrigger>
             </TabsList>
+            {mode !== 'model3d' && (
+              <div role="group" aria-label="Diagram zoom controls" className="mt-2 flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-2 py-1.5">
+                <span className="min-w-0 text-[10px] text-muted-foreground">Drag to pan · Pinch to zoom</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Zoom out diagram"
+                    onClick={() => setZoom((v) => Math.max(0.5, +(v - 0.2).toFixed(2)))}><ZoomOut className="h-4 w-4" /></Button>
+                  <span aria-live="polite" className="min-w-11 text-center text-xs font-semibold tabular-nums">{Math.round(zoom * 100)}%</span>
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Zoom in diagram"
+                    onClick={() => setZoom((v) => Math.min(4, +(v + 0.2).toFixed(2)))}><ZoomIn className="h-4 w-4" /></Button>
+                  <Button type="button" variant="outline" size="sm" className="h-9 px-2" onClick={resetViewport}
+                    aria-label="Fit diagram to screen"><RefreshCw className="mr-1 h-3.5 w-3.5" />Fit</Button>
+                </div>
+              </div>
+            )}
 
             <TabsContent value="model3d" className="mt-3 space-y-2">
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
@@ -865,8 +920,8 @@ export function MachineVisualExplorer({
               )}
             </TabsContent>
 
-            <TabsContent value="diagram" className="mt-3">
-              <div className="relative">
+            <TabsContent value="diagram" className="mt-3 w-full min-w-0 max-w-full">
+              <div className="relative w-full min-w-0 max-w-full">
                 <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
                 {renderDrillOverlay()}
               </div>

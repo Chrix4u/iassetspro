@@ -204,6 +204,26 @@ function HierarchyNode({
   );
 }
 
+
+/** Wrap every word, including long equipment codes, without inserting ellipses. */
+export function wrapSchematicLabel(value: string, maxChars: number): string[] {
+  const chunks = value.trim().split(/\s+/).flatMap((word) => {
+    const pieces: string[] = [];
+    for (let i = 0; i < word.length; i += maxChars) pieces.push(word.slice(i, i + maxChars));
+    return pieces;
+  });
+  const lines: string[] = [];
+  for (const chunk of chunks) {
+    const previous = lines[lines.length - 1];
+    if (previous && previous.length + chunk.length + 1 <= maxChars) {
+      lines[lines.length - 1] = previous + ' ' + chunk;
+    } else {
+      lines.push(chunk);
+    }
+  }
+  return lines.length ? lines : ['—'];
+}
+
 function EngineeringSchematic({
   asset, components, selectedId, onSelect, zoom, pan, panHandlers,
 }: {
@@ -218,6 +238,7 @@ function EngineeringSchematic({
     onPointerMove: React.PointerEventHandler<HTMLDivElement>;
     onPointerUp: React.PointerEventHandler<HTMLDivElement>;
     onPointerCancel: React.PointerEventHandler<HTMLDivElement>;
+    onWheel: React.WheelEventHandler<HTMLDivElement>;
   };
 }) {
   const layout = useMemo(() => {
@@ -238,19 +259,33 @@ function EngineeringSchematic({
     return rows;
   }, [components]);
 
-  const width = Math.max(640, ...layout.map((row) => row.length * 230 + 80));
-  const height = Math.max(440, (layout.length + 1) * 150);
-
-  const positions = new Map<string, { x: number; y: number }>();
-  layout.forEach((row, rowIndex) => {
-    const y = 180 + rowIndex * 140;
+  const rootNameLines = wrapSchematicLabel(asset.name, 28);
+  const rootCodeLines = wrapSchematicLabel(asset.assetTag, 36);
+  const rootHeight = Math.max(90, 22 + rootNameLines.length * 18 + rootCodeLines.length * 14 + 15);
+  const rootTop = 24;
+  const rootBottom = rootTop + rootHeight;
+  const rootWidth = 290;
+  const width = Math.max(640, ...layout.map((row) => row.length * 242 + 72));
+  const positions = new Map<string, { x: number; top: number; height: number; names: string[]; codes: string[] }>();
+  let rowTop = rootBottom + 54;
+  layout.forEach((row) => {
     const gap = width / (row.length + 1);
-    row.forEach((component, index) => positions.set(component.id, { x: gap * (index + 1), y }));
+    let maxRowHeight = 0;
+    row.forEach((component, index) => {
+      const names = wrapSchematicLabel(component.name, 27);
+      const codes = wrapSchematicLabel(component.componentCode + ' · ' + component.componentType, 34);
+      const nodeHeight = Math.max(80, 17 + names.length * 16 + codes.length * 13 + 16);
+      positions.set(component.id, { x: gap * (index + 1), top: rowTop, height: nodeHeight, names, codes });
+      maxRowHeight = Math.max(maxRowHeight, nodeHeight);
+    });
+    rowTop += maxRowHeight + 54;
   });
+  const height = Math.max(430, rowTop + 14);
 
   return (
     <div
-      className="h-[340px] w-full min-w-0 overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:h-[460px] xl:h-full"
+      data-testid="machine-diagram-viewport"
+      className="relative h-[340px] w-full min-w-0 max-w-full overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:h-[460px] xl:h-full"
       {...panHandlers}
     >
       <svg
@@ -258,7 +293,7 @@ function EngineeringSchematic({
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Machine component engineering schematic"
-        className="block h-full w-full origin-center select-none transition-transform duration-75"
+        className="block h-full w-full min-w-0 max-w-full select-none transition-transform duration-75"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
       >
         <defs>
@@ -266,37 +301,57 @@ function EngineeringSchematic({
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.09)" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="#020617" />
-        <rect width="100%" height="100%" fill="url(#grid)" />
-        <g onClick={() => onSelect(null)} className="cursor-pointer">
-          <rect x={width / 2 - 130} y={32} rx={14} width={260} height={84}
+        <rect width={width} height={height} fill="#020617" />
+        <rect width={width} height={height} fill="url(#grid)" />
+        <g onClick={() => onSelect(null)} onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(null); }
+        }} role="button" tabIndex={0} aria-label={`Select machine ${asset.name}`} className="cursor-pointer">
+          <title>{asset.name} · {asset.assetTag}</title>
+          <rect x={width / 2 - rootWidth / 2} y={rootTop} rx={14} width={rootWidth} height={rootHeight}
             fill={selectedId === null ? '#0f766e' : '#0f172a'} stroke="#38bdf8" strokeWidth="2" />
-          <text x={width / 2} y={68} textAnchor="middle" fill="#f8fafc" fontSize="15" fontWeight="700">{asset.name}</text>
-          <text x={width / 2} y={92} textAnchor="middle" fill="#94a3b8" fontSize="11">{asset.assetTag}</text>
+          {rootNameLines.map((line, index) => (
+            <text key={'root-name-' + index} x={width / 2} y={rootTop + 26 + index * 18}
+              textAnchor="middle" fill="#f8fafc" fontSize="14" fontWeight="700">{line}</text>
+          ))}
+          {rootCodeLines.map((line, index) => (
+            <text key={'root-code-' + index} x={width / 2} y={rootTop + 32 + rootNameLines.length * 18 + index * 14}
+              textAnchor="middle" fill="#94a3b8" fontSize="11">{line}</text>
+          ))}
         </g>
         {layout.flat().map((component) => {
           const pos = positions.get(component.id);
           if (!pos) return null;
-          const parentPos = component.parentId ? positions.get(component.parentId) : { x: width / 2, y: 116 };
-          return parentPos ? (
-            <line key={'edge-' + component.id} x1={parentPos.x} y1={parentPos.y + 38}
-              x2={pos.x} y2={pos.y - 34} stroke="#475569" strokeWidth="2" />
-          ) : null;
+          const parent = component.parentId ? positions.get(component.parentId) : null;
+          const parentX = parent?.x ?? width / 2;
+          const parentBottom = parent ? parent.top + parent.height : rootBottom;
+          return (
+            <line key={'edge-' + component.id} x1={parentX} y1={parentBottom}
+              x2={pos.x} y2={pos.top} stroke="#475569" strokeWidth="2" />
+          );
         })}
         {layout.flat().map((component) => {
           const pos = positions.get(component.id);
           if (!pos) return null;
           const selected = selectedId === component.id;
           return (
-            <g key={component.id} onClick={() => onSelect(component.id)} className="cursor-pointer">
-              <rect x={pos.x - 92} y={pos.y - 34} rx={10} width={184} height={68}
-                fill={selected ? '#0f766e' : '#0f172a'} stroke={selected ? '#5eead4' : '#64748b'} strokeWidth={selected ? 3 : 1.5} />
-              <text x={pos.x} y={pos.y - 7} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
-                {component.name.length > 26 ? component.name.slice(0, 24) + '…' : component.name}
-              </text>
-              <text x={pos.x} y={pos.y + 14} textAnchor="middle" fill="#94a3b8" fontSize="9">
-                {component.componentCode} · {component.componentType}
-              </text>
+            <g key={component.id} role="button" tabIndex={0}
+              aria-label={`Select ${component.name}`}
+              onClick={() => onSelect(component.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(component.id); }
+              }} className="cursor-pointer">
+              <title>{component.name} · {component.componentCode} · {component.componentType}</title>
+              <rect x={pos.x - 106} y={pos.top} rx={10} width={212} height={pos.height}
+                fill={selected ? '#0f766e' : '#0f172a'}
+                stroke={selected ? '#5eead4' : '#64748b'} strokeWidth={selected ? 3 : 1.5} />
+              {pos.names.map((line, index) => (
+                <text key={'name-' + index} x={pos.x} y={pos.top + 22 + index * 16}
+                  textAnchor="middle" fill="#f8fafc" fontSize="12" fontWeight="600">{line}</text>
+              ))}
+              {pos.codes.map((line, index) => (
+                <text key={'code-' + index} x={pos.x} y={pos.top + 28 + pos.names.length * 16 + index * 13}
+                  textAnchor="middle" fill="#94a3b8" fontSize="10">{line}</text>
+              ))}
             </g>
           );
         })}

@@ -300,14 +300,31 @@ export function PmPortfolioCompliancePanel() {
               {loading && <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Refreshing…</span>}
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-2">
-              <div className="rounded-lg border">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+              <div className="min-w-0 overflow-hidden rounded-lg border">
                 <div className="border-b px-3 py-2.5">
                   <p className="flex items-center gap-1.5 text-xs font-semibold"><Building2 className="h-3.5 w-3.5" />Department Risk</p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">Ranked by open overdue, missed cycles, then completion compliance.</p>
                 </div>
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="space-y-2 p-2 sm:hidden" data-testid="pm-department-risk-mobile">
+                  {data.departments.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No PM cycles matured in this reporting window.</p> : data.departments.map((department) => (
+                    <div key={department.departmentId || '__unassigned__'} className="min-w-0 rounded-md border p-3">
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold">{department.departmentName}</p>
+                          <p className="text-xs text-muted-foreground">{department.maturedCycles} matured · {department.completed} completed</p></div>
+                        {riskBadge(department.openOverdue, department.missed)}
+                      </div>
+                      <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                        <div><dt className="text-muted-foreground">Machines</dt><dd className="font-semibold">{department.machineCount}</dd></div>
+                        <div><dt className="text-muted-foreground">Compliance</dt><dd className="font-semibold">{formatPmPortfolioPercentage(department.completionCompliancePct)}</dd></div>
+                        <div><dt className="text-muted-foreground">Oldest</dt><dd className="font-semibold">{formatPmPortfolioDelay(department.oldestOpenOverdueMinutes)}</dd></div>
+                      </dl>
+                      {department.missed > 0 && <p className="mt-1 text-xs text-red-600">{department.missed} missed</p>}
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden max-w-full overflow-x-auto overscroll-x-contain sm:block">
+                  <Table className="min-w-[600px]">
                     <TableHeader><TableRow><TableHead className="text-xs">Department</TableHead><TableHead className="text-xs">Machines</TableHead><TableHead className="text-xs">Compliance</TableHead><TableHead className="text-xs">Exposure</TableHead><TableHead className="text-xs">Oldest</TableHead></TableRow></TableHeader>
                     <TableBody>
                       {data.departments.length === 0 ? (
@@ -326,13 +343,32 @@ export function PmPortfolioCompliancePanel() {
                 </div>
               </div>
 
-              <div className="rounded-lg border">
+              <div className="min-w-0 overflow-hidden rounded-lg border">
                 <div className="border-b px-3 py-2.5">
                   <p className="flex items-center gap-1.5 text-xs font-semibold"><ShieldAlert className="h-3.5 w-3.5" />Machine Risk · Top 15</p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">Highest-risk machines in server-ranked order.</p>
                 </div>
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="space-y-2 p-2 sm:hidden" data-testid="pm-machine-risk-mobile">
+                  {topMachines.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No machines have matured PM cycles in this window.</p> : topMachines.map((machine) => (
+                    <div key={machine.assetId} className="min-w-0 rounded-md border p-3">
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-semibold">{machine.assetName}</p>
+                          <p className="break-all text-xs text-muted-foreground">{machine.assetTag} · {machine.departmentName}</p>
+                        </div>
+                        {riskBadge(machine.openOverdue, machine.missed)}
+                      </div>
+                      <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                        <div><dt className="text-muted-foreground">Matured</dt><dd className="font-semibold">{machine.maturedCycles}</dd></div>
+                        <div><dt className="text-muted-foreground">Compliance</dt><dd className="font-semibold">{formatPmPortfolioPercentage(machine.completionCompliancePct)}</dd></div>
+                        <div><dt className="text-muted-foreground">Oldest</dt><dd className="font-semibold">{formatPmPortfolioDelay(machine.oldestOpenOverdueMinutes)}</dd></div>
+                      </dl>
+                      {machine.missed > 0 && <p className="mt-1 text-xs text-red-600">{machine.missed} missed</p>}
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden max-w-full overflow-x-auto overscroll-x-contain sm:block">
+                  <Table className="min-w-[700px]">
                     <TableHeader><TableRow><TableHead className="text-xs">Machine</TableHead><TableHead className="text-xs">Department</TableHead><TableHead className="text-xs">Compliance</TableHead><TableHead className="text-xs">Exposure</TableHead><TableHead className="text-xs">Oldest</TableHead></TableRow></TableHeader>
                     <TableBody>
                       {topMachines.length === 0 ? (
@@ -352,13 +388,32 @@ export function PmPortfolioCompliancePanel() {
               </div>
             </div>
 
-            <div className="rounded-lg border">
+            <div className="min-w-0 overflow-hidden rounded-lg border">
               <div className="border-b px-3 py-2.5">
                 <p className="text-xs font-semibold">Oldest Open Overdue PM</p>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">The ten oldest still-open matured cycles in the selected portfolio.</p>
               </div>
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="space-y-2 p-2 sm:hidden" data-testid="pm-oldest-overdue-mobile">
+                {data.oldestOpenOverdue.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No open overdue PM cycles in this reporting window.</p> : data.oldestOpenOverdue.map((cycle) => (
+                  <div key={cycle.identity} className="min-w-0 rounded-md border p-3">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-semibold">{cycle.assetName}</p>
+                        <p className="break-all text-xs text-muted-foreground">{cycle.assetTag} · {cycle.departmentName}</p>
+                      </div>
+                      <Badge variant="destructive">Overdue</Badge>
+                    </div>
+                    <p className="mt-2 break-words text-xs">Task #{cycle.taskNumber} · {cycle.description}</p>
+                    <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div><dt className="text-muted-foreground">Due</dt><dd className="font-medium">{formatDateTime(cycle.dueAt)}</dd></div>
+                      <div><dt className="text-muted-foreground">Delay</dt><dd className="font-semibold text-amber-600">{formatPmPortfolioDelay(cycle.delayMinutes)}</dd></div>
+                      <div className="col-span-2"><dt className="text-muted-foreground">Work order</dt><dd className="break-all font-medium">{cycle.workOrderNumber || 'Not generated'} · {cycle.workOrderStatus.replace(/_/g, ' ')}</dd></div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden max-w-full overflow-x-auto overscroll-x-contain sm:block">
+                <Table className="min-w-[750px]">
                   <TableHeader><TableRow><TableHead className="text-xs">Machine</TableHead><TableHead className="text-xs">Task</TableHead><TableHead className="text-xs">Due</TableHead><TableHead className="text-xs">Work Order</TableHead><TableHead className="text-xs">Delay</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {data.oldestOpenOverdue.length === 0 ? (

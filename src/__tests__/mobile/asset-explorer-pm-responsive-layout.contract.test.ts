@@ -10,6 +10,8 @@ describe('mobile asset explorer and preventive maintenance layout', () => {
   it('eliminates 560px empty hierarchy padding and keeps desktop independently scrollable', () => {
     expect(explorer).not.toContain('h-[560px]');
     expect(explorer).toContain('max-h-[min(36dvh,280px)]');
+    expect(explorer).toContain('overflow-y-auto overscroll-contain');
+    expect(explorer).not.toContain('<ScrollArea');
     expect(explorer).toContain('xl:max-h-none xl:min-h-0 xl:flex-1');
   });
 
@@ -24,6 +26,7 @@ describe('mobile asset explorer and preventive maintenance layout', () => {
 
   it('keeps both asset hierarchy actions in one mobile row', () => {
     expect(assetDetail).toContain('grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:justify-end');
+    expect(assetDetail).toContain('value="visual-explorer" className="-mx-2 mt-4 min-w-0 space-y-4 sm:mx-0"');
     expect(assetDetail).toContain('<span className="sm:hidden">Commission</span>');
     expect(assetDetail).toContain('<span className="sm:hidden">Add Item</span>');
     expect(assetDetail).toContain('Commission Hierarchy');

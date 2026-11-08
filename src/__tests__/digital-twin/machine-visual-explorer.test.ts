@@ -60,7 +60,7 @@ describe('deep machine visual explorer', () => {
     expect(explorer).toContain('xl:h-[calc(100dvh-5rem)]');
     expect(explorer).toContain('xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch');
     expect(explorer).toContain('xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden');
-    expect(explorer).toContain('xl:h-auto xl:min-h-0 xl:flex-1');
+    expect(explorer).toContain('xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1');
     expect(explorer).toContain('xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain');
     expect(explorer).toContain('space-y-4 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain xl:pr-1');
   });

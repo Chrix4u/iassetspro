@@ -96,6 +96,7 @@ export function PmInspectionWorksheetPanel() {
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<InspectionPoint[]>([]);
   const [scheduledRows, setScheduledRows] = useState<ScheduledInspection[]>([]);
+  const [scheduledDetail, setScheduledDetail] = useState<ScheduledInspection | null>(null);
   const [scheduledWarning, setScheduledWarning] = useState('');
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(1);
@@ -376,28 +377,26 @@ export function PmInspectionWorksheetPanel() {
           </div>
           {scheduledWarning && <p className="text-xs text-amber-700">{scheduledWarning}</p>}
           {!scheduledWarning && visibleScheduled.length === 0 && <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">No scheduled inspection tasks match the machine/due filters.</p>}
-          <div className="grid gap-2">
-            {visibleScheduled.map((task) => <div key={task.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold">{task.asset.name} <span className="text-muted-foreground">{task.asset.assetTag}</span></p>
-                <p className="text-sm">{task.component?.name || 'Whole machine'} · Task #{task.pmTask.taskNumber}: {task.pmTask.description}</p>
-                <p className="text-xs text-muted-foreground">
-                  {task.pmType.toUpperCase()} · {task.equipmentState} · {task.basis === 'meter'
-                    ? `Meter: ${task.currentReading ?? '—'} / ${task.nextDueReading ?? '—'} ${task.meterUnit || ''}`
-                    : `Due: ${displayDue(task.nextDueDate)}`}
-                </p>
+          <div className="grid min-w-0 gap-2">
+            {visibleScheduled.map((task) => (
+              <div key={task.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border p-2.5 sm:p-3" data-testid="pm-scheduled-compact-row">
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-sm font-semibold" title={task.asset.name}>{task.asset.name}</p>
+                  <p className="truncate text-xs text-muted-foreground" title={`${task.component?.name || 'Whole machine'} · Task #${task.pmTask.taskNumber}: ${task.pmTask.description}`}>
+                    {task.component?.name || 'Whole machine'} · Task #{task.pmTask.taskNumber}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {task.basis === 'meter'
+                      ? `Meter ${task.currentReading ?? '—'} / ${task.nextDueReading ?? '—'} ${task.meterUnit || ''}`
+                      : `Due ${displayDue(task.nextDueDate)}`}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <Badge variant={badgeVariant(task.dueState)}>{dueLabel(task.dueState)}</Badge>
+                  <Button type="button" size="sm" variant="outline" className="h-8 px-3" onClick={() => setScheduledDetail(task)}>View</Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={badgeVariant(task.dueState)}>{dueLabel(task.dueState)}</Badge>
-                {canPlan && task.component && <Button type="button" size="sm" variant="outline" onClick={() => {
-                  setPlanAssetId(task.asset.id);
-                  setPlanComponentId(task.component!.id);
-                  setPlan({ ...DEFAULT_PLAN, name: task.pmTask.description, method: task.pmTask.taskType === 'measure' ? 'measurement' : 'visual' });
-                  setPlanOpen(true);
-                }}>Configure Check</Button>}
-              </div>
-              {!task.component && <p className="w-full text-xs text-amber-700">Assign the PM task to a specific part to configure point-level instrument or sight readings.</p>}
-            </div>)}
+            ))}
           </div>
         </section>
         <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -408,6 +407,45 @@ export function PmInspectionWorksheetPanel() {
           </div>
         </div>
       </CardContent>
+
+      <ResponsiveDialog
+        open={Boolean(scheduledDetail)}
+        onOpenChange={(open) => { if (!open) setScheduledDetail(null); }}
+        title={scheduledDetail ? `PM task #${scheduledDetail.pmTask.taskNumber} · ${scheduledDetail.component?.name || 'Whole machine'}` : 'Scheduled PM inspection task'}
+        description={scheduledDetail ? scheduledDetail.asset.name : ''}
+        footer={<div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="outline" onClick={() => setScheduledDetail(null)}>Close</Button>
+          {canPlan && scheduledDetail?.component && <Button type="button" onClick={() => {
+            setPlanAssetId(scheduledDetail.asset.id);
+            setPlanComponentId(scheduledDetail.component!.id);
+            setPlan({ ...DEFAULT_PLAN, name: scheduledDetail.pmTask.description, method: scheduledDetail.pmTask.taskType === 'measure' ? 'measurement' : 'visual' });
+            setScheduledDetail(null);
+            setPlanOpen(true);
+          }}>Configure Check</Button>}
+        </div>}>
+        {scheduledDetail && (
+          <div className="min-w-0 space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={badgeVariant(scheduledDetail.dueState)}>{dueLabel(scheduledDetail.dueState)}</Badge>
+              <Badge variant="outline">{scheduledDetail.basis === 'meter' ? 'Meter-based' : 'Calendar-based'}</Badge>
+            </div>
+            <dl className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><dt className="text-xs text-muted-foreground">Machine</dt><dd className="break-words font-medium">{scheduledDetail.asset.name}</dd><dd className="break-all text-xs text-muted-foreground">{scheduledDetail.asset.assetTag}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Part / component</dt><dd className="break-words font-medium">{scheduledDetail.component?.name || 'Whole machine'}</dd>{scheduledDetail.component && <dd className="break-all text-xs text-muted-foreground">{scheduledDetail.component.componentCode}</dd>}</div>
+              <div><dt className="text-xs text-muted-foreground">PM type</dt><dd className="font-medium">{scheduledDetail.pmType.toUpperCase()}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Equipment state</dt><dd className="font-medium capitalize">{scheduledDetail.equipmentState.replace(/_/g, ' ')}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Next due</dt><dd className="font-medium">{scheduledDetail.basis === 'meter'
+                ? `${scheduledDetail.nextDueReading ?? '—'} ${scheduledDetail.meterUnit || ''} (current: ${scheduledDetail.currentReading ?? '—'})`
+                : displayDue(scheduledDetail.nextDueDate)}</dd></div>
+            </dl>
+            <div className="rounded-md bg-muted/30 p-3">
+              <p className="text-xs font-semibold">Task #{scheduledDetail.pmTask.taskNumber} · {scheduledDetail.pmTask.taskType}</p>
+              <p className="mt-1 break-words">{scheduledDetail.pmTask.description}</p>
+            </div>
+            {!scheduledDetail.component && <p className="rounded-md border border-amber-200 p-2 text-xs text-amber-700 dark:text-amber-300">Assign this PM task to a specific machine part before configuring sight or instrument readings.</p>}
+          </div>
+        )}
+      </ResponsiveDialog>
 
       <ResponsiveDialog open={planOpen} onOpenChange={setPlanOpen} title="Plan a machine-part inspection"
         description="Define whether the inspector will use sight or an instrument, what to check, acceptable readings, and the next inspection date."

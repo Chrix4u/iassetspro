@@ -183,8 +183,8 @@ function HierarchyNode({
         <button type="button" onClick={() => onSelect(node.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer">
           {nodeIcon}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium">{node.name}</span>
-            <span className="block truncate text-[10px] text-muted-foreground">{node.componentCode} · {node.componentType}</span>
+            <span className="block whitespace-normal break-words text-xs font-medium leading-snug">{node.name}</span>
+            <span className="block whitespace-normal break-all text-[10px] text-muted-foreground">{node.componentCode} · {node.componentType}</span>
           </span>
         </button>
       </div>
@@ -828,8 +828,8 @@ export function MachineVisualExplorer({
         <CardContent className="px-2 pb-3 pt-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
           <button type="button" onClick={() => setSelectedId(null)}
             className={'w-full rounded-lg border px-3 py-2 text-left cursor-pointer hover:bg-muted/60 ' + (selectedId === null ? 'border-primary bg-primary/5' : 'border-transparent')}>
-            <div className="text-xs font-semibold">{asset.name}</div>
-            <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
+            <div className="break-words text-xs font-semibold">{asset.name}</div>
+            <div className="break-all text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
           <div className="mt-1 max-h-[min(36dvh,280px)] min-h-0 overflow-y-auto overscroll-contain pr-1 xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
             {roots.length > 0 ? roots.map((root) => (
@@ -983,8 +983,8 @@ export function MachineVisualExplorer({
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Target className="h-4 w-4" />Selected item</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-xs">
             <div>
-              <div className="font-semibold">{selected?.name || asset.name}</div>
-              <div className="text-muted-foreground">{selected?.componentCode || asset.assetTag}</div>
+              <div className="break-words font-semibold">{selected?.name || asset.name}</div>
+              <div className="break-all text-muted-foreground">{selected?.componentCode || asset.assetTag}</div>
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline" className={badgeClass(selected?.criticality || asset.criticality || undefined)}>{selected?.criticality || asset.criticality || 'medium'}</Badge>

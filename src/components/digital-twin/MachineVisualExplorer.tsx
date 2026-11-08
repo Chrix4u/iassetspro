@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
 
 type MachineComponent = {
@@ -731,7 +730,7 @@ export function MachineVisualExplorer({
             <div className="text-xs font-semibold">{asset.name}</div>
             <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
-          <ScrollArea className="mt-1 max-h-[min(36dvh,280px)] pr-1 xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+          <div className="mt-1 max-h-[min(36dvh,280px)] min-h-0 overflow-y-auto overscroll-contain pr-1 xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
             {roots.length > 0 ? roots.map((root) => (
               <HierarchyNode key={root.id} node={root} childrenByParent={childrenByParent}
                 selectedId={selectedId} onSelect={setSelectedId}
@@ -750,7 +749,7 @@ export function MachineVisualExplorer({
                 )}
               </div>
             )}
-          </ScrollArea>
+          </div>
         </CardContent>
       </Card>
 

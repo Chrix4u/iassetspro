@@ -239,7 +239,7 @@ function EngineeringSchematic({
     return rows;
   }, [components]);
 
-  const width = Math.max(900, ...layout.map((row) => row.length * 230 + 80));
+  const width = Math.max(640, ...layout.map((row) => row.length * 230 + 80));
   const height = Math.max(440, (layout.length + 1) * 150);
 
   const positions = new Map<string, { x: number; y: number }>();
@@ -251,16 +251,16 @@ function EngineeringSchematic({
 
   return (
     <div
-      className="h-full min-h-[460px] overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none"
+      className="h-[340px] w-full min-w-0 overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:h-[460px] xl:h-full"
       {...panHandlers}
     >
       <svg
-        width={width}
-        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Machine component engineering schematic"
-        className="origin-top-left select-none transition-transform duration-75"
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+        className="block h-full w-full origin-center select-none transition-transform duration-75"
+        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
       >
         <defs>
           <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
@@ -330,14 +330,14 @@ function ProgrammaticEngineeringView({
   const bodyHeight = selected?.componentType === 'part' ? 150 : 220;
 
   return (
-    <div className="relative min-h-[500px] overflow-hidden rounded-xl border bg-slate-950">
+    <div className="relative min-h-[330px] overflow-hidden rounded-xl border bg-slate-950 sm:min-h-[500px]">
       <div
         className="origin-center select-none transition-transform duration-75"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
       >
         <svg
           viewBox={'0 0 ' + width + ' ' + height}
-          className="mx-auto w-full min-w-0 min-h-[500px] h-auto"
+          className="mx-auto h-[330px] w-full min-w-0 sm:h-auto sm:min-h-[500px]"
           role="img"
           aria-label={(exploded ? 'Exploded engineering view of ' : '2D engineering view of ') + subjectName}
         >
@@ -670,7 +670,7 @@ export function MachineVisualExplorer({
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
   const renderDrillOverlay = () => (
-    <div className="absolute left-3 top-3 z-10 max-w-[280px] rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur">
+    <div className="relative mt-2 w-full min-w-0 rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
         {selectedId && (
@@ -718,20 +718,20 @@ export function MachineVisualExplorer({
   const details = Object.entries(specs).slice(0, 8);
 
   if (loading) {
-    return <div className="flex min-h-[520px] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+    return <div className="flex min-h-[240px] items-center justify-center sm:min-h-[520px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
   return (
-    <div className={'grid gap-4 ' + (selectionMode ? 'xl:h-[min(72vh,760px)]' : 'xl:h-[calc(100dvh-5rem)]') + ' xl:min-h-0 xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch'}>
-      <Card className="border-0 shadow-sm xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
-        <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Network className="h-4 w-4" />Machine hierarchy</CardTitle></CardHeader>
-        <CardContent className="p-2 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
+    <div className={'grid min-w-0 gap-3 sm:gap-4 ' + (selectionMode ? 'xl:h-[min(72vh,760px)]' : 'xl:h-[calc(100dvh-5rem)]') + ' xl:min-h-0 xl:grid-cols-[260px_minmax(0,1fr)_290px] xl:items-stretch'}>
+      <Card className="min-w-0 border-0 shadow-sm xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:overflow-hidden">
+        <CardHeader className="px-3 pb-2 sm:px-6"><CardTitle className="text-sm flex items-center gap-2"><Network className="h-4 w-4" />Machine hierarchy</CardTitle></CardHeader>
+        <CardContent className="px-2 pb-3 pt-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
           <button type="button" onClick={() => setSelectedId(null)}
             className={'w-full rounded-lg border px-3 py-2 text-left cursor-pointer hover:bg-muted/60 ' + (selectedId === null ? 'border-primary bg-primary/5' : 'border-transparent')}>
             <div className="text-xs font-semibold">{asset.name}</div>
             <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
-          <ScrollArea className="mt-1 h-[560px] pr-1 xl:h-auto xl:min-h-0 xl:flex-1">
+          <ScrollArea className="mt-1 max-h-[min(36dvh,280px)] pr-1 xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
             {roots.length > 0 ? roots.map((root) => (
               <HierarchyNode key={root.id} node={root} childrenByParent={childrenByParent}
                 selectedId={selectedId} onSelect={setSelectedId}
@@ -754,8 +754,8 @@ export function MachineVisualExplorer({
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm overflow-hidden xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
-        <CardHeader className="pb-2">
+      <Card className="min-w-0 overflow-hidden border-0 shadow-sm xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
+        <CardHeader className="px-2 pb-2 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <CardTitle className="text-sm flex items-center gap-2"><Focus className="h-4 w-4" />Deep visual explorer</CardTitle>
@@ -772,7 +772,7 @@ export function MachineVisualExplorer({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent className="min-w-0 px-1.5 pt-0 sm:px-6">
           <Tabs value={mode} onValueChange={setMode}>
             <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
               <TabsTrigger value="model3d" className="cursor-pointer"><Box className="mr-1.5 h-3.5 w-3.5" />3D Model</TabsTrigger>
@@ -826,10 +826,10 @@ export function MachineVisualExplorer({
                   </div>
                 )}
                 <div
-                  className="relative min-h-[500px] overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none"
+                  className="relative min-h-[330px] overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:min-h-[500px]"
                   {...panHandlers}
                 >
-                  <div className="flex min-h-[500px] items-center justify-center p-6">
+                  <div className="flex min-h-[330px] items-center justify-center p-2 sm:min-h-[500px] sm:p-6">
                     {imageUrl ? (
                       <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
                         className="max-h-[760px] origin-center select-none object-contain transition-transform duration-75"

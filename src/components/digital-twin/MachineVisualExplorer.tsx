@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
+import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
 
 type MachineComponent = {
   id: string;
@@ -183,8 +184,8 @@ function HierarchyNode({
         <button type="button" onClick={() => onSelect(node.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer">
           {nodeIcon}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium">{node.name}</span>
-            <span className="block truncate text-[10px] text-muted-foreground">{node.componentCode} · {node.componentType}</span>
+            <span className="block whitespace-normal break-words text-xs font-medium leading-snug">{node.name}</span>
+            <span className="block whitespace-normal break-all text-[10px] text-muted-foreground">{node.componentCode} · {node.componentType}</span>
           </span>
         </button>
       </div>
@@ -204,6 +205,7 @@ function HierarchyNode({
   );
 }
 
+
 function EngineeringSchematic({
   asset, components, selectedId, onSelect, zoom, pan, panHandlers,
 }: {
@@ -218,6 +220,7 @@ function EngineeringSchematic({
     onPointerMove: React.PointerEventHandler<HTMLDivElement>;
     onPointerUp: React.PointerEventHandler<HTMLDivElement>;
     onPointerCancel: React.PointerEventHandler<HTMLDivElement>;
+    onWheel: React.WheelEventHandler<HTMLDivElement>;
   };
 }) {
   const layout = useMemo(() => {
@@ -238,19 +241,33 @@ function EngineeringSchematic({
     return rows;
   }, [components]);
 
-  const width = Math.max(640, ...layout.map((row) => row.length * 230 + 80));
-  const height = Math.max(440, (layout.length + 1) * 150);
-
-  const positions = new Map<string, { x: number; y: number }>();
-  layout.forEach((row, rowIndex) => {
-    const y = 180 + rowIndex * 140;
+  const rootNameLines = wrapSchematicLabel(asset.name, 28);
+  const rootCodeLines = wrapSchematicLabel(asset.assetTag, 36);
+  const rootHeight = Math.max(90, 22 + rootNameLines.length * 18 + rootCodeLines.length * 14 + 15);
+  const rootTop = 24;
+  const rootBottom = rootTop + rootHeight;
+  const rootWidth = 290;
+  const width = Math.max(640, ...layout.map((row) => row.length * 242 + 72));
+  const positions = new Map<string, { x: number; top: number; height: number; names: string[]; codes: string[] }>();
+  let rowTop = rootBottom + 54;
+  layout.forEach((row) => {
     const gap = width / (row.length + 1);
-    row.forEach((component, index) => positions.set(component.id, { x: gap * (index + 1), y }));
+    let maxRowHeight = 0;
+    row.forEach((component, index) => {
+      const names = wrapSchematicLabel(component.name, 27);
+      const codes = wrapSchematicLabel(component.componentCode + ' · ' + component.componentType, 34);
+      const nodeHeight = Math.max(80, 17 + names.length * 16 + codes.length * 13 + 16);
+      positions.set(component.id, { x: gap * (index + 1), top: rowTop, height: nodeHeight, names, codes });
+      maxRowHeight = Math.max(maxRowHeight, nodeHeight);
+    });
+    rowTop += maxRowHeight + 54;
   });
+  const height = Math.max(430, rowTop + 14);
 
   return (
     <div
-      className="h-[340px] w-full min-w-0 overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:h-[460px] xl:h-full"
+      data-testid="machine-diagram-viewport"
+      className="relative h-[340px] w-full min-w-0 max-w-full overflow-hidden rounded-xl border bg-slate-950 cursor-grab active:cursor-grabbing touch-none sm:h-[460px] xl:h-full"
       {...panHandlers}
     >
       <svg
@@ -258,7 +275,7 @@ function EngineeringSchematic({
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Machine component engineering schematic"
-        className="block h-full w-full origin-center select-none transition-transform duration-75"
+        className="block h-full w-full min-w-0 max-w-full select-none transition-transform duration-75"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center center' }}
       >
         <defs>
@@ -266,37 +283,57 @@ function EngineeringSchematic({
             <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(148,163,184,0.09)" strokeWidth="1" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="#020617" />
-        <rect width="100%" height="100%" fill="url(#grid)" />
-        <g onClick={() => onSelect(null)} className="cursor-pointer">
-          <rect x={width / 2 - 130} y={32} rx={14} width={260} height={84}
+        <rect width={width} height={height} fill="#020617" />
+        <rect width={width} height={height} fill="url(#grid)" />
+        <g onClick={() => onSelect(null)} onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(null); }
+        }} role="button" tabIndex={0} aria-label={`Select machine ${asset.name}`} className="cursor-pointer">
+          <title>{asset.name} · {asset.assetTag}</title>
+          <rect x={width / 2 - rootWidth / 2} y={rootTop} rx={14} width={rootWidth} height={rootHeight}
             fill={selectedId === null ? '#0f766e' : '#0f172a'} stroke="#38bdf8" strokeWidth="2" />
-          <text x={width / 2} y={68} textAnchor="middle" fill="#f8fafc" fontSize="15" fontWeight="700">{asset.name}</text>
-          <text x={width / 2} y={92} textAnchor="middle" fill="#94a3b8" fontSize="11">{asset.assetTag}</text>
+          {rootNameLines.map((line, index) => (
+            <text key={'root-name-' + index} x={width / 2} y={rootTop + 26 + index * 18}
+              textAnchor="middle" fill="#f8fafc" fontSize="14" fontWeight="700">{line}</text>
+          ))}
+          {rootCodeLines.map((line, index) => (
+            <text key={'root-code-' + index} x={width / 2} y={rootTop + 32 + rootNameLines.length * 18 + index * 14}
+              textAnchor="middle" fill="#94a3b8" fontSize="11">{line}</text>
+          ))}
         </g>
         {layout.flat().map((component) => {
           const pos = positions.get(component.id);
           if (!pos) return null;
-          const parentPos = component.parentId ? positions.get(component.parentId) : { x: width / 2, y: 116 };
-          return parentPos ? (
-            <line key={'edge-' + component.id} x1={parentPos.x} y1={parentPos.y + 38}
-              x2={pos.x} y2={pos.y - 34} stroke="#475569" strokeWidth="2" />
-          ) : null;
+          const parent = component.parentId ? positions.get(component.parentId) : null;
+          const parentX = parent?.x ?? width / 2;
+          const parentBottom = parent ? parent.top + parent.height : rootBottom;
+          return (
+            <line key={'edge-' + component.id} x1={parentX} y1={parentBottom}
+              x2={pos.x} y2={pos.top} stroke="#475569" strokeWidth="2" />
+          );
         })}
         {layout.flat().map((component) => {
           const pos = positions.get(component.id);
           if (!pos) return null;
           const selected = selectedId === component.id;
           return (
-            <g key={component.id} onClick={() => onSelect(component.id)} className="cursor-pointer">
-              <rect x={pos.x - 92} y={pos.y - 34} rx={10} width={184} height={68}
-                fill={selected ? '#0f766e' : '#0f172a'} stroke={selected ? '#5eead4' : '#64748b'} strokeWidth={selected ? 3 : 1.5} />
-              <text x={pos.x} y={pos.y - 7} textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="600">
-                {component.name.length > 26 ? component.name.slice(0, 24) + '…' : component.name}
-              </text>
-              <text x={pos.x} y={pos.y + 14} textAnchor="middle" fill="#94a3b8" fontSize="9">
-                {component.componentCode} · {component.componentType}
-              </text>
+            <g key={component.id} role="button" tabIndex={0}
+              aria-label={`Select ${component.name}`}
+              onClick={() => onSelect(component.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(component.id); }
+              }} className="cursor-pointer">
+              <title>{component.name} · {component.componentCode} · {component.componentType}</title>
+              <rect x={pos.x - 106} y={pos.top} rx={10} width={212} height={pos.height}
+                fill={selected ? '#0f766e' : '#0f172a'}
+                stroke={selected ? '#5eead4' : '#64748b'} strokeWidth={selected ? 3 : 1.5} />
+              {pos.names.map((line, index) => (
+                <text key={'name-' + index} x={pos.x} y={pos.top + 22 + index * 16}
+                  textAnchor="middle" fill="#f8fafc" fontSize="12" fontWeight="600">{line}</text>
+              ))}
+              {pos.codes.map((line, index) => (
+                <text key={'code-' + index} x={pos.x} y={pos.top + 28 + pos.names.length * 16 + index * 13}
+                  textAnchor="middle" fill="#94a3b8" fontSize="10">{line}</text>
+              ))}
             </g>
           );
         })}
@@ -467,6 +504,13 @@ export function MachineVisualExplorer({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; dragging: boolean } | null>(null);
+  const touchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    distance: number;
+    zoom: number;
+    pan: { x: number; y: number };
+    midpoint: { x: number; y: number };
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [twinId, setTwinId] = useState<string | null>(null);
@@ -526,19 +570,45 @@ export function MachineVisualExplorer({
 
   const panHandlers = useMemo(() => ({
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0) return;
-      const target = event.target as HTMLElement;
-      if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
-      dragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        originX: pan.x,
-        originY: pan.y,
-        dragging: false,
-      };
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if ((event.target as Element).closest('button, a, input, textarea, select')) return;
+      touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPointersRef.current.size >= 2) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        pinchRef.current = {
+          distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+          zoom,
+          pan: { ...pan },
+          midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+        };
+        dragRef.current = null;
+      } else {
+        dragRef.current = {
+          pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+          originX: pan.x, originY: pan.y, dragging: false,
+        };
+      }
     },
     onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!touchPointersRef.current.has(event.pointerId)) return;
+      touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (touchPointersRef.current.size >= 2 && pinchRef.current) {
+        const [first, second] = [...touchPointersRef.current.values()];
+        const midpoint = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+        const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y));
+        const gesture = pinchRef.current;
+        const nextZoom = Math.min(4, Math.max(0.5, gesture.zoom * distance / gesture.distance));
+        const ratio = nextZoom / gesture.zoom;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setZoom(nextZoom);
+        setPan({
+          x: gesture.pan.x + midpoint.x - gesture.midpoint.x
+            + (1 - ratio) * (gesture.midpoint.x - bounds.left - bounds.width / 2 - gesture.pan.x),
+          y: gesture.pan.y + midpoint.y - gesture.midpoint.y
+            + (1 - ratio) * (gesture.midpoint.y - bounds.top - bounds.height / 2 - gesture.pan.y),
+        });
+        return;
+      }
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       const deltaX = event.clientX - drag.startX;
@@ -548,21 +618,34 @@ export function MachineVisualExplorer({
         drag.dragging = true;
         event.currentTarget.setPointerCapture(event.pointerId);
       }
-      setPan({
-        x: drag.originX + deltaX,
-        y: drag.originY + deltaY,
-      });
+      setPan({ x: drag.originX + deltaX, y: drag.originY + deltaY });
     },
     onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      touchPointersRef.current.delete(event.pointerId);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
+      if (touchPointersRef.current.size < 2) {
+        pinchRef.current = null;
+        const remaining = [...touchPointersRef.current.entries()][0];
+        dragRef.current = remaining
+          ? { pointerId: remaining[0], startX: remaining[1].x, startY: remaining[1].y,
+              originX: pan.x, originY: pan.y, dragging: false }
+          : null;
+      }
     },
     onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => {
-      if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+      touchPointersRef.current.delete(event.pointerId);
+      pinchRef.current = null;
+      dragRef.current = null;
     },
-  }), [pan.x, pan.y]);
+    // Ctrl/trackpad pinch works without stealing ordinary wheel-based page scrolling.
+    onWheel: (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      setZoom((current) => Math.max(0.5, Math.min(4, +(current * (event.deltaY > 0 ? 0.9 : 1.1)).toFixed(2))));
+    },
+  }), [pan.x, pan.y, zoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -669,7 +752,7 @@ export function MachineVisualExplorer({
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
   const renderDrillOverlay = () => (
-    <div className="relative mt-2 w-full min-w-0 rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
+    <div className="relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
         {selectedId && (
@@ -684,8 +767,8 @@ export function MachineVisualExplorer({
           {drillChildren.map((child) => (
             <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
               className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
-              <span className="min-w-0 truncate">{child.name}</span>
-              <Badge variant="outline" className="border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
+              <span className="min-w-0 flex-1 whitespace-normal break-words leading-relaxed">{child.name}</span>
+              <Badge variant="outline" className="shrink-0 border-slate-600 bg-slate-900/70 text-[9px] text-slate-300">{child.componentType}</Badge>
             </button>
           ))}
         </div>
@@ -727,8 +810,8 @@ export function MachineVisualExplorer({
         <CardContent className="px-2 pb-3 pt-0 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
           <button type="button" onClick={() => setSelectedId(null)}
             className={'w-full rounded-lg border px-3 py-2 text-left cursor-pointer hover:bg-muted/60 ' + (selectedId === null ? 'border-primary bg-primary/5' : 'border-transparent')}>
-            <div className="text-xs font-semibold">{asset.name}</div>
-            <div className="text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
+            <div className="break-words text-xs font-semibold">{asset.name}</div>
+            <div className="break-all text-[10px] text-muted-foreground">{asset.assetTag} · machine</div>
           </button>
           <div className="mt-1 max-h-[min(36dvh,280px)] min-h-0 overflow-y-auto overscroll-contain pr-1 xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
             {roots.length > 0 ? roots.map((root) => (
@@ -753,33 +836,42 @@ export function MachineVisualExplorer({
         </CardContent>
       </Card>
 
-      <Card className="min-w-0 overflow-hidden border-0 shadow-sm xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
-        <CardHeader className="px-2 pb-2 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
+      <Card className="w-full min-w-0 max-w-full overflow-hidden border-0 shadow-sm xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain">
+        <CardHeader className="min-w-0 px-2 pb-2 sm:px-6">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
               <CardTitle className="text-sm flex items-center gap-2"><Focus className="h-4 w-4" />Deep visual explorer</CardTitle>
-              <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
-                <button className="hover:text-foreground cursor-pointer" onClick={() => setSelectedId(null)}>{asset.name}</button>
-                {path.map((item) => <React.Fragment key={item.id}><ChevronRight className="h-3 w-3" /><button className="hover:text-foreground cursor-pointer" onClick={() => setSelectedId(item.id)}>{item.name}</button></React.Fragment>)}
+              <div className="mt-1 flex min-w-0 max-w-full flex-wrap items-center gap-1 text-[11px] leading-snug text-muted-foreground">
+                <button type="button" className="min-w-0 max-w-full whitespace-normal break-words text-left hover:text-foreground cursor-pointer" onClick={() => setSelectedId(null)}>{asset.name}</button>
+                {path.map((item) => <React.Fragment key={item.id}><ChevronRight className="h-3 w-3 shrink-0" /><button type="button" className="min-w-0 max-w-full whitespace-normal break-words text-left hover:text-foreground cursor-pointer" onClick={() => setSelectedId(item.id)}>{item.name}</button></React.Fragment>)}
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.max(0.6, +(v - 0.2).toFixed(2)))}><ZoomOut className="h-3.5 w-3.5" /></Button>
-              <span className="min-w-12 text-center text-[11px] text-muted-foreground">{Math.round(zoom * 100)}%</span>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setZoom((v) => Math.min(4, +(v + 0.2).toFixed(2)))}><ZoomIn className="h-3.5 w-3.5" /></Button>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={resetViewport} title="Reset zoom and pan"><RefreshCw className="h-3.5 w-3.5" /></Button>
-            </div>
+
           </div>
         </CardHeader>
-        <CardContent className="min-w-0 px-1.5 pt-0 sm:px-6">
-          <Tabs value={mode} onValueChange={setMode}>
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
-              <TabsTrigger value="model3d" className="cursor-pointer"><Box className="mr-1.5 h-3.5 w-3.5" />3D Model</TabsTrigger>
-              <TabsTrigger value="realistic" className="cursor-pointer"><ImageIcon className="mr-1.5 h-3.5 w-3.5" />AI Realistic</TabsTrigger>
-              <TabsTrigger value="diagram" className="cursor-pointer"><Network className="mr-1.5 h-3.5 w-3.5" />Diagram</TabsTrigger>
-              <TabsTrigger value="technical2d" className="cursor-pointer"><Focus className="mr-1.5 h-3.5 w-3.5" />Engineering 2D</TabsTrigger>
-              <TabsTrigger value="exploded" className="cursor-pointer"><Layers3 className="mr-1.5 h-3.5 w-3.5" />Exploded</TabsTrigger>
+        <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
+          <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
+            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-5">
+              <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
+              <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
+              <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
+              <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
+              <TabsTrigger value="exploded" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Layers3 className="mr-1 h-3.5 w-3.5 shrink-0" />Exploded</TabsTrigger>
             </TabsList>
+            {mode !== 'model3d' && (
+              <div role="group" aria-label="Diagram zoom controls" className="mt-2 flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-2 py-1.5">
+                <span className="min-w-0 text-[10px] text-muted-foreground">Drag to pan · Pinch to zoom</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Zoom out diagram"
+                    onClick={() => setZoom((v) => Math.max(0.5, +(v - 0.2).toFixed(2)))}><ZoomOut className="h-4 w-4" /></Button>
+                  <span aria-live="polite" className="min-w-11 text-center text-xs font-semibold tabular-nums">{Math.round(zoom * 100)}%</span>
+                  <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="Zoom in diagram"
+                    onClick={() => setZoom((v) => Math.min(4, +(v + 0.2).toFixed(2)))}><ZoomIn className="h-4 w-4" /></Button>
+                  <Button type="button" variant="outline" size="sm" className="h-9 px-2" onClick={resetViewport}
+                    aria-label="Fit diagram to screen"><RefreshCw className="mr-1 h-3.5 w-3.5" />Fit</Button>
+                </div>
+              </div>
+            )}
 
             <TabsContent value="model3d" className="mt-3 space-y-2">
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
@@ -810,8 +902,8 @@ export function MachineVisualExplorer({
               )}
             </TabsContent>
 
-            <TabsContent value="diagram" className="mt-3">
-              <div className="relative">
+            <TabsContent value="diagram" className="mt-3 w-full min-w-0 max-w-full">
+              <div className="relative w-full min-w-0 max-w-full">
                 <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
                 {renderDrillOverlay()}
               </div>
@@ -873,8 +965,8 @@ export function MachineVisualExplorer({
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Target className="h-4 w-4" />Selected item</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-xs">
             <div>
-              <div className="font-semibold">{selected?.name || asset.name}</div>
-              <div className="text-muted-foreground">{selected?.componentCode || asset.assetTag}</div>
+              <div className="break-words font-semibold">{selected?.name || asset.name}</div>
+              <div className="break-all text-muted-foreground">{selected?.componentCode || asset.assetTag}</div>
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline" className={badgeClass(selected?.criticality || asset.criticality || undefined)}>{selected?.criticality || asset.criticality || 'medium'}</Badge>

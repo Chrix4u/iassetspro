@@ -17,13 +17,14 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
   const suffix = Date.now().toString().slice(-8);
   const assemblyCode = `UAT-MOB-ASM-${suffix}`;
   const partCode = `UAT-MOB-PRT-${suffix}`;
+  const assemblyName = 'Mobile Regression Pump and Casing Assembly with Very Long Equipment Description';
 
   const response = await apiCallWithPlant(plannerToken, 'POST', '/api/component-registry/bulk', plantId, {
     assetId,
     rows: [
       {
         componentCode: assemblyCode,
-        name: 'Mobile Regression Pump Assembly',
+        name: assemblyName,
         componentType: 'assembly',
         criticality: 'medium',
       },
@@ -82,4 +83,53 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
   expect(overlayBox!.x).toBeGreaterThanOrEqual(-1);
   expect(overlayBox!.x + overlayBox!.width).toBeLessThanOrEqual(361);
   expect(overlayBox!.y).toBeGreaterThanOrEqual(schematicBox!.y + schematicBox!.height - 1);
+
+  const viewport = page.getByTestId('machine-diagram-viewport');
+  const viewportBox = await viewport.boundingBox();
+  expect(viewportBox).not.toBeNull();
+  expect(viewportBox!.x).toBeGreaterThanOrEqual(-1);
+  expect(viewportBox!.x + viewportBox!.width).toBeLessThanOrEqual(361);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
+
+  const longNode = schematic.locator(`g[role="button"][aria-label="Select ${assemblyName}"]`);
+  await expect(longNode).toBeVisible();
+  const nodeLines = await longNode.locator('text').allTextContents();
+  expect(nodeLines.length).toBeGreaterThan(3);
+  expect(nodeLines.join(' ')).toContain(assemblyName);
+  expect(nodeLines.join(' ')).not.toContain('…');
+
+  const controls = page.getByRole('group', { name: 'Diagram zoom controls' });
+  await expect(controls).toBeVisible();
+  await controls.getByRole('button', { name: 'Zoom in diagram' }).click();
+  await expect(controls).toContainText('120%');
+  await controls.getByRole('button', { name: 'Fit diagram to screen' }).click();
+  await expect(controls).toContainText('100%');
+
+  // Two-finger pinch gesture should change the diagram's own zoom, not the browser page.
+  await viewport.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const fire = (type: string, id: number, x: number) => {
+      node.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, pointerType: 'touch', pointerId: id, button: 0,
+        clientX: box.left + x, clientY: box.top + 160,
+      }));
+    };
+    fire('pointerdown', 1, 80);
+    fire('pointerdown', 2, 180);
+    fire('pointermove', 2, 220);
+    fire('pointerup', 2, 220);
+    fire('pointerup', 1, 80);
+  });
+  await expect(controls).toContainText('140%');
+  await controls.getByRole('button', { name: 'Fit diagram to screen' }).click();
+  await expect(controls).toContainText('100%');
+
+  await longNode.click();
+  const breadcrumb = page.getByText('Deep visual explorer', { exact: true })
+    .locator('xpath=..').getByRole('button', { name: assemblyName, exact: true });
+  await expect(breadcrumb).toBeVisible();
+  const breadcrumbBox = await breadcrumb.boundingBox();
+  expect(breadcrumbBox).not.toBeNull();
+  expect(breadcrumbBox!.x).toBeGreaterThanOrEqual(-1);
+  expect(breadcrumbBox!.x + breadcrumbBox!.width).toBeLessThanOrEqual(361);
 });

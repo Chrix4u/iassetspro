@@ -18,10 +18,10 @@ describe('mobile asset explorer and preventive maintenance layout', () => {
   it('fits the dark schematic within mobile viewport without cutting off a 900px bitmap', () => {
     expect(explorer).toContain('viewBox={`0 0 ${width} ${height}`}');
     expect(explorer).toContain('preserveAspectRatio="xMidYMid meet"');
-    expect(explorer).toContain('className="block h-full w-full origin-center');
-    expect(explorer).toContain('h-[340px] w-full min-w-0 overflow-hidden');
-    expect(explorer).toContain('min-w-0 px-1.5 pt-0 sm:px-6');
-    expect(explorer).toContain('relative mt-2 w-full min-w-0 rounded-xl');
+    expect(explorer).toContain('className="block h-full w-full min-w-0 max-w-full');
+    expect(explorer).toContain('h-[340px] w-full min-w-0 max-w-full overflow-hidden');
+    expect(explorer).toContain('min-w-0 max-w-full px-1.5 pt-0 sm:px-6');
+    expect(explorer).toContain('relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl');
   });
 
   it('keeps both asset hierarchy actions in one mobile row', () => {

@@ -1430,7 +1430,7 @@ export function AssetDetailPage({ id }: { id: string }) {
             </TabsContent>
 
             {/* ==================== VISUAL EXPLORER TAB ==================== */}
-            <TabsContent value="visual-explorer" className="mt-4 space-y-4">
+            <TabsContent value="visual-explorer" className="-mx-2 mt-4 min-w-0 space-y-4 sm:mx-0">
               <MachineVisualExplorer
                 asset={asset}
                 initialComponentId={visualFocusId}

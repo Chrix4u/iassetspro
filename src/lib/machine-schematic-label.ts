@@ -16,4 +16,3 @@ export function wrapSchematicLabel(value: string, maxChars: number): string[] {
   }
   return lines.length ? lines : ['—'];
 }
-

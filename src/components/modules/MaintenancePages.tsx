@@ -5024,6 +5024,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         : 'You are now the accountable planner. Review readiness before assigning technicians.');
       setClaimPmPlanningOpen(false);
       await Promise.all([fetchWO(), fetchPmPlanningReadiness()]);
+      onUpdate(); // Refresh the parent list: the claimed draft no longer belongs in the unowned backlog.
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not claim PM planning responsibility');
     } finally {

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { authenticateAs } from './helpers/auth';
-import { apiCall, getToken, lookupAssetId, lookupPlantId } from './helpers/api';
+import { apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } from './helpers/api';
 
 /**
  * Phone-width regression for the asset explorer screenshots.
@@ -18,7 +18,7 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
   const assemblyCode = `UAT-MOB-ASM-${suffix}`;
   const partCode = `UAT-MOB-PRT-${suffix}`;
 
-  const response = await apiCall(plannerToken, 'POST', '/api/component-registry/bulk', {
+  const response = await apiCallWithPlant(plannerToken, 'POST', '/api/component-registry/bulk', plantId, {
     assetId,
     rows: [
       {
@@ -36,7 +36,7 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
       },
     ],
   });
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(201);
 
   await authenticateAs(context, 'planner');
   await page.goto('/');

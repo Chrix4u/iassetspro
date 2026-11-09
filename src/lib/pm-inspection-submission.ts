@@ -10,6 +10,7 @@ export interface InspectionSubmissionSnapshot {
   value: string | null;
   findings: string | null;
   recommendation: string | null;
+  equipmentState?: string | null;
 }
 
 const normalized = (value: string | null): string => value ?? '';
@@ -28,5 +29,6 @@ export function isSameInspectionSubmission(
     && original.result === incoming.result
     && normalized(original.value) === normalized(incoming.value)
     && normalized(original.findings) === normalized(incoming.findings)
-    && normalized(original.recommendation) === normalized(incoming.recommendation);
+    && normalized(original.recommendation) === normalized(incoming.recommendation)
+    && normalized(original.equipmentState ?? null) === normalized(incoming.equipmentState ?? null);
 }

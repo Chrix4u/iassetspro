@@ -33,6 +33,25 @@ describe('PM inspection idempotent retry payload', () => {
     expect(isSameInspectionSubmission(original, { ...original, inspectionPointId: 'point-2' })).toBe(false);
   });
 
+  it('preserves legacy unknown state but rejects changing a recorded state on replay', () => {
+    expect(isSameInspectionSubmission(
+      { ...original, equipmentState: null },
+      { ...original },
+    )).toBe(true);
+    expect(isSameInspectionSubmission(
+      { ...original, equipmentState: 'running' },
+      { ...original, equipmentState: 'running' },
+    )).toBe(true);
+    expect(isSameInspectionSubmission(
+      { ...original, equipmentState: 'running' },
+      { ...original, equipmentState: 'standstill' },
+    )).toBe(false);
+    expect(isSameInspectionSubmission(
+      { ...original },
+      { ...original, equipmentState: 'running' },
+    )).toBe(false);
+  });
+
   it('rejects reuse of a request key for a changed reading, outcome or defect', () => {
     expect(isSameInspectionSubmission(original, { ...original, value: '93.5' })).toBe(false);
     expect(isSameInspectionSubmission(original, { ...original, result: 'pass' })).toBe(false);

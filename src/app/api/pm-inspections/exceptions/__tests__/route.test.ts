@@ -82,7 +82,7 @@ describe('GET /api/pm-inspections/exceptions', () => {
     for (const query of [
       'from=2026-02-30', 'to=2026-11-99',
       'from=2026-11-09&to=2026-11-08',
-      'result=pass', 'followUp=everything',
+      'result=pass', 'followUp=everything', 'equipmentState=off',
     ]) {
       expect((await run(query)).status).toBe(400);
     }
@@ -112,6 +112,16 @@ describe('GET /api/pm-inspections/exceptions', () => {
     }));
   });
 
+  it('shows an explicitly captured historical state without manufacturing one for legacy records', async () => {
+    const legacy = await run();
+    expect(legacy.body.data[0].equipmentState).toBeNull();
+
+    mocks.records.mockResolvedValueOnce([{ ...oldDefect, equipmentState: 'standstill' }]);
+    const known = await run();
+    expect(known.status).toBe(200);
+    expect(known.body.data[0].equipmentState).toBe('standstill');
+  });
+
   it('filters exact date ranges and open corrective work orders without guessing operating state', async () => {
     expect((await run('from=2026-11-01&to=2026-11-09&result=fail&followUp=open&assetId=asset-a')).status).toBe(200);
     expect(mocks.records).toHaveBeenCalledWith(expect.objectContaining({
@@ -124,6 +134,21 @@ describe('GET /api/pm-inspections/exceptions', () => {
         },
         workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
       }),
+    }));
+  });
+
+  it('supports truthful Running, Standstill and unknown-state filters', async () => {
+    expect((await run('equipmentState=running')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: 'running' }),
+    }));
+    expect((await run('equipmentState=standstill')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: 'standstill' }),
+    }));
+    expect((await run('equipmentState=unknown')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: null }),
     }));
   });
 

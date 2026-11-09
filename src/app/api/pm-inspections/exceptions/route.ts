@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
 
     const result = q.get('result') || 'all';
     const followUp = q.get('followUp') || 'all';
+    const equipmentState = q.get('equipmentState') || 'all';
     const assetId = q.get('assetId')?.trim().slice(0, 120) || '';
     const departmentId = q.get('departmentId')?.trim().slice(0, 120) || '';
     const dateFrom = q.get('from') || '';
@@ -55,6 +56,9 @@ export async function GET(request: NextRequest) {
     }
     if (!FOLLOW_UP.includes(followUp as typeof FOLLOW_UP[number])) {
       return NextResponse.json({ success: false, error: 'Invalid corrective work-order filter' }, { status: 400 });
+    }
+    if (!['all', 'running', 'standstill', 'unknown'].includes(equipmentState)) {
+      return NextResponse.json({ success: false, error: 'Invalid inspection operating-state filter' }, { status: 400 });
     }
     const from = dateFrom ? inspectionDay(dateFrom) : null;
     const to = dateTo ? inspectionDay(dateTo, true) : null;
@@ -74,6 +78,10 @@ export async function GET(request: NextRequest) {
     const where: Prisma.ComponentInspectionRecordWhereInput = {
       component: { asset: { is: assetWhere } },
       result: result === 'all' ? { in: [...ALLOWED_RESULTS] } : result,
+      ...(equipmentState === 'all' ? {} : {
+        // Historical records without a state remain explicitly Unknown.
+        equipmentState: equipmentState === 'unknown' ? null : equipmentState,
+      }),
     };
     if (from || to) {
       where.inspectedAt = { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) };
@@ -91,6 +99,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, result: true, value: true, findings: true, recommendation: true, inspectedAt: true,
+          equipmentState: true,
           inspector: { select: { id: true, fullName: true } },
           inspectionPoint: {
             select: { id: true, name: true, inspectionType: true, parameterKey: true, normalRange: true },
@@ -113,8 +122,9 @@ export async function GET(request: NextRequest) {
       success: true,
       data: records.map((record) => ({
         ...record,
-        // Never infer state from current machine state or PM assignments.
-        equipmentState: null,
+        // Use the state saved at inspection time; old records are unknown.
+        equipmentState: record.equipmentState === 'running' || record.equipmentState === 'standstill'
+          ? record.equipmentState : null,
       })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });

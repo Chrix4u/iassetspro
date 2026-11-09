@@ -24,6 +24,7 @@ export interface PrintableMachineInspectionRow {
   outcome: string;
   remarks: string;
   recordedAt: string;
+  recordedState: 'running' | 'standstill' | 'unknown';
   correctiveWorkOrder: string;
   requiresConfiguration: boolean;
 }
@@ -59,7 +60,7 @@ export function buildMachineInspectionPrintRows(
         method: '—',
         reference: 'Requires planner setup',
         actual: '', outcome: 'UNCONFIGURED', remarks: '', recordedAt: '',
-        correctiveWorkOrder: '', requiresConfiguration: true,
+        recordedState: 'unknown', correctiveWorkOrder: '', requiresConfiguration: true,
       });
     }
 
@@ -89,6 +90,8 @@ export function buildMachineInspectionPrintRows(
         outcome: record?.result.toUpperCase().replace(/_/g, ' ') || 'NOT RECORDED',
         remarks: record?.findings || '',
         recordedAt: record ? formatDateTime(record.inspectedAt) : '',
+        recordedState: record?.equipmentState === 'running' || record?.equipmentState === 'standstill'
+          ? record.equipmentState : 'unknown',
         correctiveWorkOrder: point.openCorrectiveWorkOrder
           ? `${point.openCorrectiveWorkOrder.woNumber} (${point.openCorrectiveWorkOrder.status})`
           : '',
@@ -107,7 +110,7 @@ export function buildMachineInspectionPrintRows(
       method: '—',
       reference: 'Requires planner setup',
       actual: '', outcome: 'UNCONFIGURED', remarks: '', recordedAt: '',
-      correctiveWorkOrder: '', requiresConfiguration: true,
+      recordedState: 'unknown', correctiveWorkOrder: '', requiresConfiguration: true,
     });
   }
   return rows;

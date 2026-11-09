@@ -17,7 +17,7 @@ interface ExceptionRow {
   findings: string | null;
   recommendation: string | null;
   inspectedAt: string;
-  equipmentState: null;
+  equipmentState: 'running' | 'standstill' | null;
   inspector: { id: string; fullName: string | null };
   inspectionPoint: {
     id: string; name: string; inspectionType: string;
@@ -33,10 +33,11 @@ interface ExceptionRow {
 interface ExceptionFilters {
   result: string;
   followUp: string;
+  equipmentState: string;
   from: string;
   to: string;
 }
-const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', from: '', to: '' };
+const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', equipmentState: 'all', from: '', to: '' };
 
 function dateLabel(raw: string): string {
   const date = new Date(raw);
@@ -80,6 +81,7 @@ export function PmInspectionExceptionsPanel({
       if (departmentId) params.set('departmentId', departmentId);
       if (filters.result !== 'all') params.set('result', filters.result);
       if (filters.followUp !== 'all') params.set('followUp', filters.followUp);
+      if (filters.equipmentState !== 'all') params.set('equipmentState', filters.equipmentState);
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
       const response = await api.get<ExceptionRow[]>(`/api/pm-inspections/exceptions?${params}`);
@@ -135,7 +137,7 @@ export function PmInspectionExceptionsPanel({
         </div>
       </div>
 
-      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-5">
         <div><Label className="text-xs">Outcome</Label>
           <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
             <SelectTrigger className="mt-1 h-9" aria-label="Outcome"><SelectValue /></SelectTrigger>
@@ -158,6 +160,17 @@ export function PmInspectionExceptionsPanel({
             </SelectContent>
           </Select>
         </div>
+        <div><Label className="text-xs">At inspection</Label>
+          <Select value={filters.equipmentState} onValueChange={(equipmentState) => updateFilters({ equipmentState })}>
+            <SelectTrigger className="mt-1 h-9" aria-label="Inspection operating state"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All states</SelectItem>
+              <SelectItem value="running">Running</SelectItem>
+              <SelectItem value="standstill">Standstill</SelectItem>
+              <SelectItem value="unknown">Unknown (legacy)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div><Label className="text-xs" htmlFor="pm-exception-from">Recorded from</Label>
           <Input id="pm-exception-from" type="date" className="mt-1 h-9" value={filters.from}
             onChange={(event) => updateFilters({ from: event.target.value })} />
@@ -168,7 +181,7 @@ export function PmInspectionExceptionsPanel({
         </div>
       </div>
       <p className="rounded-md border border-amber-200 bg-amber-50/30 p-2 text-xs text-muted-foreground dark:border-amber-900">
-        Earlier inspection records do not store the machine's Running/Standstill state; this report does not infer one from today's equipment settings.
+        New inspection records show the saved Running/Standstill state. Older records display Unknown; this report never infers operating state from today's machine settings.
       </p>
 
       {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading plant-authorized inspection exceptions…</p>}
@@ -213,7 +226,8 @@ export function PmInspectionExceptionsPanel({
                     : 'Sight / qualitative'}</p></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Recorded</span>
                   <p>{dateLabel(record.inspectedAt)}</p>
-                  <p className="break-words">{record.inspector?.fullName || 'Inspector not named'}</p></div>
+                  <p className="break-words">{record.inspector?.fullName || 'Inspector not named'}</p>
+                  <p>State: {record.equipmentState || 'Unknown (legacy)'}</p></div>
               </div>
               {record.findings && <p className="break-words text-xs"><span className="font-semibold">Findings:</span> {record.findings}</p>}
               {record.recommendation && <p className="break-words text-xs"><span className="font-semibold">Recommended:</span> {record.recommendation}</p>}

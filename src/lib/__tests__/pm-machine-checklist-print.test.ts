@@ -89,6 +89,24 @@ describe('print machine inspection checklist — paper-style evidence snapshot',
     });
   });
 
+  it('prints the saved state of each inspection, not the current report filter', () => {
+    const measured = point({
+      latestRecord: {
+        id: 'record-standstill', result: 'pass', value: '3.8',
+        findings: 'Bearing stable', inspectedAt: '2026-11-09T08:00:00Z',
+        equipmentState: 'standstill',
+      },
+    });
+    const rows = buildMachineInspectionPrintRows(data({
+      equipmentState: 'running',
+      groups: [{ component, tasks: [task], points: [measured] }],
+    }));
+    expect(rows[0].recordedState).toBe('standstill');
+
+    const legacy = buildMachineInspectionPrintRows(data());
+    expect(legacy[0].recordedState).toBe('unknown');
+  });
+
   it('keeps unconfigured part tasks and machine-wide tasks visibly unresolved', () => {
     const unassigned: MachineChecklistTask = { ...task, id: 'whole', component: null, componentId: null };
     const rows = buildMachineInspectionPrintRows(data({

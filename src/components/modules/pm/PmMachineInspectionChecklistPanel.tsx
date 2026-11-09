@@ -164,6 +164,7 @@ export function PmMachineInspectionChecklistPanel({
             findings: entry.findings.trim(),
             recommendation: entry.recommendation.trim(),
             requestKey,
+            equipmentState,
           });
           if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
           succeeded += 1;
@@ -207,7 +208,7 @@ export function PmMachineInspectionChecklistPanel({
     if (!data) return;
     const rows: unknown[][] = [
       ['Machine', data.machine.name, 'Asset code', data.machine.assetTag, 'Inspection state', data.equipmentState, 'Generated', data.generatedAt],
-      ['Part code', 'Part description', 'PM tasks', 'Inspection / parameter', 'Method', 'Normal min', 'Normal max', 'Unit', 'Latest recorded value', 'Latest result', 'Latest remark', 'Latest time', 'Outstanding corrective WO'],
+      ['Part code', 'Part description', 'PM tasks', 'Inspection / parameter', 'Method', 'Normal min', 'Normal max', 'Unit', 'Latest recorded value', 'Latest result', 'Latest remark', 'Latest time', 'Outstanding corrective WO', 'Recorded operating state'],
     ];
     for (const group of data.groups) {
       const tasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
@@ -220,6 +221,7 @@ export function PmMachineInspectionChecklistPanel({
           point.latestRecord?.value || '', point.latestRecord?.result || '',
           point.latestRecord?.findings || '', point.latestRecord ? dateTime(point.latestRecord.inspectedAt) : '',
           point.openCorrectiveWorkOrder?.woNumber || '',
+          point.latestRecord?.equipmentState || 'unknown',
         ]);
       }
     }
@@ -371,6 +373,7 @@ export function PmMachineInspectionChecklistPanel({
                         Latest: {point.latestRecord
                           ? `${point.latestRecord.result.replace('_', ' ')} · ${point.latestRecord.value ?? point.latestRecord.findings ?? 'observation'} · ${dateTime(point.latestRecord.inspectedAt)}`
                           : 'Not yet recorded'}
+                        {point.latestRecord && ` · Operating: ${point.latestRecord.equipmentState || 'unknown (legacy)'}`}
                       </p>
                     </div>
                   );

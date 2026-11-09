@@ -94,8 +94,8 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
             </div>
           </div>
           <p className="pm-print-note mt-1">
-            Latest saved inspection readings, not a single signed inspection run. Timestamps may differ by point.
-            Blank values mean no saved reading; unconfigured checks require planner setup.
+            Latest saved inspection readings, not a single signed inspection run. Timestamps and operating states may differ by point.
+            Blank values mean no saved reading; legacy entries have unknown operating state; unconfigured checks require planner setup.
           </p>
           <div className="mt-2 flex justify-between gap-3 border border-slate-400 p-2 text-xs">
             <span>Total configured checks: <strong>{counts.checks}</strong></span>
@@ -147,6 +147,7 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
                 <td className="break-words">
                   {row.remarks}
                   {row.recordedAt && <div className="mt-1 text-[10px]">{row.recordedAt}</div>}
+                  <div className="mt-1 text-[10px]">Operating state at recording: {row.recordedState}</div>
                 </td>
                 <td className="break-words">{row.correctiveWorkOrder}</td>
               </tr>

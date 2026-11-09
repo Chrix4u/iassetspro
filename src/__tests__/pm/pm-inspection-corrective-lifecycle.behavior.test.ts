@@ -37,6 +37,7 @@ interface RecordState {
   id: string; inspectionPointId: string; inspectorId: string; inspectedAt: Date;
   workOrderId: string | null; requestKey: string | null; result: string;
   value: string | null; findings: string | null; recommendation: string | null;
+  equipmentState?: string | null;
 }
 interface Wo { id: string; woNumber: string; status: string; type: 'corrective'; plannerId: string | null }
 let records: RecordState[];
@@ -116,6 +117,44 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(result.status).toBe(403);
     expect(mocks.recordCreate).not.toHaveBeenCalled();
     expect(mocks.woCreate).not.toHaveBeenCalled();
+  });
+
+  it('records the exact selected operating state and rejects invalid state before any write', async () => {
+    const running = await submit({
+      requestKey: 'record-state-running-0001',
+      outcome: 'pass', value: '55', equipmentState: 'running',
+    });
+    expect(running.status).toBe(201);
+    expect(running.body.data.record.equipmentState).toBe('running');
+    expect(records[0].equipmentState).toBe('running');
+
+    const same = await submit({
+      requestKey: 'record-state-running-0001',
+      outcome: 'pass', value: '55', equipmentState: 'running',
+    });
+    expect(same.status).toBe(200);
+    expect(same.body.data.duplicate).toBe(true);
+
+    const changed = await submit({
+      requestKey: 'record-state-running-0001',
+      outcome: 'pass', value: '55', equipmentState: 'standstill',
+    });
+    expect(changed.status).toBe(409);
+    expect(records).toHaveLength(1);
+
+    const invalid = await submit({
+      requestKey: 'record-state-invalid-0001',
+      outcome: 'pass', value: '55', equipmentState: 'moving',
+    });
+    expect(invalid.status).toBe(400);
+    expect(records).toHaveLength(1);
+    expect(mocks.woCreate).not.toHaveBeenCalled();
+  });
+
+  it('preserves NULL for readings made through legacy worksheets', async () => {
+    const result = await submit({ outcome: 'pass', value: '60' });
+    expect(result.status).toBe(201);
+    expect(result.body.data.record.equipmentState).toBeNull();
   });
 
   it('records a failed sight inspection without fabricating an instrument reading', async () => {

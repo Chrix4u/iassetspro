@@ -18,6 +18,10 @@ interface ExceptionRow {
   recommendation: string | null;
   inspectedAt: string;
   equipmentState: 'running' | 'standstill' | null;
+  captureSource?: 'digital' | 'paper' | null;
+  fieldInspectedAt?: string | null;
+  fieldInspectorName?: string | null;
+  paperReference?: string | null;
   inspector: { id: string; fullName: string | null };
   inspectionPoint: {
     id: string; name: string; inspectionType: string;
@@ -171,11 +175,11 @@ export function PmInspectionExceptionsPanel({
             </SelectContent>
           </Select>
         </div>
-        <div><Label className="text-xs" htmlFor="pm-exception-from">Recorded from</Label>
+        <div><Label className="text-xs" htmlFor="pm-exception-from">Entered from</Label>
           <Input id="pm-exception-from" type="date" className="mt-1 h-9" value={filters.from}
             onChange={(event) => updateFilters({ from: event.target.value })} />
         </div>
-        <div><Label className="text-xs" htmlFor="pm-exception-to">Recorded to</Label>
+        <div><Label className="text-xs" htmlFor="pm-exception-to">Entered to</Label>
           <Input id="pm-exception-to" type="date" className="mt-1 h-9" value={filters.to}
             onChange={(event) => updateFilters({ to: event.target.value })} />
         </div>
@@ -226,7 +230,13 @@ export function PmInspectionExceptionsPanel({
                     : 'Sight / qualitative'}</p></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Recorded</span>
                   <p>{dateLabel(record.inspectedAt)}</p>
-                  <p className="break-words">{record.inspector?.fullName || 'Inspector not named'}</p>
+                  <p className="break-words">Entered by: {record.inspector?.fullName || 'Unknown user'}</p>
+                  {record.captureSource === 'paper' ? <>
+                    <p className="mt-1 font-semibold">Paper inspection</p>
+                    <p>Original field time: {record.fieldInspectedAt ? dateLabel(record.fieldInspectedAt) : 'Not supplied'}</p>
+                    <p className="break-words">Field inspector: {record.fieldInspectorName || 'Not supplied'}</p>
+                    <p className="break-all">Sheet: {record.paperReference || 'Not supplied'}</p>
+                  </> : <p>Source: {record.captureSource === 'digital' ? 'Direct electronic' : 'Unknown (legacy)'}</p>}
                   <p>State: {record.equipmentState || 'Unknown (legacy)'}</p></div>
               </div>
               {record.findings && <p className="break-words text-xs"><span className="font-semibold">Findings:</span> {record.findings}</p>}

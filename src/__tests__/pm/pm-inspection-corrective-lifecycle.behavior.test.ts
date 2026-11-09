@@ -38,6 +38,10 @@ interface RecordState {
   workOrderId: string | null; requestKey: string | null; result: string;
   value: string | null; findings: string | null; recommendation: string | null;
   equipmentState?: string | null;
+  captureSource?: 'paper' | 'digital' | null;
+  fieldInspectedAt?: Date | null;
+  fieldInspectorName?: string | null;
+  paperReference?: string | null;
 }
 interface Wo { id: string; woNumber: string; status: string; type: 'corrective'; plannerId: string | null }
 let records: RecordState[];
@@ -243,5 +247,93 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(oldReplay.body.data.awaitingCloseout).toBe(false);
     expect(mocks.recordCreate).toHaveBeenCalledTimes(2);
     expect(mocks.woCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('transcribes paper evidence without replacing the authenticated entering user', async () => {
+    const fieldInspectedAt = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    const payload = {
+      requestKey: 'paper-record-20261109-0001', outcome: 'pass', value: '55',
+      equipmentState: 'running', captureSource: 'paper',
+      fieldInspectedAt, fieldInspectorName: 'Ama Mensah',
+      paperReference: 'C314-P267-20261109',
+    };
+    const entered = await submit(payload);
+    expect(entered.status).toBe(201);
+    expect(records).toHaveLength(1);
+    expect(records[0].inspectorId).toBe('technician-1');
+    expect(records[0].captureSource).toBe('paper');
+    expect(records[0].fieldInspectedAt?.toISOString()).toBe(fieldInspectedAt);
+    expect(records[0].fieldInspectorName).toBe('Ama Mensah');
+    expect(records[0].paperReference).toBe('C314-P267-20261109');
+    expect(records[0].inspectedAt.getTime()).toBeGreaterThan(new Date(fieldInspectedAt).getTime());
+    expect(mocks.readingCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ recordedAt: new Date(fieldInspectedAt), recordedById: 'technician-1' }),
+    }));
+    const next = new Date(fieldInspectedAt);
+    next.setDate(next.getDate() + 7);
+    expect(point.nextInspection.toISOString()).toBe(next.toISOString());
+    const retry = await submit(payload);
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.duplicate).toBe(true);
+    for (const patch of [
+      { fieldInspectorName: 'Another Person' },
+      { fieldInspectedAt: new Date(Date.now() - 3_600_000).toISOString() },
+      { paperReference: 'Other-Paper' },
+    ]) expect((await submit({ ...payload, ...patch })).status).toBe(409);
+    expect((await submit({
+      requestKey: payload.requestKey, outcome: 'pass', value: '55',
+      equipmentState: 'running', captureSource: 'digital',
+    })).status).toBe(409);
+    expect((await submit({ ...payload, captureSource: 'digital' })).status).toBe(400);
+    expect(records).toHaveLength(1);
+    expect(mocks.recordCreate).toHaveBeenCalledOnce();
+  });
+
+  it('rejects missing paper source details or future field dates before any write', async () => {
+    const base = {
+      requestKey: 'paper-invalid-20261109', outcome: 'pass', value: '55',
+      captureSource: 'paper', fieldInspectorName: 'Ama Mensah',
+      paperReference: 'C314-P267', fieldInspectedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    };
+    for (const patch of [
+      { fieldInspectorName: '' }, { paperReference: '' },
+      { fieldInspectedAt: new Date(Date.now() + 3_600_000).toISOString() },
+    ]) expect((await submit({ ...base, ...patch })).status).toBe(400);
+    expect(records).toHaveLength(0);
+    expect(mocks.woCreate).not.toHaveBeenCalled();
+    expect(mocks.readingCreate).not.toHaveBeenCalled();
+  });
+
+  it('does not reset a newer due cycle when an older paper PASS is transcribed', async () => {
+    const recent = new Date(Date.now() - 3_600_000);
+    point.lastInspected = recent;
+    const originalDue = point.nextInspection.toISOString();
+    const fieldInspectedAt = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const result = await submit({
+      requestKey: 'paper-old-reading-0001', outcome: 'pass', value: '50',
+      captureSource: 'paper', fieldInspectedAt,
+      fieldInspectorName: 'Ama Mensah', paperReference: 'C314-P267',
+    });
+    expect(result.status).toBe(201);
+    expect(point.lastInspected).toEqual(recent);
+    expect(point.nextInspection.toISOString()).toBe(originalDue);
+    expect(mocks.pointUpdate).not.toHaveBeenCalled();
+    expect(records).toHaveLength(1);
+  });
+
+  it('keeps abnormal paper evidence in a corrective draft WO and leaves next due untouched', async () => {
+    const due = point.nextInspection.toISOString();
+    const result = await submit({
+      requestKey: 'paper-defect-20261109', outcome: 'fail', value: '120',
+      equipmentState: 'running', captureSource: 'paper',
+      fieldInspectedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      fieldInspectorName: 'Ama Mensah', paperReference: 'C314-P267',
+    });
+    expect(result.status).toBe(201);
+    expect(result.body.data.workOrder.status).toBe('draft');
+    expect(point.nextInspection.toISOString()).toBe(due);
+    expect(mocks.woCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ description: expect.stringContaining('Paper worksheet C314-P267') }),
+    }));
   });
 });

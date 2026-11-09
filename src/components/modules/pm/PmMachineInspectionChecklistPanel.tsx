@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
 import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
+import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
 
 interface MachineChecklistResponse {
   machine: { id: string; name: string; assetTag: string; plantId: string };
@@ -36,6 +37,7 @@ interface MachineChecklistResponse {
 }
 
 interface EntryState extends MachineChecklistDraft {
+  fieldInspectedAt?: string;
   saving?: boolean;
   saved?: boolean;
   error?: string;
@@ -91,6 +93,9 @@ export function PmMachineInspectionChecklistPanel({
   const [saveProgress, setSaveProgress] = useState('');
   const [printMode, setPrintMode] = useState<'saved' | 'field'>('saved');
   const [entryLayout, setEntryLayout] = useState<'part' | 'task'>('part');
+  const [captureMode, setCaptureMode] = useState<'digital' | 'paper'>('digital');
+  const [paperInspector, setPaperInspector] = useState('');
+  const [paperReference, setPaperReference] = useState('');
   const printSheet = (mode: 'saved' | 'field') => {
     setPrintMode(mode);
     window.requestAnimationFrame(() => window.print());
@@ -120,6 +125,9 @@ export function PmMachineInspectionChecklistPanel({
     setEntries({});
     setSaveProgress('');
     setShowSetupIssues(false);
+    setCaptureMode('digital');
+    setPaperInspector('');
+    setPaperReference('');
   }, [assetId, equipmentState]);
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
@@ -190,6 +198,26 @@ export function PmMachineInspectionChecklistPanel({
       return;
     }
 
+    // Validate physical inspection evidence BEFORE any readings are written.
+    // One paper can have many points inspected at different times.
+    const captureByPoint = new Map<string, InspectionCaptureEvidence>();
+    try {
+      for (const { point, entry } of snapshot) {
+        const raw = entry.fieldInspectedAt ? new Date(entry.fieldInspectedAt) : new Date(NaN);
+        captureByPoint.set(point.id, parseInspectionCaptureEvidence(
+          captureMode === 'paper' ? {
+            captureSource: 'paper',
+            fieldInspectedAt: Number.isFinite(raw.getTime()) ? raw.toISOString() : '',
+            fieldInspectorName: paperInspector,
+            paperReference,
+          } : { captureSource: 'digital' },
+        ));
+      }
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Invalid paper inspection details';
+      toast.error(message);
+      return;
+    }
     setBusy(true);
     let succeeded = 0;
     let failed = 0;
@@ -216,6 +244,7 @@ export function PmMachineInspectionChecklistPanel({
             recommendation: entry.recommendation.trim(),
             requestKey,
             equipmentState,
+            ...captureByPoint.get(point.id),
           });
           if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
           succeeded += 1;
@@ -259,7 +288,8 @@ export function PmMachineInspectionChecklistPanel({
     if (!data) return;
     const rows: unknown[][] = [
       ['Machine', data.machine.name, 'Asset code', data.machine.assetTag, 'Inspection state', data.equipmentState, 'Generated', data.generatedAt],
-      ['Part code', 'Part description', 'PM tasks', 'Inspection / parameter', 'Method', 'Normal min', 'Normal max', 'Unit', 'Latest recorded value', 'Latest result', 'Latest remark', 'Latest time', 'Outstanding corrective WO', 'Recorded operating state'],
+      ['Part code', 'Part description', 'PM tasks', 'Inspection / parameter', 'Method', 'Normal min', 'Normal max', 'Unit', 'Latest recorded value', 'Latest result', 'Latest remark', 'Latest time', 'Outstanding corrective WO', 'Recorded operating state',
+        'Reading source', 'Field inspector', 'Original field time', 'Paper reference'],
     ];
     for (const group of data.groups) {
       const tasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
@@ -273,6 +303,10 @@ export function PmMachineInspectionChecklistPanel({
           point.latestRecord?.findings || '', point.latestRecord ? dateTime(point.latestRecord.inspectedAt) : '',
           point.openCorrectiveWorkOrder?.woNumber || '',
           point.latestRecord?.equipmentState || 'unknown',
+          point.latestRecord?.captureSource || 'unknown',
+          point.latestRecord?.fieldInspectorName || '',
+          point.latestRecord?.fieldInspectedAt ? dateTime(point.latestRecord.fieldInspectedAt) : '',
+          point.latestRecord?.paperReference || '',
         ]);
       }
     }
@@ -337,6 +371,50 @@ export function PmMachineInspectionChecklistPanel({
         {!data.totalAssignments && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           No active {equipmentState} inspection tasks are assigned to this machine. Configure them in PM Planning before capturing a checklist.
         </p>}
+        <div className="space-y-2 rounded-lg border p-3" data-testid="pm-inspection-capture-source">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold">How were these readings taken?</p>
+              <p className="text-xs text-muted-foreground">
+                Paper entry keeps the original field inspector and inspection time separate from the logged-in person entering the data.
+              </p>
+            </div>
+            <div className="w-full sm:w-[230px] space-y-1">
+              <Label className="text-xs">Reading source</Label>
+              <Select value={captureMode} disabled={busy} onValueChange={(value) => {
+                if (ready.length && !window.confirm('Change the source and clear unsaved readings?')) return;
+                setEntries({});
+                setCaptureMode(value as 'digital' | 'paper');
+              }}>
+                <SelectTrigger aria-label="Inspection reading source" className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="digital">Direct electronic inspection</SelectItem>
+                  <SelectItem value="paper">Transcribe paper worksheet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {captureMode === 'paper' && (
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2" data-testid="pm-paper-evidence">
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs">Field inspector (name written on paper)</Label>
+                <Input aria-label="Paper field inspector" value={paperInspector} disabled={busy}
+                  maxLength={160} placeholder="Technician who physically inspected"
+                  onChange={(event) => setPaperInspector(event.target.value)} />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs">Paper sheet reference</Label>
+                <Input aria-label="Paper worksheet reference" value={paperReference} disabled={busy}
+                  maxLength={120} placeholder="e.g. C314-OPM-P267-09NOV2026"
+                  onChange={(event) => setPaperReference(event.target.value)} />
+              </div>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">
+                For each part below, enter the exact date and time shown on the returned paper.
+                The system also records who typed it in and when. Never backdate the electronic entry timestamp.
+              </p>
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
           <div>
             <p className="text-sm font-semibold">Enter inspection readings</p>
@@ -414,7 +492,17 @@ export function PmMachineInspectionChecklistPanel({
                         </div>
                         <Badge variant={point.dueState === 'overdue' ? 'destructive' : 'outline'}>{point.dueState.replace('_', ' ')}</Badge>
                       </div>
-                      {recordable && canRecord && <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_10rem] sm:items-start">
+                      {recordable && canRecord && <>
+                      {captureMode === 'paper' && (
+                        <div className="min-w-0 space-y-1">
+                          <Label className="text-xs">Original field inspection date/time for this part</Label>
+                          <Input type="datetime-local" step="60" aria-label={`Field inspection date/time: ${point.name}`}
+                            className="w-full sm:max-w-xs" disabled={busy}
+                            value={entry.fieldInspectedAt || ''}
+                            onChange={(event) => edit(point.id, { fieldInspectedAt: event.target.value })}/>
+                        </div>
+                      )}
+                      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_10rem] sm:items-start">
                         <div className="min-w-0 space-y-1">
                           {point.inspectionType === 'measurement' ? <>
                             <Label className="text-xs">Actual reading ({limits.unit || 'unit'})</Label>
@@ -450,7 +538,8 @@ export function PmMachineInspectionChecklistPanel({
                           <Button size="sm" className="w-full" variant="outline" disabled={busy || entry.saved}
                             onClick={() => void save([point])}><Save className="mr-1.5 h-3.5 w-3.5"/>{entry.saved ? 'Saved' : 'Save reading'}</Button>
                         </div>
-                      </div>}
+                      </div>
+                      </>}
                       {!recordable && <p className="text-xs text-amber-700 dark:text-amber-300">
                         {supported ? 'A planner must configure the measurement parameter before readings can be recorded.'
                           : 'This legacy check needs a new sight or instrument point before it can be recorded.'}
@@ -467,6 +556,12 @@ export function PmMachineInspectionChecklistPanel({
                           ? `${point.latestRecord.result.replace('_', ' ')} · ${point.latestRecord.value ?? point.latestRecord.findings ?? 'observation'} · ${dateTime(point.latestRecord.inspectedAt)}`
                           : 'Not yet recorded'}
                         {point.latestRecord && ` · Operating: ${point.latestRecord.equipmentState || 'unknown (legacy)'}`}
+                        {point.latestRecord?.captureSource === 'paper' && (
+                          <span className="block break-words">
+                            Paper ${point.latestRecord.paperReference || 'reference unknown'} · Field inspector ${point.latestRecord.fieldInspectorName || 'unknown'} ·
+                            Checked ${dateTime(point.latestRecord.fieldInspectedAt || null)} · Entered ${dateTime(point.latestRecord.inspectedAt)}
+                          </span>
+                        )}
                       </p>
                     </div>
                   );

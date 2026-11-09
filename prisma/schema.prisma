@@ -3593,6 +3593,10 @@ model ComponentInspectionRecord {
   inspectorId       String
   inspectedAt       DateTime @default(now())
   equipmentState    String?  @map("equipment_state") // running, standstill; NULL for historical/legacy entries
+  captureSource     String?  @map("capture_source") // NULL for legacy unknown origin
+  fieldInspectedAt  DateTime? @map("field_inspected_at") // original time on paper
+  fieldInspectorName String?  @map("field_inspector_name") // named field inspector
+  paperReference    String?   @map("paper_reference") // reference to the original sheet
   workOrderId       String?  @unique // automatically generated corrective WO from this specific failed inspection
 
   inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)

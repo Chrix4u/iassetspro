@@ -10,7 +10,7 @@ export interface InspectionSubmissionSnapshot {
   value: string | null;
   findings: string | null;
   recommendation: string | null;
-  equipmentState?: 'running' | 'standstill' | null;
+  equipmentState?: string | null;
 }
 
 const normalized = (value: string | null): string => value ?? '';

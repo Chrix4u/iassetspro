@@ -55,7 +55,8 @@ function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 function matches(resource: PmMappedResource, request: PmResourceRequestEvidence): boolean {
-  if (resource.id && request.id && resource.id === request.id) return true;
+  // Authoritative catalog IDs take precedence over similar item names.
+  if (resource.id && request.id) return resource.id === request.id;
   const name = normalize(request.label);
   return Boolean(name && [resource.label, ...(resource.aliases || [])]
     .some((label) => normalize(label) === name));

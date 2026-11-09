@@ -73,11 +73,18 @@ describe('PM resource lifecycle evidence', () => {
     expect(result.issuedWithQuantity).toBe(0);
     expect(result.partialOrUnverified).toBe(1);
   });
-  it('keeps resource evidence plant-insensitive because API WO authorization owns scoping', () => {
+  it('uses explicit name aliases only when a legacy request has no catalog ID', () => {
     const result = summarizePmResourceLifecycle('material',[materials[0]],[
-      {id:'different-id',label:'BRG-6205',status:'issued',quantityIssued:2},
+      {id:null,label:'BRG-6205',status:'issued',quantityIssued:2},
     ],true);
     expect(result.entries[0].stage).toBe('issued');
+  });
+  it('does not confuse a different catalog item with the same label', () => {
+    const result = summarizePmResourceLifecycle('material',[materials[0]],[
+      {id:'another-bearing',label:'Bearing 6205',status:'issued',quantityIssued:2},
+    ],true);
+    expect(result.entries[0].stage).toBe('not_submitted');
+    expect(result.issuedWithQuantity).toBe(0);
   });
   it('prefers an active replacement request over an older rejected one', () => {
     const result = summarizePmResourceLifecycle('material',[materials[0]],[

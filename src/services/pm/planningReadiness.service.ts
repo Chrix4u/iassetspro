@@ -195,7 +195,9 @@ function requestHasEnteredExecutionPipeline(request: ResourceRequest): boolean {
 }
 
 function requestMatchesResource(resource: MappedResource, request: ResourceRequest): boolean {
-  if (resource.id && request.id && resource.id === request.id) return true;
+  // A different mapped inventory/tool ID must not be treated as approved
+  // merely because the text label resembles another catalog item.
+  if (resource.id && request.id) return resource.id === request.id;
 
   const requestLabel = normalizeKey(request.label);
   if (!requestLabel) return false;

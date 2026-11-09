@@ -11,6 +11,20 @@ async function loadService() {
 }
 
 describe('PM planning readiness', () => {
+  it('never counts another inventory ID as requested or issued solely by an identical label', async () => {
+    const { buildPmPlanningReadiness } = await loadService();
+    const result = buildPmPlanningReadiness({
+      plannerId: 'planner-1', assignedTo: 'tech-1',
+      assignedSupervisorId: 'sup-1', departmentId: 'mechanical',
+      suggestedParts: JSON.stringify([{itemId:'actual-bearing',itemName:'Bearing 6205',quantity:2}]),
+      materialRequests: [
+        {itemId:'different-bearing',itemName:'Bearing 6205',status:'issued',quantityIssued:2},
+      ],
+      tasks: [{estimatedMinutes:30,requiredParts:'[]'}],
+    });
+    expect(result.resources.requestCoverage.materials.requestedCount).toBe(0);
+    expect(result.resources.lifecycle.materials.entries[0].stage).toBe('not_submitted');
+  });
   it('summarizes checklist requirements and separates mapped from unresolved resources', async () => {
     const { buildPmPlanningReadiness } = await loadService();
 

@@ -112,6 +112,16 @@ describe('GET /api/pm-inspections/exceptions', () => {
     }));
   });
 
+  it('shows an explicitly captured historical state without manufacturing one for legacy records', async () => {
+    const legacy = await run();
+    expect(legacy.body.data[0].equipmentState).toBeNull();
+
+    mocks.records.mockResolvedValueOnce([{ ...oldDefect, equipmentState: 'standstill' }]);
+    const known = await run();
+    expect(known.status).toBe(200);
+    expect(known.body.data[0].equipmentState).toBe('standstill');
+  });
+
   it('filters exact date ranges and open corrective work orders without guessing operating state', async () => {
     expect((await run('from=2026-11-01&to=2026-11-09&result=fail&followUp=open&assetId=asset-a')).status).toBe(200);
     expect(mocks.records).toHaveBeenCalledWith(expect.objectContaining({

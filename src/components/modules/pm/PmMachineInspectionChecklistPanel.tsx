@@ -48,8 +48,11 @@ function dateTime(value: string | Date | null): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—';
 }
 function csvCell(input: unknown): string {
-  const value = String(input ?? '');
-  return `"${value.replace(/"/g, '""')}"`;
+  const raw = String(input ?? '');
+  // Plant metadata and inspection remarks are user-controlled. Do not let a
+  // CSV spreadsheet interpret text as formulas when exporting this checklist.
+  const safe = /^[\\u0000-\\u0020]*[=+@-]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -308,6 +311,12 @@ export function PmMachineInspectionChecklistPanel({
                               ? `Instrument · ${point.parameterKey || 'Unconfigured parameter'} · Accepted ${limits.min ?? '—'} to ${limits.max ?? '—'} ${limits.unit || ''}`
                               : point.inspectionType === 'visual' ? 'Sight / qualitative observation' : `Legacy ${point.inspectionType}: needs configuration`}
                           </p>
+                          {point.inspectionType === 'measurement' && limits.min === null && limits.max === null && (
+                            <p className="text-xs text-amber-700 dark:text-amber-300">
+                              No numeric acceptance limits configured. Automatic out-of-range detection is unavailable;
+                              the technician must assess the reading and the planner should set valid limits.
+                            </p>
+                          )}
                         </div>
                         <Badge variant={point.dueState === 'overdue' ? 'destructive' : 'outline'}>{point.dueState.replace('_', ' ')}</Badge>
                       </div>

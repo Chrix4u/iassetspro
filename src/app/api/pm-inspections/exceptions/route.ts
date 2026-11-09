@@ -29,8 +29,7 @@ export async function GET(request: NextRequest) {
     if (!isAdmin(session)
       && !hasPermission(session, 'pm_schedules.view')
       && !hasPermission(session, 'pm_schedules.update')
-      && !hasPermission(session, 'work_orders.view')
-      && !hasPermission(session, 'work_orders.view_own')) {
+      && !hasPermission(session, 'work_orders.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
     const scope = await getPlantScope(request, session);

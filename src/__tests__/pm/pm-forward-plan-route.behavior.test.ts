@@ -101,9 +101,9 @@ describe('plant-scoped enterprise PM forward register', () => {
   it('matches only the current due-cycle work order, not a previous cycle', async () => {
     mock.executions.mockResolvedValue([
       { pmScheduleTaskId: 'pm-1', pmDueCycleKey: 'tbm:pm-1:2026-10-01', workOrder: {
-        id: 'wo-old', woNumber: 'WO-OLD', status: 'planned' } },
+        id: 'wo-old', woNumber: 'WO-OLD', status: 'planned', plantId: 'plant-1' } },
       { pmScheduleTaskId: 'pm-1', pmDueCycleKey: fixture.lastGeneratedCycleKey, workOrder: {
-        id: 'wo-current', woNumber: 'WO-CURRENT', status: 'draft' } },
+        id: 'wo-current', woNumber: 'WO-CURRENT', status: 'draft', plantId: 'plant-1' } },
     ]);
     const response = await GET(request());
     expect((await response.json()).data.items[0].openWorkOrder).toMatchObject({
@@ -115,6 +115,15 @@ describe('plant-scoped enterprise PM forward register', () => {
         workOrder: { is: { status: { notIn: ['closed', 'verified', 'cancelled'] } } },
       }),
     }));
+  });
+  it('does not disclose a work order belonging to another plant even when linked incorrectly', async () => {
+    mock.executions.mockResolvedValue([
+      { pmScheduleTaskId: 'pm-1', pmDueCycleKey: fixture.lastGeneratedCycleKey,
+        workOrder: { id: 'other', woNumber: 'WO-OTHER-PLANT', status: 'draft', plantId: 'plant-2' } },
+    ]);
+    const res = await GET(request());
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.items[0].openWorkOrder).toBeNull();
   });
   it('uses only real active meter readings and flags legacy frequency for review', async () => {
     mock.assignments.mockResolvedValue([

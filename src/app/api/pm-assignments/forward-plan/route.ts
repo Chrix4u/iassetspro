@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         },
         select: {
           pmScheduleTaskId: true, pmDueCycleKey: true,
-          workOrder: { select: { id: true, woNumber: true, status: true } },
+          workOrder: { select: { id: true, woNumber: true, status: true, plantId: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: MAX_LINKED_EXECUTIONS + 1,
@@ -95,12 +95,18 @@ export async function GET(request: NextRequest) {
       }, { status: 422 });
     }
     const executionMap = new Map<string, (typeof executions)[number]>();
-    const keys = new Map(assignments.map((row) => [row.id, row.lastGeneratedCycleKey]));
+    const keys = new Map(assignments.map((row) => [row.id, {
+      cycle: row.lastGeneratedCycleKey,
+      plantId: row.asset.plantId,
+    }]));
     for (const execution of executions) {
       if (!execution.pmScheduleTaskId) continue;
-      const generatedKey = keys.get(execution.pmScheduleTaskId);
-      if (generatedKey === undefined) continue;
-      if ((execution.pmDueCycleKey || null) !== (generatedKey || null)) continue;
+      const task = keys.get(execution.pmScheduleTaskId);
+      if (!task) continue;
+      // A wrongly linked cross-plant work order must never be exposed in
+      // another plant's planning view, even if the PM task itself is visible.
+      if (!execution.workOrder.plantId || task.plantId !== execution.workOrder.plantId) continue;
+      if ((execution.pmDueCycleKey || null) !== (task.cycle || null)) continue;
       if (!executionMap.has(execution.pmScheduleTaskId)) {
         executionMap.set(execution.pmScheduleTaskId, execution);
       }

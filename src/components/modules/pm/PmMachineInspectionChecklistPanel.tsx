@@ -51,7 +51,7 @@ function csvCell(input: unknown): string {
   const raw = String(input ?? '');
   // Plant metadata and inspection remarks are user-controlled. Do not let a
   // CSV spreadsheet interpret text as formulas when exporting this checklist.
-  const safe = /^[\\u0000-\\u0020]*[=+@-]/.test(raw) ? `'${raw}` : raw;
+  const safe = '=+@-'.includes(raw.trimStart().charAt(0)) ? `'${raw}` : raw;
   return `"${safe.replace(/"/g, '""')}"`;
 }
 

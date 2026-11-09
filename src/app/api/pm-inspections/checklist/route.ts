@@ -150,7 +150,17 @@ export async function GET(request: NextRequest) {
       frequency: point.frequency,
       nextInspection: point.nextInspection,
       dueState: inspectionDueState(point.nextInspection, now),
-      latestRecord: point.records[0] || null,
+      latestRecord: point.records[0]
+        ? {
+          ...point.records[0],
+          // Prisma stores a nullable string; expose only the two explicitly
+          // validated states and never infer historical state from PM plans.
+          equipmentState: point.records[0].equipmentState === 'running'
+            || point.records[0].equipmentState === 'standstill'
+              ? point.records[0].equipmentState as 'running' | 'standstill'
+              : null,
+        }
+        : null,
       openCorrectiveWorkOrder: openByPoint.get(point.id) || null,
     }));
     const grouped = groupMachineInspectionChecklist(tasks, items);

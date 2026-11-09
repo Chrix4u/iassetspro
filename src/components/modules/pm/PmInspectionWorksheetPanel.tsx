@@ -5,6 +5,8 @@ import { AlertTriangle, ClipboardCheck, Download, Gauge, Eye, Loader2, Plus, Ref
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
+import { PmMachineInspectionChecklistPanel } from './PmMachineInspectionChecklistPanel';
+import type { MachineChecklistTask, MachineInspectionState } from '@/lib/pm-machine-checklist';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,6 +99,9 @@ export function PmInspectionWorksheetPanel() {
   const [rows, setRows] = useState<InspectionPoint[]>([]);
   const [scheduledRows, setScheduledRows] = useState<ScheduledInspection[]>([]);
   const [scheduledDetail, setScheduledDetail] = useState<ScheduledInspection | null>(null);
+  const [machineChecklistOpen, setMachineChecklistOpen] = useState(false);
+  const [machineInspectionState, setMachineInspectionState] = useState<MachineInspectionState>('running');
+  const [machineChecklistRevision, setMachineChecklistRevision] = useState(0);
   const [scheduledWarning, setScheduledWarning] = useState('');
   const [total, setTotal] = useState(0);
   const [pageCount, setPageCount] = useState(1);
@@ -209,6 +214,7 @@ export function PmInspectionWorksheetPanel() {
       setPlanAssetId('');
       setPlanComponentId('');
       await refresh();
+      setMachineChecklistRevision((current) => current + 1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not save inspection plan');
     } finally { setSavingPlan(false); }
@@ -311,6 +317,53 @@ export function PmInspectionWorksheetPanel() {
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Corrective follow-up</Label><Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All follow-ups</SelectItem><SelectItem value="open">Open corrective WO</SelectItem><SelectItem value="none">No open corrective WO</SelectItem></SelectContent></Select></div>
         </div>
 
+        <div className="flex min-w-0 flex-wrap items-end justify-between gap-2 rounded-lg border bg-muted/20 p-2.5 sm:p-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Machine inspection checklist</p>
+            <p className="text-xs text-muted-foreground">
+              Select one machine above, then generate its assigned Running or Standstill tasks and inspect every configured part.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[140px] space-y-1">
+              <Label className="text-xs">Machine state</Label>
+              <Select value={machineInspectionState} onValueChange={(state) => setMachineInspectionState(state as MachineInspectionState)}>
+                <SelectTrigger className="h-9"><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <Button type="button" size="sm" className="h-9" disabled={!filters.assetId}
+              onClick={() => setMachineChecklistOpen(true)}>
+              <ClipboardCheck className="mr-1.5 h-4 w-4"/>Generate Machine Checklist
+            </Button>
+          </div>
+        </div>
+
+        {machineChecklistOpen && filters.assetId && (
+          <PmMachineInspectionChecklistPanel
+            key={`${filters.assetId}:${machineInspectionState}`}
+            assetId={filters.assetId}
+            equipmentState={machineInspectionState}
+            canRecord={canRecord}
+            canPlan={canPlan}
+            reloadKey={machineChecklistRevision}
+            onClose={() => setMachineChecklistOpen(false)}
+            onRecorded={() => { void refresh(); }}
+            onConfigure={(task: MachineChecklistTask) => {
+              if (!task.componentId) return;
+              setPlanAssetId(filters.assetId);
+              setPlanComponentId(task.componentId);
+              setPlan({
+                ...DEFAULT_PLAN,
+                name: task.pmTask.description,
+                method: task.pmTask.taskType === 'measure' ? 'measurement' : 'visual',
+              });
+              setPlanOpen(true);
+            }}
+          />
+        )}
+        {!machineChecklistOpen && <>
+
         {loading && rows.length === 0 ? <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Generating inspection list…</div> : rows.length === 0 ?
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No inspection points match these filters. Use <strong>Plan Inspection</strong> to define sight or instrument checks for a machine part.</div> :
           <div className="grid gap-2">
@@ -406,6 +459,7 @@ export function PmInspectionWorksheetPanel() {
             <Button size="sm" variant="outline" disabled={page >= pageCount || loading} onClick={() => setPage((p) => p + 1)}>Next</Button>
           </div>
         </div>
+        </>}
       </CardContent>
 
       <ResponsiveDialog

@@ -28,6 +28,10 @@ export interface PrintableMachineInspectionRow {
   remarks: string;
   recordedAt: string;
   recordedState: 'running' | 'standstill' | 'unknown';
+  captureSource?: 'paper' | 'digital' | 'unknown';
+  fieldInspectedAt?: string;
+  fieldInspectorName?: string;
+  paperReference?: string;
   correctiveWorkOrder: string;
   requiresConfiguration: boolean;
 }
@@ -95,6 +99,11 @@ export function buildMachineInspectionPrintRows(
         recordedAt: record ? formatDateTime(record.inspectedAt) : '',
         recordedState: record?.equipmentState === 'running' || record?.equipmentState === 'standstill'
           ? record.equipmentState : 'unknown',
+        captureSource: record?.captureSource === 'paper' ? 'paper'
+          : record?.captureSource === 'digital' ? 'digital' : 'unknown',
+        fieldInspectedAt: record?.fieldInspectedAt ? formatDateTime(record.fieldInspectedAt) : '',
+        fieldInspectorName: record?.fieldInspectorName || '',
+        paperReference: record?.paperReference || '',
         correctiveWorkOrder: point.openCorrectiveWorkOrder
           ? `${point.openCorrectiveWorkOrder.woNumber} (${point.openCorrectiveWorkOrder.status})`
           : '',

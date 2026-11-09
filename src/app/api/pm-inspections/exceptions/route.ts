@@ -99,7 +99,8 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, result: true, value: true, findings: true, recommendation: true, inspectedAt: true,
-          equipmentState: true,
+          equipmentState: true, captureSource: true, fieldInspectedAt: true,
+          fieldInspectorName: true, paperReference: true,
           inspector: { select: { id: true, fullName: true } },
           inspectionPoint: {
             select: { id: true, name: true, inspectionType: true, parameterKey: true, normalRange: true },

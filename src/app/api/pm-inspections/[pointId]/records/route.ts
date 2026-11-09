@@ -7,6 +7,7 @@ import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
+import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }, { status: 400 });
     }
     const equipmentState: 'running' | 'standstill' | null = rawEquipmentState ?? null;
+    const evidence = parseInspectionCaptureEvidence(body as Record<string, unknown>);
     const submissionKey = typeof body.requestKey === 'string' ? body.requestKey.trim() : '';
     if (submissionKey && !/^[a-zA-Z0-9_-]{8,120}$/.test(submissionKey)) {
       return NextResponse.json({ success: false, error: 'Invalid inspection submission key' }, { status: 400 });
@@ -94,6 +96,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             findings: findings || null,
             recommendation: recommendation || null,
             equipmentState,
+            ...evidence,
           })) {
             throw new Error('Inspection submission key conflict');
           }
@@ -118,10 +121,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
       const refreshedPoint = await tx.componentInspectionPoint.findUnique({
-        where: { id: pointId }, select: { isActive: true, frequency: true, nextInspection: true },
+        where: { id: pointId }, select: { isActive: true, frequency: true, nextInspection: true, lastInspected: true },
       });
       if (!refreshedPoint?.isActive) throw new Error('Inspection point was deactivated');
-      const inspectedAt = new Date();
+      const inspectedAt = new Date(); // server timestamp when entered
+      const observedAt = evidence.fieldInspectedAt || inspectedAt; // actual field reading time
+      const mayAdvanceDue = mayAdvanceInspectionDue(refreshedPoint.lastInspected, observedAt);
       const record = await tx.componentInspectionRecord.create({
         data: {
           inspectionPointId: pointId,
@@ -134,6 +139,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           inspectorId: session.userId,
           inspectedAt,
           equipmentState,
+          ...evidence,
         },
       });
       if (inspection.numericValue !== null) {
@@ -148,7 +154,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             maxThreshold: limits.max,
             isAlarm: inspection.isAlarm,
             source: 'manual',
-            recordedAt: inspectedAt,
+            recordedAt: observedAt,
             recordedById: session.userId,
           },
         });
@@ -168,16 +174,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let reusedWorkOrder = Boolean(workOrder);
       let nextInspection: Date | null = null;
       if (!inspection.isAlarm && !workOrder) {
-        nextInspection = nextInspectionDate(inspectedAt, refreshedPoint.frequency);
-        if (!nextInspection) throw new Error('Unsupported inspection recurrence; update the inspection plan');
-        await tx.componentInspectionPoint.update({
-          where: { id: pointId }, data: { lastInspected: inspectedAt, nextInspection },
-        });
+        if (mayAdvanceDue) {
+          const computedNext = nextInspectionDate(observedAt, refreshedPoint.frequency);
+          if (!computedNext) throw new Error('Unsupported inspection recurrence; update the inspection plan');
+          nextInspection = safeInspectionNextDue(
+            computedNext, refreshedPoint.nextInspection, evidence.captureSource,
+          );
+          await tx.componentInspectionPoint.update({
+            where: { id: pointId }, data: { lastInspected: observedAt, nextInspection },
+          });
+        }
+        // Old paper PASS must never rewind a newer PM cycle.
       } else if (!inspection.isAlarm) {
-        // Keep the inspector's pass observation, but retain the outstanding
-        // corrective due until the linked work order is verified and closed.
-        await tx.componentInspectionPoint.update({
-          where: { id: pointId }, data: { lastInspected: inspectedAt },
+        // Later PASS must never clear an open corrective work order.
+        if (mayAdvanceDue) await tx.componentInspectionPoint.update({
+          where: { id: pointId }, data: { lastInspected: observedAt },
         });
       } else {
         // A failed inspection does not reset due date. Its corrective WO must be
@@ -208,6 +219,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
                 inspection.value !== null ? `Recorded value: ${inspection.value} ${limits.unit || ''}` : '',
                 `Result: ${inspection.outcome}`,
                 `Findings: ${findings}`,
+                evidence.captureSource === 'paper'
+                  ? `Paper worksheet ${evidence.paperReference}; physically checked by ${evidence.fieldInspectorName} at ${observedAt.toISOString()}; entered at ${inspectedAt.toISOString()}.`
+                  : '',
                 recommendation ? `Recommendation: ${recommendation}` : '',
               ].filter(Boolean).join('\n'),
               type: 'corrective',
@@ -242,8 +256,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             },
           });
         }
-        await tx.componentInspectionPoint.update({
-          where: { id: pointId }, data: { lastInspected: inspectedAt },
+        if (mayAdvanceDue) await tx.componentInspectionPoint.update({
+          where: { id: pointId }, data: { lastInspected: observedAt },
         });
       }
 
@@ -254,7 +268,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           newValues: JSON.stringify({
             inspectionPointId: pointId, componentId: point.component.id, method: point.inspectionType,
             value: inspection.value, unit: limits.unit, result: inspection.outcome,
-            equipmentState, findings, workOrderId: workOrder?.id || null, reusedWorkOrder, nextInspection,
+            equipmentState, captureSource: evidence.captureSource,
+            fieldInspectedAt: evidence.fieldInspectedAt?.toISOString() || null,
+            fieldInspectorName: evidence.fieldInspectorName,
+            paperReference: evidence.paperReference,
+            enteredAt: inspectedAt.toISOString(),
+            dueCycleUpdated: mayAdvanceDue && !inspection.isAlarm && !workOrder,
+            findings, workOrderId: workOrder?.id || null, reusedWorkOrder, nextInspection,
           }),
         },
       });
@@ -263,7 +283,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: true, data: outcome }, { status: 'duplicate' in outcome ? 200 : 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to record PM inspection';
-    const clientError = /invalid|require|select|unsupported|deactivated|defect|observation/i.test(message);
+    const clientError = /invalid|require|select|unsupported|deactivated|defect|observation|field inspector|worksheet|paper|future|date and time/i.test(message);
     return NextResponse.json({ success: false, error: message }, { status: message === 'Inspection submission key conflict' ? 409 : clientError ? 400 : 500 });
   }
 }

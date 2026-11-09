@@ -11,7 +11,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticateAs(context, 'planner');
 
-  const posted: Array<{ pointId: string; requestKey: string; value: string; outcome: string; findings: string; equipmentState: string }> = [];
+  const posted: Array<{ pointId: string; requestKey: string; value: string; outcome: string; findings: string; equipmentState: string; captureSource?: string; fieldInspectedAt?: string; fieldInspectorName?: string; paperReference?: string }> = [];
   const machine = { id: 'uat-pump-mobile', name: 'Mercerizer C314 UAT', assetTag: 'C314-UAT', plantId: 'uat-plant', description: 'Mercerizing production line', location: 'Plant A' };
   const bearing = {
     id: 'bearing', name: 'Drive-End Bearing', componentCode: 'C314-21-02', componentType: 'part',
@@ -201,4 +201,29 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted).toHaveLength(2);
   const width = await checklist.evaluate((element) => element.scrollWidth - element.clientWidth);
   expect(width, 'machine checklist must not overflow the 390px viewport').toBeLessThanOrEqual(2);
+
+  // Return to Running and transcribe a field technician's paper measurements.
+  await worksheet.getByText('Machine state', { exact: true }).locator('..').getByRole('combobox').click();
+  await page.getByRole('option', { name: 'Running', exact: true }).click();
+  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
+  await checklist.getByRole('combobox', { name: 'Inspection reading source' }).click();
+  await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();
+  await expect(checklist.getByTestId('pm-paper-evidence')).toBeVisible();
+  await checklist.getByRole('textbox', { name: 'Paper field inspector' }).fill('Ama Mensah');
+  await checklist.getByRole('textbox', { name: 'Paper worksheet reference' }).fill('C314-P267-20261109');
+  const when = await page.evaluate(() => {
+    const time = new Date(Date.now() - 45 * 60_000);
+    return new Date(time.getTime() - time.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  });
+  await checklist.getByLabel('Field inspection date/time: Vibration').fill(when);
+  await checklist.getByRole('spinbutton', { name: 'Actual reading: Vibration' }).fill('3.1');
+  await checklist.getByRole('button', { name: 'Save reading' }).first().click();
+  await expect(checklist).toContainText('1 entries saved', { timeout: 25_000 });
+  expect(posted).toHaveLength(3);
+  expect(posted[2]).toMatchObject({
+    pointId: 'vibration', value: '3.1', captureSource: 'paper',
+    fieldInspectorName: 'Ama Mensah', paperReference: 'C314-P267-20261109',
+    equipmentState: 'running',
+  });
+  expect(posted[2].fieldInspectedAt).toMatch(/T\d{2}:\d{2}:00/);
 });

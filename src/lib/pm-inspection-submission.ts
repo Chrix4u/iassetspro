@@ -11,9 +11,15 @@ export interface InspectionSubmissionSnapshot {
   findings: string | null;
   recommendation: string | null;
   equipmentState?: string | null;
+  captureSource?: string | null;
+  fieldInspectedAt?: Date | string | null;
+  fieldInspectorName?: string | null;
+  paperReference?: string | null;
 }
 
-const normalized = (value: string | null): string => value ?? '';
+const normalized = (value: string | null | undefined): string => value ?? '';
+const normalizedInstant = (value: Date | string | null | undefined): string =>
+  value === null || value === undefined ? '' : new Date(value).toISOString();
 
 /** A completed or cancelled corrective WO must not appear as pending on retry. */
 export function isPendingCorrectiveWorkOrder(order: { status: string } | null | undefined): boolean {
@@ -30,5 +36,9 @@ export function isSameInspectionSubmission(
     && normalized(original.value) === normalized(incoming.value)
     && normalized(original.findings) === normalized(incoming.findings)
     && normalized(original.recommendation) === normalized(incoming.recommendation)
-    && normalized(original.equipmentState ?? null) === normalized(incoming.equipmentState ?? null);
+    && normalized(original.equipmentState ?? null) === normalized(incoming.equipmentState ?? null)
+    && (original.captureSource || 'digital') === (incoming.captureSource || 'digital')
+    && normalizedInstant(original.fieldInspectedAt) === normalizedInstant(incoming.fieldInspectedAt)
+    && normalized(original.fieldInspectorName) === normalized(incoming.fieldInspectorName)
+    && normalized(original.paperReference) === normalized(incoming.paperReference);
 }

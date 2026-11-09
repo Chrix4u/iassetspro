@@ -88,7 +88,11 @@ export async function GET(request: NextRequest) {
         records: {
           orderBy: { inspectedAt: 'desc' },
           take: 1,
-          select: { id: true, result: true, value: true, findings: true, inspectedAt: true, equipmentState: true },
+          select: {
+            id: true, result: true, value: true, findings: true,
+            inspectedAt: true, equipmentState: true, captureSource: true,
+            fieldInspectedAt: true, fieldInspectorName: true, paperReference: true,
+          },
         },
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],

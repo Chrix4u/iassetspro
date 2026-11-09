@@ -35,6 +35,10 @@ export interface MachineChecklistPoint {
     id: string; result: string; value: string | null;
     findings: string | null; inspectedAt: string | Date;
     equipmentState?: MachineInspectionState | null;
+    captureSource?: string | null;
+    fieldInspectedAt?: string | Date | null;
+    fieldInspectorName?: string | null;
+    paperReference?: string | null;
   } | null;
   openCorrectiveWorkOrder: { id: string; woNumber: string; status: string } | null;
 }

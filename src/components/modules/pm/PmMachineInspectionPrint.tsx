@@ -260,6 +260,13 @@ export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
                   {row.remarks}
                   {row.recordedAt && <div className="mt-1 text-[10px]">{row.recordedAt}</div>}
                   <div className="mt-1 text-[10px]">Operating state at recording: {row.recordedState}</div>
+                  <div className="mt-1 text-[10px]">Capture source: {row.captureSource || 'unknown'}</div>
+                  {row.captureSource === 'paper' && <>
+                    <div className="mt-1 text-[10px]">Original field time: {row.fieldInspectedAt}</div>
+                    <div className="text-[10px]">Field inspector: {row.fieldInspectorName}</div>
+                    <div className="text-[10px]">Paper reference: {row.paperReference}</div>
+                    <div className="text-[10px]">Entered into system: {row.recordedAt}</div>
+                  </>}
                 </td>
                 <td className="break-words">{row.correctiveWorkOrder}</td>
               </tr>

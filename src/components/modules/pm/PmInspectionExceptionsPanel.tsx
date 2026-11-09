@@ -33,10 +33,11 @@ interface ExceptionRow {
 interface ExceptionFilters {
   result: string;
   followUp: string;
+  equipmentState: string;
   from: string;
   to: string;
 }
-const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', from: '', to: '' };
+const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', equipmentState: 'all', from: '', to: '' };
 
 function dateLabel(raw: string): string {
   const date = new Date(raw);
@@ -80,6 +81,7 @@ export function PmInspectionExceptionsPanel({
       if (departmentId) params.set('departmentId', departmentId);
       if (filters.result !== 'all') params.set('result', filters.result);
       if (filters.followUp !== 'all') params.set('followUp', filters.followUp);
+      if (filters.equipmentState !== 'all') params.set('equipmentState', filters.equipmentState);
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
       const response = await api.get<ExceptionRow[]>(`/api/pm-inspections/exceptions?${params}`);
@@ -135,7 +137,7 @@ export function PmInspectionExceptionsPanel({
         </div>
       </div>
 
-      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-5">
         <div><Label className="text-xs">Outcome</Label>
           <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
             <SelectTrigger className="mt-1 h-9" aria-label="Outcome"><SelectValue /></SelectTrigger>
@@ -155,6 +157,17 @@ export function PmInspectionExceptionsPanel({
               <SelectItem value="open">Open WO</SelectItem>
               <SelectItem value="none">No linked WO</SelectItem>
               <SelectItem value="closed">Closed / Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div><Label className="text-xs">At inspection</Label>
+          <Select value={filters.equipmentState} onValueChange={(equipmentState) => updateFilters({ equipmentState })}>
+            <SelectTrigger className="mt-1 h-9" aria-label="Inspection operating state"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All states</SelectItem>
+              <SelectItem value="running">Running</SelectItem>
+              <SelectItem value="standstill">Standstill</SelectItem>
+              <SelectItem value="unknown">Unknown (legacy)</SelectItem>
             </SelectContent>
           </Select>
         </div>

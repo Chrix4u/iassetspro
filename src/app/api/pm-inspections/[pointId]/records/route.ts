@@ -7,7 +7,7 @@ import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
-import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
+import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -175,8 +175,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let nextInspection: Date | null = null;
       if (!inspection.isAlarm && !workOrder) {
         if (mayAdvanceDue) {
-          nextInspection = nextInspectionDate(observedAt, refreshedPoint.frequency);
-          if (!nextInspection) throw new Error('Unsupported inspection recurrence; update the inspection plan');
+          const computedNext = nextInspectionDate(observedAt, refreshedPoint.frequency);
+          if (!computedNext) throw new Error('Unsupported inspection recurrence; update the inspection plan');
+          nextInspection = safeInspectionNextDue(
+            computedNext, refreshedPoint.nextInspection, evidence.captureSource,
+          );
           await tx.componentInspectionPoint.update({
             where: { id: pointId }, data: { lastInspected: observedAt, nextInspection },
           });

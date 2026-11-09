@@ -42,6 +42,18 @@ export function parseInspectionCaptureEvidence(
     throw new Error('Enter a valid field inspection date and time with timezone');
   }
   const fieldInspectedAt = new Date(rawTime);
+  // Date.parse can normalize impossible calendar dates such as February 30.
+  // Reconstruct the source-local time from its explicit timezone offset.
+  const zone = rawTime.match(/([+-])(\d{2}):(\d{2})$/);
+  const offsetMinutes = zone
+    ? (zone[1] === '+' ? 1 : -1) * (Number(zone[2]) * 60 + Number(zone[3]))
+    : 0;
+  const actualLocal = Number.isFinite(fieldInspectedAt.getTime())
+    ? new Date(fieldInspectedAt.getTime() + offsetMinutes * 60_000).toISOString().slice(0, 19)
+    : '';
+  if (actualLocal !== rawTime.slice(0, 19)) {
+    throw new Error('Field inspection date/time is not a real calendar date');
+  }
   if (!Number.isFinite(fieldInspectedAt.getTime())
     || fieldInspectedAt.getTime() < Date.UTC(2000, 0, 1)
     || fieldInspectedAt.getTime() > now.getTime() + 5 * 60_000) {
@@ -57,4 +69,18 @@ export function mayAdvanceInspectionDue(
   // Back-entering older paper measurements must not overwrite a newer
   // verified inspection cycle's last-inspected date or next due.
   return lastInspected === null || inspectedOn.getTime() >= lastInspected.getTime();
+}
+
+/** Paper transcription must never shorten an already planned / verified
+ * next-due date. Direct readings retain the existing recurrence rules.
+ */
+export function safeInspectionNextDue(
+  computed: Date,
+  existing: Date | null,
+  source: 'digital' | 'paper',
+): Date {
+  if (source === 'paper' && existing && existing.getTime() > computed.getTime()) {
+    return existing;
+  }
+  return computed;
 }

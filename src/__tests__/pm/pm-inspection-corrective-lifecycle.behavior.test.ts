@@ -321,6 +321,21 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(records).toHaveLength(1);
   });
 
+  it('does not shorten next due after a newer verified closeout when a late paper PASS arrives', async () => {
+    const observed = new Date(Date.now() - 2 * 86_400_000);
+    point.lastInspected = new Date(Date.now() - 12 * 86_400_000);
+    point.nextInspection = new Date(Date.now() + 25 * 86_400_000);
+    const due = point.nextInspection.toISOString();
+    const result = await submit({
+      requestKey: 'paper-verified-safe-2026', outcome: 'pass', value: '50',
+      captureSource: 'paper', fieldInspectedAt: observed.toISOString(),
+      fieldInspectorName: 'Ama Mensah', paperReference: 'C314-P267',
+    });
+    expect(result.status).toBe(201);
+    expect(point.lastInspected).toEqual(observed);
+    expect(point.nextInspection.toISOString()).toBe(due);
+  });
+
   it('keeps abnormal paper evidence in a corrective draft WO and leaves next due untouched', async () => {
     const due = point.nextInspection.toISOString();
     const result = await submit({

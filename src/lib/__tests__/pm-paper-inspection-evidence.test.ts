@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseInspectionCaptureEvidence, mayAdvanceInspectionDue } from '@/lib/pm-paper-inspection-evidence';
+import { parseInspectionCaptureEvidence, mayAdvanceInspectionDue, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
 
 const now = new Date('2026-11-09T12:00:00.000Z');
 const paper = {
@@ -35,6 +35,22 @@ describe('PM inspection paper-to-digital audit evidence', () => {
     expect(() => parseInspectionCaptureEvidence({ ...paper, fieldInspectedAt: '2026-11-10T09:15:00.000Z' }, now)).toThrow(/future/);
     expect(() => parseInspectionCaptureEvidence({ ...paper, fieldInspectedAt: '1999-12-31T09:15:00.000Z' }, now)).toThrow(/past/);
   });
+  it('rejects impossible field inspection calendar dates and preserves explicit timezone offsets', () => {
+    expect(() => parseInspectionCaptureEvidence({
+      ...paper, fieldInspectedAt: '2026-02-30T09:15:00.000Z',
+    }, now)).toThrow(/real calendar date/);
+    const withOffset = parseInspectionCaptureEvidence({
+      ...paper, fieldInspectedAt: '2026-11-09T09:15:00+00:00',
+    }, now);
+    expect(withOffset.fieldInspectedAt?.toISOString()).toBe('2026-11-09T09:15:00.000Z');
+  });
+  it('never shortens a newer planned due date based on an older paper sheet', () => {
+    const next = new Date('2026-11-22T10:00:00.000Z');
+    const oldCalculated = new Date('2026-11-16T10:00:00.000Z');
+    expect(safeInspectionNextDue(oldCalculated, next, 'paper')).toBe(next);
+    expect(safeInspectionNextDue(oldCalculated, next, 'digital')).toBe(oldCalculated);
+  });
+
   it('retains newer due cycles when a paper inspection is keyed in late', () => {
     const newest = new Date('2026-11-09T10:00:00.000Z');
     expect(mayAdvanceInspectionDue(newest, new Date('2026-11-08T10:00:00Z'))).toBe(false);

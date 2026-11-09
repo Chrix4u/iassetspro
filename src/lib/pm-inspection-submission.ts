@@ -11,7 +11,7 @@ export interface InspectionSubmissionSnapshot {
   findings: string | null;
   recommendation: string | null;
   equipmentState?: string | null;
-  captureSource?: 'digital' | 'paper';
+  captureSource?: string | null;
   fieldInspectedAt?: Date | string | null;
   fieldInspectorName?: string | null;
   paperReference?: string | null;

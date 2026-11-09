@@ -138,7 +138,7 @@ export function PmInspectionExceptionsPanel({
       <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
         <div><Label className="text-xs">Outcome</Label>
           <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
-            <SelectTrigger className="mt-1 h-9"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-9" aria-label="Outcome"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All abnormal</SelectItem>
               <SelectItem value="fail">Fail</SelectItem>
@@ -149,7 +149,7 @@ export function PmInspectionExceptionsPanel({
         </div>
         <div><Label className="text-xs">Corrective WO</Label>
           <Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}>
-            <SelectTrigger className="mt-1 h-9"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-9" aria-label="Corrective WO"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="open">Open WO</SelectItem>

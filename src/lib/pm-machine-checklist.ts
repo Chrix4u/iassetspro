@@ -30,6 +30,7 @@ export interface MachineChecklistPoint {
   latestRecord: {
     id: string; result: string; value: string | null;
     findings: string | null; inspectedAt: string | Date;
+    equipmentState?: MachineInspectionState | null;
   } | null;
   openCorrectiveWorkOrder: { id: string; woNumber: string; status: string } | null;
 }

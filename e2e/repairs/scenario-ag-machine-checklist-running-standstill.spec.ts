@@ -76,8 +76,22 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
             equipmentState: standstill ? 'standstill' : 'running',
           }],
           groups: standstill ? [] : [
-            { component: bearing, tasks: [tasks[0]], points: [vibration] },
-            { component: pulley, tasks: [tasks[1]], points: [sound] },
+            { component: bearing, tasks: [tasks[0]], points: [{
+              ...vibration,
+              latestRecord: posted.some((entry) => entry.pointId === 'vibration')
+                ? { id: 'inspection-vibration', result: 'fail', value: '7.9',
+                    findings: 'High vibration at the drive bearing', inspectedAt: '2026-11-09T07:15:00Z' }
+                : null,
+              openCorrectiveWorkOrder: posted.some((entry) => entry.pointId === 'vibration')
+                ? { id: 'wo-draft', woNumber: 'WO-UAT-CORR-01', status: 'draft' } : null,
+            }] },
+            { component: pulley, tasks: [tasks[1]], points: [{
+              ...sound,
+              latestRecord: posted.some((entry) => entry.pointId === 'sound')
+                ? { id: 'inspection-sound', result: 'pass', value: null,
+                    findings: 'Regular pulley sound, no rubbing or rattling', inspectedAt: '2026-11-09T07:16:00Z' }
+                : null,
+            }] },
           ],
         },
       }),
@@ -134,6 +148,17 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted.find((p) => p.pointId === 'sound')?.findings).toContain('Regular pulley sound');
   expect(posted.every((p) => p.requestKey.length >= 8)).toBe(true);
   await expect(checklist).toContainText('Corrective WO-UAT-CORR-01');
+  const printView = page.getByTestId('pm-machine-inspection-print');
+  await expect(page.getByRole('button', { name: 'Print saved machine inspection checklist' })).toBeEnabled();
+  await expect(printView).toContainText('7.9 mm/s', { timeout: 15_000 });
+  await expect(printView).toContainText('Regular pulley sound, no rubbing or rattling');
+  await expect(printView).toContainText('WO-UAT-CORR-01 (draft)');
+  await expect(printView.getByTestId('pm-machine-print-table').locator('tbody tr')).toHaveCount(3);
+  await page.emulateMedia({ media: 'print' });
+  await expect(printView).toBeVisible();
+  await expect(printView).toContainText('Machine Inspection List — running');
+  await page.emulateMedia({ media: 'screen' });
+  await expect(printView).toBeHidden();
 
   // A state change regenerates the task list; the previous readings are not
   // silently submitted again under the standstill inspection context.

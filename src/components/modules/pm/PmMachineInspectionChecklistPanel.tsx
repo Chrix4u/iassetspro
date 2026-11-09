@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ClipboardCheck, Download, Eye, Gauge, Loader2, RefreshCw, Save } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, Download, Eye, Gauge, Loader2, Printer, RefreshCw, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { parseInspectionLimits } from '@/lib/pm-inspection';
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
 
 interface MachineChecklistResponse {
   machine: { id: string; name: string; assetTag: string; plantId: string };
@@ -245,6 +246,7 @@ export function PmMachineInspectionChecklistPanel({
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={() => setReload((v) => v + 1)} disabled={busy || loading}><RefreshCw className="mr-1 h-3.5 w-3.5"/>Refresh</Button>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || busy}><Download className="mr-1 h-3.5 w-3.5"/>Export CSV</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => window.print()} disabled={!data || busy || loading} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print / Save PDF</Button>
           <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close List</Button>
         </div>
       </div>
@@ -389,6 +391,7 @@ export function PmMachineInspectionChecklistPanel({
           </Button>}
         </div>
       </>}
+      {data && !loading && <PmMachineInspectionPrint data={data} />}
     </section>
   );
 }

@@ -82,7 +82,7 @@ describe('GET /api/pm-inspections/exceptions', () => {
     for (const query of [
       'from=2026-02-30', 'to=2026-11-99',
       'from=2026-11-09&to=2026-11-08',
-      'result=pass', 'followUp=everything',
+      'result=pass', 'followUp=everything', 'equipmentState=off',
     ]) {
       expect((await run(query)).status).toBe(400);
     }
@@ -134,6 +134,21 @@ describe('GET /api/pm-inspections/exceptions', () => {
         },
         workOrder: { is: { type: 'corrective', status: { notIn: ['closed', 'cancelled'] } } },
       }),
+    }));
+  });
+
+  it('supports truthful Running, Standstill and unknown-state filters', async () => {
+    expect((await run('equipmentState=running')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: 'running' }),
+    }));
+    expect((await run('equipmentState=standstill')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: 'standstill' }),
+    }));
+    expect((await run('equipmentState=unknown')).status).toBe(200);
+    expect(mocks.records).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ equipmentState: null }),
     }));
   });
 

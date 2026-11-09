@@ -8,6 +8,7 @@ import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/main
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
 import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
+import { validateManagedPaperReading } from '@/lib/pm-paper-worksheet-validation';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -74,6 +75,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Measurement point has no parameter key' }, { status: 400 });
     }
     const asset = point.component.asset;
+    if (evidence.captureSource === 'paper' && evidence.paperReference?.startsWith('IW-')) {
+      const issue = await db.pmPaperWorksheetIssue.findUnique({
+        where: { reference: evidence.paperReference },
+        select: { reference: true, assetId: true, plantId: true, equipmentState: true,
+          pointIds: true, issuedAt: true },
+      });
+      const invalid = validateManagedPaperReading(issue, {
+        reference: evidence.paperReference, assetId: asset.id,
+        plantId: asset.plantId, equipmentState, pointId,
+        fieldInspectedAt: evidence.fieldInspectedAt,
+      });
+      if (invalid) return NextResponse.json({ success: false, error: invalid }, { status: 400 });
+    }
     const location = await getAssetLiveLocationMap([asset.id]);
     const snapshot = buildMaintenanceLocationSnapshot(location.get(asset.id) ?? null);
 

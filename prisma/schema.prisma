@@ -3581,6 +3581,24 @@ model ComponentInspectionPoint {
   @@map("component_inspection_points")
 }
 
+model PmPaperWorksheetIssue {
+  id             String   @id @default(cuid())
+  requestKey     String   @unique @map("request_key")
+  reference      String   @unique
+  assetId        String
+  plantId        String
+  machineCode    String
+  equipmentState String
+  issuedById     String
+  issuedAt       DateTime @default(now())
+  pointIds       String   @db.Text
+  taskIds        String   @db.Text
+
+  @@index([assetId, issuedAt])
+  @@index([plantId, issuedAt])
+  @@map("pm_paper_worksheet_issues")
+}
+
 model ComponentInspectionRecord {
   id                String   @id @default(cuid())
   requestKey        String?  @unique @map("request_key") // idempotent mobile inspection submission

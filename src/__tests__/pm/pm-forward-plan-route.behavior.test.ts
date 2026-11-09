@@ -29,6 +29,8 @@ const fixture = {
   pmType: 'tbm', basis: 'calendar', activityMode: 'inspection',
   equipmentState: 'running', estimatedMinutes: 45,
   nextDueDate: new Date('2026-11-09T19:00:00.000Z'), nextDueReading: null,
+  recurrenceBasis: 'fixed_schedule', recurrenceAnchorDate: new Date('2026-10-09T19:00:00Z'),
+  frequencyInterval: 1, frequencyUnit: 'months',
   lastGeneratedCycleKey: 'tbm:pm-1:2026-11-09T19:00:00.000Z',
   asset: { name: 'Mercerizer C314', assetTag: 'C314', plantId: 'plant-1',
     criticality: 'critical', status: 'operational', plant: { name: 'Weaving Plant' } },
@@ -70,6 +72,8 @@ describe('plant-scoped enterprise PM forward register', () => {
     expect(data.items[0]).toMatchObject({
       id: 'pm-1', plantId: 'plant-1', assetCriticality: 'critical',
       basis: 'calendar', estimatedMinutes: 45,
+      recurrenceBasis: 'fixed_schedule', recurrenceAnchorDate: '2026-10-09T19:00:00.000Z',
+      frequencyInterval: 1, frequencyUnit: 'months',
     });
   });
   it('denies an unauthorized plant selector', async () => {

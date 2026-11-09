@@ -201,7 +201,7 @@ export function PmMachineInspectionChecklistPanel({
   });
   const exportCsv = () => {
     if (!data) return;
-    const rows = [
+    const rows: unknown[][] = [
       ['Machine', data.machine.name, 'Asset code', data.machine.assetTag, 'Inspection state', data.equipmentState, 'Generated', data.generatedAt],
       ['Part code', 'Part description', 'PM tasks', 'Inspection / parameter', 'Method', 'Normal min', 'Normal max', 'Unit', 'Latest recorded value', 'Latest result', 'Latest remark', 'Latest time', 'Outstanding corrective WO'],
     ];

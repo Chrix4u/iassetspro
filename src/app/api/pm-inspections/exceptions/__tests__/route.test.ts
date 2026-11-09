@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/auth', () => ({
   getSession: mocks.session,
-  hasPermission: () => true,
+  hasPermission: (session: { permissions?: string[] }, permission: string) =>
+    session.permissions ? session.permissions.includes(permission) : true,
   isAdmin: () => false,
 }));
 vi.mock('@/lib/plant-scope', () => ({
@@ -56,6 +57,12 @@ describe('GET /api/pm-inspections/exceptions', () => {
   it('returns 401 before querying database for unauthenticated callers', async () => {
     mocks.session.mockReturnValue(null);
     expect((await run()).status).toBe(401);
+    expect(mocks.records).not.toHaveBeenCalled();
+  });
+
+  it('does not expose plant-wide exception history to work-orders-own-only users', async () => {
+    mocks.session.mockReturnValue({ userId: 'technician-1', permissions: ['work_orders.view_own'] });
+    expect((await run()).status).toBe(403);
     expect(mocks.records).not.toHaveBeenCalled();
   });
 

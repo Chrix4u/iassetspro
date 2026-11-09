@@ -9,6 +9,8 @@ import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
 import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
 import { validateManagedPaperReading, normalizeManagedPaperReference } from '@/lib/pm-paper-worksheet-validation';
+import { createPlannerInspectionAlert, type PlannerInspectionAlert } from '@/lib/pm-inspection-planner-alert';
+import { wsNotify } from '@/lib/ws-notify';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -133,6 +135,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             reusedWorkOrder: Boolean(outstanding),
             nextInspection: null,
             awaitingCloseout: Boolean(outstanding),
+            plannerAlert: null as PlannerInspectionAlert | null,
             duplicate: true,
           };
         }
@@ -190,6 +193,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let workOrder: { id: string; woNumber: string; status: string } | null = outstanding?.workOrder || null;
       let reusedWorkOrder = Boolean(workOrder);
       let nextInspection: Date | null = null;
+      let plannerAlert: PlannerInspectionAlert | null = null;
       if (!inspection.isAlarm && !workOrder) {
         if (mayAdvanceDue) {
           const computedNext = nextInspectionDate(observedAt, refreshedPoint.frequency);
@@ -272,6 +276,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               newValues: JSON.stringify({ woNumber, inspectionPointId: pointId, inspectionRecordId: record.id, status: 'draft', plannerId, plannerAssignment: plannerId ? 'plant_planner' : 'management_attention_required', reason: 'failed_inspection' }),
             },
           });
+          // Persist the alert with the draft WO in the SAME transaction.
+          // No SMS or external email is sent automatically; the planner can
+          // review through existing in-app and WebSocket notifications.
+          const alert = createPlannerInspectionAlert({
+            plannerId, workOrderId: created.id, woNumber, assetName: asset.name,
+            partCode: point.component.componentCode, inspectionName: point.name,
+            equipmentState, result: inspection.outcome as 'fail' | 'needs_attention',
+            reading: inspection.value, unit: limits.unit,
+          });
+          if (alert) {
+            await tx.notification.create({ data: alert });
+            plannerAlert = alert;
+          }
         }
         if (mayAdvanceDue) await tx.componentInspectionPoint.update({
           where: { id: pointId }, data: { lastInspected: observedAt },
@@ -295,9 +312,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           }),
         },
       });
-      return { record, workOrder, reusedWorkOrder, nextInspection, awaitingCloseout: Boolean(workOrder) };
+      return { record, workOrder, reusedWorkOrder, nextInspection,
+        awaitingCloseout: Boolean(workOrder), plannerAlert };
     });
-    return NextResponse.json({ success: true, data: outcome }, { status: 'duplicate' in outcome ? 200 : 201 });
+    const { plannerAlert, ...responseData } = outcome;
+    if (plannerAlert) {
+      // Post-commit live push is best-effort; persistent in-app notification
+      // has already committed atomically with the draft WO.
+      try {
+        await wsNotify(plannerAlert.userId, 'notification', { ...plannerAlert });
+      } catch (error) {
+        console.error('[PM inspection] Planner WebSocket notification failed:', error);
+      }
+    }
+    return NextResponse.json({ success: true, data: responseData }, { status: 'duplicate' in outcome ? 200 : 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to record PM inspection';
     const clientError = /invalid|require|select|unsupported|deactivated|defect|observation|field inspector|worksheet|paper|future|date and time/i.test(message);

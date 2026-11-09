@@ -6,10 +6,12 @@ const mocks = vi.hoisted(() => ({
   pointFind: vi.fn(), pointUpdate: vi.fn(),
   recordFind: vi.fn(), recordFindFirst: vi.fn(), recordCreate: vi.fn(), recordUpdate: vi.fn(),
   readingCreate: vi.fn(), woFindMany: vi.fn(), woCreate: vi.fn(),
-  componentUpsert: vi.fn(), auditCreate: vi.fn(), lock: vi.fn(), plannerFind: vi.fn(),
+  componentUpsert: vi.fn(), auditCreate: vi.fn(), notificationCreate: vi.fn(),
+  wsNotify: vi.fn(), lock: vi.fn(), plannerFind: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ getSession: mocks.getSession, isAdmin: () => false, hasPermission: () => true }));
 vi.mock('@/lib/plant-scope', () => ({ getPlantScope: mocks.getScope, canAccessPlantStrict: mocks.access }));
+vi.mock('@/lib/ws-notify', () => ({ wsNotify: mocks.wsNotify }));
 vi.mock('@/lib/functional-location/live-location', () => ({ getAssetLiveLocationMap: async () => new Map() }));
 vi.mock('@/lib/functional-location/maintenance-snapshot', () => ({ buildMaintenanceLocationSnapshot: () => ({}) }));
 
@@ -23,6 +25,7 @@ function tx() {
     workOrder: { findMany: mocks.woFindMany, create: mocks.woCreate },
     workOrderComponent: { upsert: mocks.componentUpsert },
     auditLog: { create: mocks.auditCreate },
+    notification: { create: mocks.notificationCreate },
   };
 }
 vi.mock('@/lib/db', () => ({ db: {
@@ -113,6 +116,8 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     mocks.componentUpsert.mockResolvedValue({});
     mocks.readingCreate.mockResolvedValue({});
     mocks.auditCreate.mockResolvedValue({});
+    mocks.notificationCreate.mockResolvedValue({ id: 'notif-1' });
+    mocks.wsNotify.mockResolvedValue(true);
   });
 
   it('blocks plant access before recording readings or drafting a WO', async () => {
@@ -174,7 +179,50 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(result.body.data.awaitingCloseout).toBe(true);
     expect(mocks.readingCreate).not.toHaveBeenCalled();
     expect(mocks.woCreate).toHaveBeenCalledOnce();
+    expect(mocks.notificationCreate).toHaveBeenCalledOnce();
+    expect(mocks.notificationCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        userId: 'plant-planner-1', type: 'asset_condition', entityType: 'work_order',
+        entityId: 'wo-1', actionUrl: 'wo-detail?id=wo-1',
+      }),
+    }));
+    expect(mocks.wsNotify).toHaveBeenCalledOnce();
+    expect(mocks.wsNotify).toHaveBeenCalledWith('plant-planner-1', 'notification',
+      expect.objectContaining({ entityId: 'wo-1' }));
     expect(point.nextInspection.toISOString()).toBe(originalDue);
+  });
+
+  it('retains an unassigned corrective draft without misdirecting alerts to the inspector', async () => {
+    mocks.plannerFind.mockResolvedValue(null);
+    const res = await submit({
+      requestKey: 'inspection-unassigned-0001', outcome: 'fail', value: '120',
+      findings: 'Overheating bearing needs maintenance planning',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.workOrder.status).toBe('draft');
+    expect(orders.get(res.body.data.workOrder.id)?.plannerId).toBeNull();
+    expect(mocks.notificationCreate).not.toHaveBeenCalled();
+    expect(mocks.wsNotify).not.toHaveBeenCalled();
+    expect(mocks.auditCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ entityType: 'work_order',
+        newValues: expect.stringContaining('management_attention_required') }),
+    }));
+  });
+
+  it('keeps successful inspections free of planner alerts', async () => {
+    const res = await submit({ outcome: 'pass', value: '55' });
+    expect(res.status).toBe(201);
+    expect(mocks.notificationCreate).not.toHaveBeenCalled();
+    expect(mocks.wsNotify).not.toHaveBeenCalled();
+  });
+
+  it('does not fail a committed draft when the live WebSocket push is unavailable', async () => {
+    mocks.wsNotify.mockRejectedValueOnce(new Error('Live notifier offline'));
+    const res = await submit({ outcome: 'fail', value: '120', findings: 'Hot bearing' });
+    expect(res.status).toBe(201);
+    expect(mocks.notificationCreate).toHaveBeenCalledOnce();
+    expect(mocks.wsNotify).toHaveBeenCalledOnce();
+    expect(res.body.data.plannerAlert).toBeUndefined();
   });
 
   it('rejects invalid instrument readings before creating a record, condition reading, or WO', async () => {
@@ -212,6 +260,8 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(mocks.recordCreate).toHaveBeenCalledTimes(1);
     expect(mocks.readingCreate).toHaveBeenCalledTimes(1);
     expect(mocks.woCreate).toHaveBeenCalledTimes(1);
+    expect(mocks.notificationCreate).toHaveBeenCalledOnce();
+    expect(mocks.wsNotify).toHaveBeenCalledOnce();
 
     const conflict = await submit({ ...failedInput, value: '121' });
     expect(conflict.status).toBe(409);
@@ -224,6 +274,8 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect(laterPass.body.data.workOrder.id).toBe(failed.body.data.workOrder.id);
     expect(point.nextInspection.toISOString()).toBe(originalDue);
     expect(orders.size).toBe(1);
+    expect(mocks.notificationCreate).toHaveBeenCalledOnce();
+    expect(mocks.wsNotify).toHaveBeenCalledOnce();
 
     // The Repairs planner has verified and closed the corrective WO.
     const order = orders.get(failed.body.data.workOrder.id)!;

@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   pointFind: vi.fn(), pointUpdate: vi.fn(),
   recordFind: vi.fn(), recordFindFirst: vi.fn(), recordCreate: vi.fn(), recordUpdate: vi.fn(),
   readingCreate: vi.fn(), woFindMany: vi.fn(), woCreate: vi.fn(),
-  componentUpsert: vi.fn(), auditCreate: vi.fn(), lock: vi.fn(), plannerFind: vi.fn(),
+  componentUpsert: vi.fn(), auditCreate: vi.fn(), lock: vi.fn(), plannerFind: vi.fn(), worksheetFind: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({ getSession: mocks.getSession, isAdmin: () => false, hasPermission: () => true }));
 vi.mock('@/lib/plant-scope', () => ({ getPlantScope: mocks.getScope, canAccessPlantStrict: mocks.access }));
@@ -27,6 +27,7 @@ function tx() {
 }
 vi.mock('@/lib/db', () => ({ db: {
   componentInspectionPoint: { findUnique: mocks.pointFind },
+  pmInspectionWorksheetIssue: { findUnique: mocks.worksheetFind },
   $transaction: async (callback: (client: ReturnType<typeof tx>) => unknown) => callback(tx()),
 } }));
 
@@ -287,6 +288,36 @@ describe('PM inspection corrective lifecycle: mocked transaction, no production 
     expect((await submit({ ...payload, captureSource: 'digital' })).status).toBe(400);
     expect(records).toHaveLength(1);
     expect(mocks.recordCreate).toHaveBeenCalledOnce();
+  });
+
+  it('validates registered paper sheet against machine, operating state and point before recording', async () => {
+    const reference = 'PMI-20261109-0123456789ABCDEF';
+    const fieldInspectedAt = new Date(Date.now() - 20 * 60_000);
+    mocks.worksheetFind.mockResolvedValue({
+      reference, assetId: 'machine-1', plantId: 'plant-1',
+      equipmentState: 'running', pointIds: ['temperature-point'],
+      issuedAt: new Date(fieldInspectedAt.getTime() - 10 * 60_000),
+    });
+    const payload = {
+      requestKey: 'pm-issued-reading-00001', outcome: 'pass', value: '55',
+      equipmentState: 'running', captureSource: 'paper',
+      fieldInspectedAt: fieldInspectedAt.toISOString(), fieldInspectorName: 'Ama Mensah',
+      paperReference: reference,
+    };
+    const valid = await submit(payload);
+    expect(valid.status).toBe(201);
+    expect(records).toHaveLength(1);
+    expect(mocks.worksheetFind).toHaveBeenCalledWith({ where: { reference } });
+    const oldCount = records.length;
+    expect((await submit({ ...payload, requestKey: 'pm-mismatch-state-01',
+      equipmentState: 'standstill' })).status).toBe(400);
+    mocks.worksheetFind.mockResolvedValue({ reference, assetId: 'machine-2', plantId: 'plant-1',
+      equipmentState: 'running', pointIds: ['temperature-point'],
+      issuedAt: new Date(fieldInspectedAt.getTime() - 10 * 60_000) });
+    expect((await submit({ ...payload, requestKey: 'pm-mismatch-machine01' })).status).toBe(400);
+    expect((await submit({ ...payload, requestKey: 'pm-fake-ref-00001',
+      paperReference: 'PMI-20261109-INVALID' })).status).toBe(400);
+    expect(records).toHaveLength(oldCount);
   });
 
   it('rejects missing paper source details or future field dates before any write', async () => {

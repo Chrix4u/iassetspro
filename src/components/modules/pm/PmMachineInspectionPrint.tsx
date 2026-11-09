@@ -19,8 +19,10 @@ function displayTime(input: string): string {
  * inspectionlist. All data is from the server's SAVED inspection records.
  * No fake approvals, sign-offs, or inferred inspection timestamps.
  */
-export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
-  data: PrintableMachineInspectionData; mode?: 'saved' | 'field';
+export function PmMachineInspectionPrint({ data, mode = 'saved', issuedWorksheet = null }: {
+  data: PrintableMachineInspectionData;
+  mode?: 'saved' | 'field';
+  issuedWorksheet?: { reference: string; issuedAt: string; assetId: string; equipmentState: string } | null;
 }) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
@@ -101,7 +103,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
                   {data.machine.location && <p>Location: {data.machine.location}</p>}
                 </div>
                 <div className="text-right text-xs">
-                  <p>Issued: {displayTime(data.generatedAt)}</p>
+                  <p>Issued: {displayTime(issuedWorksheet?.issuedAt || data.generatedAt)}</p>
                   <p>Plant: {data.machine.plantId}</p>
                   <p>{data.totalAssignments} assigned task(s)</p>
                   <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
@@ -111,13 +113,14 @@ export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
                 <span>Inspection date: ______________</span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
-                <span>Paper reference: ______________</span>
+                <span data-testid="pm-paper-reference">Paper reference: <strong>{issuedWorksheet?.reference || 'NOT ISSUED'}</strong></span>
               </div>
               <p className="pm-print-note mt-2 font-semibold">
                 BLANK FIELD INSPECTION SHEET — take this printout to the machine, write each actual
                 instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
                 as a substitute for a measurement. Enter the same readings into the electronic machine checklist
-                afterwards. Any abnormal result requires planner review.
+                afterwards using the printed sheet reference. A registration number identifies the printed
+                checklist; it does not verify the technician's signature. Any abnormal result requires planner review.
               </p>
             </header>
             {fieldSections.map((task) => (

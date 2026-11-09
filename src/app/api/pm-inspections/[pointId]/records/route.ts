@@ -8,6 +8,7 @@ import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/main
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
 import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
+import { hasSystemWorksheetPrefix, validateIssuedWorksheetUse } from '@/lib/pm-issued-paper-worksheet';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -74,6 +75,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Measurement point has no parameter key' }, { status: 400 });
     }
     const asset = point.component.asset;
+    // Only registered PMI- references claim system issuance. Preserve legacy
+    // externally numbered paper forms, while refusing forged/mismatched PMI sheets.
+    if (evidence.captureSource === 'paper' && evidence.paperReference
+      && hasSystemWorksheetPrefix(evidence.paperReference)) {
+      const issued = await db.pmInspectionWorksheetIssue.findUnique({
+        where: { reference: evidence.paperReference },
+      });
+      const issueError = validateIssuedWorksheetUse(issued, {
+        reference: evidence.paperReference,
+        assetId: asset.id, plantId: asset.plantId,
+        equipmentState, pointId, fieldInspectedAt: evidence.fieldInspectedAt,
+      });
+      if (issueError) return NextResponse.json({ success: false, error: issueError }, { status: 400 });
+    }
     const location = await getAssetLiveLocationMap([asset.id]);
     const snapshot = buildMaintenanceLocationSnapshot(location.get(asset.id) ?? null);
 

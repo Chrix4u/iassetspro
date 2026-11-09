@@ -64,6 +64,25 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
       });
     });
   }
+  let issuedCount = 0;
+  await page.route((url) => url.pathname === '/api/pm-inspections/checklist/issue', async (route) => {
+    const body = route.request().postDataJSON() as { assetId: string; equipmentState: string; expectedPointIds: string[] };
+    expect(body.assetId).toBe(machine.id);
+    expect(body.expectedPointIds).toEqual(body.equipmentState === 'running' ? ['sound', 'vibration'] : []);
+    expect(['running', 'standstill']).toContain(body.equipmentState);
+    issuedCount += 1;
+    await route.fulfill({
+      status: 201, contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          reference: 'PMI-20261109-' + String(issuedCount).padStart(16, '0'),
+          issuedAt: '2026-11-09T10:00:00.000Z', assetId: body.assetId,
+          equipmentState: body.equipmentState, pointCount: body.equipmentState === 'running' ? 2 : 0,
+        },
+      }),
+    });
+  });
   await page.route((url) => url.pathname === '/api/pm-inspections/checklist', async (route) => {
     const state = new URL(route.request().url()).searchParams.get('equipmentState');
     const standstill = state === 'standstill';
@@ -180,6 +199,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.evaluate(() => { window.print = () => undefined; });
   await checklist.getByRole('button', { name: 'Print blank field inspection worksheet' }).click();
   await expect(printView).toContainText('BLANK FIELD INSPECTION SHEET');
+  await expect(printView.getByTestId('pm-paper-reference')).toContainText('PMI-20261109-0000000000000001');
+  await expect(checklist.getByTestId('pm-issued-worksheet')).toContainText('PMI-20261109-0000000000000001');
+  expect(issuedCount).toBe(1);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
   await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
   await expect(printView).toContainText('Drive Assembly');

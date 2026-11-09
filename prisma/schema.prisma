@@ -58,6 +58,7 @@ model RolePermission {
 }
 
 model User {
+  issuedPaperInspectionWorksheets PmInspectionWorksheetIssue[] @relation("PmWorksheetIssuedBy")
   id                      String    @id @default(cuid())
   username                String    @unique
   email                   String    @unique
@@ -1058,6 +1059,7 @@ model AssetFunctionalLocationAssignment {
 }
 
 model Asset {
+  issuedPaperInspectionWorksheets PmInspectionWorksheetIssue[] @relation("PmWorksheetMachine")
   id                String    @id @default(cuid())
   name              String
   assetTag          String    @unique
@@ -3579,6 +3581,24 @@ model ComponentInspectionPoint {
   @@index([componentId])
   @@index([isActive])
   @@map("component_inspection_points")
+}
+
+model PmInspectionWorksheetIssue {
+  id             String   @id @default(cuid())
+  reference      String   @unique
+  assetId        String   @map("asset_id")
+  plantId        String   @map("plant_id")
+  equipmentState String   @map("equipment_state")
+  issuedById     String   @map("issued_by_id")
+  issuedAt       DateTime @default(now()) @map("issued_at")
+  pointIds       Json     @map("point_ids") // immutable set of printed, active inspection-point IDs
+
+  machine  Asset @relation("PmWorksheetMachine", fields: [assetId], references: [id], onDelete: Restrict)
+  issuedBy User  @relation("PmWorksheetIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@index([assetId, issuedAt])
+  @@index([plantId, issuedAt])
+  @@map("pm_inspection_worksheet_issues")
 }
 
 model ComponentInspectionRecord {

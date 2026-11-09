@@ -36,6 +36,14 @@ interface MachineChecklistResponse {
   generalTasks: MachineChecklistTask[];
 }
 
+interface IssuedWorksheet {
+  reference: string;
+  issuedAt: string;
+  assetId: string;
+  equipmentState: MachineInspectionState;
+  pointCount: number;
+}
+
 interface EntryState extends MachineChecklistDraft {
   fieldInspectedAt?: string;
   saving?: boolean;
@@ -96,9 +104,37 @@ export function PmMachineInspectionChecklistPanel({
   const [captureMode, setCaptureMode] = useState<'digital' | 'paper'>('digital');
   const [paperInspector, setPaperInspector] = useState('');
   const [paperReference, setPaperReference] = useState('');
-  const printSheet = (mode: 'saved' | 'field') => {
-    setPrintMode(mode);
-    window.requestAnimationFrame(() => window.print());
+  const [issuedWorksheet, setIssuedWorksheet] = useState<IssuedWorksheet | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const printSheet = async (mode: 'saved' | 'field') => {
+    if (mode === 'saved') {
+      setPrintMode('saved');
+      window.requestAnimationFrame(() => window.print());
+      return;
+    }
+    if (!data || printing) return;
+    setPrinting(true);
+    try {
+      // Issue BEFORE opening print; no untracked or invented PMI reference can
+      // appear on a new field sheet. Cancelled print remains an issue record.
+      const response = await api.post<IssuedWorksheet>('/api/pm-inspections/checklist/issue', {
+        assetId: data.machine.id, equipmentState: data.equipmentState,
+        expectedPointIds: Array.from(new Set(data.groups.flatMap((group) => group.points.map((point) => point.id)))).sort(),
+      });
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Unable to register this paper worksheet');
+      }
+      setIssuedWorksheet(response.data);
+      setPaperReference((previous) => previous.trim() ? previous : response.data!.reference);
+      setPrintMode('field');
+      // React must commit the returned issue number before the print snapshot.
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => window.print()));
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Could not issue paper worksheet');
+    } finally {
+      setPrinting(false);
+    }
   };
   const [showSetupIssues, setShowSetupIssues] = useState(false);
 
@@ -128,6 +164,7 @@ export function PmMachineInspectionChecklistPanel({
     setCaptureMode('digital');
     setPaperInspector('');
     setPaperReference('');
+    setIssuedWorksheet(null);
   }, [assetId, equipmentState]);
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
@@ -333,11 +370,27 @@ export function PmMachineInspectionChecklistPanel({
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={() => setReload((v) => v + 1)} disabled={busy || loading}><RefreshCw className="mr-1 h-3.5 w-3.5"/>Refresh</Button>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || busy}><Download className="mr-1 h-3.5 w-3.5"/>Export CSV</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('field')} disabled={!data || busy || loading} aria-label="Print blank field inspection worksheet"><Printer className="mr-1 h-3.5 w-3.5"/>Print Blank Field Sheet</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('saved')} disabled={!data || busy || loading} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('field')} disabled={!data || busy || loading || printing} aria-label="Print blank field inspection worksheet"><Printer className="mr-1 h-3.5 w-3.5"/>Print Blank Field Sheet</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('saved')} disabled={!data || busy || loading || printing} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
           <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close List</Button>
         </div>
       </div>
+      {issuedWorksheet && issuedWorksheet.assetId === assetId && issuedWorksheet.equipmentState === equipmentState && (
+        <div data-testid="pm-issued-worksheet" role="status"
+          className="min-w-0 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2 text-xs">
+          <div className="min-w-0">
+            <p className="font-semibold">Registered paper sheet: <span className="break-all">{issuedWorksheet.reference}</span></p>
+            <p className="text-muted-foreground">Issued {dateTime(issuedWorksheet.issuedAt)} · {issuedWorksheet.pointCount} check(s).
+              Print registration is not proof of physical inspection or technician signature.</p>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={() => {
+            setCaptureMode('paper');
+            setPaperReference(issuedWorksheet.reference);
+          }} disabled={busy || ready.length > 0}>
+            Use this reference for entry
+          </Button>
+        </div>
+      )}
       {loading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin"/>Generating the machine's assigned inspection checklist…</p>}
       {error && <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{error}</p>}
       {data && !loading && <>
@@ -405,8 +458,10 @@ export function PmMachineInspectionChecklistPanel({
               <div className="min-w-0 space-y-1">
                 <Label className="text-xs">Paper sheet reference</Label>
                 <Input aria-label="Paper worksheet reference" value={paperReference} disabled={busy}
-                  maxLength={120} placeholder="e.g. C314-OPM-P267-09NOV2026"
+                  maxLength={120} placeholder="PMI-... printed reference or existing manual paper ID"
                   onChange={(event) => setPaperReference(event.target.value)} />
+                <p className="text-[11px] text-muted-foreground">PMI- references must match a registered sheet for this exact machine, state and check.
+                  Existing externally numbered forms are accepted as manually referenced evidence.</p>
               </div>
               <p className="sm:col-span-2 text-xs text-muted-foreground">
                 For each part below, enter the exact date and time shown on the returned paper.
@@ -582,7 +637,7 @@ export function PmMachineInspectionChecklistPanel({
           </Button>}
         </div>
       </>}
-      {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} />}
+      {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} issuedWorksheet={issuedWorksheet} />}
     </section>
   );
 }

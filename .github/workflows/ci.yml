@@ -166,13 +166,25 @@ jobs:
           NEXT_PUBLIC_BUILD_VERSION: ${{ github.sha }}
         run: bun run build
 
+      # Turbopack may emit chunks containing ':' in their filenames.
+      # GitHub artifact uploads reject that character; a tarball preserves
+      # exact paths and also keeps executable bits for Playwright consumers.
+      - name: Package standalone build for CI consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js
+          tar -C .next/standalone -czf build-output.tar.gz .
+          test -s build-output.tar.gz
+          tar -tzf build-output.tar.gz | grep -qx './server.js'
+
       - name: Upload standalone build for CI consumers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: build-output
-          path: .next/standalone
-          include-hidden-files: true
+          path: build-output.tar.gz
           retention-days: 7
+          compression-level: 0
 
       - name: Assemble compact production release artifact
         shell: bash
@@ -363,7 +375,17 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: build-output
-          path: .next/standalone
+          path: .
+
+      - name: Restore exact standalone build for browser tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build-output.tar.gz
+          mkdir -p .next/standalone
+          tar -xzf build-output.tar.gz -C .next/standalone
+          test -f .next/standalone/server.js
+          rm build-output.tar.gz
 
       - name: Install Playwright Chromium browser with system dependencies
         run: bunx playwright install --with-deps chromium
@@ -468,7 +490,17 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: build-output
-          path: .next/standalone
+          path: .
+
+      - name: Restore exact standalone build for browser tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build-output.tar.gz
+          mkdir -p .next/standalone
+          tar -xzf build-output.tar.gz -C .next/standalone
+          test -f .next/standalone/server.js
+          rm build-output.tar.gz
 
       - name: Install Playwright Chromium browser with system dependencies
         run: bunx playwright install --with-deps chromium

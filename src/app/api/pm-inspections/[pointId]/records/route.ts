@@ -74,6 +74,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Measurement point has no parameter key' }, { status: 400 });
     }
     const asset = point.component.asset;
+    if (evidence.captureSource === 'paper' && evidence.paperReference?.startsWith('IW-')) {
+      const issue = await db.pmPaperWorksheetIssue.findUnique({
+        where: { reference: evidence.paperReference },
+        select: { assetId: true, equipmentState: true, pointIds: true },
+      });
+      if (!issue || issue.assetId !== asset.id || issue.equipmentState !== equipmentState
+        || !(JSON.parse(issue.pointIds) as string[]).includes(pointId)) {
+        return NextResponse.json({
+          success: false, error: 'Issued worksheet does not include this machine, operating state or inspection point',
+        }, { status: 400 });
+      }
+    }
     const location = await getAssetLiveLocationMap([asset.id]);
     const snapshot = buildMaintenanceLocationSnapshot(location.get(asset.id) ?? null);
 

@@ -19,8 +19,9 @@ function displayTime(input: string): string {
  * inspectionlist. All data is from the server's SAVED inspection records.
  * No fake approvals, sign-offs, or inferred inspection timestamps.
  */
-export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
+export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }: {
   data: PrintableMachineInspectionData; mode?: 'saved' | 'field';
+  printedIssue?: { reference: string; issuedAt: string } | null;
 }) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
@@ -101,7 +102,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
                   {data.machine.location && <p>Location: {data.machine.location}</p>}
                 </div>
                 <div className="text-right text-xs">
-                  <p>Issued: {displayTime(data.generatedAt)}</p>
+                  <p>Issued: {printedIssue ? displayTime(printedIssue.issuedAt) : 'Not yet issued'}</p>
                   <p>Plant: {data.machine.plantId}</p>
                   <p>{data.totalAssignments} assigned task(s)</p>
                   <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
@@ -111,7 +112,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
                 <span>Inspection date: ______________</span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
-                <span>Paper reference: ______________</span>
+                <span>Paper reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
               </div>
               <p className="pm-print-note mt-2 font-semibold">
                 BLANK FIELD INSPECTION SHEET — take this printout to the machine, write each actual

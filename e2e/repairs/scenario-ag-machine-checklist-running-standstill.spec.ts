@@ -64,6 +64,33 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
       });
     });
   }
+  let sheetIssued = false;
+  const issuedRef = 'IW-C314UAT-20261109-1234567890';
+  await page.route((url) => url.pathname === '/api/pm-inspections/sheets', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON() as {
+        pointIds: string[]; taskIds: string[]; equipmentState: string; requestKey: string;
+      };
+      expect(payload.pointIds.sort()).toEqual(['sound', 'vibration']);
+      expect(payload.taskIds.sort()).toEqual(['general', 'task-bearing', 'task-pulley']);
+      expect(payload.equipmentState).toBe('running');
+      expect(payload.requestKey.length).toBeGreaterThanOrEqual(8);
+      sheetIssued = true;
+      await route.fulfill({ status: 201, contentType: 'application/json',
+        body: JSON.stringify({ success: true,
+          data: { reference: issuedRef, issuedAt: '2026-11-09T09:00:00Z' } }),
+      });
+    } else {
+      const matching = posted.filter((row) => row.paperReference === issuedRef);
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: sheetIssued ? [{
+          reference: issuedRef, issuedAt: '2026-11-09T09:00:00Z',
+          expected: 2, entered: matching.length, remaining: 2 - matching.length,
+          status: matching.length === 0 ? 'issued' : 'partial',
+        }] : [] }),
+      });
+    }
+  });
   await page.route((url) => url.pathname === '/api/pm-inspections/checklist', async (route) => {
     const state = new URL(route.request().url()).searchParams.get('equipmentState');
     const standstill = state === 'standstill';
@@ -180,6 +207,8 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.evaluate(() => { window.print = () => undefined; });
   await checklist.getByRole('button', { name: 'Print blank field inspection worksheet' }).click();
   await expect(printView).toContainText('BLANK FIELD INSPECTION SHEET');
+  await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
+  await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
   await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
   await expect(printView).toContainText('Drive Assembly');
@@ -210,7 +239,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();
   await expect(checklist.getByTestId('pm-paper-evidence')).toBeVisible();
   await checklist.getByRole('textbox', { name: 'Paper field inspector' }).fill('Ama Mensah');
-  await checklist.getByRole('textbox', { name: 'Paper worksheet reference' }).fill('C314-P267-20261109');
+  await checklist.getByRole('combobox', { name: 'Select issued paper worksheet' }).click();
+  await page.getByRole('option', { name: new RegExp(issuedRef) }).click();
+  await expect(checklist.getByRole('textbox', { name: 'Paper worksheet reference' })).toHaveValue(issuedRef);
   const when = await page.evaluate(() => {
     const time = new Date(Date.now() - 45 * 60_000);
     return new Date(time.getTime() - time.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -222,7 +253,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted).toHaveLength(3);
   expect(posted[2]).toMatchObject({
     pointId: 'vibration', value: '3.1', captureSource: 'paper',
-    fieldInspectorName: 'Ama Mensah', paperReference: 'C314-P267-20261109',
+    fieldInspectorName: 'Ama Mensah', paperReference: issuedRef,
     equipmentState: 'running',
   });
   expect(posted[2].fieldInspectedAt).toMatch(/T\d{2}:\d{2}:00/);

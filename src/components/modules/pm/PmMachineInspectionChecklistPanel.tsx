@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Download, Eye, Gauge, Loader2, Printer, RefreshCw, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -36,6 +36,15 @@ interface MachineChecklistResponse {
   generalTasks: MachineChecklistTask[];
 }
 
+interface IssuedPaperSheet {
+  reference: string;
+  issuedAt: string;
+  issuedById?: string;
+  expected: number;
+  entered: number;
+  remaining: number;
+  status: string;
+}
 interface EntryState extends MachineChecklistDraft {
   fieldInspectedAt?: string;
   saving?: boolean;
@@ -96,9 +105,50 @@ export function PmMachineInspectionChecklistPanel({
   const [captureMode, setCaptureMode] = useState<'digital' | 'paper'>('digital');
   const [paperInspector, setPaperInspector] = useState('');
   const [paperReference, setPaperReference] = useState('');
-  const printSheet = (mode: 'saved' | 'field') => {
-    setPrintMode(mode);
-    window.requestAnimationFrame(() => window.print());
+  const [issuedSheets, setIssuedSheets] = useState<IssuedPaperSheet[]>([]);
+  const [printedIssue, setPrintedIssue] = useState<{ reference: string; issuedAt: string } | null>(null);
+  const [issuingPaper, setIssuingPaper] = useState(false);
+  const pendingIssueKey = useRef<string | null>(null);
+  const loadIssued = useCallback(async () => {
+    try {
+      const query = new URLSearchParams({ assetId, equipmentState });
+      const response = await api.get<IssuedPaperSheet[]>(`/api/pm-inspections/sheets?${query}`);
+      setIssuedSheets(response.success && Array.isArray(response.data) ? response.data : []);
+    } catch {
+      setIssuedSheets([]);
+    }
+  }, [assetId, equipmentState]);
+
+  const printSheet = async (mode: 'saved' | 'field') => {
+    if (mode === 'saved') {
+      setPrintMode('saved');
+      window.requestAnimationFrame(() => window.print());
+      return;
+    }
+    if (!data || issuingPaper) return;
+    setIssuingPaper(true);
+    try {
+      const requestKey = pendingIssueKey.current || crypto.randomUUID();
+      pendingIssueKey.current = requestKey;
+      const pointIds = Array.from(new Set(data.groups.flatMap((g) => g.points.map((p) => p.id))));
+      const taskIds = Array.from(new Set([
+        ...data.groups.flatMap((g) => g.tasks.map((t) => t.id)),
+        ...data.generalTasks.map((t) => t.id),
+      ]));
+      const response = await api.post<{ reference: string; issuedAt: string }>(
+        '/api/pm-inspections/sheets', { assetId, equipmentState, requestKey, pointIds, taskIds });
+      if (!response.success || !response.data) throw new Error(response.error || 'Could not issue paper reference');
+      const issued = { reference: response.data.reference, issuedAt: response.data.issuedAt };
+      pendingIssueKey.current = null;
+      setPrintedIssue(issued);
+      setPrintMode('field');
+      void loadIssued();
+      window.requestAnimationFrame(() => window.print());
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Could not issue paper inspection sheet');
+    } finally {
+      setIssuingPaper(false);
+    }
   };
   const [showSetupIssues, setShowSetupIssues] = useState(false);
 
@@ -119,6 +169,7 @@ export function PmMachineInspectionChecklistPanel({
   }, [assetId, equipmentState]);
 
   useEffect(() => { void load(); }, [load, reloadKey, reload]);
+  useEffect(() => { void loadIssued(); }, [loadIssued, reload]);
   useEffect(() => {
     // A previous machine's unsaved readings must NEVER be silently submitted
     // against a newly selected machine or another inspection state.
@@ -128,6 +179,8 @@ export function PmMachineInspectionChecklistPanel({
     setCaptureMode('digital');
     setPaperInspector('');
     setPaperReference('');
+    setPrintedIssue(null);
+    pendingIssueKey.current = null;
   }, [assetId, equipmentState]);
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
@@ -272,6 +325,7 @@ export function PmMachineInspectionChecklistPanel({
         // Reload the authoritative latest readings and outstanding WO numbers.
         setReload((value) => value + 1);
         onRecorded();
+        void loadIssued();
       }
       if (failed) toast.error(`${failed} item${failed === 1 ? '' : 's'} not saved. Fix and retry; already saved rows will not be repeated.`);
       setSaveProgress(failures.length ? failures[0] : `${succeeded} entries saved`);
@@ -333,8 +387,8 @@ export function PmMachineInspectionChecklistPanel({
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={() => setReload((v) => v + 1)} disabled={busy || loading}><RefreshCw className="mr-1 h-3.5 w-3.5"/>Refresh</Button>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || busy}><Download className="mr-1 h-3.5 w-3.5"/>Export CSV</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('field')} disabled={!data || busy || loading} aria-label="Print blank field inspection worksheet"><Printer className="mr-1 h-3.5 w-3.5"/>Print Blank Field Sheet</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('saved')} disabled={!data || busy || loading} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('field')} disabled={!data || busy || loading || issuingPaper} aria-label="Print blank field inspection worksheet">{issuingPaper ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/> : <Printer className="mr-1 h-3.5 w-3.5"/>}Print Blank Field Sheet</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('saved')} disabled={!data || busy || loading || issuingPaper} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
           <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close List</Button>
         </div>
       </div>
@@ -408,6 +462,16 @@ export function PmMachineInspectionChecklistPanel({
                   maxLength={120} placeholder="e.g. C314-OPM-P267-09NOV2026"
                   onChange={(event) => setPaperReference(event.target.value)} />
               </div>
+              {issuedSheets.length > 0 && <div className="sm:col-span-2 space-y-1">
+                <Label className="text-xs">Issued paper worksheets (select to enter readings)</Label>
+                <Select value={issuedSheets.some((sheet) => sheet.reference === paperReference) ? paperReference : ''}
+                  disabled={busy} onValueChange={setPaperReference}>
+                  <SelectTrigger aria-label="Select issued paper worksheet" className="w-full"><SelectValue placeholder="Choose issued sheet or type an older external reference" /></SelectTrigger>
+                  <SelectContent>{issuedSheets.map((sheet) => <SelectItem key={sheet.reference} value={sheet.reference}>
+                    {sheet.reference} · {sheet.entered}/{sheet.expected} entered ({sheet.status.replace('_', ' ')})
+                  </SelectItem>)}</SelectContent>
+                </Select>
+              </div>}
               <p className="sm:col-span-2 text-xs text-muted-foreground">
                 For each part below, enter the exact date and time shown on the returned paper.
                 The system also records who typed it in and when. Never backdate the electronic entry timestamp.
@@ -415,6 +479,16 @@ export function PmMachineInspectionChecklistPanel({
             </div>
           )}
         </div>
+        {issuedSheets.length > 0 && <div data-testid="pm-paper-sheet-register" className="space-y-1 rounded-lg border p-2.5 text-xs">
+          <p className="font-semibold">Issued paper sheets · {issuedSheets.length} recent</p>
+          {issuedSheets.slice(0, 5).map((sheet) => (
+            <div key={sheet.reference} className="flex flex-wrap justify-between gap-2 py-1">
+              <span className="break-all font-medium">{sheet.reference}</span>
+              <span>{sheet.entered} / {sheet.expected} entered · {sheet.status.replace('_',' ')}</span>
+            </div>
+          ))}
+          <p className="text-muted-foreground">Completion counts configured checks only; unconfigured parts still need planner setup.</p>
+        </div>}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
           <div>
             <p className="text-sm font-semibold">Enter inspection readings</p>
@@ -582,7 +656,7 @@ export function PmMachineInspectionChecklistPanel({
           </Button>}
         </div>
       </>}
-      {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} />}
+      {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} printedIssue={printedIssue} />}
     </section>
   );
 }

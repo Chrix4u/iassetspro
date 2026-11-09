@@ -20,6 +20,7 @@ import { PmAssignmentTargetDetailDialog } from '@/components/modules/pm/PmAssign
 import { PmAssignmentTargetList } from '@/components/modules/pm/PmAssignmentTargetList';
 import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
 import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';
+import { PmEnterpriseForwardPlan } from '@/components/modules/pm/PmEnterpriseForwardPlan';
 import { PmInspectionWorksheetPanel } from '@/components/modules/pm/PmInspectionWorksheetPanel';
 
 function taskOverdue(row: PmAssignmentTargetListRecord, now: Date) {
@@ -99,6 +100,7 @@ export function PmPlanningPage() {
       <Stat label="Machines" value={machines.length} icon={ClipboardList}/><Stat label="Active Tasks" value={assignments.length} icon={Activity}/><Stat label="Due Soon Targets" value={dueSoonTargets} icon={Clock}/><Stat label="Overdue Targets" value={overdueTargets} icon={AlertTriangle}/>
     </div>
 
+    <PmEnterpriseForwardPlan />
     <PmPortfolioCompliancePanel />
     <PmInspectionWorksheetPanel />
     <PmMachineRollupPanel />

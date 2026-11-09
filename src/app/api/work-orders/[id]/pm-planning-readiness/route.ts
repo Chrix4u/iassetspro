@@ -41,6 +41,8 @@ export async function GET(
             itemName: true,
             status: true,
             source: true,
+            quantityIssued: true,
+            stockReserved: true,
           },
         },
         repairToolRequests: {
@@ -53,6 +55,7 @@ export async function GET(
               select: {
                 toolId: true,
                 toolName: true,
+                quantityIssued: true,
               },
             },
           },
@@ -98,13 +101,15 @@ export async function GET(
     const toolRequests = wo.repairToolRequests.flatMap((toolRequest) => {
       const requestItems = toolRequest.items.length > 0
         ? toolRequest.items
-        : [{ toolId: toolRequest.toolId, toolName: toolRequest.toolName }];
+        : [{ toolId: toolRequest.toolId, toolName: toolRequest.toolName,
+          quantityIssued: null }];
 
       return requestItems.map((item) => ({
         toolId: item.toolId,
         toolName: item.toolName || toolRequest.toolName,
         status: toolRequest.status,
         source: toolRequest.source,
+        quantityIssued: item.quantityIssued,
       }));
     });
 

@@ -86,6 +86,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
         body: JSON.stringify({ success: true, data: sheetIssued ? [{
           reference: issuedRef, issuedAt: '2026-11-09T09:00:00Z',
           expected: 2, entered: matching.length, remaining: 2 - matching.length,
+          missingPointIds: ['vibration', 'sound'].filter((id) => !matching.some((row) => row.pointId === id)),
           status: matching.length === 0 ? 'issued' : 'partial',
         }] : [] }),
       });
@@ -242,6 +243,10 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await checklist.getByRole('combobox', { name: 'Select issued paper worksheet' }).click();
   await page.getByRole('option', { name: new RegExp(issuedRef) }).click();
   await expect(checklist.getByRole('textbox', { name: 'Paper worksheet reference' })).toHaveValue(issuedRef);
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('2 readings remaining on this sheet');
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('C314-21-02');
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('Vibration');
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('Unusual noise');
   const when = await page.evaluate(() => {
     const time = new Date(Date.now() - 45 * 60_000);
     return new Date(time.getTime() - time.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
@@ -250,6 +255,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await checklist.getByRole('spinbutton', { name: 'Actual reading: Vibration' }).fill('3.1');
   await checklist.getByRole('button', { name: 'Save reading' }).first().click();
   await expect(checklist).toContainText('1 entries saved', { timeout: 25_000 });
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('1 reading remaining on this sheet');
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).not.toContainText('Vibration');
+  await expect(checklist.getByTestId('pm-paper-missing-readings')).toContainText('Unusual noise');
   expect(posted).toHaveLength(3);
   expect(posted[2]).toMatchObject({
     pointId: 'vibration', value: '3.1', captureSource: 'paper',

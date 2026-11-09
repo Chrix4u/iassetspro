@@ -9,8 +9,9 @@ export function sameSheetScope(first: readonly string[], second: readonly string
 export function paperSheetProgress(expected: readonly string[], observed: ReadonlySet<string>) {
   const pointIds = Array.from(new Set(expected));
   const entered = pointIds.filter((id) => observed.has(id)).length;
-  const remaining = pointIds.length - entered;
-  return { expected: pointIds.length, entered, remaining,
+  const missingPointIds = pointIds.filter((id) => !observed.has(id));
+  const remaining = missingPointIds.length;
+  return { expected: pointIds.length, entered, remaining, missingPointIds,
     status: pointIds.length === 0 ? 'requires_setup' : remaining === 0 ? 'entered' : entered === 0 ? 'issued' : 'partial',
   };
 }

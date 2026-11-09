@@ -11,12 +11,15 @@ describe('installed spare lifecycle contract', () => {
     const removal = read('src/app/api/component-registry/[id]/installed-parts/[installedPartId]/route.ts');
 
     expect(schema).toContain('model InstalledSparePart');
-    expect(schema).toContain('materialRequestId String?');
-    expect(schema).toContain('workOrderId       String?');
+    expect(schema).toMatch(/materialRequestId\s+String\?/);
+    expect(schema).toMatch(/workOrderId\s+String\?/);
     expect(schema).toContain('installedById');
     expect(schema).toContain('removedById');
-    expect(schema).toContain('serialNumber      String?');
-    expect(schema).not.toContain('serialNumber      String?   @unique');
+    expect(schema).toMatch(/serialNumber\s+String\?/);
+    const installedSpareModel = schema.match(/model InstalledSparePart\s*\{([\s\S]*?)\n\}/)?.[1] || '';
+    // Other unrelated models may intentionally have unique serial numbers;
+    // this partial uniqueness contract applies ONLY to installed spares.
+    expect(installedSpareModel).not.toMatch(/serialNumber\s+String\?\s+@unique\b/);
 
     expect(migration).toContain('installed_spare_parts_active_serial_key');
     expect(migration).toContain("WHERE \"serialNumber\" IS NOT NULL AND \"status\" = 'installed'");

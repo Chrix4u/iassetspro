@@ -13,10 +13,10 @@ const pmDue = fs.readFileSync('src/app/api/pm-schedules/check-due/route.ts', 'ut
 
 describe('machine component maintenance hierarchy contract', () => {
   it('supports recursive machine component hierarchy and inventory spare links', () => {
-    expect(schema).toContain('parent        ComponentRegistry?');
-    expect(schema).toContain('children      ComponentRegistry[]');
+    expect(schema).toMatch(/parent\s+ComponentRegistry\?/);
+    expect(schema).toMatch(/children\s+ComponentRegistry\[\]/);
     expect(schema).toContain('model ComponentSparePart');
-    expect(schema).toContain('inventoryItemId   String?');
+    expect(schema).toMatch(/inventoryItemId\s+String\?/);
     expect(assetPage).toContain('Parent Assembly / Component');
     expect(assetPage).toContain('Component Spare Parts & Store Linkage');
     expect(assetPage).toContain('Link Store Part');
@@ -39,8 +39,8 @@ describe('machine component maintenance hierarchy contract', () => {
   });
 
   it('supports component-targeted PM schedules and generated WO inheritance', () => {
-    expect(schema).toContain('componentId       String?');
-    expect(schema).toContain('pmSchedules              PmSchedule[] @relation("PmScheduleComponent")');
+    expect(schema).toMatch(/componentId\s+String\?/);
+    expect(schema).toMatch(/pmSchedules\s+PmSchedule\[\]\s+@relation\("PmScheduleComponent"\)/);
     expect(pmApi).toContain('Selected component does not belong to the selected asset');
     expect(pmTarget).toContain('Choose PM Target');
     expect(pmTarget).toContain('Select the exact coded maintainable node.');

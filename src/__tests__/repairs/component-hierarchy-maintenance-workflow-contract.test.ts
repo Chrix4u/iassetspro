@@ -17,10 +17,10 @@ const componentSpareApi = fs.readFileSync('src/app/api/component-registry/[id]/s
 
 describe('machine component hierarchy maintenance workflow contract', () => {
   it('supports recursive assemblies/components and store spare-part linkage', () => {
-    expect(schema).toContain('parentId          String?');
-    expect(schema).toContain('children      ComponentRegistry[] @relation("ComponentHierarchy")');
+    expect(schema).toMatch(/parentId\s+String\?/);
+    expect(schema).toMatch(/children\s+ComponentRegistry\[\]\s+@relation\("ComponentHierarchy"\)/);
     expect(schema).toContain('model ComponentSparePart');
-    expect(schema).toContain('inventoryItemId   String?');
+    expect(schema).toMatch(/inventoryItemId\s+String\?/);
     expect(assetPage).toContain('Parent Assembly / Component');
     expect(assetPage).toContain('Component Spare Parts & Store Linkage');
     expect(assetPage).toContain('Link Store Part');
@@ -51,7 +51,7 @@ describe('machine component hierarchy maintenance workflow contract', () => {
   });
 
   it('allows PM schedules to target a component and carries it to generated PM work orders', () => {
-    expect(schema).toContain('componentId       String?');
+    expect(schema).toMatch(/componentId\s+String\?/);
     expect(schema).toContain('@relation("PmScheduleComponent"');
     expect(pmTarget).toContain('Choose PM Target');
     expect(pmTarget).toContain('Select the exact coded maintainable node.');

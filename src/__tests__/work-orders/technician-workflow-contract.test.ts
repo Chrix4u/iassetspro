@@ -9,7 +9,7 @@ describe('technician work-order vertical slice contract', () => {
     const start = read('src/services/workOrderStartExecution.service.ts');
     const capability = read('src/app/api/work-orders/[id]/capabilities/route.ts');
     const assignment = read('src/app/api/work-orders/[id]/assignment-response/route.ts');
-    expect(schema).toContain('assignmentResponseStatus String @default("pending")');
+    expect(schema).toMatch(/assignmentResponseStatus\s+String\s+@default\("pending"\)/);
     expect(start).toContain("wo.assignmentResponseStatus !== 'accepted'");
     expect(capability).toContain('canAcceptAssignment');
     expect(capability).toContain('canDeclineAssignment');

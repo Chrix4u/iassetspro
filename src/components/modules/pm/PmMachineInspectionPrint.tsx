@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PrintableMachineInspectionData } from '@/lib/pm-machine-checklist-print';
+import { buildPaperInspectionTasks } from '@/lib/pm-machine-field-worksheet';
 import {
   buildMachineInspectionPrintRows,
   machineInspectionPrintSummary,
@@ -18,9 +19,12 @@ function displayTime(input: string): string {
  * inspectionlist. All data is from the server's SAVED inspection records.
  * No fake approvals, sign-offs, or inferred inspection timestamps.
  */
-export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspectionData }) {
+export function PmMachineInspectionPrint({ data, mode = 'saved' }: {
+  data: PrintableMachineInspectionData; mode?: 'saved' | 'field';
+}) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
+  const fieldSections = buildPaperInspectionTasks(data.groups, data.generalTasks);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
@@ -68,6 +72,10 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
+          #pm-machine-inspection-print .pm-paper-task { margin-top: 14px !important; }
+          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 11mm; border-bottom: 1px solid #9ca3af; }
+          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 13mm; border-bottom: 1px solid #9ca3af; }
+          #pm-machine-inspection-print .pm-paper-heading { background: #e2e8f0 !important; font-weight: bold; padding: 7px !important; }
           #pm-machine-inspection-print .pm-print-note {
             color: #374151 !important;
             font-size: 8pt !important;
@@ -80,6 +88,110 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
         className="hidden"
         aria-label="Printable machine inspection checklist"
       >
+        {mode === 'field' ? (
+          <>
+            <header className="pm-print-no-break mb-3">
+              <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-2">
+                <div>
+                  <p className="text-xs font-semibold">iAssetsPro · Preventive Maintenance</p>
+                  <h1 className="text-xl font-bold">Inspectionlist — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
+                  <p className="text-base font-bold">{data.machine.name}</p>
+                  <p>Machine code: <strong>{data.machine.assetTag}</strong></p>
+                  <p>Machine description: {data.machine.description || data.machine.name}</p>
+                  {data.machine.location && <p>Location: {data.machine.location}</p>}
+                </div>
+                <div className="text-right text-xs">
+                  <p>Issued: {displayTime(data.generatedAt)}</p>
+                  <p>Plant: {data.machine.plantId}</p>
+                  <p>{data.totalAssignments} assigned task(s)</p>
+                  <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-3 border border-slate-400 p-2 text-xs">
+                <span>Inspection date: ______________</span>
+                <span>Start time: __________</span>
+                <span>End time: __________</span>
+                <span>Paper reference: ______________</span>
+              </div>
+              <p className="pm-print-note mt-2 font-semibold">
+                BLANK FIELD INSPECTION SHEET — take this printout to the machine, write each actual
+                instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
+                as a substitute for a measurement. Enter the same readings into the electronic machine checklist
+                afterwards. Any abnormal result requires planner review.
+              </p>
+            </header>
+            {fieldSections.map((task) => (
+              <section key={task.id} className="pm-paper-task" data-testid="pm-paper-task">
+                <h2 className="pm-paper-heading pm-print-no-break text-sm">
+                  Task #{task.number}: {task.instruction}
+                </h2>
+                <table className="text-xs" data-testid="pm-paper-field-table">
+                  <colgroup>
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '16%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '15%' }} />
+                    <col style={{ width: '11%' }} />
+                    <col style={{ width: '18%' }} />
+                    <col style={{ width: '6%' }} />
+                  </colgroup>
+                  <thead><tr className="bg-slate-100">
+                    <th>Assembly / subassembly / part path</th>
+                    <th>Part code / description</th>
+                    <th>Check / parameter</th>
+                    <th>Method / accepted range</th>
+                    <th>Actual reading</th>
+                    <th>Observation / remark</th>
+                    <th>Time</th>
+                  </tr></thead>
+                  <tbody>
+                    {task.rows.map((row) => (
+                      <tr key={row.id} data-testid="pm-paper-field-row">
+                        <td>
+                          {row.hierarchy.length ? row.hierarchy.map((ancestor, index) => (
+                            <div key={ancestor.id} className="break-words">
+                              {index > 0 ? '› ' : ''}{ancestor.type}: <strong>{ancestor.code}</strong>
+                              <span> — {ancestor.name}</span>
+                            </div>
+                          )) : 'Machine-wide task — no registered part'}
+                        </td>
+                        <td><strong>{row.partCode}</strong><div>{row.partName}</div></td>
+                        <td>
+                          <strong>{row.checkName}</strong>
+                          <div>{row.parameter}</div>
+                        </td>
+                        <td>
+                          <strong>{row.method}</strong>
+                          <div>{row.acceptedRange} {row.unit}</div>
+                          {row.configurationNote && <div className="mt-1 text-[10px]">{row.configurationNote}</div>}
+                        </td>
+                        <td>
+                          {row.requiresConfiguration ? (
+                            <strong>CONFIGURE FIRST</strong>
+                          ) : <span aria-label="Blank space for handwritten actual reading" className="pm-paper-writing-line">&nbsp;</span>}
+                        </td>
+                        <td><span aria-label="Blank space for handwritten observation" className="pm-paper-writing-note">&nbsp;</span></td>
+                        <td><span aria-label="Blank space for handwritten inspection time" className="pm-paper-writing-line">&nbsp;</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            ))}
+            {fieldSections.length === 0 && <p className="mt-3 border p-3">No active inspection tasks are assigned for this machine and operating state.</p>}
+            <footer className="pm-print-no-break mt-4 space-y-3 text-xs">
+              <p><strong>Reporting:</strong> Notify the supervisor of dangerous readings immediately. Data entry
+                drafts a corrective work order for planner assessment; it does not authorize repairs or close the order.</p>
+              <div className="grid grid-cols-2 gap-8 pt-3">
+                <p>Inspector name/signature: _______________________________________</p>
+                <p>Supervisor name/signature: _______________________________________</p>
+                <p>Date/time handed in: _____________________________________________</p>
+                <p>Instrument identification (where used): __________________________</p>
+              </div>
+            </footer>
+          </>
+        ) : (
+          <>
         <header className="pm-print-no-break mb-3">
           <div className="flex items-center justify-between gap-6 border-b-2 border-slate-900 pb-2">
             <div>
@@ -166,6 +278,8 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
           </div>
           <p className="pm-print-note">Signature lines are blank until signed. The application audit trail remains the source of truth.</p>
         </footer>
+          </>
+        )}
       </section>
     </>,
     document.body,

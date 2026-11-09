@@ -7,7 +7,11 @@ export type MachineInspectionDueState = 'overdue' | 'due_today' | 'upcoming' | '
 export interface MachineChecklistTask {
   id: string;
   componentId: string | null;
-  component: { id: string; name: string; componentCode: string; componentType: string } | null;
+  component: {
+    id: string; name: string; componentCode: string; componentType: string;
+    hierarchyPath?: Array<{ id: string; code: string; name: string; type: string }>;
+    hierarchyComplete?: boolean;
+  } | null;
   pmTask: { id: string; taskNumber: number; description: string; taskType: string };
   pmType: string;
   basis: string | null;

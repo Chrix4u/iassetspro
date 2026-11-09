@@ -176,7 +176,7 @@ jobs:
           test -f .next/standalone/server.js
           tar -C .next/standalone -czf build-output.tar.gz .
           test -s build-output.tar.gz
-          tar -tzf build-output.tar.gz | grep -qx './server.js'
+          tar -tzf build-output.tar.gz ./server.js >/dev/null
 
       - name: Upload standalone build for CI consumers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

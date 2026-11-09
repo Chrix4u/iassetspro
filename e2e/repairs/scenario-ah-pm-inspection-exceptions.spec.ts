@@ -33,7 +33,7 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
           findings: 'Excess vibration during bearing rotation',
           recommendation: 'Inspect bearing and sprocket',
           inspectedAt: '2026-11-09T07:15:00Z',
-          equipmentState: null,
+          equipmentState: 'standstill',
           inspector: { id: 'tech-1', fullName: 'Technician UAT' },
           inspectionPoint: {
             id: 'point-1', name: 'Drive-end vibration',
@@ -64,7 +64,8 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   await expect(review).toContainText('7.9 mm/s');
   await expect(review).toContainText('Technician UAT');
   await expect(review).toContainText('WO-UAT-001');
-  await expect(review).toContainText('Earlier inspection records do not store');
+  await expect(review).toContainText('Older records display Unknown');
+  await expect(review).toContainText('State: standstill');
 
   const bounds = await review.boundingBox();
   expect(bounds).not.toBeNull();

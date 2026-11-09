@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
         where,
         select: {
           id: true, result: true, value: true, findings: true, recommendation: true, inspectedAt: true,
+          equipmentState: true,
           inspector: { select: { id: true, fullName: true } },
           inspectionPoint: {
             select: { id: true, name: true, inspectionType: true, parameterKey: true, normalRange: true },
@@ -113,8 +114,9 @@ export async function GET(request: NextRequest) {
       success: true,
       data: records.map((record) => ({
         ...record,
-        // Never infer state from current machine state or PM assignments.
-        equipmentState: null,
+        // Use the state saved at inspection time; old records are unknown.
+        equipmentState: record.equipmentState === 'running' || record.equipmentState === 'standstill'
+          ? record.equipmentState : null,
       })),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });

@@ -48,7 +48,10 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     mock.assignments.mockResolvedValue([{
       id: 'task-1', componentId: 'part-1', component: { assetId: 'machine-1' },
     }]);
-    mock.points.mockResolvedValue([{ id: 'point-1' }, { id: 'point-2' }]);
+    mock.points.mockResolvedValue([
+      { id: 'point-1', inspectionType: 'visual', parameterKey: null },
+      { id: 'point-2', inspectionType: 'measurement', parameterKey: 'temperature' },
+    ]);
     mock.createIssue.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       id: 'issue-1', issuedAt: new Date('2026-11-09T12:00:00Z'), ...data,
     }));
@@ -71,6 +74,18 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     expect(replay.status).toBe(200);
     expect((await replay.json()).duplicate).toBe(true);
     expect(mock.createIssue).toHaveBeenCalledTimes(1);
+  });
+  it('does not demand electronic entry of unconfigured printed inspection checks', async () => {
+    mock.points.mockResolvedValue([
+      { id: 'point-1', inspectionType: 'visual', parameterKey: null },
+      { id: 'point-2', inspectionType: 'measurement', parameterKey: 'temperature' },
+      { id: 'missing-param', inspectionType: 'measurement', parameterKey: null },
+      { id: 'legacy', inspectionType: 'obsolete', parameterKey: null },
+    ]);
+    const response = await POST(request(payload));
+    expect(response.status).toBe(201);
+    const data = (await response.json()).data;
+    expect(JSON.parse(data.pointIds)).toEqual(['point-1', 'point-2']);
   });
   it('rejects a tampered point list before issuing a paper reference', async () => {
     const result = await POST(request({ ...payload, pointIds: ['other-point'] }));

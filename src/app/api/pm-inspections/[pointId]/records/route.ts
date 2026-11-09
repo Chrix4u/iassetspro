@@ -8,7 +8,7 @@ import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/main
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
 import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrectiveInspectionPlanner.service';
 import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
-import { validateManagedPaperReading } from '@/lib/pm-paper-worksheet-validation';
+import { validateManagedPaperReading, normalizeManagedPaperReference } from '@/lib/pm-paper-worksheet-validation';
 
 /**
  * Capture a part-level inspection, with an actual numeric instrument reading
@@ -53,6 +53,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     const equipmentState: 'running' | 'standstill' | null = rawEquipmentState ?? null;
     const evidence = parseInspectionCaptureEvidence(body as Record<string, unknown>);
+    if (evidence.paperReference) {
+      evidence.paperReference = normalizeManagedPaperReference(evidence.paperReference);
+    }
     const submissionKey = typeof body.requestKey === 'string' ? body.requestKey.trim() : '';
     if (submissionKey && !/^[a-zA-Z0-9_-]{8,120}$/.test(submissionKey)) {
       return NextResponse.json({ success: false, error: 'Invalid inspection submission key' }, { status: 400 });

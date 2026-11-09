@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
-import { sameSheetScope, paperSheetProgress } from '@/lib/pm-paper-worksheet-issue';
+import { sameSheetScope, paperSheetProgress, isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
 
 const select = { id: true, requestKey: true, reference: true, assetId: true, plantId: true,
   machineCode: true, equipmentState: true, issuedById: true, issuedAt: true,
@@ -68,12 +68,16 @@ export async function POST(request: NextRequest) {
     const partIds = [...new Set(assigned.flatMap((t) =>
       t.componentId && t.component?.assetId === assetId ? [t.componentId] : []))];
     const allPoints = partIds.length ? await db.componentInspectionPoint.findMany({
-      where: { componentId: { in: partIds }, isActive: true }, select: { id: true }, take: 3001,
+      where: { componentId: { in: partIds }, isActive: true },
+      select: { id: true, inspectionType: true, parameterKey: true }, take: 3001,
     }) : [];
     if (allPoints.length > 3000) return NextResponse.json({
       success: false, error: 'Too many inspection points for one sheet',
     }, { status: 422 });
-    if (!sameSheetScope(assigned.map(t=>t.id),tasks) || !sameSheetScope(allPoints.map(p=>p.id),points))
+    // Keep unconfigured rows visible on the printed page, but exclude
+    // unrecordable legacy/missing-parameter checks from completion totals.
+    const recordablePointIds = allPoints.filter(isRecordablePaperPoint).map(p=>p.id);
+    if (!sameSheetScope(assigned.map(t=>t.id),tasks) || !sameSheetScope(recordablePointIds,points))
       return NextResponse.json({
         success: false, error: 'Checklist was updated; refresh before printing a new sheet',
       }, { status: 409 });

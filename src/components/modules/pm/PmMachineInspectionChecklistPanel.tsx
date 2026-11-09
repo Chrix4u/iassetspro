@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
 import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
+import { isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
 import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
 
 interface MachineChecklistResponse {
@@ -130,7 +131,8 @@ export function PmMachineInspectionChecklistPanel({
     try {
       const requestKey = pendingIssueKey.current || crypto.randomUUID();
       pendingIssueKey.current = requestKey;
-      const pointIds = Array.from(new Set(data.groups.flatMap((g) => g.points.map((p) => p.id))));
+      const pointIds = Array.from(new Set(data.groups.flatMap((g) => g.points
+        .filter(isRecordablePaperPoint).map((p) => p.id))));
       const taskIds = Array.from(new Set([
         ...data.groups.flatMap((g) => g.tasks.map((t) => t.id)),
         ...data.generalTasks.map((t) => t.id),

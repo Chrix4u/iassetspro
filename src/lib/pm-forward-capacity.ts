@@ -23,6 +23,11 @@ export interface PmForwardTask {
   equipmentState: string;
   basis: PmForwardBasis;
   dueAt: string | null;
+  /** Optional server-observed recurrence: only fixed calendar is modelled. */
+  recurrenceBasis?: string | null;
+  recurrenceAnchorDate?: string | null;
+  frequencyInterval?: number | null;
+  frequencyUnit?: string | null;
   nextDueReading: number | null;
   meterValue: number | null;
   meterUnit: string | null;

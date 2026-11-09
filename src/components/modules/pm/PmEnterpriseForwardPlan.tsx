@@ -6,6 +6,7 @@ import {
   buildPmForwardPlan, pmCapacityForWeek,
   type PmCapacityScenario, type PmForwardRow, type PmForwardTask,
 } from '@/lib/pm-forward-capacity';
+import { projectFixedCalendarRepeats } from '@/lib/pm-fixed-recurrence-scenario';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,6 +50,7 @@ export function PmEnterpriseForwardPlan() {
   const [availablePlants, setAvailablePlants] = useState<PlantOption[]>([]);
   const [search, setSearch] = useState('');
   const [scenario, setScenario] = useState<PmCapacityScenario>(DEFAULT_SCENARIO);
+  const [includeRecurringScenario, setIncludeRecurringScenario] = useState(false);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -84,6 +86,9 @@ export function PmEnterpriseForwardPlan() {
     (feed?.items || []).filter((task) => plantId === 'all' || task.plantId === plantId),
   [feed, plantId]);
   const plan = useMemo(() => buildPmForwardPlan(scopedTasks, windowDays,
+    feed?.generatedAt ? new Date(feed.generatedAt) : new Date()),
+  [scopedTasks, windowDays, feed?.generatedAt]);
+  const repeats = useMemo(() => projectFixedCalendarRepeats(scopedTasks, windowDays,
     feed?.generatedAt ? new Date(feed.generatedAt) : new Date()),
   [scopedTasks, windowDays, feed?.generatedAt]);
   const actionableRows = useMemo(() => {
@@ -215,15 +220,52 @@ export function PmEnterpriseForwardPlan() {
             <CapacityInput label="Productive time %" value={scenario.productivePercent} min={0} max={100}
               onChange={(v)=>update('productivePercent',v)}/>
           </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-2.5"
+            data-testid="pm-repeat-scenario-toggle">
+            <Button size="sm" variant={includeRecurringScenario ? 'default' : 'outline'}
+              aria-pressed={includeRecurringScenario}
+              onClick={() => setIncludeRecurringScenario((previous) => !previous)}>
+              {includeRecurringScenario ? 'Exclude' : 'Include'} additional fixed-calendar repeats
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {repeats.summary.additionalOccurrences.toLocaleString()} potential repeat tasks,
+              {' '}{formatHours(repeats.summary.estimatedMinutes)} estimated task-hours beyond
+              the first due occurrence, from {repeats.summary.eligibleFixedCalendarTasks} fixed-schedule
+              assignments.
+            </p>
+            {includeRecurringScenario && (
+              <p role="note" className="w-full text-xs text-amber-700 dark:text-amber-300">
+                Scenario only: assumes future fixed-calendar cycles occur on time.
+                These are not generated or authorized work orders.
+                {repeats.summary.afterCompletionExcluded} after-completion tasks,
+                {' '}{repeats.summary.meterExcluded} meter tasks and
+                {' '}{repeats.summary.overdueAwaitingCompletion} overdue fixed-calendar tasks
+                cannot be projected safely.
+                {repeats.summary.unestimatedOccurrences} potential repeat tasks lack valid effort estimates.
+                {repeats.summary.limited && ' Recurrence projection exceeded a safety cap; counts may be incomplete.'}
+              </p>
+            )}
+          </div>
           <div className="space-y-2">
             {plan.weeks.map((week)=>{
-              const c=pmCapacityForWeek(week,scenario);
+              const repeatWeek = repeats.weeks[week.index];
+              const capacityMinutes = week.knownMinutes +
+                (includeRecurringScenario ? repeatWeek.estimatedMinutes : 0);
+              const unknownEffort = week.unknownEffortTasks +
+                (includeRecurringScenario ? repeatWeek.unestimatedOccurrences : 0);
+              const c=pmCapacityForWeek({ ...week, knownMinutes: capacityMinutes },scenario);
               const pct=c.availableHours>0?Math.min(100,c.demandHours/c.availableHours*100):
                 c.demandHours>0?100:0;
               return <div key={week.index} className="grid gap-1.5 border-t pt-2 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_minmax(0,11rem)] sm:items-center"
                 data-testid="pm-forward-week">
                 <div className="text-xs"><p className="font-semibold">Week {week.index+1} · {week.from} to {week.through}</p>
-                  <p className="text-muted-foreground">{week.taskCount} tasks · {week.committedTasks} with WO</p></div>
+                  <p className="text-muted-foreground">{week.taskCount} next-due tasks · {week.committedTasks} with WO</p>
+                  {includeRecurringScenario && repeatWeek.additionalOccurrences > 0 && (
+                    <p className="text-amber-700 dark:text-amber-300">
+                      +{repeatWeek.additionalOccurrences.toLocaleString()} hypothetical repeats
+                    </p>
+                  )}
+                </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-muted"
                   aria-label={'Week '+(week.index+1)+' known work demand'}>
                   <div className={'h-full rounded-full '+(c.overCapacity?'bg-rose-500':'bg-blue-500')}
@@ -233,8 +275,8 @@ export function PmEnterpriseForwardPlan() {
                     {c.demandHours.toLocaleString()}h / {c.availableHours.toLocaleString()}h
                     {c.loadPercent!==null && ' ('+c.loadPercent+'%)'}
                   </p>
-                  <p className="text-muted-foreground">{week.unknownEffortTasks
-                    ? '+'+week.unknownEffortTasks+' unestimated' : 'Known estimates only'}</p>
+                  <p className="text-muted-foreground">{unknownEffort
+                    ? '+'+unknownEffort+' unestimated task occurrences' : 'Known estimates only'}</p>
                 </div>
               </div>;
             })}

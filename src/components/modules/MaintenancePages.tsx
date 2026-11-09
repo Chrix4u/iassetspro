@@ -2255,7 +2255,7 @@ export function WorkOrdersPage() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [pmNeedsPlannerOnly, setPmNeedsPlannerOnly] = useState(false);
   const [pmDraftPage, setPmDraftPage] = useState(1);
-  const [pmDraftTotal, setPmDraftTotal] = useState(0);
+  const [pmDraftTotal, setPmDraftTotal] = useState<number | null>(null);
   const [pmDraftPages, setPmDraftPages] = useState(1);
   const { hasPermission, isAdmin, user } = useAuthStore();
   const { navigate, pageParams } = useNavigationStore();
@@ -2335,6 +2335,27 @@ export function WorkOrdersPage() {
     }).catch(() => {});
     return () => { active = false; };
   }, [refreshKey, isPlannerOrAdmin]);
+
+  // Surface the actionable PM backlog count even before the filter is opened.
+  // Reuse the normal, plant-scoped list API; never fetch unscoped global counts.
+  // The limit=1 request is intentionally lightweight; pagination.total remains
+  // the source of truth for the complete authorized backlog.
+  useEffect(() => {
+    if (!canReviewUnownedPm || pmNeedsPlannerOnly) return;
+    let active = true;
+    api.get<WorkOrder[]>('/api/work-orders?pmPlannerState=unassigned&page=1&limit=1')
+      .then((res) => {
+        if (!active || !res.success || !Array.isArray(res.data)) return;
+        const pagination = (res as typeof res & { pagination?: { total: number } }).pagination;
+        if (typeof pagination?.total === 'number' && pagination.total >= 0) {
+          setPmDraftTotal(pagination.total);
+        }
+      }).catch(() => {
+        // An unauthorized or temporarily unavailable count must never change
+        // the main Work Orders page or expose another plant's records.
+      });
+    return () => { active = false; };
+  }, [canReviewUnownedPm, pmNeedsPlannerOnly, refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -2502,7 +2523,7 @@ export function WorkOrdersPage() {
               setSearchText('');
             }}>
             <UserCheck className="mr-1.5 h-4 w-4" />
-            PM drafts awaiting planner {pmNeedsPlannerOnly ? `(${pmDraftTotal})` : ''}
+            PM drafts awaiting planner {pmDraftTotal !== null ? `(${pmDraftTotal})` : ''}
           </Button>
           {pmNeedsPlannerOnly && <p role="status" className="text-xs text-muted-foreground">
             These PM work orders are still Draft and have no planner. Open one and use Claim PM Planning if authorized for its plant.

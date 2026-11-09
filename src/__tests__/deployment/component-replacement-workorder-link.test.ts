@@ -7,9 +7,9 @@ describe('component replacement work-order traceability', () => {
   it('persists a nullable indexed work-order relation', () => {
     const schema = read('prisma/schema.prisma');
     const migration = read('prisma/migrations/20261005231500_component_replacement_workorder_link/migration.sql');
-    expect(schema).toContain('componentReplacements        ComponentReplacementHistory[]');
-    expect(schema).toContain('workOrderId     String?');
-    expect(schema).toContain('workOrder  WorkOrder?');
+    expect(schema).toMatch(/componentReplacements\s+ComponentReplacementHistory\[\]/);
+    expect(schema).toMatch(/workOrderId\s+String\?/);
+    expect(schema).toMatch(/workOrder\s+WorkOrder\?/);
     expect(schema).toContain('@@index([workOrderId])');
     expect(migration).toContain('ADD COLUMN "workOrderId" TEXT');
     expect(migration).toContain('REFERENCES "work_orders"("id")');

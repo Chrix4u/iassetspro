@@ -65,7 +65,7 @@ describe('PM inspection lifecycle integration contracts', () => {
   });
 
   it('deduplicates mobile retries before writing inspections, readings or work orders', () => {
-    expect(schema).toContain('requestKey        String?  @unique @map("request_key")');
+    expect(schema).toMatch(/requestKey\s+String\?\s+@unique\s+@map\("request_key"\)/);
     expect(entryRoute).toContain('componentInspectionRecord.findUnique');
     expect(entryRoute).toContain('isSameInspectionSubmission');
     expect(entryRoute).toContain('requestKey: submissionKey || null');
@@ -78,7 +78,7 @@ describe('PM inspection lifecycle integration contracts', () => {
     expect(closeout).toContain('await advanceClosedPmScheduledTaskRecurrence({');
     expect(oldEntry).toContain('recordPmInspection(delegatedRequest');
     expect(oldEntry).not.toContain('nextInspection: nextInspectionDate');
-    expect(schema).toContain('inspectionTriggerRecord ComponentInspectionRecord?');
+    expect(schema).toMatch(/inspectionTriggerRecord\s+ComponentInspectionRecord\?/);
     expect(gate).toContain("{ prefix: '/api/pm-inspections', modules: ['pm_schedules'] }");
   });
 });

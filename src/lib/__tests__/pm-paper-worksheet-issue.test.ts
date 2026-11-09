@@ -15,14 +15,14 @@ describe('paper sheet issuance and reconciliation', () => {
   });
   it('counts unique readings from the issued sheet, never unrelated points', () => {
     expect(paperSheetProgress(['a','b','c'], new Set(['a','c','unrelated']))).toMatchObject({
-      expected: 3, entered: 2, remaining: 1, status: 'partial',
+      expected: 3, entered: 2, remaining: 1, missingPointIds: ['b'], status: 'partial',
     });
     expect(paperSheetProgress(['a','b'], new Set(['a','b']))).toMatchObject({
-      status: 'entered', remaining: 0,
+      status: 'entered', remaining: 0, missingPointIds: [],
     });
   });
   it('does not treat an empty or unconfigured checklist as complete', () => {
-    expect(paperSheetProgress([], new Set())).toMatchObject({ status: 'requires_setup' });
+    expect(paperSheetProgress([], new Set())).toMatchObject({ status: 'requires_setup', missingPointIds: [] });
     expect(paperSheetProgress(['a'], new Set())).toMatchObject({ status: 'issued', remaining: 1 });
   });
 });

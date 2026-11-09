@@ -44,6 +44,7 @@ interface IssuedPaperSheet {
   expected: number;
   entered: number;
   remaining: number;
+  missingPointIds?: string[];
   status: string;
 }
 interface EntryState extends MachineChecklistDraft {
@@ -186,6 +187,19 @@ export function PmMachineInspectionChecklistPanel({
   }, [assetId, equipmentState]);
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
+  const activeIssuedSheet = issuedSheets.find((sheet) => sheet.reference === paperReference);
+  const missingSheetReadings = useMemo(() => {
+    if (!data || !activeIssuedSheet?.missingPointIds) return [];
+    return activeIssuedSheet.missingPointIds.map((id) => {
+      const group = data.groups.find((candidate) => candidate.points.some((point) => point.id === id));
+      const point = group?.points.find((candidate) => candidate.id === id);
+      return {
+        id,
+        partCode: group?.component.componentCode || 'Previously configured part',
+        name: point?.name || 'Check no longer in current machine configuration',
+      };
+    });
+  }, [activeIssuedSheet, data]);
   const readiness = useMemo(
     () => data ? assessMachineInspectionReadiness(data.groups, data.generalTasks) : null,
     [data],
@@ -474,6 +488,30 @@ export function PmMachineInspectionChecklistPanel({
                   </SelectItem>)}</SelectContent>
                 </Select>
               </div>}
+              {activeIssuedSheet && (
+                <div className="sm:col-span-2 space-y-1 rounded-md border p-2.5 text-xs"
+                  data-testid="pm-paper-missing-readings" aria-live="polite">
+                  <p className="font-semibold">
+                    {activeIssuedSheet.status === 'requires_setup'
+                      ? 'This sheet needs planner configuration before readings can be entered.'
+                      : activeIssuedSheet.remaining === 0
+                        ? 'All configured readings have been entered for this sheet.'
+                        : `${activeIssuedSheet.remaining} reading${activeIssuedSheet.remaining === 1 ? '' : 's'} remaining on this sheet`}
+                  </p>
+                  {activeIssuedSheet.remaining > 0 && missingSheetReadings.length > 0 && (
+                    <ul className="list-inside list-disc space-y-1">
+                      {missingSheetReadings.map((item) => (
+                        <li key={item.id} className="break-words">
+                          <span className="font-medium">{item.partCode}</span> · {item.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-muted-foreground">
+                    Based on readings saved against this issued reference. A fully entered sheet still requires normal planner review.
+                  </p>
+                </div>
+              )}
               <p className="sm:col-span-2 text-xs text-muted-foreground">
                 For each part below, enter the exact date and time shown on the returned paper.
                 The system also records who typed it in and when. Never backdate the electronic entry timestamp.

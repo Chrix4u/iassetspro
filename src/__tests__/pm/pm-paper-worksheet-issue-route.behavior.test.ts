@@ -119,7 +119,7 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
       'http://localhost/api/pm-inspections/sheets?assetId=machine-1&equipmentState=running'));
     expect(response.status).toBe(200);
     expect((await response.json()).data[0]).toMatchObject({
-      expected: 2, entered: 1, remaining: 1, status: 'partial',
+      expected: 2, entered: 1, remaining: 1, missingPointIds: ['point-2'], status: 'partial',
     });
   });
 });

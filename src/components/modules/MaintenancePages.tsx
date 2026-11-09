@@ -75,6 +75,8 @@ import { PmTemplateTaskPickerDialog } from '@/components/modules/pm/PmTemplateTa
 import { PmTemplateTaskList, type PmTemplateResolvedTask } from '@/components/modules/pm/PmTemplateTaskList';
 import { PmScheduleTaskPlanner } from '@/components/modules/pm/PmScheduleTaskPlanner';
 import { PmResourcePipelineCard, type PmResourceRequestCoverage } from '@/components/modules/pm/PmResourcePipelineCard';
+import { PmResourceLifecycleCard } from '@/components/modules/pm/PmResourceLifecycleCard';
+import type { PmResourceLifecycleBucket } from '@/lib/pm-resource-lifecycle';
 import { PmAssignmentFormDialog } from '@/components/modules/pm/PmAssignmentFormDialog';
 import { PmMachineRollupPanel } from '@/components/modules/pm/PmMachineRollupPanel';
 import { PmPlanningPage } from '@/components/modules/pm/PmPlanningPage';
@@ -161,9 +163,10 @@ type PmPlanningReadinessData = {
     unresolvedPartLabels: string[];
     unresolvedToolLabels: string[];
     requestCoverage: PmResourceRequestCoverage;
+    lifecycle?: { materials: PmResourceLifecycleBucket; tools: PmResourceLifecycleBucket };
   };
   schedule: {
-    id: string;
+    id: string | null;
     title: string;
     templateId: string | null;
     templateTitle: string | null;
@@ -4055,12 +4058,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [id, fetchSuggestedItems, hydratePersonalToolsFromWO, hydrateSuggestedResourcesFromWO]);
 
   useEffect(() => {
-    if (!wo?.pmScheduleId) {
+    if (!wo?.id) {
       setPmPlanningReadiness(null);
       return;
     }
+    // Direct-PM WOs intentionally lack a legacy pmScheduleId.
+    // The server authorizes the WO and returns 400 for unrelated Repairs WOs.
     void fetchPmPlanningReadiness();
-  }, [wo?.pmScheduleId, wo?.updatedAt, fetchPmPlanningReadiness]);
+  }, [wo?.id, wo?.updatedAt, fetchPmPlanningReadiness]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -6741,7 +6746,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
 
           {/* PM Planning Readiness — PM-generated work stays on the canonical Repairs lifecycle. */}
-          {wo.pmScheduleId && (
+          {(Boolean(wo.pmScheduleId) || Boolean(pmPlanningReadiness)) && (
             <Card className="border-0 shadow-sm border-l-4 border-l-sky-500">
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -6851,6 +6856,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           </div>
                         )}
                       </div>
+                    )}
+
+                    {pmPlanningReadiness.resources.lifecycle && (
+                      <PmResourceLifecycleCard
+                        lifecycle={pmPlanningReadiness.resources.lifecycle}
+                        inventoryOperational={pmPlanningReadiness.modules.inventory}
+                        toolsOperational={pmPlanningReadiness.modules.tools}
+                      />
                     )}
 
                     <PmResourcePipelineCard

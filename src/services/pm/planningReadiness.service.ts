@@ -1,3 +1,5 @@
+import { summarizePmResourceLifecycle } from '@/lib/pm-resource-lifecycle';
+
 export type PmPlanningIssue = {
   code: string;
   label: string;
@@ -13,6 +15,8 @@ type PmMaterialRequest = {
   itemName?: string | null;
   status?: string | null;
   source?: string | null;
+  quantityIssued?: number | null;
+  stockReserved?: boolean | null;
 };
 
 type PmToolRequest = {
@@ -20,6 +24,7 @@ type PmToolRequest = {
   toolName?: string | null;
   status?: string | null;
   source?: string | null;
+  quantityIssued?: number | null;
 };
 
 export type PmPlanningReadinessInput = {
@@ -46,6 +51,7 @@ type ResourceRequirement = {
 
 type MappedResource = ResourceRequirement & {
   aliases: string[];
+  quantity: number | null;
 };
 
 type ResourceRequest = {
@@ -160,10 +166,14 @@ function mappedResources(
       if (key) labels.add(key);
     }
 
+    const rawQty = record.quantity;
+    const quantity = typeof rawQty === 'number' && Number.isFinite(rawQty) && rawQty > 0
+      ? rawQty : null;
     entries.push({
       id,
       label,
       aliases: uniqueStrings(resourceLabels),
+      quantity,
     });
   }
 
@@ -185,7 +195,9 @@ function requestHasEnteredExecutionPipeline(request: ResourceRequest): boolean {
 }
 
 function requestMatchesResource(resource: MappedResource, request: ResourceRequest): boolean {
-  if (resource.id && request.id && resource.id === request.id) return true;
+  // A different mapped inventory/tool ID must not be treated as approved
+  // merely because the text label resembles another catalog item.
+  if (resource.id && request.id) return resource.id === request.id;
 
   const requestLabel = normalizeKey(request.label);
   if (!requestLabel) return false;
@@ -260,6 +272,22 @@ export function buildPmPlanningReadiness(input: PmPlanningReadinessInput) {
       source: request.source,
     })),
   );
+
+  // Approval pipeline status and actual issue evidence are distinct.
+  // In particular, a submitted request, approved reservation and verified
+  // issued quantity must never be represented as the same readiness state.
+  const lifecycle = {
+    materials: summarizePmResourceLifecycle('material', mappedParts.entries,
+      (input.materialRequests || []).map((req) => ({
+        id: req.itemId, label: req.itemName, status: req.status, source: req.source,
+        quantityIssued: req.quantityIssued, stockReserved: req.stockReserved,
+      })), input.inventoryOperational !== false && input.repairsOperational !== false),
+    tools: summarizePmResourceLifecycle('tool', mappedTools.entries,
+      (input.toolRequests || []).map((req) => ({
+        id: req.toolId, label: req.toolName, status: req.status, source: req.source,
+        quantityIssued: req.quantityIssued,
+      })), input.toolsOperational !== false && input.repairsOperational !== false),
+  };
 
   const blockingIssues: PmPlanningIssue[] = [];
   if (input.repairsOperational === false) {
@@ -349,6 +377,7 @@ export function buildPmPlanningReadiness(input: PmPlanningReadinessInput) {
         materials: materialRequestCoverage,
         tools: toolRequestCoverage,
       },
+      lifecycle,
     },
   };
 }

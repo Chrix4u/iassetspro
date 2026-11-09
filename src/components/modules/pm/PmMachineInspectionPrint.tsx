@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { PrintableMachineInspectionData } from '@/lib/pm-machine-checklist-print';
 import {
   buildMachineInspectionPrintRows,
@@ -19,23 +21,27 @@ function displayTime(input: string): string {
 export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspectionData }) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
 
-  return (
+  // Print content is a direct body child, outside all dashboard scroll panels.
+  // This prevents long, multi-page machine checklists being clipped by layout.
+  return createPortal(
     <>
       <style>{`
         @media print {
           @page { size: A4 landscape; margin: 11mm; }
           html, body { height: auto !important; overflow: visible !important; }
-          body:has(#pm-machine-inspection-print) * { visibility: hidden !important; }
-          body:has(#pm-machine-inspection-print) #pm-machine-inspection-print,
-          body:has(#pm-machine-inspection-print) #pm-machine-inspection-print * {
-            visibility: visible !important;
+          body:has(#pm-machine-inspection-print) > :not(#pm-machine-inspection-print) {
+            display: none !important;
+          }
+          body:has(#pm-machine-inspection-print) {
+            overflow: visible !important;
           }
           #pm-machine-inspection-print {
             display: block !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
+            position: static !important;
             width: 100% !important;
             max-width: none !important;
             overflow: visible !important;
@@ -160,6 +166,7 @@ export function PmMachineInspectionPrint({ data }: { data: PrintableMachineInspe
           <p className="pm-print-note">Signature lines are blank until signed. The application audit trail remains the source of truth.</p>
         </footer>
       </section>
-    </>
+    </>,
+    document.body,
   );
 }

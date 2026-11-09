@@ -17,7 +17,7 @@ interface ExceptionRow {
   findings: string | null;
   recommendation: string | null;
   inspectedAt: string;
-  equipmentState: null;
+  equipmentState: 'running' | 'standstill' | null;
   inspector: { id: string; fullName: string | null };
   inspectionPoint: {
     id: string; name: string; inspectionType: string;
@@ -168,7 +168,7 @@ export function PmInspectionExceptionsPanel({
         </div>
       </div>
       <p className="rounded-md border border-amber-200 bg-amber-50/30 p-2 text-xs text-muted-foreground dark:border-amber-900">
-        Earlier inspection records do not store the machine's Running/Standstill state; this report does not infer one from today's equipment settings.
+        New inspection records show the saved Running/Standstill state. Older records display Unknown; this report never infers operating state from today's machine settings.
       </p>
 
       {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading plant-authorized inspection exceptions…</p>}
@@ -213,7 +213,8 @@ export function PmInspectionExceptionsPanel({
                     : 'Sight / qualitative'}</p></div>
                 <div className="min-w-0"><span className="text-muted-foreground">Recorded</span>
                   <p>{dateLabel(record.inspectedAt)}</p>
-                  <p className="break-words">{record.inspector?.fullName || 'Inspector not named'}</p></div>
+                  <p className="break-words">{record.inspector?.fullName || 'Inspector not named'}</p>
+                  <p>State: {record.equipmentState || 'Unknown (legacy)'}</p></div>
               </div>
               {record.findings && <p className="break-words text-xs"><span className="font-semibold">Findings:</span> {record.findings}</p>}
               {record.recommendation && <p className="break-words text-xs"><span className="font-semibold">Recommended:</span> {record.recommendation}</p>}

@@ -164,6 +164,7 @@ export function PmMachineInspectionChecklistPanel({
             findings: entry.findings.trim(),
             recommendation: entry.recommendation.trim(),
             requestKey,
+            equipmentState,
           });
           if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
           succeeded += 1;

@@ -11,7 +11,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.setViewportSize({ width: 390, height: 844 });
   await authenticateAs(context, 'planner');
 
-  const posted: Array<{ pointId: string; requestKey: string; value: string; outcome: string; findings: string }> = [];
+  const posted: Array<{ pointId: string; requestKey: string; value: string; outcome: string; findings: string; equipmentState: string }> = [];
   const machine = { id: 'uat-pump-mobile', name: 'Mercerizer C314 UAT', assetTag: 'C314-UAT', plantId: 'uat-plant' };
   const bearing = { id: 'bearing', name: 'Drive-End Bearing', componentCode: 'C314-21-02', componentType: 'part' };
   const pulley = { id: 'pulley', name: 'Drive pulley', componentCode: 'C314-05-46', componentType: 'part' };
@@ -99,7 +99,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   });
   await page.route((url) => /^\/api\/pm-inspections\/(vibration|sound)\/records$/.test(url.pathname), async (route) => {
     const body = route.request().postDataJSON() as {
-      outcome: string; value: string; findings: string; requestKey: string;
+      outcome: string; value: string; findings: string; requestKey: string; equipmentState: string;
     };
     const pointId = new URL(route.request().url()).pathname.split('/')[3];
     posted.push({ pointId, ...body });
@@ -147,6 +147,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted.find((p) => p.pointId === 'vibration')?.value).toBe('7.9');
   expect(posted.find((p) => p.pointId === 'sound')?.findings).toContain('Regular pulley sound');
   expect(posted.every((p) => p.requestKey.length >= 8)).toBe(true);
+  expect(posted.every((p) => p.equipmentState === 'running')).toBe(true);
   await expect(checklist).toContainText('Corrective WO-UAT-CORR-01');
   const printView = page.getByTestId('pm-machine-inspection-print');
   await expect(page.getByRole('button', { name: 'Print saved machine inspection checklist' })).toBeEnabled();

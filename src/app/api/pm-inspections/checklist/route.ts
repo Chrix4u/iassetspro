@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     const asset = await db.asset.findUnique({
       where: { id: assetId },
-      select: { id: true, name: true, assetTag: true, plantId: true },
+      select: { id: true, name: true, assetTag: true, plantId: true, description: true, location: true },
     });
     if (!asset) return NextResponse.json({ success: false, error: 'Machine not found' }, { status: 404 });
     if (!canAccessPlantStrict(scope, asset.plantId)) {
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       where: assignmentWhere,
       include: {
         pmTask: { select: { id: true, taskNumber: true, description: true, taskType: true } },
-        component: { select: { id: true, name: true, componentCode: true, componentType: true, assetId: true } },
+        component: { select: { id: true, parentId: true, name: true, componentCode: true, componentType: true, assetId: true } },
       },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
       take: 1501,
@@ -121,6 +121,49 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Resolve only registered ancestors belonging to THIS machine. Never
+    // infer hierarchy codes from substrings of a part number.
+    const registryAncestors = new Map<string, {
+      id: string; parentId: string | null; componentCode: string;
+      name: string; componentType: string; assetId: string | null;
+    }>();
+    let parentFrontier = Array.from(new Set(assignments.flatMap((task) =>
+      task.component?.assetId === asset.id && task.component.parentId ? [task.component.parentId] : [])));
+    for (let depth = 0; depth < 24 && parentFrontier.length; depth += 1) {
+      const parents = await db.componentRegistry.findMany({
+        where: { id: { in: parentFrontier }, assetId: asset.id },
+        select: {
+          id: true, parentId: true, componentCode: true, name: true,
+          componentType: true, assetId: true,
+        },
+      });
+      for (const parent of parents) registryAncestors.set(parent.id, parent);
+      parentFrontier = Array.from(new Set(parents.flatMap((parent) =>
+        parent.parentId && !registryAncestors.has(parent.parentId) ? [parent.parentId] : [])));
+    }
+    const registeredPath = (part: NonNullable<(typeof assignments)[number]['component']>) => {
+      const chain = [{
+        id: part.id, code: part.componentCode, name: part.name, type: part.componentType,
+      }];
+      const visited = new Set<string>([part.id]);
+      let ancestorId = part.parentId;
+      let complete = true;
+      while (ancestorId) {
+        const ancestor = registryAncestors.get(ancestorId);
+        if (!ancestor || visited.has(ancestorId)) {
+          complete = false;
+          break;
+        }
+        visited.add(ancestorId);
+        chain.unshift({
+          id: ancestor.id, code: ancestor.componentCode,
+          name: ancestor.name, type: ancestor.componentType,
+        });
+        ancestorId = ancestor.parentId;
+      }
+      return { hierarchyPath: chain, hierarchyComplete: complete };
+    };
+
     const tasks: MachineChecklistTask[] = assignments.map((task) => ({
       id: task.id,
       componentId: task.component?.assetId === asset.id ? task.componentId : null,
@@ -130,6 +173,7 @@ export async function GET(request: NextRequest) {
           name: task.component.name,
           componentCode: task.component.componentCode,
           componentType: task.component.componentType,
+          ...registeredPath(task.component),
         } : null,
       pmTask: task.pmTask,
       pmType: task.pmType,

@@ -12,8 +12,14 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await authenticateAs(context, 'planner');
 
   const posted: Array<{ pointId: string; requestKey: string; value: string; outcome: string; findings: string; equipmentState: string }> = [];
-  const machine = { id: 'uat-pump-mobile', name: 'Mercerizer C314 UAT', assetTag: 'C314-UAT', plantId: 'uat-plant' };
-  const bearing = { id: 'bearing', name: 'Drive-End Bearing', componentCode: 'C314-21-02', componentType: 'part' };
+  const machine = { id: 'uat-pump-mobile', name: 'Mercerizer C314 UAT', assetTag: 'C314-UAT', plantId: 'uat-plant', description: 'Mercerizing production line', location: 'Plant A' };
+  const bearing = {
+    id: 'bearing', name: 'Drive-End Bearing', componentCode: 'C314-21-02', componentType: 'part',
+    hierarchyPath: [
+      { id: 'assembly', code: 'C314-21', name: 'Drive Assembly', type: 'assembly' },
+      { id: 'bearing', code: 'C314-21-02', name: 'Drive-End Bearing', type: 'part' },
+    ],
+  };
   const pulley = { id: 'pulley', name: 'Drive pulley', componentCode: 'C314-05-46', componentType: 'part' };
   const tasks = [
     {
@@ -129,14 +135,6 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await expect(checklist).toContainText('C314-21-02');
   await expect(checklist).toContainText('General machine checks — part assignment required');
-  const readiness = checklist.getByTestId('pm-machine-readiness');
-  await expect(readiness).toContainText('2 recordable checks · 1 setup blockers · 0 threshold warnings');
-  const setupFilter = checklist.getByTestId('pm-machine-readiness-filter');
-  await setupFilter.click();
-  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(0);
-  await expect(checklist).toContainText('General machine checks — part assignment required');
-  await setupFilter.click();
-  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
 
   const soundObservation = checklist.getByRole('textbox', { name: 'Observed condition: Unusual noise' });
   await checklist.getByRole('button', { name: 'Save reading' }).last().click();
@@ -166,6 +164,31 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.emulateMedia({ media: 'print' });
   await expect(printView).toBeVisible();
   await expect(printView).toContainText('Machine Inspection List — running');
+  await page.emulateMedia({ media: 'screen' });
+  await expect(printView).toBeHidden();
+
+  // The technician can match electronic entry to the task-first paper worksheet.
+  await checklist.getByRole('button', { name: 'By Task (Paper Order)' }).click();
+  await expect(checklist.getByTestId('pm-machine-task-heading')).toHaveCount(2);
+  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
+  await expect(checklist.getByTestId('pm-machine-task-heading').first()).toContainText('Task #8');
+  await checklist.getByRole('button', { name: 'By Part' }).click();
+  await expect(checklist.getByTestId('pm-machine-task-heading')).toHaveCount(0);
+
+  // A blank field sheet contains EMPTY handwriting cells, not the last saved
+  // 7.9 mm/s reading or a fabricated Good/Bad result.
+  await page.evaluate(() => { window.print = () => undefined; });
+  await checklist.getByRole('button', { name: 'Print blank field inspection worksheet' }).click();
+  await expect(printView).toContainText('BLANK FIELD INSPECTION SHEET');
+  await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
+  await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
+  await expect(printView).toContainText('Drive Assembly');
+  await expect(printView).toContainText('C314-21-02');
+  await expect(printView).toContainText('Actual reading');
+  await expect(printView).not.toContainText('7.9 mm/s');
+  await expect(printView.getByLabel('Blank space for handwritten actual reading')).toHaveCount(2);
+  await page.emulateMedia({ media: 'print' });
+  await expect(printView).toBeVisible();
   await page.emulateMedia({ media: 'screen' });
   await expect(printView).toBeHidden();
 

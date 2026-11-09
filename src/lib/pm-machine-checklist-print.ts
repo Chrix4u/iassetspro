@@ -2,7 +2,10 @@ import { parseInspectionLimits } from '@/lib/pm-inspection';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
 
 export interface PrintableMachineInspectionData {
-  machine: { id: string; name: string; assetTag: string; plantId: string };
+  machine: {
+    id: string; name: string; assetTag: string; plantId: string;
+    description?: string | null; location?: string | null;
+  };
   equipmentState: 'running' | 'standstill';
   generatedAt: string;
   totalAssignments: number;

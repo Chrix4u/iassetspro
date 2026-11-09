@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
+import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 
 interface MachineChecklistResponse {
@@ -88,6 +89,12 @@ export function PmMachineInspectionChecklistPanel({
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const [saveProgress, setSaveProgress] = useState('');
+  const [printMode, setPrintMode] = useState<'saved' | 'field'>('saved');
+  const [entryLayout, setEntryLayout] = useState<'part' | 'task'>('part');
+  const printSheet = (mode: 'saved' | 'field') => {
+    setPrintMode(mode);
+    window.requestAnimationFrame(() => window.print());
+  };
   const [showSetupIssues, setShowSetupIssues] = useState(false);
 
   const load = useCallback(async () => {
@@ -134,6 +141,29 @@ export function PmMachineInspectionChecklistPanel({
         points: group.points.filter((point) => setupPointIds.has(point.id)),
       }));
   }, [data, showSetupIssues, setupPointIds]);
+  const displayGroups = useMemo(() => {
+    type DisplayGroup = MachineChecklistGroup & { paperTask: PaperInspectionTask | null; showTaskHeading: boolean };
+    if (!data) return [] as DisplayGroup[];
+    if (entryLayout === 'part') {
+      return visibleGroups.map((group) => ({ ...group, paperTask: null, showTaskHeading: false }));
+    }
+    const sectionList = buildPaperInspectionTasks(visibleGroups, showSetupIssues ? [] : data.generalTasks);
+    const byPart = new Map(visibleGroups.map((group) => [group.component.id, group]));
+    return sectionList.flatMap((section) => {
+      const partIds = Array.from(new Set(section.rows.flatMap((row) => row.partId ? [row.partId] : [])));
+      return partIds.flatMap((partId, index) => {
+        const source = byPart.get(partId);
+        if (!source) return [];
+        return [{
+          ...source,
+          tasks: source.tasks.filter((assignment) => assignment.pmTask.id === section.id),
+          paperTask: section,
+          showTaskHeading: index === 0,
+        }];
+      });
+    });
+  }, [data, entryLayout, visibleGroups, showSetupIssues]);
+
   const getDraft = (id: string): EntryState => entries[id] || EMPTY_DRAFT;
   const edit = (id: string, patch: Partial<EntryState>) => {
     setEntries((current) => ({
@@ -269,7 +299,8 @@ export function PmMachineInspectionChecklistPanel({
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={() => setReload((v) => v + 1)} disabled={busy || loading}><RefreshCw className="mr-1 h-3.5 w-3.5"/>Refresh</Button>
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || busy}><Download className="mr-1 h-3.5 w-3.5"/>Export CSV</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => window.print()} disabled={!data || busy || loading} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print / Save PDF</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('field')} disabled={!data || busy || loading} aria-label="Print blank field inspection worksheet"><Printer className="mr-1 h-3.5 w-3.5"/>Print Blank Field Sheet</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => printSheet('saved')} disabled={!data || busy || loading} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
           <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close List</Button>
         </div>
       </div>
@@ -306,6 +337,20 @@ export function PmMachineInspectionChecklistPanel({
         {!data.totalAssignments && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           No active {equipmentState} inspection tasks are assigned to this machine. Configure them in PM Planning before capturing a checklist.
         </p>}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
+          <div>
+            <p className="text-sm font-semibold">Enter inspection readings</p>
+            <p className="text-xs text-muted-foreground">
+              The task view follows the printed worksheet. Shared part/check points are saved once even if listed under multiple tasks.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant={entryLayout === 'task' ? 'default' : 'outline'}
+              aria-pressed={entryLayout === 'task'} onClick={() => setEntryLayout('task')}>By Task (Paper Order)</Button>
+            <Button type="button" size="sm" variant={entryLayout === 'part' ? 'default' : 'outline'}
+              aria-pressed={entryLayout === 'part'} onClick={() => setEntryLayout('part')}>By Part</Button>
+          </div>
+        </div>
         {data.generalTasks.length > 0 && (
           <div className="rounded-lg border border-amber-200 p-3 dark:border-amber-900">
             <p className="text-sm font-semibold">General machine checks — part assignment required</p>
@@ -313,8 +358,14 @@ export function PmMachineInspectionChecklistPanel({
             {data.generalTasks.map((task) => <p key={task.id} className="break-words py-1 text-xs">Task #{task.pmTask.taskNumber}: {task.pmTask.description}</p>)}
           </div>
         )}
-        {visibleGroups.map((group) => (
-          <div key={group.component.id} className="min-w-0 space-y-2 rounded-lg border" data-testid="pm-machine-checklist-part">
+        {displayGroups.map((group) => (
+          <div key={group.paperTask ? group.paperTask.id + ':' + group.component.id : group.component.id}
+            className="min-w-0 space-y-2 rounded-lg border" data-testid="pm-machine-checklist-part">
+            {group.showTaskHeading && group.paperTask && (
+              <div data-testid="pm-machine-task-heading" className="rounded-t-lg bg-slate-100 p-3 text-sm font-bold text-slate-900 dark:bg-slate-800 dark:text-slate-100">
+                Task #{group.paperTask.number}: {group.paperTask.instruction}
+              </div>
+            )}
             <div className="rounded-t-lg bg-muted/40 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -436,7 +487,7 @@ export function PmMachineInspectionChecklistPanel({
           </Button>}
         </div>
       </>}
-      {data && !loading && <PmMachineInspectionPrint data={data} />}
+      {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} />}
     </section>
   );
 }

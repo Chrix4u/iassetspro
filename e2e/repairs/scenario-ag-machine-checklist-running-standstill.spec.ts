@@ -129,6 +129,14 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await expect(checklist).toContainText('C314-21-02');
   await expect(checklist).toContainText('General machine checks — part assignment required');
+  const readiness = checklist.getByTestId('pm-machine-readiness');
+  await expect(readiness).toContainText('2 recordable checks · 1 setup blockers · 0 threshold warnings');
+  const setupFilter = checklist.getByTestId('pm-machine-readiness-filter');
+  await setupFilter.click();
+  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(0);
+  await expect(checklist).toContainText('General machine checks — part assignment required');
+  await setupFilter.click();
+  await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
 
   const soundObservation = checklist.getByRole('textbox', { name: 'Observed condition: Unusual noise' });
   await checklist.getByRole('button', { name: 'Save reading' }).last().click();

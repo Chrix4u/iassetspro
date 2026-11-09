@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
+import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 
 interface MachineChecklistResponse {
   machine: { id: string; name: string; assetTag: string; plantId: string };
@@ -87,6 +88,7 @@ export function PmMachineInspectionChecklistPanel({
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const [saveProgress, setSaveProgress] = useState('');
+  const [showSetupIssues, setShowSetupIssues] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,9 +112,28 @@ export function PmMachineInspectionChecklistPanel({
     // against a newly selected machine or another inspection state.
     setEntries({});
     setSaveProgress('');
+    setShowSetupIssues(false);
   }, [assetId, equipmentState]);
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
+  const readiness = useMemo(
+    () => data ? assessMachineInspectionReadiness(data.groups, data.generalTasks) : null,
+    [data],
+  );
+  const setupPointIds = useMemo(
+    () => new Set(readiness?.issues.flatMap((issue) => issue.pointId ? [issue.pointId] : []) || []),
+    [readiness],
+  );
+  const visibleGroups = useMemo(() => {
+    if (!data) return [];
+    if (!showSetupIssues) return data.groups;
+    return data.groups
+      .filter((group) => group.points.length === 0 || group.points.some((point) => setupPointIds.has(point.id)))
+      .map((group) => ({
+        ...group,
+        points: group.points.filter((point) => setupPointIds.has(point.id)),
+      }));
+  }, [data, showSetupIssues, setupPointIds]);
   const getDraft = (id: string): EntryState => entries[id] || EMPTY_DRAFT;
   const edit = (id: string, patch: Partial<EntryState>) => {
     setEntries((current) => ({
@@ -261,6 +282,23 @@ export function PmMachineInspectionChecklistPanel({
           <Badge variant="outline">{data.totalConfiguredPoints} configured checks</Badge>
           {data.unconfiguredTasks > 0 && <Badge variant="secondary">{data.unconfiguredTasks} tasks need part/check configuration</Badge>}
         </div>
+        {readiness && (
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 p-3" data-testid="pm-machine-readiness">
+            <div className="min-w-0 space-y-1 text-xs">
+              <p className="font-semibold">Inspection setup readiness</p>
+              <p>{readiness.readyPoints} recordable checks · {readiness.blockers} setup blockers · {readiness.warnings} threshold warnings</p>
+              <p className="text-muted-foreground">
+                Missing parts, methods or parameters block entry. Missing numeric thresholds allow manual assessment,
+                but automatic out-of-range detection is unavailable until the planner configures limits.
+              </p>
+            </div>
+            <Button type="button" size="sm" variant="outline" disabled={!readiness.issues.length}
+              aria-pressed={showSetupIssues} onClick={() => setShowSetupIssues((current) => !current)}
+              data-testid="pm-machine-readiness-filter">
+              {showSetupIssues ? 'Show all checks' : 'Review setup issues (' + readiness.issues.length + ')'}
+            </Button>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           Record measured temperature, vibration, pressure or sound in their configured units; for sight and qualitative sound checks, describe what you observed.
           The server validates limits and drafts corrective work orders for abnormalities. Saving readings does not close PM work orders.
@@ -275,7 +313,7 @@ export function PmMachineInspectionChecklistPanel({
             {data.generalTasks.map((task) => <p key={task.id} className="break-words py-1 text-xs">Task #{task.pmTask.taskNumber}: {task.pmTask.description}</p>)}
           </div>
         )}
-        {data.groups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.component.id} className="min-w-0 space-y-2 rounded-lg border" data-testid="pm-machine-checklist-part">
             <div className="rounded-t-lg bg-muted/40 p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -301,6 +339,7 @@ export function PmMachineInspectionChecklistPanel({
                   const entry = getDraft(point.id);
                   const outOfRange = machineChecklistOutOfRange(point, entry.value);
                   const supported = point.inspectionType === 'measurement' || point.inspectionType === 'visual';
+                  const recordable = supported && (point.inspectionType !== 'measurement' || Boolean(point.parameterKey?.trim()));
                   return (
                     <div key={point.id} className="min-w-0 space-y-2 rounded-lg border p-2.5 sm:p-3" data-testid="pm-machine-checklist-row">
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -324,7 +363,7 @@ export function PmMachineInspectionChecklistPanel({
                         </div>
                         <Badge variant={point.dueState === 'overdue' ? 'destructive' : 'outline'}>{point.dueState.replace('_', ' ')}</Badge>
                       </div>
-                      {supported && canRecord && <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_10rem] sm:items-start">
+                      {recordable && canRecord && <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_10rem] sm:items-start">
                         <div className="min-w-0 space-y-1">
                           {point.inspectionType === 'measurement' ? <>
                             <Label className="text-xs">Actual reading ({limits.unit || 'unit'})</Label>
@@ -361,7 +400,10 @@ export function PmMachineInspectionChecklistPanel({
                             onClick={() => void save([point])}><Save className="mr-1.5 h-3.5 w-3.5"/>{entry.saved ? 'Saved' : 'Save reading'}</Button>
                         </div>
                       </div>}
-                      {!supported && <p className="text-xs text-amber-700 dark:text-amber-300">This legacy check needs a new sight or instrument point before it can be recorded.</p>}
+                      {!recordable && <p className="text-xs text-amber-700 dark:text-amber-300">
+                        {supported ? 'A planner must configure the measurement parameter before readings can be recorded.'
+                          : 'This legacy check needs a new sight or instrument point before it can be recorded.'}
+                      </p>}
                       {entry.error && <p role="alert" className="text-xs text-destructive">{entry.error}</p>}
                       {entry.saved && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">
                         Recorded: {entry.recordedOutcome?.replace('_', ' ') || 'saved'}{entry.workOrder ? ` · Corrective ${entry.workOrder} awaiting planner workflow` : ''}

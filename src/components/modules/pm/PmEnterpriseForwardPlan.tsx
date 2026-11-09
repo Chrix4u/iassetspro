@@ -97,7 +97,7 @@ export function PmEnterpriseForwardPlan() {
     const headers = ['Plant','Machine','Machine Code','Criticality','Asset Status',
       'Part','Part Code','Task Number','Task Description','Operating State',
       'Activity','Frequency Type','Next Due UTC','Meter Reading','Meter Threshold',
-      'Meter Unit','Due Status','Effort Hours (known only)','Linked Work Order','WO Status','Horizon Days'];
+      'Meter Unit','Due Status','Task Duration Hours (estimated only)','Linked Work Order','WO Status','Horizon Days'];
     const values = plan.rows.map((item) => [
       item.plantName,item.assetName,item.assetCode,item.assetCriticality,item.assetStatus,
       item.componentName || '',item.componentCode || '',item.taskNumber,item.description,
@@ -180,7 +180,7 @@ export function PmEnterpriseForwardPlan() {
           <Metric label="No current-cycle WO link" value={plan.summary.awaitingWorkOrder} warning={plan.summary.awaitingWorkOrder>0}/>
           <Metric label="Due with unknown effort" value={plan.summary.unestimatedDueTasks} warning={plan.summary.unestimatedDueTasks>0}/>
         </div>
-        <p className="text-sm"><strong>{formatHours(plan.summary.knownMinutes)} known labour-hours</strong> due
+        <p className="text-sm"><strong>{formatHours(plan.summary.knownMinutes)} estimated task-hours</strong> due
           within the selected horizon, including overdue and already-triggered meter work.
           {plan.summary.unestimatedDueTasks>0 && <span className="text-amber-700 dark:text-amber-300">
             {' '}{plan.summary.unestimatedDueTasks} tasks still lack effort estimates; true workload is uncertain.</span>}
@@ -201,7 +201,7 @@ export function PmEnterpriseForwardPlan() {
             <Badge variant="outline">Illustrative — not actual staffing</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            Enter planning assumptions. Capacity does not claim real technician availability,
+            Enter planning assumptions (one crew per task as a provisional approximation). Capacity does not claim real technician availability,
             confirmed shutdown windows, safety permits, spare parts or tools.
             Working days are counted from Monday.
           </p>
@@ -295,7 +295,7 @@ export function PmEnterpriseForwardPlan() {
         <p className="text-xs text-muted-foreground">
           Read-only planning outlook: does not dispatch crews, generate or approve WOs, reserve inventory,
           or change PM due dates. Use Machine PM Roll-up and standard approvals to execute the plan.
-          Meter tasks enter the workload only when an observed value reaches its configured threshold;
+          Estimates are task durations, not verified person-hours or remaining work on in-progress jobs. Meter tasks enter the workload only when an observed value reaches its configured threshold;
           unestimated hours are not guessed.
         </p>
       </>}

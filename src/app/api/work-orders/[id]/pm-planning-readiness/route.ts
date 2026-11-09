@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { authorizeWorkOrderExecutionAccess } from '@/lib/plant-auth-helpers';
 import { getUnavailableOperationalModules } from '@/lib/module-access.server';
 import { buildPmPlanningReadiness } from '@/services/pm/planningReadiness.service';
+import { identifyPmWorkOrderSource } from '@/lib/pm-workorder-provenance';
 
 export async function GET(
   request: NextRequest,
@@ -32,7 +33,7 @@ export async function GET(
         suggestedTools: true,
         taskExecutions: {
           orderBy: { taskNumber: 'asc' },
-          select: { requiredParts: true, estimatedMinutes: true },
+          select: { pmScheduleTaskId: true, requiredParts: true, estimatedMinutes: true },
         },
         repairMaterialRequests: {
           select: {
@@ -76,8 +77,15 @@ export async function GET(
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
-    if (!wo.pmScheduleId || !wo.pmSchedule) {
-      return NextResponse.json({ success: false, error: 'Work order is not linked to a PM schedule' }, { status: 400 });
+    const provenance = identifyPmWorkOrderSource({
+      pmScheduleId: wo.pmScheduleId,
+      schedule: wo.pmSchedule,
+      taskExecutions: wo.taskExecutions,
+    });
+    if (provenance.kind !== 'valid') {
+      return NextResponse.json({ success: false, error: provenance.message }, {
+        status: provenance.kind === 'broken_schedule' ? 409 : 400,
+      });
     }
 
     const unavailableModules = new Set(
@@ -108,8 +116,8 @@ export async function GET(
       repairsOperational,
       inventoryOperational,
       toolsOperational,
-      requiredSkills: wo.pmSchedule.template?.requiredSkills || null,
-      requiredTools: wo.pmSchedule.template?.requiredTools || null,
+      requiredSkills: wo.pmSchedule?.template?.requiredSkills || null,
+      requiredTools: wo.pmSchedule?.template?.requiredTools || null,
       suggestedParts: wo.suggestedParts,
       suggestedTools: wo.suggestedTools,
       materialRequests: wo.repairMaterialRequests,
@@ -122,10 +130,15 @@ export async function GET(
       data: {
         ...readiness,
         schedule: {
-          id: wo.pmSchedule.id,
-          title: wo.pmSchedule.title,
-          templateId: wo.pmSchedule.template?.id || null,
-          templateTitle: wo.pmSchedule.template?.title || null,
+          id: wo.pmSchedule?.id || null,
+          title: wo.pmSchedule?.title || 'Direct PM assignment',
+          templateId: wo.pmSchedule?.template?.id || null,
+          templateTitle: wo.pmSchedule?.template?.title || null,
+          source: provenance.source,
+        },
+        provenance: {
+          source: provenance.source,
+          assignmentCount: wo.taskExecutions.filter((task) => Boolean(task.pmScheduleTaskId)).length,
         },
         modules: {
           repairs: repairsOperational,

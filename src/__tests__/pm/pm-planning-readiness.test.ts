@@ -44,6 +44,24 @@ describe('PM planning readiness', () => {
     expect(result.readyForPlanning).toBe(true);
   });
 
+  it('reports unestimated PM work without pretending missing labour is zero', async () => {
+    const { buildPmPlanningReadiness } = await loadService();
+    const result = buildPmPlanningReadiness({
+      plannerId: 'planner-1', assignedTo: 'tech-1', assignedSupervisorId: 'supervisor-1',
+      departmentId: 'dept-1', requiredSkills: null, requiredTools: null,
+      tasks: [
+        { estimatedMinutes: 75 }, { estimatedMinutes: null },
+        { estimatedMinutes: 0 }, { estimatedMinutes: -40 },
+      ],
+    });
+    expect(result.checklist).toEqual({ taskCount: 4, estimatedMinutes: 75 });
+    expect(result.workloadEstimate).toEqual({
+      knownMinutes: 75, unestimatedTaskCount: 3, complete: false,
+    });
+    expect(result.warnings.map((w: {code:string}) => w.code)).toContain('effort_estimate_missing');
+    expect(result.readyForPlanning).toBe(true);
+  });
+
   it('tracks mapped recommendations that entered Repairs requests and flags rejected or missing coverage', async () => {
     const { buildPmPlanningReadiness } = await loadService();
 

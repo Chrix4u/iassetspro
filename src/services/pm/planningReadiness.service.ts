@@ -279,6 +279,19 @@ export function buildPmPlanningReadiness(input: PmPlanningReadinessInput) {
   }
 
   const warnings: PmPlanningIssue[] = [];
+  const unestimatedTaskCount = input.tasks.filter((task) =>
+    task.estimatedMinutes == null ||
+    !Number.isFinite(task.estimatedMinutes) ||
+    task.estimatedMinutes <= 0).length;
+  const knownEstimatedMinutes = input.tasks.reduce((sum, task) =>
+    sum + (task.estimatedMinutes != null && Number.isFinite(task.estimatedMinutes)
+      && task.estimatedMinutes > 0 ? task.estimatedMinutes : 0), 0);
+  if (unestimatedTaskCount > 0) {
+    warnings.push({
+      code: 'effort_estimate_missing',
+      label: `${unestimatedTaskCount} PM task${unestimatedTaskCount === 1 ? '' : 's'} need positive labour-time estimates before reliable crew capacity planning`,
+    });
+  }
   if (input.tasks.length === 0) {
     warnings.push({ code: 'checklist_empty', label: 'No PM checklist is attached to this work order' });
   }
@@ -319,7 +332,12 @@ export function buildPmPlanningReadiness(input: PmPlanningReadinessInput) {
     warnings,
     checklist: {
       taskCount: input.tasks.length,
-      estimatedMinutes: input.tasks.reduce((sum, task) => sum + (task.estimatedMinutes || 0), 0),
+      estimatedMinutes: knownEstimatedMinutes,
+    },
+    workloadEstimate: {
+      knownMinutes: knownEstimatedMinutes,
+      unestimatedTaskCount,
+      complete: unestimatedTaskCount === 0 && input.tasks.length > 0,
     },
     requiredSkills,
     resources: {

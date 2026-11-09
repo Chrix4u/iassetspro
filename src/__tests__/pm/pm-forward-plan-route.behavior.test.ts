@@ -77,6 +77,16 @@ describe('plant-scoped enterprise PM forward register', () => {
     expect(result.status).toBe(403);
     expect(mock.assignments).not.toHaveBeenCalled();
   });
+  it('narrows a permitted large-company register to one explicitly chosen plant', async () => {
+    const response = await GET(request('plant-1'));
+    expect(response.status).toBe(200);
+    expect(mock.assignments).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        asset: { is: { plantId: 'plant-1' } },
+      }),
+    }));
+  });
+
   it('returns no records for a user with no accessible plants', async () => {
     mock.plantScope.mockResolvedValue({ isSystemWide: false, isScoped: false,
       plantId: null, accessiblePlantIds: [], denyAccess: false });

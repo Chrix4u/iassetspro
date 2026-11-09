@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface ForwardFeed { generatedAt: string; items: PmForwardTask[] }
+interface PlantOption { id: string; name: string; code?: string | null }
 const DEFAULT_SCENARIO: PmCapacityScenario = {
   crews: 2, hoursPerShift: 8, workingDaysPerWeek: 5, productivePercent: 80,
 };
@@ -45,12 +46,15 @@ export function PmEnterpriseForwardPlan() {
   const [reload, setReload] = useState(0);
   const [windowDays, setWindowDays] = useState<7 | 30 | 90>(30);
   const [plantId, setPlantId] = useState('all');
+  const [availablePlants, setAvailablePlants] = useState<PlantOption[]>([]);
   const [search, setSearch] = useState('');
   const [scenario, setScenario] = useState<PmCapacityScenario>(DEFAULT_SCENARIO);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const response = await api.get<ForwardFeed>('/api/pm-assignments/forward-plan');
+      const endpoint = '/api/pm-assignments/forward-plan' +
+        (plantId === 'all' ? '' : '?plantId=' + encodeURIComponent(plantId));
+      const response = await api.get<ForwardFeed>(endpoint);
       if (!response.success || !response.data || !Array.isArray(response.data.items)) {
         throw new Error(response.error || 'Could not load the plant-wide PM register');
       }
@@ -59,13 +63,23 @@ export function PmEnterpriseForwardPlan() {
       setFeed(null);
       setError(caught instanceof Error ? caught.message : 'Could not load PM forward plan');
     } finally { setLoading(false); }
-  }, []);
+  }, [plantId]);
   useEffect(() => { void load(); }, [load, reload]);
+  useEffect(() => {
+    let current = true;
+    void api.get<PlantOption[]>('/api/plants').then((response) => {
+      if (current && response.success && Array.isArray(response.data)) {
+        setAvailablePlants(response.data);
+      }
+    }).catch(() => {});
+    return () => { current = false; };
+  }, []);
   const plants = useMemo(() => {
     const map = new Map<string, string>();
+    for (const plant of availablePlants) map.set(plant.id, plant.name);
     for (const item of feed?.items || []) map.set(item.plantId, item.plantName);
     return [...map].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [feed]);
+  }, [availablePlants, feed]);
   const scopedTasks = useMemo(() =>
     (feed?.items || []).filter((task) => plantId === 'all' || task.plantId === plantId),
   [feed, plantId]);
@@ -151,7 +165,9 @@ export function PmEnterpriseForwardPlan() {
       </div>
     </CardHeader>
     <CardContent className="space-y-4">
-      {error && <p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">
+        {error} If the all-plants register is too large, choose an authorized plant above to load a complete plant-level plan.
+      </p>}
       {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Analyzing assignments and current-cycle work orders…</p>}
       {feed && <>
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

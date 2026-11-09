@@ -341,6 +341,7 @@ export function PmInspectionWorksheetPanel() {
 
         {machineChecklistOpen && filters.assetId && (
           <PmMachineInspectionChecklistPanel
+            key={`${filters.assetId}:${machineInspectionState}`}
             assetId={filters.assetId}
             equipmentState={machineInspectionState}
             canRecord={canRecord}

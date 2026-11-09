@@ -40,6 +40,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Use sight or instrument inspection for this PM worksheet' }, { status: 400 });
     }
     const body = await request.json();
+    // An absent state is legitimate for legacy worksheet captures. Never infer
+    // Running/Standstill from a machine's current state for a historical record.
+    const rawEquipmentState = body.equipmentState;
+    if (rawEquipmentState !== undefined && rawEquipmentState !== null
+      && rawEquipmentState !== 'running' && rawEquipmentState !== 'standstill') {
+      return NextResponse.json({
+        success: false, error: 'Invalid equipment state: choose Running or Standstill',
+      }, { status: 400 });
+    }
+    const equipmentState: 'running' | 'standstill' | null = rawEquipmentState ?? null;
     const submissionKey = typeof body.requestKey === 'string' ? body.requestKey.trim() : '';
     if (submissionKey && !/^[a-zA-Z0-9_-]{8,120}$/.test(submissionKey)) {
       return NextResponse.json({ success: false, error: 'Invalid inspection submission key' }, { status: 400 });
@@ -83,6 +93,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             value: inspection.value,
             findings: findings || null,
             recommendation: recommendation || null,
+            equipmentState,
           })) {
             throw new Error('Inspection submission key conflict');
           }
@@ -122,6 +133,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           recommendation: recommendation || null,
           inspectorId: session.userId,
           inspectedAt,
+          equipmentState,
         },
       });
       if (inspection.numericValue !== null) {
@@ -242,7 +254,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           newValues: JSON.stringify({
             inspectionPointId: pointId, componentId: point.component.id, method: point.inspectionType,
             value: inspection.value, unit: limits.unit, result: inspection.outcome,
-            findings, workOrderId: workOrder?.id || null, reusedWorkOrder, nextInspection,
+            equipmentState, findings, workOrderId: workOrder?.id || null, reusedWorkOrder, nextInspection,
           }),
         },
       });

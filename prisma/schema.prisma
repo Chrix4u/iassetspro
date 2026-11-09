@@ -3592,6 +3592,7 @@ model ComponentInspectionRecord {
   recommendation    String?  @db.Text
   inspectorId       String
   inspectedAt       DateTime @default(now())
+  equipmentState    String?  @map("equipment_state") // running, standstill; NULL for historical/legacy entries
   workOrderId       String?  @unique // automatically generated corrective WO from this specific failed inspection
 
   inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)

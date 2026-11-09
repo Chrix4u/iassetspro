@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
 import { PmMachineInspectionChecklistPanel } from './PmMachineInspectionChecklistPanel';
+import { PmInspectionExceptionsPanel } from './PmInspectionExceptionsPanel';
 import type { MachineChecklistTask, MachineInspectionState } from '@/lib/pm-machine-checklist';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
@@ -100,6 +101,7 @@ export function PmInspectionWorksheetPanel() {
   const [scheduledRows, setScheduledRows] = useState<ScheduledInspection[]>([]);
   const [scheduledDetail, setScheduledDetail] = useState<ScheduledInspection | null>(null);
   const [machineChecklistOpen, setMachineChecklistOpen] = useState(false);
+  const [exceptionsOpen, setExceptionsOpen] = useState(false);
   const [machineInspectionState, setMachineInspectionState] = useState<MachineInspectionState>('running');
   const [machineChecklistRevision, setMachineChecklistRevision] = useState(0);
   const [scheduledWarning, setScheduledWarning] = useState('');
@@ -290,6 +292,13 @@ export function PmInspectionWorksheetPanel() {
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
               <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Generate List
             </Button>
+            <Button type="button" size="sm" variant={exceptionsOpen ? 'default' : 'outline'}
+              aria-pressed={exceptionsOpen} onClick={() => {
+                setExceptionsOpen((current) => !current);
+                setMachineChecklistOpen(false);
+              }}>
+              <AlertTriangle className="mr-1.5 h-4 w-4"/>{exceptionsOpen ? 'Back to Inspection List' : 'Review Exceptions'}
+            </Button>
             <Button type="button" size="sm" variant="outline" onClick={exportVisiblePage} disabled={loading || rows.length === 0} title="Export only the filtered inspection points shown on this page">
               <Download className="mr-1.5 h-4 w-4"/>Export Page CSV
             </Button>
@@ -317,6 +326,13 @@ export function PmInspectionWorksheetPanel() {
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Corrective follow-up</Label><Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All follow-ups</SelectItem><SelectItem value="open">Open corrective WO</SelectItem><SelectItem value="none">No open corrective WO</SelectItem></SelectContent></Select></div>
         </div>
 
+        {exceptionsOpen && <PmInspectionExceptionsPanel
+          assetId={filters.assetId}
+          departmentId={filters.departmentId}
+          reloadKey={machineChecklistRevision}
+          onClose={() => setExceptionsOpen(false)}
+        />}
+        {!exceptionsOpen && <>
         <div className="flex min-w-0 flex-wrap items-end justify-between gap-2 rounded-lg border bg-muted/20 p-2.5 sm:p-3">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">Machine inspection checklist</p>
@@ -459,6 +475,7 @@ export function PmInspectionWorksheetPanel() {
             <Button size="sm" variant="outline" disabled={page >= pageCount || loading} onClick={() => setPage((p) => p + 1)}>Next</Button>
           </div>
         </div>
+        </>}
         </>}
       </CardContent>
 

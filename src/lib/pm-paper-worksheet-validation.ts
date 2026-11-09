@@ -43,3 +43,10 @@ export function validateManagedPaperReading(
   }
   return null;
 }
+
+/** Treat case variants of our reserved IW- prefix as system-issued, not as
+ * legacy/unverified external paper references. Retain legacy references as-is.
+ */
+export function normalizeManagedPaperReference(reference: string): string {
+  return /^iw-/i.test(reference) ? reference.toUpperCase() : reference;
+}

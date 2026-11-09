@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateManagedPaperReading } from '@/lib/pm-paper-worksheet-validation';
+import { validateManagedPaperReading, normalizeManagedPaperReference } from '@/lib/pm-paper-worksheet-validation';
 const issuedAt = new Date('2026-11-09T09:00:00.000Z');
 const issue = {
   reference: 'IW-C314-20261109-1234567890',
@@ -12,6 +12,12 @@ const reading = {
   fieldInspectedAt: new Date('2026-11-09T10:00:00.000Z'),
 };
 describe('registered paper worksheet original-time and scope validation', () => {
+  it('normalizes reserved system-issued references without changing legacy paper codes', () => {
+    expect(normalizeManagedPaperReference('iw-c314-20261109-aabbccddee'))
+      .toBe('IW-C314-20261109-AABBCCDDEE');
+    expect(normalizeManagedPaperReference('Iw-unknown')).toBe('IW-UNKNOWN');
+    expect(normalizeManagedPaperReference('External-sheet-A')).toBe('External-sheet-A');
+  });
   it('accepts a matching machine, state, issued sheet and original field time', () => {
     expect(validateManagedPaperReading(issue, reading)).toBeNull();
   });

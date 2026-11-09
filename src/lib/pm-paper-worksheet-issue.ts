@@ -14,3 +14,14 @@ export function paperSheetProgress(expected: readonly string[], observed: Readon
     status: pointIds.length === 0 ? 'requires_setup' : remaining === 0 ? 'entered' : entered === 0 ? 'issued' : 'partial',
   };
 }
+
+/** A printed sheet can show legacy or unconfigured checks, but only actual
+ * recordable sight/instrument points can contribute to completed readings.
+ */
+export function isRecordablePaperPoint(point: {
+  inspectionType: string;
+  parameterKey?: string | null;
+}): boolean {
+  return point.inspectionType === 'visual'
+    || (point.inspectionType === 'measurement' && Boolean(point.parameterKey?.trim()));
+}

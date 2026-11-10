@@ -25,7 +25,7 @@ import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-ma
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 import { isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
 import {
-  inspectionPointsForTask, missingInspectionTaskMappings, type InspectionTaskPointLink,
+  inspectionPointsForTask, inspectionTaskLabelsForPoint, missingInspectionTaskMappings, type InspectionTaskPointLink,
 } from '@/lib/pm-task-point-scope';
 import { PmInspectionTaskPointMapper } from './PmInspectionTaskPointMapper';
 import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
@@ -409,12 +409,17 @@ export function PmMachineInspectionChecklistPanel({
         'Reading source', 'Field inspector', 'Original field time', 'Paper reference'],
     ];
     for (const group of data.groups) {
-      const tasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
-      if (!group.points.length) rows.push([group.component.componentCode, group.component.name, tasks, 'UNCONFIGURED']);
+      const allAssignedTasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
+      if (!group.points.length) rows.push([group.component.componentCode, group.component.name, allAssignedTasks, 'UNCONFIGURED']);
       for (const point of group.points) {
         const limits = parseInspectionLimits(point.normalRange);
+        // A physical point appears once, labeled only with the exact PM
+        // tasks mapped to it. Unmapped shared-part points must not inherit
+        // another task's name in an exported inspection report.
+        const taskLabels = inspectionTaskLabelsForPoint(group, point.id, data.explicitTaskPointLinks || []);
         rows.push([
-          group.component.componentCode, group.component.name, tasks, point.name,
+          group.component.componentCode, group.component.name,
+          taskLabels.length ? taskLabels.join('; ') : 'UNMAPPED — planner review required', point.name,
           point.inspectionType, limits.min ?? '', limits.max ?? '', limits.unit || '',
           point.latestRecord?.value || '', point.latestRecord?.result || '',
           point.latestRecord?.findings || '', point.latestRecord ? dateTime(point.latestRecord.inspectedAt) : '',

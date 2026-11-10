@@ -21,6 +21,7 @@ describe('enterprise PM explicit task/measurement flow contracts', () => {
     expect(machine).toContain('missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || [])');
     expect(machine).toContain('if (unresolved.taskCount)');
     expect(machine).toContain('taskPointLinks });');
+    expect(machine).toContain('inspectionTaskLabelsForPoint(group, point.id, data.explicitTaskPointLinks || [])');
     expect(printed).toContain('buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || [])');
   });
   it('server verifies the mapping against stored records and snapshots the actual issue scope', () => {

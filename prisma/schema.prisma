@@ -1309,6 +1309,7 @@ model PmTask {
   createdBy     User             @relation("PmTaskCreatedBy", fields: [createdById], references: [id])
   templateTasks PmTemplateTask[]
   scheduleTasks PmScheduleTask[]
+  inspectionPointLinks PmInspectionTaskPoint[]
 
   @@unique([plantId, taskNumber])
   @@index([plantId, taskType, isActive])
@@ -3572,10 +3573,27 @@ model ComponentInspectionPoint {
 
   component ComponentRegistry           @relation(fields: [componentId], references: [id], onDelete: Cascade)
   records   ComponentInspectionRecord[]
+  pmTaskLinks PmInspectionTaskPoint[]
 
   @@index([componentId])
   @@index([isActive])
   @@map("component_inspection_points")
+}
+
+// A measurement checkpoint may belong to more than one PM task on the same
+// registered part. Task-scoped links avoid guessing from a shared part alone.
+model PmInspectionTaskPoint {
+  pmTaskId          String
+  inspectionPointId String
+  createdAt         DateTime @default(now())
+  createdById       String
+
+  pmTask          PmTask                   @relation(fields: [pmTaskId], references: [id], onDelete: Cascade)
+  inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)
+
+  @@id([pmTaskId, inspectionPointId])
+  @@index([inspectionPointId])
+  @@map("pm_inspection_task_points")
 }
 
 model PmPaperWorksheetIssue {

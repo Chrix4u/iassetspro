@@ -115,7 +115,7 @@ export function SettingsUsersPage() {
 
   const openEdit = (u: User) => {
     setSelectedUser(u);
-    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', staffId: u.staffId || '', department: u.department || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
+    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', staffId: u.staffId || '', department: u.department || '', password: '', status: u.status, roleIds: (u as User & { userRoles?: UserRole[] }).userRoles?.map(ur => ur.roleId) || [] });
     setEditOpen(true);
   };
 
@@ -576,7 +576,7 @@ export function SettingsRolesPage() {
     if (!permFilter.trim()) return entries;
     const q = permFilter.toLowerCase();
     return entries
-      .map(([mod, perms]) => [mod, perms.filter(p => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q))])
+      .map(([mod, perms]): [string, Permission[]] => [mod, perms.filter(p => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q))])
       .filter(([, perms]) => perms.length > 0);
   }, [permissionsByModule, permFilter]);
   const filteredPermTotal = useMemo(() => moduleNames.reduce((s, [, p]) => s + p.length, 0), [moduleNames]);
@@ -846,7 +846,7 @@ export function SettingsRolesPage() {
   );
 }
 // moduleIconMap + SettingsModulesPage
-const moduleIconMap: Record<string, React.ElementType> = {
+const moduleIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   core: Boxes,
   assets: Building2,
   maintenance_requests: ClipboardList,
@@ -1986,7 +1986,7 @@ const TYPE_COLORS: Record<string, string> = {
   info: 'bg-slate-50 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
 };
 
-const TYPE_ICONS: Record<string, React.ElementType> = {
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   mr_assigned: ClipboardList,
   mr_approved: CheckCircle2,
   mr_rejected: XCircle,
@@ -3689,7 +3689,7 @@ export function SettingsIntegrationsPage() {
   const [serverConfigs, setServerConfigs] = useState<Record<string, any>>({});
 
   const defaultIntegrations = [
-    { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
+    { id: 'erp', name: 'ERP Integration', description: 'Connect to your ERP system to synchronize data', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
     { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
     { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
     { id: 'sms', name: 'SMS Gateway (Hubtel)', description: 'Send critical alerts via SMS using Hubtel\'s Programmable SMS API', icon: Smartphone, connected: false, fields: ['clientId', 'clientSecret', 'senderName'], provider: 'hubtel' },

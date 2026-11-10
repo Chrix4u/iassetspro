@@ -47,7 +47,7 @@
 }
 
 /* ============================================================================
-   ENTERPRISE LIGHT MODE
+   LIGHT MODE
    - Dark sidebar (charcoal) for strong visual hierarchy
    - White header with border for clear separation
    - Subtle warm-gray content area
@@ -116,7 +116,7 @@
 }
 
 /* ============================================================================
-   ENTERPRISE DARK MODE
+   DARK MODE
    - Deeper dark sidebar for maximum contrast
    - Elevated header surface with subtle glow
    - Deep background with refined borders

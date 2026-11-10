@@ -167,7 +167,7 @@ export default function EnterpriseReports() {
     exportPDF({
       title: `Report - ${startDate} to ${endDate}`,
       subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
-      filename: `enterprise-report-${startDate}-to-${endDate}`,
+      filename: `maintenance-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
         { label: 'Total WOs', value: String(s.totalWOs) },
@@ -189,7 +189,7 @@ export default function EnterpriseReports() {
   const handleCsvExport = () => {
     if (!reportData) return;
     exportCSV(
-      `enterprise-report-${startDate}-to-${endDate}`,
+      `maintenance-report-${startDate}-to-${endDate}`,
       ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Estimated Hours', 'Total Cost', 'Created Date'],
       recentWOs.map((wo: any) => [
         wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',

@@ -124,7 +124,7 @@ export function PmEnterpriseForwardPlan() {
     const numeric = Number(raw);
     setScenario((old) => ({...old,[key]:Number.isFinite(numeric) ? numeric : 0}));
   };
-  return <Card className="border shadow-sm" data-testid="pm-enterprise-forward-plan">
+  return <Card className="border shadow-sm" data-testid="pm-maintenance-workload-outlook">
     <CardHeader className="space-y-3 pb-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">

@@ -3689,7 +3689,7 @@ export function SettingsIntegrationsPage() {
   const [serverConfigs, setServerConfigs] = useState<Record<string, any>>({});
 
   const defaultIntegrations = [
-    { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
+    { id: 'erp', name: 'ERP Integration', description: 'Connect to your ERP system to synchronize data', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
     { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
     { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
     { id: 'sms', name: 'SMS Gateway (Hubtel)', description: 'Send critical alerts via SMS using Hubtel\'s Programmable SMS API', icon: Smartphone, connected: false, fields: ['clientId', 'clientSecret', 'senderName'], provider: 'hubtel' },

@@ -26,12 +26,12 @@ describe('PM portfolio compliance view model', () => {
     });
 
     expect(kpis).toEqual([
-      { key: 'compliance', label: 'Completion Compliance', value: '66.7%' },
-      { key: 'matured', label: 'Matured Cycles', value: '18' },
+      { key: 'compliance', label: 'Tasks Completed (%)', value: '66.7%' },
+      { key: 'matured', label: 'Tasks Past Due Date', value: '18' },
       { key: 'completed', label: 'Completed', value: '12' },
-      { key: 'overdue', label: 'Open Overdue', value: '4' },
+      { key: 'overdue', label: 'Still Overdue', value: '4' },
       { key: 'missed', label: 'Missed', value: '2' },
-      { key: 'machinesOverdue', label: 'Machines w/ Overdue', value: '3 / 9' },
+      { key: 'machinesOverdue', label: 'Machines Still Overdue', value: '3 / 9' },
     ]);
   });
 

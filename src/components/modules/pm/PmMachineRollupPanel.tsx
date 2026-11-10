@@ -227,8 +227,8 @@ export function PmMachineRollupPanel() {
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4 text-emerald-600" />Machine PM Roll-up</CardTitle>
-            <CardDescription>See whole-machine and descendant PM together, then consolidate compatible due and due-soon work without mixing Running and Standstill.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-sm"><Network className="h-4 w-4 text-emerald-600" />Machine Maintenance Schedule</CardTitle>
+            <CardDescription>Select a machine to see its maintenance tasks, affected parts, due dates and meter readings. Running and Standstill jobs are shown separately.</CardDescription>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={refreshAll} disabled={!assetId || loading || complianceLoading}>
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loading || complianceLoading ? 'animate-spin' : ''}`} />Refresh
@@ -251,9 +251,9 @@ export function PmMachineRollupPanel() {
         </div>
 
         {!assetId ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">Select a machine to load its PM roll-up.</div>
+          <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">Select a machine to see what maintenance is due on its parts.</div>
         ) : loading && !data ? (
-          <div className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PM roll-up…</div>
+          <div className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading this machine's maintenance schedule…</div>
         ) : data ? (
           <>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -306,8 +306,8 @@ export function PmMachineRollupPanel() {
             <div className="rounded-lg border p-3">
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-xs font-semibold">PM Compliance</p>
-                  <p className="text-[10px] text-muted-foreground">Historical completion, open-overdue exposure, and missed direct-PM cycles. This is completion compliance, not an on-time SLA.</p>
+                  <p className="text-xs font-semibold">Maintenance Completion</p>
+                  <p className="text-[10px] text-muted-foreground">For tasks whose due dates have passed, see which were completed, which are still overdue, and which were missed. This does not measure whether work finished on time.</p>
                 </div>
                 <div className="w-full space-y-1 sm:w-40">
                   <Label className="text-[10px] font-semibold">Reporting Window</Label>
@@ -343,7 +343,7 @@ export function PmMachineRollupPanel() {
                       <TableHeader><TableRow><TableHead className="text-xs">Due</TableHead><TableHead className="text-xs">Task</TableHead><TableHead className="text-xs">PM Type</TableHead><TableHead className="text-xs">Outcome</TableHead><TableHead className="text-xs">Work Order</TableHead><TableHead className="text-xs">Delay</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {recentComplianceCycles.length === 0 ? (
-                          <TableRow><TableCell colSpan={6} className="py-6 text-center text-xs text-muted-foreground">No PM cycles matured in this reporting window.</TableCell></TableRow>
+                          <TableRow><TableCell colSpan={6} className="py-6 text-center text-xs text-muted-foreground">No maintenance tasks became due in this period.</TableCell></TableRow>
                         ) : recentComplianceCycles.map((cycle) => (
                           <TableRow key={cycle.identity}>
                             <TableCell className="whitespace-nowrap text-[10px]">{formatDateTime(cycle.dueAt)}</TableCell>
@@ -365,7 +365,7 @@ export function PmMachineRollupPanel() {
               <Table>
                 <TableHeader><TableRow><TableHead className="text-xs">Technical Path</TableHead><TableHead className="text-xs">Task</TableHead><TableHead className="text-xs">PM / Activity</TableHead><TableHead className="text-xs">Inspection Type</TableHead><TableHead className="text-xs">Due State</TableHead><TableHead className="text-xs">Est. Minutes</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {data.assignments.length === 0 ? <TableRow><TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">No direct PM assignments exist on this machine.</TableCell></TableRow> : data.assignments.map((assignment) => (
+                  {data.assignments.length === 0 ? <TableRow><TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">No maintenance tasks are assigned to this machine.</TableCell></TableRow> : data.assignments.map((assignment) => (
                     <TableRow key={assignment.id}>
                       <TableCell><p className="max-w-[260px] truncate text-xs font-medium" title={assignment.technicalPathLabel || 'Whole machine'}>{assignment.technicalPathLabel || 'Whole machine'}</p><p className="text-[10px] text-muted-foreground">{assignment.targetKind === 'machine' ? 'Machine target' : 'Maintainable node'}</p></TableCell>
                       <TableCell><p className="font-mono text-[10px] text-muted-foreground">Task #{assignment.pmTask.taskNumber}</p><p className="max-w-[280px] truncate text-xs" title={assignment.pmTask.description}>{assignment.pmTask.description}</p></TableCell>

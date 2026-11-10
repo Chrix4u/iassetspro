@@ -221,10 +221,10 @@ export function PmPortfolioCompliancePanel() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <Factory className="h-4 w-4 text-emerald-600" />PM Portfolio Compliance
+              <Factory className="h-4 w-4 text-emerald-600" />Maintenance Completion by Plant & Department
             </CardTitle>
             <CardDescription>
-              Plant and department exposure across matured direct-PM cycles. Completion compliance is not an on-time SLA metric.
+              Select a plant or department to see maintenance tasks whose due dates have passed: completed, overdue and missed. Completion does not necessarily mean the job was finished on time.
             </CardDescription>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={() => void loadPortfolio()} disabled={!plantId || loading}>
@@ -276,14 +276,14 @@ export function PmPortfolioCompliancePanel() {
         </div>
 
         {!plantId && !loadingPlants ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">No accessible plant is available for portfolio compliance.</div>
+          <div className="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground">No plant is available for this maintenance report.</div>
         ) : error ? (
           <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <div><p className="font-semibold">Portfolio compliance could not be loaded.</p><p className="mt-0.5 opacity-80">{error}</p></div>
+            <div><p className="font-semibold">Maintenance completion report could not be loaded.</p><p className="mt-0.5 opacity-80">{error}</p></div>
           </div>
         ) : loading && !data ? (
-          <div className="flex min-h-28 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading PM portfolio compliance…</div>
+          <div className="flex min-h-28 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading maintenance completion report…</div>
         ) : data ? (
           <>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
@@ -303,11 +303,11 @@ export function PmPortfolioCompliancePanel() {
             <div className="grid min-w-0 gap-4 xl:grid-cols-2">
               <div className="min-w-0 overflow-hidden rounded-lg border">
                 <div className="border-b px-3 py-2.5">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold"><Building2 className="h-3.5 w-3.5" />Department Risk</p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">Ranked by open overdue, missed cycles, then completion compliance.</p>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold"><Building2 className="h-3.5 w-3.5" />Departments with Overdue Maintenance</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Departments with the most overdue or missed maintenance are shown first.</p>
                 </div>
                 <div className="space-y-2 p-2 sm:hidden" data-testid="pm-department-risk-mobile">
-                  {data.departments.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No PM cycles matured in this reporting window.</p> : data.departments.map((department) => (
+                  {data.departments.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No maintenance tasks became due in this period.</p> : data.departments.map((department) => (
                     <div key={department.departmentId || '__unassigned__'} className="min-w-0 rounded-md border p-3">
                       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold">{department.departmentName}</p>
@@ -328,7 +328,7 @@ export function PmPortfolioCompliancePanel() {
                     <TableHeader><TableRow><TableHead className="text-xs">Department</TableHead><TableHead className="text-xs">Machines</TableHead><TableHead className="text-xs">Compliance</TableHead><TableHead className="text-xs">Exposure</TableHead><TableHead className="text-xs">Oldest</TableHead></TableRow></TableHeader>
                     <TableBody>
                       {data.departments.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="py-6 text-center text-xs text-muted-foreground">No PM cycles matured in this reporting window.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} className="py-6 text-center text-xs text-muted-foreground">No maintenance tasks became due in this period.</TableCell></TableRow>
                       ) : data.departments.map((department) => (
                         <TableRow key={department.departmentId || '__unassigned__'}>
                           <TableCell><p className="text-xs font-medium">{department.departmentName}</p><p className="text-[9px] text-muted-foreground">{department.maturedCycles} matured · {department.completed} completed</p></TableCell>
@@ -345,11 +345,11 @@ export function PmPortfolioCompliancePanel() {
 
               <div className="min-w-0 overflow-hidden rounded-lg border">
                 <div className="border-b px-3 py-2.5">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold"><ShieldAlert className="h-3.5 w-3.5" />Machine Risk · Top 15</p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">Highest-risk machines in server-ranked order.</p>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold"><ShieldAlert className="h-3.5 w-3.5" />Machines Needing Attention · Top 15</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Machines with the most outstanding or missed maintenance appear first.</p>
                 </div>
                 <div className="space-y-2 p-2 sm:hidden" data-testid="pm-machine-risk-mobile">
-                  {topMachines.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No machines have matured PM cycles in this window.</p> : topMachines.map((machine) => (
+                  {topMachines.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No machines had maintenance tasks become due in this period.</p> : topMachines.map((machine) => (
                     <div key={machine.assetId} className="min-w-0 rounded-md border p-3">
                       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -372,10 +372,10 @@ export function PmPortfolioCompliancePanel() {
                     <TableHeader><TableRow><TableHead className="text-xs">Machine</TableHead><TableHead className="text-xs">Department</TableHead><TableHead className="text-xs">Compliance</TableHead><TableHead className="text-xs">Exposure</TableHead><TableHead className="text-xs">Oldest</TableHead></TableRow></TableHeader>
                     <TableBody>
                       {topMachines.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="py-6 text-center text-xs text-muted-foreground">No machines have matured PM cycles in this window.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} className="py-6 text-center text-xs text-muted-foreground">No machines had maintenance tasks become due in this period.</TableCell></TableRow>
                       ) : topMachines.map((machine) => (
                         <TableRow key={machine.assetId}>
-                          <TableCell><p className="text-xs font-medium">{machine.assetName}</p><p className="font-mono text-[9px] text-muted-foreground">{machine.assetTag} · {machine.maturedCycles} matured</p></TableCell>
+                          <TableCell><p className="text-xs font-medium">{machine.assetName}</p><p className="font-mono text-[9px] text-muted-foreground">{machine.assetTag} · {machine.maturedCycles} due</p></TableCell>
                           <TableCell className="text-xs">{machine.departmentName}</TableCell>
                           <TableCell className="text-xs font-semibold">{formatPmPortfolioPercentage(machine.completionCompliancePct)}</TableCell>
                           <TableCell>{riskBadge(machine.openOverdue, machine.missed)}{machine.missed > 0 && machine.openOverdue > 0 && <p className="mt-1 text-[9px] text-red-600">{machine.missed} missed</p>}</TableCell>
@@ -390,8 +390,8 @@ export function PmPortfolioCompliancePanel() {
 
             <div className="min-w-0 overflow-hidden rounded-lg border">
               <div className="border-b px-3 py-2.5">
-                <p className="text-xs font-semibold">Oldest Open Overdue PM</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">The ten oldest still-open matured cycles in the selected portfolio.</p>
+                <p className="text-xs font-semibold">Longest Overdue Maintenance Tasks</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">The ten maintenance tasks that have remained overdue the longest.</p>
               </div>
               <div className="space-y-2 p-2 sm:hidden" data-testid="pm-oldest-overdue-mobile">
                 {data.oldestOpenOverdue.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No open overdue PM cycles in this reporting window.</p> : data.oldestOpenOverdue.map((cycle) => (

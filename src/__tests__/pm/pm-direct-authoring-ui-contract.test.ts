@@ -137,7 +137,7 @@ describe('direct PM assignment authoring UI contract', () => {
   it('keeps direct assignments primary while removing legacy PM schedule history from the planning page', () => {
     expect(maintenanceSource).toContain('PmPlanningPage');
     expect(planningSource).toContain('PmAssignmentFormDialog');
-    expect(planningSource).toContain('New PM Assignment');
+    expect(planningSource).toContain('Add PM Schedule');
     expect(planningSource).toContain("api.get('/api/pm-assignments?isActive=true')");
     expect(maintenanceSource).not.toContain('Legacy PM Schedules');
     expect(planningSource).not.toContain('Legacy PM Schedules');

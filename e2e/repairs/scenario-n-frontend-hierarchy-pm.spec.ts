@@ -125,8 +125,8 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       expandParentCode?: string,
     ) => {
       await page.goto('/#/pm-schedules');
-      await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
-      await page.getByRole('button', { name: /New PM Assignment/i }).click();
+      await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 20_000 });
+      await page.getByRole('button', { name: /Add PM Schedule/i }).click();
       const assignmentHeading = page.getByRole('heading', { name: 'New PM Assignment', exact: true });
       await expect(assignmentHeading).toBeVisible({ timeout: 10_000 });
       const assignmentDialog = page.getByRole('dialog').filter({ has: assignmentHeading });
@@ -239,7 +239,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
     // Legacy compatibility schedules remain covered through their API and generation engine below.
     await page.goto('/#/pm-schedules');
     await page.reload();
-    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('main').getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 20_000 });
     await expandPmMachine();
     const refreshedTargetRow = page.getByRole('row').filter({ hasText: partCode }).first();
     await expect(refreshedTargetRow).toBeVisible({ timeout: 20_000 });

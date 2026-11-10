@@ -285,8 +285,8 @@ export function PmInspectionWorksheetPanel() {
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>PM Inspection List</CardTitle>
-            <CardDescription>Inspect each machine part by sight or instrument, record limits and findings, and create draft corrective work orders for defects.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>Machine Inspection Sheets & Readings</CardTitle>
+            <CardDescription>Select a machine, print the inspection tasks and all their assigned parts, then enter the technician's measured values or written observations.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
@@ -315,7 +315,40 @@ export function PmInspectionWorksheetPanel() {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-8">
+        <div className="rounded-lg border bg-muted/20 p-3 sm:p-4" data-testid="pm-inspection-generate-machine">
+          <h3 className="text-sm font-semibold">Generate an inspection sheet for one machine</h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            1. Choose the machine. 2. Choose Running or Standstill. 3. Generate the sheet,
+            then click Print Blank Task-Grouped Sheet. Every assigned part will appear beneath its inspection task.
+          </p>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)_auto] sm:items-end">
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs">Machine (name or code)</Label>
+              <AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => {
+                setMachineChecklistOpen(false);
+                updateFilters({ assetId });
+              }} fetchOptions={fetchAssets} placeholder="Select machine..." />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Inspection type</Label>
+              <Select value={machineInspectionState} onValueChange={(value) => {
+                setMachineChecklistOpen(false);
+                setMachineInspectionState(value as MachineInspectionState);
+              }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="running">Running</SelectItem>
+                  <SelectItem value="standstill">Standstill / Stopped</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" className="h-9" disabled={!filters.assetId}
+              onClick={() => { setExceptionsOpen(false); setMachineChecklistOpen(true); }}>
+              <ClipboardCheck className="mr-1.5 h-4 w-4" />Generate Machine Sheet
+            </Button>
+          </div>
+        </div>
+        <div className={machineChecklistOpen ? 'hidden' : 'grid grid-cols-2 gap-2 xl:grid-cols-8'}>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Department</Label><div className="mt-1"><AsyncSearchableSelect value={filters.departmentId} onValueChange={(departmentId) => updateFilters({ departmentId })} fetchOptions={fetchDepartments} placeholder="All departments"/></div></div>
           <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
@@ -333,27 +366,12 @@ export function PmInspectionWorksheetPanel() {
           onClose={() => setExceptionsOpen(false)}
         />}
         {!exceptionsOpen && <>
-        <div className="flex min-w-0 flex-wrap items-end justify-between gap-2 rounded-lg border bg-muted/20 p-2.5 sm:p-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Machine inspection checklist</p>
-            <p className="text-xs text-muted-foreground">
-              Select one machine above, then generate its assigned Running or Standstill tasks and inspect every configured part.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="min-w-[140px] space-y-1">
-              <Label className="text-xs">Machine state</Label>
-              <Select value={machineInspectionState} onValueChange={(state) => setMachineInspectionState(state as MachineInspectionState)}>
-                <SelectTrigger className="h-9"><SelectValue/></SelectTrigger>
-                <SelectContent><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill</SelectItem></SelectContent>
-              </Select>
-            </div>
-            <Button type="button" size="sm" className="h-9" disabled={!filters.assetId}
-              onClick={() => setMachineChecklistOpen(true)}>
-              <ClipboardCheck className="mr-1.5 h-4 w-4"/>Generate Machine Checklist
-            </Button>
-          </div>
-        </div>
+        {!machineChecklistOpen && (
+          <p className="text-xs text-muted-foreground">
+            The filters below also let you review individual inspection points and their saved history.
+            For a full printable machine sheet, use the machine selector above.
+          </p>
+        )}
 
         {machineChecklistOpen && filters.assetId && (
           <PmMachineInspectionChecklistPanel

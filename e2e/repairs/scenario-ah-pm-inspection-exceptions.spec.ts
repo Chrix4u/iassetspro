@@ -52,7 +52,7 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   });
 
   await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 25_000 });
   const worksheet = page.getByTestId('pm-inspection-worksheet');
   await worksheet.getByRole('button', { name: 'Review Exceptions' }).click();
   const review = page.getByTestId('pm-inspection-exceptions');
@@ -84,5 +84,5 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   expect(requestedFilters.some((value) => value.includes('followUp=none'))).toBe(true);
   await review.getByRole('button', { name: 'Back to List' }).click();
   await expect(review).not.toBeVisible();
-  await expect(worksheet.getByText('Machine inspection checklist', { exact: true })).toBeVisible();
+  await expect(worksheet.getByText('Machine Inspection Sheets & Readings', { exact: true })).toBeVisible();
 });

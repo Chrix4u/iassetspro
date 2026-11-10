@@ -19,10 +19,10 @@ export function formatPmCompliancePercentage(value: number | null): string {
 
 export function buildPmComplianceKpis(summary: PmComplianceSummaryView): PmComplianceKpi[] {
   return [
-    { key: 'compliance', label: 'Completion Compliance', value: formatPmCompliancePercentage(summary.completionCompliancePct) },
-    { key: 'matured', label: 'Matured Cycles', value: String(summary.maturedCycles) },
+    { key: 'compliance', label: 'Tasks Completed (%)', value: formatPmCompliancePercentage(summary.completionCompliancePct) },
+    { key: 'matured', label: 'Tasks Past Due Date', value: String(summary.maturedCycles) },
     { key: 'completed', label: 'Completed', value: String(summary.completed) },
-    { key: 'overdue', label: 'Open Overdue', value: String(summary.openOverdue) },
+    { key: 'overdue', label: 'Still Overdue', value: String(summary.openOverdue) },
     { key: 'missed', label: 'Missed', value: String(summary.missed) },
   ];
 }

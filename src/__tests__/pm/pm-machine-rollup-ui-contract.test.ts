@@ -14,7 +14,7 @@ const bundleRoute = source('src/app/api/pm-assignments/bundle/route.ts');
 describe('PM machine roll-up UI contract', () => {
   it('loads machine-scoped due and near-due work with exact technical paths', () => {
     expect(panelSource).toContain('/api/pm-assignments/rollup');
-    expect(panelSource).toContain('Machine PM Roll-up');
+    expect(panelSource).toContain('Machine Maintenance Schedule');
     expect(panelSource).toContain('Technical Path');
     expect(panelSource).toContain('Due');
     expect(panelSource).toContain('Near Due');

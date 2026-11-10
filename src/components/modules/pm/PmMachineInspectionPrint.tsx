@@ -26,6 +26,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
   const fieldSections = buildPaperInspectionTasks(data.groups, data.generalTasks);
+  const sharedPartCount = data.groups.filter((group) =>
+    group.points.length > 0 && new Set(group.tasks.map((task) => task.pmTask.id)).size > 1).length;
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
@@ -74,8 +76,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             page-break-inside: avoid !important;
           }
           #pm-machine-inspection-print .pm-paper-task { margin-top: 14px !important; }
-          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 11mm; border-bottom: 1px solid #9ca3af; }
-          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 13mm; border-bottom: 1px solid #9ca3af; }
+          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 11mm; border: 1px solid #9ca3af; background: #fff !important; }
+          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 13mm; border: 1px solid #9ca3af; background: #fff !important; }
           #pm-machine-inspection-print .pm-paper-heading { background: #e2e8f0 !important; font-weight: bold; padding: 7px !important; }
           #pm-machine-inspection-print .pm-print-note {
             color: #374151 !important;
@@ -95,7 +97,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
               <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-2">
                 <div>
                   <p className="text-xs font-semibold">iAssetsPro · Preventive Maintenance</p>
-                  <h1 className="text-xl font-bold">Inspectionlist — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
+                  <h1 className="text-xl font-bold">Machine Inspection Sheet — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
                   <p className="text-base font-bold">{data.machine.name}</p>
                   <p>Machine code: <strong>{data.machine.assetTag}</strong></p>
                   <p>Machine description: {data.machine.description || data.machine.name}</p>
@@ -104,7 +106,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 <div className="text-right text-xs">
                   <p>Issued: {printedIssue ? displayTime(printedIssue.issuedAt) : 'Not yet issued'}</p>
                   <p>Plant: {data.machine.plantId}</p>
-                  <p>{data.totalAssignments} assigned task(s)</p>
+                  <p>{fieldSections.length} inspection task(s)</p>
                   <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
                 </div>
               </div>
@@ -114,8 +116,13 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 <span>End time: __________</span>
                 <span>Paper reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
               </div>
+              {sharedPartCount > 0 && <p className="pm-print-note mt-2 border border-amber-500 p-2 font-semibold">
+                PLANNER CHECK: {sharedPartCount} part(s) have multiple PM tasks. Their configured inspection points
+                are currently linked to the part, not individually to a task. Verify the task/check associations
+                before the technician uses this sheet.
+              </p>}
               <p className="pm-print-note mt-2 font-semibold">
-                BLANK FIELD INSPECTION SHEET — take this printout to the machine, write each actual
+                FIELD SHEET — grouped by task. Take this printout to the machine and write each actual
                 instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
                 as a substitute for a measurement. Enter the same readings into the electronic machine checklist
                 afterwards. Any abnormal result requires planner review.
@@ -124,29 +131,29 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             {fieldSections.map((task) => (
               <section key={task.id} className="pm-paper-task" data-testid="pm-paper-task">
                 <h2 className="pm-paper-heading pm-print-no-break text-sm">
-                  Task #{task.number}: {task.instruction}
+                  Task #{task.number}: {task.instruction} — {new Set(task.rows.filter((row) => row.partId).map((row) => row.partId)).size} parts, {task.rows.length} reading boxes
                 </h2>
                 <table className="text-xs" data-testid="pm-paper-field-table">
                   <colgroup>
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '16%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '15%' }} />
-                    <col style={{ width: '11%' }} />
                     <col style={{ width: '18%' }} />
-                    <col style={{ width: '6%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '12%' }} />
+                    <col style={{ width: '14%' }} />
+                    <col style={{ width: '20%' }} />
+                    <col style={{ width: '8%' }} />
                   </colgroup>
                   <thead><tr className="bg-slate-100">
                     <th>Assembly / subassembly / part path</th>
                     <th>Part code / description</th>
                     <th>Check / parameter</th>
                     <th>Method / accepted range</th>
-                    <th>Actual reading</th>
-                    <th>Observation / remark</th>
-                    <th>Time</th>
+                    <th>Actual value (write here)</th>
+                    <th>Actual observation / defect (write here)</th>
+                    <th>Time checked</th>
                   </tr></thead>
                   <tbody>
-                    {task.rows.map((row) => (
+                    {task.rows.map((row, index) => (
                       <tr key={row.id} data-testid="pm-paper-field-row">
                         <td>
                           {row.hierarchy.length ? row.hierarchy.map((ancestor, index) => (
@@ -156,7 +163,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                             </div>
                           )) : 'Machine-wide task — no registered part'}
                         </td>
-                        <td><strong>{row.partCode}</strong><div>{row.partName}</div></td>
+                        <td><span className="text-[9px]">{index + 1}. </span><strong>{row.partCode}</strong><div>{row.partName}</div></td>
                         <td>
                           <strong>{row.checkName}</strong>
                           <div>{row.parameter}</div>

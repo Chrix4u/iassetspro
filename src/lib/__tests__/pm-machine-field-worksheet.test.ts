@@ -63,6 +63,33 @@ describe('paper field inspection worksheet', () => {
     expect(sections[1].rows).toHaveLength(2);
     expect(sections[1].rows.every(row => row.requiresConfiguration)).toBe(true);
   });
+  it('keeps every assigned part in a 125-part machine under the right inspection task', () => {
+    const groups: MachineChecklistGroup[] = Array.from({ length: 125 }, (_, index) => {
+      const part = component('part-' + index, 'C314-' + String(index + 1).padStart(4, '0'));
+      const assigned = index < 100
+        ? task('temperature-' + index, 8, part)
+        : {
+          ...task('vibration-' + index, 9, part),
+          pmTask: { id: 'pm-vibration', taskNumber: 9,
+            description: 'Measure bearing vibration', taskType: 'measure' },
+        };
+      return {
+        component: part, tasks: [assigned],
+        points: [point('reading-' + index, part.id)],
+      };
+    });
+    const sections = buildPaperInspectionTasks(groups, []);
+    expect(sections).toHaveLength(2);
+    expect(sections[0].number).toBe(8);
+    expect(sections[0].rows).toHaveLength(100);
+    expect(new Set(sections[0].rows.map((row) => row.partCode)).size).toBe(100);
+    expect(sections[1].number).toBe(9);
+    expect(sections[1].rows).toHaveLength(25);
+    expect(new Set(sections[1].rows.map((row) => row.partCode)).size).toBe(25);
+    expect(sections.flatMap((section) => section.rows)).toHaveLength(125);
+    expect(sections[0].rows.every((row) => row.pointId && row.hierarchy.length > 0)).toBe(true);
+  });
+
   it('warns when instrument range is unknown but leaves a configured point available', () => {
     const c = component('part', 'C314-41');
     const rows = buildPaperInspectionTasks([

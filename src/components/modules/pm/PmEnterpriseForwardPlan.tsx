@@ -129,10 +129,10 @@ export function PmEnterpriseForwardPlan() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarRange className="h-4 w-4 text-blue-600"/>Enterprise PM Workload & Capacity Outlook
+            <CalendarRange className="h-4 w-4 text-blue-600"/>Upcoming Maintenance & Available Crew Time
           </CardTitle>
-          <p className="text-xs text-muted-foreground">Plant-wide planning across 7, 30 and 90 days.
-            One next occurrence per task; meter due dates are never guessed.</p>
+          <p className="text-xs text-muted-foreground">See which maintenance is due over 7, 30 or 90 days and the work hours it may need.
+            Meter-based jobs appear as due only when a recorded meter reading reaches the limit.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" disabled={loading}
@@ -339,7 +339,7 @@ export function PmEnterpriseForwardPlan() {
         </div>
         <p className="text-xs text-muted-foreground">
           Read-only planning outlook: does not dispatch crews, generate or approve WOs, reserve inventory,
-          or change PM due dates. Use Machine PM Roll-up and standard approvals to execute the plan.
+          or change PM due dates. Use Machine Maintenance Schedule and standard approvals to execute the plan.
           Estimates are task durations, not verified person-hours or remaining work on in-progress jobs. Meter tasks enter the workload only when an observed value reaches its configured threshold;
           unestimated hours are not guessed.
         </p>

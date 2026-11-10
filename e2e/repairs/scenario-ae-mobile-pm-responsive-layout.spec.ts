@@ -81,12 +81,16 @@ test('UAT-mobile: PM inspection rows and risk reports fit a 390px phone viewport
   });
 
   await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 25_000 });
   const row = page.getByTestId('pm-scheduled-compact-row');
   await expect(row).toHaveCount(1, { timeout: 20_000 });
   await expect(row.getByRole('button', { name: 'View', exact: true })).toBeVisible();
   await expect(row).toContainText('Impeller');
   await expect(row).not.toContainText(taskDescription);
+
+  // Portfolio reports are deliberately collapsed beneath the daily machine workflow.
+  await page.getByTestId('pm-more-planning-reports').locator('summary').click();
+  await expect(page.getByTestId('pm-department-risk-mobile').first()).toBeVisible({ timeout: 25_000 });
 
   for (const testId of [
     'pm-scheduled-compact-row',

@@ -30,14 +30,14 @@ export function buildPmPortfolioComplianceKpis(
   summary: PmPortfolioComplianceSummaryView,
 ): PmPortfolioComplianceKpi[] {
   return [
-    { key: 'compliance', label: 'Completion Compliance', value: formatPmPortfolioPercentage(summary.completionCompliancePct) },
-    { key: 'matured', label: 'Matured Cycles', value: String(summary.maturedCycles) },
+    { key: 'compliance', label: 'Tasks Completed (%)', value: formatPmPortfolioPercentage(summary.completionCompliancePct) },
+    { key: 'matured', label: 'Tasks Past Due Date', value: String(summary.maturedCycles) },
     { key: 'completed', label: 'Completed', value: String(summary.completed) },
-    { key: 'overdue', label: 'Open Overdue', value: String(summary.openOverdue) },
+    { key: 'overdue', label: 'Still Overdue', value: String(summary.openOverdue) },
     { key: 'missed', label: 'Missed', value: String(summary.missed) },
     {
       key: 'machinesOverdue',
-      label: 'Machines w/ Overdue',
+      label: 'Machines Still Overdue',
       value: `${summary.machinesWithOpenOverdue} / ${summary.machinesWithMaturedCycles}`,
     },
   ];

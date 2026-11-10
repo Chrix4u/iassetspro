@@ -24,6 +24,10 @@ import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
 import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 import { isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
+import {
+  inspectionPointsForTask, missingInspectionTaskMappings, type InspectionTaskPointLink,
+} from '@/lib/pm-task-point-scope';
+import { PmInspectionTaskPointMapper } from './PmInspectionTaskPointMapper';
 import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
 
 interface MachineChecklistResponse {
@@ -32,6 +36,7 @@ interface MachineChecklistResponse {
   generatedAt: string;
   totalAssignments: number;
   totalConfiguredPoints: number;
+  explicitTaskPointLinks?: InspectionTaskPointLink[];
   unconfiguredTasks: number;
   groups: MachineChecklistGroup[];
   generalTasks: MachineChecklistTask[];
@@ -112,6 +117,7 @@ export function PmMachineInspectionChecklistPanel({
   const [issuedSheets, setIssuedSheets] = useState<IssuedPaperSheet[]>([]);
   const [printedIssue, setPrintedIssue] = useState<{ reference: string; issuedAt: string } | null>(null);
   const [issuingPaper, setIssuingPaper] = useState(false);
+  const [mappingPartId, setMappingPartId] = useState<string | null>(null);
   const pendingIssueKey = useRef<string | null>(null);
   const loadIssued = useCallback(async () => {
     try {
@@ -130,21 +136,30 @@ export function PmMachineInspectionChecklistPanel({
       return;
     }
     if (!data || issuingPaper) return;
-    if (sharedPartCount > 0 && !window.confirm(
-      sharedPartCount + ' parts have multiple PM tasks. Their inspection points are currently saved against the part, not against an individual task. The paper sheet shows those points under each assigned task. Confirm the check/task mapping with the planner before using the sheet. Continue printing?',
-    )) return;
+    const unresolved = missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || []);
+    if (unresolved.taskCount) {
+      toast.error(unresolved.taskCount + ' shared-part PM tasks need exact inspection-check mapping before the paper sheet can be issued.');
+      if (canPlan) setMappingPartId(unresolved.firstComponentId);
+      return;
+    }
     setIssuingPaper(true);
     try {
       const requestKey = pendingIssueKey.current || crypto.randomUUID();
       pendingIssueKey.current = requestKey;
-      const pointIds = Array.from(new Set(data.groups.flatMap((g) => g.points
-        .filter(isRecordablePaperPoint).map((p) => p.id))));
+      const allowedRecordable = new Set(data.groups.flatMap((group) => group.points
+        .filter(isRecordablePaperPoint).map((point) => point.id)));
+      const sections = buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || []);
+      const taskPointLinks = sections.flatMap((section) => section.rows.flatMap((row) =>
+        row.pointId && allowedRecordable.has(row.pointId)
+          ? [{ pmTaskId: section.id, inspectionPointId: row.pointId }]
+          : []));
+      const pointIds = [...new Set(taskPointLinks.map((pair) => pair.inspectionPointId))];
       const taskIds = Array.from(new Set([
         ...data.groups.flatMap((g) => g.tasks.map((t) => t.id)),
         ...data.generalTasks.map((t) => t.id),
       ]));
       const response = await api.post<{ reference: string; issuedAt: string }>(
-        '/api/pm-inspections/sheets', { assetId, equipmentState, requestKey, pointIds, taskIds });
+        '/api/pm-inspections/sheets', { assetId, equipmentState, requestKey, pointIds, taskIds, taskPointLinks });
       if (!response.success || !response.data) throw new Error(response.error || 'Could not issue paper reference');
       const issued = { reference: response.data.reference, issuedAt: response.data.issuedAt };
       pendingIssueKey.current = null;
@@ -188,6 +203,7 @@ export function PmMachineInspectionChecklistPanel({
     setPaperInspector('');
     setPaperReference('');
     setPrintedIssue(null);
+    setMappingPartId(null);
     setTaskFilter('all');
     setPartSearch('');
     pendingIssueKey.current = null;
@@ -195,12 +211,13 @@ export function PmMachineInspectionChecklistPanel({
 
   const points = useMemo(() => data?.groups.flatMap((group) => group.points) || [], [data]);
   const taskSections = useMemo(
-    () => data ? buildPaperInspectionTasks(data.groups, data.generalTasks) : [],
+    () => data ? buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || []) : [],
     [data],
   );
-  const sharedPartCount = useMemo(() => data?.groups.filter(
-    (group) => new Set(group.tasks.map((task) => task.pmTask.id)).size > 1 && group.points.length > 0,
-  ).length || 0, [data]);
+  const unresolvedMapping = useMemo(
+    () => missingInspectionTaskMappings(data?.groups || [], data?.explicitTaskPointLinks || []),
+    [data],
+  );
   const activeIssuedSheet = issuedSheets.find((sheet) => sheet.reference === paperReference);
   const missingSheetReadings = useMemo(() => {
     if (!data || !activeIssuedSheet?.missingPointIds) return [];
@@ -241,10 +258,14 @@ export function PmMachineInspectionChecklistPanel({
         .some((value) => value.toLowerCase().includes(term)));
   }, [visibleGroups, partSearch]);
   const displayGroups = useMemo(() => {
-    type DisplayGroup = MachineChecklistGroup & { paperTask: PaperInspectionTask | null; showTaskHeading: boolean };
+    type DisplayGroup = MachineChecklistGroup & {
+      paperTask: PaperInspectionTask | null; showTaskHeading: boolean; mappingRequired: boolean;
+    };
     if (!data) return [] as DisplayGroup[];
     if (entryLayout === 'part') {
-      return filteredPartGroups.map((group) => ({ ...group, paperTask: null, showTaskHeading: false }));
+      return filteredPartGroups.map((group) => ({
+        ...group, paperTask: null, showTaskHeading: false, mappingRequired: false,
+      }));
     }
     const sectionList = buildPaperInspectionTasks(filteredPartGroups, showSetupIssues ? [] : data.generalTasks)
       .filter((section) => taskFilter === 'all' || section.id === taskFilter);
@@ -254,8 +275,11 @@ export function PmMachineInspectionChecklistPanel({
       return partIds.flatMap((partId, index) => {
         const source = byPart.get(partId);
         if (!source) return [];
+        const scoped = inspectionPointsForTask(source, section.id, data.explicitTaskPointLinks || []);
         return [{
           ...source,
+          points: scoped.points,
+          mappingRequired: scoped.mappingRequired,
           tasks: source.tasks.filter((assignment) => assignment.pmTask.id === section.id),
           paperTask: section,
           showTaskHeading: index === 0,
@@ -459,14 +483,18 @@ export function PmMachineInspectionChecklistPanel({
             </Button>
           </div>
         )}
-        {sharedPartCount > 0 && (
-          <p role="note" className="rounded-md border border-amber-300/70 p-3 text-xs text-amber-800 dark:text-amber-300"
+        {unresolvedMapping.partCount > 0 && (
+          <div role="note" className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300/70 p-3 text-xs text-amber-800 dark:text-amber-300"
             data-testid="pm-shared-check-task-warning">
-            {sharedPartCount} part(s) are assigned to multiple inspection tasks. Inspection points are currently linked to the part,
-            not a particular task, so the same check may be listed under more than one task.
-            The planner must verify which checks belong to each task before issuing the paper sheet.
-            No extra inspection records are created for repeated on-screen rows.
-          </p>
+            <p className="min-w-0 flex-1 break-words">
+              {unresolvedMapping.taskCount} task(s) across {unresolvedMapping.partCount} shared part(s)
+              still need explicit inspection-check mapping. Do not print or guess readings for those tasks.
+            </p>
+            {canPlan && unresolvedMapping.firstComponentId && <Button size="sm" variant="outline"
+              onClick={() => setMappingPartId(unresolvedMapping.firstComponentId)}>
+              Map task readings
+            </Button>}
+          </div>
         )}
         <p className="text-xs text-muted-foreground">
           Print the blank sheet to see each inspection task followed by ALL the parts assigned to it, including their assembly/subassembly codes and an actual-reading box on every row.
@@ -625,7 +653,11 @@ export function PmMachineInspectionChecklistPanel({
                   <h4 className="break-words text-sm font-bold">{group.component.name}</h4>
                   <p className="break-all text-xs text-muted-foreground">{group.component.componentCode} · {group.component.componentType}</p>
                 </div>
-                <Badge variant="outline">{group.points.length} inspection checks</Badge>
+                <div className="flex items-center gap-2">
+                  {canPlan && <Button size="sm" variant="outline"
+                    onClick={() => setMappingPartId(group.component.id)}>Map task readings</Button>}
+                  <Badge variant="outline">{group.points.length} inspection checks</Badge>
+                </div>
               </div>
               {group.tasks.map((task) => <p key={task.id} className="mt-1 break-words text-xs text-muted-foreground">
                 <span className="font-semibold">Task #{task.pmTask.taskNumber}:</span> {task.pmTask.description}
@@ -633,8 +665,14 @@ export function PmMachineInspectionChecklistPanel({
             </div>
             {group.points.length === 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-2 p-3">
-                <p className="text-xs text-amber-700 dark:text-amber-300">No sight or instrument point configured on this part. Do not enter or infer readings.</p>
-                {canPlan && <Button size="sm" variant="outline" onClick={() => onConfigure(group.tasks[0])}>Configure Check</Button>}
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  {group.mappingRequired
+                    ? 'This part has configured checks, but none are assigned to this specific PM task. Ask the planner to map them.'
+                    : 'No sight or instrument point configured on this part. Do not enter or infer readings.'}
+                </p>
+                {canPlan && (group.mappingRequired ? (
+                  <Button size="sm" variant="outline" onClick={() => setMappingPartId(group.component.id)}>Map task readings</Button>
+                ) : <Button size="sm" variant="outline" onClick={() => onConfigure(group.tasks[0])}>Configure Check</Button>)}
               </div>
             ) : (
               <div className="min-w-0 space-y-2 p-2 sm:p-3">
@@ -758,6 +796,16 @@ export function PmMachineInspectionChecklistPanel({
         </div>
       </>}
       {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} printedIssue={printedIssue} />}
+      <PmInspectionTaskPointMapper
+        componentId={mappingPartId}
+        componentCode={data?.groups.find((group) => group.component.id === mappingPartId)?.component.componentCode || ''}
+        onClose={() => setMappingPartId(null)}
+        onSaved={() => {
+          pendingIssueKey.current = null;
+          setPrintedIssue(null);
+          setReload((current) => current + 1);
+        }}
+      />
     </section>
   );
 }

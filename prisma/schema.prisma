@@ -3597,17 +3597,18 @@ model PmInspectionTaskPoint {
 }
 
 model PmPaperWorksheetIssue {
-  id             String   @id @default(cuid())
-  requestKey     String   @unique @map("request_key")
-  reference      String   @unique
-  assetId        String
-  plantId        String
-  machineCode    String
-  equipmentState String
-  issuedById     String
-  issuedAt       DateTime @default(now())
-  pointIds       String   @db.Text
-  taskIds        String   @db.Text
+  id                String   @id @default(cuid())
+  requestKey        String   @unique @map("request_key")
+  reference         String   @unique
+  assetId           String
+  plantId           String
+  machineCode       String
+  equipmentState    String
+  issuedById        String
+  issuedAt          DateTime @default(now())
+  pointIds          String   @db.Text
+  taskIds           String   @db.Text
+  taskPointSnapshot String?  @map("task_point_snapshot") @db.Text // immutable task/check mapping at issue time
 
   @@index([assetId, issuedAt])
   @@index([plantId, issuedAt])

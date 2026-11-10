@@ -2080,7 +2080,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
           <DialogContent className="sm:max-w-lg max-h-[80vh]">
             <DialogHeader>
               <DialogTitle>Diagram Templates</DialogTitle>
-              <DialogDescription>Load a pre-built enterprise diagram template</DialogDescription>
+              <DialogDescription>Load a ready-made diagram template</DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[60vh]">
               <div className="grid gap-3 py-2">
@@ -2132,7 +2132,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
           <DialogContent className="sm:max-w-4xl max-h-[85vh]">
             <DialogHeader>
               <DialogTitle>Template Gallery</DialogTitle>
-              <DialogDescription>Choose a pre-built enterprise diagram template to get started</DialogDescription>
+              <DialogDescription>Choose a ready-made diagram template to get started</DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[70vh]">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 py-2">

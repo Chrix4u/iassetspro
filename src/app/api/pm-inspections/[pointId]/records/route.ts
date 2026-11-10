@@ -217,11 +217,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let reusedWorkOrder = Boolean(workOrder);
       let nextInspection: Date | null = null;
       let plannerAlert: PlannerInspectionAlert | null = null;
-      if (notMeasured || !inspectionMayAdvanceDue(purpose, inspection.outcome)) {
-        // A missed instrument test or early observation is evidence only:
-        // it never creates a false numeric reading, closes a WO, or moves due dates.
+      if (notMeasured) {
+        // Unavailable instrument test: record the reason, but never invent a
+        // numeric reading, draft a defect WO, or advance an inspection due.
       } else if (!inspection.isAlarm && !workOrder) {
-        if (mayAdvanceDue) {
+        if (mayAdvanceDue && inspectionMayAdvanceDue(purpose, inspection.outcome)) {
           const computedNext = nextInspectionDate(observedAt, refreshedPoint.frequency);
           if (!computedNext) throw new Error('Unsupported inspection recurrence; update the inspection plan');
           nextInspection = safeInspectionNextDue(
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Old paper PASS must never rewind a newer PM cycle.
       } else if (!inspection.isAlarm) {
         // Later PASS must never clear an open corrective work order.
-        if (mayAdvanceDue) await tx.componentInspectionPoint.update({
+        if (mayAdvanceDue && inspectionMayAdvanceDue(purpose, inspection.outcome)) await tx.componentInspectionPoint.update({
           where: { id: pointId }, data: { lastInspected: observedAt },
         });
       } else {

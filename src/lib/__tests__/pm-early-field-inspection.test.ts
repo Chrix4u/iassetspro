@@ -22,6 +22,7 @@ describe('early machine inspection — PM due dates and unavailable readings', (
       basis:'calendar',nextDueDate:'2026-11-15T00:00:00Z',nextDueReading:null,
     })).toBe('2026-11-15');
     expect(inspectionMayAdvanceDue('early_check','pass')).toBe(false);
+    expect(inspectionMayAdvanceDue('early_check','fail')).toBe(false);
     expect(inspectionMayAdvanceDue('routine','pass')).toBe(true);
     expect(inspectionMayAdvanceDue('routine','not_measured')).toBe(false);
   });

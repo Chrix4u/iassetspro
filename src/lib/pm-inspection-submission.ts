@@ -15,6 +15,7 @@ export interface InspectionSubmissionSnapshot {
   fieldInspectedAt?: Date | string | null;
   fieldInspectorName?: string | null;
   paperReference?: string | null;
+  inspectionPurpose?: string | null;
 }
 
 const normalized = (value: string | null | undefined): string => value ?? '';
@@ -40,5 +41,6 @@ export function isSameInspectionSubmission(
     && (original.captureSource || 'digital') === (incoming.captureSource || 'digital')
     && normalizedInstant(original.fieldInspectedAt) === normalizedInstant(incoming.fieldInspectedAt)
     && normalized(original.fieldInspectorName) === normalized(incoming.fieldInspectorName)
-    && normalized(original.paperReference) === normalized(incoming.paperReference);
+    && normalized(original.paperReference) === normalized(incoming.paperReference)
+    && (original.inspectionPurpose || 'routine') === (incoming.inspectionPurpose || 'routine');
 }

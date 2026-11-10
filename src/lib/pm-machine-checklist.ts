@@ -1,7 +1,7 @@
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 
 export type MachineInspectionState = 'running' | 'standstill';
-export type MachineInspectionOutcome = 'pass' | 'fail' | 'needs_attention';
+export type MachineInspectionOutcome = 'pass' | 'fail' | 'needs_attention' | 'not_measured';
 export type MachineInspectionDueState = 'overdue' | 'due_today' | 'upcoming' | 'unscheduled';
 
 export interface MachineChecklistTask {
@@ -17,6 +17,7 @@ export interface MachineChecklistTask {
   basis: string | null;
   nextDueDate: string | Date | null;
   nextDueReading: number | null;
+  frequencyUnit?: string | null;
   equipmentState: string;
 }
 
@@ -39,6 +40,7 @@ export interface MachineChecklistPoint {
     fieldInspectedAt?: string | Date | null;
     fieldInspectorName?: string | null;
     paperReference?: string | null;
+    inspectionPurpose?: string | null;
   } | null;
   openCorrectiveWorkOrder: { id: string; woNumber: string; status: string } | null;
 }
@@ -109,7 +111,16 @@ export function validateMachineChecklistEntry(
   if (!['visual', 'measurement'].includes(point.inspectionType)) {
     return 'Configure a sight or instrument inspection point before recording.';
   }
-  if (!['pass', 'fail', 'needs_attention'].includes(draft.outcome)) return 'Select an inspection outcome.';
+  if (!['pass', 'fail', 'needs_attention', 'not_measured'].includes(draft.outcome)) return 'Select an inspection outcome.';
+  if (draft.findings.length > 3000 || draft.recommendation.length > 3000) {
+    return 'Observation and recommended action must each be at most 3,000 characters.';
+  }
+  if (draft.outcome === 'not_measured') {
+    if (point.inspectionType !== 'measurement') return 'Not measurable is only for instrument checks.';
+    if (draft.value.trim()) return 'Do not enter a numeric value when the reading was not taken.';
+    if (draft.findings.trim().length < 10) return 'Explain why measurement was not possible (at least 10 characters).';
+    return null;
+  }
   if (point.inspectionType === 'measurement') {
     if (!draft.value.trim() || !Number.isFinite(Number(draft.value))) {
       return 'Enter the actual numeric instrument reading.';
@@ -121,9 +132,6 @@ export function validateMachineChecklistEntry(
   }
   if (draft.outcome !== 'pass' && !draft.findings.trim()) {
     return 'Describe the defect or abnormal finding before submitting.';
-  }
-  if (draft.findings.length > 3000 || draft.recommendation.length > 3000) {
-    return 'Observation and recommended action must each be at most 3,000 characters.';
   }
   return null;
 }

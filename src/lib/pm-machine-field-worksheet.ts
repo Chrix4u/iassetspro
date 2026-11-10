@@ -1,6 +1,7 @@
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
 import { inspectionPointsForTask, type InspectionTaskPointLink } from '@/lib/pm-task-point-scope';
+import { pmAssignmentDueLabel } from '@/lib/pm-early-field-inspection';
 
 export interface PaperInspectionHierarchyNode {
   id: string;
@@ -14,6 +15,7 @@ export interface PaperInspectionRow {
   partId: string | null;
   partCode: string;
   partName: string;
+  scheduledDue: string;
   hierarchy: PaperInspectionHierarchyNode[];
   checkName: string;
   parameter: string;
@@ -64,7 +66,8 @@ export function buildPaperInspectionTasks(
         seen.add(unique);
         section.rows.push({
           id: unique, pointId: null, partId: group.component.id,
-          partCode: group.component.componentCode, partName: group.component.name, hierarchy,
+          partCode: group.component.componentCode, partName: group.component.name,
+          scheduledDue: pmAssignmentDueLabel(task), hierarchy,
           checkName: scoped.mappingRequired ? 'Task/check mapping not configured' : 'Inspection point not configured',
           parameter: '—', method: '—', acceptedRange: '—', unit: '',
           requiresConfiguration: true,
@@ -88,7 +91,8 @@ export function buildPaperInspectionTasks(
             : String(reference.min ?? '—') + ' to ' + String(reference.max ?? '—');
         section.rows.push({
           id: unique, pointId: point.id, partId: group.component.id,
-          partCode: group.component.componentCode, partName: group.component.name, hierarchy,
+          partCode: group.component.componentCode, partName: group.component.name,
+          scheduledDue: pmAssignmentDueLabel(task), hierarchy,
           checkName: point.name,
           parameter: point.parameterKey || (point.inspectionType === 'visual' ? 'Qualitative observation' : '—'),
           method: point.inspectionType === 'measurement' ? 'Instrument'
@@ -110,6 +114,7 @@ export function buildPaperInspectionTasks(
     section.rows.push({
       id: unique, pointId: null, partId: null,
       partCode: 'MACHINE-WIDE', partName: 'Part assignment required',
+      scheduledDue: pmAssignmentDueLabel(task),
       hierarchy: [], checkName: task.pmTask.description,
       parameter: '—', method: '—', acceptedRange: '—', unit: '',
       requiresConfiguration: true,

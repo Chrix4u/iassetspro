@@ -3609,6 +3609,8 @@ model PmPaperWorksheetIssue {
   pointIds          String   @db.Text
   taskIds           String   @db.Text
   taskPointSnapshot String?  @map("task_point_snapshot") @db.Text // immutable task/check mapping at issue time
+  plannedForDate    String?  @map("planned_for_date") // YYYY-MM-DD; NULL for historical sheets
+  purpose           String   @default("routine") // routine or early_check; does not change PM schedule
 
   @@index([assetId, issuedAt])
   @@index([plantId, issuedAt])
@@ -3631,6 +3633,7 @@ model ComponentInspectionRecord {
   fieldInspectedAt   DateTime? @map("field_inspected_at") // original time on paper
   fieldInspectorName String?   @map("field_inspector_name") // named field inspector
   paperReference     String?   @map("paper_reference") // reference to the original sheet
+  inspectionPurpose  String?   @map("inspection_purpose") // early_check vs routine; NULL for legacy
   workOrderId        String?   @unique // automatically generated corrective WO from this specific failed inspection
 
   inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)

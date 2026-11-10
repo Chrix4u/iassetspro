@@ -21,6 +21,36 @@ const point = (id: string, cId: string, changes: Partial<MachineChecklistPoint> 
   latestRecord: null, openCorrectiveWorkOrder: null, ...changes,
 });
 describe('paper field inspection worksheet', () => {
+  it('prints 50 real parts under two assigned tasks, with 78 actual instrument boxes and the 15 Nov PM due date', () => {
+    const groups: MachineChecklistGroup[] = Array.from({length:50}, (_, index) => {
+      const part = component('part-' + (index + 1), 'M-050-' + String(index + 1).padStart(3,'0'));
+      const isTemperature = index < 22;
+      const assignment = {
+        ...task('assignment-' + index, isTemperature ? 1 : 2, part),
+        pmTask: { id: isTemperature ? 'pm-temp' : 'pm-vib-sound',
+          taskNumber: isTemperature ? 1 : 2,
+          description: isTemperature ? 'Inspect temperature' : 'Inspect vibration and sound',
+          taskType: 'inspection' },
+        nextDueDate: new Date('2026-11-15T00:00:00Z'),
+      };
+      return {
+        component: part, tasks:[assignment],
+        points:isTemperature ? [point('temp-'+index,part.id)] : [
+          point('vib-'+index,part.id,{parameterKey:'vibration',
+            normalRange:JSON.stringify({min:0,max:4.5,unit:'mm/s'})}),
+          point('sound-'+index,part.id,{parameterKey:'sound',
+            normalRange:JSON.stringify({min:0,max:85,unit:'dB(A)'})}),
+        ],
+      };
+    });
+    const tasks = buildPaperInspectionTasks(groups,[]);
+    expect(tasks).toHaveLength(2);
+    expect(tasks.map(t=>t.rows.length)).toEqual([22,56]);
+    expect(new Set(tasks.flatMap(t=>t.rows.map(r=>r.partId))).size).toBe(50);
+    expect(tasks.flatMap(t=>t.rows).every(r=>r.scheduledDue==='2026-11-15')).toBe(true);
+    expect(tasks.flatMap(t=>t.rows).every(r=>!('actual' in r))).toBe(true);
+  });
+
   it('prints one task heading followed by ALL assigned parts and their exact registered hierarchy', () => {
     const sprocket = component('sprocket', 'C314-21-02');
     const pulley = component('pulley', 'C314-21-04');

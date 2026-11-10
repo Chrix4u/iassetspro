@@ -77,6 +77,33 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     expect((await replay.json()).duplicate).toBe(true);
     expect(mock.createIssue).toHaveBeenCalledTimes(1);
   });
+  it('records the early field visit date and purpose without changing PM due dates', async () => {
+    const early = { ...payload, equipmentState: 'standstill',
+      plannedForDate: '2026-11-11', purpose: 'early_check' };
+    const issued = await POST(request(early));
+    expect(issued.status).toBe(201);
+    expect((await issued.json()).data).toMatchObject({
+      plannedForDate: '2026-11-11', purpose: 'early_check',
+    });
+    expect(mock.createIssue).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        plannedForDate: '2026-11-11', purpose: 'early_check',
+      }),
+    }));
+    // Issuing paper must never update the PM schedule assignment.
+    expect(mock.assignments).toHaveBeenCalledTimes(1);
+  });
+  it('rejects impossible field visit dates and unsupported purposes', async () => {
+    expect((await POST(request({ ...payload, plannedForDate: '2026-02-30' }))).status).toBe(400);
+    expect((await POST(request({ ...payload, purpose: 'condition_frequency' }))).status).toBe(400);
+    expect(mock.createIssue).not.toHaveBeenCalled();
+  });
+  it('rejects a retry trying to re-purpose an issued field visit', async () => {
+    const first = await POST(request({ ...payload, purpose: 'early_check' }));
+    expect(first.status).toBe(201);
+    mock.findIssue.mockResolvedValue((await first.json()).data);
+    expect((await POST(request({ ...payload, purpose: 'routine' }))).status).toBe(409);
+  });
   it('does not demand electronic entry of unconfigured printed inspection checks', async () => {
     mock.points.mockResolvedValue([
       { id: 'point-1', componentId: 'part-1', inspectionType: 'visual', parameterKey: null },
@@ -97,6 +124,8 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
   it('rejects a changed retry payload using the same request key', async () => {
     mock.findIssue.mockResolvedValue({
       ...payload, issuedById: 'planner-1',
+      issuedAt: new Date('2026-11-09T12:00:00Z'),
+      plannedForDate: new Date().toISOString().slice(0, 10), purpose: 'routine',
       pointIds: JSON.stringify(['point-1', 'point-2']),
       taskIds: JSON.stringify(['task-1']),
     });
@@ -142,6 +171,24 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     const record = (await result.json()).data;
     expect(JSON.parse(record.taskPointSnapshot)).toEqual(pairs);
     expect(JSON.parse(record.pointIds)).toEqual(['point-1', 'point-2']);
+  });
+  it('keeps unmeasurable readings distinct from completed measured results', async () => {
+    mock.listIssues.mockResolvedValue([{
+      ...payload, id: 'issue-2', reference: 'IW-C314-20261111-AABBCCDDEE',
+      issuedById: 'planner-1', issuedAt: new Date(),
+      plannedForDate: '2026-11-11', purpose: 'early_check',
+      pointIds: JSON.stringify(payload.pointIds), taskIds: JSON.stringify(payload.taskIds),
+    }]);
+    mock.records.mockResolvedValue([
+      { paperReference: 'IW-C314-20261111-AABBCCDDEE', inspectionPointId: 'point-1', result: 'pass' },
+      { paperReference: 'IW-C314-20261111-AABBCCDDEE', inspectionPointId: 'point-2', result: 'not_measured' },
+    ]);
+    const res = await GET(new NextRequest(
+      'http://localhost/api/pm-inspections/sheets?assetId=machine-1&equipmentState=running'));
+    expect((await res.json()).data[0]).toMatchObject({
+      plannedForDate: '2026-11-11', purpose: 'early_check',
+      entered: 2, remaining: 0, followUpRequired: 1, status: 'needs_follow_up',
+    });
   });
   it('counts only recorded points on the issued paper reference', async () => {
     mock.listIssues.mockResolvedValue([{

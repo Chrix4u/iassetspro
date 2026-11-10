@@ -1,4 +1,5 @@
 import { parseInspectionLimits } from '@/lib/pm-inspection';
+import { actionListAcceptance } from '@/lib/pm-action-list-parameters';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
 
 export interface PrintableMachineInspectionData {
@@ -79,7 +80,7 @@ export function buildMachineInspectionPrintRows(
           ? 'Numeric limits NOT SET'
           : `${limits.min ?? '—'} – ${limits.max ?? '—'} ${limits.unit || ''}`.trim())
         : point.inspectionType === 'visual'
-          ? 'Sight / qualitative observation'
+          ? actionListAcceptance(point.normalRange) || 'Sight / qualitative observation'
           : 'Legacy method — reconfigure';
       const record = point.latestRecord;
       const actual = !record ? '' : record.result === 'not_measured'

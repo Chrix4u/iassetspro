@@ -70,7 +70,7 @@ describe('paper field inspection worksheet', () => {
     expect(sections[0].rows.find(row => row.checkName === 'vibration')).toMatchObject({
       acceptedRange: '0 to 4.5', unit: 'mm/s', method: 'Instrument',
     });
-    expect(sections[0].rows.find(row => row.checkName === 'sound')?.method).toBe('Sight / sound');
+    expect(sections[0].rows.find(row => row.checkName === 'sound')?.method).toBe('Visual');
   });
   it('never invents a measurement or duplicates the same task/part/point', () => {
     const bearing = component('bearing', 'C314-10');

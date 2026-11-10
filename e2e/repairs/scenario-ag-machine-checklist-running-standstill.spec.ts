@@ -158,7 +158,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
 
   await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
   const checklist = page.getByTestId('pm-machine-checklist');
-  await expect(checklist).toContainText('Machine Inspection Checklist — Running', { timeout: 20_000 });
+  await expect(checklist).toContainText('Machine Action List — Running', { timeout: 20_000 });
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await expect(checklist).toContainText('C314-21-02');
@@ -207,7 +207,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // 7.9 mm/s reading or a fabricated Good/Bad result.
   await page.evaluate(() => { window.print = () => undefined; });
   await checklist.getByRole('button', { name: 'Print task-grouped blank inspection worksheet' }).click();
-  await expect(printView).toContainText('FIELD SHEET — grouped by task');
+  await expect(printView).toContainText('ACTION LIST — grouped by task');
   await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
@@ -227,7 +227,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: /Standstill \/ Stopped/ }).click();
   await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
-  await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Inspection Checklist — Standstill');
+  await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Action List — Standstill');
   await expect(page.getByTestId('pm-machine-checklist').getByTestId('pm-machine-checklist-row')).toHaveCount(0);
   expect(posted).toHaveLength(2);
   const width = await checklist.evaluate((element) => element.scrollWidth - element.clientWidth);

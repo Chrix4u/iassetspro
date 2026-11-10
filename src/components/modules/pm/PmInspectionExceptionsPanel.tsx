@@ -149,7 +149,7 @@ export function PmInspectionExceptionsPanel({
           <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
             <SelectTrigger className="mt-1 h-9" aria-label="Outcome"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All abnormal</SelectItem>
+              <SelectItem value="all">All findings</SelectItem>
               <SelectItem value="fail">Fail</SelectItem>
               <SelectItem value="needs_attention">Needs attention</SelectItem>
               <SelectItem value="conditional">Legacy conditional</SelectItem>

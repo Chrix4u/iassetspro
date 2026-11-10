@@ -57,6 +57,7 @@ describe('not measurable readings stay visible as follow-up, not failed equipmen
   it('shows an N/A and follow-up explanation rather than a fabricated zero or spurious WO', () => {
     const panel = readFileSync('src/components/modules/pm/PmInspectionExceptionsPanel.tsx','utf8');
     const list = readFileSync('src/components/modules/pm/PmInspectionWorksheetPanel.tsx','utf8');
+    expect(panel).toContain('<SelectItem value="all">All findings</SelectItem>');
     expect(panel).toContain('N/A — no instrument reading taken');
     expect(panel).toContain('No corrective WO is generated solely because a measurement was unavailable.');
     expect(panel).toContain("notMeasured: rows.filter((row) => row.result === 'not_measured').length");

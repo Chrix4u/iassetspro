@@ -89,7 +89,7 @@ describe('user-facing branding', () => {
       const source = read(file);
       // JSX body text is displayed. Component/function names and technical
       // page IDs are deliberately not inspected here: they are not UI copy.
-      for (const match of source.matchAll(/>([^<>{}]*?)</gs)) {
+      for (const match of source.matchAll(/>([^<>{}]*?)</g)) {
         if (/\benterprise\b/i.test(match[1])) {
           violations.push(`${file}: JSX text: ${match[1].trim().slice(0, 90)}`);
         }

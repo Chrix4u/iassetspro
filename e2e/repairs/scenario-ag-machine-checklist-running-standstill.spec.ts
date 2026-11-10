@@ -224,8 +224,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
 
   // A state change regenerates the task list; the previous readings are not
   // silently submitted again under the standstill inspection context.
-  await worksheet.getByText('Machine state', { exact: true }).locator('..').getByRole('combobox').click();
-  await page.getByRole('option', { name: 'Standstill', exact: true }).click();
+  await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
+  await page.getByRole('option', { name: /Standstill \/ Stopped/ }).click();
+  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
   await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Inspection Checklist — Standstill');
   await expect(page.getByTestId('pm-machine-checklist').getByTestId('pm-machine-checklist-row')).toHaveCount(0);
   expect(posted).toHaveLength(2);
@@ -233,8 +234,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(width, 'machine checklist must not overflow the 390px viewport').toBeLessThanOrEqual(2);
 
   // Return to Running and transcribe a field technician's paper measurements.
-  await worksheet.getByText('Machine state', { exact: true }).locator('..').getByRole('combobox').click();
+  await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
+  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await checklist.getByRole('combobox', { name: 'Inspection reading source' }).click();
   await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();

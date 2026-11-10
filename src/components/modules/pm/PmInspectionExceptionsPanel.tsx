@@ -48,7 +48,8 @@ function dateLabel(raw: string): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—';
 }
 function stateBadge(value: string) {
-  return value === 'fail' ? 'destructive' as const : 'secondary' as const;
+  return value === 'fail' ? 'destructive' as const
+    : value === 'not_measured' ? 'outline' as const : 'secondary' as const;
 }
 
 /**
@@ -117,7 +118,8 @@ export function PmInspectionExceptionsPanel({
   const currentPageSummary = useMemo(() => ({
     failures: rows.filter((row) => row.result === 'fail').length,
     needsAttention: rows.filter((row) => row.result === 'needs_attention' || row.result === 'conditional').length,
-    noWorkOrder: rows.filter((row) => !row.workOrder).length,
+    notMeasured: rows.filter((row) => row.result === 'not_measured').length,
+    noWorkOrder: rows.filter((row) => !row.workOrder && row.result !== 'not_measured').length,
     openWorkOrder: rows.filter((row) =>
       row.workOrder && !['closed', 'cancelled'].includes(row.workOrder.status)).length,
   }), [rows]);
@@ -130,7 +132,8 @@ export function PmInspectionExceptionsPanel({
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />Inspection Exceptions
           </h3>
           <p className="text-xs text-muted-foreground">
-            Historical abnormal readings and observations, grouped by recorded event. A later good reading never erases an older failed inspection.
+            Historical abnormal observations and unmeasurable checks, grouped by inspection event.
+            An unavailable standstill reading is flagged for a follow-up test, not classified as a failed machine part.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -150,6 +153,7 @@ export function PmInspectionExceptionsPanel({
               <SelectItem value="fail">Fail</SelectItem>
               <SelectItem value="needs_attention">Needs attention</SelectItem>
               <SelectItem value="conditional">Legacy conditional</SelectItem>
+              <SelectItem value="not_measured">Not measurable — follow-up</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -195,6 +199,7 @@ export function PmInspectionExceptionsPanel({
           <Badge variant="outline">{total} matching exceptions</Badge>
           <Badge variant="outline">{currentPageSummary.failures} failures on page</Badge>
           <Badge variant="outline">{currentPageSummary.needsAttention} needing attention on page</Badge>
+          <Badge variant="outline">{currentPageSummary.notMeasured} not measurable on page</Badge>
           <Badge variant="outline">{currentPageSummary.openWorkOrder} open WOs on page</Badge>
           <Badge variant="outline">{currentPageSummary.noWorkOrder} without WO on page</Badge>
         </div>
@@ -206,9 +211,11 @@ export function PmInspectionExceptionsPanel({
           {rows.map((record) => {
             const limits = parseInspectionLimits(record.inspectionPoint.normalRange);
             const open = record.workOrder && !['closed', 'cancelled'].includes(record.workOrder.status);
-            const value = record.inspectionPoint.inspectionType === 'measurement'
-              ? `${record.value ?? '—'} ${limits.unit || ''}`.trim()
-              : record.findings || 'No written observation';
+            const value = record.result === 'not_measured'
+              ? 'N/A — no instrument reading taken'
+              : record.inspectionPoint.inspectionType === 'measurement'
+                ? `${record.value ?? '—'} ${limits.unit || ''}`.trim()
+                : record.findings || 'No written observation';
             return <article key={record.id} className="min-w-0 space-y-2 rounded-lg border p-3" data-testid="pm-inspection-exception-row">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -216,7 +223,9 @@ export function PmInspectionExceptionsPanel({
                   <p className="break-all text-xs text-muted-foreground">{record.component.asset.assetTag}</p>
                   <p className="break-words text-xs">{record.component.name} · {record.component.componentCode}</p>
                 </div>
-                <Badge variant={stateBadge(record.result)}>{record.result.replace(/_/g, ' ')}</Badge>
+                <Badge variant={stateBadge(record.result)}>
+                  {record.result === 'not_measured' ? 'Not measurable' : record.result.replace(/_/g, ' ')}
+                </Badge>
               </div>
               <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-xs">
                 <div className="min-w-0"><span className="text-muted-foreground">Inspection point</span>
@@ -245,7 +254,11 @@ export function PmInspectionExceptionsPanel({
                 {record.workOrder
                   ? <p className="break-all text-xs"><strong>Corrective WO:</strong> {record.workOrder.woNumber}
                     <Badge variant={open ? 'secondary' : 'outline'} className="ml-1.5">{record.workOrder.status}</Badge></p>
-                  : <p className="text-xs text-amber-700 dark:text-amber-300">No corrective WO linked — planner follow-up needed</p>}
+                  : record.result === 'not_measured'
+                    ? <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Arrange a suitable approved instrument test. No corrective WO is generated solely because a measurement was unavailable.
+                      </p>
+                    : <p className="text-xs text-amber-700 dark:text-amber-300">No corrective WO linked — planner follow-up needed</p>}
                 <Button type="button" size="sm" variant="outline"
                   onClick={() => { window.location.hash = `#/asset-detail?id=${encodeURIComponent(record.component.asset.id)}`; }}>
                   <ClipboardCheck className="mr-1 h-3.5 w-3.5" />View Machine

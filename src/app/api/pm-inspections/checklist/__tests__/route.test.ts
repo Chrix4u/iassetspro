@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(), scope: vi.fn(), plantAccess: vi.fn(),
-  asset: vi.fn(), tasks: vi.fn(), points: vi.fn(), pending: vi.fn(),
+  asset: vi.fn(), tasks: vi.fn(), points: vi.fn(), pending: vi.fn(), links: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({
   getSession: mocks.session,
@@ -20,6 +20,7 @@ vi.mock('@/lib/db', () => ({
     pmScheduleTask: { findMany: mocks.tasks },
     componentInspectionPoint: { findMany: mocks.points },
     componentInspectionRecord: { findMany: mocks.pending },
+    pmInspectionTaskPoint: { findMany: mocks.links },
   },
 }));
 
@@ -56,6 +57,7 @@ describe('generated machine inspection checklist (read-only, plant-scoped)', () 
       records: [],
     }]);
     mocks.pending.mockResolvedValue([]);
+    mocks.links.mockResolvedValue([]);
   });
 
   it('rejects anonymous calls before querying assets or inspection values', async () => {

@@ -48,8 +48,10 @@ export async function GET(request: NextRequest) {
     const auth = await authorize(request, componentId);
     if ('error' in auth) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     const { part } = auth;
+    const asset = part.asset;
+    if (!asset) return NextResponse.json({ success: false, error: 'Machine not found' }, { status: 404 });
     const [assignments, points] = await Promise.all([
-      activePartTasks(componentId, part.asset.id, part.asset.plantId),
+      activePartTasks(componentId, asset.id, asset.plantId),
       db.componentInspectionPoint.findMany({
         where: { componentId, isActive: true },
         select: { id: true, name: true, inspectionType: true, parameterKey: true, normalRange: true },
@@ -65,7 +67,7 @@ export async function GET(request: NextRequest) {
       select: { pmTaskId: true, inspectionPointId: true },
     }) : [];
     return NextResponse.json({ success: true, data: {
-      componentId, assetId: part.asset.id, tasks, points, links,
+      componentId, assetId: asset.id, tasks, points, links,
       mappingComplete: tasks.length > 0 && tasks.every((t) => links.some((l) => l.pmTaskId === t.id)),
     } });
   } catch (error) {
@@ -90,8 +92,10 @@ export async function PUT(request: NextRequest) {
     const auth = await authorize(request, componentId);
     if ('error' in auth) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
     const { part } = auth;
+    const asset = part.asset;
+    if (!asset) return NextResponse.json({ success: false, error: 'Machine not found' }, { status: 404 });
     const [tasks, points] = await Promise.all([
-      activePartTasks(componentId, part.asset.id, part.asset.plantId),
+      activePartTasks(componentId, asset.id, asset.plantId),
       db.componentInspectionPoint.findMany({
         where: { componentId, isActive: true }, select: { id: true }, take: 3001,
       }),
@@ -103,7 +107,7 @@ export async function PUT(request: NextRequest) {
         success: false, error: 'PM task is not assigned to this machine part in this plant',
       }, { status: 422 });
     const selected = validateInspectionTaskPointSelection(body.pointIds, points.map((p) => p.id));
-    if (selected.error) return NextResponse.json({ success: false, error: selected.error }, { status: 422 });
+    if (selected.pointIds === null) return NextResponse.json({ success: false, error: selected.error }, { status: 422 });
     const pointIds = selected.pointIds;
     const result = await db.$transaction(async (tx) => {
       const prior = await tx.pmInspectionTaskPoint.findMany({
@@ -117,7 +121,7 @@ export async function PUT(request: NextRequest) {
         })),
       });
       await tx.auditLog.create({ data: {
-        userId: session.userId, action: 'update', plantId: part.asset.plantId,
+        userId: session.userId, action: 'update', plantId: asset.plantId,
         entityType: 'pm_inspection_task_point_mapping', entityId: pmTaskId,
         oldValues: JSON.stringify({ componentId, pointIds: prior.map((p) => p.inspectionPointId) }),
         newValues: JSON.stringify({ componentId, pointIds }),

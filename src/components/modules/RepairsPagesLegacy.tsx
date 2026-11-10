@@ -3919,7 +3919,7 @@ export function RepairAnalyticsPage() {
     if (enterpriseFunctionalLocationId) params.set('functionalLocationId', enterpriseFunctionalLocationId);
     const res = await api.get(`/api/reports/enterprise?${params}`);
     if (res.success) setEnterpriseReport(res.data);
-    else toast.error(res.error || 'Failed to load enterprise report');
+    else toast.error(res.error || 'Failed to load maintenance report');
     setEnterpriseLoading(false);
   }, [dateFrom, dateTo, enterpriseFunctionalLocationId]);
 
@@ -3987,7 +3987,7 @@ export function RepairAnalyticsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="h-6 w-6 text-blue-600" /> Repairs Analytics</h2>
-          <p className="text-muted-foreground">Key performance indicators and enterprise reports for the repairs module</p>
+          <p className="text-muted-foreground">Maintenance performance indicators and detailed repairs reports</p>
         </div>
         <div className="flex items-center gap-2">
           <DateRangePicker from={dateFrom || undefined} to={dateTo || undefined} onChange={(f, t) => { setDateFrom(f || ''); setDateTo(t || ''); }} />

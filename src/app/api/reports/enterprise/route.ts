@@ -801,7 +801,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to generate enterprise report';
+    const message = error instanceof Error ? error.message : 'Failed to generate maintenance report';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

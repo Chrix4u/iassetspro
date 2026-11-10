@@ -7,6 +7,7 @@ import {
   type PmCapacityScenario, type PmForwardRow, type PmForwardTask,
 } from '@/lib/pm-forward-capacity';
 import { projectFixedCalendarRepeats } from '@/lib/pm-fixed-recurrence-scenario';
+import { PmForwardWorkOrderReadiness } from '@/components/modules/pm/PmForwardWorkOrderReadiness';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -323,7 +324,9 @@ export function PmEnterpriseForwardPlan() {
                   </td>
                   <td className="px-3 py-2 align-top">
                     {item.openWorkOrder?<><p className="font-medium">{item.openWorkOrder.woNumber}</p>
-                      <p className="text-muted-foreground">{item.openWorkOrder.status}</p></>:
+                      <p className="text-muted-foreground">{item.openWorkOrder.status}</p>
+                      <PmForwardWorkOrderReadiness workOrderId={item.openWorkOrder.id}
+                        workOrderNumber={item.openWorkOrder.woNumber}/></>:
                       <span className="text-muted-foreground">No current-cycle WO link</span>}
                   </td>
                 </tr>)}

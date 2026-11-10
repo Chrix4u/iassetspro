@@ -90,6 +90,33 @@ describe('paper field inspection worksheet', () => {
     expect(sections[0].rows.every((row) => row.pointId && row.hierarchy.length > 0)).toBe(true);
   });
 
+  it('prints only deliberately mapped readings under each task on a shared machine part', () => {
+    const bearing = component('bearing', 'C314-21-02');
+    const temperature = task('one', 8, bearing);
+    const vibration = {
+      ...task('two', 9, bearing),
+      pmTask: { id: 'pm-vib', taskNumber: 9, description: 'Measure vibration', taskType: 'measure' },
+    };
+    const group: MachineChecklistGroup = {
+      component: bearing, tasks: [temperature, vibration],
+      points: [point('temp', bearing.id), point('vib', bearing.id), point('spare', bearing.id)],
+    };
+    const links = [
+      { pmTaskId: 'pm-8', inspectionPointId: 'temp' },
+      { pmTaskId: 'pm-vib', inspectionPointId: 'vib' },
+      { pmTaskId: 'pm-8', inspectionPointId: 'other-machine-point' },
+    ];
+    const sections = buildPaperInspectionTasks([group], [], links);
+    expect(sections).toHaveLength(2);
+    expect(sections[0].rows.map((row) => row.pointId)).toEqual(['temp']);
+    expect(sections[1].rows.map((row) => row.pointId)).toEqual(['vib']);
+    const ambiguous = buildPaperInspectionTasks([group], [], []);
+    expect(ambiguous.flatMap((section) => section.rows)).toHaveLength(2);
+    expect(ambiguous[0].rows[0]).toMatchObject({
+      pointId: null, requiresConfiguration: true, checkName: 'Task/check mapping not configured',
+    });
+    expect(ambiguous[1].rows[0].pointId).toBeNull();
+  });
   it('warns when instrument range is unknown but leaves a configured point available', () => {
     const c = component('part', 'C314-41');
     const rows = buildPaperInspectionTasks([

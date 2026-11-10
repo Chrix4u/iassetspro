@@ -2,6 +2,7 @@ import { parseInspectionLimits } from '@/lib/pm-inspection';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
 
 export interface PrintableMachineInspectionData {
+  explicitTaskPointLinks?: import('@/lib/pm-task-point-scope').InspectionTaskPointLink[];
   machine: {
     id: string; name: string; assetTag: string; plantId: string;
     description?: string | null; location?: string | null;

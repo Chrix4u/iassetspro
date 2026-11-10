@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PrintableMachineInspectionData } from '@/lib/pm-machine-checklist-print';
 import { buildPaperInspectionTasks } from '@/lib/pm-machine-field-worksheet';
+import { missingInspectionTaskMappings } from '@/lib/pm-task-point-scope';
 import {
   buildMachineInspectionPrintRows,
   machineInspectionPrintSummary,
@@ -25,9 +26,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
 }) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
-  const fieldSections = buildPaperInspectionTasks(data.groups, data.generalTasks);
-  const sharedPartCount = data.groups.filter((group) =>
-    group.points.length > 0 && new Set(group.tasks.map((task) => task.pmTask.id)).size > 1).length;
+  const fieldSections = buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || []);
+  const unresolved = missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || []);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
@@ -116,10 +116,9 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 <span>End time: __________</span>
                 <span>Paper reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
               </div>
-              {sharedPartCount > 0 && <p className="pm-print-note mt-2 border border-amber-500 p-2 font-semibold">
-                PLANNER CHECK: {sharedPartCount} part(s) have multiple PM tasks. Their configured inspection points
-                are currently linked to the part, not individually to a task. Verify the task/check associations
-                before the technician uses this sheet.
+              {unresolved.partCount > 0 && <p className="pm-print-note mt-2 border border-amber-500 p-2 font-semibold">
+                NOT READY FOR FIELD USE: {unresolved.taskCount} PM task(s) across {unresolved.partCount} parts
+                have no verified task-to-check mapping. A planner must assign the exact measurements before issue.
               </p>}
               <p className="pm-print-note mt-2 font-semibold">
                 FIELD SHEET — grouped by task. Take this printout to the machine and write each actual

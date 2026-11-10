@@ -211,6 +211,18 @@ export async function GET(request: NextRequest) {
         : null,
       openCorrectiveWorkOrder: openByPoint.get(point.id) || null,
     }));
+    // Return only explicit links for already-authorized tasks and checkpoints.
+    // Existing paper and digital capture remain unchanged until the planner
+    // deliberately maps task instructions to the exact configured checks.
+    const explicitTaskPointLinks = items.length && assignments.length
+      ? await db.pmInspectionTaskPoint.findMany({
+        where: {
+          pmTaskId: { in: assignments.map((assignment) => assignment.pmTaskId) },
+          inspectionPointId: { in: items.map((point) => point.id) },
+        },
+        select: { pmTaskId: true, inspectionPointId: true },
+      })
+      : [];
     const grouped = groupMachineInspectionChecklist(tasks, items);
     return NextResponse.json({
       success: true,
@@ -220,6 +232,7 @@ export async function GET(request: NextRequest) {
         generatedAt: now.toISOString(),
         totalAssignments: assignments.length,
         totalConfiguredPoints: grouped.groups.reduce((n, group) => n + group.points.length, 0),
+        explicitTaskPointLinks,
         ...grouped,
       },
     });

@@ -1,5 +1,6 @@
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
+import { inspectionPointsForTask, type InspectionTaskPointLink } from '@/lib/pm-task-point-scope';
 
 export interface PaperInspectionHierarchyNode {
   id: string;
@@ -36,6 +37,7 @@ export interface PaperInspectionTask {
 export function buildPaperInspectionTasks(
   groups: MachineChecklistGroup[],
   generalTasks: MachineChecklistTask[],
+  explicitTaskPointLinks: readonly InspectionTaskPointLink[] = [],
 ): PaperInspectionTask[] {
   const sections = new Map<string, PaperInspectionTask>();
   const seen = new Set<string>();
@@ -55,20 +57,23 @@ export function buildPaperInspectionTasks(
           name: group.component.name, type: group.component.componentType }];
     for (const task of group.tasks) {
       const section = getSection(task);
-      if (!group.points.length) {
+      const scoped = inspectionPointsForTask(group, task.pmTask.id, explicitTaskPointLinks);
+      if (!scoped.points.length) {
         const unique = [section.id, group.component.id, 'unconfigured'].join(':');
         if (seen.has(unique)) continue;
         seen.add(unique);
         section.rows.push({
           id: unique, pointId: null, partId: group.component.id,
           partCode: group.component.componentCode, partName: group.component.name, hierarchy,
-          checkName: 'Inspection point not configured',
+          checkName: scoped.mappingRequired ? 'Task/check mapping not configured' : 'Inspection point not configured',
           parameter: '—', method: '—', acceptedRange: '—', unit: '',
           requiresConfiguration: true,
-          configurationNote: 'Planner must define sight or instrument check before electronic entry.',
+          configurationNote: scoped.mappingRequired
+            ? 'Planner must assign the exact configured checks to this task on this part.'
+            : 'Planner must define sight or instrument check before electronic entry.',
         });
       }
-      for (const point of group.points) {
+      for (const point of scoped.points) {
         const unique = [section.id, group.component.id, point.id].join(':');
         if (seen.has(unique)) continue;
         seen.add(unique);

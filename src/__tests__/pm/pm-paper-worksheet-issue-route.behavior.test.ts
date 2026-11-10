@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server';
 const mock = vi.hoisted(() => ({
   session: vi.fn(), scope: vi.fn(), access: vi.fn(), asset: vi.fn(),
   findIssue: vi.fn(), createIssue: vi.fn(), assignments: vi.fn(), points: vi.fn(),
-  records: vi.fn(), listIssues: vi.fn(), audit: vi.fn(),
+  records: vi.fn(), listIssues: vi.fn(), audit: vi.fn(), links: vi.fn(),
 }));
 vi.mock('@/lib/auth', () => ({
   getSession: mock.session, isAdmin: () => false, hasPermission: () => true,
@@ -17,6 +17,7 @@ vi.mock('@/lib/db', () => ({ db: {
   pmPaperWorksheetIssue: { findUnique: mock.findIssue, findMany: mock.listIssues },
   pmScheduleTask: { findMany: mock.assignments },
   componentInspectionPoint: { findMany: mock.points },
+  pmInspectionTaskPoint: { findMany: mock.links },
   componentInspectionRecord: { findMany: mock.records },
   $transaction: (callback: (tx: unknown) => Promise<unknown>) => callback({
     pmPaperWorksheetIssue: { create: mock.createIssue },
@@ -45,12 +46,13 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     mock.access.mockReturnValue(true);
     mock.asset.mockResolvedValue({ id: 'machine-1', plantId: 'plant-1', assetTag: 'C314' });
     mock.findIssue.mockResolvedValue(null);
+    mock.links.mockResolvedValue([]);
     mock.assignments.mockResolvedValue([{
-      id: 'task-1', componentId: 'part-1', component: { assetId: 'machine-1' },
+      id: 'task-1', pmTaskId: 'pm-1', componentId: 'part-1', component: { assetId: 'machine-1' },
     }]);
     mock.points.mockResolvedValue([
-      { id: 'point-1', inspectionType: 'visual', parameterKey: null },
-      { id: 'point-2', inspectionType: 'measurement', parameterKey: 'temperature' },
+      { id: 'point-1', componentId: 'part-1', inspectionType: 'visual', parameterKey: null },
+      { id: 'point-2', componentId: 'part-1', inspectionType: 'measurement', parameterKey: 'temperature' },
     ]);
     mock.createIssue.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       id: 'issue-1', issuedAt: new Date('2026-11-09T12:00:00Z'), ...data,
@@ -77,10 +79,10 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
   });
   it('does not demand electronic entry of unconfigured printed inspection checks', async () => {
     mock.points.mockResolvedValue([
-      { id: 'point-1', inspectionType: 'visual', parameterKey: null },
-      { id: 'point-2', inspectionType: 'measurement', parameterKey: 'temperature' },
-      { id: 'missing-param', inspectionType: 'measurement', parameterKey: null },
-      { id: 'legacy', inspectionType: 'obsolete', parameterKey: null },
+      { id: 'point-1', componentId: 'part-1', inspectionType: 'visual', parameterKey: null },
+      { id: 'point-2', componentId: 'part-1', inspectionType: 'measurement', parameterKey: 'temperature' },
+      { id: 'missing-param', componentId: 'part-1', inspectionType: 'measurement', parameterKey: null },
+      { id: 'legacy', componentId: 'part-1', inspectionType: 'obsolete', parameterKey: null },
     ]);
     const response = await POST(request(payload));
     expect(response.status).toBe(201);
@@ -105,6 +107,41 @@ describe('issued paper worksheet: plant-authorized immutable scope', () => {
     mock.access.mockReturnValue(false);
     expect((await POST(request(payload))).status).toBe(403);
     expect(mock.findIssue).not.toHaveBeenCalled();
+  });
+  it('blocks ambiguous shared-part PM instructions until each task is mapped', async () => {
+    mock.assignments.mockResolvedValue([
+      { id: 'task-1', pmTaskId: 'pm-1', componentId: 'part-1', component: { assetId: 'machine-1' } },
+      { id: 'task-2', pmTaskId: 'pm-2', componentId: 'part-1', component: { assetId: 'machine-1' } },
+    ]);
+    const result = await POST(request({ ...payload, taskIds: ['task-1', 'task-2'] }));
+    expect(result.status).toBe(422);
+    expect((await result.json()).error).toMatch(/exact check mapping/);
+    expect(mock.createIssue).not.toHaveBeenCalled();
+  });
+  it('requires exact task/point pairs and snapshots the authorized mapping on issue', async () => {
+    mock.assignments.mockResolvedValue([
+      { id: 'task-1', pmTaskId: 'pm-1', componentId: 'part-1', component: { assetId: 'machine-1' } },
+      { id: 'task-2', pmTaskId: 'pm-2', componentId: 'part-1', component: { assetId: 'machine-1' } },
+    ]);
+    mock.links.mockResolvedValue([
+      { pmTaskId: 'pm-1', inspectionPointId: 'point-1' },
+      { pmTaskId: 'pm-2', inspectionPointId: 'point-2' },
+    ]);
+    const taskIds = ['task-1', 'task-2'];
+    const pairs = [
+      { pmTaskId: 'pm-1', inspectionPointId: 'point-1' },
+      { pmTaskId: 'pm-2', inspectionPointId: 'point-2' },
+    ];
+    expect((await POST(request({ ...payload, taskIds }))).status).toBe(409);
+    expect((await POST(request({ ...payload, taskIds, taskPointLinks: [
+      { pmTaskId: 'pm-2', inspectionPointId: 'point-1' }, pairs[0],
+    ] }))).status).toBe(409);
+    expect(mock.createIssue).not.toHaveBeenCalled();
+    const result = await POST(request({ ...payload, taskIds, taskPointLinks: pairs }));
+    expect(result.status).toBe(201);
+    const record = (await result.json()).data;
+    expect(JSON.parse(record.taskPointSnapshot)).toEqual(pairs);
+    expect(JSON.parse(record.pointIds)).toEqual(['point-1', 'point-2']);
   });
   it('counts only recorded points on the issued paper reference', async () => {
     mock.listIssues.mockResolvedValue([{

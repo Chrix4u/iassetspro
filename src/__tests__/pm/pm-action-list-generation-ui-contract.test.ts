@@ -21,6 +21,8 @@ describe('printed Action List and engineer-approved part parameters', () => {
     expect(setup).toContain('approved maximum');
     expect(setup).toContain('Acceptable visual condition');
     expect(setup).toContain('existing part has different limits');
+    expect(setup).toContain('configuredParameterText');
+    expect(setup).toContain('Configured parameters / approved limits');
     expect(panel).toContain('Assign Parameters & Limits');
     expect(panel).toContain('Print Blank Action List');
     expect(rows).toContain('actionListAcceptance(point.normalRange)');

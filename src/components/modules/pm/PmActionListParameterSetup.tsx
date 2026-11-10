@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Layers, Loader2, Plus, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { parseInspectionLimits } from '@/lib/pm-inspection';
+import { actionListAcceptance } from '@/lib/pm-action-list-parameters';
 import { ACTION_LIST_PARAMETER_PRESETS, type ActionListParameterMethod } from '@/lib/pm-action-list-parameters';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,17 @@ type Draft = {
   rowId: string; key: string; name: string; method: ActionListParameterMethod;
   unit: string; min: string; max: string; acceptance: string;
 };
+function configuredParameterText(point: Part['parameters'][number]): string {
+  if (point.inspectionType === 'visual') {
+    return point.name + ': ' + (actionListAcceptance(point.normalRange) || 'Visual criterion not set');
+  }
+  const limits = parseInspectionLimits(point.normalRange);
+  return point.name + ': '
+    + (limits.min === null ? '' : 'min ' + limits.min + ' ')
+    + (limits.max === null ? 'max NOT SET' : 'max ' + limits.max)
+    + (limits.unit ? ' ' + limits.unit : '');
+}
+
 const newPreset = (key: string): Draft => {
   const preset = ACTION_LIST_PARAMETER_PRESETS.find(item => item.key === key);
   if (preset) return { rowId: crypto.randomUUID(), key: preset.key,
@@ -177,7 +190,7 @@ export function PmActionListParameterSetup({ assetId, equipmentState, open, onCl
                 <strong>{part.componentCode}</strong> · {part.name} <span className="text-muted-foreground">({part.componentType})</span>
                 {!allowed && <span className="ml-1 text-amber-700">PM task not assigned</span>}
                 {part.parameters.length > 0 && <span className="block text-muted-foreground">
-                  Existing: {part.parameters.map(item => item.parameterKey || item.name).join(', ')}
+                  Configured parameters / approved limits: {part.parameters.map(configuredParameterText).join('; ')}
                 </span>}
               </span>
             </label>;

@@ -103,7 +103,7 @@ describe('GET /api/pm-inspections/exceptions', () => {
     });
     expect(mocks.records).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
-        result: { in: ['fail', 'needs_attention', 'conditional'] },
+        result: { in: ['fail', 'needs_attention', 'conditional', 'not_measured'] },
         component: { asset: { is: { plantId: { in: ['plant-1'] } } } },
       }),
       orderBy: [{ inspectedAt: 'desc' }, { id: 'desc' }],

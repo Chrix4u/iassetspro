@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     if (dueState && !['overdue', 'due_today', 'upcoming', 'unscheduled'].includes(dueState)) {
       return NextResponse.json({ success: false, error: 'Invalid due state' }, { status: 400 });
     }
-    if (result && !['pass', 'fail', 'needs_attention', 'not_inspected'].includes(result)) {
+    if (result && !['pass', 'fail', 'needs_attention', 'not_measured', 'not_inspected'].includes(result)) {
       return NextResponse.json({ success: false, error: 'Invalid result filter' }, { status: 400 });
     }
     if (followUp && !['open', 'none'].includes(followUp)) {

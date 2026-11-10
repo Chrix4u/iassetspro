@@ -4,7 +4,8 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
-const ALLOWED_RESULTS = ['fail', 'needs_attention', 'conditional'] as const;
+// An unavailable instrument reading is a follow-up event, NOT an equipment failure.
+const ALLOWED_RESULTS = ['fail', 'needs_attention', 'conditional', 'not_measured'] as const;
 const FOLLOW_UP = ['all', 'open', 'none', 'closed'] as const;
 
 function inspectionDay(value: string | null, endOfDay = false): Date | null {

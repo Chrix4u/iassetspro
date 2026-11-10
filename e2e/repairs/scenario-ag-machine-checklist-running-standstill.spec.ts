@@ -150,13 +150,13 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   });
 
   await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('heading', { name: 'PM Planning', exact: true })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 25_000 });
   const worksheet = page.getByTestId('pm-inspection-worksheet');
   await worksheet.getByRole('combobox', { name: 'All machines' }).click();
   await expect(page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true })).toBeVisible();
   await page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true }).click();
 
-  await worksheet.getByRole('button', { name: 'Generate Machine Checklist' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
   const checklist = page.getByTestId('pm-machine-checklist');
   await expect(checklist).toContainText('Machine Inspection Checklist — Running', { timeout: 20_000 });
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
@@ -206,7 +206,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // A blank field sheet contains EMPTY handwriting cells, not the last saved
   // 7.9 mm/s reading or a fabricated Good/Bad result.
   await page.evaluate(() => { window.print = () => undefined; });
-  await checklist.getByRole('button', { name: 'Print blank field inspection worksheet' }).click();
+  await checklist.getByRole('button', { name: 'Print task-grouped blank inspection worksheet' }).click();
   await expect(printView).toContainText('BLANK FIELD INSPECTION SHEET');
   await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);

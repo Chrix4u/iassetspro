@@ -51,7 +51,7 @@ describe('PM schedule exact hierarchy targeting contract', () => {
     expect(assignmentSource).toContain('searchPlaceholder="Search PM templates..."');
     expect(assignmentSource).toContain('PmAssignmentTaskPlanner');
     expect(assignmentSource).toContain("'New PM Assignment'");
-    expect(scenario).toContain("getByRole('button', { name: /New PM Assignment/i })");
+    expect(scenario).toContain("getByRole('button', { name: /Add PM Schedule/i })");
     expect(scenario).toContain("page.getByPlaceholder('Search asset name or tag...')");
     expect(scenario).toContain("page.getByPlaceholder('Search PM templates...')");
     expect(scenario).toContain('expandParentCode?: string');

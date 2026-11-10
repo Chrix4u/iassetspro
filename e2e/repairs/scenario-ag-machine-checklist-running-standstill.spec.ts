@@ -131,6 +131,26 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
       }),
     });
   });
+  await page.route((url) => url.pathname === '/api/pm-inspections/parameter-assignments', async (route) => {
+    const url = new URL(route.request().url());
+    expect(url.searchParams.get('assetId')).toBe(machine.id);
+    expect(url.searchParams.get('equipmentState')).toBe('running');
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: {
+        machine,
+        parts: [
+          { ...bearing, taskIds: ['pm-vib'], parameters: [vibration] },
+          { ...pulley, taskIds: ['pm-sound'], parameters: [sound] },
+        ],
+        tasks: [
+          { id: 'pm-vib', taskNumber: 8, description: 'Check bearing vibration and temperature', assignedPartCount: 1 },
+          { id: 'pm-sound', taskNumber: 9, description: 'Listen for rubbing and unusual belt sound', assignedPartCount: 1 },
+        ],
+        pagination: { page: 1, total: 2, pageCount: 1 },
+      } }),
+    });
+  });
   await page.route((url) => /^\/api\/pm-inspections\/(vibration|sound)\/records$/.test(url.pathname), async (route) => {
     const body = route.request().postDataJSON() as {
       outcome: string; value: string; findings: string; requestKey: string; equipmentState: string;
@@ -156,13 +176,28 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true })).toBeVisible();
   await page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true }).click();
 
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   const checklist = page.getByTestId('pm-machine-checklist');
-  await expect(checklist).toContainText('Machine Inspection Checklist — Running', { timeout: 20_000 });
+  await expect(checklist).toContainText('Machine Action List — Running', { timeout: 20_000 });
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await expect(checklist).toContainText('C314-21-02');
   await expect(checklist).toContainText('General machine checks — part assignment required');
+
+  // Planner reviews the real part parameter matrix before printing an Action List.
+  // No fake approved limits are prefilled; the engineer's maximum is entered explicitly.
+  await checklist.getByRole('button', { name: 'Assign Parameters & Limits' }).click();
+  const setup = page.getByTestId('pm-action-list-parameter-setup');
+  await expect(setup).toBeVisible();
+  await setup.getByRole('combobox', { name: 'PM task for parameter assignment' }).click();
+  await page.getByRole('option', { name: /#8 Check bearing vibration and temperature/ }).click();
+  await expect(setup).toContainText('C314-21-02');
+  await expect(setup).toContainText('max 4.5 mm/s');
+  await setup.getByRole('button', { name: 'Add', exact: true }).click();
+  await setup.getByPlaceholder('Enter engineer-approved maximum').fill('85');
+  await expect(setup.getByPlaceholder('Enter engineer-approved maximum')).toHaveValue('85');
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await expect(setup).toBeHidden();
 
   const soundObservation = checklist.getByRole('textbox', { name: 'Observed condition: Unusual noise' });
   await checklist.getByRole('button', { name: 'Save reading' }).last().click();
@@ -184,14 +219,14 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted.every((p) => p.equipmentState === 'running')).toBe(true);
   await expect(checklist).toContainText('Corrective WO-UAT-CORR-01');
   const printView = page.getByTestId('pm-machine-inspection-print');
-  await expect(page.getByRole('button', { name: 'Print saved machine inspection checklist' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Print saved Action List readings' })).toBeEnabled();
   await expect(printView).toContainText('7.9 mm/s', { timeout: 15_000 });
   await expect(printView).toContainText('Regular pulley sound, no rubbing or rattling');
   await expect(printView).toContainText('WO-UAT-CORR-01 (draft)');
   await expect(printView.getByTestId('pm-machine-print-table').locator('tbody tr')).toHaveCount(3);
   await page.emulateMedia({ media: 'print' });
   await expect(printView).toBeVisible();
-  await expect(printView).toContainText('Machine Inspection List — running');
+  await expect(printView).toContainText('Action List — saved inspection results — running');
   await page.emulateMedia({ media: 'screen' });
   await expect(printView).toBeHidden();
 
@@ -206,8 +241,8 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // A blank field sheet contains EMPTY handwriting cells, not the last saved
   // 7.9 mm/s reading or a fabricated Good/Bad result.
   await page.evaluate(() => { window.print = () => undefined; });
-  await checklist.getByRole('button', { name: 'Print task-grouped blank inspection worksheet' }).click();
-  await expect(printView).toContainText('FIELD SHEET — grouped by task');
+  await checklist.getByRole('button', { name: 'Print task-grouped blank Action List' }).click();
+  await expect(printView).toContainText('ACTION LIST — grouped by task');
   await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
@@ -226,8 +261,8 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // silently submitted again under the standstill inspection context.
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: /Standstill \/ Stopped/ }).click();
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
-  await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Inspection Checklist — Standstill');
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
+  await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Action List — Standstill');
   await expect(page.getByTestId('pm-machine-checklist').getByTestId('pm-machine-checklist-row')).toHaveCount(0);
   expect(posted).toHaveLength(2);
   const width = await checklist.evaluate((element) => element.scrollWidth - element.clientWidth);
@@ -236,7 +271,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // Return to Running and transcribe a field technician's paper measurements.
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await checklist.getByRole('combobox', { name: 'Inspection reading source' }).click();
   await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();

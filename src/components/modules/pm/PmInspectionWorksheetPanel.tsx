@@ -285,7 +285,7 @@ export function PmInspectionWorksheetPanel() {
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>Machine Inspection Sheets & Readings</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>Action Lists & Inspection Readings</CardTitle>
             <CardDescription>Select a machine, print the inspection tasks and all their assigned parts, then enter the technician's measured values or written observations.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -316,10 +316,10 @@ export function PmInspectionWorksheetPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border bg-muted/20 p-3 sm:p-4" data-testid="pm-inspection-generate-machine">
-          <h3 className="text-sm font-semibold">Generate an inspection sheet for one machine</h3>
+          <h3 className="text-sm font-semibold">Generate an Action List for one machine</h3>
           <p className="mb-3 text-xs text-muted-foreground">
             1. Choose the machine. 2. Choose Running or Standstill. 3. Generate the sheet,
-            then click Print Blank Task-Grouped Sheet. Every assigned part will appear beneath its inspection task.
+            then click Print Blank Action List. Every assigned part appears beneath its inspection task, with approved parameter limits.
           </p>
           <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,11rem)_auto] sm:items-end">
             <div className="min-w-0 space-y-1">
@@ -344,7 +344,7 @@ export function PmInspectionWorksheetPanel() {
             </div>
             <Button type="button" className="h-9" disabled={!filters.assetId}
               onClick={() => { setExceptionsOpen(false); setMachineChecklistOpen(true); }}>
-              <ClipboardCheck className="mr-1.5 h-4 w-4" />Generate Machine Sheet
+              <ClipboardCheck className="mr-1.5 h-4 w-4" />Generate Action List
             </Button>
           </div>
         </div>

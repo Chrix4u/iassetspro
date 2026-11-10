@@ -84,5 +84,5 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   expect(requestedFilters.some((value) => value.includes('followUp=none'))).toBe(true);
   await review.getByRole('button', { name: 'Back to List' }).click();
   await expect(review).not.toBeVisible();
-  await expect(worksheet.getByText('Machine Inspection Sheets & Readings', { exact: true })).toBeVisible();
+  await expect(worksheet.getByText('Action Lists & Inspection Readings', { exact: true })).toBeVisible();
 });

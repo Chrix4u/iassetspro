@@ -89,7 +89,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
         id="pm-machine-inspection-print"
         data-testid="pm-machine-inspection-print"
         className="hidden"
-        aria-label="Printable machine inspection checklist"
+        aria-label="Printable machine Action List"
       >
         {mode === 'field' ? (
           <>
@@ -97,7 +97,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
               <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-2">
                 <div>
                   <p className="text-xs font-semibold">iAssetsPro · Preventive Maintenance</p>
-                  <h1 className="text-xl font-bold">Machine Inspection Sheet — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
+                  <h1 className="text-xl font-bold">ACTION LIST — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
                   <p className="text-base font-bold">{data.machine.name}</p>
                   <p>Machine code: <strong>{data.machine.assetTag}</strong></p>
                   <p>Machine description: {data.machine.description || data.machine.name}</p>
@@ -115,7 +115,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 <span>Planned inspection: <strong data-testid="pm-print-planned-date">{printedIssue?.plannedForDate || '______________'}</strong></span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
-                <span>Paper reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
+                <span>Action List reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
               </div>
               {unresolved.partCount > 0 && <p className="pm-print-note mt-2 border border-amber-500 p-2 font-semibold">
                 NOT READY FOR FIELD USE: {unresolved.taskCount} PM task(s) across {unresolved.partCount} parts
@@ -128,7 +128,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </p>
               )}
               <p className="pm-print-note mt-2 font-semibold">
-                FIELD SHEET — grouped by task. Take this printout to the machine and write each actual
+                ACTION LIST — grouped by task. Take this printout to the machine and write each actual
                 instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
                 as a substitute for a measurement. Enter the same readings into the electronic machine checklist
                 afterwards. When a measurement is impossible on a stopped machine, write
@@ -155,7 +155,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                     <th>Assembly / subassembly / part path</th>
                     <th>Part code / description</th>
                     <th>Check / parameter</th>
-                    <th>Method / accepted range</th>
+                    <th>Inspection type / approved limit or criterion</th>
                     <th>Actual value (write here) / N/A + reason</th>
                     <th>Actual observation / defect (write here)</th>
                     <th>Time checked</th>
@@ -213,7 +213,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
         <header className="pm-print-no-break mb-3">
           <div className="flex items-center justify-between gap-6 border-b-2 border-slate-900 pb-2">
             <div>
-              <h1 className="text-xl font-bold uppercase">Machine Inspection List — {data.equipmentState}</h1>
+              <h1 className="text-xl font-bold uppercase">Action List — saved inspection results — {data.equipmentState}</h1>
               <p className="text-sm font-semibold">{data.machine.name}</p>
               <p>Machine / asset code: <strong>{data.machine.assetTag}</strong></p>
             </div>

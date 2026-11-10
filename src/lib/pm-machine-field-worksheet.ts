@@ -2,6 +2,7 @@ import { parseInspectionLimits } from '@/lib/pm-inspection';
 import type { MachineChecklistGroup, MachineChecklistTask } from '@/lib/pm-machine-checklist';
 import { inspectionPointsForTask, type InspectionTaskPointLink } from '@/lib/pm-task-point-scope';
 import { pmAssignmentDueLabel } from '@/lib/pm-early-field-inspection';
+import { actionListAcceptance } from '@/lib/pm-action-list-parameters';
 
 export interface PaperInspectionHierarchyNode {
   id: string;
@@ -86,9 +87,11 @@ export function buildPaperInspectionTasks(
         const missingLimits = point.inspectionType === 'measurement'
           && reference.min === null && reference.max === null;
         const acceptedRange = point.inspectionType === 'visual'
-          ? 'Describe sight / sound observation'
+          ? actionListAcceptance(point.normalRange) || 'Describe the actual visible condition'
           : missingLimits ? 'Limits NOT CONFIGURED'
-            : String(reference.min ?? '—') + ' to ' + String(reference.max ?? '—');
+            : reference.min === null ? 'MAX ' + reference.max
+              : reference.max === null ? 'MIN ' + reference.min
+                : String(reference.min) + ' to ' + String(reference.max);
         section.rows.push({
           id: unique, pointId: point.id, partId: group.component.id,
           partCode: group.component.componentCode, partName: group.component.name,
@@ -96,7 +99,7 @@ export function buildPaperInspectionTasks(
           checkName: point.name,
           parameter: point.parameterKey || (point.inspectionType === 'visual' ? 'Qualitative observation' : '—'),
           method: point.inspectionType === 'measurement' ? 'Instrument'
-            : point.inspectionType === 'visual' ? 'Sight / sound' : 'Unsupported',
+            : point.inspectionType === 'visual' ? 'Visual' : 'Unsupported',
           acceptedRange, unit: reference.unit || '',
           requiresConfiguration: !validMethod || !hasParameter,
           configurationNote: !validMethod ? 'Planner must replace unsupported inspection method.'

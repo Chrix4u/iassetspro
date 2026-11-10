@@ -28,6 +28,8 @@ import {
   inspectionPointsForTask, inspectionTaskLabelsForPoint, missingInspectionTaskMappings, type InspectionTaskPointLink,
 } from '@/lib/pm-task-point-scope';
 import { PmInspectionTaskPointMapper } from './PmInspectionTaskPointMapper';
+import { PmActionListParameterSetup } from './PmActionListParameterSetup';
+import { actionListAcceptance } from '@/lib/pm-action-list-parameters';
 import { type InspectionPurpose } from '@/lib/pm-early-field-inspection';
 import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
 
@@ -126,6 +128,7 @@ export function PmMachineInspectionChecklistPanel({
   } | null>(null);
   const [issuingPaper, setIssuingPaper] = useState(false);
   const [mappingPartId, setMappingPartId] = useState<string | null>(null);
+  const [parameterSetupOpen, setParameterSetupOpen] = useState(false);
   const pendingIssueKey = useRef<string | null>(null);
   const loadIssued = useCallback(async () => {
     try {
@@ -465,7 +468,7 @@ export function PmMachineInspectionChecklistPanel({
     <section aria-label="Machine running or standstill inspection checklist" data-testid="pm-machine-checklist" className="min-w-0 space-y-3 rounded-xl border p-2.5 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
-          <h3 className="break-words text-base font-bold">Machine Inspection Checklist — {equipmentState === 'running' ? 'Running' : 'Standstill'}</h3>
+          <h3 className="break-words text-base font-bold">Machine Action List — {equipmentState === 'running' ? 'Running' : 'Standstill'}</h3>
           {data && <>
             <p className="break-words text-sm font-semibold">{data.machine.name}</p>
             <p className="break-all text-xs text-muted-foreground">{data.machine.assetTag} · Generated {dateTime(data.generatedAt)}</p>
@@ -473,10 +476,12 @@ export function PmMachineInspectionChecklistPanel({
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={() => setReload((v) => v + 1)} disabled={busy || loading}><RefreshCw className="mr-1 h-3.5 w-3.5"/>Refresh</Button>
+          {canPlan && <Button type="button" size="sm" variant="outline" onClick={() => setParameterSetupOpen(true)}
+            disabled={!data || busy}><Gauge className="mr-1 h-3.5 w-3.5"/>Assign Parameters & Limits</Button>}
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || busy}><Download className="mr-1 h-3.5 w-3.5"/>Export CSV</Button>
-          <Button type="button" size="sm" variant="default" onClick={() => void printSheet('field')} disabled={!data || busy || loading || issuingPaper} aria-label="Print task-grouped blank inspection worksheet">{issuingPaper ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/> : <Printer className="mr-1 h-3.5 w-3.5"/>}Print Blank Task-Grouped Sheet</Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('saved')} disabled={!data || busy || loading || issuingPaper} aria-label="Print saved machine inspection checklist"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
-          <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close List</Button>
+          <Button type="button" size="sm" variant="default" onClick={() => void printSheet('field')} disabled={!data || busy || loading || issuingPaper} aria-label="Print task-grouped blank Action List">{issuingPaper ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/> : <Printer className="mr-1 h-3.5 w-3.5"/>}Print Blank Action List</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => void printSheet('saved')} disabled={!data || busy || loading || issuingPaper} aria-label="Print saved Action List readings"><Printer className="mr-1 h-3.5 w-3.5"/>Print Saved Readings</Button>
+          <Button size="sm" variant="outline" onClick={onClose} disabled={busy}>Close Action List</Button>
         </div>
       </div>
       {loading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin"/>Generating the machine's assigned inspection checklist…</p>}
@@ -837,6 +842,8 @@ export function PmMachineInspectionChecklistPanel({
                         Existing corrective {point.openCorrectiveWorkOrder.woNumber} ({point.openCorrectiveWorkOrder.status}) — next due remains pending verified closeout.
                       </p>}
                       <p className="text-[11px] text-muted-foreground">
+                        {point.inspectionType === 'visual' && actionListAcceptance(point.normalRange) &&
+                          <span className="block">Approved visual criterion: {actionListAcceptance(point.normalRange)}</span>}
                         Latest: {point.latestRecord
                           ? `${point.latestRecord.result.replace('_', ' ')} · ${point.latestRecord.value ?? point.latestRecord.findings ?? 'observation'} · ${dateTime(point.latestRecord.inspectedAt)}`
                           : 'Not yet recorded'}
@@ -869,6 +876,13 @@ export function PmMachineInspectionChecklistPanel({
         </div>
       </>}
       {data && !loading && <PmMachineInspectionPrint data={data} mode={printMode} printedIssue={printedIssue} />}
+      <PmActionListParameterSetup assetId={assetId} equipmentState={equipmentState} open={canPlan && parameterSetupOpen}
+        onClose={() => setParameterSetupOpen(false)}
+        onSaved={() => {
+          pendingIssueKey.current = null;
+          setPrintedIssue(null);
+          setReload(value => value + 1);
+        }}/>
       <PmInspectionTaskPointMapper
         componentId={mappingPartId}
         componentCode={data?.groups.find((group) => group.component.id === mappingPartId)?.component.componentCode || ''}

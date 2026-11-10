@@ -22,7 +22,7 @@ function displayTime(input: string): string {
  */
 export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }: {
   data: PrintableMachineInspectionData; mode?: 'saved' | 'field';
-  printedIssue?: { reference: string; issuedAt: string } | null;
+  printedIssue?: { reference: string; issuedAt: string; plannedForDate?: string | null; purpose?: string } | null;
 }) {
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
@@ -105,13 +105,14 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </div>
                 <div className="text-right text-xs">
                   <p>Issued: {printedIssue ? displayTime(printedIssue.issuedAt) : 'Not yet issued'}</p>
+                  <p>Visit: {printedIssue?.purpose === 'early_check' ? 'Early condition inspection' : 'Routine inspection'}</p>
                   <p>Plant: {data.machine.plantId}</p>
                   <p>{fieldSections.length} inspection task(s)</p>
                   <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-4 gap-3 border border-slate-400 p-2 text-xs">
-                <span>Inspection date: ______________</span>
+                <span>Planned inspection: <strong data-testid="pm-print-planned-date">{printedIssue?.plannedForDate || '______________'}</strong></span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
                 <span>Paper reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
@@ -120,11 +121,19 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 NOT READY FOR FIELD USE: {unresolved.taskCount} PM task(s) across {unresolved.partCount} parts
                 have no verified task-to-check mapping. A planner must assign the exact measurements before issue.
               </p>}
+              {printedIssue?.purpose === 'early_check' && (
+                <p className="pm-print-note mt-2 border border-slate-500 p-2 font-semibold">
+                  EARLY INSPECTION — record actual conditions now. This visit does not generate,
+                  complete or reschedule the planned PM work order. Scheduled PM due dates below remain unchanged.
+                </p>
+              )}
               <p className="pm-print-note mt-2 font-semibold">
                 FIELD SHEET — grouped by task. Take this printout to the machine and write each actual
                 instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
                 as a substitute for a measurement. Enter the same readings into the electronic machine checklist
-                afterwards. Any abnormal result requires planner review.
+                afterwards. When a measurement is impossible on a stopped machine, write
+                N/A with the exact reason (never zero); the planner must arrange a suitable follow-up.
+                Any abnormal result requires planner review.
               </p>
             </header>
             {fieldSections.map((task) => (
@@ -147,7 +156,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                     <th>Part code / description</th>
                     <th>Check / parameter</th>
                     <th>Method / accepted range</th>
-                    <th>Actual value (write here)</th>
+                    <th>Actual value (write here) / N/A + reason</th>
                     <th>Actual observation / defect (write here)</th>
                     <th>Time checked</th>
                   </tr></thead>
@@ -162,7 +171,9 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                             </div>
                           )) : 'Machine-wide task — no registered part'}
                         </td>
-                        <td><span className="text-[9px]">{index + 1}. </span><strong>{row.partCode}</strong><div>{row.partName}</div></td>
+                        <td><span className="text-[9px]">{index + 1}. </span><strong>{row.partCode}</strong><div>{row.partName}</div>
+                          <div className="mt-1 text-[10px]"><strong>Scheduled PM due:</strong> {row.scheduledDue}</div>
+                        </td>
                         <td>
                           <strong>{row.checkName}</strong>
                           <div>{row.parameter}</div>
@@ -221,6 +232,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             <span>Recorded: <strong>{counts.recorded}</strong></span>
             <span>Normal: <strong>{counts.normal}</strong></span>
             <span>Abnormal: <strong>{counts.abnormal}</strong></span>
+            <span>Not measurable: <strong>{counts.notMeasured}</strong></span>
             <span>Needs configuration: <strong>{counts.unconfigured}</strong></span>
           </div>
         </header>

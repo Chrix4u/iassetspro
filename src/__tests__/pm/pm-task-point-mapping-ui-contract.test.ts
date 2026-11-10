@@ -20,7 +20,8 @@ describe('enterprise PM explicit task/measurement flow contracts', () => {
   it('never silently prints a shared part with unmapped measurements', () => {
     expect(machine).toContain('missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || [])');
     expect(machine).toContain('if (unresolved.taskCount)');
-    expect(machine).toContain('taskPointLinks });');
+    expect(machine).toContain('taskIds, taskPointLinks,');
+    expect(machine).toContain('plannedForDate, purpose: inspectionPurpose');
     expect(printed).toContain('buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || [])');
   });
   it('server verifies the mapping against stored records and snapshots the actual issue scope', () => {

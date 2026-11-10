@@ -25,9 +25,10 @@ import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-ma
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 import { isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
 import {
-  inspectionPointsForTask, missingInspectionTaskMappings, type InspectionTaskPointLink,
+  inspectionPointsForTask, inspectionTaskLabelsForPoint, missingInspectionTaskMappings, type InspectionTaskPointLink,
 } from '@/lib/pm-task-point-scope';
 import { PmInspectionTaskPointMapper } from './PmInspectionTaskPointMapper';
+import { type InspectionPurpose } from '@/lib/pm-early-field-inspection';
 import { parseInspectionCaptureEvidence, type InspectionCaptureEvidence } from '@/lib/pm-paper-inspection-evidence';
 
 interface MachineChecklistResponse {
@@ -46,9 +47,12 @@ interface IssuedPaperSheet {
   reference: string;
   issuedAt: string;
   issuedById?: string;
+  plannedForDate?: string | null;
+  purpose?: InspectionPurpose;
   expected: number;
   entered: number;
   remaining: number;
+  followUpRequired?: number;
   missingPointIds?: string[];
   status: string;
 }
@@ -114,8 +118,12 @@ export function PmMachineInspectionChecklistPanel({
   const [captureMode, setCaptureMode] = useState<'digital' | 'paper'>('digital');
   const [paperInspector, setPaperInspector] = useState('');
   const [paperReference, setPaperReference] = useState('');
+  const [plannedForDate, setPlannedForDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [inspectionPurpose, setInspectionPurpose] = useState<InspectionPurpose>('early_check');
   const [issuedSheets, setIssuedSheets] = useState<IssuedPaperSheet[]>([]);
-  const [printedIssue, setPrintedIssue] = useState<{ reference: string; issuedAt: string } | null>(null);
+  const [printedIssue, setPrintedIssue] = useState<{
+    reference: string; issuedAt: string; plannedForDate: string; purpose: InspectionPurpose;
+  } | null>(null);
   const [issuingPaper, setIssuingPaper] = useState(false);
   const [mappingPartId, setMappingPartId] = useState<string | null>(null);
   const pendingIssueKey = useRef<string | null>(null);
@@ -136,6 +144,10 @@ export function PmMachineInspectionChecklistPanel({
       return;
     }
     if (!data || issuingPaper) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedForDate)) {
+      toast.error('Select the planned field inspection date before issuing the sheet.');
+      return;
+    }
     const unresolved = missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || []);
     if (unresolved.taskCount) {
       toast.error(unresolved.taskCount + ' shared-part PM tasks need exact inspection-check mapping before the paper sheet can be issued.');
@@ -159,9 +171,15 @@ export function PmMachineInspectionChecklistPanel({
         ...data.generalTasks.map((t) => t.id),
       ]));
       const response = await api.post<{ reference: string; issuedAt: string }>(
-        '/api/pm-inspections/sheets', { assetId, equipmentState, requestKey, pointIds, taskIds, taskPointLinks });
+        '/api/pm-inspections/sheets', {
+          assetId, equipmentState, requestKey, pointIds, taskIds, taskPointLinks,
+          plannedForDate, purpose: inspectionPurpose,
+        });
       if (!response.success || !response.data) throw new Error(response.error || 'Could not issue paper reference');
-      const issued = { reference: response.data.reference, issuedAt: response.data.issuedAt };
+      const issued = {
+        reference: response.data.reference, issuedAt: response.data.issuedAt,
+        plannedForDate, purpose: inspectionPurpose,
+      };
       pendingIssueKey.current = null;
       setPrintedIssue(issued);
       setPrintMode('field');
@@ -203,6 +221,8 @@ export function PmMachineInspectionChecklistPanel({
     setPaperInspector('');
     setPaperReference('');
     setPrintedIssue(null);
+    setInspectionPurpose('early_check');
+    setPlannedForDate(new Date().toISOString().slice(0, 10));
     setMappingPartId(null);
     setTaskFilter('all');
     setPartSearch('');
@@ -360,6 +380,8 @@ export function PmMachineInspectionChecklistPanel({
             recommendation: entry.recommendation.trim(),
             requestKey,
             equipmentState,
+            inspectionPurpose: captureMode === 'paper'
+              ? (activeIssuedSheet?.purpose || inspectionPurpose) : inspectionPurpose,
             ...captureByPoint.get(point.id),
           });
           if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
@@ -399,7 +421,7 @@ export function PmMachineInspectionChecklistPanel({
 
   const ready = points.filter((point) => {
     const draft = getDraft(point.id);
-    return !draft.saved && hasInput(point, draft);
+    return !draft.saved && (draft.outcome === 'not_measured' || hasInput(point, draft));
   });
   const exportCsv = () => {
     if (!data) return;
@@ -409,12 +431,14 @@ export function PmMachineInspectionChecklistPanel({
         'Reading source', 'Field inspector', 'Original field time', 'Paper reference'],
     ];
     for (const group of data.groups) {
-      const tasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
-      if (!group.points.length) rows.push([group.component.componentCode, group.component.name, tasks, 'UNCONFIGURED']);
+      const allAssignedTasks = group.tasks.map((item) => `#${item.pmTask.taskNumber} ${item.pmTask.description}`).join('; ');
+      if (!group.points.length) rows.push([group.component.componentCode, group.component.name, allAssignedTasks, 'UNCONFIGURED']);
       for (const point of group.points) {
         const limits = parseInspectionLimits(point.normalRange);
+        const taskLabels = inspectionTaskLabelsForPoint(group, point.id, data.explicitTaskPointLinks || []);
         rows.push([
-          group.component.componentCode, group.component.name, tasks, point.name,
+          group.component.componentCode, group.component.name,
+          taskLabels.length ? taskLabels.join('; ') : 'UNMAPPED — planner review required', point.name,
           point.inspectionType, limits.min ?? '', limits.max ?? '', limits.unit || '',
           point.latestRecord?.value || '', point.latestRecord?.result || '',
           point.latestRecord?.findings || '', point.latestRecord ? dateTime(point.latestRecord.inspectedAt) : '',
@@ -458,6 +482,38 @@ export function PmMachineInspectionChecklistPanel({
       {loading && <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin"/>Generating the machine's assigned inspection checklist…</p>}
       {error && <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{error}</p>}
       {data && !loading && <>
+        <div className="flex flex-wrap gap-2 rounded-lg border bg-muted/20 p-3" data-testid="pm-field-visit-planning">
+          <div className="min-w-0 flex-1 space-y-1 sm:max-w-[230px]">
+            <Label className="text-xs">Planned field inspection date</Label>
+            <Input type="date" aria-label="Planned field inspection date" value={plannedForDate}
+              disabled={busy || issuingPaper}
+              onChange={(event) => {
+                setPlannedForDate(event.target.value);
+                setPrintedIssue(null);
+                pendingIssueKey.current = null;
+              }} />
+          </div>
+          <div className="w-full space-y-1 sm:w-[220px]">
+            <Label className="text-xs">Inspection purpose</Label>
+            <Select value={inspectionPurpose} disabled={busy || issuingPaper}
+              onValueChange={(value) => {
+                setInspectionPurpose(value as InspectionPurpose);
+                setPrintedIssue(null);
+                pendingIssueKey.current = null;
+              }}>
+              <SelectTrigger aria-label="Inspection purpose"><SelectValue/></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="early_check">Early condition inspection</SelectItem>
+                <SelectItem value="routine">Routine inspection</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="w-full text-xs text-muted-foreground">
+            {inspectionPurpose === 'early_check'
+              ? 'Early inspections may take place before the scheduled PM due date. Readings remain auditable, but do not complete the scheduled work order or reset inspection due dates.'
+              : 'Routine inspection readings follow their own configured checkpoint recurrence. Scheduled PM work orders retain their separate due dates.'}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-1.5 text-xs">
           <Badge variant="outline">{taskSections.length} inspection task groups</Badge>
           <Badge variant="outline">{data.totalAssignments} part/task assignments</Badge>
@@ -547,7 +603,7 @@ export function PmMachineInspectionChecklistPanel({
                   disabled={busy} onValueChange={setPaperReference}>
                   <SelectTrigger aria-label="Select issued paper worksheet" className="w-full"><SelectValue placeholder="Choose issued sheet or type an older external reference" /></SelectTrigger>
                   <SelectContent>{issuedSheets.map((sheet) => <SelectItem key={sheet.reference} value={sheet.reference}>
-                    {sheet.reference} · {sheet.entered}/{sheet.expected} entered ({sheet.status.replace('_', ' ')})
+                    {sheet.reference} · {sheet.plannedForDate || 'Date unknown'} · {sheet.purpose === 'early_check' ? 'Early' : 'Routine'} · {sheet.entered}/{sheet.expected} entered ({sheet.status.replace('_', ' ')})
                   </SelectItem>)}</SelectContent>
                 </Select>
               </div>}
@@ -558,7 +614,9 @@ export function PmMachineInspectionChecklistPanel({
                     {activeIssuedSheet.status === 'requires_setup'
                       ? 'This sheet needs planner configuration before readings can be entered.'
                       : activeIssuedSheet.remaining === 0
-                        ? 'All configured readings have been entered for this sheet.'
+                        ? activeIssuedSheet.followUpRequired
+                          ? `${activeIssuedSheet.followUpRequired} reading(s) could not be measured — planner follow-up required.`
+                          : 'All configured readings have been entered for this sheet.'
                         : `${activeIssuedSheet.remaining} reading${activeIssuedSheet.remaining === 1 ? '' : 's'} remaining on this sheet`}
                   </p>
                   {activeIssuedSheet.remaining > 0 && missingSheetReadings.length > 0 && (
@@ -571,6 +629,12 @@ export function PmMachineInspectionChecklistPanel({
                     </ul>
                   )}
                   <p className="text-muted-foreground">
+                    {activeIssuedSheet.followUpRequired
+                      ? `${activeIssuedSheet.followUpRequired} N/A check(s) require a suitable follow-up measurement. `
+                      : ''}
+                    {activeIssuedSheet.purpose === 'early_check'
+                      ? 'Early inspection: no scheduled PM due date is reset. '
+                      : ''}
                     Based on readings saved against this issued reference. A fully entered sheet still requires normal planner review.
                   </p>
                 </div>
@@ -720,7 +784,8 @@ export function PmMachineInspectionChecklistPanel({
                           {point.inspectionType === 'measurement' ? <>
                             <Label className="text-xs">Actual reading ({limits.unit || 'unit'})</Label>
                             <Input inputMode="decimal" type="number" step="any" aria-label={`Actual reading: ${point.name}`}
-                              value={entry.value} disabled={busy} placeholder="Enter measured value"
+                              value={entry.value} disabled={busy || entry.outcome === 'not_measured'}
+                              placeholder={entry.outcome === 'not_measured' ? 'N/A — explain below' : 'Enter measured value'}
                               onChange={(e) => edit(point.id, { value: e.target.value })}/>
                             {outOfRange && <p className="flex items-center gap-1 text-[11px] text-destructive"><AlertTriangle className="h-3 w-3 shrink-0"/>Outside configured limits — corrective review required</p>}
                           </> : <>
@@ -734,7 +799,9 @@ export function PmMachineInspectionChecklistPanel({
                           {point.inspectionType === 'measurement' && <>
                             <Label className="text-xs">Observations / remarks</Label>
                             <Textarea rows={2} aria-label={`Inspection remarks: ${point.name}`} value={entry.findings} disabled={busy}
-                              placeholder="What did you see or hear? Describe abnormal conditions."
+                              placeholder={entry.outcome === 'not_measured'
+                                ? 'State why this reading cannot be obtained while stopped; identify the required follow-up method.'
+                                : 'What did you see or hear? Describe abnormal conditions.'}
                               onChange={(e) => edit(point.id, { findings: e.target.value })}/>
                           </>}
                           <Label className="text-xs">Recommended action (optional)</Label>
@@ -744,9 +811,14 @@ export function PmMachineInspectionChecklistPanel({
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Technician assessment</Label>
-                          <Select value={entry.outcome} disabled={busy} onValueChange={(value) => edit(point.id, { outcome: value as MachineChecklistDraft['outcome'] })}>
+                          <Select value={entry.outcome} disabled={busy} onValueChange={(value) => edit(point.id, {
+                            outcome: value as MachineChecklistDraft['outcome'],
+                            ...(value === 'not_measured' ? { value: '' } : {}),
+                          })}>
                             <SelectTrigger aria-label={`Assessment: ${point.name}`}><SelectValue/></SelectTrigger>
-                            <SelectContent><SelectItem value="pass">Normal</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="fail">Defect / Fail</SelectItem></SelectContent>
+                            <SelectContent><SelectItem value="pass">Normal</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="fail">Defect / Fail</SelectItem>
+                              {point.inspectionType === 'measurement' && <SelectItem value="not_measured">Not measurable — explain why</SelectItem>}
+                            </SelectContent>
                           </Select>
                           <Button size="sm" className="w-full" variant="outline" disabled={busy || entry.saved}
                             onClick={() => void save([point])}><Save className="mr-1.5 h-3.5 w-3.5"/>{entry.saved ? 'Saved' : 'Save reading'}</Button>
@@ -769,6 +841,7 @@ export function PmMachineInspectionChecklistPanel({
                           ? `${point.latestRecord.result.replace('_', ' ')} · ${point.latestRecord.value ?? point.latestRecord.findings ?? 'observation'} · ${dateTime(point.latestRecord.inspectedAt)}`
                           : 'Not yet recorded'}
                         {point.latestRecord && ` · Operating: ${point.latestRecord.equipmentState || 'unknown (legacy)'}`}
+                        {point.latestRecord?.inspectionPurpose === 'early_check' && ' · Early check (PM due unchanged)'}
                         {point.latestRecord?.captureSource === 'paper' && (
                           <span className="block break-words">
                             Paper ${point.latestRecord.paperReference || 'reference unknown'} · Field inspector ${point.latestRecord.fieldInspectorName || 'unknown'} ·

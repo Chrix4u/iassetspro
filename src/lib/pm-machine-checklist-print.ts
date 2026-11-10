@@ -82,7 +82,8 @@ export function buildMachineInspectionPrintRows(
           ? 'Sight / qualitative observation'
           : 'Legacy method — reconfigure';
       const record = point.latestRecord;
-      const actual = !record ? '' :
+      const actual = !record ? '' : record.result === 'not_measured'
+        ? 'N/A — not measurable' :
         point.inspectionType === 'measurement'
           ? `${record.value ?? ''}${record.value !== null && record.value !== '' && limits.unit ? ` ${limits.unit}` : ''}`
           : (record.findings || record.value || '');
@@ -136,7 +137,8 @@ export function machineInspectionPrintSummary(rows: PrintableMachineInspectionRo
     checks: rows.filter(row => !row.requiresConfiguration).length,
     recorded: recorded.length,
     normal: recorded.filter(row => row.outcome === 'PASS').length,
-    abnormal: recorded.filter(row => row.outcome !== 'PASS').length,
+    abnormal: recorded.filter(row => row.outcome !== 'PASS' && row.outcome !== 'NOT MEASURED').length,
+    notMeasured: recorded.filter(row => row.outcome === 'NOT MEASURED').length,
     unconfigured: rows.filter(row => row.requiresConfiguration).length,
   };
 }

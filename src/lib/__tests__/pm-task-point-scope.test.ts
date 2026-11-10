@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MachineChecklistGroup, MachineChecklistPoint, MachineChecklistTask } from '@/lib/pm-machine-checklist';
-import { inspectionPointsForTask, missingInspectionTaskMappings, plannedPaperInspectionScope } from '@/lib/pm-task-point-scope';
+import { inspectionPointsForTask, inspectionTaskLabelsForPoint, missingInspectionTaskMappings, plannedPaperInspectionScope } from '@/lib/pm-task-point-scope';
 
 const part = { id: 'bearing', name: 'Drive bearing', componentCode: 'C314-21-02', componentType: 'part' };
 const task = (id: string): MachineChecklistTask => ({
@@ -32,6 +32,21 @@ describe('task-scoped industrial inspection checks', () => {
     expect(inspectionPointsForTask(group, 'temperature', links).points.map((p) => p.id)).toEqual(['t']);
     expect(inspectionPointsForTask(group, 'vibration', links).points.map((p) => p.id)).toEqual(['v']);
     expect(missingInspectionTaskMappings([group], links).taskCount).toBe(0);
+  });
+  it('labels CSV readings with exact task associations rather than every task sharing the part', () => {
+    const links = [
+      { pmTaskId: 'temperature', inspectionPointId: 't' },
+      { pmTaskId: 'vibration', inspectionPointId: 'v' },
+    ];
+    expect(inspectionTaskLabelsForPoint(group, 't', links)).toEqual(['#1 temperature']);
+    expect(inspectionTaskLabelsForPoint(group, 'v', links)).toEqual(['#2 vibration']);
+    expect(inspectionTaskLabelsForPoint(group, 't', [])).toEqual([]);
+    expect(inspectionTaskLabelsForPoint(group, 'foreign-point', links)).toEqual([]);
+    expect(inspectionTaskLabelsForPoint(group, 't', [
+      ...links, { pmTaskId: 'vibration', inspectionPointId: 't' },
+    ])).toEqual(['#1 temperature', '#2 vibration']);
+    const duplicateAssignment = { ...group, tasks: [task('temperature'), task('temperature')] };
+    expect(inspectionTaskLabelsForPoint(duplicateAssignment, 't', [])).toEqual(['#1 temperature']);
   });
   it('keeps a one-task part backward compatible without guessed many-to-many links', () => {
     const single = { ...group, tasks: [task('temperature')] };

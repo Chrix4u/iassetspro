@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
             id: true, result: true, value: true, findings: true,
             inspectedAt: true, equipmentState: true, captureSource: true,
             fieldInspectedAt: true, fieldInspectorName: true, paperReference: true,
+            inspectionPurpose: true,
           },
         },
       },
@@ -184,6 +185,7 @@ export async function GET(request: NextRequest) {
       basis: task.basis,
       nextDueDate: task.nextDueDate,
       nextDueReading: task.nextDueReading,
+      frequencyUnit: task.frequencyUnit,
       equipmentState: task.equipmentState === 'stopped' ? 'standstill' : task.equipmentState,
     }));
     const now = new Date();

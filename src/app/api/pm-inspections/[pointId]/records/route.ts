@@ -10,6 +10,7 @@ import { resolveCorrectiveInspectionPlanner } from '@/services/pm/resolveCorrect
 import { mayAdvanceInspectionDue, parseInspectionCaptureEvidence, safeInspectionNextDue } from '@/lib/pm-paper-inspection-evidence';
 import { validateManagedPaperReading, normalizeManagedPaperReference } from '@/lib/pm-paper-worksheet-validation';
 import { createPlannerInspectionAlert, type PlannerInspectionAlert } from '@/lib/pm-inspection-planner-alert';
+import { inspectionPurpose, inspectionMayAdvanceDue } from '@/lib/pm-early-field-inspection';
 import { wsNotify } from '@/lib/ws-notify';
 
 /**
@@ -63,12 +64,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Invalid inspection submission key' }, { status: 400 });
     }
     const choice = body.outcome;
-    if (!['pass', 'fail', 'needs_attention'].includes(choice)) {
-      return NextResponse.json({ success: false, error: 'Select Pass, Fail, or Needs Attention' }, { status: 400 });
+    if (!['pass', 'fail', 'needs_attention', 'not_measured'].includes(choice)) {
+      return NextResponse.json({ success: false, error: 'Choose Normal, Needs Attention, Defect or Not Measurable' }, { status: 400 });
+    }
+    let purpose: 'routine' | 'early_check';
+    try { purpose = inspectionPurpose(body.inspectionPurpose); }
+    catch (cause) { return NextResponse.json({ success: false,
+      error: cause instanceof Error ? cause.message : 'Invalid inspection purpose',
+    }, { status: 400 }); }
+    const notMeasured = choice === 'not_measured';
+    let findings = typeof body.findings === 'string' ? body.findings.trim().slice(0, 3000) : '';
+    if (notMeasured && (point.inspectionType !== 'measurement'
+      || (body.value !== null && body.value !== undefined && String(body.value).trim() !== '')
+      || findings.length < 10)) {
+      return NextResponse.json({ success: false,
+        error: 'Not measurable requires an instrument check, no numeric reading, and an explanation of at least 10 characters',
+      }, { status: 400 });
     }
     const limits = parseInspectionLimits(point.normalRange);
-    const inspection = evaluateInspectionResult(point.inspectionType, body.value, choice, limits);
-    let findings = typeof body.findings === 'string' ? body.findings.trim().slice(0, 3000) : '';
+    const inspection = notMeasured
+      ? { value: null, numericValue: null, outcome: 'not_measured' as const, isAlarm: false }
+      : evaluateInspectionResult(point.inspectionType, body.value, choice, limits);
     const recommendation = typeof body.recommendation === 'string' ? body.recommendation.trim().slice(0, 3000) : '';
     if (inspection.isAlarm && !findings && inspection.numericValue !== null) {
       findings = `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the accepted range (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
@@ -84,7 +100,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const issue = await db.pmPaperWorksheetIssue.findUnique({
         where: { reference: evidence.paperReference },
         select: { reference: true, assetId: true, plantId: true, equipmentState: true,
-          pointIds: true, issuedAt: true },
+          pointIds: true, issuedAt: true, purpose: true },
       });
       const invalid = validateManagedPaperReading(issue, {
         reference: evidence.paperReference, assetId: asset.id,
@@ -92,6 +108,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         fieldInspectedAt: evidence.fieldInspectedAt,
       });
       if (invalid) return NextResponse.json({ success: false, error: invalid }, { status: 400 });
+      if (issue && body.inspectionPurpose !== undefined && purpose !== issue.purpose) {
+        return NextResponse.json({ success: false,
+          error: 'Inspection purpose differs from the issued worksheet', }, { status: 409 });
+      }
+      if (issue) purpose = inspectionPurpose(issue.purpose);
     }
     const location = await getAssetLiveLocationMap([asset.id]);
     const snapshot = buildMaintenanceLocationSnapshot(location.get(asset.id) ?? null);
@@ -116,6 +137,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             recommendation: recommendation || null,
             equipmentState,
             ...evidence,
+            inspectionPurpose: purpose,
           })) {
             throw new Error('Inspection submission key conflict');
           }
@@ -160,6 +182,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           inspectedAt,
           equipmentState,
           ...evidence,
+          inspectionPurpose: purpose,
         },
       });
       if (inspection.numericValue !== null) {
@@ -194,8 +217,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let reusedWorkOrder = Boolean(workOrder);
       let nextInspection: Date | null = null;
       let plannerAlert: PlannerInspectionAlert | null = null;
-      if (!inspection.isAlarm && !workOrder) {
-        if (mayAdvanceDue) {
+      if (notMeasured) {
+        // Unavailable instrument test: record the reason, but never invent a
+        // numeric reading, draft a defect WO, or advance an inspection due.
+      } else if (!inspection.isAlarm && !workOrder) {
+        if (mayAdvanceDue && inspectionMayAdvanceDue(purpose, inspection.outcome)) {
           const computedNext = nextInspectionDate(observedAt, refreshedPoint.frequency);
           if (!computedNext) throw new Error('Unsupported inspection recurrence; update the inspection plan');
           nextInspection = safeInspectionNextDue(
@@ -208,7 +234,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Old paper PASS must never rewind a newer PM cycle.
       } else if (!inspection.isAlarm) {
         // Later PASS must never clear an open corrective work order.
-        if (mayAdvanceDue) await tx.componentInspectionPoint.update({
+        if (mayAdvanceDue && inspectionMayAdvanceDue(purpose, inspection.outcome)) await tx.componentInspectionPoint.update({
           where: { id: pointId }, data: { lastInspected: observedAt },
         });
       } else {

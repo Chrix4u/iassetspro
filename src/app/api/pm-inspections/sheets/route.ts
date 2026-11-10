@@ -5,10 +5,11 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { sameSheetScope, paperSheetProgress, isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
 import { plannedPaperInspectionScope, type InspectionTaskPointLink } from '@/lib/pm-task-point-scope';
+import { inspectionPurpose, plannedFieldDate } from '@/lib/pm-early-field-inspection';
 
 const select = { id: true, requestKey: true, reference: true, assetId: true, plantId: true,
   machineCode: true, equipmentState: true, issuedById: true, issuedAt: true,
-  taskIds: true, pointIds: true, taskPointSnapshot: true } as const;
+  taskIds: true, pointIds: true, taskPointSnapshot: true, plannedForDate: true, purpose: true } as const;
 function allowed(session: NonNullable<ReturnType<typeof getSession>>) {
   return isAdmin(session) || ['pm_schedules.view','pm_schedules.create','pm_schedules.update',
     'work_orders.view','work_orders.view_own','digital_twin.view'].some((p) => hasPermission(session,p));
@@ -58,6 +59,16 @@ export async function POST(request: NextRequest) {
     const assetId = typeof body.assetId === 'string' ? body.assetId.trim() : '';
     const state = body.equipmentState, key = typeof body.requestKey === 'string' ? body.requestKey.trim() : '';
     const tasks = parseIds(body.taskIds,1500), points = parseIds(body.pointIds,3000);
+    let plannedForDate: string;
+    let purpose: 'routine' | 'early_check';
+    try {
+      plannedForDate = plannedFieldDate(body.plannedForDate);
+      purpose = inspectionPurpose(body.purpose);
+    } catch (error) {
+      return NextResponse.json({ success: false,
+        error: error instanceof Error ? error.message : 'Invalid field visit details',
+      }, { status: 400 });
+    }
     const requestPairs = parseTaskPointPairs(body.taskPointLinks);
     if (!assetId || assetId.length > 120 || !validState(state)
       || !/^[A-Za-z0-9_-]{8,120}$/.test(key) || !tasks || !points
@@ -69,6 +80,8 @@ export async function POST(request: NextRequest) {
     const prior = await db.pmPaperWorksheetIssue.findUnique({ where: { requestKey: key }, select });
     if (prior) {
       if (prior.assetId !== assetId || prior.equipmentState !== state || prior.issuedById !== session.userId
+        || (prior.plannedForDate || prior.issuedAt.toISOString().slice(0, 10)) !== plannedForDate
+        || prior.purpose !== purpose
         || !sameSheetScope(JSON.parse(prior.taskIds),tasks) || !sameSheetScope(JSON.parse(prior.pointIds),points)
         || (requestPairs && !sameTaskPointPairs(
           prior.taskPointSnapshot ? JSON.parse(prior.taskPointSnapshot) : [], requestPairs)))
@@ -135,13 +148,14 @@ export async function POST(request: NextRequest) {
         data: { reference, requestKey: key, assetId, plantId: asset.plantId,
           machineCode: asset.assetTag, equipmentState: state, issuedById: session.userId,
           taskIds: JSON.stringify(tasks), pointIds: JSON.stringify(points),
-          taskPointSnapshot: JSON.stringify(verifiedPairs) }, select,
+          taskPointSnapshot: JSON.stringify(verifiedPairs), plannedForDate, purpose }, select,
       });
       await tx.auditLog.create({ data: {
         userId: session.userId, action: 'create', entityType: 'pm_paper_worksheet_issue',
         entityId: item.id, plantId: asset.plantId,
         newValues: JSON.stringify({ reference, assetId, equipmentState: state,
-          taskCount: tasks.length, pointCount: points.length, taskPointPairs: verifiedPairs }),
+          taskCount: tasks.length, pointCount: points.length, taskPointPairs: verifiedPairs,
+          plannedForDate, purpose, scheduleDueDatesChanged: false }),
       } });
       return item;
     });
@@ -169,20 +183,31 @@ export async function GET(request: NextRequest) {
     const saved = items.length ? await db.componentInspectionRecord.findMany({
       where: { paperReference: { in: items.map(i=>i.reference) },
         captureSource:'paper', component: { assetId } },
-      select:{paperReference:true,inspectionPointId:true},
+      select:{paperReference:true,inspectionPointId:true,result:true},
+      orderBy:{inspectedAt:'desc'},
     }) : [];
-    const matched = new Map<string,Set<string>>();
+    // Most recent submission per sheet/point is authoritative. A later valid
+    // reading resolves an earlier N/A, without erasing its historical record.
+    const latestBySheet = new Map<string,Map<string,string>>();
     for (const rec of saved) {
       if (!rec.paperReference) continue;
-      if (!matched.has(rec.paperReference)) matched.set(rec.paperReference,new Set());
-      matched.get(rec.paperReference)!.add(rec.inspectionPointId);
+      if (!latestBySheet.has(rec.paperReference)) latestBySheet.set(rec.paperReference,new Map());
+      const byPoint = latestBySheet.get(rec.paperReference)!;
+      if (!byPoint.has(rec.inspectionPointId)) byPoint.set(rec.inspectionPointId,rec.result);
     }
     return NextResponse.json({
-      success:true,data:items.map(i=>({
-        reference:i.reference,issuedAt:i.issuedAt,issuedById:i.issuedById,
-        taskPointSnapshot: i.taskPointSnapshot ? JSON.parse(i.taskPointSnapshot) : null,
-        ...paperSheetProgress(JSON.parse(i.pointIds),matched.get(i.reference)||new Set<string>()),
-      })),
+      success:true,data:items.map(i=>{
+        const readings = latestBySheet.get(i.reference) || new Map<string,string>();
+        const progress = paperSheetProgress(JSON.parse(i.pointIds),new Set(readings.keys()));
+        const followUpRequired = [...readings.values()].filter(result=>result==='not_measured').length;
+        return {
+          reference:i.reference,issuedAt:i.issuedAt,issuedById:i.issuedById,
+          plannedForDate:i.plannedForDate, purpose:i.purpose,
+          taskPointSnapshot: i.taskPointSnapshot ? JSON.parse(i.taskPointSnapshot) : null,
+          ...progress, followUpRequired,
+          status: !progress.remaining && followUpRequired ? 'needs_follow_up' : progress.status,
+        };
+      }),
     });
   } catch(error) {
     return NextResponse.json({success:false,error:error instanceof Error?error.message:'Unable to list worksheets'},{status:500});

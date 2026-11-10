@@ -316,7 +316,7 @@ export function PmInspectionWorksheetPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border bg-muted/20 p-3 sm:p-4" data-testid="pm-inspection-generate-machine">
-          <h3 className="text-sm font-semibold">Generate an inspection sheet for one machine</h3>
+          <h3 className="text-sm font-semibold">Generate an Action List for one machine</h3>
           <p className="mb-3 text-xs text-muted-foreground">
             1. Choose the machine. 2. Choose Running or Standstill. 3. Generate the sheet,
             then click Print Blank Action List. Every assigned part appears beneath its inspection task, with approved parameter limits.
@@ -344,7 +344,7 @@ export function PmInspectionWorksheetPanel() {
             </div>
             <Button type="button" className="h-9" disabled={!filters.assetId}
               onClick={() => { setExceptionsOpen(false); setMachineChecklistOpen(true); }}>
-              <ClipboardCheck className="mr-1.5 h-4 w-4" />Generate Machine Sheet
+              <ClipboardCheck className="mr-1.5 h-4 w-4" />Generate Action List
             </Button>
           </div>
         </div>

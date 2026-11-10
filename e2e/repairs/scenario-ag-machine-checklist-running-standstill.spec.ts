@@ -176,7 +176,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true })).toBeVisible();
   await page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true }).click();
 
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   const checklist = page.getByTestId('pm-machine-checklist');
   await expect(checklist).toContainText('Machine Action List — Running', { timeout: 20_000 });
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
@@ -261,7 +261,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // silently submitted again under the standstill inspection context.
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: /Standstill \/ Stopped/ }).click();
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Action List — Standstill');
   await expect(page.getByTestId('pm-machine-checklist').getByTestId('pm-machine-checklist-row')).toHaveCount(0);
   expect(posted).toHaveLength(2);
@@ -271,7 +271,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // Return to Running and transcribe a field technician's paper measurements.
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
-  await worksheet.getByRole('button', { name: 'Generate Machine Sheet' }).click();
+  await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await checklist.getByRole('combobox', { name: 'Inspection reading source' }).click();
   await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();

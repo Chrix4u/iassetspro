@@ -21,6 +21,20 @@ const point = (id: string, cId: string, changes: Partial<MachineChecklistPoint> 
   latestRecord: null, openCorrectiveWorkOrder: null, ...changes,
 });
 describe('paper field inspection worksheet', () => {
+  it('clearly labels a maximum-only instrument threshold rather than printing a misleading blank minimum', () => {
+    const one = component('c-max', 'C314-MAX');
+    const group: MachineChecklistGroup = {
+      component: one,
+      tasks: [task('inspect', 1, one)],
+      points: [point('t-max', one.id, {
+        name: 'Temperature', parameterKey: 'temperature',
+        normalRange: JSON.stringify({min:null,max:75,unit:'°C'}),
+      })],
+    };
+    const row = buildPaperInspectionTasks([group], [])[0].rows[0];
+    expect(row.acceptedRange).toBe('MAX 75');
+    expect(row.unit).toBe('°C');
+  });
   it('prints 50 real parts under two assigned tasks, with 78 actual instrument boxes and the 15 Nov PM due date', () => {
     const groups: MachineChecklistGroup[] = Array.from({length:50}, (_, index) => {
       const part = component('part-' + (index + 1), 'M-050-' + String(index + 1).padStart(3,'0'));

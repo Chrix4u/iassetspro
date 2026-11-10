@@ -78,7 +78,9 @@ export function buildMachineInspectionPrintRows(
       const reference = point.inspectionType === 'measurement'
         ? (limits.min === null && limits.max === null
           ? 'Numeric limits NOT SET'
-          : `${limits.min ?? '—'} – ${limits.max ?? '—'} ${limits.unit || ''}`.trim())
+          : `${limits.min === null ? 'MAX ' + limits.max
+            : limits.max === null ? 'MIN ' + limits.min
+              : limits.min + ' – ' + limits.max} ${limits.unit || ''}`.trim())
         : point.inspectionType === 'visual'
           ? actionListAcceptance(point.normalRange) || 'Sight / qualitative observation'
           : 'Legacy method — reconfigure';

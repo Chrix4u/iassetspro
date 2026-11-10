@@ -89,7 +89,9 @@ export function buildPaperInspectionTasks(
         const acceptedRange = point.inspectionType === 'visual'
           ? actionListAcceptance(point.normalRange) || 'Describe the actual visible condition'
           : missingLimits ? 'Limits NOT CONFIGURED'
-            : String(reference.min ?? '—') + ' to ' + String(reference.max ?? '—');
+            : reference.min === null ? 'MAX ' + reference.max
+              : reference.max === null ? 'MIN ' + reference.min
+                : String(reference.min) + ' to ' + String(reference.max);
         section.rows.push({
           id: unique, pointId: point.id, partId: group.component.id,
           partCode: group.component.componentCode, partName: group.component.name,

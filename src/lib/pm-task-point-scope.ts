@@ -26,6 +26,29 @@ export function inspectionPointsForTask(
   return { points: group.points, mappingRequired: false, explicit: false };
 }
 
+/** A physical checkpoint is exported once, with only the PM tasks actually
+ * authorized for that checkpoint. Never label a measured value with every
+ * task on its part when the stored associations are more specific.
+ */
+export function inspectionTaskLabelsForPoint(
+  group: MachineChecklistGroup,
+  pointId: string,
+  links: readonly InspectionTaskPointLink[],
+): string[] {
+  if (!group.points.some((point) => point.id === pointId)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const assignment of group.tasks) {
+    const task = assignment.pmTask;
+    if (seen.has(task.id)) continue;
+    seen.add(task.id);
+    if (inspectionPointsForTask(group, task.id, links).points.some((point) => point.id === pointId)) {
+      result.push(`#${task.taskNumber} ${task.description}`);
+    }
+  }
+  return result;
+}
+
 export function missingInspectionTaskMappings(
   groups: readonly MachineChecklistGroup[],
   links: readonly InspectionTaskPointLink[],

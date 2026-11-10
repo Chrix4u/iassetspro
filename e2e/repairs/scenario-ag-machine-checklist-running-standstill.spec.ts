@@ -207,14 +207,14 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // 7.9 mm/s reading or a fabricated Good/Bad result.
   await page.evaluate(() => { window.print = () => undefined; });
   await checklist.getByRole('button', { name: 'Print task-grouped blank inspection worksheet' }).click();
-  await expect(printView).toContainText('BLANK FIELD INSPECTION SHEET');
+  await expect(printView).toContainText('FIELD SHEET — grouped by task');
   await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
   await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
   await expect(printView).toContainText('Drive Assembly');
   await expect(printView).toContainText('C314-21-02');
-  await expect(printView).toContainText('Actual reading');
+  await expect(printView).toContainText('Actual value (write here)');
   await expect(printView).not.toContainText('7.9 mm/s');
   await expect(printView.getByLabel('Blank space for handwritten actual reading')).toHaveCount(2);
   await page.emulateMedia({ media: 'print' });

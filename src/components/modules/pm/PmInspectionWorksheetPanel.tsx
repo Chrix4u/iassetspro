@@ -348,15 +348,57 @@ export function PmInspectionWorksheetPanel() {
             </Button>
           </div>
         </div>
-        <div className={machineChecklistOpen ? 'hidden' : 'grid grid-cols-2 gap-2 xl:grid-cols-8'}>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Search</Label><Input className="mt-1 h-9" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/></div>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Department</Label><div className="mt-1"><AsyncSearchableSelect value={filters.departmentId} onValueChange={(departmentId) => updateFilters({ departmentId })} fetchOptions={fetchDepartments} placeholder="All departments"/></div></div>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Machine</Label><div className="mt-1"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div></div>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Part / Instrument</Label><div className="mt-1"><AsyncSearchableSelect value={filters.componentId} onValueChange={(componentId) => updateFilters({ componentId })} fetchOptions={fetchFilterComponents} placeholder={filters.assetId ? 'All parts' : 'Select machine first'} disabled={!filters.assetId}/></div></div>
-          <div><Label className="text-xs">Method</Label><Select value={filters.method} onValueChange={(method) => updateFilters({ method })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="visual">Sight / Visual</SelectItem><SelectItem value="measurement">Instrument / Reading</SelectItem></SelectContent></Select></div>
-          <div><Label className="text-xs">Due</Label><Select value={filters.dueState} onValueChange={(dueState) => updateFilters({ dueState })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All due states</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_today">Due Today</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="unscheduled">Unscheduled</SelectItem></SelectContent></Select></div>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Recorded outcome (history)</Label><Select value={filters.result} onValueChange={(result) => updateFilters({ result })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="not_inspected">Never inspected</SelectItem><SelectItem value="pass">Has passed</SelectItem><SelectItem value="fail">Has failed</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="not_measured">Not measurable — follow-up</SelectItem></SelectContent></Select></div>
-          <div className="col-span-2 xl:col-span-1"><Label className="text-xs">Corrective follow-up</Label><Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}><SelectTrigger className="mt-1 h-9"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All follow-ups</SelectItem><SelectItem value="open">Open corrective WO</SelectItem><SelectItem value="none">No open corrective WO</SelectItem></SelectContent></Select></div>
+        <div className={machineChecklistOpen ? 'hidden' : 'space-y-3'} data-testid="pm-inspection-filters">
+          {/* Keep the machine selector spacious: three fields on the first desktop row. */}
+          <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.65fr)]" data-testid="pm-inspection-filters-primary">
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Search</Label>
+              <Input className="mt-1 h-9 w-full min-w-0" placeholder="Machine, part, parameter..." value={filters.search} onChange={(event) => updateFilters({ search: event.target.value })}/>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Department</Label>
+              <div className="mt-1 min-w-0"><AsyncSearchableSelect value={filters.departmentId} onValueChange={(departmentId) => updateFilters({ departmentId })} fetchOptions={fetchDepartments} placeholder="All departments"/></div>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Machine</Label>
+              <div className="mt-1 min-w-0"><AsyncSearchableSelect value={filters.assetId} onValueChange={(assetId) => updateFilters({ assetId })} fetchOptions={fetchAssets} placeholder="All machines"/></div>
+            </div>
+          </div>
+          {/* Five fields on the second desktop row. Long dropdown labels receive more width. */}
+          <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)]" data-testid="pm-inspection-filters-secondary">
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Part / Instrument</Label>
+              <div className="mt-1 min-w-0"><AsyncSearchableSelect value={filters.componentId} onValueChange={(componentId) => updateFilters({ componentId })} fetchOptions={fetchFilterComponents} placeholder={filters.assetId ? 'All parts' : 'Select machine first'} disabled={!filters.assetId}/></div>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Method</Label>
+              <Select value={filters.method} onValueChange={(method) => updateFilters({ method })}>
+                <SelectTrigger className="mt-1 h-9 w-full min-w-0"><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="all">All methods</SelectItem><SelectItem value="visual">Sight / Visual</SelectItem><SelectItem value="measurement">Instrument / Reading</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block text-xs leading-snug">Due</Label>
+              <Select value={filters.dueState} onValueChange={(dueState) => updateFilters({ dueState })}>
+                <SelectTrigger className="mt-1 h-9 w-full min-w-0"><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="all">All due states</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="due_today">Due Today</SelectItem><SelectItem value="upcoming">Upcoming</SelectItem><SelectItem value="unscheduled">Unscheduled</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block break-words text-xs leading-snug">Recorded outcome (history)</Label>
+              <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
+                <SelectTrigger className="mt-1 h-9 w-full min-w-0"><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="all">All outcomes</SelectItem><SelectItem value="not_inspected">Never inspected</SelectItem><SelectItem value="pass">Has passed</SelectItem><SelectItem value="fail">Has failed</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="not_measured">Not measurable — follow-up</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-0 flex-col justify-end">
+              <Label className="block break-words text-xs leading-snug">Corrective follow-up</Label>
+              <Select value={filters.followUp} onValueChange={(followUp) => updateFilters({ followUp })}>
+                <SelectTrigger className="mt-1 h-9 w-full min-w-0"><SelectValue/></SelectTrigger>
+                <SelectContent><SelectItem value="all">All follow-ups</SelectItem><SelectItem value="open">Open corrective WO</SelectItem><SelectItem value="none">No open corrective WO</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
 
         {exceptionsOpen && <PmInspectionExceptionsPanel

@@ -107,11 +107,11 @@ export function PmPlanningPage() {
       <div className="mt-2 grid gap-2 text-sm md:grid-cols-3">
         <div className="rounded-lg border bg-background p-3"><strong>1. Check a machine</strong><p className="mt-1 text-xs text-muted-foreground">Select a machine below to see tasks due now, soon or overdue, including the affected parts.</p></div>
         <div className="rounded-lg border bg-background p-3"><strong>2. Print an inspection sheet</strong><p className="mt-1 text-xs text-muted-foreground">Choose the machine and Running or Standstill. Print every assigned part under its inspection task, with blank boxes for readings.</p></div>
-        <div className="rounded-lg border bg-background p-3"><strong>3. Enter results and follow up</strong><p className="mt-1 text-xs text-muted-foreground">Record the actual values from the technician's sheet. Review abnormal findings and linked corrective work orders.</p></div>
+        <div className="rounded-lg border bg-background p-3"><strong>3. Enter the complete sheet</strong><p className="mt-1 text-xs text-muted-foreground">Select the issued paper reference, transcribe Temp / Vib / Sound / Corr by part in the spreadsheet, then Save All. Review abnormal readings and corrective WOs.</p></div>
       </div>
     </section>
-    <PmMachineRollupPanel />
     <PmInspectionWorksheetPanel />
+    <PmMachineRollupPanel />
     <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
     <details className="rounded-xl border bg-card p-3 sm:p-4" data-testid="pm-more-planning-reports"
       onToggle={(event) => setShowReports(event.currentTarget.open)}>

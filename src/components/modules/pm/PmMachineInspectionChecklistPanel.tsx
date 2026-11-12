@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PmMachineInspectionPrint } from './PmMachineInspectionPrint';
+import { PmIndustrialInspectionTable } from './PmIndustrialInspectionTable';
 import { buildPaperInspectionTasks, type PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import { assessMachineInspectionReadiness } from '@/lib/pm-machine-inspection-readiness';
 import { isRecordablePaperPoint } from '@/lib/pm-paper-worksheet-issue';
@@ -115,6 +116,7 @@ export function PmMachineInspectionChecklistPanel({
   const [saveProgress, setSaveProgress] = useState('');
   const [printMode, setPrintMode] = useState<'saved' | 'field'>('saved');
   const [entryLayout, setEntryLayout] = useState<'part' | 'task'>('task');
+  const [compactEntry, setCompactEntry] = useState(true);
   const [taskFilter, setTaskFilter] = useState('all');
   const [partSearch, setPartSearch] = useState('');
   const [captureMode, setCaptureMode] = useState<'digital' | 'paper'>('digital');
@@ -228,6 +230,7 @@ export function PmMachineInspectionChecklistPanel({
     setPlannedForDate(new Date().toISOString().slice(0, 10));
     setMappingPartId(null);
     setTaskFilter('all');
+    setCompactEntry(true);
     setPartSearch('');
     pendingIssueKey.current = null;
   }, [assetId, equipmentState]);
@@ -362,52 +365,62 @@ export function PmMachineInspectionChecklistPanel({
     let failed = 0;
     const failures: string[] = [];
     try {
-      // Sequential writes preserve a clear per-row audit trail; completed rows
-      // stay completed if a later request fails. Keys persist for safe retries.
-      for (const { point, entry } of snapshot) {
-        const requestKey = entry.requestKey || crypto.randomUUID();
-        setSaveProgress(`Recording ${succeeded + failed + 1} / ${snapshot.length}`);
-        setEntries((current) => ({
-          ...current,
-          [point.id]: { ...EMPTY_DRAFT, ...current[point.id], requestKey, saving: true, error: '' },
-        }));
-        try {
-          const result = await api.post<{
-            record: { id: string; result: string };
-            workOrder: { woNumber: string; status: string } | null;
-            duplicate?: boolean;
-          }>(`/api/pm-inspections/${encodeURIComponent(point.id)}/records`, {
-            outcome: entry.outcome,
-            value: point.inspectionType === 'measurement' ? entry.value : '',
-            findings: entry.findings.trim(),
-            recommendation: entry.recommendation.trim(),
-            requestKey,
-            equipmentState,
-            inspectionPurpose: captureMode === 'paper'
-              ? (activeIssuedSheet?.purpose || inspectionPurpose) : inspectionPurpose,
-            ...captureByPoint.get(point.id),
-          });
-          if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
-          succeeded += 1;
+      // A plant may return a sheet with 1,000+ checks. Use a bounded queue,
+      // not 1,000 sequential browser round-trips or an unbounded request burst.
+      // Existing point-level API remains authoritative for per-row validation,
+      // plant scope, idempotency, audit and corrective-WO creation.
+      let cursor = 0;
+      const worker = async () => {
+        for (;;) {
+          const index = cursor++;
+          if (index >= snapshot.length) return;
+          const { point, entry } = snapshot[index];
+          const requestKey = entry.requestKey || crypto.randomUUID();
           setEntries((current) => ({
             ...current,
-            [point.id]: {
-              ...EMPTY_DRAFT, ...current[point.id], requestKey,
-              saving: false, saved: true, error: '',
-              workOrder: result.data?.workOrder?.woNumber || null,
-              recordedOutcome: result.data?.record.result,
-            },
+            [point.id]: { ...EMPTY_DRAFT, ...current[point.id], requestKey, saving: true, error: '' },
           }));
-        } catch (caught) {
-          failed += 1;
-          const message = caught instanceof Error ? caught.message : 'Submission failed';
-          failures.push(`${point.name}: ${message}`);
-          setEntries((current) => ({
-            ...current,
-            [point.id]: { ...EMPTY_DRAFT, ...current[point.id], requestKey, saving: false, error: message },
-          }));
+          try {
+            const result = await api.post<{
+              record: { id: string; result: string };
+              workOrder: { woNumber: string; status: string } | null;
+              duplicate?: boolean;
+            }>(`/api/pm-inspections/${encodeURIComponent(point.id)}/records`, {
+              outcome: entry.outcome,
+              value: point.inspectionType === 'measurement' ? entry.value : '',
+              findings: entry.findings.trim(),
+              recommendation: entry.recommendation.trim(),
+              requestKey,
+              equipmentState,
+              inspectionPurpose: captureMode === 'paper'
+                ? (activeIssuedSheet?.purpose || inspectionPurpose) : inspectionPurpose,
+              ...captureByPoint.get(point.id),
+            });
+            if (!result.success || !result.data) throw new Error(result.error || 'Inspection could not be saved');
+            succeeded += 1;
+            setEntries((current) => ({
+              ...current,
+              [point.id]: {
+                ...EMPTY_DRAFT, ...current[point.id], requestKey,
+                saving: false, saved: true, error: '',
+                workOrder: result.data?.workOrder?.woNumber || null,
+                recordedOutcome: result.data?.record.result,
+              },
+            }));
+          } catch (caught) {
+            failed += 1;
+            const message = caught instanceof Error ? caught.message : 'Submission failed';
+            failures.push(`${point.name}: ${message}`);
+            setEntries((current) => ({
+              ...current,
+              [point.id]: { ...EMPTY_DRAFT, ...current[point.id], requestKey, saving: false, error: message },
+            }));
+          } finally {
+            setSaveProgress(`Recorded ${succeeded + failed} / ${snapshot.length} (${failed} failed)`);
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(6, snapshot.length) }, () => worker()));
       if (succeeded) {
         toast.success(`${succeeded} inspection reading${succeeded === 1 ? '' : 's'} saved. Abnormal readings are sent to corrective WO planning.`);
         // Reload the authoritative latest readings and outstanding WO numbers.
@@ -558,9 +571,9 @@ export function PmMachineInspectionChecklistPanel({
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Print the blank sheet to see each inspection task followed by ALL the parts assigned to it, including their assembly/subassembly codes and an actual-reading box on every row.
-          Record measured temperature, vibration, pressure or sound in their configured units; for sight and qualitative sound checks, describe what you observed.
-          The server validates limits and drafts corrective work orders for abnormalities. Saving readings does not close PM work orders.
+          The printed and electronic sheets share the same task-grouped machine hierarchy and short measurement columns:
+          Temp, Vib, Sound, Corr and Other. Record the actual value in its configured unit, and use Remark for observations.
+          Out-of-range readings draft corrective work orders for planner review; saving readings does not close a work order.
         </p>
         {!data.totalAssignments && <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
           No active {equipmentState} inspection tasks are assigned to this machine. Configure them in PM Planning before capturing a checklist.
@@ -665,14 +678,20 @@ export function PmMachineInspectionChecklistPanel({
           <div>
             <p className="text-sm font-semibold">Enter inspection readings</p>
             <p className="text-xs text-muted-foreground">
-              The task view follows the printed worksheet. Shared part/check points are saved once even if listed under multiple tasks.
+              The spreadsheet matches the printed task/part rows. Enter all readings, then save the sheet once. Shared checks are recorded once.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant={entryLayout === 'task' ? 'default' : 'outline'}
-              aria-pressed={entryLayout === 'task'} onClick={() => setEntryLayout('task')}>By Task (Paper Order)</Button>
-            <Button type="button" size="sm" variant={entryLayout === 'part' ? 'default' : 'outline'}
-              aria-pressed={entryLayout === 'part'} onClick={() => setEntryLayout('part')}>By Part</Button>
+            <Button type="button" size="sm" variant={compactEntry ? 'default' : 'outline'}
+              aria-pressed={compactEntry} onClick={() => setCompactEntry(true)}>Spreadsheet entry</Button>
+            <Button type="button" size="sm" variant={!compactEntry ? 'default' : 'outline'}
+              aria-pressed={!compactEntry} onClick={() => setCompactEntry(false)}>Detailed cards (advanced)</Button>
+            {!compactEntry && <>
+              <Button type="button" size="sm" variant={entryLayout === 'task' ? 'default' : 'outline'}
+                aria-pressed={entryLayout === 'task'} onClick={() => setEntryLayout('task')}>By Task (Paper Order)</Button>
+              <Button type="button" size="sm" variant={entryLayout === 'part' ? 'default' : 'outline'}
+                aria-pressed={entryLayout === 'part'} onClick={() => setEntryLayout('part')}>By Part</Button>
+            </>}
           </div>
         </div>
         <div className="grid min-w-0 gap-2 rounded-lg border p-3 md:grid-cols-2" data-testid="pm-machine-inspection-navigation">
@@ -698,7 +717,18 @@ export function PmMachineInspectionChecklistPanel({
             These filters affect only the on-screen list; the printed field sheet still includes every assigned inspection task and part.
           </p>
         </div>
-        {displayGroups.length === 0 && partSearch.trim() && (
+        {compactEntry && <PmIndustrialInspectionTable
+          sections={taskSections}
+          points={points}
+          getDraft={getDraft}
+          edit={edit}
+          canRecord={canRecord}
+          busy={busy}
+          captureMode={captureMode}
+          taskFilter={taskFilter}
+          partSearch={partSearch}
+        />}
+        {!compactEntry && displayGroups.length === 0 && partSearch.trim() && (
           <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">No parts match your search. Clear the part search to see the full machine.</p>
         )}
         {data.generalTasks.length > 0 && (
@@ -708,7 +738,7 @@ export function PmMachineInspectionChecklistPanel({
             {data.generalTasks.map((task) => <p key={task.id} className="break-words py-1 text-xs">Task #{task.pmTask.taskNumber}: {task.pmTask.description}</p>)}
           </div>
         )}
-        {displayGroups.map((group) => (
+        {!compactEntry && displayGroups.map((group) => (
           <div key={group.paperTask ? group.paperTask.id + ':' + group.component.id : group.component.id}
             className="min-w-0 space-y-2 rounded-lg border" data-testid="pm-machine-checklist-part">
             {group.showTaskHeading && group.paperTask && (
@@ -871,7 +901,7 @@ export function PmMachineInspectionChecklistPanel({
           {canRecord && <Button size="sm" disabled={busy || ready.length === 0}
             onClick={() => void save(ready)}>
             {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin"/> : <ClipboardCheck className="mr-1.5 h-4 w-4"/>}
-            Save Entered Readings ({ready.length})
+            Save All Entered Readings ({ready.length})
           </Button>}
         </div>
       </>}

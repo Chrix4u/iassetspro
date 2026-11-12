@@ -179,6 +179,12 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   const checklist = page.getByTestId('pm-machine-checklist');
   await expect(checklist).toContainText('Machine Action List — Running', { timeout: 20_000 });
+  // Default is the bulk electronic table that mirrors the paper, not one card per check.
+  await expect(checklist.getByTestId('pm-industrial-inspection-grid')).toBeVisible();
+  await expect(checklist.getByTestId('pm-industrial-part-row')).toHaveCount(3);
+  await expect(checklist.getByTestId('pm-industrial-entry-table')).toContainText('Vib');
+  // Legacy detailed mode remains available for individual unusual cases.
+  await checklist.getByRole('button', { name: 'Detailed cards (advanced)' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await expect(checklist).toContainText('C314-21-02');
@@ -209,7 +215,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await checklist.getByRole('textbox', { name: 'Inspection remarks: Vibration' }).fill('High vibration at the drive bearing');
   await soundObservation.fill('Regular pulley sound, no rubbing or rattling');
 
-  await checklist.getByRole('button', { name: 'Save Entered Readings (2)' }).click();
+  await checklist.getByRole('button', { name: 'Save All Entered Readings (2)' }).click();
   await expect(checklist).toContainText('2 entries saved', { timeout: 25_000 });
   expect(posted).toHaveLength(2);
   expect(posted.map((p) => p.pointId).sort()).toEqual(['sound', 'vibration']);
@@ -247,9 +253,12 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
   await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
-  await expect(printView).toContainText('Drive Assembly');
+  await expect(printView).toContainText('Asm');
+  await expect(printView).toContainText('Subasm');
+  await expect(printView).toContainText('Temp');
+  await expect(printView).toContainText('Vib');
   await expect(printView).toContainText('C314-21-02');
-  await expect(printView).toContainText('Actual value (write here)');
+  await expect(printView).toContainText('Remark');
   await expect(printView).not.toContainText('7.9 mm/s');
   await expect(printView.getByLabel('Blank space for handwritten actual reading')).toHaveCount(2);
   await page.emulateMedia({ media: 'print' });
@@ -263,6 +272,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await page.getByRole('option', { name: /Standstill \/ Stopped/ }).click();
   await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
   await expect(page.getByTestId('pm-machine-checklist')).toContainText('Machine Action List — Standstill');
+  await checklist.getByRole('button', { name: 'Detailed cards (advanced)' }).click();
   await expect(page.getByTestId('pm-machine-checklist').getByTestId('pm-machine-checklist-row')).toHaveCount(0);
   expect(posted).toHaveLength(2);
   const width = await checklist.evaluate((element) => element.scrollWidth - element.clientWidth);
@@ -272,6 +282,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await worksheet.getByTestId('pm-inspection-generate-machine').getByText('Inspection type', { exact: true }).locator('..').getByRole('combobox').click();
   await page.getByRole('option', { name: 'Running', exact: true }).click();
   await worksheet.getByRole('button', { name: 'Generate Action List' }).click();
+  await checklist.getByRole('button', { name: 'Detailed cards (advanced)' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-row')).toHaveCount(2);
   await checklist.getByRole('combobox', { name: 'Inspection reading source' }).click();
   await page.getByRole('option', { name: 'Transcribe paper worksheet' }).click();

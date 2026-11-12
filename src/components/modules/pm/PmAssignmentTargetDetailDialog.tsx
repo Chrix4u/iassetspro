@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React from 'react';
 import type { PmAssignmentTargetGroup, PmAssignmentTargetListRecord } from '@/lib/pm-assignment-target-list';
 import { pmAssignmentFrequencyType } from '@/lib/pm-assignment-target-list';
@@ -8,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 
 const pmLabel: Record<string, string> = { tbm: 'TBM', ubm: 'UBM', cbm: 'CBM', fbm: 'FBM' };
 const frequencyLabel = (row: PmAssignmentTargetListRecord) => ({ time_day: 'Time / Day', meter: 'Meter Based', event: 'Event / Condition' }[pmAssignmentFrequencyType(row)]);
-const dateTime = (value: string | Date | null) => value ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+const dateTime = (value: string | Date | null) => formatUiDateTime(value);
 
 function intervalValue(row: PmAssignmentTargetListRecord) {
   const frequencyType = pmAssignmentFrequencyType(row);

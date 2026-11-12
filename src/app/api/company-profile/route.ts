@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { normalizeDayFirstDateFormat } from '@/lib/date-display';
 
 export async function GET(request: NextRequest) {
   try {
@@ -87,7 +88,7 @@ export async function PUT(request: NextRequest) {
         fiscalYearStart: body.fiscalYearStart || 'January',
         timezone: body.timezone || 'Africa/Accra',
         currency: body.currency || 'GHS',
-        dateFormat: body.dateFormat || 'DD/MM/YYYY',
+        dateFormat: normalizeDayFirstDateFormat(body.dateFormat),
         isSetupComplete: isNowSetupComplete,
         setupCompletedAt: isNowSetupComplete ? new Date() : null,
       },
@@ -108,7 +109,7 @@ export async function PUT(request: NextRequest) {
         fiscalYearStart: body.fiscalYearStart ?? undefined,
         timezone: body.timezone ?? undefined,
         currency: body.currency ?? undefined,
-        dateFormat: body.dateFormat ?? undefined,
+        dateFormat: body.dateFormat === undefined ? undefined : normalizeDayFirstDateFormat(body.dateFormat),
         isSetupComplete: isNowSetupComplete,
         setupCompletedAt: isNowSetupComplete && !wasSetupComplete ? new Date() : (isNowSetupComplete ? (existing?.setupCompletedAt ?? new Date()) : null),
       },

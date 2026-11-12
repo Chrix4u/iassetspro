@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate } from '@/lib/date-display';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -1010,7 +1011,7 @@ export function MachineVisualExplorer({
                           <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
                             <span>{schedule.frequencyType.replace(/_/g, ' ')} × {schedule.frequencyValue}</span>
                             <span>· {schedule.priority}</span>
-                            {schedule.nextDueDate && <span>· Due {new Date(schedule.nextDueDate).toLocaleDateString()}</span>}
+                            {schedule.nextDueDate && <span>· Due {formatUiDate(schedule.nextDueDate)}</span>}
                           </div>
                         </div>
                       ))}
@@ -1075,7 +1076,7 @@ export function MachineVisualExplorer({
                             {entry.workOrder?.status && <Badge variant="outline" className="shrink-0">{entry.workOrder.status}</Badge>}
                           </div>
                           <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-                            {entry.completedAt && <span>{new Date(entry.completedAt).toLocaleDateString()}</span>}
+                            {entry.completedAt && <span>{formatUiDate(entry.completedAt)}</span>}
                             {entry.durationMinutes != null && <span>· {entry.durationMinutes} min</span>}
                             {entry.performedBy?.fullName && <span>· {entry.performedBy.fullName}</span>}
                           </div>

@@ -6,15 +6,11 @@ import type { PrintableMachineInspectionData } from '@/lib/pm-machine-checklist-
 import { buildPaperInspectionTasks } from '@/lib/pm-machine-field-worksheet';
 import { buildIndustrialInspectionMatrix, INDUSTRIAL_INSPECTION_COLUMNS } from '@/lib/pm-industrial-inspection-matrix';
 import { missingInspectionTaskMappings } from '@/lib/pm-task-point-scope';
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import {
   buildMachineInspectionPrintRows,
   machineInspectionPrintSummary,
 } from '@/lib/pm-machine-checklist-print';
-
-function displayTime(input: string): string {
-  const date = new Date(input);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
-}
 
 /**
  * Dedicated paper/PDF report, visually based on the engineer's machine
@@ -105,6 +101,22 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
           #pm-machine-inspection-print .pm-paper-cell-empty { background: #f7f7f7 !important; }
           #pm-machine-inspection-print .pm-paper-extra-line { display: inline-block !important; width: 5mm; min-height: 2mm; border-bottom: 1px solid #9ca3af; }
           #pm-machine-inspection-print .pm-print-header-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+          #pm-machine-inspection-print .pm-print-heading-columns {
+            display: grid !important;
+            grid-template-columns: minmax(0, 65fr) minmax(0, 35fr) !important;
+            gap: 2.5mm !important;
+            align-items: start !important;
+          }
+          #pm-machine-inspection-print .pm-print-heading-columns > * { min-width: 0 !important; }
+          #pm-machine-inspection-print .pm-print-machine-description {
+            overflow-wrap: anywhere !important;
+            white-space: normal !important;
+          }
+          #pm-machine-inspection-print .pm-print-heading-meta {
+            overflow-wrap: anywhere !important;
+            white-space: normal !important;
+            text-align: right !important;
+          }
 
           #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 4.2mm; border-bottom: 1px solid #9ca3af; background: #fff !important; }
           #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 4.2mm; border-bottom: 1px solid #9ca3af; background: #fff !important; }
@@ -124,17 +136,17 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
         {mode === 'field' ? (
           <>
             <header className="pm-print-no-break mb-3">
-              <div className="flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-2">
-                <div>
+              <div className="pm-print-heading-columns grid grid-cols-[minmax(0,65fr)_minmax(0,35fr)] items-start gap-2 border-b-2 border-slate-900 pb-2">
+                <div className="min-w-0">
                   <p className="text-xs font-semibold">iAssetsPro · Preventive Maintenance</p>
                   <h1 className="text-xl font-bold">ACTION LIST — {data.equipmentState === 'running' ? 'Running' : 'Standstill'}</h1>
                   <p className="text-base font-bold">{data.machine.name}</p>
                   <p>Machine code: <strong>{data.machine.assetTag}</strong></p>
-                  <p>Machine description: {data.machine.description || data.machine.name}</p>
+                  <p className="pm-print-machine-description">Machine description: {data.machine.description || data.machine.name}</p>
                   {data.machine.location && <p>Location: {data.machine.location}</p>}
                 </div>
-                <div className="text-right text-xs">
-                  <p>Issued: {printedIssue ? displayTime(printedIssue.issuedAt) : 'Not yet issued'}</p>
+                <div className="pm-print-heading-meta min-w-0 text-right text-xs">
+                  <p>Issued: {printedIssue ? formatUiDateTime(printedIssue.issuedAt) : 'Not yet issued'}</p>
                   <p>Visit: {printedIssue?.purpose === 'early_check' ? 'Early condition inspection' : 'Routine inspection'}</p>
                   <p>Plant: {data.machine.plantId}</p>
                   <p>{fieldSections.length} inspection task(s)</p>
@@ -142,7 +154,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </div>
               </div>
               <div className="pm-print-header-grid mt-2 grid grid-cols-2 gap-1 border border-slate-400 p-1 text-[9px]">
-                <span>Planned inspection: <strong data-testid="pm-print-planned-date">{printedIssue?.plannedForDate || '______________'}</strong></span>
+                <span>Planned inspection: <strong data-testid="pm-print-planned-date">{printedIssue?.plannedForDate ? formatUiDate(printedIssue.plannedForDate) : '______________'}</strong></span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
                 <span>Action List reference: <strong data-testid="pm-print-sheet-reference">{printedIssue?.reference || 'NOT ISSUED'}</strong></span>
@@ -265,14 +277,14 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
         ) : (
           <>
         <header className="pm-print-no-break mb-3">
-          <div className="flex items-center justify-between gap-6 border-b-2 border-slate-900 pb-2">
-            <div>
+          <div className="pm-print-heading-columns grid grid-cols-[minmax(0,65fr)_minmax(0,35fr)] items-start gap-2 border-b-2 border-slate-900 pb-2">
+            <div className="min-w-0">
               <h1 className="text-xl font-bold uppercase">Action List — saved inspection results — {data.equipmentState}</h1>
               <p className="text-sm font-semibold">{data.machine.name}</p>
               <p>Machine / asset code: <strong>{data.machine.assetTag}</strong></p>
             </div>
-            <div className="text-right text-xs">
-              <p>Generated: {displayTime(data.generatedAt)}</p>
+            <div className="pm-print-heading-meta min-w-0 text-right text-xs">
+              <p>Generated: {formatUiDateTime(data.generatedAt)}</p>
               <p>Plant ID: {data.machine.plantId}</p>
               <p>{data.totalAssignments} assigned PM inspection tasks</p>
             </div>

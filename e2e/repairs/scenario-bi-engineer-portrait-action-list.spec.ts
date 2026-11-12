@@ -46,6 +46,19 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   const rows=paper.getByTestId('pm-paper-field-row');
   expect(await rows.count()).toBeGreaterThanOrEqual(5);
   await page.emulateMedia({media:'print'});
+  const split=await paper.locator('.pm-print-heading-columns').first().evaluate(node=>{
+    const columns=[...node.children].slice(0,2).map(child=>child.getBoundingClientRect());
+    return {
+      ratio: columns[0].width/(columns[0].width+columns[1].width),
+      gap: columns[1].left-columns[0].right,
+      firstRight: columns[0].right,
+      secondLeft: columns[1].left,
+    };
+  });
+  expect(split.ratio,'machine description takes 65% and does not squeeze right-hand details').toBeGreaterThan(0.63);
+  expect(split.ratio).toBeLessThan(0.67);
+  expect(split.gap,'machine description must not overlap the adjacent details').toBeGreaterThanOrEqual(0);
+  await expect(paper.getByTestId('pm-print-planned-date')).toHaveText(/^\d{2}[\/-]\d{2}[\/-]\d{4}$/);
   const styles=await paper.locator('.pm-paper-code').evaluateAll(nodes=>nodes.map(node=>{
     const css=getComputedStyle(node);
     return {space:css.whiteSpace,height:node.getBoundingClientRect().height,scrollHeight:node.scrollHeight};
@@ -70,7 +83,7 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   writeFileSync(path,pdf);
   const info=execFileSync('pdfinfo',[path],{encoding:'utf8'});
   unlinkSync(path);
-  expect(info).toMatch(/Page size:\s+595\.\d+ x 841\.\d+ pts \(A4\)/i);
+  expect(info).toMatch(/Page size:\s+59[45]\.\d+ x 84[12]\.\d+ pts \(A4\)/i);
   expect(info).not.toMatch(/842\.\d+ x 595\.\d+/);
   const pageCount=Number(info.match(/Pages:\s+(\d+)/)?.[1]||0);
   expect(pageCount).toBeGreaterThan(0);

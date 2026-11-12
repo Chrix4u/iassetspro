@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -127,10 +128,7 @@ function getSLAComplianceColor(rate: number): string {
 }
 
 function formatTimestamp(): string {
-  return new Date().toLocaleString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  return formatUiDateTime(new Date());
 }
 
 // ============================================================================

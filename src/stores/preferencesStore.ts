@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
+import { normalizeDayFirstDateFormat } from '@/lib/date-display';
 
 // ============================================================================
 // Types
@@ -33,7 +34,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
     desktopNotifications: false,
   },
   dateTime: {
-    dateFormat: 'YYYY-MM-DD',
+    dateFormat: 'DD/MM/YYYY',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   },
 };
@@ -52,7 +53,7 @@ function loadFromStorage(): UserPreferences {
     return {
       display: { ...DEFAULT_PREFERENCES.display, ...parsed.display },
       notifications: { ...DEFAULT_PREFERENCES.notifications, ...parsed.notifications },
-      dateTime: { ...DEFAULT_PREFERENCES.dateTime, ...parsed.dateTime },
+      dateTime: { ...DEFAULT_PREFERENCES.dateTime, ...parsed.dateTime, dateFormat: normalizeDayFirstDateFormat(parsed.dateTime?.dateFormat) },
     };
   } catch {
     return DEFAULT_PREFERENCES;
@@ -62,6 +63,7 @@ function loadFromStorage(): UserPreferences {
 function saveToStorage(prefs: UserPreferences): void {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(prefs));
+    localStorage.setItem('iassetspro_date_display_format', normalizeDayFirstDateFormat(prefs.dateTime.dateFormat));
   } catch {
     // Silently fail
   }
@@ -97,7 +99,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
         const merged: UserPreferences = {
           display: { ...DEFAULT_PREFERENCES.display, ...res.data.display },
           notifications: { ...DEFAULT_PREFERENCES.notifications, ...res.data.notifications },
-          dateTime: { ...DEFAULT_PREFERENCES.dateTime, ...res.data.dateTime },
+          dateTime: { ...DEFAULT_PREFERENCES.dateTime, ...res.data.dateTime, dateFormat: normalizeDayFirstDateFormat(res.data.dateTime?.dateFormat) },
         };
         saveToStorage(merged);
         set({ preferences: merged, isLoaded: true });
@@ -117,7 +119,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
       const merged: UserPreferences = {
         display: { ...current.display, ...prefs.display },
         notifications: { ...current.notifications, ...prefs.notifications },
-        dateTime: { ...current.dateTime, ...prefs.dateTime },
+        dateTime: { ...current.dateTime, ...prefs.dateTime, dateFormat: normalizeDayFirstDateFormat(prefs.dateTime?.dateFormat ?? current.dateTime.dateFormat) },
       };
 
       const res = await api.put('/api/user/preferences', merged);
@@ -139,7 +141,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => ({
     const merged: UserPreferences = {
       display: { ...current.display, ...prefs.display },
       notifications: { ...current.notifications, ...prefs.notifications },
-      dateTime: { ...current.dateTime, ...prefs.dateTime },
+      dateTime: { ...current.dateTime, ...prefs.dateTime, dateFormat: normalizeDayFirstDateFormat(prefs.dateTime?.dateFormat ?? current.dateTime.dateFormat) },
     };
     saveToStorage(merged);
     set({ preferences: merged });

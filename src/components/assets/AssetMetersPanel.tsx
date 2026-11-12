@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Gauge, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -133,7 +134,7 @@ export function AssetMetersPanel({
         ) : meters.map((meter) => (
           <div key={meter.id} className="rounded-md border p-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0"><p className="truncate text-xs font-semibold">{meter.name}</p><p className="text-[10px] text-muted-foreground">Current Reading: <strong>{Number(meter.currentValue)} {meter.unit}</strong>{meter.lastReadingAt ? ` · ${new Date(meter.lastReadingAt).toLocaleString()}` : ''}</p></div>
+              <div className="min-w-0"><p className="truncate text-xs font-semibold">{meter.name}</p><p className="text-[10px] text-muted-foreground">Current Reading: <strong>{Number(meter.currentValue)} {meter.unit}</strong>{meter.lastReadingAt ? ` · ${formatUiDateTime(meter.lastReadingAt)}` : ''}</p></div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px]">{meter.unit}</Badge>
                 {canRecordReading && (

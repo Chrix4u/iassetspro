@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate } from '@/lib/date-display';
 import { useRef, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html, Line } from '@react-three/drei';
@@ -195,7 +196,7 @@ function AnnotationPin({ annotation, index }: AnnotationPinProps) {
                   )}
                   {annotation.createdAt && (
                     <span className="text-[8px] text-slate-500">
-                      {new Date(annotation.createdAt).toLocaleDateString()}
+                      {formatUiDate(annotation.createdAt)}
                     </span>
                   )}
                 </div>

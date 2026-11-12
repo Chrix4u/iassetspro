@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate } from '@/lib/date-display';
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
@@ -406,7 +407,7 @@ export function DashboardPage() {
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
             Welcome back, <span className="text-primary">{user?.fullName?.split(' ')[0] || 'User'}</span>
           </h1>
-          <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
+          <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {formatUiDate(new Date())}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {notificationsEnabled && myKPIs.unreadNotifications > 0 && (

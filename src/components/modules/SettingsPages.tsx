@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatUiDate, formatUiDateTime, normalizeDayFirstDateFormat } from '@/lib/date-display';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -1141,7 +1142,7 @@ export function SettingsModulesPage() {
                       {mod.validFrom && mod.validUntil && (
                         <p className="text-[10px] text-muted-foreground">
                           <Calendar className="inline h-3 w-3 mr-1 -mt-px" />
-                          {format(new Date(mod.validFrom), 'MMM d, yyyy')} — {format(new Date(mod.validUntil), 'MMM d, yyyy')}
+                          {formatUiDate(mod.validFrom)} — {formatUiDate(mod.validUntil)}
                         </p>
                       )}
                       {mod.licensedAt && (
@@ -2504,7 +2505,7 @@ export function NotificationsPage() {
                             <div className="space-y-1">
                               <span className="text-muted-foreground">Received</span>
                               <span className="font-medium">
-                                {n.createdAt ? format(new Date(n.createdAt), 'MMM d, yyyy \'at\' h:mm a') : '—'}
+                                {n.createdAt ? formatUiDateTime(n.createdAt) : '—'}
                               </span>
                             </div>
                           </div>
@@ -2723,7 +2724,7 @@ export function SettingsGeneralPage() {
       api.get<{ safetyNotes: string; ppeRequired: string; notes: string }>('/api/settings/work-order-defaults'),
     ]).then(([profileRes, defaultsRes]) => {
       if (profileRes.success && profileRes.data) {
-        setProfile(prev => ({ ...prev, ...profileRes.data }));
+        setProfile(prev => ({ ...prev, ...profileRes.data, dateFormat: normalizeDayFirstDateFormat(profileRes.data?.dateFormat) }));
       }
       if (defaultsRes.success && defaultsRes.data) {
         setWorkOrderDefaults({
@@ -2760,9 +2761,14 @@ export function SettingsGeneralPage() {
         fiscalYearStart: profile.fiscalYearStart,
         timezone: profile.timezone,
         currency: profile.currency,
-        dateFormat: profile.dateFormat,
+        dateFormat: normalizeDayFirstDateFormat(profile.dateFormat),
       });
       if (res.success) {
+        if (typeof window !== 'undefined') {
+          const preferred = normalizeDayFirstDateFormat(profile.dateFormat);
+          localStorage.setItem('company_date_format', preferred);
+          localStorage.setItem('iassetspro_date_display_format', preferred);
+        }
         toast.success('General settings saved');
       } else {
         toast.error(res.error || 'Failed to save settings');
@@ -2962,13 +2968,11 @@ export function SettingsGeneralPage() {
               </div>
               <div className="space-y-2">
                 <Label>Date Format</Label>
-                <Select value={profile.dateFormat || 'DD/MM/YYYY'} onValueChange={v => handleChange('dateFormat', v)}>
+                <Select value={normalizeDayFirstDateFormat(profile.dateFormat)} onValueChange={v => handleChange('dateFormat', v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                    <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                    <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-                    <SelectItem value="DD-MMM-YYYY">DD-MMM-YYYY</SelectItem>
+                    <SelectItem value="DD-MM-YYYY">DD-MM-YYYY</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -3324,7 +3328,7 @@ function EscalationSettingsCard() {
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Last check</span>
-              <span className="font-medium">{new Date(config.lastCheckAt).toLocaleString()}</span>
+              <span className="font-medium">{formatUiDateTime(config.lastCheckAt)}</span>
             </div>
             {config.lastCheckResults && (
               <>
@@ -4168,7 +4172,7 @@ export function SecuritySettingsPage() {
                         </span>
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Created {format(new Date(session.createdAt), 'MMM d, yyyy HH:mm')}
+                        Created {formatUiDateTime(session.createdAt)}
                       </p>
                     </div>
                     <Button
@@ -4243,7 +4247,7 @@ export function SettingsBackupPage() {
   const summaryCards = [
     {
       label: 'Last Backup',
-      value: lastBackup?.date ? format(new Date(lastBackup.date), 'MMM d, HH:mm') : 'Never',
+      value: lastBackup?.date ? formatUiDateTime(lastBackup.date) : 'Never',
       icon: History,
       color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400',
     },
@@ -5295,10 +5299,10 @@ export function UserPreferencesPage() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5"><Label className="text-sm">Date Format</Label><p className="text-xs text-muted-foreground">How dates are displayed</p></div>
-              <Select value={dateTime.dateFormat} onValueChange={v => setDateTime(d => ({ ...d, dateFormat: v }))}>
+              <Select value={normalizeDayFirstDateFormat(dateTime.dateFormat)} onValueChange={v => setDateTime(d => ({ ...d, dateFormat: v }))}>
                 <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[{ value: 'YYYY-MM-DD', label: '2025-01-15 (ISO)' }, { value: 'MM/DD/YYYY', label: '01/15/2025 (US)' }, { value: 'DD/MM/YYYY', label: '15/01/2025 (EU)' }].map(f => (<SelectItem key={f.value} value={f.value}><span className="font-mono text-xs">{f.label}</span></SelectItem>))}
+                  {[{ value: 'DD/MM/YYYY', label: '15/01/2025' }, { value: 'DD-MM-YYYY', label: '15-01-2025' }].map(f => (<SelectItem key={f.value} value={f.value}><span className="font-mono text-xs">{f.label}</span></SelectItem>))}
                 </SelectContent>
               </Select>
             </div>

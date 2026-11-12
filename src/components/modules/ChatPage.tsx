@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -177,7 +178,7 @@ export function ChatPage() {
   const groupedMessages: { date: string; messages: ChatMessage[] }[] = [];
   let currentDate = '';
   for (const msg of messages) {
-    const msgDate = msg.createdAt ? new Date(msg.createdAt).toLocaleDateString() : 'Today';
+    const msgDate = msg.createdAt ? formatUiDate(msg.createdAt) : 'Today';
     if (msgDate !== currentDate) {
       currentDate = msgDate;
       groupedMessages.push({ date: msgDate, messages: [msg] });
@@ -192,7 +193,7 @@ export function ChatPage() {
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
     if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatUiDateTime(date);
   }
 
   return (

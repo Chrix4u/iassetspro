@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Download, Gauge, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import { api } from '@/lib/api';
 import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
 import { PmMachineInspectionChecklistPanel } from './PmMachineInspectionChecklistPanel';
@@ -81,7 +82,7 @@ function readLimits(point: InspectionPoint) {
 function displayDue(value: string | null): string {
   if (!value) return 'Not scheduled';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('en-GB');
+  return Number.isNaN(date.getTime()) ? '—' : formatUiDate(date);
 }
 function badgeVariant(dueState: InspectionPoint['dueState']) {
   return dueState === 'overdue' ? 'destructive' as const : dueState === 'due_today' ? 'secondary' as const : 'outline' as const;
@@ -479,7 +480,7 @@ export function PmInspectionWorksheetPanel() {
                         : latest?.workOrder && <p className="text-muted-foreground">{latest.workOrder.woNumber} · {latest.workOrder.status}</p>}</div>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{latest ? `Recorded ${new Date(latest.inspectedAt).toLocaleDateString('en-GB')}` : 'Awaiting first inspection'}</span>
+                    <span className="text-xs text-muted-foreground">{latest ? `Recorded ${formatUiDate(latest.inspectedAt)}` : 'Awaiting first inspection'}</span>
                     {point.inspectionType === 'visual' || point.inspectionType === 'measurement'
                       ? canRecord && <Button size="sm" variant="outline" onClick={() => { setRecordPoint(point); setRecord(emptyRecord); }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>
                       : <div className="flex flex-wrap items-center justify-end gap-2">

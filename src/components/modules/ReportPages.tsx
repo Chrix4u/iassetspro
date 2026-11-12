@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
@@ -436,7 +437,7 @@ export function ReportsMaintenancePage() {
     });
     exportPDF({
       title: `Asset/Machine WO Report — ${startDate} to ${endDate}`,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `asset-wo-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
@@ -478,7 +479,7 @@ export function ReportsMaintenancePage() {
     if (!reportData || !s) return;
     exportPDF({
       title: reportLabel,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `maintenance-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
@@ -515,7 +516,7 @@ export function ReportsMaintenancePage() {
     const techs = reportData.technicianProductivity || [];
     exportPDF({
       title: `Technician Productivity — ${startDate} to ${endDate}`,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `technician-productivity-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
@@ -541,7 +542,7 @@ export function ReportsMaintenancePage() {
     if (!reportData) return;
     exportPDF({
       title: `Material Consumption — ${startDate} to ${endDate}`,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `material-consumption-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
@@ -572,7 +573,7 @@ export function ReportsMaintenancePage() {
     const dt = reportData.downtimeAnalysis || {};
     exportPDF({
       title: `Downtime Analysis — ${startDate} to ${endDate}`,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `downtime-analysis-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
@@ -604,7 +605,7 @@ export function ReportsMaintenancePage() {
     if (!reportData || !s) return;
     exportPDF({
       title: reportLabel,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `maintenance-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -14,9 +15,7 @@ interface PlantOption { id: string; name: string; code?: string | null }
 type Report = PmPlanningConflictReport & {windowDays:number;from:string;to:string};
 function formatLocal(value:string) {
   const date=new Date(value);
-  return Number.isFinite(date.getTime())?date.toLocaleString('en-GH',{
-    timeZone:'Africa/Accra',day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',
-  }):'Invalid time';
+  return Number.isFinite(date.getTime()) ? formatUiDateTime(date) : 'Invalid time';
 }
 function csvEscape(value:unknown){
   const raw=String(value??'');

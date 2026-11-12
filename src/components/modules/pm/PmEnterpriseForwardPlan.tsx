@@ -1,4 +1,5 @@
 'use client';
+import { formatUiDate } from '@/lib/date-display';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarRange, Download, Factory, Gauge, Loader2, RefreshCw, Users } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -38,7 +39,7 @@ function day(value: string | null) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isFinite(date.getTime())
-    ? date.toLocaleDateString('en-GB', { timeZone: 'UTC', year: 'numeric', month: 'short', day: 'numeric' })
+    ? formatUiDate(date)
     : '—';
 }
 export function PmEnterpriseForwardPlan() {

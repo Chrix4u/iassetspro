@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import ReactFlow, {
   addEdge,
@@ -1933,7 +1934,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
               const typeMeta = diagramTypeMeta[diagram.type] || diagramTypeMeta.process;
               const nodeCount = (() => { try { return JSON.parse(diagram.nodes).length; } catch { return 0; } })();
               const edgeCount = (() => { try { return JSON.parse(diagram.edges).length; } catch { return 0; } })();
-              const timeAgo = new Date(diagram.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              const timeAgo = formatUiDateTime(diagram.updatedAt);
               const lastEditor = diagram.updatedByIdUser?.fullName || diagram.createdByIdUser?.fullName || 'Unknown';
 
               return (

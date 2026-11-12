@@ -1,14 +1,16 @@
 'use client';
 
-import type { KeyboardEvent } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import type { MachineChecklistDraft, MachineChecklistPoint } from '@/lib/pm-machine-checklist';
 import type { PaperInspectionRow, PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
 import {
-  buildIndustrialInspectionMatrix, INDUSTRIAL_INSPECTION_COLUMNS,
+  buildIndustrialInspectionMatrix, missingIndustrialFieldTimePointIds, INDUSTRIAL_INSPECTION_COLUMNS,
   type IndustrialInspectionColumn,
 } from '@/lib/pm-industrial-inspection-matrix';
 import { machineChecklistOutOfRange } from '@/lib/pm-machine-checklist';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 
 export interface IndustrialMatrixEntry extends MachineChecklistDraft {
   fieldInspectedAt?: string;
@@ -23,6 +25,7 @@ interface Props {
   points: MachineChecklistPoint[];
   getDraft: (id: string) => IndustrialMatrixEntry;
   edit: (id: string, patch: Partial<IndustrialMatrixEntry>) => void;
+  fillBlankTimes: (pointIds: string[], time: string) => void;
   canRecord: boolean;
   busy: boolean;
   captureMode: 'digital' | 'paper';
@@ -36,8 +39,9 @@ const displayCell = (value: string) => value && value !== '—' ? value : '—';
  * a single draft ID and are saved once by the parent Save Sheet workflow.
  */
 export function PmIndustrialInspectionTable({
-  sections, points, getDraft, edit, canRecord, busy, captureMode, taskFilter, partSearch,
+  sections, points, getDraft, edit, fillBlankTimes, canRecord, busy, captureMode, taskFilter, partSearch,
 }: Props) {
+  const [commonTime, setCommonTime] = useState('');
   const byPoint = new Map(points.map((point) => [point.id, point]));
   const term = partSearch.trim().toLowerCase();
   const tasks = buildIndustrialInspectionMatrix(sections)
@@ -49,6 +53,11 @@ export function PmIndustrialInspectionTable({
           .some((value) => value.toLowerCase().includes(term))),
     }))
     .filter((task) => task.parts.length > 0);
+  const missingTimeIds = captureMode === 'paper'
+    ? missingIndustrialFieldTimePointIds(tasks, getDraft) : [];
+  const validCommonTime = commonTime.length >= 16
+    && Number.isFinite(new Date(commonTime).getTime())
+    && new Date(commonTime).getTime() <= Date.now();
 
   const valueFor = (point: MachineChecklistPoint, entry: IndustrialMatrixEntry) =>
     point.inspectionType === 'measurement' ? entry.value : entry.findings;
@@ -84,6 +93,25 @@ export function PmIndustrialInspectionTable({
         <p className="font-semibold">Inspection sheet · Task → assembly → part → readings</p>
         <p className="text-muted-foreground">Tab or Enter moves between readings · One Save Sheet button saves all entered checks</p>
       </div>
+      {captureMode === 'paper' && <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/20 p-2.5"
+        data-testid="pm-industrial-common-time">
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor="industrial-common-field-time" className="text-xs">Common field time (optional)</Label>
+          <Input id="industrial-common-field-time" type="datetime-local" className="h-9 min-w-0 w-[230px] max-w-full"
+            value={commonTime} disabled={!canRecord || busy}
+            onChange={(event) => setCommonTime(event.target.value)}/>
+        </div>
+        <Button type="button" size="sm" variant="outline"
+          disabled={!canRecord || busy || !validCommonTime || missingTimeIds.length === 0}
+          onClick={() => fillBlankTimes(missingTimeIds, commonTime)}>
+          Fill blank Times ({missingTimeIds.length})
+        </Button>
+        <p className="basis-full text-[11px] text-muted-foreground">
+          Only use when these checks were actually performed at the same time.
+          Fills visible, unsaved checks only; never overwrites recorded times.
+          The inspection time must be after the issued worksheet date and before now.
+        </p>
+      </div>}
       <div className="max-h-[70vh] overflow-auto rounded-lg border" data-testid="pm-industrial-grid-scroll">
         <table className="w-full min-w-[1430px] border-separate border-spacing-0 text-xs" data-testid="pm-industrial-entry-table">
           <thead className="sticky top-0 z-20 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100">

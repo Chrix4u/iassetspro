@@ -81,3 +81,26 @@ export function buildIndustrialInspectionMatrix(tasks: readonly PaperInspectionT
     return { id: task.id, number: task.number, instruction: task.instruction, parts: [...parts.values()] };
   });
 }
+
+
+/** Return each distinct, unsaved inspection point without a field timestamp.
+ * A part may be repeated under separate tasks, but its point ID must only
+ * be filled once. Only the rows currently visible to the operator are used.
+ */
+export function missingIndustrialFieldTimePointIds(
+  tasks: readonly IndustrialInspectionTask[],
+  getDraft: (id: string) => { fieldInspectedAt?: string; saved?: boolean },
+): string[] {
+  const ids = new Set<string>();
+  for (const task of tasks) {
+    for (const part of task.parts) {
+      for (const check of part.allChecks) {
+        if (!check.pointId || check.requiresConfiguration) continue;
+        const draft = getDraft(check.pointId);
+        if (draft.saved || draft.fieldInspectedAt) continue;
+        ids.add(check.pointId);
+      }
+    }
+  }
+  return [...ids];
+}

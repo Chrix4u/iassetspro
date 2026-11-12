@@ -8,6 +8,7 @@ import {
   TimerReset, Trash2, Wrench, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatUiDateTime } from '@/lib/date-display';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
@@ -138,8 +139,8 @@ function pretty(value?: string | null) {
 
 function fmt(value?: string | Date | null) {
   if (!value) return '-';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '-';
+  const rendered = formatUiDateTime(value);
+  return rendered === '—' ? '-' : rendered;
 }
 
 function toLocalInput(date = new Date()) {

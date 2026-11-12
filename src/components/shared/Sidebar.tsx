@@ -180,7 +180,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'pm-machine-planning', label: 'Machine Work Bundles', icon: Factory, moduleCode: 'pm_schedules' },
         { page: 'pm-forward-planning', label: 'Forward Planning', icon: Calendar, moduleCode: 'pm_schedules' },
         { page: 'pm-compliance', label: 'PM Compliance', icon: BarChart3, moduleCode: 'pm_schedules' },
-        { page: 'pm-inspection-exceptions', label: 'Inspection Exceptions', icon: AlertTriangle, moduleCode: 'pm_schedules' },
+        { page: 'pm-inspection-exceptions', label: 'Inspection Exceptions', icon: TriangleAlert, moduleCode: 'pm_schedules' },
         { page: 'pm-tasks', label: 'Task Library', icon: ListChecks, moduleCode: 'pm_schedules' },
         { page: 'pm-tasks', label: 'Task Library', icon: ListChecks, moduleCode: 'pm_schedules' },
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules' },

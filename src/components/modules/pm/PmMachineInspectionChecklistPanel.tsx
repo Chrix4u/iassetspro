@@ -324,6 +324,17 @@ export function PmMachineInspectionChecklistPanel({
   };
 
 
+  const fillBlankTimes = (pointIds: string[], time: string) => {
+    setEntries((current) => {
+      const updated = { ...current };
+      for (const id of new Set(pointIds)) {
+        if (current[id]?.saved || current[id]?.fieldInspectedAt) continue;
+        updated[id] = { ...EMPTY_DRAFT, ...current[id], fieldInspectedAt: time };
+      }
+      return updated;
+    });
+  };
+
   const save = async (selected: MachineChecklistPoint[]) => {
     if (busy || !canRecord || selected.length === 0) return;
     const snapshot = selected.map((point) => ({ point, entry: { ...getDraft(point.id) } }));
@@ -719,6 +730,7 @@ export function PmMachineInspectionChecklistPanel({
           points={points}
           getDraft={getDraft}
           edit={edit}
+          fillBlankTimes={fillBlankTimes}
           canRecord={canRecord}
           busy={busy}
           captureMode={captureMode}

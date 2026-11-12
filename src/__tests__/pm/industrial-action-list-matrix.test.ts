@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildIndustrialInspectionMatrix, industrialHierarchyCodes, industrialInspectionColumn,
+  missingIndustrialFieldTimePointIds,
   INDUSTRIAL_INSPECTION_COLUMNS,
 } from '@/lib/pm-industrial-inspection-matrix';
 import type { PaperInspectionRow, PaperInspectionTask } from '@/lib/pm-machine-field-worksheet';
@@ -62,6 +63,19 @@ describe('industrial PM Action List matrix', () => {
     expect(sprocket.checks.corr).toHaveLength(1);
     expect(sprocket.checks.other[0].pointId).toBe('press-a');
     expect(rows[1].parts[0].checks.temp[0].pointId).toBe('temp-a');
+  });
+  it('fills only blank field times and deduplicates checks shared across tasks', () => {
+    const tasks = buildIndustrialInspectionMatrix(sections);
+    const draftById: Record<string, { fieldInspectedAt?: string; saved?: boolean }> = {
+      'vib-a': { fieldInspectedAt: '2026-11-12T09:30' },
+      'sound-a': { saved: true },
+    };
+    const read = (id: string) => draftById[id] || {};
+    const missing = missingIndustrialFieldTimePointIds(tasks, read);
+    expect(missing).toEqual(['temp-a', 'corr-a', 'press-a', 'temp-b']);
+    // temp-a appears under two PM tasks; it must not get a duplicate update.
+    expect(missing.filter((id) => id === 'temp-a')).toHaveLength(1);
+    expect(missingIndustrialFieldTimePointIds(tasks.slice(1), read)).toEqual(['temp-a']);
   });
   it('retains unconfigured parts in the paper and electronic sheets instead of hiding them', () => {
     const unconfigured = { ...sections[0].rows[0], id: 'unconfigured', pointId: null, requiresConfiguration: true };

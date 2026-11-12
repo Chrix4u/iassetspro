@@ -12,11 +12,13 @@ const migration = read('prisma/migrations/20261013131000_split_asset_acquisition
 describe('Asset Register final responsive and acquisition-condition contract', () => {
   it('lets Asset Register header actions and filters reflow without fixed-width phone overflow', () => {
     expect(assetPages).toContain("className='flex w-full flex-wrap gap-2 sm:w-auto'")
-    expect(assetPages).toContain('grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center')
-    expect(assetPages).toContain('col-span-2 min-w-0 lg:col-span-1')
-    expect(assetPages).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>')
-    expect(assetPages).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>')
-    expect(assetPages).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>')
+    expect(assetPages).toContain('grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2')
+    expect(assetPages).toContain('lg:grid-cols-[minmax(11rem,1.8fr)_repeat(3,minmax(7.5rem,1fr))_minmax(11.5rem,1.4fr)]')
+    expect(assetPages).toContain('data-testid="assets-machines-filter-scroll"')
+    expect(assetPages).toContain('data-testid="assets-machines-filter-search"')
+    expect(assetPages).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Status" /></SelectTrigger>')
+    expect(assetPages).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Health" /></SelectTrigger>')
+    expect(assetPages).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Criticality" /></SelectTrigger>')
   })
 
   it('stores New/Used separately from maintenance health condition', () => {

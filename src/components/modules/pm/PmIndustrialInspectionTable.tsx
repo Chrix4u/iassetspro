@@ -56,7 +56,7 @@ export function PmIndustrialInspectionTable({
     edit(point.id, point.inspectionType === 'measurement' ? { value } : { findings: value });
 
   const forwardOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
     const inputs = Array.from(event.currentTarget.closest('table')?.querySelectorAll<HTMLInputElement>(
       'input[data-inspection-matrix-input]:not([disabled])') || []);

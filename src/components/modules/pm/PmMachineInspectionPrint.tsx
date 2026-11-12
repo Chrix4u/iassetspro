@@ -158,7 +158,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                         <td className="font-mono">{part.subassembly}</td>
                         <td className="font-mono">{part.component}</td>
                         <td className="font-mono"><strong>{part.partCode}</strong></td>
-                        <td>{part.partName}</td>
+                        <td>{part.partName}<span className="block text-[8px]">Scheduled PM due: {part.allChecks[0]?.scheduledDue || '—'}</span></td>
                         {INDUSTRIAL_INSPECTION_COLUMNS.map((column) => (
                           <td key={column.key}>
                             {part.checks[column.key].length ? part.checks[column.key].map((check) =>

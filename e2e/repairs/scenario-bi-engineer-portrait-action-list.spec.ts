@@ -38,7 +38,7 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   await page.evaluate(()=>{window.print=()=>undefined;});
   await checklist.getByRole('button',{name:'Print task-grouped blank Action List'}).click();
   const paper=page.getByTestId('pm-machine-inspection-print');
-  await expect(paper).toContainText('ACTION LIST — grouped by task',{timeout:15000});
+  await expect(paper).toContainText('Task-grouped Action List',{timeout:15000});
   for(const header of headers)await expect(paper.getByRole('columnheader',{name:header,exact:true,includeHidden:true}).first()).toBeAttached();
   expect(await paper.getByRole('columnheader',{name:'Other',includeHidden:true}).count()).toBe(0);
   const rows=paper.getByTestId('pm-paper-field-row');

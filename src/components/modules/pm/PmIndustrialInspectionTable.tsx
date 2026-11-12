@@ -67,8 +67,13 @@ export function PmIndustrialInspectionTable({
     }
   };
   const editShared = (rows: PaperInspectionRow[], patch: Partial<IndustrialMatrixEntry>) => {
-    // A point may be listed beneath several PM tasks. Update each point once.
-    for (const id of new Set(rows.flatMap((row) => row.pointId ? [row.pointId] : []))) {
+    // A point may be listed beneath several PM tasks. Update it once.
+    const ids = [...new Set(rows.flatMap((row) => row.pointId ? [row.pointId] : []))];
+    // Remarks belong to instrument findings when present. Sight/sound/corrosion
+    // observations are entered in their OWN cells and must not be overwritten.
+    const measured = ids.filter((id) => byPoint.get(id)?.inspectionType === 'measurement');
+    const targets = patch.findings !== undefined && measured.length ? measured : ids;
+    for (const id of targets) {
       if (!getDraft(id).saved) edit(id, patch);
     }
   };
@@ -108,11 +113,12 @@ export function PmIndustrialInspectionTable({
               ...task.parts.map((part, idx) => {
                 const allPoints = [...new Set(part.allChecks.flatMap((row) => row.pointId ? [row.pointId] : []))]
                   .map((id) => byPoint.get(id)).filter((point): point is MachineChecklistPoint => !!point);
-                const firstEntry = allPoints.map((point) => getDraft(point.id))
-                  .find((entry) => entry.findings || entry.fieldInspectedAt) || (
-                  allPoints[0] ? getDraft(allPoints[0].id) : null);
-                const remarks = firstEntry?.findings || '';
-                const inspectedAt = firstEntry?.fieldInspectedAt || '';
+                const measuredPoints = allPoints.filter((point) => point.inspectionType === 'measurement');
+                const remarkPoints = measuredPoints.length ? measuredPoints : allPoints;
+                const remarks = remarkPoints.map((point) => getDraft(point.id))
+                  .find((entry) => entry.findings)?.findings || '';
+                const inspectedAt = allPoints.map((point) => getDraft(point.id))
+                  .find((entry) => entry.fieldInspectedAt)?.fieldInspectedAt || '';
                 return (
                   <tr key={part.id} className={idx % 2 ? 'bg-muted/20' : 'bg-background'}
                     data-testid="pm-industrial-part-row">

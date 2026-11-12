@@ -103,6 +103,18 @@ export interface MachineChecklistDraft {
   requestKey: string;
 }
 
+/** Only an actual measured value or explicit abnormal/N/A assessment queues an
+ * instrument checkpoint. Shared part remarks alone must never submit empty
+ * numeric readings; qualitative sight checks use their actual observation text.
+ */
+export function machineChecklistHasInput(
+  point: Pick<MachineChecklistPoint, 'inspectionType'>,
+  draft: Pick<MachineChecklistDraft, 'value' | 'outcome' | 'findings'>,
+): boolean {
+  if (point.inspectionType === 'visual') return Boolean(draft.findings.trim() || draft.outcome !== 'pass');
+  return Boolean(draft.value.trim() || draft.outcome !== 'pass');
+}
+
 /** Require actual observations or measured values: a bare Good/Bad tick is not a checklist entry. */
 export function validateMachineChecklistEntry(
   point: MachineChecklistPoint,

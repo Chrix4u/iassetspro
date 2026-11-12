@@ -182,7 +182,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // Default is the bulk electronic table that mirrors the paper, not one card per check.
   await expect(checklist.getByTestId('pm-industrial-inspection-grid')).toBeVisible();
   await expect(checklist.getByTestId('pm-industrial-part-row')).toHaveCount(3);
-  await expect(checklist.getByTestId('pm-industrial-entry-table')).toContainText('Vib');
+  await expect(checklist.getByTestId('pm-industrial-entry-table')).toContainText('Vibration');
   // Legacy detailed mode remains available for individual unusual cases.
   await checklist.getByRole('button', { name: 'Detailed cards (advanced)' }).click();
   await expect(checklist.getByTestId('pm-machine-checklist-part')).toHaveCount(2);
@@ -253,10 +253,10 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
   await expect(printView.getByTestId('pm-paper-field-row')).toHaveCount(3);
-  await expect(printView).toContainText('Asm');
-  await expect(printView).toContainText('Subasm');
-  await expect(printView).toContainText('Temp');
-  await expect(printView).toContainText('Vib');
+  await expect(printView).toContainText('BLOCK');
+  await expect(printView).toContainText('V.PART');
+  await expect(printView).toContainText('Temperature');
+  await expect(printView).toContainText('Vibration');
   await expect(printView).toContainText('C314-21-02');
   await expect(printView).toContainText('Remark');
   await expect(printView).not.toContainText('7.9 mm/s');

@@ -2,11 +2,10 @@ import type { PaperInspectionRow, PaperInspectionTask } from './pm-machine-field
 
 export type IndustrialInspectionColumn = 'temp' | 'vib' | 'sound' | 'corr' | 'other';
 export const INDUSTRIAL_INSPECTION_COLUMNS: ReadonlyArray<{ key: IndustrialInspectionColumn; title: string }> = [
-  { key: 'temp', title: 'Temp' },
-  { key: 'vib', title: 'Vib' },
+  { key: 'temp', title: 'Temperature' },
+  { key: 'vib', title: 'Vibration' },
   { key: 'sound', title: 'Sound' },
-  { key: 'corr', title: 'Corr' },
-  { key: 'other', title: 'Other' },
+  { key: 'corr', title: 'Corrosion' },
 ];
 export interface IndustrialInspectionPartRow {
   id: string;

@@ -40,7 +40,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
     <>
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 11mm; }
+          @page { size: A4 portrait; margin: 7mm 6mm 9mm; }
           html, body { height: auto !important; overflow: visible !important; }
           body:has(#pm-machine-inspection-print) > :not(#pm-machine-inspection-print) {
             display: none !important;
@@ -56,8 +56,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             overflow: visible !important;
             color: #111827 !important;
             background: white !important;
-            font-size: 8pt !important;
-            line-height: 1.25 !important;
+            font-size: 6.5pt !important;
+            line-height: 1.1 !important;
           }
           #pm-machine-inspection-print table {
             width: 100% !important;
@@ -67,8 +67,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
           #pm-machine-inspection-print th,
           #pm-machine-inspection-print td {
             border: 1px solid #9ca3af !important;
-            padding: 2px 3px !important;
-            overflow-wrap: anywhere !important;
+            padding: 1px 1.5px !important;
+            overflow-wrap: normal !important;
             vertical-align: top !important;
           }
           #pm-machine-inspection-print thead { display: table-header-group !important; }
@@ -77,13 +77,29 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
-          #pm-machine-inspection-print .pm-paper-task { margin-top: 14px !important; }
-          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 6mm; border: 1px solid #9ca3af; background: #fff !important; }
-          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 8mm; border: 1px solid #9ca3af; background: #fff !important; }
+          #pm-machine-inspection-print .pm-paper-task { margin-top: 8px !important; }
+          #pm-machine-inspection-print .pm-paper-code,
+          #pm-machine-inspection-print .pm-paper-part-name,
+          #pm-machine-inspection-print .pm-paper-row td {
+            white-space: nowrap !important;
+            word-break: normal !important;
+            line-break: auto !important;
+          }
+          #pm-machine-inspection-print .pm-paper-code { font-family: monospace; letter-spacing: -0.1pt; }
+          #pm-machine-inspection-print .pm-paper-row { height: 6.8mm !important; }
+          #pm-machine-inspection-print .pm-paper-row td { vertical-align: middle !important; }
+          #pm-machine-inspection-print .pm-paper-field-table th { font-size: 6.0pt !important; white-space: nowrap !important; }
+          #pm-machine-inspection-print .pm-paper-field-table { width: 100% !important; max-width: 198mm !important; }
+          #pm-machine-inspection-print .pm-paper-cell-empty { background: #f7f7f7 !important; }
+          #pm-machine-inspection-print .pm-paper-extra-line { display: inline-block !important; width: 5mm; min-height: 2mm; border-bottom: 1px solid #9ca3af; }
+          #pm-machine-inspection-print .pm-print-header-grid { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+
+          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 4.2mm; border-bottom: 1px solid #9ca3af; background: #fff !important; }
+          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 4.2mm; border-bottom: 1px solid #9ca3af; background: #fff !important; }
           #pm-machine-inspection-print .pm-paper-heading { background: #e2e8f0 !important; font-weight: bold; padding: 7px !important; }
           #pm-machine-inspection-print .pm-print-note {
             color: #374151 !important;
-            font-size: 8pt !important;
+            font-size: 6.5pt !important;
           }
         }
       `}</style>
@@ -113,7 +129,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                   <p>{fieldSections.reduce((total, task) => total + task.rows.length, 0)} inspection row(s)</p>
                 </div>
               </div>
-              <div className="mt-2 grid grid-cols-4 gap-3 border border-slate-400 p-2 text-xs">
+              <div className="pm-print-header-grid mt-2 grid grid-cols-2 gap-1 border border-slate-400 p-1 text-[9px]">
                 <span>Planned inspection: <strong data-testid="pm-print-planned-date">{printedIssue?.plannedForDate || '______________'}</strong></span>
                 <span>Start time: __________</span>
                 <span>End time: __________</span>
@@ -130,52 +146,63 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </p>
               )}
               <p className="pm-print-note mt-2 font-semibold">
-                ACTION LIST — grouped by task, then registered machine part. Fill in the short
-                parameter columns (Temp, Vib, Sound, Corr, Other), Remark and Time on paper.
-                Enter the same values into the electronic table when you return.
-                Write N/A and the reason if an instrument measurement is impossible (never zero).
-                Only registered measurements are shown; an abnormal result requires planner review.
+                Task-grouped Action List — BLOCK = assembly; PART = sub-assembly;
+                V.PART = component; GT CODE = registered part code.
+                Record actual Temperature, Vibration, Sound and Corrosion where a check is assigned.
+                Unused cells are blank, not zero. For other configured checks (e.g. pressure), use Remark.
+                Enter these same values in the electronic table; write N/A with a reason when a check is impossible.
               </p>
             </header>
             {matrixSections.map((task) => (
               <section key={task.id} className="pm-paper-task" data-testid="pm-paper-task">
-                <h2 className="pm-paper-heading pm-print-no-break text-sm">
-                  Task #{task.number}: {task.instruction} — {task.parts.length} part(s)
+                <h2 className="pm-paper-heading pm-print-no-break text-[9px]">
+                  {task.instruction} <span className="font-normal">({task.parts.length} parts)</span>
                 </h2>
-                <table className="text-xs" data-testid="pm-paper-field-table">
+                <table className="pm-paper-field-table" data-testid="pm-paper-field-table">
                   <colgroup>
-                    {[6,7,7,9,16,8,8,8,8,7,10,6].map((width, index) => <col key={index} style={{ width: width + '%' }}/>)}
+                    {[5,6,6,10,19,9,11,9,10,9,6].map((width,index)=><col key={index} style={{width:width+'%'}}/>)}
                   </colgroup>
                   <thead><tr className="bg-slate-100">
-                    <th>Asm</th><th>Subasm</th><th>Comp</th><th>Part code</th><th>Description</th>
-                    {INDUSTRIAL_INSPECTION_COLUMNS.map((column) => <th key={column.key}>{column.title}</th>)}
-                    <th>Remark</th><th>Time</th>
+                    <th>BLOCK</th><th>PART</th><th>V.PART</th><th>GT CODE</th><th>DESCRIPTION</th>
+                    {INDUSTRIAL_INSPECTION_COLUMNS.map(col=><th key={col.key}>{col.title}</th>)}
+                    <th>REMARK</th><th>TIME</th>
                   </tr></thead>
                   <tbody>
-                    {task.parts.map((part) => (
-                      <tr key={part.id} data-testid="pm-paper-field-row">
-                        <td className="font-mono">{part.assembly}</td>
-                        <td className="font-mono">{part.subassembly}</td>
-                        <td className="font-mono">{part.component}</td>
-                        <td className="font-mono"><strong>{part.partCode}</strong></td>
-                        <td>{part.partName}<span className="block text-[8px]">Scheduled PM due: {part.allChecks[0]?.scheduledDue || '—'}</span></td>
-                        {INDUSTRIAL_INSPECTION_COLUMNS.map((column) => (
-                          <td key={column.key}>
-                            {part.checks[column.key].length ? part.checks[column.key].map((check) =>
-                              <div key={check.id} className="space-y-0.5">
-                                {check.requiresConfiguration ? <strong className="text-[9px]">SET UP</strong> : <>
-                                  {part.checks[column.key].length > 1 || column.key === 'other'
-                                    ? <span className="block text-[8px]">{check.checkName}</span> : null}
-                                  <span aria-label="Blank space for handwritten actual reading" className="pm-paper-writing-line">&nbsp;</span>
-                                  <span className="block text-[8px]">{check.acceptedRange !== '—' ? check.acceptedRange : ''} {check.unit}</span>
-                                </>}
-                              </div>) : '—'}
+                    {task.parts.map((part) => {
+                      const codeScale=(code:string)=>Math.min(6.3,Math.max(2.8,108/(code.length+2)))+'pt';
+                      const descScale=Math.min(6.4,Math.max(2.7,205/(part.partName.length+6)))+'pt';
+                      const otherChecks=part.checks.other;
+                      return (
+                        <tr key={part.id} className="pm-paper-row" data-testid="pm-paper-field-row">
+                          <td className="pm-paper-code" style={{fontSize:codeScale(part.assembly)}}>{part.assembly==='—'?'':part.assembly}</td>
+                          <td className="pm-paper-code" style={{fontSize:codeScale(part.subassembly)}}>{part.subassembly==='—'?'':part.subassembly}</td>
+                          <td className="pm-paper-code" style={{fontSize:codeScale(part.component)}}>{part.component==='—'?'':part.component}</td>
+                          <td className="pm-paper-code font-semibold" style={{fontSize:codeScale(part.partCode)}}>{part.partCode}</td>
+                          <td className="pm-paper-part-name" style={{fontSize:descScale}} title={'Scheduled PM due: '+(part.allChecks[0]?.scheduledDue||'Not configured')}>
+                            {part.partName}
                           </td>
-                        ))}
-                        <td><span aria-label="Blank space for handwritten observation" className="pm-paper-writing-note">&nbsp;</span></td>
-                        <td><span aria-label="Blank space for handwritten inspection time" className="pm-paper-writing-line">&nbsp;</span></td>
-                      </tr>
-                    ))}
+                          {INDUSTRIAL_INSPECTION_COLUMNS.map(col=>(
+                            <td key={col.key} className={part.checks[col.key].length?'':'pm-paper-cell-empty'}>
+                              {part.checks[col.key].length ? part.checks[col.key].map(check=>(
+                                <span key={check.id} className="block" title={check.checkName+' | '+check.acceptedRange+' '+check.unit}>
+                                  {check.requiresConfiguration ? 'SET UP' : <span
+                                    className="pm-paper-writing-line" aria-label={'Blank '+col.title+' reading for '+part.partCode}>&nbsp;</span>}
+                                </span>
+                              )) : null}
+                            </td>
+                          ))}
+                          <td>
+                            {otherChecks.length ? otherChecks.map(check=>(
+                              <span key={check.id} className="inline-flex items-center gap-0.5 whitespace-nowrap text-[5px]">
+                                {check.checkName}{check.requiresConfiguration?' (set up)':''}
+                                {!check.requiresConfiguration&&<span className="pm-paper-extra-line">&nbsp;</span>}
+                              </span>
+                            )) : <span className="pm-paper-writing-note" aria-label="Blank space for handwritten remark">&nbsp;</span>}
+                          </td>
+                          <td><span className="pm-paper-writing-line" aria-label="Blank space for handwritten inspection time">&nbsp;</span></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </section>

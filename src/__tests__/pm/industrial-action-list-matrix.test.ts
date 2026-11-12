@@ -34,7 +34,7 @@ const sections: PaperInspectionTask[] = [
 
 describe('industrial PM Action List matrix', () => {
   it('uses concise engineer-approved column names in field and electronic sheets', () => {
-    expect(INDUSTRIAL_INSPECTION_COLUMNS.map((c) => c.title)).toEqual(['Temp', 'Vib', 'Sound', 'Corr', 'Other']);
+    expect(INDUSTRIAL_INSPECTION_COLUMNS.map((c) => c.title)).toEqual(['Temperature', 'Vibration', 'Sound', 'Corrosion']);
   });
   it('categorizes configured checks without inferring a parameter from generic PM task instructions', () => {
     expect(industrialInspectionColumn({ parameter: 'bearing_temperature', checkName: 'Motor heat' })).toBe('temp');

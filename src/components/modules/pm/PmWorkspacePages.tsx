@@ -21,7 +21,7 @@ export function PmInspectionReadingsPage() {
 }
 
 export function PmActionListsPage() {
-  return <div className="page-content"><PmInspectionWorksheetPanel mode="action-lists"/></div>;
+  return <div className="page-content space-y-4"><div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">PM Inspections</p><h1 className="text-2xl font-bold tracking-tight">Machine Action Lists</h1><p className="mt-1 text-sm text-muted-foreground">Print, complete and record machine-based inspection sheets without unrelated schedules or reports.</p></div><PmInspectionWorksheetPanel mode="action-lists"/></div>
 }
 
 export function PmScheduledInspectionsPage() {

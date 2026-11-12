@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 import {
   machineChecklistOutOfRange,
+  machineChecklistHasInput,
   validateMachineChecklistEntry,
   type MachineChecklistDraft,
   type MachineChecklistGroup,
@@ -321,11 +322,7 @@ export function PmMachineInspectionChecklistPanel({
       [id]: { ...EMPTY_DRAFT, ...current[id], ...patch, requestKey: '', saved: false, error: '', workOrder: null },
     }));
   };
-  const hasInput = (point: MachineChecklistPoint, entry: EntryState) => (
-    point.inspectionType === 'visual'
-      ? Boolean(entry.findings.trim())
-      : Boolean(entry.value.trim() || entry.findings.trim() || entry.recommendation.trim() || entry.outcome !== 'pass')
-  );
+
 
   const save = async (selected: MachineChecklistPoint[]) => {
     if (busy || !canRecord || selected.length === 0) return;
@@ -437,7 +434,7 @@ export function PmMachineInspectionChecklistPanel({
 
   const ready = points.filter((point) => {
     const draft = getDraft(point.id);
-    return !draft.saved && (draft.outcome === 'not_measured' || hasInput(point, draft));
+    return !draft.saved && (draft.outcome === 'not_measured' || machineChecklistHasInput(point, draft));
   });
   const exportCsv = () => {
     if (!data) return;

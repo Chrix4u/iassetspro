@@ -289,26 +289,37 @@ export function AssetsPage() {
         ))}
       </div>
 
-      <div className="filter-row grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center">
-        <div className="relative col-span-2 min-w-0 lg:col-span-1">
+      {/* Scoped grid avoids the legacy .filter-row flex-wrap rule. Keep all five
+          controls in a single desktop row; only the filter bar scrolls if a
+          sidebar leaves insufficient width at a desktop breakpoint. */}
+      <div className="min-w-0 overflow-x-auto" data-testid="assets-machines-filter-scroll">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[780px] lg:grid-cols-[minmax(11rem,1.8fr)_repeat(3,minmax(7.5rem,1fr))_minmax(11.5rem,1.4fr)] lg:items-center" data-testid="assets-machines-filters">
+        <div className="relative min-w-0" data-testid="assets-machines-filter-search">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+          <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="w-full min-w-0 pl-9" />
         </div>
+        <div className="min-w-0" data-testid="assets-machines-filter-status">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
         </Select>
+        </div>
+        <div className="min-w-0" data-testid="assets-machines-filter-health">
         <Select value={conditionFilter} onValueChange={setConditionFilter}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Health" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Health</SelectItem><SelectItem value="new">New / not yet assessed</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="out_of_service">Out of Service</SelectItem></SelectContent>
         </Select>
+        </div>
+        <div className="min-w-0" data-testid="assets-machines-filter-criticality">
         <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
-          <SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Criticality" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
-        <div className="col-span-2 flex items-center gap-2 lg:col-span-1 lg:ml-auto">
-          <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
+        </div>
+        <div className="flex min-w-0 items-center justify-start gap-2 lg:justify-end" data-testid="assets-machines-filter-subcomponents">
+          <label className="whitespace-nowrap text-xs text-muted-foreground">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
+        </div>
         </div>
         {atRiskFilter && (
           <Badge variant="destructive" className="gap-1.5 cursor-pointer" onClick={() => setAtRiskFilter(false)}>

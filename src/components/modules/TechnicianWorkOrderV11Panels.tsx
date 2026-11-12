@@ -1,6 +1,5 @@
 'use client';
 
-import { formatUiDateTime } from '@/lib/date-display';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -140,7 +139,7 @@ function pretty(value?: string | null) {
 function fmt(value?: string | Date | null) {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? formatUiDateTime(date) : '-';
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '-';
 }
 
 function toLocalInput(date = new Date()) {

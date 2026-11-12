@@ -1,6 +1,5 @@
 'use client';
 
-import { formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import {
@@ -198,7 +197,7 @@ function timeAgo(dateStr: string | null): string {
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
-  return formatUiDateTime(d);
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // ============================================================================
@@ -697,7 +696,7 @@ function TrendViewer({ tagMonitor }: { tagMonitor: TagMonitor[] }) {
         const data = (res.data as Array<{ timestamp: string; sourceId: string; avg: number | null }>)
           .filter(d => d.sourceId === selectedSource && d.avg !== null)
           .map(d => ({
-            time: formatUiDateTime(d.timestamp),
+            time: new Date(d.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             value: d.avg!,
           }));
         setChartData(data);
@@ -821,7 +820,7 @@ function ComparisonView({ tagMonitor }: { tagMonitor: TagMonitor[] }) {
         const pivoted = [...timeMap.values()]
           .sort((a, b) => (a.time! as number) - (b.time! as number))
           .map(d => ({
-            time: formatUiDateTime(d.time! as number),
+            time: new Date(d.time! as number).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
             ...Object.fromEntries(selectedSources.map(s => [s, d[s] ?? null])),
           }));
         setChartData(pivoted);

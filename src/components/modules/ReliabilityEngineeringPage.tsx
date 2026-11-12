@@ -1,6 +1,5 @@
 'use client';
 
-import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -657,7 +656,7 @@ function FailureModesTab() {
                 <Separator />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Records: {selectedMode._count?.records || 0}</span>
-                  <span>Created: {formatUiDate(selectedMode.createdAt)}</span>
+                  <span>Created: {new Date(selectedMode.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
               <DialogFooter>
@@ -805,7 +804,7 @@ function RcmAnalysisTab() {
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                        {a.analysisDate ? formatUiDate(a.analysisDate) : '—'}
+                        {a.analysisDate ? new Date(a.analysisDate).toLocaleDateString() : '—'}
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">{a.asset.assetTag}</TableCell>
                     </TableRow>
@@ -969,7 +968,7 @@ function WeibullTab() {
                       <TableCell className="font-mono text-sm">{a.scale?.toFixed(1) ?? '—'}</TableCell>
                       <TableCell className="text-sm">{a.failureCount}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">{a.confidence ? `${(a.confidence * 100).toFixed(0)}%` : '—'}</TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">{formatUiDate(a.analyzedAt)}</TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">{new Date(a.analyzedAt).toLocaleDateString()}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1187,7 +1186,7 @@ function DowntimeTab() {
                   {analyses.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="text-xs">
-                        {formatUiDate(a.periodStart)} — {formatUiDate(a.periodEnd)}
+                        {new Date(a.periodStart).toLocaleDateString()} — {new Date(a.periodEnd).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="font-mono text-sm">{formatDuration(a.totalDowntime)}</TableCell>
                       <TableCell className="font-mono text-sm text-green-600">{formatDuration(a.plannedDowntime)}</TableCell>
@@ -1362,7 +1361,7 @@ function RulTab() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Last Updated</p>
-                  <p className="text-xs">{formatUiDateTime(rulData.lastUpdated)}</p>
+                  <p className="text-xs">{new Date(rulData.lastUpdated).toLocaleString()}</p>
                 </div>
               </div>
             </CardContent>

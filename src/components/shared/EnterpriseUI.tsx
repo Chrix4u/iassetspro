@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 
 // ============================================================================
 // STATUS DOT — Animated status indicator
@@ -365,11 +364,11 @@ export function Timestamp({ date, format = 'relative' }: { date: string; format?
   const d = new Date(date);
   
   if (format === 'short') {
-    return <span className="text-xs text-muted-foreground">{formatUiDateTime(d)}</span>;
+    return <span className="text-xs text-muted-foreground">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>;
   }
 
   if (format === 'full') {
-    return <span className="text-xs text-muted-foreground">{formatUiDateTime(d)}</span>;
+    return <span className="text-xs text-muted-foreground">{d.toLocaleString()}</span>;
   }
 
   // Relative
@@ -384,10 +383,10 @@ export function Timestamp({ date, format = 'relative' }: { date: string; format?
   else if (diffMin < 60) relative = `${diffMin}m ago`;
   else if (diffHour < 24) relative = `${diffHour}h ago`;
   else if (diffDay < 7) relative = `${diffDay}d ago`;
-  else relative = formatUiDate(d);
+  else relative = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
-    <span className="text-xs text-muted-foreground" title={formatUiDateTime(d)}>
+    <span className="text-xs text-muted-foreground" title={d.toLocaleString()}>
       {relative}
     </span>
   );

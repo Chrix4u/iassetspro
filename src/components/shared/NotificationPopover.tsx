@@ -1,8 +1,7 @@
 'use client';
 
-import { formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-
+import { format } from 'date-fns';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/components/shared/helpers';
@@ -378,7 +377,7 @@ function NotificationPopover() {
                   <div className="space-y-1">
                     <span className="text-muted-foreground">Received</span>
                     <span className="font-medium">
-                      {selectedNotif.createdAt ? formatUiDateTime(selectedNotif.createdAt) : '—'}
+                      {selectedNotif.createdAt ? format(new Date(selectedNotif.createdAt), 'MMM d, yyyy \'at\' h:mm a') : '—'}
                     </span>
                   </div>
                 </div>

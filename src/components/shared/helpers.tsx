@@ -1,6 +1,5 @@
 import React from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { formatUiDate, formatUiDateTime, getDayFirstDateFormat } from '@/lib/date-display';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
   Clock,
   CheckCircle2,
@@ -79,14 +78,35 @@ export function formatDurationFromMinutes(minutes: number | null | undefined): s
   return formatDuration(minutes / 60);
 }
 
-/** Day-first company / user preference; only dd/MM/yyyy and dd-MM-yyyy. */
+/** Ghana-aware date format from company settings */
 export function getDateFormat(): string {
-  return getDayFirstDateFormat() === 'DD-MM-YYYY' ? 'dd-MM-yyyy' : 'dd/MM/yyyy';
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('company_date_format') || 'dd/MM/yyyy';
+  }
+  return 'dd/MM/yyyy';
 }
 
-/** Display only; API and database values remain ISO. */
+/** Map stored date format to date-fns pattern */
+function mapDateFormat(stored: string): string {
+  const map: Record<string, string> = {
+    'DD/MM/YYYY': 'dd/MM/yyyy',
+    'MM/DD/YYYY': 'MM/dd/yyyy',
+    'YYYY-MM-DD': 'yyyy-MM-dd',
+    'dd/MM/yyyy': 'dd/MM/yyyy',
+    'MM/dd/yyyy': 'MM/dd/yyyy',
+  };
+  return map[stored] || 'dd/MM/yyyy';
+}
+
+/** Format date using company date format */
 export function formatDateLocal(d?: string | Date): string {
-  return d ? formatUiDate(d) : '-';
+  if (!d) return '-';
+  const fmt = mapDateFormat(getDateFormat());
+  try {
+    return format(new Date(d), fmt);
+  } catch {
+    return '-';
+  }
 }
 
 /** Get Ghana regions list */
@@ -153,11 +173,13 @@ export function getInitials(name: string) {
 }
 
 export function formatDate(d?: string) {
-  return d ? formatUiDate(d) : '-';
+  if (!d) return '-';
+  return format(new Date(d), 'MMM d, yyyy');
 }
 
 export function formatDateTime(d?: string) {
-  return d ? formatUiDateTime(d) : '-';
+  if (!d) return '-';
+  return format(new Date(d), 'MMM d, yyyy HH:mm');
 }
 
 export function timeAgo(d?: string) {

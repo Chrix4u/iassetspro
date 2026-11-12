@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { formatUiDateTime } from '@/lib/date-display';
 import { AlertCircle, Building2, Factory, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
@@ -94,7 +95,7 @@ interface PortfolioResponse {
 function formatDateTime(value: string | null) {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? '—' : formatUiDateTime(date);
 }
 
 function riskBadge(overdue: number, missed: number) {

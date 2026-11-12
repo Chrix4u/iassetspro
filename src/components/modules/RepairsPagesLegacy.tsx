@@ -1,7 +1,8 @@
 'use client';
 
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -302,7 +303,7 @@ function DetailTimeline({ events }: { events: Array<{ label: string; date?: stri
           </div>
           <div className="pb-4 min-w-0">
             <p className="text-sm font-medium">{ev.label}</p>
-            {ev.date && <p className="text-xs text-muted-foreground">{format(new Date(ev.date), 'MMM d, yyyy h:mm a')}</p>}
+            {ev.date && <p className="text-xs text-muted-foreground">{formatUiDateTime(ev.date)}</p>}
             {ev.user && <p className="text-xs text-muted-foreground">by {ev.user}</p>}
             {ev.notes && <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">{ev.notes}</p>}
           </div>
@@ -2001,7 +2002,7 @@ export function RepairToolRequestsPage() {
                     <div><Label className="text-xs text-muted-foreground">Requested By</Label>
                       <div className="flex items-center gap-2 mt-1"><AvatarPlaceholder name={detailItem.requestedBy?.fullName || ''} /><span className="text-sm">{detailItem.requestedBy?.fullName}</span></div>
                     </div>
-                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{format(new Date(detailItem.createdAt), 'MMM d, yyyy h:mm a')}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{formatUiDateTime(detailItem.createdAt)}</p></div>
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
@@ -2995,7 +2996,7 @@ export function RepairDowntimePage() {
                       <TableCell><PriorityBadge priority={r.impactLevel} /></TableCell>
                       <TableCell>
                         <div className="font-medium text-sm">{r.durationMinutes ? `${r.durationMinutes.toFixed(0)} min` : <span className="text-red-600">Ongoing</span>}</div>
-                        <div className="text-xs text-muted-foreground">{r.downtimeStart ? format(new Date(r.downtimeStart), 'MMM d HH:mm') : ''}</div>
+                        <div className="text-xs text-muted-foreground">{r.downtimeStart ? formatUiDateTime(r.downtimeStart) : ''}</div>
                       </TableCell>
                       <TableCell className="text-sm max-w-48 truncate">{r.reason}</TableCell>
                       <TableCell>
@@ -5056,7 +5057,7 @@ export function SparePartReturnsPage() {
                   )}
                   <div className="grid grid-cols-2 gap-3 pt-2">
                     <div><Label className="text-xs text-muted-foreground">Returned By</Label><p className="text-sm mt-1">{detailItem.requestedBy?.fullName}</p></div>
-                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{format(new Date(detailItem.createdAt), 'MMM d, yyyy')}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{formatUiDate(detailItem.createdAt)}</p></div>
                   </div>
                 </TabsContent>
                 <TabsContent value="timeline" className="mt-4">

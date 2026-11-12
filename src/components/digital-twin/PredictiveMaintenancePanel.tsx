@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate } from '@/lib/date-display';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Brain,
@@ -234,7 +235,7 @@ function ActiveAlertsSection({
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3 text-slate-600" />
                           <span className="text-[9px] text-slate-500">
-                            Pred: {new Date(alert.predictedFailureAt).toLocaleDateString()}
+                            Pred: {formatUiDate(alert.predictedFailureAt)}
                           </span>
                         </div>
                       )}
@@ -324,7 +325,7 @@ function ModelRegistryTable({ models }: { models: PredictiveModelData[] }) {
                       {model.dataPoints.toLocaleString()}
                     </TableCell>
                     <TableCell className="text-[10px] text-slate-500 py-2">
-                      {model.lastTrainedAt ? new Date(model.lastTrainedAt).toLocaleDateString() : '—'}
+                      {model.lastTrainedAt ? formatUiDate(model.lastTrainedAt) : '—'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -369,7 +370,7 @@ function AlertHistoryTable({ alerts }: { alerts: PredictionAlertData[] }) {
                 {alerts.map((alert) => (
                   <TableRow key={alert.id} className="border-white/[0.04] hover:bg-white/[0.02]">
                     <TableCell className="text-[10px] text-slate-500 py-2 whitespace-nowrap">
-                      {new Date(alert.createdAt).toLocaleDateString()}
+                      {formatUiDate(alert.createdAt)}
                     </TableCell>
                     <TableCell className="text-xs text-slate-300 py-2">
                       {alert.predictiveModel?.name ?? 'Unknown'}

@@ -1,7 +1,8 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { format } from 'date-fns';
+
 import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { api } from '@/lib/api';
@@ -166,7 +167,7 @@ export default function EnterpriseReports() {
     if (!reportData || !s) return;
     exportPDF({
       title: `Report - ${startDate} to ${endDate}`,
-      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      subtitle: `Generated: ${formatUiDateTime(new Date())}`,
       filename: `maintenance-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [

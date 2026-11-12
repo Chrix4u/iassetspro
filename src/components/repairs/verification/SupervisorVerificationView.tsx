@@ -1,7 +1,8 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useEffect, useState, useCallback } from 'react';
-import { format } from 'date-fns';
+
 import { toast } from 'sonner';
 import { api, useAbortRef } from '@/lib/api';
 
@@ -409,8 +410,8 @@ export function SupervisorVerificationView({
               <TableBody>
                 {data.downtimeRecords.map((d, i) => (
                   <TableRow key={i}>
-                    <TableCell className="text-xs font-mono">{d.startTime ? format(new Date(d.startTime), 'MMM d, HH:mm') : '—'}</TableCell>
-                    <TableCell className="text-xs font-mono">{d.endTime ? format(new Date(d.endTime), 'MMM d, HH:mm') : '—'}</TableCell>
+                    <TableCell className="text-xs font-mono">{d.startTime ? formatUiDateTime(d.startTime) : '—'}</TableCell>
+                    <TableCell className="text-xs font-mono">{d.endTime ? formatUiDateTime(d.endTime) : '—'}</TableCell>
                     <TableCell className="text-xs text-right font-mono">{formatDuration((d.durationMinutes || 0) / 60)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{d.reason || '—'}</TableCell>
                   </TableRow>

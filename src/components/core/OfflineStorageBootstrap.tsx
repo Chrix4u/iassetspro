@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import { useEffect, useMemo, useState } from 'react';
 import { createLogger } from '@/lib/logger';
 import { OfflineQueueStorage } from '@/lib/offline-queue-storage';
@@ -176,7 +177,7 @@ export function OfflineStorageBootstrap() {
       .map((value) => Date.parse(value))
       .filter(Number.isFinite);
     if (timestamps.length === 0) return null;
-    return new Date(Math.min(...timestamps)).toLocaleString();
+    return formatUiDateTime(Math.min(...timestamps));
   }, [cachedEndpoints]);
 
   const staleSectionCount = Object.keys(cachedEndpoints).length;

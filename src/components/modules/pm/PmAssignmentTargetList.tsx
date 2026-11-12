@@ -10,6 +10,7 @@ import {
   type PmAssignmentTargetGroup,
 } from '@/lib/pm-assignment-target-list';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { formatUiDate } from '@/lib/date-display';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -36,8 +37,8 @@ function dueSummary(group: PmAssignmentTargetGroup) {
     .sort((a, b) => a.getTime() - b.getTime());
   const first = dated[0];
   if (overdueMeter || (first && first < now)) return { label: 'Overdue', className: 'text-red-600 dark:text-red-400' };
-  if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: new Intl.DateTimeFormat('en-GB').format(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
-  if (first) return { label: new Intl.DateTimeFormat('en-GB').format(first), className: '' };
+  if (first && first.getTime() <= now.getTime() + 7 * 86400000) return { label: formatUiDate(first), sub: 'Due soon', className: 'text-amber-600 dark:text-amber-400' };
+  if (first) return { label: formatUiDate(first), className: '' };
   if (frequencies.includes('meter')) return { label: 'Meter driven', className: '' };
   return { label: 'Not scheduled', className: '' };
 }

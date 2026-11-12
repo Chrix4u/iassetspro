@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   X,
@@ -636,7 +637,7 @@ function MaintenanceTab({
                     <SeverityBadge severity={fr.failureSeverity} />
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5">
-                    {new Date(fr.detectedAt).toLocaleDateString()}
+                    {formatUiDate(fr.detectedAt)}
                   </div>
                 </div>
               </div>
@@ -861,7 +862,7 @@ function MaintenanceTab({
               {componentHistory.map((entry, i) => {
                 const wo = asRecord(entry.workOrder);
                 const performedBy = asRecord(entry.performedBy);
-                const completedAt = entry.completedAt ? new Date(String(entry.completedAt)).toLocaleDateString() : 'Open';
+                const completedAt = entry.completedAt ? formatUiDate(String(entry.completedAt)) : 'Open';
                 return (
                   <div key={String(entry.id ?? i)} className="p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
                     <div className="flex items-center justify-between gap-2">
@@ -1071,7 +1072,7 @@ function IoTSensorsTab({
                     <div className="flex items-center gap-1 mt-1.5">
                       <Clock className="h-2.5 w-2.5 text-slate-600" />
                       <span className="text-[9px] text-slate-500">
-                        Last reading: {new Date(String(device.lastReadingAt)).toLocaleString()}
+                        Last reading: {formatUiDateTime(String(device.lastReadingAt))}
                       </span>
                     </div>
                   )}

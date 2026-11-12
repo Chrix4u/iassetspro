@@ -15,6 +15,13 @@ describe('Engineer-requested A4 portrait inspection template',()=>{
     expect(printed).toContain('white-space: nowrap !important;');
     expect(printed).toContain('pm-paper-row');
   });
+  it('keeps machine description to 65% and print dates day-first',()=>{
+    expect(printed).toContain('grid-template-columns: minmax(0, 65fr) minmax(0, 35fr)');
+    expect(printed).toContain('pm-print-machine-description');
+    expect(printed).toContain('overflow-wrap: anywhere !important;');
+    expect(printed).toContain('formatUiDate(printedIssue.plannedForDate)');
+    expect(printed).toContain('formatUiDateTime(printedIssue.issuedAt)');
+  });
   it('matches BLOCK / PART / V.PART / GT CODE arrangement in both print and entry',()=>{
     for(const heading of ['BLOCK','PART','V.PART','GT CODE','DESCRIPTION','TIME']){
       expect(printed).toContain('<th>'+heading+'</th>');

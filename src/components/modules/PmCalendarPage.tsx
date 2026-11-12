@@ -1,5 +1,6 @@
 "use client";
 
+import { formatUiDate } from '@/lib/date-display';
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Calendar as CalendarIcon,
@@ -91,12 +92,7 @@ function isDueSoon(nextDueDate?: string | null, leadDays: number = 3): boolean {
 }
 
 function formatCalendarDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatUiDate(date);
 }
 
 function formatTimeAgo(dateStr?: string | null): string {
@@ -109,7 +105,7 @@ function formatTimeAgo(dateStr?: string | null): string {
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 0) return `In ${Math.abs(diffDays)} days`;
   if (diffDays < 30) return `${diffDays} days ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatUiDate(date);
 }
 
 function formatFrequency(schedule: Pick<PmSchedule, "frequencyType" | "frequencyValue" | "frequencyUnit" | "meterName">): string {
@@ -359,9 +355,9 @@ export default function PmCalendarPage() {
       const sameMonth = start.getMonth() === end.getMonth();
       const sameYear = start.getFullYear() === end.getFullYear();
       if (sameMonth && sameYear) {
-        return `${MONTH_NAMES[start.getMonth()]} ${start.getDate()} – ${end.getDate()}, ${start.getFullYear()}`;
+        return `${formatUiDate(start)} – ${formatUiDate(end)}`;
       }
-      return `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+      return `${formatUiDate(start)} – ${formatUiDate(end)}`;
     }
     return "";
   };
@@ -977,12 +973,7 @@ function PmScheduleDetail({ schedule }: { schedule: PmScheduleWithRelations }) {
             </p>
             <p className={cn("text-sm font-medium mt-0.5", overdue && "text-red-600 dark:text-red-400")}>
               {schedule.nextDueDate
-                ? new Date(schedule.nextDueDate).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })
+                ? formatUiDate(schedule.nextDueDate)
                 : "Not set"}
               {overdue && (
                 <span className="ml-2 text-xs font-normal text-red-500">
@@ -1005,12 +996,7 @@ function PmScheduleDetail({ schedule }: { schedule: PmScheduleWithRelations }) {
             </p>
             <p className="text-sm font-medium mt-0.5">
               {schedule.lastCompletedDate
-                ? new Date(schedule.lastCompletedDate).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })
+                ? formatUiDate(schedule.lastCompletedDate)
                 : "Never"}
             </p>
           </div>

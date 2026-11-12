@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Download, Eye, Gauge, Loader2, Printer, RefreshCw, Save } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatUiDateTime } from '@/lib/date-display';
 import { api } from '@/lib/api';
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 import {
@@ -74,7 +75,7 @@ const EMPTY_DRAFT: MachineChecklistDraft = {
 function dateTime(value: string | Date | null): string {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—';
+  return Number.isFinite(date.getTime()) ? formatUiDateTime(date) : '—';
 }
 function csvCell(input: unknown): string {
   const raw = String(input ?? '');

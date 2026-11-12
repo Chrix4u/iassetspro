@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -97,7 +98,7 @@ function pretty(value?: string | null) {
 function formatDate(value?: string | null) {
   if (!value) return '-';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? '-' : formatUiDateTime(d);
 }
 
 function formatTimer(seconds: number) {

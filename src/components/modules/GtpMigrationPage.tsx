@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import React, { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, CheckCircle2, Database, Download, FileSpreadsheet, Loader2, LockKeyhole, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -533,7 +534,7 @@ export function GtpMigrationPage() {
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Imported work orders</p><p className="text-xl font-semibold">{lastImport.imported.toLocaleString()}</p></div>
           <div className="rounded-lg border bg-background/70 p-3 sm:col-span-2"><p className="text-xs text-muted-foreground">Approved fingerprint</p><p className="mt-1 break-all font-mono text-xs">{lastImport.fingerprint}</p></div>
-          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Completed</p><p className="text-sm font-medium">{new Date(lastImport.completedAt).toLocaleString()}</p></div>
+          <div className="rounded-lg border bg-background/70 p-3"><p className="text-xs text-muted-foreground">Completed</p><p className="text-sm font-medium">{formatUiDateTime(lastImport.completedAt)}</p></div>
           {lastImport.sourceSha256 && <div className="rounded-lg border bg-background/70 p-3 sm:col-span-2 lg:col-span-4"><p className="text-xs text-muted-foreground">Workbook SHA-256</p><p className="mt-1 break-all font-mono text-xs">{lastImport.sourceSha256}</p></div>}
         </CardContent>
       </Card>}
@@ -1021,7 +1022,7 @@ export function GtpMigrationPage() {
                   {(result.importPreview.sample || []).slice(0, 50).map((row) => <TableRow key={row.legacyWorkOrderNo}>
                     <TableCell className="font-mono">{row.legacyWorkOrderNo}</TableCell>
                     <TableCell>{row.assetName || 'Non-equipment'}</TableCell>
-                    <TableCell className="whitespace-nowrap">{row.reportedAt ? new Date(row.reportedAt).toLocaleString() : '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{row.reportedAt ? formatUiDateTime(row.reportedAt) : '—'}</TableCell>
                     <TableCell className="font-mono text-xs">{row.proposedMaintenanceRequest.requestNumber}</TableCell>
                     <TableCell className="font-mono text-xs">{row.proposedWorkOrder.woNumber}</TableCell>
                     <TableCell>{row.proposedWorkOrder.status}</TableCell>

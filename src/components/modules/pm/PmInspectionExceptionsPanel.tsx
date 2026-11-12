@@ -1,5 +1,6 @@
 'use client';
 
+import { formatUiDateTime } from '@/lib/date-display';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -45,7 +46,7 @@ const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', equipmentSta
 
 function dateLabel(raw: string): string {
   const date = new Date(raw);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—';
+  return Number.isFinite(date.getTime()) ? formatUiDateTime(date) : '—';
 }
 function stateBadge(value: string) {
   return value === 'fail' ? 'destructive' as const

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CalendarRange, Loader2, Network, PackageCheck, PlayCircle, Power, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatUiDateTime } from '@/lib/date-display';
 import { api } from '@/lib/api';
 import { defaultPmBundleMaintenanceDate, toPmDateInputValue } from '@/lib/pm-bundle-planning';
 import { buildPmComplianceKpis, sortPmComplianceCycles } from '@/lib/pm-compliance-view';
@@ -87,7 +88,7 @@ interface ComplianceResponse {
 function formatDateTime(value: string | null) {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? '—' : formatUiDateTime(date);
 }
 
 function plannedExecutionIso(dateValue: string) {

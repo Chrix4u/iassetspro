@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { formatUiDateTime } from '@/lib/date-display';
 
 // ============================================================================
 // CONSTANTS
@@ -127,10 +128,7 @@ function getSLAComplianceColor(rate: number): string {
 }
 
 function formatTimestamp(): string {
-  return new Date().toLocaleString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  return formatUiDateTime(new Date());
 }
 
 // ============================================================================

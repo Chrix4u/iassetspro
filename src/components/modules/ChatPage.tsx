@@ -29,6 +29,22 @@ import { toast } from 'sonner';
 import { getInitials, formatDateTime, timeAgo } from '@/components/shared/helpers';
 import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 
+interface ChatMessage {
+  id: string;
+  content: string;
+  senderId: string;
+  senderName?: string | null;
+  createdAt: string;
+}
+
+interface ChatConversation {
+  id: string;
+  name: string;
+  participants?: Array<{ userId: string; name: string }>;
+  lastMessage?: ChatMessage | null;
+  unreadCount: number;
+}
+
 export function ChatPage() {
   const { user } = useAuthStore();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);

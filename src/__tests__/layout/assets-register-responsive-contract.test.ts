@@ -14,16 +14,23 @@ describe('Asset Register responsive contract', () => {
     expect(source).toContain("className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'")
   })
 
-  it('uses a compact two-column filter layout before switching to a desktop row', () => {
-    expect(source).toContain('filter-row grid grid-cols-2 gap-3 lg:grid-cols-[minmax(14rem,1.7fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_minmax(9rem,.8fr)_auto] lg:items-center')
-    expect(source).toContain('relative col-span-2 min-w-0 lg:col-span-1')
-    expect(source).toContain('col-span-2 flex items-center gap-2 lg:col-span-1 lg:ml-auto')
+  it('keeps all five filters in one desktop row without the legacy wrapping flex rule', () => {
+    expect(source).toContain('data-testid="assets-machines-filter-scroll"')
+    expect(source).toContain('data-testid="assets-machines-filters"')
+    expect(source).toContain('grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2')
+    expect(source).toContain('lg:min-w-[780px]')
+    expect(source).toContain('lg:grid-cols-[minmax(11rem,1.8fr)_repeat(3,minmax(7.5rem,1fr))_minmax(11.5rem,1.4fr)]')
+    expect(source).not.toContain('className="filter-row grid')
+    for (const key of ['search', 'status', 'health', 'criticality', 'subcomponents']) {
+      expect(source).toContain('data-testid="assets-machines-filter-' + key + '"')
+    }
   })
 
-  it('lets each compact filter control use its available grid cell', () => {
-    expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger>')
-    expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Health" /></SelectTrigger>')
-    expect(source).toContain('<SelectTrigger className="w-full"><SelectValue placeholder="Criticality" /></SelectTrigger>')
+  it('lets each dropdown fit within its dedicated grid cell', () => {
+    expect(source).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Status" /></SelectTrigger>')
+    expect(source).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Health" /></SelectTrigger>')
+    expect(source).toContain('<SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Criticality" /></SelectTrigger>')
+    expect(source).toContain('className="whitespace-nowrap text-xs text-muted-foreground">Show sub-components')
   })
 
   it('contains the wide asset table instead of widening the page', () => {

@@ -248,7 +248,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   // 7.9 mm/s reading or a fabricated Good/Bad result.
   await page.evaluate(() => { window.print = () => undefined; });
   await checklist.getByRole('button', { name: 'Print task-grouped blank Action List' }).click();
-  await expect(printView).toContainText('ACTION LIST — grouped by task');
+  await expect(printView).toContainText('Task-grouped Action List');
   await expect(printView.getByTestId('pm-print-sheet-reference')).toContainText(issuedRef);
   await expect(checklist.getByTestId('pm-paper-sheet-register')).toContainText(issuedRef);
   await expect(printView.getByTestId('pm-paper-task')).toHaveCount(3);
@@ -258,9 +258,9 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(printView).toContainText('Temperature');
   await expect(printView).toContainText('Vibration');
   await expect(printView).toContainText('C314-21-02');
-  await expect(printView).toContainText('Remark');
+  await expect(printView).toContainText('REMARK');
   await expect(printView).not.toContainText('7.9 mm/s');
-  await expect(printView.getByLabel('Blank space for handwritten actual reading')).toHaveCount(2);
+  await expect(printView.getByLabel(/^Blank (Temperature|Vibration|Sound|Corrosion) reading for /)).toHaveCount(2);
   await page.emulateMedia({ media: 'print' });
   await expect(printView).toBeVisible();
   await page.emulateMedia({ media: 'screen' });

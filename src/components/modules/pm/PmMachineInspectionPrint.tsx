@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PrintableMachineInspectionData } from '@/lib/pm-machine-checklist-print';
 import { buildPaperInspectionTasks } from '@/lib/pm-machine-field-worksheet';
+import { buildIndustrialInspectionMatrix, INDUSTRIAL_INSPECTION_COLUMNS } from '@/lib/pm-industrial-inspection-matrix';
 import { missingInspectionTaskMappings } from '@/lib/pm-task-point-scope';
 import {
   buildMachineInspectionPrintRows,
@@ -27,6 +28,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
   const rows = buildMachineInspectionPrintRows(data);
   const counts = machineInspectionPrintSummary(rows);
   const fieldSections = buildPaperInspectionTasks(data.groups, data.generalTasks, data.explicitTaskPointLinks || []);
+  const matrixSections = buildIndustrialInspectionMatrix(fieldSections);
   const unresolved = missingInspectionTaskMappings(data.groups, data.explicitTaskPointLinks || []);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -54,7 +56,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             overflow: visible !important;
             color: #111827 !important;
             background: white !important;
-            font-size: 9pt !important;
+            font-size: 8pt !important;
             line-height: 1.25 !important;
           }
           #pm-machine-inspection-print table {
@@ -65,7 +67,7 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
           #pm-machine-inspection-print th,
           #pm-machine-inspection-print td {
             border: 1px solid #9ca3af !important;
-            padding: 4px 5px !important;
+            padding: 2px 3px !important;
             overflow-wrap: anywhere !important;
             vertical-align: top !important;
           }
@@ -76,8 +78,8 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             page-break-inside: avoid !important;
           }
           #pm-machine-inspection-print .pm-paper-task { margin-top: 14px !important; }
-          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 11mm; border: 1px solid #9ca3af; background: #fff !important; }
-          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 13mm; border: 1px solid #9ca3af; background: #fff !important; }
+          #pm-machine-inspection-print .pm-paper-writing-line { display: block; min-height: 6mm; border: 1px solid #9ca3af; background: #fff !important; }
+          #pm-machine-inspection-print .pm-paper-writing-note { display: block; min-height: 8mm; border: 1px solid #9ca3af; background: #fff !important; }
           #pm-machine-inspection-print .pm-paper-heading { background: #e2e8f0 !important; font-weight: bold; padding: 7px !important; }
           #pm-machine-inspection-print .pm-print-note {
             color: #374151 !important;
@@ -128,66 +130,48 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </p>
               )}
               <p className="pm-print-note mt-2 font-semibold">
-                ACTION LIST — grouped by task. Take this printout to the machine and write each actual
-                instrument reading (with its unit), or describe what you saw or heard. Never tick Good/Bad
-                as a substitute for a measurement. Enter the same readings into the electronic machine checklist
-                afterwards. When a measurement is impossible on a stopped machine, write
-                N/A with the exact reason (never zero); the planner must arrange a suitable follow-up.
-                Any abnormal result requires planner review.
+                ACTION LIST — grouped by task, then registered machine part. Fill in the short
+                parameter columns (Temp, Vib, Sound, Corr, Other), Remark and Time on paper.
+                Enter the same values into the electronic table when you return.
+                Write N/A and the reason if an instrument measurement is impossible (never zero).
+                Only registered measurements are shown; an abnormal result requires planner review.
               </p>
             </header>
-            {fieldSections.map((task) => (
+            {matrixSections.map((task) => (
               <section key={task.id} className="pm-paper-task" data-testid="pm-paper-task">
                 <h2 className="pm-paper-heading pm-print-no-break text-sm">
-                  Task #{task.number}: {task.instruction} — {new Set(task.rows.filter((row) => row.partId).map((row) => row.partId)).size} parts, {task.rows.length} reading boxes
+                  Task #{task.number}: {task.instruction} — {task.parts.length} part(s)
                 </h2>
                 <table className="text-xs" data-testid="pm-paper-field-table">
                   <colgroup>
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '12%' }} />
-                    <col style={{ width: '14%' }} />
-                    <col style={{ width: '20%' }} />
-                    <col style={{ width: '8%' }} />
+                    {[6,7,7,9,16,8,8,8,8,7,10,6].map((width, index) => <col key={index} style={{ width: width + '%' }}/>)}
                   </colgroup>
                   <thead><tr className="bg-slate-100">
-                    <th>Assembly / subassembly / part path</th>
-                    <th>Part code / description</th>
-                    <th>Check / parameter</th>
-                    <th>Inspection type / approved limit or criterion</th>
-                    <th>Actual value (write here) / N/A + reason</th>
-                    <th>Actual observation / defect (write here)</th>
-                    <th>Time checked</th>
+                    <th>Asm</th><th>Subasm</th><th>Comp</th><th>Part code</th><th>Description</th>
+                    {INDUSTRIAL_INSPECTION_COLUMNS.map((column) => <th key={column.key}>{column.title}</th>)}
+                    <th>Remark</th><th>Time</th>
                   </tr></thead>
                   <tbody>
-                    {task.rows.map((row, index) => (
-                      <tr key={row.id} data-testid="pm-paper-field-row">
-                        <td>
-                          {row.hierarchy.length ? row.hierarchy.map((ancestor, index) => (
-                            <div key={ancestor.id} className="break-words">
-                              {index > 0 ? '› ' : ''}{ancestor.type}: <strong>{ancestor.code}</strong>
-                              <span> — {ancestor.name}</span>
-                            </div>
-                          )) : 'Machine-wide task — no registered part'}
-                        </td>
-                        <td><span className="text-[9px]">{index + 1}. </span><strong>{row.partCode}</strong><div>{row.partName}</div>
-                          <div className="mt-1 text-[10px]"><strong>Scheduled PM due:</strong> {row.scheduledDue}</div>
-                        </td>
-                        <td>
-                          <strong>{row.checkName}</strong>
-                          <div>{row.parameter}</div>
-                        </td>
-                        <td>
-                          <strong>{row.method}</strong>
-                          <div>{row.acceptedRange} {row.unit}</div>
-                          {row.configurationNote && <div className="mt-1 text-[10px]">{row.configurationNote}</div>}
-                        </td>
-                        <td>
-                          {row.requiresConfiguration ? (
-                            <strong>CONFIGURE FIRST</strong>
-                          ) : <span aria-label="Blank space for handwritten actual reading" className="pm-paper-writing-line">&nbsp;</span>}
-                        </td>
+                    {task.parts.map((part) => (
+                      <tr key={part.id} data-testid="pm-paper-field-row">
+                        <td className="font-mono">{part.assembly}</td>
+                        <td className="font-mono">{part.subassembly}</td>
+                        <td className="font-mono">{part.component}</td>
+                        <td className="font-mono"><strong>{part.partCode}</strong></td>
+                        <td>{part.partName}</td>
+                        {INDUSTRIAL_INSPECTION_COLUMNS.map((column) => (
+                          <td key={column.key}>
+                            {part.checks[column.key].length ? part.checks[column.key].map((check) =>
+                              <div key={check.id} className="space-y-0.5">
+                                {check.requiresConfiguration ? <strong className="text-[9px]">SET UP</strong> : <>
+                                  {part.checks[column.key].length > 1 || column.key === 'other'
+                                    ? <span className="block text-[8px]">{check.checkName}</span> : null}
+                                  <span aria-label="Blank space for handwritten actual reading" className="pm-paper-writing-line">&nbsp;</span>
+                                  <span className="block text-[8px]">{check.acceptedRange !== '—' ? check.acceptedRange : ''} {check.unit}</span>
+                                </>}
+                              </div>) : '—'}
+                          </td>
+                        ))}
                         <td><span aria-label="Blank space for handwritten observation" className="pm-paper-writing-note">&nbsp;</span></td>
                         <td><span aria-label="Blank space for handwritten inspection time" className="pm-paper-writing-line">&nbsp;</span></td>
                       </tr>

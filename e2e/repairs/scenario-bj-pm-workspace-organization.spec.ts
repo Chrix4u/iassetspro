@@ -60,7 +60,7 @@ test('PM readings group one selected machine by task then parts, with useful pag
 
   await page.getByRole('button', { name: 'Open PM page guide' }).click();
   const guide = page.getByRole('dialog', { name: 'PM page assistant' });
-  await expect(guide).toContainText('Each inspection task');
+  await expect(guide).toContainText('See each machine once');
   await expect(guide.getByRole('button', { name: 'Action Lists', exact: true })).toBeVisible();
   await guide.getByRole('button', { name: 'Action Lists', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Machine Action Lists' })).toBeVisible({ timeout: 20_000 });

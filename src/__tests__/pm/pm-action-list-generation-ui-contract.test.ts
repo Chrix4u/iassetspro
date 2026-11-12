@@ -9,10 +9,10 @@ describe('printed Action List and engineer-approved part parameters', () => {
   it('uses ACTION LIST as the technician print document name, preserving hierarchy and actual recording spaces', () => {
     expect(sheet).toContain('ACTION LIST — {data.equipmentState');
     expect(sheet).toContain('Action List reference:');
-    expect(sheet).toContain('Assembly / subassembly / part path');
-    expect(sheet).toContain('Inspection type / approved limit or criterion');
+    expect(sheet).toContain('<th>Asm</th><th>Subasm</th><th>Comp</th><th>Part code</th><th>Description</th>');
+    expect(sheet).toContain('INDUSTRIAL_INSPECTION_COLUMNS.map');
     expect(sheet).toContain('Blank space for handwritten actual reading');
-    expect(sheet).toContain('Time checked');
+    expect(sheet).toContain('<th>Remark</th><th>Time</th>');
     expect(sheet).toContain('Inspector name/signature:');
   });
   it('lets planners assign reusable temperature/vibration/sound/corrosion controls, without guessing limits', () => {

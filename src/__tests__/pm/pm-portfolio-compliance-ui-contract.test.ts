@@ -6,7 +6,7 @@ const planningSource = readFileSync(resolve(process.cwd(), 'src/components/modul
 const machineRollupSource = readFileSync(resolve(process.cwd(), 'src/components/modules/pm/PmMachineRollupPanel.tsx'), 'utf8');
 
 describe('PM portfolio compliance planning composition', () => {
-  it('prioritizes machine schedule, inspection and assigned tasks before optional portfolio reports', () => {
+  it('prioritizes inspection Action Lists, then machine scheduling and assigned tasks before optional portfolio reports', () => {
     expect(planningSource).toContain("import { PmPortfolioCompliancePanel } from '@/components/modules/pm/PmPortfolioCompliancePanel';");
     const rollupIndex = planningSource.indexOf('<PmMachineRollupPanel />');
     const inspectionIndex = planningSource.indexOf('<PmInspectionWorksheetPanel />');
@@ -14,8 +14,8 @@ describe('PM portfolio compliance planning composition', () => {
     const reportsIndex = planningSource.indexOf('data-testid="pm-more-planning-reports"');
     const portfolioIndex = planningSource.indexOf('<PmPortfolioCompliancePanel />');
     expect(rollupIndex).toBeGreaterThan(-1);
-    expect(inspectionIndex).toBeGreaterThan(rollupIndex);
-    expect(targetListIndex).toBeGreaterThan(inspectionIndex);
+    expect(rollupIndex).toBeGreaterThan(inspectionIndex);
+    expect(targetListIndex).toBeGreaterThan(rollupIndex);
     expect(reportsIndex).toBeGreaterThan(targetListIndex);
     expect(portfolioIndex).toBeGreaterThan(reportsIndex);
     expect(planningSource).toContain('{showReports && <div');

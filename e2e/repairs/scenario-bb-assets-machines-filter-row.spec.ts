@@ -26,7 +26,7 @@ test('Assets & Machines: five filters in one desktop row without overlap or page
       'assets-machines-filter-criticality',
       'assets-machines-filter-subcomponents',
     ];
-    const boxes = [];
+    const boxes: Array<{ x: number; y: number; width: number; height: number }> = [];
     for (const selector of selectors) {
       const field = bar.getByTestId(selector);
       await expect(field).toBeVisible();

@@ -113,26 +113,25 @@ export function PmIndustrialInspectionTable({
         </p>
       </div>}
       <div className="max-h-[70vh] overflow-auto rounded-lg border" data-testid="pm-industrial-grid-scroll">
-        <table className="w-full min-w-[1240px] border-separate border-spacing-0 text-xs" data-testid="pm-industrial-entry-table">
+        <table className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0 text-xs" data-testid="pm-industrial-entry-table">
           <thead className="sticky top-0 z-20 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
             <tr>
-              <th className="w-[65px] border-b border-r px-1 py-2 text-left text-[10px]">BLOCK</th>
-              <th className="w-[70px] border-b border-r px-1 py-2 text-left text-[10px]">PART</th>
-              <th className="w-[70px] border-b border-r px-1 py-2 text-left text-[10px]">V.PART</th>
-              <th className="w-[105px] border-b border-r px-1 py-2 text-left text-[10px]">GT CODE</th>
-              <th className="min-w-[180px] border-b border-r px-1 py-2 text-left text-[10px]">DESCRIPTION</th>
+              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">BLOCK</th>
+              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">PART</th>
+              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">V.PART</th>
+              <th className="w-[150px] border-b border-r px-1 py-2 text-left text-[10px]">GT CODE</th>
+              <th className="w-[230px] border-b border-r px-1 py-2 text-left text-[10px]">DESCRIPTION</th>
               <th className="w-[128px] border-b border-r px-1 py-2 text-left text-[10px]">Temperature</th>
-              <th className="w-[128px] border-b border-r px-1 py-2 text-left text-[10px]">Vibration</th>
-              <th className="w-[128px] border-b border-r px-1 py-2 text-left text-[10px]">Sound</th>
-              <th className="w-[128px] border-b border-r px-1 py-2 text-left text-[10px]">Corrosion</th>
-              <th className="min-w-[155px] border-b border-r px-1 py-2 text-left text-[10px]">REMARK</th>
-              <th className="w-[155px] border-b px-1 py-2 text-left text-[10px]">TIME</th>
+              <th className="w-[100px] border-b border-r px-1 py-2 text-left text-[10px]">Vibration</th>
+              <th className="w-[100px] border-b border-r px-1 py-2 text-left text-[10px]">Sound</th>
+              <th className="w-[95px] border-b border-r px-1 py-2 text-left text-[10px]">Corrosion</th>
+              <th className="w-[185px] border-b px-1 py-2 text-left text-[10px]">TIME</th>
             </tr>
           </thead>
           <tbody>
             {tasks.flatMap((task) => [
               <tr key={task.id + '-heading'} className="bg-slate-200/90 dark:bg-slate-800/90" data-testid="pm-industrial-task-heading">
-                <th colSpan={11} className="sticky left-0 border-b px-3 py-2 text-left font-bold">
+                <th colSpan={10} className="sticky left-0 border-b px-3 py-2 text-left font-bold">
                   {task.instruction}
                   <span className="ml-2 font-normal">({task.parts.length} parts)</span>
                 </th>
@@ -140,20 +139,16 @@ export function PmIndustrialInspectionTable({
               ...task.parts.map((part, idx) => {
                 const allPoints = [...new Set(part.allChecks.flatMap((row) => row.pointId ? [row.pointId] : []))]
                   .map((id) => byPoint.get(id)).filter((point): point is MachineChecklistPoint => !!point);
-                const measuredPoints = allPoints.filter((point) => point.inspectionType === 'measurement');
-                const remarkPoints = measuredPoints.length ? measuredPoints : allPoints;
-                const remarks = remarkPoints.map((point) => getDraft(point.id))
-                  .find((entry) => entry.findings)?.findings || '';
                 const inspectedAt = allPoints.map((point) => getDraft(point.id))
                   .find((entry) => entry.fieldInspectedAt)?.fieldInspectedAt || '';
                 return (
                   <tr key={part.id} className={idx % 2 ? 'bg-muted/20' : 'bg-background'}
                     data-testid="pm-industrial-part-row">
-                    <td className="whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered assembly code">{displayCell(part.assembly)}</td>
-                    <td className="whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered sub-assembly code">{displayCell(part.subassembly)}</td>
-                    <td className="whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered component code">{displayCell(part.component)}</td>
-                    <td className="whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px] font-semibold">{part.partCode}</td>
-                    <td className="whitespace-nowrap border-b border-r px-1 py-1.5 text-[11px]" title={part.partName}>{part.partName}</td>
+                    <td className="max-w-0 overflow-hidden whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered assembly code">{displayCell(part.assembly)}</td>
+                    <td className="max-w-0 overflow-hidden whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered sub-assembly code">{displayCell(part.subassembly)}</td>
+                    <td className="max-w-0 overflow-hidden whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px]" title="Registered component code">{displayCell(part.component)}</td>
+                    <td className="max-w-0 overflow-hidden whitespace-nowrap border-b border-r px-1 py-1.5 font-mono text-[10px] font-semibold">{part.partCode}</td>
+                    <td className="max-w-0 overflow-hidden whitespace-nowrap border-b border-r px-1 py-1.5 text-[11px]" title={part.partName}>{part.partName}</td>
                     {INDUSTRIAL_INSPECTION_COLUMNS.map(({ key }: { key: IndustrialInspectionColumn }) => (
                       <td key={key} className="border-b border-r px-1.5 py-1.5 align-top">
                         {part.checks[key].length === 0 ? (
@@ -203,31 +198,6 @@ export function PmIndustrialInspectionTable({
                           })}
                       </td>
                     ))}
-                    <td className="border-b border-r px-1.5 py-1.5 align-top">
-                      <div className="flex min-w-0 items-center gap-1">
-                        {part.checks.other.map((item) => {
-                          const point = item.pointId ? byPoint.get(item.pointId) : null;
-                          if (!point || item.requiresConfiguration) return <span key={item.id} title={item.configurationNote} className="text-[9px]">Configure {item.checkName}</span>;
-                          const entry = getDraft(point.id);
-                          return <Input key={item.id} type={point.inspectionType === 'measurement' ? 'number' : 'text'}
-                            step={point.inspectionType === 'measurement' ? 'any' : undefined}
-                            data-inspection-matrix-input="" className="h-8 w-[65px] min-w-0 shrink-0 px-1 text-[10px]"
-                            aria-label={`Reading: ${point.name} — ${part.partCode}`}
-                            title={`${point.name} | ${item.acceptedRange} ${item.unit}`}
-                            placeholder={point.name} value={valueFor(point,entry)}
-                            disabled={!canRecord || busy || entry.saved || entry.outcome === 'not_measured'}
-                            onKeyDown={forwardOnEnter}
-                            onChange={(event) => editReading(point,event.target.value)} />;
-                        })}
-                      <Input data-inspection-matrix-input="" className="h-8 min-w-0 flex-1 px-1.5 text-xs"
-                        aria-label={`Remark: ${part.partCode}`} value={remarks}
-                        disabled={!canRecord || busy || allPoints.length === 0 || allPoints.every((p) => getDraft(p.id).saved)}
-                        placeholder="Observation / defect"
-                        onKeyDown={forwardOnEnter}
-                        onChange={(event) => editShared(part.allChecks, { findings: event.target.value })}/>
-                      </div>
-                      {allPoints.some((p) => !!p.openCorrectiveWorkOrder) && <span className="block text-[10px] text-amber-700">Open corrective WO</span>}
-                    </td>
                     <td className="border-b px-1.5 py-1.5 align-top">
                       {captureMode === 'paper'
                         ? <input type="datetime-local" data-inspection-matrix-input=""
@@ -242,16 +212,45 @@ export function PmIndustrialInspectionTable({
                 );
               }),
             ])}
-            {tasks.length === 0 && <tr><td colSpan={11} className="px-4 py-5 text-center text-muted-foreground">
+            {tasks.length === 0 && <tr><td colSpan={10} className="px-4 py-5 text-center text-muted-foreground">
               No parts match this task or part filter.
             </td></tr>}
           </tbody>
         </table>
       </div>
+      {tasks.some(task=>task.parts.some(part=>part.checks.other.length>0)) && (
+        <div className="rounded-md border p-2" data-testid="pm-industrial-extra-checks">
+          <p className="mb-2 text-xs font-semibold">Additional configured checks</p>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {[...new Map(tasks.flatMap(task=>task.parts.flatMap(part=>part.checks.other.map(item=>[
+              item.pointId || item.id, {part,item},
+            ] as const)))).values()].map(({part,item})=>{
+              const point=item.pointId ? byPoint.get(item.pointId) : null;
+              if(!point || item.requiresConfiguration) return <p key={item.id} className="text-xs">
+                {part.partCode} · {item.checkName}: configure inspection point
+              </p>;
+              const entry=getDraft(point.id);
+              return <label key={item.id} className="flex min-w-0 items-center gap-2 text-xs">
+                <span className="max-w-[45%] truncate" title={part.partCode+' · '+point.name}>
+                  {part.partCode} · {point.name}
+                </span>
+                <Input type={point.inspectionType==='measurement'?'number':'text'}
+                  step={point.inspectionType==='measurement'?'any':undefined}
+                  data-inspection-matrix-input=""
+                  aria-label={`Reading: ${point.name} — ${part.partCode}`}
+                  className="h-8 min-w-0 flex-1 px-1.5 text-xs"
+                  value={valueFor(point,entry)} disabled={!canRecord||busy||entry.saved||entry.outcome==='not_measured'}
+                  onKeyDown={forwardOnEnter}
+                  onChange={e=>editReading(point,e.target.value)}/>
+              </label>;
+            })}
+          </div>
+        </div>
+      )}
       <p className="text-[11px] text-muted-foreground">
-        Blank disabled inputs mean this part has no inspection parameter configured in that category, not a zero value.
-        Active inputs accept the actual instrument reading or observation. Pressure and other configured checks appear in Remark.
-        Codes are taken only from the registered hierarchy; shared points are saved once. Red readings exceed approved limits.
+        Blank disabled inputs mean that no check is configured for that measurement; they do not represent zero.
+        Comments and detailed outcomes remain available under Detailed cards (advanced).
+        Codes are taken from the registered hierarchy; shared points are saved once.
       </p>
     </div>
   );

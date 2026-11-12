@@ -28,7 +28,7 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   const checklist=page.getByTestId('pm-machine-checklist');
   const entry=checklist.getByTestId('pm-industrial-entry-table');
   await expect(entry).toBeVisible({timeout:25000});
-  const headers=['BLOCK','PART','V.PART','GT CODE','DESCRIPTION','Temperature','Vibration','Sound','Corrosion','REMARK','TIME'];
+  const headers=['BLOCK','PART','V.PART','GT CODE','DESCRIPTION','Temperature','Vibration','Sound','Corrosion','TIME'];
   for(const header of headers)await expect(entry.getByRole('columnheader',{name:header,exact:true})).toBeVisible();
   expect(await entry.getByRole('columnheader',{name:'Other',exact:true}).count()).toBe(0);
   const editable=entry.locator('input[data-inspection-matrix-input]:not([disabled])');
@@ -41,6 +41,8 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   await expect(paper).toContainText('Task-grouped Action List',{timeout:15000});
   for(const header of headers)await expect(paper.getByRole('columnheader',{name:header,exact:true,includeHidden:true}).first()).toBeAttached();
   expect(await paper.getByRole('columnheader',{name:'Other',includeHidden:true}).count()).toBe(0);
+  expect(await paper.getByRole('columnheader',{name:'REMARK',includeHidden:true}).count()).toBe(0);
+  expect(await entry.getByRole('columnheader',{name:'REMARK'}).count()).toBe(0);
   const rows=paper.getByTestId('pm-paper-field-row');
   expect(await rows.count()).toBeGreaterThanOrEqual(5);
   await page.emulateMedia({media:'print'});
@@ -49,6 +51,20 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
     return {space:css.whiteSpace,height:node.getBoundingClientRect().height,scrollHeight:node.scrollHeight};
   }));
   expect(styles.every(item=>item.space==='nowrap')).toBe(true);
+  const codeMetrics=await paper.locator('.pm-paper-code-text').evaluateAll(nodes=>nodes.map(node=>{
+    const text=node.textContent?.trim()||'';
+    const cell=node.closest('td');
+    if(!text || !cell) return {text,overflow:0};
+    const textRect=node.getBoundingClientRect();
+    const cellRect=cell.getBoundingClientRect();
+    return {text,overflow:Math.max(0,textRect.right-cellRect.right)};
+  }));
+  const overlaps=codeMetrics.filter(code=>code.overflow>1);
+  expect(overlaps,'codes must fit within their own cells without intruding into next code').toEqual([]);
+  const clippedCodes=await paper.locator('.pm-paper-code-text').evaluateAll(nodes=>
+    nodes.filter(node=>(node.textContent||'').trim() && node.scrollWidth>node.clientWidth+1)
+      .map(node=>({code:node.textContent,width:node.clientWidth,content:node.scrollWidth})));
+  expect(clippedCodes,'all printed hierarchy codes should be visible, not clipped').toEqual([]);
   const path='/tmp/iassets-portrait-uat-bfp-501.pdf';
   const pdf=await page.pdf({printBackground:true,preferCSSPageSize:true});
   writeFileSync(path,pdf);

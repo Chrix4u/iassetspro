@@ -258,7 +258,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   await expect(printView).toContainText('Temperature');
   await expect(printView).toContainText('Vibration');
   await expect(printView).toContainText('C314-21-02');
-  await expect(printView).toContainText('REMARK');
+  await expect(printView.getByRole('columnheader', { name: 'REMARK', includeHidden: true })).toHaveCount(0);
   await expect(printView).not.toContainText('7.9 mm/s');
   await expect(printView.getByLabel(/^Blank (Temperature|Vibration|Sound|Corrosion) reading for /)).toHaveCount(2);
   await page.emulateMedia({ media: 'print' });

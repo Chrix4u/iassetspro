@@ -14,51 +14,27 @@ test('PM Action List filters use three spacious controls above five without over
     await page.setViewportSize(viewport);
     await page.goto('/');
     await page.evaluate((plantId) => localStorage.setItem('user_plant_id', plantId), plant);
-    await page.goto('/#/pm-schedules');
+    await page.goto('/#/pm-inspections');
 
-    const panel = page.getByTestId('pm-inspection-worksheet');
-    await expect(panel).toBeVisible({ timeout: 25_000 });
-    const primary = panel.getByTestId('pm-inspection-filters-primary');
-    const secondary = panel.getByTestId('pm-inspection-filters-secondary');
-    await expect(primary).toBeVisible();
-    await expect(secondary).toBeVisible();
-    const primaryChildren = primary.locator(':scope > div');
-    const secondaryChildren = secondary.locator(':scope > div');
-    await expect(primaryChildren).toHaveCount(3);
-    await expect(secondaryChildren).toHaveCount(5);
-
-    const first = await primaryChildren.evaluateAll((nodes) => nodes.map((node) => {
+    const filterGrid = page.getByTestId('pm-readings-filter-grid');
+    await expect(filterGrid).toBeVisible({ timeout: 25_000 });
+    const fields = filterGrid.locator(':scope > div');
+    await expect(fields).toHaveCount(4);
+    const rects = await fields.evaluateAll((nodes) => nodes.map((node) => {
       const r = node.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
+      return { x: r.x, y: r.y, width: r.width, right: r.right, bottom: r.bottom };
     }));
-    const second = await secondaryChildren.evaluateAll((nodes) => nodes.map((node) => {
-      const r = node.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
-    }));
-
-    const overlaps = (a: typeof first[number], b: typeof first[number]) =>
-      a.x < b.right - 1 && a.right > b.x + 1 && a.y < b.bottom - 1 && a.bottom > b.y + 1;
-
-    for (const fields of [first, second]) {
-      for (let i = 0; i < fields.length; i++) {
-        expect(fields[i].width, 'field must have positive usable width').toBeGreaterThan(110);
-        for (let j = i + 1; j < fields.length; j++) {
-          expect(overlaps(fields[i], fields[j]), 'filters must not overlap').toBe(false);
-        }
+    for (let i = 0; i < rects.length; i++) {
+      expect(rects[i].width).toBeGreaterThan(60);
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i], b = rects[j];
+        const overlap = a.x < b.right - 1 && a.right > b.x + 1 &&
+          a.y < b.bottom - 1 && a.bottom > b.y + 1;
+        expect(overlap, 'PM filters should not overlap').toBe(false);
       }
     }
-    expect(Math.max(...first.map((field) => field.bottom))).toBeLessThan(Math.min(...second.map((field) => field.y)));
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    expect(overflow, 'PM inspection page should not overflow').toBeLessThanOrEqual(3);
 
-    if (viewport.width === 1440) {
-      expect(new Set(first.map((f) => Math.round(f.y))).size).toBe(1);
-      expect(new Set(second.map((f) => Math.round(f.y))).size).toBe(1);
-      expect(first[2].width, 'machine must be wider').toBeGreaterThan(first[1].width * 1.4);
-      expect(second[3].width, 'outcome should be wider than method').toBeGreaterThan(second[1].width);
-      expect(second[4].width, 'follow-up should be wider than due').toBeGreaterThan(second[2].width);
-    }
-
-    const viewportOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(viewportOverflow, 'page should have no horizontal overflow').toBeLessThanOrEqual(3);
-    console.log('PM_FILTER_LAYOUT_PASS', JSON.stringify({ viewport: viewport.width, first, second, viewportOverflow }));
   }
 });

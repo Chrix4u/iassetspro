@@ -71,6 +71,7 @@ type ReportData = {
   stoppages: any;
   cost: any;
   distribution: any;
+  componentCosts?: any[];
 };
 
 // ============================================================================
@@ -136,7 +137,7 @@ function formatTimestamp(): string {
 // ============================================================================
 
 function KPICard({ label, value, icon: Icon, color, subtitle, onClick }: {
-  label: string; value: string | number; icon: React.ElementType; color: string; subtitle?: string; onClick?: () => void;
+  label: string; value: string | number; icon: React.ComponentType<{ className?: string }>; color: string; subtitle?: string; onClick?: () => void;
 }) {
   return (
     <Card
@@ -222,7 +223,7 @@ function ChartCard({ title, children, className = '' }: { title: string; childre
 }
 
 function SafeChart({ data, children, emptyIcon: EmptyIcon, emptyTitle, emptyDescription, height = 280 }: {
-  data: any[]; children: React.ReactNode; emptyIcon: React.ElementType;
+  data: any[]; children: React.ReactNode; emptyIcon: React.ComponentType<{ className?: string }>;
   emptyTitle: string; emptyDescription: string; height?: number;
 }) {
   if (!data || data.length === 0) {

@@ -16,19 +16,19 @@ describe('Engineer-requested A4 portrait inspection template',()=>{
     expect(printed).toContain('pm-paper-row');
   });
   it('matches BLOCK / PART / V.PART / GT CODE arrangement in both print and entry',()=>{
-    for(const heading of ['BLOCK','PART','V.PART','GT CODE','DESCRIPTION','REMARK','TIME']){
+    for(const heading of ['BLOCK','PART','V.PART','GT CODE','DESCRIPTION','TIME']){
       expect(printed).toContain('<th>'+heading+'</th>');
       expect(entry).toContain('>'+heading+'</th>');
     }
     expect(printed).not.toContain('<th>Other</th>');
     expect(entry).not.toContain('>Other</th>');
   });
-  it('only shows four full measurement headings; keeps other configured checks in Remark',()=>{
+  it('only shows four full measurement headings, with other configured checks separately',()=>{
     expect(INDUSTRIAL_INSPECTION_COLUMNS.map(c=>c.title)).toEqual(
       ['Temperature','Vibration','Sound','Corrosion']);
     expect(industrialInspectionColumn({parameter:'pressure_bar',checkName:'Pressure'})).toBe('other');
-    expect(printed).toContain('const otherChecks=part.checks.other');
-    expect(entry).toContain('part.checks.other.map');
+    expect(printed).toContain('pm-paper-extra-checks');
+    expect(entry).toContain('pm-industrial-extra-checks');
   });
   it('never prints literal dash placeholders for unassigned measurements',()=>{
     expect(printed).toContain("className={part.checks[col.key].length?'':'pm-paper-cell-empty'}");
@@ -36,11 +36,17 @@ describe('Engineer-requested A4 portrait inspection template',()=>{
     expect(entry).toContain('data-inspection-matrix-input');
     expect(entry).toContain('disabled value="" readOnly');
   });
-  it('uses exactly eleven portrait table columns totaling 100 percent',()=>{
+  it('uses exactly ten portrait columns with more room for hierarchy codes and narrower Vibration/Corrosion',()=>{
     const match=printed.match(/\{\[([\d,]+)\]\.map\(\(width,index\)/);
     expect(match).toBeTruthy();
     const cols=match![1].split(',').map(Number);
-    expect(cols).toHaveLength(11);
+    expect(cols).toHaveLength(10);
+    expect(cols).toEqual([9,10,10,14,18,9,8,8,7,7]);
     expect(cols.reduce((total,value)=>total+value,0)).toBe(100);
+    expect(printed).toContain('overflow: hidden !important;');
+    expect(printed).toContain('pm-paper-code-text');
+    expect(entry).toContain('min-w-[1420px]');
+    expect(printed).not.toContain('<th>REMARK</th>');
+    expect(entry).not.toContain('>REMARK</th>');
   });
 });

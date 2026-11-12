@@ -85,7 +85,19 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
             word-break: normal !important;
             line-break: auto !important;
           }
-          #pm-machine-inspection-print .pm-paper-code { font-family: monospace; letter-spacing: -0.1pt; }
+          #pm-machine-inspection-print .pm-paper-code {
+            font-family: monospace;
+            letter-spacing: -0.1pt;
+          }
+          #pm-machine-inspection-print .pm-paper-field-table td {
+            overflow: hidden !important;
+            text-overflow: clip !important;
+          }
+          #pm-machine-inspection-print .pm-paper-code-text {
+            display: inline-block;
+            white-space: nowrap !important;
+            max-width: 100%;
+          }
           #pm-machine-inspection-print .pm-paper-row { height: 6.8mm !important; }
           #pm-machine-inspection-print .pm-paper-row td { vertical-align: middle !important; }
           #pm-machine-inspection-print .pm-paper-field-table th { font-size: 6.0pt !important; white-space: nowrap !important; }
@@ -149,8 +161,9 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 Task-grouped Action List — BLOCK = assembly; PART = sub-assembly;
                 V.PART = component; GT CODE = registered part code.
                 Record actual Temperature, Vibration, Sound and Corrosion where a check is assigned.
-                Unused cells are blank, not zero. For other configured checks (e.g. pressure), use Remark.
-                Enter these same values in the electronic table; write N/A with a reason when a check is impossible.
+                Unused cells are blank, not zero. Extra configured checks appear in the
+                supplemental section below. Enter these readings in the electronic table;
+                write N/A with the reason separately when a measurement is impossible.
               </p>
             </header>
             {matrixSections.map((task) => (
@@ -160,24 +173,37 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </h2>
                 <table className="pm-paper-field-table" data-testid="pm-paper-field-table">
                   <colgroup>
-                    {[5,6,6,10,19,9,11,9,10,9,6].map((width,index)=><col key={index} style={{width:width+'%'}}/>)}
+                    {[9,10,10,14,18,9,8,8,7,7].map((width,index)=><col key={index} style={{width:width+'%'}}/>)}
                   </colgroup>
                   <thead><tr className="bg-slate-100">
                     <th>BLOCK</th><th>PART</th><th>V.PART</th><th>GT CODE</th><th>DESCRIPTION</th>
                     {INDUSTRIAL_INSPECTION_COLUMNS.map(col=><th key={col.key}>{col.title}</th>)}
-                    <th>REMARK</th><th>TIME</th>
+                    <th>TIME</th>
                   </tr></thead>
                   <tbody>
                     {task.parts.map((part) => {
-                      const codeScale=(code:string)=>Math.min(6.3,Math.max(2.8,108/(code.length+2)))+'pt';
-                      const descScale=Math.min(6.4,Math.max(2.7,205/(part.partName.length+6)))+'pt';
-                      const otherChecks=part.checks.other;
+                      // Character-width based sizing matches the narrow A4 portrait
+                      // columns. Cell overflow is clipped as a final safeguard.
+                      const codeScale=(code:string, percent:number)=>{
+                        const widthMm=198*percent/100-1.5;
+                        return Math.min(6.3,Math.max(2.0,widthMm/(0.225*Math.max(1,code.length))))+'pt';
+                      };
+                      const descScale=Math.min(6.4,Math.max(2.0,
+                        (198*0.18-1.5)/(0.225*Math.max(1,part.partName.length))))+'pt';
                       return (
                         <tr key={part.id} className="pm-paper-row" data-testid="pm-paper-field-row">
-                          <td className="pm-paper-code" style={{fontSize:codeScale(part.assembly)}}>{part.assembly==='—'?'':part.assembly}</td>
-                          <td className="pm-paper-code" style={{fontSize:codeScale(part.subassembly)}}>{part.subassembly==='—'?'':part.subassembly}</td>
-                          <td className="pm-paper-code" style={{fontSize:codeScale(part.component)}}>{part.component==='—'?'':part.component}</td>
-                          <td className="pm-paper-code font-semibold" style={{fontSize:codeScale(part.partCode)}}>{part.partCode}</td>
+                          <td className="pm-paper-code" title={part.assembly}>
+                            <span className="pm-paper-code-text" style={{fontSize:codeScale(part.assembly,9)}}>{part.assembly==='—'?'':part.assembly}</span>
+                          </td>
+                          <td className="pm-paper-code" title={part.subassembly}>
+                            <span className="pm-paper-code-text" style={{fontSize:codeScale(part.subassembly,10)}}>{part.subassembly==='—'?'':part.subassembly}</span>
+                          </td>
+                          <td className="pm-paper-code" title={part.component}>
+                            <span className="pm-paper-code-text" style={{fontSize:codeScale(part.component,10)}}>{part.component==='—'?'':part.component}</span>
+                          </td>
+                          <td className="pm-paper-code font-semibold" title={part.partCode}>
+                            <span className="pm-paper-code-text" style={{fontSize:codeScale(part.partCode,14)}}>{part.partCode}</span>
+                          </td>
                           <td className="pm-paper-part-name" style={{fontSize:descScale}} title={'Scheduled PM due: '+(part.allChecks[0]?.scheduledDue||'Not configured')}>
                             {part.partName}
                           </td>
@@ -191,14 +217,6 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                               )) : null}
                             </td>
                           ))}
-                          <td>
-                            {otherChecks.length ? otherChecks.map(check=>(
-                              <span key={check.id} className="inline-flex items-center gap-0.5 whitespace-nowrap text-[5px]">
-                                {check.checkName}{check.requiresConfiguration?' (set up)':''}
-                                {!check.requiresConfiguration&&<span className="pm-paper-extra-line">&nbsp;</span>}
-                              </span>
-                            )) : <span className="pm-paper-writing-note" aria-label="Blank space for handwritten remark">&nbsp;</span>}
-                          </td>
                           <td><span className="pm-paper-writing-line" aria-label="Blank space for handwritten inspection time">&nbsp;</span></td>
                         </tr>
                       );
@@ -207,8 +225,33 @@ export function PmMachineInspectionPrint({ data, mode = 'saved', printedIssue }:
                 </table>
               </section>
             ))}
+            {matrixSections.some(task=>task.parts.some(part=>part.checks.other.length>0)) && (
+              <section className="pm-paper-task mt-2" data-testid="pm-paper-extra-checks">
+                <h2 className="pm-paper-heading pm-print-no-break text-[9px]">Additional configured checks</h2>
+                <table className="pm-paper-field-table text-[7px]">
+                  <thead><tr><th>GT CODE</th><th>Inspection parameter</th><th>Reading</th><th>TIME</th></tr></thead>
+                  <tbody>
+                    {[...new Map(matrixSections.flatMap(task=>task.parts.flatMap(part=>part.checks.other.map(check=>[
+                      check.pointId || check.id,
+                      {partCode:part.partCode,check},
+                    ] as const)))).values()].map(({partCode,check})=>(
+                      <tr key={check.id} className="pm-paper-row">
+                        <td className="pm-paper-code">{partCode}</td>
+                        <td>{check.checkName}</td>
+                        <td>{check.requiresConfiguration?'SET UP':<span className="pm-paper-writing-line">&nbsp;</span>}</td>
+                        <td><span className="pm-paper-writing-line">&nbsp;</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
             {fieldSections.length === 0 && <p className="mt-3 border p-3">No active inspection tasks are assigned for this machine and operating state.</p>}
-            <footer className="pm-print-no-break mt-4 space-y-3 text-xs">
+            <footer className="pm-print-no-break mt-3 space-y-2 text-xs">
+              <div className="text-[8px]">
+                <p className="font-semibold">Exceptions / N/A reasons (reference the part code)</p>
+                <p className="border-b border-slate-400 pb-1">__________________________________________________________________________________________________</p>
+              </div>
               <p><strong>Reporting:</strong> Notify the supervisor of dangerous readings immediately. Data entry
                 drafts a corrective work order for planner assessment; it does not authorize repairs or close the order.</p>
               <div className="grid grid-cols-2 gap-8 pt-3">

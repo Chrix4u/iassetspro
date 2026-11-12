@@ -12,7 +12,8 @@ describe('printed Action List and engineer-approved part parameters', () => {
     expect(sheet).toContain('<th>BLOCK</th><th>PART</th><th>V.PART</th><th>GT CODE</th><th>DESCRIPTION</th>');
     expect(sheet).toContain('INDUSTRIAL_INSPECTION_COLUMNS.map');
     expect(sheet).toContain('pm-paper-writing-line');
-    expect(sheet).toContain('<th>REMARK</th><th>TIME</th>');
+    expect(sheet).toContain('<th>TIME</th>');
+    expect(sheet).not.toContain('<th>REMARK</th>');
     expect(sheet).toContain('Inspector name/signature:');
   });
   it('lets planners assign reusable temperature/vibration/sound/corrosion controls, without guessing limits', () => {

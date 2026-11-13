@@ -4,6 +4,7 @@ import { apiCall, apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } fro
 
 test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
   test('planner commissions assembly/part in UI, creates a direct PM assignment, and preserves legacy schedule compatibility', async ({ page, context }) => {
+    test.setTimeout(180_000);
     const plannerToken = await getToken('planner');
     const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
     const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
@@ -169,6 +170,42 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       await page.getByText(templateTitle, { exact: false }).last().click();
       await expect(assignmentDialog.getByText(taskDescription, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(assignmentDialog.getByText('Tasks:', { exact: false })).toBeVisible();
+
+      // Regression for the sticky Add Task from Library action: the original
+      // task toolbar remains the primary action when visible, while scrolling
+      // past six imported tasks exposes a usable copy in the dialog header.
+      // Exercise both the desktop dialog and mobile bottom sheet without
+      // changing the draft assignment or its footer totals.
+      for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        const currentDialog = page.getByRole('dialog').filter({ has: assignmentHeading });
+        const toolbar = currentDialog.getByTestId('pm-assignment-task-toolbar');
+        const shortcut = currentDialog.getByTestId('pm-sticky-add-task');
+        const total = currentDialog.getByTestId('pm-assignment-footer-total');
+        await toolbar.scrollIntoViewIfNeeded();
+        await expect(shortcut).toHaveCount(0);
+        const totalBefore = await total.innerText();
+
+        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+          scrollArea.scrollTop = scrollArea.scrollHeight;
+          scrollArea.dispatchEvent(new Event('scroll'));
+        });
+        await expect(shortcut).toBeVisible();
+        await expect(shortcut).toBeEnabled();
+        await shortcut.click();
+
+        const taskPicker = page.getByRole('dialog').filter({
+          has: page.getByRole('heading', { name: 'Add Task from Library', exact: true }),
+        });
+        await expect(taskPicker).toBeVisible();
+        await taskPicker.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(taskPicker).toBeHidden();
+        await expect(total).toHaveText(totalBefore);
+
+        await toolbar.scrollIntoViewIfNeeded();
+        await expect(shortcut).toHaveCount(0);
+      }
+      await page.setViewportSize({ width: 1280, height: 800 });
 
       const continueButton = assignmentDialog.getByRole('button', { name: 'Continue to Triggers', exact: true });
       await expect(continueButton).toBeEnabled();

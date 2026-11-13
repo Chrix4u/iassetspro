@@ -24,10 +24,35 @@ interface Props {
   targetConfirmed?: boolean;
   disabled?: boolean;
   stage?: 'tasks' | 'triggers';
+  pickerOpen?: boolean;
+  onPickerOpenChange?: (open: boolean) => void;
+  onToolbarVisibleChange?: (visible: boolean) => void;
 }
 
-export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false, stage = 'triggers' }: Props) {
-  const [pickerOpen, setPickerOpen] = useState(false);
+export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false, stage = 'triggers', pickerOpen: controlledPickerOpen, onPickerOpenChange, onToolbarVisibleChange }: Props) {
+  const [internalPickerOpen, setInternalPickerOpen] = useState(false);
+  const pickerOpen = controlledPickerOpen ?? internalPickerOpen;
+  const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (stage !== 'tasks' || !onToolbarVisibleChange) return;
+    const toolbar = toolbarRef.current;
+    const scroller = toolbar?.closest('.responsive-dialog-body');
+    if (!toolbar || !scroller) return;
+    const checkVisibility = () => {
+      const button = toolbar.getBoundingClientRect();
+      const viewport = scroller.getBoundingClientRect();
+      onToolbarVisibleChange(button.top >= viewport.top && button.bottom <= viewport.bottom);
+    };
+    checkVisibility();
+    scroller.addEventListener('scroll', checkVisibility, { passive: true });
+    window.addEventListener('resize', checkVisibility);
+    return () => {
+      scroller.removeEventListener('scroll', checkVisibility);
+      window.removeEventListener('resize', checkVisibility);
+    };
+  }, [stage, onToolbarVisibleChange]);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
   const [conditions, setConditions] = useState<PmAssignmentConditionSourceOption[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -100,7 +125,7 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
 
   return (
     <div data-testid="pm-assignment-task-planner" className="space-y-2">
-      <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div ref={toolbarRef} data-testid="pm-assignment-task-toolbar" className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{stage === 'tasks' ? '1. Tasks' : '2. Triggers'}</p>
           <p className="text-[11px] text-muted-foreground">{stage === 'tasks' ? 'Choose the Task Library work that belongs to this machine or part. Trigger settings are configured in the next step.' : 'Configure the trigger for every task independently. Each task can use TBM, UBM, CBM or FBM without changing the other tasks on this target.'}</p>

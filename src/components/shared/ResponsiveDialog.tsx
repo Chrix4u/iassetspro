@@ -52,6 +52,8 @@ export interface ResponsiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: React.ReactNode;
+  /** Optional action outside the accessible dialog title, fixed beside the heading. */
+  headerAction?: React.ReactNode;
   description?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -69,6 +71,7 @@ export function ResponsiveDialog({
   open,
   onOpenChange,
   title,
+  headerAction,
   description,
   children,
   footer,
@@ -117,6 +120,7 @@ export function ResponsiveDialog({
                 <SheetDescription className="text-sm mt-1">{description}</SheetDescription>
               )}
             </div>
+            {headerAction && <div className="shrink-0">{headerAction}</div>}
             {showCloseButton && title && (
               <SheetClose asChild>
                 <button
@@ -159,14 +163,17 @@ export function ResponsiveDialog({
         )}
         onPointerDownOutside={handlePointerDownOutside}
       >
-        <DialogHeader className={!(title || description) ? "sr-only" : undefined}>
-          <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
-          {description ? (
-            <DialogDescription>{description}</DialogDescription>
-          ) : (
-            <DialogDescription className="sr-only">Dialog</DialogDescription>
-          )}
-        </DialogHeader>
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
+          <DialogHeader className={cn("min-w-0 flex-1", !(title || description) && "sr-only")}>
+            <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
+            {description ? (
+              <DialogDescription>{description}</DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only">Dialog</DialogDescription>
+            )}
+          </DialogHeader>
+          {headerAction && <div className="shrink-0">{headerAction}</div>}
+        </div>
 
         <div className={cn("responsive-dialog-body flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden", !footer && "pb-2")}>
           {children}

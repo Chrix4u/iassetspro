@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { PmTaskType } from '@/lib/pm-task';
@@ -44,6 +44,9 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
   const [templateLoading, setTemplateLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<PmAssignmentAuthoringStep>(initialStep);
+  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
+  const [taskToolbarVisible, setTaskToolbarVisible] = useState(true);
+  const reportTaskToolbarVisible = useCallback((visible: boolean) => setTaskToolbarVisible(visible), []);
   const templateSequence = useRef(0);
 
   const asset = assetCache[assetId] || null;
@@ -59,6 +62,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     setTasks([]);
     setTemplateLoading(false);
     setStep(initialStep);
+    setTaskPickerOpen(false);
+    setTaskToolbarVisible(true);
   }, [initialStep]);
 
   React.useEffect(() => {
@@ -240,6 +245,13 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
       title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
+      headerAction={step === 'tasks' && !taskToolbarVisible ? (
+        <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 text-xs"
+          data-testid="pm-sticky-add-task" onClick={() => setTaskPickerOpen(true)}
+          disabled={saving || templateLoading || !assetId || !targetConfirmed}>
+          <Plus className="mr-1 h-3.5 w-3.5" />Add Task from Library
+        </Button>
+      ) : null}
       description={step === 'tasks' ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.' : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -337,6 +349,9 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
           targetConfirmed={targetConfirmed}
           disabled={saving || templateLoading}
           stage={step}
+          pickerOpen={taskPickerOpen}
+          onPickerOpenChange={setTaskPickerOpen}
+          onToolbarVisibleChange={reportTaskToolbarVisible}
         />
       </div>
     </ResponsiveDialog>

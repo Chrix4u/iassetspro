@@ -54,7 +54,10 @@ import {
   Building2,
   User,
   Layers,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ============================================================================
 // TYPES
@@ -126,7 +129,7 @@ interface TriggerSourceOption {
 
 const TRIGGER_TYPE_CONFIG: Record<
   TriggerType,
-  { label: string; color: string; bg: string; border: string; icon: React.ElementType; description: string }
+  { label: string; color: string; bg: string; border: string; icon: LucideIcon; description: string }
 > = {
   time: {
     label: 'Time',
@@ -297,8 +300,8 @@ function TriggerCard({
     <Card className="border-0 shadow-sm hover:shadow-md transition-shadow">
       <CardContent className="p-4 space-y-3">
         {/* Top row: Type badge + Status */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
             <Badge variant="outline" className={`text-[11px] font-semibold border ${typeConf.border} ${typeConf.bg} ${typeConf.color}`}>
               <TypeIcon className="h-3 w-3 mr-1" />
               {typeConf.label}
@@ -313,13 +316,13 @@ function TriggerCard({
               </Badge>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             {canEdit && (
               <>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7 shrink-0"
                   onClick={onToggle}
                   title={trigger.isActive ? 'Deactivate' : 'Activate'}
                 >
@@ -328,7 +331,7 @@ function TriggerCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-7 w-7 shrink-0"
                   onClick={onEdit}
                   title="Edit"
                 >
@@ -340,7 +343,7 @@ function TriggerCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-7 w-7 shrink-0"
                 onClick={onDelete}
                 title="Delete"
               >
@@ -788,6 +791,7 @@ export default function PmTriggersPage() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchText, setSearchText] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
 
@@ -1067,6 +1071,16 @@ export default function PmTriggersPage() {
             Clear
           </Button>
         )}
+        <div className="ml-auto flex shrink-0 items-center gap-1 rounded-md border p-1" role="group" aria-label="Trigger view">
+          <Button variant={viewMode === 'grid' ? 'secondary' : 'ghost'} size="sm" className="h-8 gap-1 px-2"
+            aria-pressed={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
+            <LayoutGrid className="h-3.5 w-3.5" />Grid
+          </Button>
+          <Button variant={viewMode === 'table' ? 'secondary' : 'ghost'} size="sm" className="h-8 gap-1 px-2"
+            aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>
+            <List className="h-3.5 w-3.5" />Table
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
@@ -1088,22 +1102,55 @@ export default function PmTriggersPage() {
             }
           />
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      ) : viewMode === 'grid' ? (
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filteredTriggers.map((trigger) => (
-            <TriggerCard
-              key={trigger.id}
-              trigger={trigger}
+            <TriggerCard key={trigger.id} trigger={trigger}
               onEdit={() => handleEdit(trigger)}
               onToggle={() => handleToggle(trigger)}
-              onDelete={() => {
-                setDeleteTarget(trigger);
-                setDeleteDialogOpen(true);
-              }}
-              canEdit={canEdit}
-              canDelete={canDelete}
-            />
+              onDelete={() => { setDeleteTarget(trigger); setDeleteDialogOpen(true); }}
+              canEdit={canEdit} canDelete={canDelete} />
           ))}
+        </div>
+      ) : (
+        <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border" data-testid="pm-triggers-table">
+          <table className="w-full min-w-[780px] text-left text-xs">
+            <thead className="border-b bg-muted/40"><tr>
+              <th className="px-3 py-2">PM Schedule / Machine</th>
+              <th className="px-3 py-2">Trigger type</th>
+              <th className="px-3 py-2">Value / threshold</th>
+              <th className="px-3 py-2">State</th>
+              <th className="px-3 py-2">Last activated</th>
+              <th className="sticky right-0 bg-muted px-2 py-2">Actions</th>
+            </tr></thead>
+            <tbody>{filteredTriggers.map((trigger) => {
+              const typeConf = TRIGGER_TYPE_CONFIG[trigger.triggerType as TriggerType] || TRIGGER_TYPE_CONFIG.time;
+              return <tr key={trigger.id} className="border-b last:border-0 hover:bg-muted/20" data-testid="pm-trigger-table-row">
+                <td className="px-3 py-2"><p className="font-medium">{trigger.schedule.title}</p>
+                  <p className="text-muted-foreground">{trigger.schedule.asset.name} · {trigger.schedule.asset.assetTag}</p></td>
+                <td className="px-3 py-2">{typeConf.label}</td>
+                <td className="px-3 py-2">{formatTriggerValue(trigger.triggerType as TriggerType, trigger.triggerValue)}</td>
+                <td className="px-3 py-2"><Badge variant={trigger.isActive ? 'secondary' : 'outline'}>{trigger.isActive ? 'Active' : 'Inactive'}</Badge></td>
+                <td className="px-3 py-2">{trigger.lastTriggeredAt ? timeAgo(trigger.lastTriggeredAt) : 'Never'}</td>
+                <td className="sticky right-0 bg-background px-1.5 py-2">
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    {canEdit && <>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={() => void handleToggle(trigger)} disabled={toggleLoading === trigger.id}
+                        aria-label={trigger.isActive ? 'Deactivate trigger' : 'Activate trigger'}>
+                        <Power className="h-3.5 w-3.5"/></Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={() => void handleEdit(trigger)} aria-label="Edit trigger">
+                        <Pencil className="h-3.5 w-3.5"/></Button>
+                    </>}
+                    {canDelete && <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => {setDeleteTarget(trigger);setDeleteDialogOpen(true);}} aria-label="Delete trigger">
+                      <Trash2 className="h-3.5 w-3.5 text-red-500"/></Button>}
+                  </div>
+                </td>
+              </tr>;
+            })}</tbody>
+          </table>
         </div>
       )}
 

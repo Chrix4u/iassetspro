@@ -639,7 +639,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           </p>
           <div className="space-y-1">
             <Label>Where were these readings taken?</Label>
-            <Select value={recordSource} onValueChange={(value) => setRecordSource(value as 'digital' | 'paper')}>
+            <Select value={recordSource} onValueChange={(value) => { setRecordSource(value as 'digital' | 'paper'); setRecord((current) => ({ ...current, requestKey: '' })); }}>
               <SelectTrigger aria-label="Inspection entry source"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="digital">Direct electronic inspection · recorded at save</SelectItem>
                 <SelectItem value="paper">Transcribe paper inspection · original field time</SelectItem></SelectContent>
@@ -647,13 +647,13 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           </div>
           {recordSource === 'paper' && <div className="grid gap-2 rounded-md border p-2 sm:grid-cols-2" data-testid="pm-individual-paper-evidence">
             <div className="space-y-1"><Label>Field inspector (from paper)</Label>
-              <Input value={fieldInspector} onChange={(event) => setFieldInspector(event.target.value)}
+              <Input value={fieldInspector} onChange={(event) => { setFieldInspector(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}
                 placeholder="Technician who performed inspection" maxLength={160}/></div>
             <div className="space-y-1"><Label>Paper worksheet reference</Label>
-              <Input value={paperReference} onChange={(event) => setPaperReference(event.target.value)}
+              <Input value={paperReference} onChange={(event) => { setPaperReference(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}
                 placeholder="Original action list / sheet number" maxLength={120}/></div>
             <div className="space-y-1 sm:col-span-2"><Label>Original inspection date and time</Label>
-              <Input type="datetime-local" value={fieldInspectedAt} onChange={(event) => setFieldInspectedAt(event.target.value)}/></div>
+              <Input type="datetime-local" value={fieldInspectedAt} onChange={(event) => { setFieldInspectedAt(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}/></div>
             <p className="text-xs text-muted-foreground sm:col-span-2">The original inspection time is kept separately from the electronic entry time and user audit log.</p>
           </div>}
           {recordPoint.inspectionType === 'measurement' ? <>

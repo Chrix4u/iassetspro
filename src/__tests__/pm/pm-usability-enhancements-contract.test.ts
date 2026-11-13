@@ -40,6 +40,13 @@ describe('PM usability refinements', () => {
     expect(panel).toContain('AsyncSearchableSelect');
   });
 
+  it('preserves the selected remote machine label across paginated searches', () => {
+    const select = read('src/components/ui/searchable-select.tsx');
+    expect(select).toContain('const [selectedOption, setSelectedOption]');
+    expect(select).toContain('const displayedOptions =');
+    expect(select).toContain('options={displayedOptions}');
+  });
+
   it('switches trigger layouts while preserving controlled actions and permissions', () => {
     const page = read('src/components/modules/PmTriggersPage.tsx');
     expect(page).toContain('setViewMode');

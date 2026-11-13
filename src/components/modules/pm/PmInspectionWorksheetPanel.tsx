@@ -221,6 +221,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         unit: plan.method === 'measurement' ? plan.unit.trim() : null,
         min: plan.min.trim() ? Number(plan.min) : null,
         max: plan.max.trim() ? Number(plan.max) : null,
+        warningMin: plan.method === 'measurement' && plan.warningMin.trim() ? Number(plan.warningMin) : null,
+        warningMax: plan.method === 'measurement' && plan.warningMax.trim() ? Number(plan.warningMax) : null,
         nextInspection: plan.nextInspection || undefined,
       });
       if (!response.success) throw new Error(response.error || 'Could not save inspection plan');
@@ -625,6 +627,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             <div><Label>Unit</Label><Input value={plan.unit} onChange={(e) => setPlan({ ...plan, unit: e.target.value })} placeholder="bar"/></div>
             <div><Label>Minimum acceptable</Label><Input type="number" step="any" value={plan.min} onChange={(e) => setPlan({ ...plan, min: e.target.value })}/></div>
             <div><Label>Maximum acceptable</Label><Input type="number" step="any" value={plan.max} onChange={(e) => setPlan({ ...plan, max: e.target.value })}/></div>
+            <div><Label>Warning minimum (optional)</Label><Input type="number" step="any" value={plan.warningMin} onChange={(e) => setPlan({ ...plan, warningMin: e.target.value })}/></div>
+            <div><Label>Warning maximum (optional)</Label><Input type="number" step="any" value={plan.warningMax} onChange={(e) => setPlan({ ...plan, warningMax: e.target.value })}/></div>
+            <p className="sm:col-span-2 text-xs text-muted-foreground">Engineers can optionally define a narrower warning band inside the approved min/max. Values inside hard limits but outside the warning band become Needs attention; values outside hard limits become Fail.</p>
           </>}
           <div className="sm:col-span-2"><Label>First inspection due</Label><Input type="date" value={plan.nextInspection} onChange={(e) => setPlan({ ...plan, nextInspection: e.target.value })}/></div>
           <div className="sm:col-span-2"><Label>Instructions / sight-check criteria</Label><Textarea value={plan.description} onChange={(e) => setPlan({ ...plan, description: e.target.value })} placeholder="Where to inspect and what an acceptable condition looks like"/></div>

@@ -47,7 +47,7 @@ describe('application page spacing contract', () => {
 
   it('keeps the app shell selector aligned with the actual scroll container', () => {
     const app = read('src/components/EAMApp.tsx');
-    expect(app).toContain('<main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">');
+    expect(app).toContain('<main className="flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0">');
   });
 
   it('keeps the work-order sticky header aligned with the shared phone and desktop gutters', () => {

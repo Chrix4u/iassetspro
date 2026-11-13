@@ -35,7 +35,7 @@ function taskDueSoon(row: PmAssignmentTargetListRecord, now: Date) {
   return due >= now.getTime() && due <= now.getTime() + 7 * 86400000;
 }
 
-export function PmPlanningPage() {
+export function PmPlanningPage({ view = 'overview' }: { view?: 'overview' | 'planning' | 'compliance' }) {
   const [assignments, setAssignments] = useState<PmAssignmentTargetListRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignmentOpen, setAssignmentOpen] = useState(false);
@@ -44,7 +44,6 @@ export function PmPlanningPage() {
   const [viewTarget, setViewTarget] = useState<PmAssignmentTargetGroup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PmAssignmentTargetGroup | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [showReports, setShowReports] = useState(false);
   const [automationStatus, setAutomationStatus] = useState<any>(null);
   const { hasPermission, isAdmin } = useAuthStore();
   const canCreate = hasPermission('pm_schedules.create') || hasPermission('work_orders.create') || isAdmin();
@@ -93,36 +92,34 @@ export function PmPlanningPage() {
   };
 
   return <div className="page-content space-y-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p><h1 className="text-2xl font-bold tracking-tight">PM Schedule Overview</h1><p className="mt-1 text-sm text-muted-foreground">Choose a machine to check what is due, print its inspection sheet and review recorded results. Each task can be assigned to the exact parts that need it.</p>{automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}</div>
-      {canCreate && <Button size="sm" onClick={() => { setEditTarget(null); setTriggerTarget(null); setAssignmentOpen(true); }}><Plus className="mr-1.5 h-4 w-4"/>Add PM Schedule</Button>}
-    </div>
-
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Stat label="Machines" value={machines.length} icon={ClipboardList}/><Stat label="Scheduled Part-Tasks" value={assignments.length} icon={Activity}/><Stat label="Machine / Parts Due Soon" value={dueSoonTargets} icon={Clock}/><Stat label="Machine / Parts Overdue" value={overdueTargets} icon={AlertTriangle}/>
-    </div>
-
-    <section aria-label="How to use PM schedules" className="rounded-xl border bg-muted/20 p-3 sm:p-4" data-testid="pm-schedule-quick-guide">
-      <h2 className="text-base font-semibold">Start here — 3 steps</h2>
-      <div className="mt-2 grid gap-2 text-sm md:grid-cols-3">
-        <div className="rounded-lg border bg-background p-3"><strong>1. Check a machine</strong><p className="mt-1 text-xs text-muted-foreground">Select a machine below to see tasks due now, soon or overdue, including the affected parts.</p></div>
-        <div className="rounded-lg border bg-background p-3"><strong>2. Print an inspection sheet</strong><p className="mt-1 text-xs text-muted-foreground">Choose the machine and Running or Standstill. Print every assigned part under its inspection task, with blank boxes for readings.</p></div>
-        <div className="rounded-lg border bg-background p-3"><strong>3. Enter the complete sheet</strong><p className="mt-1 text-xs text-muted-foreground">Select the issued paper reference, transcribe Temp / Vib / Sound / Corr by part in the spreadsheet, then Save All. Review abnormal readings and corrective WOs.</p></div>
+    {view === 'overview' && <>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Preventive Maintenance</p>
+          <h1 className="text-2xl font-bold tracking-tight">PM Schedules</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage the maintenance assignments and due cycles for every machine and part. Detailed inspections, Action Lists and planning reports now have their own pages.</p>
+          {automationStatus && <div className="mt-2 flex items-center gap-2 text-xs"><span className="text-muted-foreground">PM Automation</span><Badge variant="outline">{automationStatus.health === 'healthy' ? 'Healthy' : automationStatus.health || 'Unknown'}</Badge></div>}
+        </div>
+        {canCreate && <Button size="sm" onClick={() => { setEditTarget(null); setTriggerTarget(null); setAssignmentOpen(true); }}><Plus className="mr-1.5 h-4 w-4"/>Add PM Schedule</Button>}
       </div>
-    </section>
-    <PmInspectionWorksheetPanel />
-    <PmMachineRollupPanel />
-    <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
-    <details className="rounded-xl border bg-card p-3 sm:p-4" data-testid="pm-more-planning-reports"
-      onToggle={(event) => setShowReports(event.currentTarget.open)}>
-      <summary className="cursor-pointer text-sm font-semibold">More planning reports (upcoming work, scheduling warnings and maintenance history)</summary>
-      <p className="mb-3 mt-2 text-xs text-muted-foreground">These reports help planners look across many machines. Use the sections above for daily machine inspections.</p>
-      {showReports && <div className="space-y-4">
-        <PmEnterpriseForwardPlan />
-        <PmSchedulingConflictsPanel />
-        <PmPortfolioCompliancePanel />
-      </div>}
-    </details>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Machines" value={machines.length} icon={ClipboardList}/>
+        <Stat label="Scheduled Part-Tasks" value={assignments.length} icon={Activity}/>
+        <Stat label="Due Soon" value={dueSoonTargets} icon={Clock}/>
+        <Stat label="Overdue" value={overdueTargets} icon={AlertTriangle}/>
+      </div>
+      <p className="text-sm text-muted-foreground">Use the filters below to find schedules by machine, part or task. Open <strong>Inspection Readings</strong> to review measurements, or <strong>Machine Planning</strong> to create grouped work bundles.</p>
+      <PmAssignmentTargetList groups={groups} loading={loading} canEdit={canEdit} canDelete={canDelete} onView={setViewTarget} onEdit={(group) => { setTriggerTarget(null); setEditTarget(group); }} onConfigureTriggers={(group) => { setEditTarget(null); setTriggerTarget(group); }} onDelete={setDeleteTarget}/>
+    </>}
+    {view === 'planning' && <>
+      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">PM Planning</p><h1 className="text-2xl font-bold tracking-tight">Forward Planning & Conflicts</h1><p className="mt-1 text-sm text-muted-foreground">See upcoming maintenance across machines, review workload and resolve scheduling conflicts before creating work orders.</p></div>
+      <PmEnterpriseForwardPlan />
+      <PmSchedulingConflictsPanel />
+    </>}
+    {view === 'compliance' && <>
+      <div><p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">PM Performance</p><h1 className="text-2xl font-bold tracking-tight">Maintenance Compliance</h1><p className="mt-1 text-sm text-muted-foreground">Compare completed, due and overdue maintenance across plants, departments and machines. Review exceptions here without crowding the schedule list.</p></div>
+      <PmPortfolioCompliancePanel />
+    </>}
 
     <PmAssignmentFormDialog
       open={assignmentOpen || Boolean(editTarget) || Boolean(triggerTarget)}

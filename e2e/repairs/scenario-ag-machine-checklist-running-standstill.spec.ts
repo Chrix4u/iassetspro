@@ -169,10 +169,10 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
     });
   });
 
-  await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 25_000 });
+  await page.goto('/#/pm-action-lists');
+  await expect(page.getByRole('heading', { name: 'Machine Action Lists', exact: true })).toBeVisible({ timeout: 25_000 });
   const worksheet = page.getByTestId('pm-inspection-worksheet');
-  await worksheet.getByRole('combobox', { name: 'All machines' }).click();
+  await worksheet.getByTestId('pm-inspection-generate-machine').getByRole('combobox').first().click();
   await expect(page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true })).toBeVisible();
   await page.getByText('Mercerizer C314 UAT [C314-UAT]', { exact: true }).click();
 

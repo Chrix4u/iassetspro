@@ -80,37 +80,43 @@ test('UAT-mobile: PM inspection rows and risk reports fit a 390px phone viewport
     });
   });
 
-  await page.goto('/#/pm-schedules');
-  await expect(page.getByRole('heading', { name: 'PM Schedule Overview', exact: true })).toBeVisible({ timeout: 25_000 });
+  await page.route((url) => url.pathname === '/api/assets', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      success: true, data: [{ id: 'uat-mobile-asset', name: longMachine, assetTag: 'AST-202609-0001' }],
+    }) });
+  });
+  await page.goto('/#/pm-scheduled-inspections');
+  await expect(page.getByRole('heading', { name: 'Scheduled Inspection Tasks', exact: true })).toBeVisible({ timeout: 25_000 });
+  await page.getByRole('combobox', { name: 'Choose machine name or code' }).click();
+  await page.getByText(longMachine + ' [AST-202609-0001]', { exact: true }).last().click();
   const row = page.getByTestId('pm-scheduled-compact-row');
   await expect(row).toHaveCount(1, { timeout: 20_000 });
   await expect(row.getByRole('button', { name: 'View', exact: true })).toBeVisible();
   await expect(row).toContainText('Impeller');
   await expect(row).not.toContainText(taskDescription);
 
-  // Portfolio reports are deliberately collapsed beneath the daily machine workflow.
-  await page.getByTestId('pm-more-planning-reports').locator('summary').click();
-  await expect(page.getByTestId('pm-department-risk-mobile').first()).toBeVisible({ timeout: 25_000 });
-
-  for (const testId of [
-    'pm-scheduled-compact-row',
-    'pm-department-risk-mobile',
-    'pm-machine-risk-mobile',
-    'pm-oldest-overdue-mobile',
-  ]) {
-    const element = page.getByTestId(testId).first();
-    await expect(element).toBeVisible({ timeout: 25_000 });
-    const bounds = await element.boundingBox();
-    expect(bounds, testId).not.toBeNull();
-    expect(bounds!.x, testId).toBeGreaterThanOrEqual(-1);
-    expect(bounds!.x + bounds!.width, testId).toBeLessThanOrEqual(391);
-    const hasHorizontalOverflow = await element.evaluate((node) => node.scrollWidth > node.clientWidth + 2);
-    expect(hasHorizontalOverflow, `${testId} must not overflow horizontally`).toBe(false);
-  }
-
+  const scheduledBounds = await row.boundingBox();
+  expect(scheduledBounds).not.toBeNull();
+  expect(scheduledBounds!.x).toBeGreaterThanOrEqual(-1);
+  expect(scheduledBounds!.x + scheduledBounds!.width).toBeLessThanOrEqual(391);
   await row.getByRole('button', { name: 'View', exact: true }).click();
   const details = page.getByRole('dialog').last();
   await expect(details).toContainText(taskDescription);
   await expect(details).toContainText('P01-CMP-IMPELLER');
-  await expect(details.getByRole('button', { name: 'Configure Check' })).toBeVisible();
+  await details.getByRole('button', { name: 'Close', exact: true }).last().click();
+
+  // Portfolio reports now belong to their own page, not beneath the schedule list.
+  await page.goto('/#/pm-compliance');
+  await expect(page.getByRole('heading', { name: 'Maintenance Compliance', exact: true })).toBeVisible();
+  await expect(page.getByTestId('pm-department-risk-mobile').first()).toBeVisible({ timeout: 25_000 });
+  for (const testId of ['pm-department-risk-mobile', 'pm-machine-risk-mobile', 'pm-oldest-overdue-mobile']) {
+    const element = page.getByTestId(testId).first();
+    await expect(element).toBeVisible({ timeout: 25_000 });
+    const bounds = await element.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(-1);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(391);
+    const hasHorizontalOverflow = await element.evaluate((node) => node.scrollWidth > node.clientWidth + 2);
+    expect(hasHorizontalOverflow, testId + ' must not overflow horizontally').toBe(false);
+  }
 });

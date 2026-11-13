@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 const file = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 const planner = file('src/components/modules/pm/PmPlanningPage.tsx');
 const worksheet = file('src/components/modules/pm/PmInspectionWorksheetPanel.tsx');
+const workspaces = file('src/components/modules/pm/PmWorkspacePages.tsx');
+const groupedReadings = file('src/components/modules/pm/PmGroupedReadingsPage.tsx');
 const listRoute = file('src/app/api/pm-inspections/route.ts');
 const scheduledRoute = file('src/app/api/pm-inspections/scheduled/route.ts');
 const entryRoute = file('src/app/api/pm-inspections/[pointId]/records/route.ts');
@@ -15,7 +17,11 @@ const schema = file('prisma/schema.prisma');
 
 describe('PM inspection lifecycle integration contracts', () => {
   it('exposes a filtered list of existing PM tasks and planned part inspection points', () => {
-    expect(planner).toContain('<PmInspectionWorksheetPanel />');
+    // The widget moved out of the compact PM Schedules page into Action Lists.
+    expect(planner).not.toContain('<PmInspectionWorksheetPanel />');
+    expect(workspaces).toContain('<PmInspectionWorksheetPanel mode="action-lists"/>');
+    expect(workspaces).toContain('<PmGroupedReadingsPage />');
+    expect(groupedReadings).toContain('groupInspectionPoints(rows)');
     expect(worksheet).toContain('Plan Inspection');
     expect(worksheet).toContain('Record Inspection');
     expect(worksheet).toContain('Generate List');

@@ -185,6 +185,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* The app uses its own vertical scroller. Mobile popovers must never
+     horizontally scroll the document and leave the header/cards shifted. */
+  html,
+  body {
+    overflow-x: clip;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -452,6 +458,19 @@ header[class*="bg-header"] {
 @media (min-width: 1024px) {
   .page-content {
     padding: 2rem;
+  }
+}
+
+/* The selected machine's task groups can have long industrial part codes.
+   On narrow screens keep the PM readings workspace anchored at the left gutter
+   instead of allowing intrinsic child widths and auto margins to center it offscreen. */
+@media (max-width: 639px) {
+  .page-content.pm-machine-readings {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin-inline: 0;
+    overflow-x: clip;
   }
 }
 

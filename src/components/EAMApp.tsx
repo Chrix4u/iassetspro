@@ -27,6 +27,7 @@ import {
 import type { PageName, Plant } from '@/types';
 import { PAGE_PERMISSIONS, pageHasPermission, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
 import { api } from '@/lib/api';
+import { PmPageGuideAssistant } from '@/components/modules/pm/PmPageGuideAssistant';
 
 // ============================================================================
 // PAGE TITLE MAP — module-level (no hook dependency)
@@ -62,6 +63,13 @@ const PAGE_TITLES: Record<string, string> = {
   'maintenance-risk-assessment': 'Risk Assessment',
   'maintenance-tools': 'Tools',
   'pm-schedules': 'PM Schedules',
+  'pm-inspections': 'Inspection Readings',
+  'pm-action-lists': 'Action Lists',
+  'pm-scheduled-inspections': 'Scheduled Inspection Tasks',
+  'pm-machine-planning': 'Machine Planning & Bundles',
+  'pm-forward-planning': 'PM Forward Planning',
+  'pm-compliance': 'PM Compliance',
+  'pm-inspection-exceptions': 'Inspection Exceptions',
   'pm-tasks': 'PM Task Library',
   'pm-templates': 'PM Templates',
   'pm-triggers': 'PM Triggers',
@@ -220,6 +228,13 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'maintenance-risk-assessment': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRiskAssessmentPage),
   'maintenance-tools': () => import('./modules/MaintenancePages').then(m => m.MaintenanceToolsPage),
   'pm-schedules': () => import('./modules/MaintenancePages').then(m => m.PmSchedulesPage),
+  'pm-inspections': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmInspectionReadingsPage),
+  'pm-action-lists': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmActionListsPage),
+  'pm-scheduled-inspections': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmScheduledInspectionsPage),
+  'pm-machine-planning': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmMachinePlanningPage),
+  'pm-forward-planning': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmForwardPlanningPage),
+  'pm-compliance': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmComplianceWorkspacePage),
+  'pm-inspection-exceptions': () => import('./modules/pm/PmWorkspacePages').then(m => m.PmInspectionExceptionsPage),
   'pm-tasks': () => import('./modules/pm/PmTaskLibraryPage').then(m => m.PmTaskLibraryPage),
   'pm-templates': () => import('./modules/MaintenancePages').then(m => m.PmTemplatesPage),
   'pm-triggers': () => import('./modules/PmTriggersPage').then(m => m.default),
@@ -661,8 +676,9 @@ function AppShell() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
+        <main className="flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0">
           <PageSwitcher page={currentPage} />
+          {currentPageVisible && currentPage.startsWith('pm-') && <PmPageGuideAssistant page={currentPage} />}
         </main>
 
         {/* Mobile Bottom Navigation */}

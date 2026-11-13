@@ -9,7 +9,7 @@ describe('page spacing source audit', () => {
     const loaderEntries = [...app.matchAll(/^\s*'[^']+':\s*\(\)\s*=>\s*import\(/gm)];
     expect(loaderEntries.length).toBeGreaterThan(50);
     expect(app).toContain('<PageSwitcher page={currentPage} />');
-    expect(app).toContain('<main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">');
+    expect(app).toContain('<main className="flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0">');
     expect(css).toContain('main.flex-1.min-h-0.overflow-y-auto > *');
   });
 });

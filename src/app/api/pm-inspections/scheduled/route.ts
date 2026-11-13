@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
     const departmentId = q.get('departmentId')?.trim();
     const componentId = q.get('componentId')?.trim();
     const search = q.get('search')?.trim().slice(0, 120);
+    const page = Math.max(1, Number.parseInt(q.get('page') || '1', 10) || 1);
+    const limit = Math.max(1, Math.min(100, Number.parseInt(q.get('limit') || '50', 10) || 50));
     const where: Prisma.PmScheduleTaskWhereInput = {
       scheduleId: null,
       isActive: true,
@@ -45,9 +47,10 @@ export async function GET(request: NextRequest) {
         { asset: { assetTag: { contains: search, mode: 'insensitive' } } },
       ];
     }
-    const assignments = await db.pmScheduleTask.findMany({
+    const [assignments, total] = await Promise.all([db.pmScheduleTask.findMany({
       where,
-      take: 250,
+      skip: (page - 1) * limit,
+      take: limit,
       include: {
         asset: { select: { id: true, name: true, assetTag: true, plantId: true } },
         component: { select: { id: true, name: true, componentCode: true, componentType: true } },
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
         pmTask: { select: { id: true, taskNumber: true, description: true, taskType: true } },
       },
       orderBy: [{ nextDueDate: 'asc' }, { createdAt: 'asc' }],
-    });
+    }), db.pmScheduleTask.count({ where })]);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today);
@@ -82,7 +85,8 @@ export async function GET(request: NextRequest) {
         dueState,
       };
     });
-    return NextResponse.json({ success: true, data: rows, shown: rows.length, capped: assignments.length === 250 });
+    return NextResponse.json({ success: true, data: rows, shown: rows.length, capped: false,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Failed to load scheduled inspections' }, { status: 500 });
   }

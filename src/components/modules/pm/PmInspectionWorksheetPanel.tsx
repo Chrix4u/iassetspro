@@ -92,7 +92,7 @@ function dueLabel(value: InspectionPoint['dueState']) {
 }
 
 /** A generated, filterable technician inspection list sourced from approved machine-part points. */
-export function PmInspectionWorksheetPanel() {
+export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 'action-lists' }) {
   const { hasPermission, isAdmin } = useAuthStore();
   const canPlan = isAdmin() || hasPermission('pm_schedules.create') || hasPermission('work_orders.create');
   const canRecord = isAdmin() || hasPermission('pm_schedules.update') || hasPermission('work_orders.update') || hasPermission('digital_twin.manage');
@@ -119,6 +119,11 @@ export function PmInspectionWorksheetPanel() {
   const [savingRecord, setSavingRecord] = useState(false);
 
   const refresh = useCallback(async () => {
+    if (mode === 'action-lists') {
+      setRows([]); setScheduledRows([]); setTotal(0); setPageCount(1);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), limit: '50' });
@@ -152,7 +157,7 @@ export function PmInspectionWorksheetPanel() {
     } finally {
       setLoading(false);
     }
-  }, [filters, page]);
+  }, [filters, page, mode]);
 
   useEffect(() => { void refresh(); }, [refresh]);
   const updateFilters = (patch: Partial<typeof filters>) => {
@@ -286,34 +291,34 @@ export function PmInspectionWorksheetPanel() {
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>Action Lists & Inspection Readings</CardTitle>
-            <CardDescription>Select a machine, print the inspection tasks and all their assigned parts, then enter the technician's measured values or written observations.</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Action Lists & Inspection Readings'}</CardTitle>
+            <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Select a machine, print the inspection tasks and all their assigned parts, then enter the technician\'s measured values or written observations.'}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
               <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Generate List
             </Button>
-            <Button type="button" size="sm" variant={exceptionsOpen ? 'default' : 'outline'}
+            {mode === 'full' && <Button type="button" size="sm" variant={exceptionsOpen ? 'default' : 'outline'}
               aria-pressed={exceptionsOpen} onClick={() => {
                 setExceptionsOpen((current) => !current);
                 setMachineChecklistOpen(false);
               }}>
               <AlertTriangle className="mr-1.5 h-4 w-4"/>{exceptionsOpen ? 'Back to Inspection List' : 'Review Exceptions'}
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={exportVisiblePage} disabled={loading || rows.length === 0} title="Export only the filtered inspection points shown on this page">
+            </Button>}
+            {mode === 'full' && <Button type="button" size="sm" variant="outline" onClick={exportVisiblePage} disabled={loading || rows.length === 0} title="Export only the filtered inspection points shown on this page">
               <Download className="mr-1.5 h-4 w-4"/>Export Page CSV
-            </Button>
+            </Button>}
             {canPlan && <Button size="sm" onClick={() => setPlanOpen(true)}><Plus className="mr-1 h-4 w-4"/>Plan Inspection</Button>}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+        {mode === 'full' && <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <Badge variant="outline">{total} inspection points</Badge>
           <Badge variant="outline">{scheduledRows.length} scheduled PM inspection tasks</Badge>
           <Badge variant="outline">{stats.overdue} overdue on page</Badge>
           <Badge variant="outline">{stats.due} due today on page</Badge>
           <Badge variant="outline">{stats.instrument} instrument checks on page</Badge>
           <Badge variant="outline">{stats.openCorrective} open corrective WOs on page</Badge>
-        </div>
+        </div>}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border bg-muted/20 p-3 sm:p-4" data-testid="pm-inspection-generate-machine">
@@ -349,7 +354,7 @@ export function PmInspectionWorksheetPanel() {
             </Button>
           </div>
         </div>
-        <div className={machineChecklistOpen ? 'hidden' : 'space-y-3'} data-testid="pm-inspection-filters">
+        <div className={mode === 'action-lists' || machineChecklistOpen ? 'hidden' : 'space-y-3'} data-testid="pm-inspection-filters">
           {/* Keep the machine selector spacious: three fields on the first desktop row. */}
           <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.65fr)]" data-testid="pm-inspection-filters-primary">
             <div className="flex min-w-0 flex-col justify-end">
@@ -409,7 +414,7 @@ export function PmInspectionWorksheetPanel() {
           onClose={() => setExceptionsOpen(false)}
         />}
         {!exceptionsOpen && <>
-        {!machineChecklistOpen && (
+        {mode === 'full' && !machineChecklistOpen && (
           <p className="text-xs text-muted-foreground">
             The filters below also let you review individual inspection points and their saved history.
             For a full printable machine sheet, use the machine selector above.
@@ -439,7 +444,7 @@ export function PmInspectionWorksheetPanel() {
             }}
           />
         )}
-        {!machineChecklistOpen && <>
+        {mode === 'full' && !machineChecklistOpen && <>
 
         {loading && rows.length === 0 ? <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Generating inspection list…</div> : rows.length === 0 ?
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No inspection points match these filters. Use <strong>Plan Inspection</strong> to define sight or instrument checks for a machine part.</div> :

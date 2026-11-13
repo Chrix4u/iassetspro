@@ -16,7 +16,7 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   await authenticateAs(context,'planner');
   await page.goto('/');
   await page.evaluate(id=>localStorage.setItem('user_plant_id',id),plant);
-  await page.goto('/#/pm-schedules');
+  await page.goto('/#/pm-action-lists');
   const panel=page.getByTestId('pm-inspection-worksheet');
   await expect(panel).toBeVisible({timeout:30000});
   const choose=panel.getByTestId('pm-inspection-generate-machine').getByRole('combobox').first();

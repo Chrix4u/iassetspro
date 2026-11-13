@@ -48,6 +48,8 @@ interface SearchableSelectProps {
   loading?: boolean;
   /** Optional callback used by async wrappers for server-side search. */
   onSearchChange?: (query: string) => void;
+  /** Restore trigger focus without scrolling when closing a mobile machine menu. */
+  preventScrollOnClose?: boolean;
 }
 
 export function SearchableSelect({
@@ -65,9 +67,11 @@ export function SearchableSelect({
   maxHeight = 'max-h-[240px]',
   loading = false,
   onSearchChange,
+  preventScrollOnClose = false,
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedOption = options.find(o => o.value === value);
 
   // Forward mouse wheel events to the scrollable cmdk-list container
@@ -93,6 +97,7 @@ export function SearchableSelect({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           variant="outline"
           role="combobox"
           aria-label={ariaLabel ?? placeholder.replace(/\.\.\.$/, '')}
@@ -139,6 +144,21 @@ export function SearchableSelect({
         align="start"
         onWheel={handleWheel}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={preventScrollOnClose ? (event) => {
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+          // The popover option may have been scrolled horizontally into view
+          // by the browser before it was selected. Restore the application
+          // scroller after focus is returned, preserving vertical position.
+          const restoreX = () => {
+            const scroller = triggerRef.current?.closest('main');
+            if (scroller instanceof HTMLElement) scroller.scrollLeft = 0;
+            document.documentElement.scrollLeft = 0;
+            document.body.scrollLeft = 0;
+          };
+          restoreX();
+          requestAnimationFrame(restoreX);
+        } : undefined}
       >
         <DismissableLayerBranch>
         <Command shouldFilter={false} loop>

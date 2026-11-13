@@ -67,8 +67,8 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
     }
   };
 
-  return <div className="fixed bottom-20 right-3 z-[60] flex max-w-[calc(100vw-1.5rem)] flex-col items-end lg:bottom-5 lg:right-6" data-testid="pm-page-guide">
-    {open && <section aria-label="PM page assistant" role="dialog" className="mb-2 flex max-h-[min(72vh,640px)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-card shadow-xl">
+  return <div className="pointer-events-none fixed bottom-20 right-3 z-[60] flex max-w-[calc(100vw-1.5rem)] flex-col items-end lg:bottom-5 lg:right-6" data-testid="pm-page-guide">
+    {open && <section aria-label="PM page assistant" role="dialog" className="pointer-events-auto mb-2 flex max-h-[min(72vh,640px)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border bg-card shadow-xl">
       <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
         <div className="min-w-0"><h2 className="flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4 text-emerald-600"/>PM Page Guide</h2><p className="truncate text-xs text-muted-foreground">{guide.title}</p></div>
         <Button type="button" size="icon" variant="ghost" aria-label="Close PM guide" onClick={() => setOpen(false)}><X className="h-4 w-4"/></Button>
@@ -96,7 +96,7 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
       </form>
       <p className="px-3 pb-2 text-[10px] text-muted-foreground">Navigation help is verified locally. Other questions use the configured AI provider when available.</p>
     </section>}
-    <Button type="button" aria-expanded={open} aria-label={open ? 'Minimize PM page guide' : 'Open PM page guide'} onClick={() => setOpen((value) => !value)} className="h-11 gap-2 rounded-full px-4 shadow-lg">
+    <Button type="button" aria-expanded={open} aria-label={open ? 'Minimize PM page guide' : 'Open PM page guide'} onClick={() => setOpen((value) => !value)} className="pointer-events-auto h-11 gap-2 rounded-full px-4 shadow-lg">
       <Bot className="h-5 w-5"/>{open ? 'Minimize guide' : 'PM Guide'}{open && <ChevronDown className="h-4 w-4"/>}
     </Button>
   </div>;

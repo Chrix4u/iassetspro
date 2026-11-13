@@ -52,7 +52,7 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   });
 
   await page.goto('/#/pm-inspection-exceptions');
-  await expect(page.getByRole('heading', { name: 'Inspection Exceptions', exact: true })).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByRole('heading', { name: 'Inspection Exceptions', exact: true, level: 1 })).toBeVisible({ timeout: 25_000 });
   const review = page.getByTestId('pm-inspection-exceptions');
   await expect(review).toBeVisible({ timeout: 20_000 });
   await expect(review).toContainText('1 matching exceptions');

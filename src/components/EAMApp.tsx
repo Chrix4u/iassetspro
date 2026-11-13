@@ -676,7 +676,7 @@ function AppShell() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
+        <main className="flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0">
           <PageSwitcher page={currentPage} />
           {currentPageVisible && currentPage.startsWith('pm-') && <PmPageGuideAssistant page={currentPage} />}
         </main>

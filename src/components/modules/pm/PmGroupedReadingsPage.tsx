@@ -152,7 +152,7 @@ export function PmGroupedReadingsPage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  return <div className="page-content space-y-4">
+  return <div className="page-content min-w-0 max-w-full space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">PM Inspections</p>
@@ -164,7 +164,7 @@ export function PmGroupedReadingsPage() {
         <Button size="sm" variant="outline" onClick={() => navigate('pm-inspection-exceptions')}><AlertTriangle className="mr-1 h-4 w-4" />Exceptions</Button>
       </div>
     </div>
-    <Card>
+    <Card className="w-full min-w-0 max-w-full">
       <CardHeader className="pb-3"><CardTitle className="text-sm">Machine & inspection filters</CardTitle><CardDescription>Search for one machine before loading its parts; suitable for large multi-plant portfolios.</CardDescription></CardHeader>
       <CardContent className="space-y-3">
         <div data-testid="pm-readings-filter-grid" className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_minmax(0,.8fr)_minmax(0,.8fr)]">
@@ -187,7 +187,7 @@ export function PmGroupedReadingsPage() {
       : loading ? <div role="status" className="flex items-center gap-2 p-5 text-sm"><Loader2 className="h-4 w-4 animate-spin"/>Loading inspection points…</div>
       : error ? <p role="alert" className="rounded-lg border border-red-200 p-4 text-sm text-red-700">{error}</p>
       : machines.length === 0 ? <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No inspection points match these filters. You can plan a new inspection from the Action Lists workspace.</p>
-      : machines.map((machine) => <Card key={machine.id} data-testid="pm-inspection-machine-group" className="overflow-hidden">
+      : machines.map((machine) => <Card key={machine.id} data-testid="pm-inspection-machine-group" className="w-full min-w-0 max-w-full overflow-hidden gap-0">
         <CardHeader className="border-b bg-muted/30 pb-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0"><CardTitle className="break-words text-base">{machine.name}</CardTitle><CardDescription className="break-all font-mono">{machine.code}</CardDescription></div>

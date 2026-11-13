@@ -103,7 +103,7 @@ test('UAT-mobile: PM inspection rows and risk reports fit a 390px phone viewport
   const details = page.getByRole('dialog').last();
   await expect(details).toContainText(taskDescription);
   await expect(details).toContainText('P01-CMP-IMPELLER');
-  await details.getByRole('button', { name: 'Close' }).click();
+  await details.getByRole('button', { name: 'Close', exact: true }).last().click();
 
   // Portfolio reports now belong to their own page, not beneath the schedule list.
   await page.goto('/#/pm-compliance');

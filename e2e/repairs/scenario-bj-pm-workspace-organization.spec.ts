@@ -58,6 +58,8 @@ test('PM readings group one selected machine by task then parts, with useful pag
     rootScrollLeft: document.documentElement.scrollLeft,
     bodyScrollLeft: document.body.scrollLeft,
     mainScrollLeft: document.querySelector('main')?.scrollLeft ?? null,
+    shellScrollLeft: document.querySelector('main')?.parentElement?.scrollLeft ?? null,
+    shellOverflowX: document.querySelector('main')?.parentElement ? getComputedStyle(document.querySelector('main')!.parentElement!).overflowX : null,
     rootWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
     visualOffsetLeft: window.visualViewport?.offsetLeft ?? null,

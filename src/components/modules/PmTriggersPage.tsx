@@ -57,6 +57,7 @@ import {
   LayoutGrid,
   List,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ============================================================================
 // TYPES
@@ -128,7 +129,7 @@ interface TriggerSourceOption {
 
 const TRIGGER_TYPE_CONFIG: Record<
   TriggerType,
-  { label: string; color: string; bg: string; border: string; icon: React.ElementType; description: string }
+  { label: string; color: string; bg: string; border: string; icon: LucideIcon; description: string }
 > = {
   time: {
     label: 'Time',

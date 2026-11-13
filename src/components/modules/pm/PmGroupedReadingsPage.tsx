@@ -125,7 +125,12 @@ export function PmGroupedReadingsPage() {
       document.documentElement.scrollLeft = 0;
       document.body.scrollLeft = 0;
       const main = document.querySelector('main');
-      if (main instanceof HTMLElement) main.scrollLeft = 0;
+      if (main instanceof HTMLElement) {
+        main.scrollLeft = 0;
+        // The shell above main is overflow-clipped (not an independent
+        // scroll container); clear any stale scroll offset during navigation.
+        if (main.parentElement) main.parentElement.scrollLeft = 0;
+      }
       window.scrollTo({ left: 0, top: window.scrollY, behavior: 'auto' });
     };
     window.requestAnimationFrame(() => {

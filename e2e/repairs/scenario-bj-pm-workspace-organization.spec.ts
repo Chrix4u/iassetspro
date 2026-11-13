@@ -58,6 +58,8 @@ test('PM readings group one selected machine by task then parts, with useful pag
     rootScrollLeft: document.documentElement.scrollLeft,
     bodyScrollLeft: document.body.scrollLeft,
     mainScrollLeft: document.querySelector('main')?.scrollLeft ?? null,
+    shellScrollLeft: document.querySelector('main')?.parentElement?.scrollLeft ?? null,
+    shellOverflowX: document.querySelector('main')?.parentElement ? getComputedStyle(document.querySelector('main')!.parentElement!).overflowX : null,
     rootWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
     visualOffsetLeft: window.visualViewport?.offsetLeft ?? null,
@@ -65,6 +67,7 @@ test('PM readings group one selected machine by task then parts, with useful pag
     pageRect: document.querySelector('.pm-machine-readings')?.getBoundingClientRect().toJSON(),
     cardRect: document.querySelector('[data-testid="pm-inspection-machine-group"]')?.getBoundingClientRect().toJSON(),
   }));
+  expect(viewportOffsets.shellScrollLeft, 'The application shell must not scroll horizontally').toBe(0);
   const rect = await machine.boundingBox();
   expect(rect).not.toBeNull();
   expect(rect!.x, 'The machine card must remain fully visible: ' + JSON.stringify(viewportOffsets)).toBeGreaterThanOrEqual(-1);

@@ -27,7 +27,7 @@ export const PM_GUIDE_PAGES: Record<string, PmGuidePage> = {
   },
   'pm-inspections': {
     title: 'Inspection Readings',
-    purpose: 'A machine-first record of actual inspection results, arranged by inspection task and then every assigned component.',
+    purpose: 'See each machine once, then inspect actual results by inspection task and every assigned component. This keeps the machine-first list compact while retaining part-level details.',
     whenToUse: 'Use this after a technician has measured vibration, temperature, sound or other parameters, or when reviewing the latest result for a particular machine part.',
     details: [
       'Select one machine first. Bearing Temperature is shown once as a task group; its assigned drive-side and non-drive-side bearings appear as separate part rows.',

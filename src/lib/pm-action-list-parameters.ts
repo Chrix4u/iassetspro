@@ -3,6 +3,7 @@ export type ActionListParameterMethod = 'measurement' | 'visual';
 export type ActionListParameter = {
   key: string; name: string; method: ActionListParameterMethod;
   unit: string; min: number | null; max: number | null; acceptance: string;
+  warningMin?: number | null; warningMax?: number | null;
 };
 export const ACTION_LIST_PARAMETER_PRESETS = [
   { key: 'temperature', name: 'Temperature', method: 'measurement', unit: '°C' },
@@ -41,15 +42,30 @@ export function parseActionListParameters(input: unknown): ActionListParameter[]
     if (method !== 'visual' && method !== 'measurement') throw new Error('Choose Visual or Instrument inspection');
     const min = optionalNumber(item.min);
     const max = optionalNumber(item.max);
+    const warningMin = optionalNumber(item.warningMin);
+    const warningMax = optionalNumber(item.warningMax);
     if (method === 'measurement') {
       if (!unit || unit.length > 32) throw new Error(name + ': instrument readings need a unit');
       if (min === null && max === null) throw new Error(name + ': supply at least one approved min/max limit');
       if (min !== null && max !== null && min > max) throw new Error(name + ': minimum must not exceed maximum');
+      if (warningMin !== null && warningMax !== null && warningMin > warningMax) {
+        throw new Error(name + ': warning minimum must not exceed warning maximum');
+      }
+      if ((min !== null && warningMin !== null && warningMin < min)
+        || (max !== null && warningMax !== null && warningMax > max)
+        || (max !== null && warningMin !== null && warningMin > max)
+        || (min !== null && warningMax !== null && warningMax < min)) {
+        throw new Error(name + ': warning limits must sit inside the approved minimum/maximum');
+      }
     } else {
       if (!acceptance || acceptance.length > 500) throw new Error(name + ': describe the acceptable visual condition');
-      if (min !== null || max !== null || unit) throw new Error(name + ': visual checks use acceptance criteria, not numeric limits');
+      if (min !== null || max !== null || unit || warningMin !== null || warningMax !== null)
+        throw new Error(name + ': visual checks use acceptance criteria, not numeric limits');
     }
-    return { key, name, method, unit, min, max, acceptance };
+    return { key, name, method, unit, min, max, acceptance,
+      ...(warningMin !== null ? { warningMin } : {}),
+      ...(warningMax !== null ? { warningMax } : {}),
+    };
   });
 }
 
@@ -65,7 +81,10 @@ export function actionListAcceptance(normalRange: string | null): string | null 
 export function actionListLimitJson(parameter: ActionListParameter) {
   return JSON.stringify(parameter.method === 'visual'
     ? { acceptance: parameter.acceptance }
-    : { min: parameter.min, max: parameter.max, unit: parameter.unit });
+    : { min: parameter.min, max: parameter.max, unit: parameter.unit,
+      ...(parameter.warningMin != null ? { warningMin: parameter.warningMin } : {}),
+      ...(parameter.warningMax != null ? { warningMax: parameter.warningMax } : {}),
+    });
 }
 
 export function actionListExistingKey(point: {

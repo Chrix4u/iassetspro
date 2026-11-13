@@ -237,6 +237,9 @@ export function AsyncSearchableSelect({
   ...props
 }: AsyncSearchableSelectProps) {
   const [options, setOptions] = useState<SearchableOption[]>([]);
+  // Keep the last selected remote option visible after clearing the search.
+  // Large asset lists may no longer contain it in the first result page.
+  const [selectedOption, setSelectedOption] = useState<SearchableOption | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const mountedRef = useRef(true);
@@ -269,10 +272,20 @@ export function AsyncSearchableSelect({
     };
   }, [load, query, ...deps]);
 
+  React.useEffect(() => {
+    const selected = options.find((option) => option.value === props.value);
+    if (selected) setSelectedOption(selected);
+  }, [options, props.value]);
+
+  const displayedOptions = selectedOption && selectedOption.value === props.value &&
+    !options.some((option) => option.value === selectedOption.value)
+    ? [...options, selectedOption]
+    : options;
+
   return (
     <SearchableSelect
       {...props}
-      options={options}
+      options={displayedOptions}
       loading={loading || externalLoading}
       onSearchChange={setQuery}
     />

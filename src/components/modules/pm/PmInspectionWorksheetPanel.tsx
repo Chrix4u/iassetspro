@@ -69,7 +69,7 @@ interface InspectionResponse {
 }
 
 const emptyFilters = { search: '', departmentId: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all', followUp: 'all' };
-const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
+const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '', warningMin: '', warningMax: '' };
 const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '', requestKey: '' };
 
 function readLimits(point: InspectionPoint) {

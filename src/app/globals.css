@@ -185,6 +185,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* The app uses its own vertical scroller. Mobile popovers must never
+     horizontally scroll the document and leave the header/cards shifted. */
+  html,
+  body {
+    overflow-x: clip;
+  }
   body {
     @apply bg-background text-foreground;
   }

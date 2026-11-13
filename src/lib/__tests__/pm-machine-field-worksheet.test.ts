@@ -21,6 +21,21 @@ const point = (id: string, cId: string, changes: Partial<MachineChecklistPoint> 
   latestRecord: null, openCorrectiveWorkOrder: null, ...changes,
 });
 describe('paper field inspection worksheet', () => {
+  it('prints engineer-approved warning bands beside hard limits for paper inspectors', () => {
+    const bearing = component('bearing', 'C314-BRG');
+    const group: MachineChecklistGroup = {
+      component: bearing,
+      tasks: [task('inspect', 1, bearing)],
+      points: [point('temp-warning', bearing.id, {
+        normalRange: JSON.stringify({
+          min: 50, max: 100, warningMin: 60, warningMax: 85, unit: '°C',
+        }),
+      })],
+    };
+    const printed = buildPaperInspectionTasks([group], [])[0].rows[0];
+    expect(printed.acceptedRange).toBe('50 to 100 · WARN MIN 60 / MAX 85');
+    expect(printed.unit).toBe('°C');
+  });
   it('clearly labels a maximum-only instrument threshold rather than printing a misleading blank minimum', () => {
     const one = component('c-max', 'C314-MAX');
     const group: MachineChecklistGroup = {

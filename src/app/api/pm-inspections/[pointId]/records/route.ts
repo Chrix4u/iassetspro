@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
-import { evaluateInspectionResult, nextInspectionDate, parseInspectionLimits } from '@/lib/pm-inspection';
+import { automaticMeasurementOutcome, evaluateInspectionResult, nextInspectionDate, parseInspectionLimits } from '@/lib/pm-inspection';
 import { getAssetLiveLocationMap } from '@/lib/functional-location/live-location';
 import { buildMaintenanceLocationSnapshot } from '@/lib/functional-location/maintenance-snapshot';
 import { isSameInspectionSubmission, isPendingCorrectiveWorkOrder } from '@/lib/pm-inspection-submission';
@@ -87,7 +87,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       : evaluateInspectionResult(point.inspectionType, body.value, choice, limits);
     const recommendation = typeof body.recommendation === 'string' ? body.recommendation.trim().slice(0, 3000) : '';
     if (inspection.isAlarm && !findings && inspection.numericValue !== null) {
-      findings = `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the accepted range (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
+      const objective = automaticMeasurementOutcome(inspection.value, point.normalRange);
+      if (objective === 'fail') {
+        findings = `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the approved hard range (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
+      } else if (objective === 'needs_attention') {
+        findings = `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the approved warning band (${limits.warningMin ?? '—'} to ${limits.warningMax ?? '—'}), within hard limits (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
+      }
+      // A subjective fail/attention with an in-range value must supply an
+      // actual observation, never synthesize a false hard-limit breach.
     }
     if (inspection.isAlarm && !findings) {
       return NextResponse.json({ success: false, error: 'Describe the inspection defect or observation' }, { status: 400 });

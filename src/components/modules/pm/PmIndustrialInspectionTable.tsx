@@ -164,6 +164,7 @@ export function PmIndustrialInspectionTable({
                                 title={item.configurationNote}>{item.requiresConfiguration ? 'Configure' : ''}</span>
                             );
                             const entry = getDraft(point.id);
+                            const autoStatus = automaticMeasurementOutcome(entry.value, point.normalRange);
                             const outOfRange = machineChecklistOutOfRange(point, entry.value);
                             const numeric = point.inspectionType === 'measurement';
                             const entered = valueFor(point, entry);
@@ -176,7 +177,7 @@ export function PmIndustrialInspectionTable({
                                 data-inspection-matrix-input=""
                                 aria-label={`${numeric ? 'Reading' : 'Observation'}: ${point.name} — ${part.partCode}`}
                                 title={`${point.name}: ${item.acceptedRange} ${item.unit}`}
-                                className={`h-8 min-w-0 flex-1 px-1.5 text-xs ${outOfRange ? 'border-destructive bg-destructive/10' : ''}`}
+                                className={`h-8 min-w-0 flex-1 px-1.5 text-xs ${outOfRange ? 'border-destructive bg-destructive/10' : autoStatus === 'needs_attention' ? 'border-amber-500 bg-amber-500/10' : ''}`}
                                 value={entered} disabled={!canRecord || busy || entry.saved || entry.outcome === 'not_measured'}
                                 placeholder={entry.outcome === 'not_measured' ? 'N/A' : numeric ? item.unit || 'Value' : 'Observation'}
                                 onKeyDown={forwardOnEnter}
@@ -184,9 +185,9 @@ export function PmIndustrialInspectionTable({
                               {numeric && (parseInspectionLimits(point.normalRange).min !== null || parseInspectionLimits(point.normalRange).max !== null) ? (
                                 <div className="flex w-[57px] shrink-0 flex-col items-center justify-center gap-0.5">
                                   <span role="status" aria-label={`Automatic assessment: ${point.name} — ${part.partCode}`}
-                                    className={`text-[9px] font-semibold ${entry.outcome === 'not_measured' ? 'text-muted-foreground' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'text-destructive' : 'text-emerald-700 dark:text-emerald-300'}`}>
-                                    {entry.outcome === 'not_measured' ? 'N/A' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'FAIL' :
-                                      automaticMeasurementOutcome(entry.value, point.normalRange) === 'pass' ? 'OK' : '—'}
+                                    className={`text-[9px] font-semibold ${entry.outcome === 'not_measured' ? 'text-muted-foreground' : autoStatus === 'fail' ? 'text-destructive' : autoStatus === 'needs_attention' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                                    {entry.outcome === 'not_measured' ? 'N/A' : autoStatus === 'fail' ? 'FAIL' :
+                                      autoStatus === 'needs_attention' ? 'ALERT' : autoStatus === 'pass' ? 'OK' : '—'}
                                   </span>
                                   <button type="button" className="cursor-pointer text-[9px] underline disabled:cursor-not-allowed disabled:opacity-50"
                                     title="Toggle not measurable; enter a reason in Detailed cards"

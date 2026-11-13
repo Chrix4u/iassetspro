@@ -86,12 +86,15 @@ export function buildPaperInspectionTasks(
         const reference = parseInspectionLimits(point.normalRange);
         const missingLimits = point.inspectionType === 'measurement'
           && reference.min === null && reference.max === null;
+        const hardRange = reference.min === null ? 'MAX ' + reference.max
+          : reference.max === null ? 'MIN ' + reference.min
+            : String(reference.min) + ' to ' + String(reference.max);
+        const warningRange = reference.warningMin == null && reference.warningMax == null ? ''
+          : ' · WARN ' + (reference.warningMin == null ? 'below —' : 'MIN ' + reference.warningMin)
+            + ' / ' + (reference.warningMax == null ? 'above —' : 'MAX ' + reference.warningMax);
         const acceptedRange = point.inspectionType === 'visual'
           ? actionListAcceptance(point.normalRange) || 'Describe the actual visible condition'
-          : missingLimits ? 'Limits NOT CONFIGURED'
-            : reference.min === null ? 'MAX ' + reference.max
-              : reference.max === null ? 'MIN ' + reference.min
-                : String(reference.min) + ' to ' + String(reference.max);
+          : missingLimits ? 'Limits NOT CONFIGURED' : hardRange + warningRange;
         section.rows.push({
           id: unique, pointId: point.id, partId: group.component.id,
           partCode: group.component.componentCode, partName: group.component.name,

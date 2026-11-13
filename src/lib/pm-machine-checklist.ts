@@ -142,12 +142,12 @@ export function validateMachineChecklistEntry(
   if (point.inspectionType === 'visual' && !draft.findings.trim()) {
     return 'Describe what you actually observed, including normal conditions.';
   }
-  // A failed numeric reading is objective evidence in itself. The API adds
-  // the actual value and configured limits to the failure finding if notes
-  // were not typed; visual/subjective concerns still require an observation.
-  const autoFailure = point.inspectionType === 'measurement'
-    && automaticMeasurementOutcome(draft.value, point.normalRange) === 'fail';
-  if (draft.outcome !== 'pass' && !draft.findings.trim() && !autoFailure) {
+  // Both hard-limit failures and approved warning-band breaches are
+  // objective numeric evidence; the API records the reading and actual limits.
+  // Manually reported, subjective abnormalities still require observations.
+  const automaticAlert = point.inspectionType === 'measurement'
+    && ['fail', 'needs_attention'].includes(automaticMeasurementOutcome(draft.value, point.normalRange) || '');
+  if (draft.outcome !== 'pass' && !draft.findings.trim() && !automaticAlert) {
     return 'Describe the defect or abnormal finding before submitting.';
   }
   return null;

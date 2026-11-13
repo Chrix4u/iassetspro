@@ -69,7 +69,7 @@ interface InspectionResponse {
 }
 
 const emptyFilters = { search: '', departmentId: '', assetId: '', componentId: '', method: 'all', dueState: 'all', result: 'all', followUp: 'all' };
-const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '' };
+const DEFAULT_PLAN = { name: '', description: '', method: 'visual' as InspectionMethod, frequency: 'monthly', parameterKey: '', unit: '', min: '', max: '', nextInspection: '', warningMin: '', warningMax: '' };
 const emptyRecord = { outcome: 'pass' as Result, value: '', findings: '', recommendation: '', requestKey: '' };
 
 function readLimits(point: InspectionPoint) {
@@ -221,6 +221,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         unit: plan.method === 'measurement' ? plan.unit.trim() : null,
         min: plan.min.trim() ? Number(plan.min) : null,
         max: plan.max.trim() ? Number(plan.max) : null,
+        warningMin: plan.method === 'measurement' && plan.warningMin.trim() ? Number(plan.warningMin) : null,
+        warningMax: plan.method === 'measurement' && plan.warningMax.trim() ? Number(plan.warningMax) : null,
         nextInspection: plan.nextInspection || undefined,
       });
       if (!response.success) throw new Error(response.error || 'Could not save inspection plan');
@@ -625,6 +627,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             <div><Label>Unit</Label><Input value={plan.unit} onChange={(e) => setPlan({ ...plan, unit: e.target.value })} placeholder="bar"/></div>
             <div><Label>Minimum acceptable</Label><Input type="number" step="any" value={plan.min} onChange={(e) => setPlan({ ...plan, min: e.target.value })}/></div>
             <div><Label>Maximum acceptable</Label><Input type="number" step="any" value={plan.max} onChange={(e) => setPlan({ ...plan, max: e.target.value })}/></div>
+            <div><Label>Warning minimum (optional)</Label><Input type="number" step="any" value={plan.warningMin} onChange={(e) => setPlan({ ...plan, warningMin: e.target.value })}/></div>
+            <div><Label>Warning maximum (optional)</Label><Input type="number" step="any" value={plan.warningMax} onChange={(e) => setPlan({ ...plan, warningMax: e.target.value })}/></div>
+            <p className="sm:col-span-2 text-xs text-muted-foreground">Engineers can optionally define a narrower warning band inside the approved min/max. Values inside hard limits but outside the warning band become Needs attention; values outside hard limits become Fail.</p>
           </>}
           <div className="sm:col-span-2"><Label>First inspection due</Label><Input type="date" value={plan.nextInspection} onChange={(e) => setPlan({ ...plan, nextInspection: e.target.value })}/></div>
           <div className="sm:col-span-2"><Label>Instructions / sight-check criteria</Label><Textarea value={plan.description} onChange={(e) => setPlan({ ...plan, description: e.target.value })} placeholder="Where to inspect and what an acceptable condition looks like"/></div>
@@ -676,8 +681,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           {recordPoint.inspectionType === 'measurement' && (readLimits(recordPoint).min !== null || readLimits(recordPoint).max !== null) ? (
             <div className="space-y-1" data-testid="pm-individual-automatic-result">
               <Label>Automatic result (approved instrument limits)</Label>
-              <p role="status" className={`rounded-md border p-2 text-sm font-semibold ${automaticRecordOutcome === 'fail' ? 'border-destructive text-destructive' : ''}`}>
-                {automaticRecordOutcome === 'fail' ? 'Fail · measured value outside approved limits' :
+              <p role="status" className={`rounded-md border p-2 text-sm font-semibold ${automaticRecordOutcome === 'fail' ? 'border-destructive text-destructive' : automaticRecordOutcome === 'needs_attention' ? 'border-amber-500 text-amber-700 dark:text-amber-300' : ''}`}>
+                {automaticRecordOutcome === 'fail' ? 'Fail · measured value outside hard limits' :
+                  automaticRecordOutcome === 'needs_attention' ? 'Needs attention · value outside warning band' :
                   automaticRecordOutcome === 'pass' ? 'Pass · measured value within approved limits' : 'Enter a measured value to calculate result'}
               </p>
             </div>
@@ -689,7 +695,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           </div>}
           <div><Label>Findings / defects</Label><Textarea value={record.findings} onChange={(e) => setRecord({ ...record, findings: e.target.value, requestKey: '' })} placeholder="Describe leakage, worn bearing, abnormal vibration or other findings"/></div>
           <div><Label>Recommended action</Label><Textarea value={record.recommendation} onChange={(e) => setRecord({ ...record, recommendation: e.target.value, requestKey: '' })} placeholder="Suggested corrective action for the planner"/></div>
-          {(automaticRecordOutcome === 'fail' || (!automaticRecordOutcome && record.outcome !== 'pass')) && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
+          {((automaticRecordOutcome === 'fail' || automaticRecordOutcome === 'needs_attention') || (!automaticRecordOutcome && record.outcome !== 'pass')) && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
         </div>}
       </ResponsiveDialog>
     </Card>

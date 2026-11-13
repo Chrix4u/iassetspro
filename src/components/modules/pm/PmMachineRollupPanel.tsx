@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CalendarRange, Loader2, Network, PackageCheck, PlayCircle, Power, RefreshCw } from 'lucide-react';
+import { AlertCircle, CalendarRange, Eye, Loader2, Network, PackageCheck, PlayCircle, Power, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatUiDateTime } from '@/lib/date-display';
 import { api } from '@/lib/api';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { Input } from '@/components/ui/input';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -130,6 +131,7 @@ export function PmMachineRollupPanel() {
   const [loading, setLoading] = useState(false);
   const [bundlingKey, setBundlingKey] = useState<string | null>(null);
   const [bundleDates, setBundleDates] = useState<Record<string, string>>({});
+  const [viewBundle, setViewBundle] = useState<BundleGroup | null>(null);
   const [complianceWindowDays, setComplianceWindowDays] = useState('30');
   const [complianceData, setComplianceData] = useState<ComplianceResponse | null>(null);
   const [complianceLoading, setComplianceLoading] = useState(false);
@@ -223,6 +225,8 @@ export function PmMachineRollupPanel() {
   };
 
   const recentComplianceCycles = complianceData ? sortPmComplianceCycles(complianceData.cycles).slice(0, 10) : [];
+  const viewedBundleTasks = viewBundle && data
+    ? data.assignments.filter((item) => viewBundle.assignmentIds.includes(item.id)) : [];
 
   return (
     <Card className="border-0 shadow-sm">
@@ -294,6 +298,9 @@ export function PmMachineRollupPanel() {
                               onChange={(event) => setBundleDates((current) => ({ ...current, [group.key]: event.target.value }))}
                             />
                           </div>
+                          <Button type="button" size="sm" variant="outline" className="h-8 shrink-0" onClick={() => setViewBundle(group)}>
+                            <Eye className="mr-1 h-3.5 w-3.5" />View Tasks
+                          </Button>
                           <Button type="button" size="sm" className="h-8 shrink-0" onClick={() => void createBundle(group)} disabled={Boolean(bundlingKey)}>
                             {bundlingKey === group.key ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="mr-1 h-3.5 w-3.5" />}Create Work Bundle
                           </Button>
@@ -382,6 +389,33 @@ export function PmMachineRollupPanel() {
             </div>
           </>
         ) : null}
+      <ResponsiveDialog open={Boolean(viewBundle)} onOpenChange={(open) => { if (!open) setViewBundle(null); }}
+        title={viewBundle ? `${viewBundle.inspectionType === 'standstill' ? 'Standstill' : 'Running'} · Machine Work Bundle` : 'Machine Work Bundle'}
+        description="Preview the due machine/part tasks included in this bundle. Creating a bundle generates a work order for authorized planning and execution."
+        footer={<Button type="button" onClick={() => setViewBundle(null)}>Close</Button>}>
+        {viewBundle && <div className="space-y-2" data-testid="pm-bundle-task-details">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Badge variant="outline">{viewedBundleTasks.length} tasks</Badge>
+            <Badge variant="secondary">{viewBundle.totalEstimatedMinutes} estimated minutes</Badge>
+            <span className="text-muted-foreground">Due: {formatDateTime(viewBundle.planningStart)} – {formatDateTime(viewBundle.planningEnd)}</span>
+          </div>
+          {viewedBundleTasks.length === 0
+            ? <p className="text-sm text-muted-foreground">No current assignments found. Refresh the machine planning window.</p>
+            : <div className="space-y-2">{viewedBundleTasks.map((task) => (
+              <div key={task.id} className="rounded-md border p-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong>Task #{task.pmTask.taskNumber}</strong>{dueBadge(task.dueStatus)}
+                  <Badge variant="outline">{task.pmType.toUpperCase()}</Badge>
+                  <span>{task.estimatedMinutes} min</span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap break-words">{task.pmTask.description}</p>
+                <p className="mt-1 break-words text-muted-foreground">{task.technicalPathLabel || 'Whole machine'} · {task.inspectionType === 'running' ? 'Running' : 'Standstill'}</p>
+                <p className="text-muted-foreground">Due: {task.nextDueDate ? formatDateTime(task.nextDueDate)
+                  : task.nextDueReading != null ? `Meter ${task.nextDueReading} ${task.frequencyUnit || ''}` : task.dueReason}</p>
+              </div>
+            ))}</div>}
+        </div>}
+      </ResponsiveDialog>
       </CardContent>
     </Card>
   );

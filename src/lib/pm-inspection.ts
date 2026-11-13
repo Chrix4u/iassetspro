@@ -22,6 +22,22 @@ export function parseInspectionLimits(source: string | null): InspectionLimits {
   }
 }
 
+/** The instrument's approved numeric limits—not an operator's OK selection—determine its status.
+ * Return null when no numeric reading or approved limits exist: a missing
+ * threshold must never be mistaken for evidence that a machine is healthy.
+ * Visual checks retain a human assessment. */
+export function automaticMeasurementOutcome(
+  rawValue: string | number | null | undefined,
+  normalRange: string | null,
+): 'pass' | 'fail' | null {
+  if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') return null;
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) return null;
+  const { min, max } = parseInspectionLimits(normalRange);
+  if (min === null && max === null) return null;
+  return (min !== null && value < min) || (max !== null && value > max) ? 'fail' : 'pass';
+}
+
 export function inspectionDueState(nextInspection: Date | string | null, now: Date = new Date()): PmInspectionDueState {
   if (!nextInspection) return 'unscheduled';
   const date = new Date(nextInspection);

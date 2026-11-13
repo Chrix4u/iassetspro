@@ -8,6 +8,7 @@ import {
   type IndustrialInspectionColumn,
 } from '@/lib/pm-industrial-inspection-matrix';
 import { machineChecklistOutOfRange } from '@/lib/pm-machine-checklist';
+import { automaticMeasurementOutcome, parseInspectionLimits } from '@/lib/pm-inspection';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -109,23 +110,23 @@ export function PmIndustrialInspectionTable({
         <p className="basis-full text-[11px] text-muted-foreground">
           Only use when these checks were actually performed at the same time.
           Fills visible, unsaved checks only; never overwrites recorded times.
-          The inspection time must be after the issued worksheet date and before now.
+          The original inspection time is retained separately from the actual electronic entry time.
         </p>
       </div>}
       <div className="max-h-[70vh] overflow-auto rounded-lg border" data-testid="pm-industrial-grid-scroll">
-        <table className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0 text-xs" data-testid="pm-industrial-entry-table">
+        <table className="w-full min-w-[1370px] table-fixed border-separate border-spacing-0 text-xs" data-testid="pm-industrial-entry-table">
           <thead className="sticky top-0 z-20 bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100">
             <tr>
-              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">BLOCK</th>
-              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">PART</th>
-              <th className="w-[125px] border-b border-r px-1 py-2 text-left text-[10px]">V.PART</th>
-              <th className="w-[150px] border-b border-r px-1 py-2 text-left text-[10px]">GT CODE</th>
-              <th className="w-[230px] border-b border-r px-1 py-2 text-left text-[10px]">DESCRIPTION</th>
-              <th className="w-[128px] border-b border-r px-1 py-2 text-left text-[10px]">Temperature</th>
-              <th className="w-[100px] border-b border-r px-1 py-2 text-left text-[10px]">Vibration</th>
-              <th className="w-[100px] border-b border-r px-1 py-2 text-left text-[10px]">Sound</th>
-              <th className="w-[95px] border-b border-r px-1 py-2 text-left text-[10px]">Corrosion</th>
-              <th className="w-[185px] border-b px-1 py-2 text-left text-[10px]">TIME</th>
+              <th className="w-[108px] border-b border-r px-1 py-1.5 text-left text-[10px]">BLOCK</th>
+              <th className="w-[108px] border-b border-r px-1 py-1.5 text-left text-[10px]">PART</th>
+              <th className="w-[110px] border-b border-r px-1 py-1.5 text-left text-[10px]">V.PART</th>
+              <th className="w-[128px] border-b border-r px-1 py-1.5 text-left text-[10px]">GT CODE</th>
+              <th className="w-[170px] border-b border-r px-1 py-1.5 text-left text-[10px]">DESCRIPTION</th>
+              <th className="w-[154px] border-b border-r px-1 py-1.5 text-left text-[10px]">Temperature</th>
+              <th className="w-[140px] border-b border-r px-1 py-1.5 text-left text-[10px]">Vibration</th>
+              <th className="w-[140px] border-b border-r px-1 py-1.5 text-left text-[10px]">Sound</th>
+              <th className="w-[140px] border-b border-r px-1 py-1.5 text-left text-[10px]">Corrosion</th>
+              <th className="w-[150px] border-b px-1 py-1.5 text-left text-[10px]" title="Digital: logged at save. Paper: enter the original inspection date and time.">TIME</th>
             </tr>
           </thead>
           <tbody>
@@ -180,9 +181,23 @@ export function PmIndustrialInspectionTable({
                                 placeholder={entry.outcome === 'not_measured' ? 'N/A' : numeric ? item.unit || 'Value' : 'Observation'}
                                 onKeyDown={forwardOnEnter}
                                 onChange={(e) => editReading(point, e.target.value)} />
-                              <select aria-label={`Assessment: ${point.name} — ${part.partCode}`}
+                              {numeric && (parseInspectionLimits(point.normalRange).min !== null || parseInspectionLimits(point.normalRange).max !== null) ? (
+                                <div className="flex w-[57px] shrink-0 flex-col items-center justify-center gap-0.5">
+                                  <span role="status" aria-label={`Automatic assessment: ${point.name} — ${part.partCode}`}
+                                    className={`text-[9px] font-semibold ${entry.outcome === 'not_measured' ? 'text-muted-foreground' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'text-destructive' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                                    {entry.outcome === 'not_measured' ? 'N/A' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'FAIL' :
+                                      automaticMeasurementOutcome(entry.value, point.normalRange) === 'pass' ? 'OK' : '—'}
+                                  </span>
+                                  <button type="button" className="cursor-pointer text-[9px] underline disabled:cursor-not-allowed disabled:opacity-50"
+                                    title="Toggle not measurable; enter a reason in Detailed cards"
+                                    disabled={!canRecord || busy || entry.saved}
+                                    onClick={() => edit(point.id, { outcome: entry.outcome === 'not_measured' ? 'pass' : 'not_measured', value: '' })}>
+                                    {entry.outcome === 'not_measured' ? 'Enter' : 'N/A'}
+                                  </button>
+                                </div>
+                              ) : <select aria-label={`Assessment: ${point.name} — ${part.partCode}`}
                                 title={`Assessment · approved ${item.acceptedRange} ${item.unit}`}
-                                className="h-8 w-[53px] min-w-0 shrink-0 cursor-pointer rounded border bg-background px-0.5 text-[9px]"
+                                className="h-8 w-[57px] min-w-0 shrink-0 cursor-pointer rounded border bg-background px-0.5 text-[9px]"
                                 disabled={!canRecord || busy || entry.saved} value={entry.outcome}
                                 onChange={(e) => edit(point.id, {
                                   outcome: e.target.value as MachineChecklistDraft['outcome'],
@@ -191,7 +206,7 @@ export function PmIndustrialInspectionTable({
                                 <option value="pass">OK</option><option value="needs_attention">Alert</option>
                                 <option value="fail">Fail</option>
                                 {numeric && <option value="not_measured">N/A</option>}
-                              </select>
+                              </select>}
                               {entry.error && <span role="alert" className="block break-words text-[10px] text-destructive">{entry.error}</span>}
                               {entry.saved && <span className="block text-[10px] text-emerald-600">Saved{entry.workOrder ? ' · ' + entry.workOrder : ''}</span>}
                             </div>;
@@ -249,7 +264,7 @@ export function PmIndustrialInspectionTable({
       )}
       <p className="text-[11px] text-muted-foreground">
         Blank disabled inputs mean that no check is configured for that measurement; they do not represent zero.
-        Comments and detailed outcomes remain available under Detailed cards (advanced).
+        Numeric results with configured limits are calculated automatically. Use Detailed cards (advanced) for observations, N/A reasons and corrective recommendations.
         Codes are taken from the registered hierarchy; shared points are saved once.
       </p>
     </div>

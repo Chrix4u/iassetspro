@@ -52,7 +52,9 @@ describe('Engineer-requested A4 portrait inspection template',()=>{
     expect(cols.reduce((total,value)=>total+value,0)).toBe(100);
     expect(printed).toContain('overflow: hidden !important;');
     expect(printed).toContain('pm-paper-code-text');
-    expect(entry).toContain('min-w-[1420px]');
+    expect(entry).toContain('min-w-[1370px]');
+    expect(entry).toContain('w-[150px] border-b');
+    expect(entry).toContain('w-[140px] border-b');
     expect(printed).not.toContain('<th>REMARK</th>');
     expect(entry).not.toContain('>REMARK</th>');
   });

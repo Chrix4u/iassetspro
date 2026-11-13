@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Download, Gauge, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
+import { automaticMeasurementOutcome } from '@/lib/pm-inspection';
 import { api } from '@/lib/api';
 import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
 import { PmMachineInspectionChecklistPanel } from './PmMachineInspectionChecklistPanel';
@@ -117,6 +118,13 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
   const [recordPoint, setRecordPoint] = useState<InspectionPoint | null>(null);
   const [record, setRecord] = useState(emptyRecord);
   const [savingRecord, setSavingRecord] = useState(false);
+  const [recordSource, setRecordSource] = useState<'digital' | 'paper'>('digital');
+  const [paperOperatingState, setPaperOperatingState] = useState<'running' | 'standstill' | ''>('');
+  const [fieldInspector, setFieldInspector] = useState('');
+  const [paperReference, setPaperReference] = useState('');
+  const [fieldInspectedAt, setFieldInspectedAt] = useState('');
+  const automaticRecordOutcome = recordPoint?.inspectionType === 'measurement'
+    ? automaticMeasurementOutcome(record.value, recordPoint.normalRange) : null;
 
   const refresh = useCallback(async () => {
     if (mode === 'action-lists') {
@@ -230,6 +238,11 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
 
   const saveRecord = async () => {
     if (!recordPoint) return;
+    if (recordSource === 'paper' && (!paperOperatingState || !fieldInspector.trim() || !paperReference.trim() ||
+      !fieldInspectedAt || !Number.isFinite(new Date(fieldInspectedAt).getTime()))) {
+      toast.error('For a paper inspection, select Running or Standstill and supply the field inspector, paper reference and original field date/time.');
+      return;
+    }
     setSavingRecord(true);
     // Keep this key across network failures; regenerate it whenever the form changes.
     const requestKey = record.requestKey || crypto.randomUUID();
@@ -242,7 +255,18 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         nextInspection: string | null;
         awaitingCloseout: boolean;
         duplicate?: boolean;
-      }>(`/api/pm-inspections/${encodeURIComponent(recordPoint.id)}/records`, { ...record, requestKey });
+      }>(`/api/pm-inspections/${encodeURIComponent(recordPoint.id)}/records`, {
+        ...record,
+        outcome: automaticRecordOutcome || record.outcome,
+        requestKey,
+        captureSource: recordSource,
+        ...(recordSource === 'paper' ? {
+          equipmentState: paperOperatingState,
+          fieldInspectorName: fieldInspector.trim(),
+          paperReference: paperReference.trim(),
+          fieldInspectedAt: new Date(fieldInspectedAt).toISOString(),
+        } : {}),
+      });
       if (!response.success) throw new Error(response.error || 'Could not record inspection');
       const wo = response.data?.workOrder;
       toast.success(response.data?.duplicate
@@ -291,8 +315,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Action Lists & Inspection Readings'}</CardTitle>
-            <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Select a machine, print the inspection tasks and all their assigned parts, then enter the technician\'s measured values or written observations.'}</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Inspection Points & History'}</CardTitle>
+            <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Review and record each configured machine/part inspection point individually, including measured values, findings and corrective follow-up. For printable machine-wide worksheets and batch paper entry, use Machine Action Lists; both use the same inspection history.'}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
@@ -416,8 +440,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         {!exceptionsOpen && <>
         {mode === 'full' && !machineChecklistOpen && (
           <p className="text-xs text-muted-foreground">
-            The filters below also let you review individual inspection points and their saved history.
-            For a full printable machine sheet, use the machine selector above.
+            This page is for single-point readings, their accepted limits and follow-up history.
+            For machine-wide printing or spreadsheet data entry, use Machine Action Lists. Both save into this same inspection history.
           </p>
         )}
 
@@ -487,7 +511,10 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-muted-foreground">{latest ? `Recorded ${formatUiDate(latest.inspectedAt)}` : 'Awaiting first inspection'}</span>
                     {point.inspectionType === 'visual' || point.inspectionType === 'measurement'
-                      ? canRecord && <Button size="sm" variant="outline" onClick={() => { setRecordPoint(point); setRecord(emptyRecord); }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>
+                      ? canRecord && <Button size="sm" variant="outline" onClick={() => {
+                        setRecordPoint(point); setRecord(emptyRecord);
+                        setRecordSource('digital'); setPaperOperatingState(''); setFieldInspector(''); setPaperReference(''); setFieldInspectedAt('');
+                      }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>
                       : <div className="flex flex-wrap items-center justify-end gap-2">
                           <span className="text-xs text-amber-700 dark:text-amber-300">This legacy method cannot be recorded in the sight/instrument worksheet.</span>
                           {canPlan && point.component.asset && <Button size="sm" variant="outline" onClick={() => {
@@ -609,14 +636,60 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         description={recordPoint ? `${recordPoint.component.name} · ${recordPoint.inspectionType === 'measurement' ? 'Instrument reading' : 'Sight inspection'}` : ''}
         footer={<div className="flex justify-end gap-2"><Button variant="outline" disabled={savingRecord} onClick={() => setRecordPoint(null)}>Cancel</Button><Button disabled={savingRecord} onClick={() => void saveRecord()}>{savingRecord ? 'Recording…' : 'Save Inspection'}</Button></div>}>
         {recordPoint && <div className="space-y-3">
+          <p className="rounded-md border bg-muted/20 p-2 text-xs">
+            This form records a single inspection point. For full-machine or printed sheets, use Action Lists → Generate Action List → Spreadsheet entry. Both save to the same inspection history.
+          </p>
+          <div className="space-y-1">
+            <Label>Where were these readings taken?</Label>
+            <Select value={recordSource} onValueChange={(value) => { setRecordSource(value as 'digital' | 'paper'); setRecord((current) => ({ ...current, requestKey: '' })); }}>
+              <SelectTrigger aria-label="Inspection entry source"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="digital">Direct electronic inspection · recorded at save</SelectItem>
+                <SelectItem value="paper">Transcribe paper inspection · original field time</SelectItem></SelectContent>
+            </Select>
+          </div>
+          {recordSource === 'paper' && <div className="grid gap-2 rounded-md border p-2 sm:grid-cols-2" data-testid="pm-individual-paper-evidence">
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Machine state during field inspection</Label>
+              <Select value={paperOperatingState} onValueChange={(value) => {
+                setPaperOperatingState(value as 'running' | 'standstill');
+                setRecord((current) => ({ ...current, requestKey: '' }));
+              }}>
+                <SelectTrigger aria-label="Paper inspection operating state"><SelectValue placeholder="Choose the state written on the field Action List" /></SelectTrigger>
+                <SelectContent><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill / Stopped</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label>Field inspector (from paper)</Label>
+              <Input value={fieldInspector} onChange={(event) => { setFieldInspector(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}
+                placeholder="Technician who performed inspection" maxLength={160}/></div>
+            <div className="space-y-1"><Label>Paper worksheet reference</Label>
+              <Input value={paperReference} onChange={(event) => { setPaperReference(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}
+                placeholder="Original action list / sheet number" maxLength={120}/></div>
+            <div className="space-y-1 sm:col-span-2"><Label>Original inspection date and time</Label>
+              <Input type="datetime-local" value={fieldInspectedAt} onChange={(event) => { setFieldInspectedAt(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}/></div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">The original inspection time is kept separately from the electronic entry time and user audit log.</p>
+          </div>}
           {recordPoint.inspectionType === 'measurement' ? <>
             <p className="rounded-md bg-muted/40 p-2 text-xs">Parameter: <strong>{recordPoint.parameterKey}</strong> · Allowed range: {readLimits(recordPoint).min ?? '—'} to {readLimits(recordPoint).max ?? '—'} {readLimits(recordPoint).unit}</p>
-            <div><Label>Measured value ({readLimits(recordPoint).unit})</Label><Input type="number" step="any" value={record.value} onChange={(e) => setRecord({ ...record, value: e.target.value, requestKey: '' })} placeholder="Enter instrument reading"/></div>
+            <div><Label>Measured value ({readLimits(recordPoint).unit})</Label><Input type="number" step="any" value={record.value} onChange={(e) => setRecord({ ...record, value: e.target.value,
+              outcome: automaticMeasurementOutcome(e.target.value, recordPoint.normalRange) || record.outcome, requestKey: '' })} placeholder="Enter instrument reading"/></div>
           </> : <p className="flex items-center gap-2 text-sm"><Eye className="h-4 w-4"/>Confirm the condition you observed visually.</p>}
-          <div><Label>Inspection outcome</Label><Select value={record.outcome} onValueChange={(outcome) => setRecord({ ...record, outcome: outcome as Result, requestKey: '' })}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="needs_attention">Needs Attention</SelectItem><SelectItem value="fail">Fail</SelectItem></SelectContent></Select></div>
+          {recordPoint.inspectionType === 'measurement' && (readLimits(recordPoint).min !== null || readLimits(recordPoint).max !== null) ? (
+            <div className="space-y-1" data-testid="pm-individual-automatic-result">
+              <Label>Automatic result (approved instrument limits)</Label>
+              <p role="status" className={`rounded-md border p-2 text-sm font-semibold ${automaticRecordOutcome === 'fail' ? 'border-destructive text-destructive' : ''}`}>
+                {automaticRecordOutcome === 'fail' ? 'Fail · measured value outside approved limits' :
+                  automaticRecordOutcome === 'pass' ? 'Pass · measured value within approved limits' : 'Enter a measured value to calculate result'}
+              </p>
+            </div>
+          ) : <div><Label>{recordPoint.inspectionType === 'visual' ? 'Observed visual condition' : 'Assessment (no configured numeric limits)'}</Label>
+            <Select value={record.outcome} onValueChange={(outcome) => setRecord({ ...record, outcome: outcome as Result, requestKey: '' })}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
+              <SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="needs_attention">Needs Attention</SelectItem><SelectItem value="fail">Fail</SelectItem></SelectContent>
+            </Select>
+          </div>}
           <div><Label>Findings / defects</Label><Textarea value={record.findings} onChange={(e) => setRecord({ ...record, findings: e.target.value, requestKey: '' })} placeholder="Describe leakage, worn bearing, abnormal vibration or other findings"/></div>
           <div><Label>Recommended action</Label><Textarea value={record.recommendation} onChange={(e) => setRecord({ ...record, recommendation: e.target.value, requestKey: '' })} placeholder="Suggested corrective action for the planner"/></div>
-          {record.outcome !== 'pass' && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
+          {(automaticRecordOutcome === 'fail' || (!automaticRecordOutcome && record.outcome !== 'pass')) && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
         </div>}
       </ResponsiveDialog>
     </Card>

@@ -5,7 +5,7 @@ import { AlertTriangle, ClipboardCheck, Download, Eye, Gauge, Loader2, Printer, 
 import { toast } from 'sonner';
 import { formatUiDateTime } from '@/lib/date-display';
 import { api } from '@/lib/api';
-import { parseInspectionLimits } from '@/lib/pm-inspection';
+import { automaticMeasurementOutcome, parseInspectionLimits } from '@/lib/pm-inspection';
 import {
   machineChecklistOutOfRange,
   machineChecklistHasInput,
@@ -318,9 +318,14 @@ export function PmMachineInspectionChecklistPanel({
 
   const getDraft = (id: string): EntryState => entries[id] || EMPTY_DRAFT;
   const edit = (id: string, patch: Partial<EntryState>) => {
+    const point = patch.value !== undefined ? points.find((candidate) => candidate.id === id) : null;
+    const autoOutcome = point?.inspectionType === 'measurement'
+      ? automaticMeasurementOutcome(patch.value, point.normalRange) : null;
     setEntries((current) => ({
       ...current,
-      [id]: { ...EMPTY_DRAFT, ...current[id], ...patch, requestKey: '', saved: false, error: '', workOrder: null },
+      [id]: { ...EMPTY_DRAFT, ...current[id], ...patch,
+        ...(autoOutcome ? { outcome: autoOutcome } : {}),
+        requestKey: '', saved: false, error: '', workOrder: null },
     }));
   };
 
@@ -338,7 +343,12 @@ export function PmMachineInspectionChecklistPanel({
 
   const save = async (selected: MachineChecklistPoint[]) => {
     if (busy || !canRecord || selected.length === 0) return;
-    const snapshot = selected.map((point) => ({ point, entry: { ...getDraft(point.id) } }));
+    const snapshot = selected.map((point) => {
+      const draft = { ...getDraft(point.id) };
+      const outcome = point.inspectionType === 'measurement' && draft.outcome !== 'not_measured'
+        ? automaticMeasurementOutcome(draft.value, point.normalRange) : null;
+      return { point, entry: { ...draft, ...(outcome ? { outcome } : {}) } };
+    });
     const invalid = snapshot.find(({ point, entry }) => validateMachineChecklistEntry(point, entry));
     if (invalid) {
       const reason = validateMachineChecklistEntry(invalid.point, invalid.entry) || 'Incomplete record';
@@ -855,16 +865,34 @@ export function PmMachineInspectionChecklistPanel({
                             onChange={(e) => edit(point.id, { recommendation: e.target.value })}/>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs">Technician assessment</Label>
-                          <Select value={entry.outcome} disabled={busy} onValueChange={(value) => edit(point.id, {
-                            outcome: value as MachineChecklistDraft['outcome'],
-                            ...(value === 'not_measured' ? { value: '' } : {}),
-                          })}>
-                            <SelectTrigger aria-label={`Assessment: ${point.name}`}><SelectValue/></SelectTrigger>
-                            <SelectContent><SelectItem value="pass">Normal</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="fail">Defect / Fail</SelectItem>
-                              {point.inspectionType === 'measurement' && <SelectItem value="not_measured">Not measurable — explain why</SelectItem>}
-                            </SelectContent>
-                          </Select>
+                          {point.inspectionType === 'measurement' && (limits.min !== null || limits.max !== null) ? (
+                            <>
+                              <Label className="text-xs">Automatic instrument result</Label>
+                              <div role="status" aria-label={`Automatic assessment: ${point.name}`}
+                                className={`rounded border px-2 py-1.5 text-xs font-semibold ${entry.outcome === 'not_measured' ? 'bg-muted' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'border-destructive text-destructive' : 'bg-muted/30'}`}>
+                                {entry.outcome === 'not_measured' ? 'Not measured' :
+                                  automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'Fail · outside limits' :
+                                  automaticMeasurementOutcome(entry.value, point.normalRange) === 'pass' ? 'Pass · within limits' : 'Awaiting reading'}
+                              </div>
+                              <Button type="button" variant="ghost" size="sm" className="h-7 text-[11px]" disabled={busy || entry.saved}
+                                onClick={() => edit(point.id, { outcome: entry.outcome === 'not_measured' ? 'pass' : 'not_measured', value: '' })}>
+                                {entry.outcome === 'not_measured' ? 'Enter a reading instead' : 'Not measurable?'}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Label className="text-xs">{point.inspectionType === 'visual' ? 'Visual condition assessment' : 'Assessment (limits missing)'}</Label>
+                              <Select value={entry.outcome} disabled={busy} onValueChange={(value) => edit(point.id, {
+                                outcome: value as MachineChecklistDraft['outcome'],
+                                ...(value === 'not_measured' ? { value: '' } : {}),
+                              })}>
+                                <SelectTrigger aria-label={`Assessment: ${point.name}`}><SelectValue/></SelectTrigger>
+                                <SelectContent><SelectItem value="pass">Normal</SelectItem><SelectItem value="needs_attention">Needs attention</SelectItem><SelectItem value="fail">Defect / Fail</SelectItem>
+                                  {point.inspectionType === 'measurement' && <SelectItem value="not_measured">Not measurable — explain why</SelectItem>}
+                                </SelectContent>
+                              </Select>
+                            </>
+                          )}
                           <Button size="sm" className="w-full" variant="outline" disabled={busy || entry.saved}
                             onClick={() => void save([point])}><Save className="mr-1.5 h-3.5 w-3.5"/>{entry.saved ? 'Saved' : 'Save reading'}</Button>
                         </div>

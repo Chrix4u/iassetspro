@@ -211,7 +211,7 @@ test('UAT-machine-checklist: running parts, actual readings, corrective draft, a
   expect(posted).toHaveLength(0);
 
   await checklist.getByRole('spinbutton', { name: 'Actual reading: Vibration' }).fill('7.9');
-  await expect(checklist).toContainText('Outside configured limits');
+  await expect(checklist).toContainText('Outside approved hard limits');
   await checklist.getByRole('textbox', { name: 'Inspection remarks: Vibration' }).fill('High vibration at the drive bearing');
   await soundObservation.fill('Regular pulley sound, no rubbing or rattling');
 

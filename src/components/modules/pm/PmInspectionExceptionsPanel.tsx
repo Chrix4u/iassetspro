@@ -300,7 +300,7 @@ export function PmInspectionExceptionsPanel({
             return <tr key={record.id} data-testid="pm-inspection-exception-row" className="border-b last:border-0 hover:bg-muted/30">
               <td className="px-3 py-2 align-top"><p className="font-medium break-words">{record.component.asset.name}</p><p className="font-mono text-[11px] text-muted-foreground">{record.component.asset.assetTag}</p></td>
               <td className="px-3 py-2 align-top"><p className="break-words">{record.component.name}</p><p className="break-all font-mono text-[11px] text-muted-foreground">{record.component.componentCode}</p></td>
-              <td className="px-3 py-2 align-top"><p className="break-words">{record.inspectionPoint.name}</p><p className="font-semibold">{record.result === 'not_measured' ? 'Not measured' : record.value ?? (record.findings || '—')}</p></td>
+              <td className="px-3 py-2 align-top"><p className="break-words">{record.inspectionPoint.name}</p><p className="font-semibold">{record.result === 'not_measured' ? 'Not measured' : record.inspectionPoint.inspectionType === 'measurement' ? `${record.value ?? '—'} ${parseInspectionLimits(record.inspectionPoint.normalRange).unit || ''}`.trim() : (record.findings || '—')}</p></td>
               <td className="px-3 py-2 align-top"><Badge variant={stateBadge(record.result)}>{record.result.replaceAll('_', ' ')}</Badge></td>
               <td className="px-3 py-2 align-top text-muted-foreground">{dateLabel(record.inspectedAt)}</td>
               <td className="px-3 py-2 align-top">{record.workOrder?.woNumber || '—'}</td>

@@ -131,7 +131,7 @@ export function evaluateInspectionResult(
   return {
     value: String(number),
     numericValue: number,
-    outcome: outside ? 'fail' : warning ? 'needs_attention' : reportedOutcome,
+    outcome: outside || reportedOutcome === 'fail' ? 'fail' : warning || reportedOutcome === 'needs_attention' ? 'needs_attention' : 'pass',
     isAlarm: outside || warning || reportedOutcome !== 'pass',
   };
 }

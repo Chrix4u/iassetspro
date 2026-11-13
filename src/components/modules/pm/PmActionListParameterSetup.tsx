@@ -26,7 +26,7 @@ type ResponseData = {
 };
 type Draft = {
   rowId: string; key: string; name: string; method: ActionListParameterMethod;
-  unit: string; min: string; max: string; acceptance: string;
+  unit: string; min: string; max: string; warningMin: string; warningMax: string; acceptance: string;
 };
 function configuredParameterText(point: Part['parameters'][number]): string {
   if (point.inspectionType === 'visual') {
@@ -36,16 +36,18 @@ function configuredParameterText(point: Part['parameters'][number]): string {
   return point.name + ': '
     + (limits.min === null ? '' : 'min ' + limits.min + ' ')
     + (limits.max === null ? 'max NOT SET' : 'max ' + limits.max)
-    + (limits.unit ? ' ' + limits.unit : '');
+    + (limits.unit ? ' ' + limits.unit : '')
+    + (limits.warningMin == null && limits.warningMax == null ? '' :
+      ' (warning ' + (limits.warningMin ?? '—') + ' to ' + (limits.warningMax ?? '—') + ')');
 }
 
 const newPreset = (key: string): Draft => {
   const preset = ACTION_LIST_PARAMETER_PRESETS.find(item => item.key === key);
   if (preset) return { rowId: crypto.randomUUID(), key: preset.key,
     name: preset.name, method: preset.method, unit: preset.unit,
-    min: '', max: '', acceptance: '' };
+    min: '', max: '', warningMin: '', warningMax: '', acceptance: '' };
   return { rowId: crypto.randomUUID(), key: '', name: '',
-    method: 'measurement', unit: '', min: '', max: '', acceptance: '' };
+    method: 'measurement', unit: '', min: '', max: '', warningMin: '', warningMax: '', acceptance: '' };
 };
 
 /** Reuse one approved parameter set across selected parts of the SAME machine and PM task. */
@@ -118,6 +120,8 @@ export function PmActionListParameterSetup({ assetId, equipmentState, open, onCl
           unit: row.method === 'measurement' ? row.unit.trim() : '',
           min: row.method === 'measurement' && row.min.trim() ? Number(row.min) : null,
           max: row.method === 'measurement' && row.max.trim() ? Number(row.max) : null,
+          warningMin: row.method === 'measurement' && row.warningMin.trim() ? Number(row.warningMin) : null,
+          warningMax: row.method === 'measurement' && row.warningMax.trim() ? Number(row.warningMax) : null,
           acceptance: row.method === 'visual' ? row.acceptance.trim() : '',
         })),
       });
@@ -232,7 +236,7 @@ export function PmActionListParameterSetup({ assetId, equipmentState, open, onCl
             <Input value={row.name} onChange={e => changeDraft(row.rowId,{name:e.target.value})} placeholder="Temperature"/></div>
           <div className="space-y-1"><Label>Inspection type</Label>
             <Select value={row.method} onValueChange={value => changeDraft(row.rowId,{
-              method: value as ActionListParameterMethod, unit:'', min:'', max:'', acceptance:'',
+              method: value as ActionListParameterMethod, unit:'', min:'', max:'', warningMin:'', warningMax:'', acceptance:'',
             })}><SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent><SelectItem value="measurement">Instrument</SelectItem><SelectItem value="visual">Visual</SelectItem></SelectContent>
             </Select>
@@ -245,6 +249,16 @@ export function PmActionListParameterSetup({ assetId, equipmentState, open, onCl
             <div className="space-y-1"><Label>Approved maximum (required if min blank)</Label>
               <Input type="number" step="any" value={row.max} onChange={e => changeDraft(row.rowId,{max:e.target.value})}
                 placeholder="Enter engineer-approved maximum"/></div>
+            <div className="space-y-1"><Label>Warning minimum (optional)</Label>
+              <Input type="number" step="any" value={row.warningMin} onChange={e => changeDraft(row.rowId,{warningMin:e.target.value})}
+                placeholder="Alert if below, before hard minimum"/></div>
+            <div className="space-y-1"><Label>Warning maximum (optional)</Label>
+              <Input type="number" step="any" value={row.warningMax} onChange={e => changeDraft(row.rowId,{warningMax:e.target.value})}
+                placeholder="Alert if above, before hard maximum"/></div>
+            <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+              Optional warning band must lie inside the approved min/max limits. Outside hard limits = Fail;
+              inside hard limits but outside warning band = Needs attention; otherwise Pass.
+            </p>
           </> : <div className="space-y-1 sm:col-span-2"><Label>Acceptable visual condition / maximum severity</Label>
             <Textarea value={row.acceptance} onChange={e => changeDraft(row.rowId,{acceptance:e.target.value})}
               placeholder="E.g. no visible rust, pitting, or coating loss; describe location and severity of any corrosion"/></div>}

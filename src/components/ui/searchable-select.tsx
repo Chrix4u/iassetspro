@@ -147,6 +147,17 @@ export function SearchableSelect({
         onCloseAutoFocus={preventScrollOnClose ? (event) => {
           event.preventDefault();
           triggerRef.current?.focus({ preventScroll: true });
+          // The popover option may have been scrolled horizontally into view
+          // by the browser before it was selected. Restore the application
+          // scroller after focus is returned, preserving vertical position.
+          const restoreX = () => {
+            const scroller = triggerRef.current?.closest('main');
+            if (scroller instanceof HTMLElement) scroller.scrollLeft = 0;
+            document.documentElement.scrollLeft = 0;
+            document.body.scrollLeft = 0;
+          };
+          restoreX();
+          requestAnimationFrame(restoreX);
         } : undefined}
       >
         <DismissableLayerBranch>

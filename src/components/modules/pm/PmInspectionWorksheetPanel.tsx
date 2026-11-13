@@ -313,7 +313,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Inspection Readings'}</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Inspection Points & History'}</CardTitle>
             <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Review and record each configured machine/part inspection point individually, including measured values, findings and corrective follow-up. For printable machine-wide worksheets and batch paper entry, use Machine Action Lists; both use the same inspection history.'}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">

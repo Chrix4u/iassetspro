@@ -172,8 +172,21 @@ export async function POST(request: NextRequest) {
     const numericBound = (value: unknown) => value === null || value === undefined || value === '' ? null : Number(value);
     const min = numericBound(body.min);
     const max = numericBound(body.max);
+    const warningMin = numericBound(body.warningMin);
+    const warningMax = numericBound(body.warningMax);
     if ((min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max)) || (min !== null && max !== null && min > max)) {
       return NextResponse.json({ success: false, error: 'Provide valid minimum and maximum limits' }, { status: 400 });
+    }
+    if ((warningMin !== null && !Number.isFinite(warningMin))
+      || (warningMax !== null && !Number.isFinite(warningMax))
+      || (warningMin !== null && warningMax !== null && warningMin > warningMax)
+      || (min !== null && warningMin !== null && warningMin < min)
+      || (max !== null && warningMax !== null && warningMax > max)
+      || (max !== null && warningMin !== null && warningMin > max)
+      || (min !== null && warningMax !== null && warningMax < min)
+      || (inspectionType !== 'measurement' && (warningMin !== null || warningMax !== null))
+      || (min === null && max === null && (warningMin !== null || warningMax !== null))) {
+      return NextResponse.json({ success: false, error: 'Warning limits must be valid instrument thresholds inside the approved min/max' }, { status: 400 });
     }
     const nextInspection = body.nextInspection ? new Date(body.nextInspection) : new Date();
     if (!Number.isFinite(nextInspection.getTime())) {
@@ -192,7 +205,10 @@ export async function POST(request: NextRequest) {
         description: typeof body.description === 'string' ? body.description.trim().slice(0, 3000) || null : null,
         inspectionType,
         parameterKey: inspectionType === 'measurement' ? parameterKey : null,
-        normalRange: inspectionType === 'measurement' ? JSON.stringify({ min, max, unit }) : null,
+        normalRange: inspectionType === 'measurement' ? JSON.stringify({ min, max, unit,
+          ...(warningMin !== null ? { warningMin } : {}),
+          ...(warningMax !== null ? { warningMax } : {}),
+        }) : null,
         frequency,
         nextInspection,
       },

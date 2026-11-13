@@ -1,4 +1,4 @@
-import { parseInspectionLimits } from '@/lib/pm-inspection';
+import { automaticMeasurementOutcome, parseInspectionLimits } from '@/lib/pm-inspection';
 
 export type MachineInspectionState = 'running' | 'standstill';
 export type MachineInspectionOutcome = 'pass' | 'fail' | 'needs_attention' | 'not_measured';
@@ -142,7 +142,12 @@ export function validateMachineChecklistEntry(
   if (point.inspectionType === 'visual' && !draft.findings.trim()) {
     return 'Describe what you actually observed, including normal conditions.';
   }
-  if (draft.outcome !== 'pass' && !draft.findings.trim()) {
+  // A failed numeric reading is objective evidence in itself. The API adds
+  // the actual value and configured limits to the failure finding if notes
+  // were not typed; visual/subjective concerns still require an observation.
+  const autoFailure = point.inspectionType === 'measurement'
+    && automaticMeasurementOutcome(draft.value, point.normalRange) === 'fail';
+  if (draft.outcome !== 'pass' && !draft.findings.trim() && !autoFailure) {
     return 'Describe the defect or abnormal finding before submitting.';
   }
   return null;

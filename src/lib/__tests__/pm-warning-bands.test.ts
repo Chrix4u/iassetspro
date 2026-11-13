@@ -5,6 +5,7 @@ import {
 import {
   actionListLimitJson, parseActionListParameters,
 } from '@/lib/pm-action-list-parameters';
+import { validateMachineChecklistEntry, type MachineChecklistPoint } from '@/lib/pm-machine-checklist';
 
 const configured = JSON.stringify({
   min: 50, max: 100, warningMin: 60, warningMax: 85, unit: '°C',
@@ -52,6 +53,20 @@ describe('engineer-approved PM warning bands', () => {
       key: 'corrosion', name: 'Corrosion', method: 'visual', unit: '',
       min: null, max: null, warningMax: 2, acceptance: 'No visible pitting',
     }])).toThrow(/visual/i);
+  });
+
+  it('permits objective warning measurements without invented text, but requires subjective findings', () => {
+    const point: MachineChecklistPoint = {
+      id: 'temperature', componentId: 'bearing', name: 'Bearing temperature',
+      description: null, inspectionType: 'measurement', parameterKey: 'temperature',
+      normalRange: configured, frequency: 'weekly', nextInspection: null,
+      dueState: 'unscheduled', latestRecord: null, openCorrectiveWorkOrder: null,
+    };
+    const draft = { value: '90', outcome: 'needs_attention' as const, findings: '',
+      recommendation: '', requestKey: '' };
+    expect(validateMachineChecklistEntry(point, draft)).toBeNull();
+    expect(validateMachineChecklistEntry(point, { ...draft, value: '75' })).toMatch(/Describe/);
+    expect(validateMachineChecklistEntry(point, { ...draft, value: '75', outcome: 'fail' })).toMatch(/Describe/);
   });
 
   it('retains warning bounds in approved stored ranges, without breaking legacy data', () => {

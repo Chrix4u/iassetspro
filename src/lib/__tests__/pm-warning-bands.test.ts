@@ -35,6 +35,7 @@ describe('engineer-approved PM warning bands', () => {
     const warning = evaluateInspectionResult('measurement', '90', 'pass', limits);
     expect(warning.outcome).toBe('needs_attention');
     expect(warning.isAlarm).toBe(true);
+    expect(evaluateInspectionResult('measurement', '90', 'fail', limits).outcome).toBe('fail');
     const failed = evaluateInspectionResult('measurement', '110', 'pass', limits);
     expect(failed.outcome).toBe('fail');
     expect(failed.isAlarm).toBe(true);

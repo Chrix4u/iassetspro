@@ -47,7 +47,8 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
         role: 'assistant',
         text: guide.title + ': ' + guide.purpose + '\n\n' +
           guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n') +
-          '\n\nUse the navigation links below to open a related PM workspace.',
+          '\n\n' + (guide.sections || []).map((section) => section.heading + ': ' + section.body).join('\n\n') +
+          '\n\nUse the navigation links below to open a related PM workspace.'
       }]);
       return;
     }
@@ -60,7 +61,8 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
       setMessages((prev) => [...prev, {
         role: 'assistant',
         text: 'The configured AI service is unavailable. Here are the verified steps for ' + guide.title + ':\n' +
-          guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n'),
+          guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n') +
+          '\n\n' + (guide.sections || []).map((section) => section.heading + ': ' + section.body).join('\n\n'),
       }]);
     } finally {
       setLoading(false);
@@ -80,6 +82,13 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
             {guide.steps.map((step) => <li key={step}>{step}</li>)}
           </ol>
         </div>
+        {guide.sections && guide.sections.length > 0 && <div className="space-y-2" data-testid="pm-guide-details">
+          <p className="text-xs font-semibold">Detailed explanation and examples</p>
+          {guide.sections.map((section) => <details key={section.heading} className="rounded-lg border p-2.5 open:bg-muted/20">
+            <summary className="cursor-pointer text-xs font-semibold">{section.heading}</summary>
+            <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{section.body}</p>
+          </details>)}
+        </div>}
         {allowedRelated.length > 0 && <div className="space-y-2"><p className="text-xs font-semibold">Go to related workspace</p>
           <div className="flex flex-wrap gap-2">{allowedRelated.map((id) =>
             <Button key={id} type="button" variant="outline" size="sm" className="h-auto min-h-8 whitespace-normal text-left text-xs" onClick={() => { navigate(id as Parameters<typeof navigate>[0]); setMessages([]); }}>{PM_GUIDE_PAGES[id].title}</Button>)}

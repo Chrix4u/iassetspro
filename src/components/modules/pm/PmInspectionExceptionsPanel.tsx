@@ -3,6 +3,8 @@
 import { formatUiDateTime } from '@/lib/date-display';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, Loader2, RefreshCw } from 'lucide-react';
+import { AsyncSearchableSelect, type SearchableOption } from '@/components/ui/searchable-select';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { api } from '@/lib/api';
 import { parseInspectionLimits } from '@/lib/pm-inspection';
 import { Badge } from '@/components/ui/badge';
@@ -39,10 +41,11 @@ interface ExceptionFilters {
   result: string;
   followUp: string;
   equipmentState: string;
+  machineId: string;
   from: string;
   to: string;
 }
-const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', equipmentState: 'all', from: '', to: '' };
+const INITIAL: ExceptionFilters = { result: 'all', followUp: 'all', equipmentState: 'all', machineId: '', from: '', to: '' };
 
 function dateLabel(raw: string): string {
   const date = new Date(raw);
@@ -51,6 +54,65 @@ function dateLabel(raw: string): string {
 function stateBadge(value: string) {
   return value === 'fail' ? 'destructive' as const
     : value === 'not_measured' ? 'outline' as const : 'secondary' as const;
+}
+
+function ExceptionDetails({ record }: { record: ExceptionRow }) {
+            const limits = parseInspectionLimits(record.inspectionPoint.normalRange);
+            const open = record.workOrder && !['closed', 'cancelled'].includes(record.workOrder.status);
+            const value = record.result === 'not_measured'
+              ? 'N/A — no instrument reading taken'
+              : record.inspectionPoint.inspectionType === 'measurement'
+                ? `${record.value ?? '—'} ${limits.unit || ''}`.trim()
+                : record.findings || 'No written observation';
+            return <article className="min-w-0 space-y-2 rounded-lg border p-3" data-testid="pm-inspection-exception-detail">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-semibold">{record.component.asset.name}</p>
+                  <p className="break-all text-xs text-muted-foreground">{record.component.asset.assetTag}</p>
+                  <p className="break-words text-xs">{record.component.name} · {record.component.componentCode}</p>
+                </div>
+                <Badge variant={stateBadge(record.result)}>
+                  {record.result === 'not_measured' ? 'Not measurable' : record.result.replace(/_/g, ' ')}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-xs">
+                <div className="min-w-0"><span className="text-muted-foreground">Inspection point</span>
+                  <p className="break-words font-semibold">{record.inspectionPoint.name}</p></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Actual reading / observation</span>
+                  <p className="break-words font-semibold">{value}</p></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Configured normal limits</span>
+                  <p className="break-words">{record.inspectionPoint.inspectionType === 'measurement'
+                    ? (limits.min === null && limits.max === null ? 'Not configured'
+                      : `${limits.min ?? '—'} to ${limits.max ?? '—'} ${limits.unit || ''}`)
+                    : 'Sight / qualitative'}</p></div>
+                <div className="min-w-0"><span className="text-muted-foreground">Recorded</span>
+                  <p>{dateLabel(record.inspectedAt)}</p>
+                  <p className="break-words">Entered by: {record.inspector?.fullName || 'Unknown user'}</p>
+                  {record.captureSource === 'paper' ? <>
+                    <p className="mt-1 font-semibold">Paper inspection</p>
+                    <p>Original field time: {record.fieldInspectedAt ? dateLabel(record.fieldInspectedAt) : 'Not supplied'}</p>
+                    <p className="break-words">Field inspector: {record.fieldInspectorName || 'Not supplied'}</p>
+                    <p className="break-all">Sheet: {record.paperReference || 'Not supplied'}</p>
+                  </> : <p>Source: {record.captureSource === 'digital' ? 'Direct electronic' : 'Unknown (legacy)'}</p>}
+                  <p>State: {record.equipmentState || 'Unknown (legacy)'}</p></div>
+              </div>
+              {record.findings && <p className="break-words text-xs"><span className="font-semibold">Findings:</span> {record.findings}</p>}
+              {record.recommendation && <p className="break-words text-xs"><span className="font-semibold">Recommended:</span> {record.recommendation}</p>}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+                {record.workOrder
+                  ? <p className="break-all text-xs"><strong>Corrective WO:</strong> {record.workOrder.woNumber}
+                    <Badge variant={open ? 'secondary' : 'outline'} className="ml-1.5">{record.workOrder.status}</Badge></p>
+                  : record.result === 'not_measured'
+                    ? <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Arrange a suitable approved instrument test. No corrective WO is generated solely because a measurement was unavailable.
+                      </p>
+                    : <p className="text-xs text-amber-700 dark:text-amber-300">No corrective WO linked — planner follow-up needed</p>}
+                <Button type="button" size="sm" variant="outline"
+                  onClick={() => { window.location.hash = `#/asset-detail?id=${encodeURIComponent(record.component.asset.id)}`; }}>
+                  <ClipboardCheck className="mr-1 h-3.5 w-3.5" />View Machine
+                </Button>
+              </div>
+            </article>;
 }
 
 /**
@@ -72,7 +134,16 @@ export function PmInspectionExceptionsPanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<ExceptionRow | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const fetchMachines = useCallback(async (query: string): Promise<SearchableOption[]> => {
+    const params = new URLSearchParams({ search: query, limit: '50' });
+    const response = await api.get<Array<{ id: string; name: string; assetTag: string }>>('/api/assets?' + params);
+    return response.success && Array.isArray(response.data)
+      ? response.data.map((item) => ({ value: item.id, label: item.name + ' [' + item.assetTag + ']' }))
+      : [];
+  }, []);
 
   const updateFilters = (patch: Partial<ExceptionFilters>) => {
     setFilters((current) => ({ ...current, ...patch }));
@@ -83,7 +154,7 @@ export function PmInspectionExceptionsPanel({
     setError('');
     try {
       const params = new URLSearchParams({ page: String(page), limit: '25' });
-      if (assetId) params.set('assetId', assetId);
+      if (assetId || filters.machineId) params.set('assetId', assetId || filters.machineId);
       if (departmentId) params.set('departmentId', departmentId);
       if (filters.result !== 'all') params.set('result', filters.result);
       if (filters.followUp !== 'all') params.set('followUp', filters.followUp);
@@ -126,6 +197,7 @@ export function PmInspectionExceptionsPanel({
   }), [rows]);
 
   return (
+    <>
     <section aria-label="Inspection exception review" data-testid="pm-inspection-exceptions" className="min-w-0 space-y-3 rounded-xl border p-2.5 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
@@ -145,7 +217,13 @@ export function PmInspectionExceptionsPanel({
         </div>
       </div>
 
-      <div className="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-5">
+      <div className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-6">
+        {!assetId && <div className="col-span-2 min-w-0 space-y-1.5 lg:col-span-1">
+          <Label className="text-xs">Machine</Label>
+          <AsyncSearchableSelect value={filters.machineId} onValueChange={(machineId) => updateFilters({ machineId })}
+            fetchOptions={fetchMachines} placeholder="All machines" searchPlaceholder="Search machine name or code..."
+            clearable preventScrollOnClose ariaLabel="Filter inspection exceptions by machine"/>
+        </div>}
         <div><Label className="text-xs">Outcome</Label>
           <Select value={filters.result} onValueChange={(result) => updateFilters({ result })}>
             <SelectTrigger className="mt-1 h-9" aria-label="Outcome"><SelectValue /></SelectTrigger>
@@ -208,65 +286,39 @@ export function PmInspectionExceptionsPanel({
           <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
             No recorded exceptions match these filters. Adjust the date range, outcome, machine or corrective follow-up status.
           </div>
-        ) : <div className="grid min-w-0 gap-2 xl:grid-cols-2">
-          {rows.map((record) => {
-            const limits = parseInspectionLimits(record.inspectionPoint.normalRange);
-            const open = record.workOrder && !['closed', 'cancelled'].includes(record.workOrder.status);
-            const value = record.result === 'not_measured'
-              ? 'N/A — no instrument reading taken'
-              : record.inspectionPoint.inspectionType === 'measurement'
-                ? `${record.value ?? '—'} ${limits.unit || ''}`.trim()
-                : record.findings || 'No written observation';
-            return <article key={record.id} className="min-w-0 space-y-2 rounded-lg border p-3" data-testid="pm-inspection-exception-row">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="break-words text-sm font-semibold">{record.component.asset.name}</p>
-                  <p className="break-all text-xs text-muted-foreground">{record.component.asset.assetTag}</p>
-                  <p className="break-words text-xs">{record.component.name} · {record.component.componentCode}</p>
-                </div>
-                <Badge variant={stateBadge(record.result)}>
-                  {record.result === 'not_measured' ? 'Not measurable' : record.result.replace(/_/g, ' ')}
-                </Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/30 p-2 text-xs">
-                <div className="min-w-0"><span className="text-muted-foreground">Inspection point</span>
-                  <p className="break-words font-semibold">{record.inspectionPoint.name}</p></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Actual reading / observation</span>
-                  <p className="break-words font-semibold">{value}</p></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Configured normal limits</span>
-                  <p className="break-words">{record.inspectionPoint.inspectionType === 'measurement'
-                    ? (limits.min === null && limits.max === null ? 'Not configured'
-                      : `${limits.min ?? '—'} to ${limits.max ?? '—'} ${limits.unit || ''}`)
-                    : 'Sight / qualitative'}</p></div>
-                <div className="min-w-0"><span className="text-muted-foreground">Recorded</span>
-                  <p>{dateLabel(record.inspectedAt)}</p>
-                  <p className="break-words">Entered by: {record.inspector?.fullName || 'Unknown user'}</p>
-                  {record.captureSource === 'paper' ? <>
-                    <p className="mt-1 font-semibold">Paper inspection</p>
-                    <p>Original field time: {record.fieldInspectedAt ? dateLabel(record.fieldInspectedAt) : 'Not supplied'}</p>
-                    <p className="break-words">Field inspector: {record.fieldInspectorName || 'Not supplied'}</p>
-                    <p className="break-all">Sheet: {record.paperReference || 'Not supplied'}</p>
-                  </> : <p>Source: {record.captureSource === 'digital' ? 'Direct electronic' : 'Unknown (legacy)'}</p>}
-                  <p>State: {record.equipmentState || 'Unknown (legacy)'}</p></div>
-              </div>
-              {record.findings && <p className="break-words text-xs"><span className="font-semibold">Findings:</span> {record.findings}</p>}
-              {record.recommendation && <p className="break-words text-xs"><span className="font-semibold">Recommended:</span> {record.recommendation}</p>}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
-                {record.workOrder
-                  ? <p className="break-all text-xs"><strong>Corrective WO:</strong> {record.workOrder.woNumber}
-                    <Badge variant={open ? 'secondary' : 'outline'} className="ml-1.5">{record.workOrder.status}</Badge></p>
-                  : record.result === 'not_measured'
-                    ? <p className="text-xs text-amber-700 dark:text-amber-300">
-                        Arrange a suitable approved instrument test. No corrective WO is generated solely because a measurement was unavailable.
-                      </p>
-                    : <p className="text-xs text-amber-700 dark:text-amber-300">No corrective WO linked — planner follow-up needed</p>}
-                <Button type="button" size="sm" variant="outline"
-                  onClick={() => { window.location.hash = `#/asset-detail?id=${encodeURIComponent(record.component.asset.id)}`; }}>
-                  <ClipboardCheck className="mr-1 h-3.5 w-3.5" />View Machine
-                </Button>
-              </div>
-            </article>;
-          })}
+        ) : <div className="min-w-0 overflow-x-auto rounded-lg border" data-testid="pm-inspection-exceptions-table">
+          <table className="w-full min-w-[840px] border-collapse text-left text-xs">
+            <thead className="bg-muted/40 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Machine</th>
+                <th className="px-3 py-2 font-semibold">Part / Code</th>
+                <th className="px-3 py-2 font-semibold">Inspection</th>
+                <th className="px-3 py-2 font-semibold">Outcome</th>
+                <th className="px-3 py-2 font-semibold">Reading</th>
+                <th className="px-3 py-2 font-semibold">Recorded</th>
+                <th className="px-3 py-2 font-semibold">Corrective WO</th>
+                <th className="px-3 py-2 text-right font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {rows.map((record) => {
+                const limits = parseInspectionLimits(record.inspectionPoint.normalRange);
+                const reading = record.result === 'not_measured' ? 'N/A'
+                  : record.inspectionPoint.inspectionType === 'measurement'
+                    ? (record.value ?? '—') + ' ' + (limits.unit || '') : 'Visual';
+                return <tr key={record.id} data-testid="pm-inspection-exception-row" className="hover:bg-muted/20">
+                  <td className="max-w-[175px] px-3 py-2"><p className="truncate font-medium" title={record.component.asset.name}>{record.component.asset.name}</p><p className="font-mono text-muted-foreground">{record.component.asset.assetTag}</p></td>
+                  <td className="max-w-[175px] px-3 py-2"><p className="truncate" title={record.component.name}>{record.component.name}</p><p className="font-mono text-muted-foreground">{record.component.componentCode}</p></td>
+                  <td className="max-w-[160px] truncate px-3 py-2" title={record.inspectionPoint.name}>{record.inspectionPoint.name}</td>
+                  <td className="px-3 py-2"><Badge variant={stateBadge(record.result)}>{record.result === 'not_measured' ? 'Not measurable' : record.result.replace(/_/g, ' ')}</Badge></td>
+                  <td className="px-3 py-2">{reading.trim()}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{dateLabel(record.inspectedAt)}</td>
+                  <td className="px-3 py-2">{record.workOrder ? <span className="font-medium">{record.workOrder.woNumber}</span> : '—'}</td>
+                  <td className="px-3 py-2 text-right"><Button size="sm" variant="outline" onClick={() => setSelected(record)}>View</Button></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
         </div>}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>Page {page} of {pageCount} · {total} matching recorded exceptions</span>
@@ -279,5 +331,13 @@ export function PmInspectionExceptionsPanel({
         </div>
       </>}
     </section>
+    <ResponsiveDialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}
+      title="Inspection Exception Details"
+      description={selected ? selected.component.asset.name + ' · ' + selected.component.name : 'Inspection outcome and follow-up'}
+      size="wide"
+      footer={<Button variant="outline" size="sm" onClick={() => setSelected(null)}>Close</Button>}>
+      {selected && <ExceptionDetails record={selected} />}
+    </ResponsiveDialog>
+    </>
   );
 }

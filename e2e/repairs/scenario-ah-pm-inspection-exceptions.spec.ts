@@ -51,6 +51,12 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
     });
   });
 
+  await page.route((url) => url.pathname === '/api/assets', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ success: true, data: [
+      { id: 'asset-1', name: 'Mercerizer C314', assetTag: 'C314' },
+    ] }),
+  }));
   await page.goto('/#/pm-inspection-exceptions');
   await expect(page.getByRole('heading', { name: 'Inspection Exceptions', exact: true, level: 1 })).toBeVisible({ timeout: 25_000 });
   const review = page.getByTestId('pm-inspection-exceptions');
@@ -60,10 +66,21 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   await expect(review).toContainText('C314-21-02');
   await expect(review).toContainText('Drive-end vibration');
   await expect(review).toContainText('7.9 mm/s');
-  await expect(review).toContainText('Technician UAT');
+  await expect(review.getByTestId('pm-inspection-exceptions-table')).toBeVisible();
+  await expect(review.getByTestId('pm-inspection-exception-row')).toHaveCount(1);
+  await expect(review).not.toContainText('Technician UAT');
   await expect(review).toContainText('WO-UAT-001');
   await expect(review).toContainText('Older records display Unknown');
-  await expect(review).toContainText('State: standstill');
+  await review.getByTestId('pm-inspection-exception-row').getByRole('button', { name: 'View' }).click();
+  const exceptionDetail = page.getByRole('dialog', { name: 'Inspection Exception Details' });
+  await expect(exceptionDetail).toContainText('Technician UAT');
+  await expect(exceptionDetail).toContainText('State: standstill');
+  await expect(exceptionDetail).toContainText('7.9 mm/s');
+  await exceptionDetail.getByRole('button', { name: 'Close', exact: true }).last().click();
+
+  await review.getByRole('combobox', { name: 'Filter inspection exceptions by machine' }).click();
+  await page.getByText('Mercerizer C314 [C314]', { exact: true }).last().click();
+  await expect.poll(() => requestedFilters.some((value) => value.includes('assetId=asset-1'))).toBe(true);
   await review.getByRole('combobox', { name: 'Inspection operating state' }).click();
   await page.getByRole('option', { name: 'Standstill', exact: true }).click();
   await expect.poll(() => requestedFilters.some((value) => value.includes('equipmentState=standstill')))
@@ -78,7 +95,9 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
 
   await review.getByRole('combobox', { name: 'Corrective WO' }).click();
   await page.getByRole('option', { name: 'No linked WO' }).click();
-  await expect(review).toContainText('No corrective WO linked — planner follow-up needed');
+  await review.getByTestId('pm-inspection-exception-row').getByRole('button', { name: 'View' }).click();
+  await expect(exceptionDetail).toContainText('No corrective WO linked — planner follow-up needed');
+  await exceptionDetail.getByRole('button', { name: 'Close', exact: true }).last().click();
   expect(requestedFilters.some((value) => value.includes('followUp=none'))).toBe(true);
   await review.getByRole('button', { name: 'Back to List' }).click();
   await expect(review).not.toBeVisible();

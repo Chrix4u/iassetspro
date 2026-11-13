@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
   const summary = PM_GUIDE_PAGE_IDS.map((id) => {
     const info = PM_GUIDE_PAGES[id];
-    return id + ': ' + info.title + '. ' + info.purpose + ' Steps: ' + info.steps.join(' ');
+    return id + ': ' + info.title + '. ' + info.purpose + ' Steps: ' + info.steps.join(' ') + ' Details: ' + (info.sections || []).map((section) => section.heading + ': ' + section.body).join(' ');
   }).join('\n');
   try {
     const result = await aiChatCompletion({

@@ -24,14 +24,46 @@ interface Props {
   targetConfirmed?: boolean;
   disabled?: boolean;
   stage?: 'tasks' | 'triggers';
+  openLibraryRequest?: number;
+  onLibraryRowVisibilityChange?: (visible: boolean) => void;
 }
 
-export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false, stage = 'triggers' }: Props) {
+export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId = null, targetConfirmed = false, disabled = false, stage = 'triggers', openLibraryRequest = 0, onLibraryRowVisibilityChange }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
   const [conditions, setConditions] = useState<PmAssignmentConditionSourceOption[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
   const clientSequence = useRef(0);
+  const libraryRowRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef(openLibraryRequest);
+
+  useEffect(() => {
+    if (openLibraryRequest !== requestRef.current && openLibraryRequest > 0 && stage === 'tasks') {
+      setPickerOpen(true);
+    }
+    requestRef.current = openLibraryRequest;
+  }, [openLibraryRequest, stage]);
+
+  useEffect(() => {
+    if (stage !== 'tasks' || !onLibraryRowVisibilityChange) return;
+    const row = libraryRowRef.current;
+    if (!row) return;
+    const root = row.closest('.responsive-dialog-body');
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        // Show the header shortcut only after the regular task bar has
+        // scrolled ABOVE the visible body—not while it is still below it.
+        const bodyTop = entry.rootBounds?.top ?? 0;
+        const taskBarHasScrolledPast = entry.boundingClientRect.bottom <= bodyTop;
+        onLibraryRowVisibilityChange(!taskBarHasScrolledPast);
+      },
+      { root: root instanceof Element ? root : null, threshold: [0, 0.25, 0.5, 1] },
+    );
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [stage, onLibraryRowVisibilityChange]);
 
   const nextClientId = useCallback((pmTaskId: string) => {
     clientSequence.current += 1;
@@ -100,7 +132,7 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
 
   return (
     <div data-testid="pm-assignment-task-planner" className="space-y-2">
-      <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div ref={libraryRowRef} data-testid="pm-assignment-task-library-row" className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{stage === 'tasks' ? '1. Tasks' : '2. Triggers'}</p>
           <p className="text-[11px] text-muted-foreground">{stage === 'tasks' ? 'Choose the Task Library work that belongs to this machine or part. Trigger settings are configured in the next step.' : 'Configure the trigger for every task independently. Each task can use TBM, UBM, CBM or FBM without changing the other tasks on this target.'}</p>

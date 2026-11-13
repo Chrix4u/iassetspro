@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { PmTaskType } from '@/lib/pm-task';
@@ -45,6 +45,10 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState<PmAssignmentAuthoringStep>(initialStep);
   const templateSequence = useRef(0);
+  const [libraryRowVisible, setLibraryRowVisible] = useState(true);
+  const [libraryOpenRequest, setLibraryOpenRequest] = useState(0);
+  const handleLibraryRowVisibility = useCallback((visible: boolean) => setLibraryRowVisible(visible), []);
+
 
   const asset = assetCache[assetId] || null;
   const totalEstimatedMinutes = totalPmAssignmentEstimatedMinutes(tasks);
@@ -59,6 +63,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     setTasks([]);
     setTemplateLoading(false);
     setStep(initialStep);
+    setLibraryRowVisible(true);
+    setLibraryOpenRequest(0);
   }, [initialStep]);
 
   React.useEffect(() => {
@@ -240,7 +246,19 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
       title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
-      description={step === 'tasks' ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.' : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}
+      description={<>
+        <span>{step === 'tasks'
+          ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.'
+          : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}</span>
+        {step === 'tasks' && !libraryRowVisible && (
+          <Button type="button" variant="outline" size="sm"
+            data-testid="pm-assignment-sticky-add-task" className="ml-2 mt-1 h-8 gap-1 text-xs"
+            disabled={saving || templateLoading || !assetId || !targetConfirmed}
+            onClick={() => setLibraryOpenRequest((n) => n + 1)}>
+            <Plus className="h-3.5 w-3.5" />Add Task from Library
+          </Button>
+        )}
+      </>}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs" data-testid="pm-assignment-footer-total">
@@ -337,6 +355,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
           targetConfirmed={targetConfirmed}
           disabled={saving || templateLoading}
           stage={step}
+          openLibraryRequest={libraryOpenRequest}
+          onLibraryRowVisibilityChange={handleLibraryRowVisibility}
         />
       </div>
     </ResponsiveDialog>

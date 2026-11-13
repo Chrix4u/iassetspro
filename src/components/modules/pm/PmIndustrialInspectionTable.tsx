@@ -200,7 +200,7 @@ export function PmIndustrialInspectionTable({
                     ))}
                     <td className="border-b px-1.5 py-1.5 align-top">
                       {captureMode === 'paper'
-                        ? <input type="datetime-local" data-inspection-matrix-input=""
+                        ? <input type="datetime-local" data-inspection-matrix-input="" onClick={(event) => { try { event.currentTarget.showPicker?.(); } catch { /* browser native fallback */ } }}
                             aria-label={`Field time: ${part.partCode}`}
                             className="h-8 w-full min-w-0 rounded border bg-background px-1 text-[10px]"
                             value={inspectedAt} disabled={!canRecord || busy || allPoints.length === 0}

@@ -99,8 +99,8 @@ export function PmScheduledTasksPage() {
     <Card>
       <CardHeader className="pb-3"><CardTitle className="text-sm">Select machine</CardTitle><CardDescription>Only one machine is loaded at a time for fast browsing across large plants.</CardDescription></CardHeader>
       <CardContent className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-end">
-        <div className="min-w-0"><Label>Machine</Label><AsyncSearchableSelect value={machineId} onValueChange={(value) => { setMachineId(value); setPage(1); }} fetchOptions={fetchMachines} placeholder="Choose machine name or code"/></div>
-        <div className="min-w-0"><Label>Search task or part</Label><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Task name, component or code"/></div>
+        <div className="min-w-0 space-y-1.5"><Label>Machine</Label><AsyncSearchableSelect value={machineId} onValueChange={(value) => { setMachineId(value); setPage(1); }} fetchOptions={fetchMachines} placeholder="Choose machine name or code"/></div>
+        <div className="min-w-0 space-y-1.5"><Label>Search task or part</Label><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Task name, component or code"/></div>
         <Button variant="outline" size="sm" disabled={!machineId || loading} onClick={() => setRevision((current) => current + 1)}><RefreshCw className="mr-1 h-4 w-4"/>Refresh</Button>
       </CardContent>
     </Card>

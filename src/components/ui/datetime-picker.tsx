@@ -218,6 +218,7 @@ export function DatePicker({
           <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <input
             type="date"
+            onClick={(event) => { try { event.currentTarget.showPicker?.() } catch { /* browser native fallback */ } }}
             value={normalizeDateInput(value)}
             onChange={(e) => {
               const v = e.target.value
@@ -475,6 +476,7 @@ export function DateTimePicker({
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
               type="date"
+              onClick={(event) => { try { event.currentTarget.showPicker?.() } catch { /* browser native fallback */ } }}
               value={dateStr}
               min={minDate}
               max={maxDate}
@@ -630,6 +632,7 @@ export function DateRangePicker({
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
               type="date"
+              onClick={(event) => { try { event.currentTarget.showPicker?.() } catch { /* browser native fallback */ } }}
               value={from ?? ''}
               onChange={(e) => {
                 onChange?.(e.target.value || undefined, to)
@@ -650,6 +653,7 @@ export function DateRangePicker({
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <input
               type="date"
+              onClick={(event) => { try { event.currentTarget.showPicker?.() } catch { /* browser native fallback */ } }}
               value={to ?? ''}
               onChange={(e) => {
                 onChange?.(from, e.target.value || undefined)

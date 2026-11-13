@@ -119,6 +119,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
   const [record, setRecord] = useState(emptyRecord);
   const [savingRecord, setSavingRecord] = useState(false);
   const [recordSource, setRecordSource] = useState<'digital' | 'paper'>('digital');
+  const [paperOperatingState, setPaperOperatingState] = useState<'running' | 'standstill' | ''>('');
   const [fieldInspector, setFieldInspector] = useState('');
   const [paperReference, setPaperReference] = useState('');
   const [fieldInspectedAt, setFieldInspectedAt] = useState('');
@@ -237,9 +238,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
 
   const saveRecord = async () => {
     if (!recordPoint) return;
-    if (recordSource === 'paper' && (!fieldInspector.trim() || !paperReference.trim() ||
+    if (recordSource === 'paper' && (!paperOperatingState || !fieldInspector.trim() || !paperReference.trim() ||
       !fieldInspectedAt || !Number.isFinite(new Date(fieldInspectedAt).getTime()))) {
-      toast.error('For a paper inspection, supply the field inspector, paper reference and original field date/time.');
+      toast.error('For a paper inspection, select Running or Standstill and supply the field inspector, paper reference and original field date/time.');
       return;
     }
     setSavingRecord(true);
@@ -260,6 +261,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         requestKey,
         captureSource: recordSource,
         ...(recordSource === 'paper' ? {
+          equipmentState: paperOperatingState,
           fieldInspectorName: fieldInspector.trim(),
           paperReference: paperReference.trim(),
           fieldInspectedAt: new Date(fieldInspectedAt).toISOString(),
@@ -511,7 +513,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
                     {point.inspectionType === 'visual' || point.inspectionType === 'measurement'
                       ? canRecord && <Button size="sm" variant="outline" onClick={() => {
                         setRecordPoint(point); setRecord(emptyRecord);
-                        setRecordSource('digital'); setFieldInspector(''); setPaperReference(''); setFieldInspectedAt('');
+                        setRecordSource('digital'); setPaperOperatingState(''); setFieldInspector(''); setPaperReference(''); setFieldInspectedAt('');
                       }}><ClipboardCheck className="mr-1.5 h-4 w-4"/>Record Inspection</Button>
                       : <div className="flex flex-wrap items-center justify-end gap-2">
                           <span className="text-xs text-amber-700 dark:text-amber-300">This legacy method cannot be recorded in the sight/instrument worksheet.</span>
@@ -646,6 +648,16 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             </Select>
           </div>
           {recordSource === 'paper' && <div className="grid gap-2 rounded-md border p-2 sm:grid-cols-2" data-testid="pm-individual-paper-evidence">
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Machine state during field inspection</Label>
+              <Select value={paperOperatingState} onValueChange={(value) => {
+                setPaperOperatingState(value as 'running' | 'standstill');
+                setRecord((current) => ({ ...current, requestKey: '' }));
+              }}>
+                <SelectTrigger aria-label="Paper inspection operating state"><SelectValue placeholder="Choose the state written on the field Action List" /></SelectTrigger>
+                <SelectContent><SelectItem value="running">Running</SelectItem><SelectItem value="standstill">Standstill / Stopped</SelectItem></SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1"><Label>Field inspector (from paper)</Label>
               <Input value={fieldInspector} onChange={(event) => { setFieldInspector(event.target.value); setRecord((current) => ({ ...current, requestKey: '' })); }}
                 placeholder="Technician who performed inspection" maxLength={160}/></div>

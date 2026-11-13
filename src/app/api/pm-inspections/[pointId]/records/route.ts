@@ -87,7 +87,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       : evaluateInspectionResult(point.inspectionType, body.value, choice, limits);
     const recommendation = typeof body.recommendation === 'string' ? body.recommendation.trim().slice(0, 3000) : '';
     if (inspection.isAlarm && !findings && inspection.numericValue !== null) {
-      findings = `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the accepted range (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
+      findings = inspection.outcome === 'needs_attention'
+        ? `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the approved warning band (${limits.warningMin ?? '—'} to ${limits.warningMax ?? '—'}), within hard limits (${limits.min ?? '—'} to ${limits.max ?? '—'}).`
+        : `Instrument reading ${inspection.value} ${limits.unit || ''} is outside the accepted hard range (${limits.min ?? '—'} to ${limits.max ?? '—'}).`;
     }
     if (inspection.isAlarm && !findings) {
       return NextResponse.json({ success: false, error: 'Describe the inspection defect or observation' }, { status: 400 });

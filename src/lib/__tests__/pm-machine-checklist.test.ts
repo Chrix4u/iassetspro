@@ -72,8 +72,12 @@ describe('full-machine running / standstill PM checklist', () => {
     expect(validateMachineChecklistEntry(visual, draft({ findings: 'Rattling sound', outcome: 'fail' }))).toBeNull();
   });
 
-  it('does not save an abnormal technician assessment without findings', () => {
-    expect(validateMachineChecklistEntry(point('temp'), draft({ value: '8', outcome: 'fail' }))).toMatch(/defect/i);
+  it('requires notes for subjective warnings, but accepts objective limit violations', () => {
+    // A technician reporting a defect inside normal numeric limits must explain it.
+    expect(validateMachineChecklistEntry(point('temp'), draft({ value: '3.2', outcome: 'fail' }))).toMatch(/defect/i);
+    // Outside approved limits, the actual value and limits document the defect;
+    // the API automatically records those details and drafts corrective work.
+    expect(validateMachineChecklistEntry(point('temp'), draft({ value: '8', outcome: 'fail' }))).toBeNull();
     expect(validateMachineChecklistEntry(point('temp'), draft({ value: '8', outcome: 'fail', findings: 'Abnormal noise' }))).toBeNull();
   });
 

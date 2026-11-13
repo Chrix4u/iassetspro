@@ -115,7 +115,24 @@ export function PmGroupedReadingsPage() {
   }, [assetId, page, search, method, dueState, reload]);
 
   const machines = useMemo(() => groupInspectionPoints(rows), [rows]);
-  const updateMachine = (value: string) => { setAssetId(value); setPage(1); };
+  const updateMachine = (value: string) => {
+    setAssetId(value);
+    setPage(1);
+    // A searchable machine popover can scroll the app shell horizontally
+    // while restoring focus. Restore only the horizontal scroll positions
+    // after it closes; preserve the user's vertical reading position.
+    const resetHorizontalScroll = () => {
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+      const main = document.querySelector('main');
+      if (main instanceof HTMLElement) main.scrollLeft = 0;
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: 'auto' });
+    };
+    window.requestAnimationFrame(() => {
+      resetHorizontalScroll();
+      window.requestAnimationFrame(resetHorizontalScroll);
+    });
+  };
   const updateSearch = (value: string) => { setSearch(value); setPage(1); };
   const updateMethod = (value: string) => { setMethod(value); setPage(1); };
   const updateDue = (value: string) => { setDueState(value); setPage(1); };

@@ -799,6 +799,7 @@ export function PmMachineInspectionChecklistPanel({
                   const limits = parseInspectionLimits(point.normalRange);
                   const entry = getDraft(point.id);
                   const outOfRange = machineChecklistOutOfRange(point, entry.value);
+                  const automaticStatus = automaticMeasurementOutcome(entry.value, point.normalRange);
                   const supported = point.inspectionType === 'measurement' || point.inspectionType === 'visual';
                   const recordable = supported && (point.inspectionType !== 'measurement' || Boolean(point.parameterKey?.trim()));
                   return (
@@ -842,7 +843,8 @@ export function PmMachineInspectionChecklistPanel({
                               value={entry.value} disabled={busy || entry.outcome === 'not_measured'}
                               placeholder={entry.outcome === 'not_measured' ? 'N/A — explain below' : 'Enter measured value'}
                               onChange={(e) => edit(point.id, { value: e.target.value })}/>
-                            {outOfRange && <p className="flex items-center gap-1 text-[11px] text-destructive"><AlertTriangle className="h-3 w-3 shrink-0"/>Outside configured limits — corrective review required</p>}
+                            {outOfRange && <p className="flex items-center gap-1 text-[11px] text-destructive"><AlertTriangle className="h-3 w-3 shrink-0"/>Outside approved hard limits — corrective review required</p>}
+                            {!outOfRange && automaticStatus === 'needs_attention' && <p className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"><AlertTriangle className="h-3 w-3 shrink-0"/>Outside approved warning band — planner attention required</p>}
                           </> : <>
                             <Label className="text-xs">Actual sight / sound observation</Label>
                             <Textarea rows={2} aria-label={`Observed condition: ${point.name}`}
@@ -869,10 +871,11 @@ export function PmMachineInspectionChecklistPanel({
                             <>
                               <Label className="text-xs">Automatic instrument result</Label>
                               <div role="status" aria-label={`Automatic assessment: ${point.name}`}
-                                className={`rounded border px-2 py-1.5 text-xs font-semibold ${entry.outcome === 'not_measured' ? 'bg-muted' : automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'border-destructive text-destructive' : 'bg-muted/30'}`}>
+                                className={`rounded border px-2 py-1.5 text-xs font-semibold ${entry.outcome === 'not_measured' ? 'bg-muted' : automaticStatus === 'fail' ? 'border-destructive text-destructive' : automaticStatus === 'needs_attention' ? 'border-amber-500 text-amber-700 dark:text-amber-300' : 'bg-muted/30'}`}>
                                 {entry.outcome === 'not_measured' ? 'Not measured' :
-                                  automaticMeasurementOutcome(entry.value, point.normalRange) === 'fail' ? 'Fail · outside limits' :
-                                  automaticMeasurementOutcome(entry.value, point.normalRange) === 'pass' ? 'Pass · within limits' : 'Awaiting reading'}
+                                  automaticStatus === 'fail' ? 'Fail · outside hard limits' :
+                                  automaticStatus === 'needs_attention' ? 'Needs attention · outside warning band' :
+                                  automaticStatus === 'pass' ? 'Pass · inside configured limits' : 'Awaiting reading'}
                               </div>
                               <Button type="button" variant="ghost" size="sm" className="h-7 text-[11px]" disabled={busy || entry.saved}
                                 onClick={() => edit(point.id, { outcome: entry.outcome === 'not_measured' ? 'pass' : 'not_measured', value: '' })}>

@@ -169,7 +169,7 @@ export function PmGroupedReadingsPage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  return <div className="page-content min-w-0 max-w-full space-y-4">
+  return <div className="page-content pm-machine-readings min-w-0 max-w-full space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">PM Inspections</p>

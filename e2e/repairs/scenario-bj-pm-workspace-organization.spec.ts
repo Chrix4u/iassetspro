@@ -61,6 +61,9 @@ test('PM readings group one selected machine by task then parts, with useful pag
     rootWidth: document.documentElement.scrollWidth,
     viewportWidth: window.innerWidth,
     visualOffsetLeft: window.visualViewport?.offsetLeft ?? null,
+    mainRect: document.querySelector('main')?.getBoundingClientRect().toJSON(),
+    pageRect: document.querySelector('.pm-machine-readings')?.getBoundingClientRect().toJSON(),
+    cardRect: document.querySelector('[data-testid="pm-inspection-machine-group"]')?.getBoundingClientRect().toJSON(),
   }));
   const rect = await machine.boundingBox();
   expect(rect).not.toBeNull();

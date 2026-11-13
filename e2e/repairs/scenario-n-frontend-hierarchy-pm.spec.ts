@@ -176,7 +176,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
       // past six imported tasks exposes a usable copy in the dialog header.
       // Exercise both the desktop dialog and mobile bottom sheet without
       // changing the draft assignment or its footer totals.
-      for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      for (const viewport of [{ width: 1280, height: 520 }, { width: 390, height: 560 }]) {
         await page.setViewportSize(viewport);
         const currentDialog = page.getByRole('dialog').filter({ has: assignmentHeading });
         const toolbar = currentDialog.getByTestId('pm-assignment-task-toolbar');
@@ -186,10 +186,20 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await expect(shortcut).toHaveCount(0);
         const totalBefore = await total.innerText();
 
-        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+        const scrollStatus = await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
           scrollArea.scrollTop = scrollArea.scrollHeight;
           scrollArea.dispatchEvent(new Event('scroll'));
+          const anchor = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
+          const area = scrollArea.getBoundingClientRect();
+          const target = anchor?.getBoundingClientRect();
+          return {
+            clientHeight: scrollArea.clientHeight, scrollHeight: scrollArea.scrollHeight,
+            scrollTop: scrollArea.scrollTop,
+            toolbarVisible: !!target && target.top >= area.top && target.bottom <= area.bottom,
+          };
         });
+        expect(scrollStatus.scrollTop, 'Task list must really scroll: ' + JSON.stringify(scrollStatus)).toBeGreaterThan(0);
+        expect(scrollStatus.toolbarVisible, 'Toolbar must scroll out of view: ' + JSON.stringify(scrollStatus)).toBe(false);
         await expect(shortcut).toBeVisible();
         await expect(shortcut).toBeEnabled();
         await shortcut.click();

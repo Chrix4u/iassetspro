@@ -619,3 +619,16 @@ nav[aria-label="Sticky work order lifecycle navigation"] {
   transform: none !important;
   justify-content: flex-end !important;
 }
+
+
+/* Form labels need breathing room before the following input or selector.
+   Only vertical label/control pairs are affected; horizontal switch labels
+   and inline checkboxes retain their original alignment. */
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ [data-slot="input"]),
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ [data-slot="select-trigger"]),
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ [role="combobox"]),
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ [data-slot="popover-trigger"]),
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ [data-slot="textarea"]),
+:where(.page-content, .responsive-dialog-body) [data-slot="label"]:has(+ textarea) {
+  margin-bottom: 0.375rem;
+}

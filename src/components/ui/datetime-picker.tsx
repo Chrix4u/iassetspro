@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useIsMobile } from '@/components/shared/ResponsiveDialog'
 import { Calendar, Clock, ChevronRight } from 'lucide-react'
@@ -216,7 +217,7 @@ export function DatePicker({
       <FieldWrapper label={label} className={className}>
         <div className="relative">
           <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <input
+          <Input
             type="date"
             value={normalizeDateInput(value)}
             onChange={(e) => {
@@ -473,7 +474,7 @@ export function DateTimePicker({
           {/* Date native input */}
           <div className="relative">
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <input
+            <Input
               type="date"
               value={dateStr}
               min={minDate}
@@ -628,7 +629,7 @@ export function DateRangePicker({
         <div className="space-y-2">
           <div className="relative">
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <input
+            <Input
               type="date"
               value={from ?? ''}
               onChange={(e) => {
@@ -648,7 +649,7 @@ export function DateRangePicker({
           </div>
           <div className="relative">
             <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <input
+            <Input
               type="date"
               value={to ?? ''}
               onChange={(e) => {

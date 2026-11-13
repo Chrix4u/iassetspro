@@ -41,13 +41,17 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
     setQuestion('');
     setMessages((prev) => [...prev, { role: 'user', text: q }]);
     const lower = q.toLowerCase();
-    const asksAboutPage = /what (is|does)|how (do|does|to)|where (do|can)|guide|help|navigate|start|use this page|this screen/.test(lower);
+    const matchedPage = Object.values(PM_GUIDE_PAGES).find((item) => lower.includes(item.title.toLowerCase()));
+    const helpPage = matchedPage ?? guide;
+    const asksAboutPage = /what (is|does)|how (do|does|to)|where (do|can)|guide|help|navigate|start|use this page|this screen|explain/.test(lower);
     if (asksAboutPage) {
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        text: guide.title + ': ' + guide.purpose + '\n\n' +
-          guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n') +
-          '\n\nUse the navigation links below to open a related PM workspace.',
+        text: helpPage.title + ': ' + helpPage.purpose +
+          '\n\nWhen to use: ' + helpPage.whenToUse +
+          '\n\nHow it works:\n' + helpPage.details.map((detail) => '• ' + detail).join('\n') +
+          '\n\nSteps:\n' + helpPage.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n') +
+          '\n\nExample: ' + helpPage.example + '\n\nImportant: ' + helpPage.caution,
       }]);
       return;
     }
@@ -59,8 +63,11 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
     } catch {
       setMessages((prev) => [...prev, {
         role: 'assistant',
-        text: 'The configured AI service is unavailable. Here are the verified steps for ' + guide.title + ':\n' +
-          guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n'),
+        text: 'The configured AI service is unavailable. Here is the verified guide for ' + guide.title + ':\n' +
+          guide.purpose + '\n\n' + guide.whenToUse +
+          '\n\n' + guide.details.join('\n') +
+          '\n\n' + guide.steps.map((step, index) => String(index + 1) + '. ' + step).join('\n') +
+          '\n\nExample: ' + guide.example,
       }]);
     } finally {
       setLoading(false);
@@ -75,11 +82,28 @@ export function PmPageGuideAssistant({ page }: { page: string }) {
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 text-sm">
         <p className="text-sm">{guide.purpose}</p>
+        <div className="space-y-1 rounded-lg bg-muted/30 p-3">
+          <p className="text-xs font-semibold">When should I use this page?</p>
+          <p className="text-xs text-muted-foreground">{guide.whenToUse}</p>
+        </div>
+        <div className="space-y-1 rounded-lg border p-3">
+          <p className="text-xs font-semibold">Understanding the information</p>
+          <ul className="list-disc space-y-1.5 pl-4 text-xs text-muted-foreground">
+            {guide.details.map((detail) => <li key={detail}>{detail}</li>)}
+          </ul>
+        </div>
         <div className="rounded-lg bg-muted/30 p-3"><p className="mb-2 font-medium">How to use this page</p>
           <ol className="list-inside list-decimal space-y-1.5 text-xs text-muted-foreground">
             {guide.steps.map((step) => <li key={step}>{step}</li>)}
           </ol>
         </div>
+        <div className="space-y-1 rounded-lg border p-3">
+          <p className="text-xs font-semibold">Industrial example</p>
+          <p className="text-xs text-muted-foreground">{guide.example}</p>
+        </div>
+        <p className="rounded-md border border-amber-200 p-2 text-xs text-muted-foreground dark:border-amber-900">
+          <strong>Important:</strong> {guide.caution}
+        </p>
         {allowedRelated.length > 0 && <div className="space-y-2"><p className="text-xs font-semibold">Go to related workspace</p>
           <div className="flex flex-wrap gap-2">{allowedRelated.map((id) =>
             <Button key={id} type="button" variant="outline" size="sm" className="h-auto min-h-8 whitespace-normal text-left text-xs" onClick={() => { navigate(id as Parameters<typeof navigate>[0]); setMessages([]); }}>{PM_GUIDE_PAGES[id].title}</Button>)}

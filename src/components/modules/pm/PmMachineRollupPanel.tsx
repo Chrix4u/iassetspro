@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -280,7 +281,7 @@ export function PmMachineRollupPanel() {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                           <div className="space-y-1">
                             <Label className="text-[10px] font-semibold">Maintenance Date</Label>
-                            <input
+                            <Input
                               type="date"
                               className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                               min={toPmDateInputValue(data.planningWindow.start)}

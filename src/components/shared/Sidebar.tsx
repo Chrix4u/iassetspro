@@ -182,7 +182,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'pm-compliance', label: 'PM Compliance', icon: BarChart3, moduleCode: 'pm_schedules' },
         { page: 'pm-inspection-exceptions', label: 'Inspection Exceptions', icon: TriangleAlert, moduleCode: 'pm_schedules' },
         { page: 'pm-tasks', label: 'Task Library', icon: ListChecks, moduleCode: 'pm_schedules' },
-        { page: 'pm-tasks', label: 'Task Library', icon: ListChecks, moduleCode: 'pm_schedules' },
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck, moduleCode: 'pm_schedules' },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap, moduleCode: 'pm_schedules' },
         { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar, moduleCode: 'pm_schedules' },

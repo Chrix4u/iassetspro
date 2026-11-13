@@ -60,10 +60,18 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
   await expect(review).toContainText('C314-21-02');
   await expect(review).toContainText('Drive-end vibration');
   await expect(review).toContainText('7.9 mm/s');
-  await expect(review).toContainText('Technician UAT');
   await expect(review).toContainText('WO-UAT-001');
   await expect(review).toContainText('Older records display Unknown');
-  await expect(review).toContainText('State: standstill');
+  await expect(review.getByTestId('pm-inspection-exception-row')).toHaveCount(1);
+  await expect(review.getByTestId('pm-inspection-exception-row')).toContainText('7.9');
+  await review.getByRole('button', { name: 'View exception for Drive-End Bearing' }).click();
+  const details = page.getByRole('dialog', { name: 'Inspection exception details' });
+  await expect(details).toContainText('Technician UAT');
+  await expect(details).toContainText('State: standstill');
+  await expect(details).toContainText('7.9 mm/s');
+  await expect(details).toContainText('WO-UAT-001');
+  await expect(details.getByRole('button', { name: 'View Machine' })).toBeVisible();
+  await details.getByRole('button', { name: 'Close', exact: true }).last().click();
   await review.getByRole('combobox', { name: 'Inspection operating state' }).click();
   await page.getByRole('option', { name: 'Standstill', exact: true }).click();
   await expect.poll(() => requestedFilters.some((value) => value.includes('equipmentState=standstill')))
@@ -78,7 +86,11 @@ test('UAT-PM exceptions: mobile records show inspector, actual readings, abnorma
 
   await review.getByRole('combobox', { name: 'Corrective WO' }).click();
   await page.getByRole('option', { name: 'No linked WO' }).click();
-  await expect(review).toContainText('No corrective WO linked — planner follow-up needed');
+  await review.getByRole('button', { name: 'View exception for Drive-End Bearing' }).click();
+  await expect(page.getByRole('dialog', { name: 'Inspection exception details' }))
+    .toContainText('No corrective WO linked — planner follow-up needed');
+  await page.getByRole('dialog', { name: 'Inspection exception details' })
+    .getByRole('button', { name: 'Close', exact: true }).last().click();
   expect(requestedFilters.some((value) => value.includes('followUp=none'))).toBe(true);
   await review.getByRole('button', { name: 'Back to List' }).click();
   await expect(review).not.toBeVisible();

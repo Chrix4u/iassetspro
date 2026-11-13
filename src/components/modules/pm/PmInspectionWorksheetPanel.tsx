@@ -681,8 +681,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           {recordPoint.inspectionType === 'measurement' && (readLimits(recordPoint).min !== null || readLimits(recordPoint).max !== null) ? (
             <div className="space-y-1" data-testid="pm-individual-automatic-result">
               <Label>Automatic result (approved instrument limits)</Label>
-              <p role="status" className={`rounded-md border p-2 text-sm font-semibold ${automaticRecordOutcome === 'fail' ? 'border-destructive text-destructive' : ''}`}>
-                {automaticRecordOutcome === 'fail' ? 'Fail · measured value outside approved limits' :
+              <p role="status" className={`rounded-md border p-2 text-sm font-semibold ${automaticRecordOutcome === 'fail' ? 'border-destructive text-destructive' : automaticRecordOutcome === 'needs_attention' ? 'border-amber-500 text-amber-700 dark:text-amber-300' : ''}`}>
+                {automaticRecordOutcome === 'fail' ? 'Fail · measured value outside hard limits' :
+                  automaticRecordOutcome === 'needs_attention' ? 'Needs attention · value outside warning band' :
                   automaticRecordOutcome === 'pass' ? 'Pass · measured value within approved limits' : 'Enter a measured value to calculate result'}
               </p>
             </div>
@@ -694,7 +695,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
           </div>}
           <div><Label>Findings / defects</Label><Textarea value={record.findings} onChange={(e) => setRecord({ ...record, findings: e.target.value, requestKey: '' })} placeholder="Describe leakage, worn bearing, abnormal vibration or other findings"/></div>
           <div><Label>Recommended action</Label><Textarea value={record.recommendation} onChange={(e) => setRecord({ ...record, recommendation: e.target.value, requestKey: '' })} placeholder="Suggested corrective action for the planner"/></div>
-          {(automaticRecordOutcome === 'fail' || (!automaticRecordOutcome && record.outcome !== 'pass')) && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
+          {((automaticRecordOutcome === 'fail' || automaticRecordOutcome === 'needs_attention') || (!automaticRecordOutcome && record.outcome !== 'pass')) && <p className="flex items-start gap-2 rounded-md border border-amber-200 p-2 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle className="h-4 w-4 shrink-0"/>Defects create a draft corrective work order (or reuse an open one). The inspection remains due until verified closure.</p>}
         </div>}
       </ResponsiveDialog>
     </Card>

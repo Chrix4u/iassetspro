@@ -461,6 +461,19 @@ header[class*="bg-header"] {
   }
 }
 
+/* The selected machine's task groups can have long industrial part codes.
+   On narrow screens keep the PM readings workspace anchored at the left gutter
+   instead of allowing intrinsic child widths and auto margins to center it offscreen. */
+@media (max-width: 639px) {
+  .page-content.pm-machine-readings {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin-inline: 0;
+    overflow-x: clip;
+  }
+}
+
 /* ============================================================================
    SCROLL CONTAINMENT — ensures pages scroll inside the app shell
    ============================================================================ */

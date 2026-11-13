@@ -53,9 +53,18 @@ test('PM readings group one selected machine by task then parts, with useful pag
   await expect(temperature).toContainText('20 to 75 °C');
   await expect(temperature).toContainText('11/11/2026');
   await expect(groups.filter({ hasText: 'Bearing Vibration' }).getByTestId('pm-inspection-point')).toHaveCount(1);
+  const viewportOffsets = await page.evaluate(() => ({
+    windowScrollX: window.scrollX,
+    rootScrollLeft: document.documentElement.scrollLeft,
+    bodyScrollLeft: document.body.scrollLeft,
+    mainScrollLeft: document.querySelector('main')?.scrollLeft ?? null,
+    rootWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+    visualOffsetLeft: window.visualViewport?.offsetLeft ?? null,
+  }));
   const rect = await machine.boundingBox();
   expect(rect).not.toBeNull();
-  expect(rect!.x).toBeGreaterThanOrEqual(-1);
+  expect(rect!.x, 'The machine card must remain fully visible: ' + JSON.stringify(viewportOffsets)).toBeGreaterThanOrEqual(-1);
   expect(rect!.x + rect!.width).toBeLessThanOrEqual(391);
 
   await page.getByRole('button', { name: 'Open PM page guide' }).click();

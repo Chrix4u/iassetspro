@@ -7,6 +7,8 @@ export interface InspectionLimits {
   min: number | null;
   max: number | null;
   unit: string | null;
+  warningMin?: number | null;
+  warningMax?: number | null;
 }
 
 export function parseInspectionLimits(source: string | null): InspectionLimits {
@@ -16,7 +18,20 @@ export function parseInspectionLimits(source: string | null): InspectionLimits {
     const min = typeof parsed.min === 'number' && Number.isFinite(parsed.min) ? parsed.min : null;
     const max = typeof parsed.max === 'number' && Number.isFinite(parsed.max) ? parsed.max : null;
     const unit = typeof parsed.unit === 'string' && parsed.unit.trim() ? parsed.unit.trim() : null;
-    return { min, max, unit };
+    const warningMin = typeof parsed.warningMin === 'number' && Number.isFinite(parsed.warningMin) ? parsed.warningMin : null;
+    const warningMax = typeof parsed.warningMax === 'number' && Number.isFinite(parsed.warningMax) ? parsed.warningMax : null;
+    // Invalid or stale warning bands are deliberately ignored, never silently
+    // interpreted as valid configured warning thresholds.
+    const ordered = (warningMin === null || warningMax === null || warningMin <= warningMax)
+      && (min === null || warningMin === null || warningMin >= min)
+      && (max === null || warningMax === null || warningMax <= max)
+      && (min === null || warningMax === null || warningMax >= min)
+      && (max === null || warningMin === null || warningMin <= max);
+    return {
+      min, max, unit,
+      ...(ordered && warningMin !== null ? { warningMin } : {}),
+      ...(ordered && warningMax !== null ? { warningMax } : {}),
+    };
   } catch {
     return { min: null, max: null, unit: null };
   }
@@ -29,13 +44,15 @@ export function parseInspectionLimits(source: string | null): InspectionLimits {
 export function automaticMeasurementOutcome(
   rawValue: string | number | null | undefined,
   normalRange: string | null,
-): 'pass' | 'fail' | null {
+): PmInspectionOutcome | null {
   if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') return null;
   const value = Number(rawValue);
   if (!Number.isFinite(value)) return null;
-  const { min, max } = parseInspectionLimits(normalRange);
+  const { min, max, warningMin, warningMax } = parseInspectionLimits(normalRange);
   if (min === null && max === null) return null;
-  return (min !== null && value < min) || (max !== null && value > max) ? 'fail' : 'pass';
+  if ((min !== null && value < min) || (max !== null && value > max)) return 'fail';
+  if ((warningMin != null && value < warningMin) || (warningMax != null && value > warningMax)) return 'needs_attention';
+  return 'pass';
 }
 
 export function inspectionDueState(nextInspection: Date | string | null, now: Date = new Date()): PmInspectionDueState {
@@ -107,10 +124,14 @@ export function evaluateInspectionResult(
   if (!Number.isFinite(number)) throw new Error('Instrument inspection requires a finite numeric reading');
   const outside = (limits.min !== null && number < limits.min)
     || (limits.max !== null && number > limits.max);
+  const warning = !outside && (
+    (limits.warningMin != null && number < limits.warningMin)
+    || (limits.warningMax != null && number > limits.warningMax)
+  );
   return {
     value: String(number),
     numericValue: number,
-    outcome: outside ? 'fail' : reportedOutcome,
-    isAlarm: outside || reportedOutcome !== 'pass',
+    outcome: outside ? 'fail' : warning ? 'needs_attention' : reportedOutcome,
+    isAlarm: outside || warning || reportedOutcome !== 'pass',
   };
 }

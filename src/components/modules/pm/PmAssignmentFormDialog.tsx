@@ -244,16 +244,14 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       onOpenChange={onOpenChange}
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
-      title={<span className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-        <span>{editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}</span>
-        {step === 'tasks' && !taskToolbarVisible && (
-          <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 text-xs"
-            data-testid="pm-sticky-add-task" onClick={() => setTaskPickerOpen(true)}
-            disabled={saving || templateLoading || !assetId || !targetConfirmed}>
-            <Plus className="mr-1 h-3.5 w-3.5" />Add Task from Library
-          </Button>
-        )}
-      </span>}
+      title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
+      headerAction={step === 'tasks' && !taskToolbarVisible ? (
+        <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 text-xs"
+          data-testid="pm-sticky-add-task" onClick={() => setTaskPickerOpen(true)}
+          disabled={saving || templateLoading || !assetId || !targetConfirmed}>
+          <Plus className="mr-1 h-3.5 w-3.5" />Add Task from Library
+        </Button>
+      ) : null}
       description={step === 'tasks' ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.' : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}
       footer={(
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

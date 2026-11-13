@@ -291,7 +291,7 @@ function TriggerCard({
   canDelete: boolean;
 }) {
   const typeConf = TRIGGER_TYPE_CONFIG[trigger.triggerType as TriggerType] || TRIGGER_TYPE_CONFIG.time;
-  const TypeIcon = typeConf.icon;
+  const TypeIcon = typeConf.icon as React.ComponentType<{ className?: string }>;
   const config = parseTriggerConfig(trigger.triggerConfig);
   const schedule = trigger.schedule;
 
@@ -604,7 +604,7 @@ function TriggerForm({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {(['meter', 'condition', 'production_count'] as TriggerType[]).map((t) => {
             const conf = TRIGGER_TYPE_CONFIG[t];
-            const TypeIcon = conf.icon;
+            const TypeIcon = conf.icon as React.ComponentType<{ className?: string }>;
             return (
               <button
                 key={t}
@@ -1009,7 +1009,7 @@ export default function PmTriggersPage() {
         </Card>
         {TRIGGER_TYPES.map((t) => {
           const conf = TRIGGER_TYPE_CONFIG[t];
-          const TypeIcon = conf.icon;
+          const TypeIcon = conf.icon as React.ComponentType<{ className?: string }>;
           return (
             <Card key={t} className="border-0 shadow-sm">
               <CardContent className="p-3 text-center">

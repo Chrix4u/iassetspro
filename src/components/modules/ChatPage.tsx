@@ -27,6 +27,23 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getInitials, formatDateTime, timeAgo } from '@/components/shared/helpers';
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
+
+interface ChatMessage {
+  id: string;
+  content: string;
+  senderId: string;
+  senderName?: string | null;
+  createdAt: string;
+}
+
+interface ChatConversation {
+  id: string;
+  name: string;
+  participants?: Array<{ userId: string; name: string }>;
+  lastMessage?: ChatMessage | null;
+  unreadCount: number;
+}
 
 export function ChatPage() {
   const { user } = useAuthStore();
@@ -177,7 +194,7 @@ export function ChatPage() {
   const groupedMessages: { date: string; messages: ChatMessage[] }[] = [];
   let currentDate = '';
   for (const msg of messages) {
-    const msgDate = msg.createdAt ? new Date(msg.createdAt).toLocaleDateString() : 'Today';
+    const msgDate = msg.createdAt ? formatUiDate(msg.createdAt) : 'Today';
     if (msgDate !== currentDate) {
       currentDate = msgDate;
       groupedMessages.push({ date: msgDate, messages: [msg] });
@@ -191,8 +208,8 @@ export function ChatPage() {
     const date = new Date(d);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-    if (isToday) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return formatUiDateTime(date);
   }
 
   return (

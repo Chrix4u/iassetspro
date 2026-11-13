@@ -313,8 +313,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
       <CardHeader className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Action Lists & Inspection Readings'}</CardTitle>
-            <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Select a machine, print the inspection tasks and all their assigned parts, then enter the technician\'s measured values or written observations.'}</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-base"><ClipboardCheck className="h-4 w-4 text-emerald-600"/>{mode === 'action-lists' ? 'Machine Action Lists' : 'Inspection Readings'}</CardTitle>
+            <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Review and record each configured machine/part inspection point individually, including measured values, findings and corrective follow-up. For printable machine-wide worksheets and batch paper entry, use Machine Action Lists; both use the same inspection history.'}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
@@ -438,8 +438,8 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         {!exceptionsOpen && <>
         {mode === 'full' && !machineChecklistOpen && (
           <p className="text-xs text-muted-foreground">
-            The filters below also let you review individual inspection points and their saved history.
-            For a full printable machine sheet, use the machine selector above.
+            This page is for single-point readings, their accepted limits and follow-up history.
+            For machine-wide printing or spreadsheet data entry, use Machine Action Lists. Both save into this same inspection history.
           </p>
         )}
 

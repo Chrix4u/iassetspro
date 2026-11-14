@@ -22,9 +22,15 @@ describe('PM inspection lifecycle integration contracts', () => {
     expect(workspaces).toContain('<PmInspectionWorksheetPanel mode="action-lists"/>');
     expect(workspaces).toContain('<PmGroupedReadingsPage />');
     expect(groupedReadings).toContain('groupInspectionPoints(rows)');
-    expect(worksheet).toContain('Plan Inspection');
+    // Machine Action Lists have one deliberate generator. The standalone point
+    // editor and list refresh remain restricted to legacy/full inspection mode.
+    expect(worksheet).toContain('Generate Action List');
+    expect(worksheet).toContain('Refresh Inspection Points');
+    expect(worksheet).toContain('Add Inspection Point');
+    expect(worksheet).toContain("mode === 'full' && canPlan");
+    expect(worksheet).not.toContain('>Generate List');
+    expect(worksheet).not.toContain('>Plan Inspection');
     expect(worksheet).toContain('Record Inspection');
-    expect(worksheet).toContain('Generate List');
     expect(worksheet).toContain('Part / Instrument');
     expect(scheduledRoute).toContain("activityMode: 'inspection'");
     expect(scheduledRoute).toContain('nextDueReading');

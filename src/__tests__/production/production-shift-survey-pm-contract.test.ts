@@ -104,7 +104,7 @@ describe('production survey and PM usage integration',()=>{
    const create=file('src/app/api/pm-schedules/route.ts');
    const update=file('src/app/api/pm-schedules/[id]/route.ts');
    expect(sources).toContain('db.assetMeter.findMany');
-   expect(sources).toContain('currentValue: meter.currentValue');
+   expect(sources).toContain('value: meter.currentValue');
    expect(create).toContain('db.assetMeter.findFirst');
    expect(create).toContain('value: registered.currentValue');
    expect(create).toContain('baselineValue: Number(selectedMeter.value)');

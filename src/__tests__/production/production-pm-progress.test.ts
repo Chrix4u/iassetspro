@@ -58,7 +58,7 @@ describe('production output to meter PM progress', () => {
     expect(api).not.toMatch(/\b(?:db|tx)\.[A-Za-z]+\.(?:create|update|delete|upsert)\(/);
   });
   it('reuses exactly the source values that the two PM engines evaluate', () => {
-    expect(taskEngine).toContain('meter.currentValue');
+    expect(taskEngine).toContain('meter?.currentValue');
     expect(taskEngine).toContain('nextDueReading');
     expect(legacyEngine).toContain('tx.meterReading.findFirst');
     expect(legacyEngine).toContain('baselineValue');

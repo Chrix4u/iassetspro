@@ -91,6 +91,20 @@ describe('production survey and PM usage integration',()=>{
    expect(frontend).toContain('mixed units');
    expect(frontend).toContain('reportSingleUnit');
  });
+ it('can register a 5,000-unit PM cadence before the first approved output reading',()=>{
+   const sources=file('src/app/api/pm-schedules/meter-sources/route.ts');
+   const create=file('src/app/api/pm-schedules/route.ts');
+   const update=file('src/app/api/pm-schedules/[id]/route.ts');
+   expect(sources).toContain('db.assetMeter.findMany');
+   expect(sources).toContain('currentValue: meter.currentValue');
+   expect(create).toContain('db.assetMeter.findFirst');
+   expect(create).toContain('value: registered.currentValue');
+   expect(create).toContain('baselineValue: Number(selectedMeter.value)');
+   expect(update).toContain('db.assetMeter.findFirst');
+   // No additional Event/Condition frequency type was introduced.
+   const frequency=file('src/lib/pm-utils.ts');
+   expect(frequency).toContain("['time_day', 'meter']");
+ });
  it('reports approved day/week amounts only and reuses existing canonical meter PM source',()=>{
    expect(report).toContain("status:'approved'");
    expect(report).toContain("group==='week'?reportingWeekStart");

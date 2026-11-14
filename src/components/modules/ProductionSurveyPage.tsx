@@ -121,8 +121,8 @@ export default function ProductionSurveyPage(){
    }),{output:0,shifts:0,stoppage:0,linked:0}),[reports]);
  const reportSingleUnit=reports.length>0&&reports.every(x=>x.unit===reports[0].unit);
  const reportUnit=reportSingleUnit?reports[0].unit:'';
- const outputSummary=reportSingleUnit?amount(preparedReport.output)+' '+reportUnit:'See machine rows · mixed units';
- const postedSummary=reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
+ const outputSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.output)+' '+reportUnit:'See machine rows · mixed units';
+ const postedSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
 
  const configure=async(initialize:boolean)=>{
    if(!setup||!canManage)return;

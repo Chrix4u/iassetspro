@@ -119,7 +119,10 @@ export default function ProductionSurveyPage(){
     output:sum.output+row.output,shifts:sum.shifts+row.shifts,
     stoppage:sum.stoppage+row.downtimeMinutes,linked:sum.linked+row.meterLinkedOutput,
    }),{output:0,shifts:0,stoppage:0,linked:0}),[reports]);
- const reportUnit=reports.length>0&&reports.every(x=>x.unit===reports[0].unit)?reports[0].unit:'mixed units';
+ const reportSingleUnit=reports.length>0&&reports.every(x=>x.unit===reports[0].unit);
+ const reportUnit=reportSingleUnit?reports[0].unit:'';
+ const outputSummary=reportSingleUnit?amount(preparedReport.output)+' '+reportUnit:'See machine rows · mixed units';
+ const postedSummary=reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
 
  const configure=async(initialize:boolean)=>{
    if(!setup||!canManage)return;
@@ -262,7 +265,7 @@ export default function ProductionSurveyPage(){
          <Button variant="outline" onClick={exportCsv} disabled={!reports.length}><Download className="mr-2 h-4 w-4"/>Export CSV</Button>
        </div>
        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-         {[[ 'Verified output',amount(preparedReport.output)+' '+reportUnit],['Recorded shifts',preparedReport.shifts],['Downtime',amount(preparedReport.stoppage)+' min'],['Posted to PM meters',amount(preparedReport.linked)+' '+reportUnit]].map(([label,value])=>
+         {[[ 'Verified output',outputSummary],['Recorded shifts',preparedReport.shifts],['Downtime',amount(preparedReport.stoppage)+' min'],['Posted to PM meters',postedSummary]].map(([label,value])=>
            <div key={String(label)} className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-bold text-lg">{value}</p></div>)}
        </div>
        <div className="overflow-x-auto rounded-lg border">

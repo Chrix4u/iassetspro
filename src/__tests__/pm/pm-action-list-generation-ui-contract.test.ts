@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 const sheet = readFileSync('src/components/modules/pm/PmMachineInspectionPrint.tsx','utf8');
 const panel = readFileSync('src/components/modules/pm/PmMachineInspectionChecklistPanel.tsx','utf8');
+const workspace = readFileSync('src/components/modules/pm/PmInspectionWorksheetPanel.tsx','utf8');
 const setup = readFileSync('src/components/modules/pm/PmActionListParameterSetup.tsx','utf8');
 const rows = readFileSync('src/lib/pm-machine-field-worksheet.ts','utf8');
 
@@ -15,6 +16,17 @@ describe('printed Action List and engineer-approved part parameters', () => {
     expect(sheet).toContain('<th>TIME</th>');
     expect(sheet).not.toContain('<th>REMARK</th>');
     expect(sheet).toContain('Inspector name/signature:');
+  });
+  it('keeps the machine Action List generator without redundant refresh or standalone planning controls', () => {
+    expect(workspace).toContain("{mode === 'full' && <Button type=\"button\" size=\"sm\" variant=\"outline\" onClick={() => void refresh()}");
+    expect(workspace).toContain("{mode === 'full' && canPlan && <Button size=\"sm\" onClick={() => setPlanOpen(true)}");
+    expect(workspace).toContain('Generate an Action List for one machine');
+    expect(workspace).toContain('Generate Action List');
+    expect(workspace).not.toContain('onConfigure={');
+    // Missing part checks use the same task-aware parameter assignment flow
+    // as the machine Action List, not a second independent plan/interval.
+    expect(panel).toContain('onClick={() => setParameterSetupOpen(true)}>Assign Parameters & Limits</Button>');
+    expect(panel).not.toContain('onConfigure(');
   });
   it('lets planners assign reusable temperature/vibration/sound/corrosion controls, without guessing limits', () => {
     expect(setup).toContain('Assign Action List parameters to machine parts');

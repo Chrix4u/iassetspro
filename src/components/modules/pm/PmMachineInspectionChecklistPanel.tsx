@@ -95,7 +95,6 @@ export function PmMachineInspectionChecklistPanel({
   equipmentState,
   canRecord,
   canPlan,
-  onConfigure,
   onClose,
   onRecorded,
   reloadKey,
@@ -104,7 +103,6 @@ export function PmMachineInspectionChecklistPanel({
   equipmentState: MachineInspectionState;
   canRecord: boolean;
   canPlan: boolean;
-  onConfigure: (task: MachineChecklistTask) => void;
   onClose: () => void;
   onRecorded: () => void;
   reloadKey: number;
@@ -791,7 +789,7 @@ export function PmMachineInspectionChecklistPanel({
                 </p>
                 {canPlan && (group.mappingRequired ? (
                   <Button size="sm" variant="outline" onClick={() => setMappingPartId(group.component.id)}>Map task readings</Button>
-                ) : <Button size="sm" variant="outline" onClick={() => onConfigure(group.tasks[0])}>Configure Check</Button>)}
+                ) : <Button size="sm" variant="outline" onClick={() => setParameterSetupOpen(true)}>Assign Parameters & Limits</Button>)}
               </div>
             ) : (
               <div className="min-w-0 space-y-2 p-2 sm:p-3">

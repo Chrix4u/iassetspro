@@ -4,6 +4,7 @@ import { allowedProductionMeter, parseProductionSurveyInput, reportingWeekStart,
 const file=(path:string)=>readFileSync(path,'utf8');
 const entry=file('src/app/api/production-surveys/route.ts');
 const review=file('src/app/api/production-surveys/[id]/review/route.ts');
+const correction=file('src/app/api/production-surveys/[id]/route.ts');
 const setup=file('src/app/api/production-surveys/setup/route.ts');
 const report=file('src/app/api/production-surveys/report/route.ts');
 const schema=file('prisma/schema.prisma');
@@ -75,6 +76,18 @@ describe('production survey and PM usage integration',()=>{
    expect(review).toContain('meterReadingId=reading.id');
    expect(entry).not.toContain('meterReading.create(');
    expect(migration).toContain('production_shift_records_meterReadingId_key');
+ });
+ it('allows rejected operator corrections without rewriting an approved or posted meter',()=>{
+   expect(correction).toContain("original.recordedById!==session.userId");
+   expect(correction).toContain("original.status!=='rejected'||original.meterReadingId");
+   expect(correction).toContain("latest.status!=='rejected'||latest.meterReadingId");
+   expect(correction).toContain("status:'submitted',reviewNote:null");
+   expect(frontend).toContain('Correct & Resubmit');
+   expect(frontend).toContain('Resubmit corrected shift');
+ });
+ it('does not sum unlike production units into a false total',()=>{
+   expect(frontend).toContain('mixed units');
+   expect(frontend).toContain('reportSingleUnit');
  });
  it('reports approved day/week amounts only and reuses existing canonical meter PM source',()=>{
    expect(report).toContain("status:'approved'");

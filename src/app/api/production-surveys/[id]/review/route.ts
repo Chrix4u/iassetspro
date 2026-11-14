@@ -26,7 +26,10 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{id:stri
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))','iassetspro:production-survey:'+id);
       const row=await tx.productionShiftRecord.findUnique({where:{id}});
       if(!row||row.plantId!==scopeRecord.plantId)throw new Error('Shift entry no longer available');
-      if(row.status==='approved')return {duplicate:true,record:row,meterPosted:Boolean(row.meterReadingId)};
+      if(row.status==='approved') {
+        if(body.action==='approve')return {duplicate:true,record:row,meterPosted:Boolean(row.meterReadingId)};
+        throw new Error('An approved production record cannot be rejected or rewritten');
+      }
       if(row.status!=='submitted')throw new Error('Only submitted production shifts can be reviewed');
       if(row.recordedById===session.userId)throw new Error('A second person must verify the recorded production quantity');
       const at=new Date();
@@ -68,7 +71,7 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{id:stri
     return NextResponse.json({success:true,data:result});
   }catch(error){
     const msg=error instanceof Error?error.message:'Could not review shift';
-    const status=/Only submitted|second person|not valid|baseline|decrease|reason|no longer available/i.test(msg)?409:500;
+    const status=/Only submitted|second person|not valid|baseline|decrease|reason|no longer available|approved production record/i.test(msg)?409:500;
     return NextResponse.json({success:false,error:msg},{status});
   }
 }

@@ -44,10 +44,29 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Newly commissioned output meters must be selectable before their first
+    // production shift. Preserve historical reading-backed sources as-is.
+    const registered = await db.assetMeter.findMany({
+      where: { assetId, isActive: true },
+      select: { name: true, unit: true, currentValue: true, lastReadingAt: true },
+    });
+    const sources = [...readings];
+    const seen = new Set(readings.map((reading) => reading.meterName + '\\u0000' + reading.unit));
+    for (const meter of registered) {
+      const key = meter.name + '\\u0000' + meter.unit;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      sources.push({
+        meterName: meter.name,
+        unit: meter.unit,
+        value: meter.currentValue,
+        readingDate: meter.lastReadingAt ?? new Date(0),
+      });
+    }
     return NextResponse.json({
       success: true,
-      data: readings,
-      pagination: { page: 1, limit: readings.length, total: readings.length, totalPages: 1 },
+      data: sources,
+      pagination: { page: 1, limit: sources.length, total: sources.length, totalPages: 1 },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load PM meter sources';

@@ -462,7 +462,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
         {mode === 'full' && !machineChecklistOpen && <>
 
         {loading && rows.length === 0 ? <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin"/>Generating inspection list…</div> : rows.length === 0 ?
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No inspection points match these filters. Use <strong>Plan Inspection</strong> to define sight or instrument checks for a machine part.</div> :
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No inspection points match these filters. Use <strong>Add Inspection Point</strong> to define sight or instrument checks for a machine part.</div> :
           <div className="grid gap-2">
             {rows.map((point) => {
               const limits = readLimits(point);

@@ -58,6 +58,8 @@ model RolePermission {
 }
 
 model User {
+  productionShiftEntries ProductionShiftRecord[] @relation("ProductionShiftRecorder")
+  productionShiftReviews ProductionShiftRecord[] @relation("ProductionShiftReviewer")
   id                      String    @id @default(cuid())
   username                String    @unique
   email                   String    @unique
@@ -385,6 +387,8 @@ model Plant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  productionShiftTemplates ProductionShiftTemplate[]
+  productionShiftRecords ProductionShiftRecord[]
   departments         Department[]
   plantAccess         UserPlant[]
   assets              Asset[]
@@ -1106,6 +1110,7 @@ model Asset {
   pmSchedules                   PmSchedule[]
   pmAssignments                 PmScheduleTask[]                    @relation("PmAssignmentAsset")
   assetMeters                   AssetMeter[]
+  productionShiftRecords       ProductionShiftRecord[]
   iotDevices                    IotDevice[]
   bomAsParent                   BillOfMaterial[]                    @relation("BomParent")
   bomAsChild                    BillOfMaterial[]                    @relation("BomChild")
@@ -2202,6 +2207,7 @@ model AssetMeter {
   asset         Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
   readings      MeterReading[]
   pmAssignments PmScheduleTask[]
+  productionShiftRecords ProductionShiftRecord[]
 
   @@unique([assetId, name, unit])
   @@index([assetId, isActive])
@@ -2227,6 +2233,7 @@ model MeterReading {
 
   assetMeter AssetMeter? @relation(fields: [assetMeterId], references: [id], onDelete: SetNull)
   readBy     User        @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
+  productionShiftRecord ProductionShiftRecord? @relation("ProductionSurveyMeterReading")
 
   @@index([assetMeterId, readingDate])
   @@map("meter_readings")
@@ -5480,4 +5487,70 @@ model LaborRate {
   @@index([tradeId, effectiveFrom, effectiveTo])
   @@index([plantId])
   @@map("labor_rates")
+}
+
+
+// Production survey: an absent shift record is NOT a zero-output shift.
+// Only a reviewed record can post a new cumulative asset-meter reading.
+model ProductionShiftTemplate {
+  id          String   @id @default(cuid())
+  plantId     String
+  code        String
+  name        String
+  startsAt    String?
+  endsAt      String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plant    Plant                   @relation(fields: [plantId], references: [id], onDelete: Restrict)
+  records  ProductionShiftRecord[]
+
+  @@unique([plantId, code])
+  @@index([plantId, isActive, sortOrder])
+  @@map("production_shift_templates")
+}
+
+model ProductionShiftRecord {
+  id                   String   @id @default(cuid())
+  plantId              String
+  assetId              String
+  shiftTemplateId      String
+  productionDate       DateTime @db.Date
+  outputQuantity       Float
+  unit                 String
+  targetQuantity       Float?
+  availableMinutes     Int
+  breakMinutes         Int      @default(0)
+  repairMinutes        Int      @default(0)
+  inputDeliveryMinutes Int      @default(0)
+  changeoverMinutes    Int      @default(0)
+  startupCleaningMinutes Int    @default(0)
+  otherMinutes         Int      @default(0)
+  preventiveMinutes    Int      @default(0)
+  notes                String?  @db.Text
+  status               String   @default("submitted") // submitted, approved, rejected
+  reviewNote           String?  @db.Text
+  assetMeterId         String?
+  meterReadingId       String?  @unique
+  recordedById         String
+  reviewedById         String?
+  reviewedAt           DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  plant        Plant                   @relation(fields: [plantId], references: [id], onDelete: Restrict)
+  asset        Asset                   @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  shift        ProductionShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Restrict)
+  meter        AssetMeter?             @relation(fields: [assetMeterId], references: [id], onDelete: Restrict)
+  meterReading MeterReading?           @relation("ProductionSurveyMeterReading", fields: [meterReadingId], references: [id], onDelete: SetNull)
+  recordedBy   User                    @relation("ProductionShiftRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  reviewedBy   User?                   @relation("ProductionShiftReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([assetId, productionDate, shiftTemplateId])
+  @@index([plantId, productionDate, status])
+  @@index([assetMeterId, status])
+  @@map("production_shift_records")
 }

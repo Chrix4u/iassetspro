@@ -323,10 +323,23 @@ export async function PUT(
           select: { id: true },
         });
         if (!selectedMeter) {
-          return NextResponse.json(
-            { success: false, error: 'Selected meter has no reading for this asset' },
-            { status: 400 },
-          );
+          // Permit a newly commissioned production-output meter to receive its
+          // first PM schedule before any shift production has been approved.
+          const registered = await db.assetMeter.findFirst({
+            where: {
+              assetId: existing.assetId,
+              name: canonicalFrequencyForUpdate.meterName,
+              unit: canonicalFrequencyForUpdate.frequencyUnit,
+              isActive: true,
+            },
+            select: { id: true },
+          });
+          if (!registered) {
+            return NextResponse.json(
+              { success: false, error: 'Selected meter has no reading and is not registered on this asset' },
+              { status: 400 },
+            );
+          }
         }
       } else if (canonicalFrequencyForUpdate.frequencyType === 'meter' && !legacyComponentUsage) {
         return NextResponse.json(

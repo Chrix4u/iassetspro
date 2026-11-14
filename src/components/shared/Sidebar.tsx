@@ -240,6 +240,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       label: 'Production', icon: Zap, perm: 'production.view', moduleCode: 'production',
       children: [
         { page: 'production-work-centers', label: 'Work Centers', icon: Factory },
+        { page: 'production-survey', label: 'Shift Production Survey', icon: ClipboardList },
         { page: 'production-resource-planning', label: 'Resource Planning', icon: Layers },
         { page: 'production-scheduling', label: 'Scheduling', icon: Calendar },
         { page: 'production-capacity', label: 'Capacity', icon: Box },

@@ -109,6 +109,7 @@ const PAGE_TITLES: Record<string, string> = {
   'operations-checklists': 'Checklists',
   // Production
   'production-work-centers': 'Work Centers',
+  'production-survey': 'Production Survey & PM Usage',
   'production-resource-planning': 'Resource Planning',
   'production-scheduling': 'Production Scheduling',
   'production-capacity': 'Capacity Management',
@@ -275,6 +276,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'operations-checklists': () => import('./modules/OperationsPages').then(m => m.OperationsChecklistsPage),
   // Production
   'production-work-centers': () => import('./modules/ProductionPages').then(m => m.ProductionWorkCentersPage),
+  'production-survey': () => import('./modules/ProductionSurveyPage').then(m => m.default),
   'production-resource-planning': () => import('./modules/ProductionPages').then(m => m.ProductionResourcePlanningPage),
   'production-scheduling': () => import('./modules/ProductionPages').then(m => m.ProductionSchedulingPage),
   'production-capacity': () => import('./modules/ProductionPages').then(m => m.ProductionCapacityPage),

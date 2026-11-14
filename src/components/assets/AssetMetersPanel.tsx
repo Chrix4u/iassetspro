@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type AssetMeterRecord = {
   id: string;
@@ -41,6 +42,7 @@ export function AssetMetersPanel({
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('');
+  const [meterType, setMeterType] = useState('general');
   const [initialReading, setInitialReading] = useState('0');
   const [readingMeterId, setReadingMeterId] = useState<string | null>(null);
   const [readingValue, setReadingValue] = useState('');
@@ -72,11 +74,12 @@ export function AssetMetersPanel({
       const response = await api.post(`/api/assets/${encodeURIComponent(assetId)}/meters`, {
         name: name.trim(),
         unit: unit.trim(),
+        meterType,
         initialValue,
       });
       if (!response.success) throw new Error(response.error || 'Failed to add meter');
       toast.success('Asset meter added');
-      setName(''); setUnit(''); setInitialReading('0');
+      setName(''); setUnit(''); setMeterType('general'); setInitialReading('0');
       await loadMeters();
       onChanged?.();
     } catch (error) {
@@ -112,7 +115,7 @@ export function AssetMetersPanel({
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-semibold"><Gauge className="h-4 w-4" />Asset Meters</p>
-          <p className="text-[10px] text-muted-foreground">Meter definitions live on the machine; PM inherits their unit automatically.</p>
+          <p className="text-[10px] text-muted-foreground">Meter definitions live on the machine; PM inherits their unit automatically. Choose Production Output for shift-survey tonnage, yards or pieces.</p>
         </div>
         <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => void loadMeters()} disabled={loading} aria-label="Refresh asset meters">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -120,9 +123,21 @@ export function AssetMetersPanel({
       </div>
 
       {canCreate && (
-        <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_8rem_auto]">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_10rem_8rem_8rem_auto]">
           <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Meter name</Label><Input className="h-8 text-xs" value={name} onChange={(event) => setName(event.target.value)} placeholder="Operating Hours" /></div>
-          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Unit</Label><Input className="h-8 text-xs" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="hours" /></div>
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Meter type</Label>
+            <Select value={meterType} onValueChange={setMeterType}>
+              <SelectTrigger className="h-8 text-xs" aria-label="Asset meter type"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="general">General</SelectItem>
+                <SelectItem value="runtime">Operating hours</SelectItem>
+                <SelectItem value="cycles">Cycles</SelectItem>
+                <SelectItem value="production">Production Output</SelectItem>
+                <SelectItem value="energy">Energy</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Unit</Label><Input className="h-8 text-xs" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder={meterType === 'production' ? 'tonnes, yards, pieces' : 'hours'} /></div>
           <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Initial reading</Label><Input className="h-8 text-xs" type="number" step="any" value={initialReading} onChange={(event) => setInitialReading(event.target.value)} /></div>
           <div className="flex items-end"><Button type="button" size="sm" className="h-8 w-full" onClick={addMeter} disabled={saving || !assetId}><Plus className="mr-1 h-3.5 w-3.5" />Add Meter</Button></div>
         </div>
@@ -137,6 +152,7 @@ export function AssetMetersPanel({
               <div className="min-w-0"><p className="truncate text-xs font-semibold">{meter.name}</p><p className="text-[10px] text-muted-foreground">Current Reading: <strong>{Number(meter.currentValue)} {meter.unit}</strong>{meter.lastReadingAt ? ` · ${formatUiDateTime(meter.lastReadingAt)}` : ''}</p></div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px]">{meter.unit}</Badge>
+                <Badge variant="outline" className="text-[10px]">{meter.meterType === 'production' ? 'Production Output' : meter.meterType}</Badge>
                 {canRecordReading && (
                   <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => { setReadingMeterId(readingMeterId === meter.id ? null : meter.id); setReadingValue(String(meter.currentValue)); }}>Record Reading</Button>
                 )}

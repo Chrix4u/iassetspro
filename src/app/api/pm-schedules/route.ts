@@ -298,10 +298,10 @@ export async function POST(request: NextRequest) {
       componentForTrigger = component;
     }
 
-    // Canonical Meter schedules are driven by a real meter reading on the selected
-    // asset. Historical meter_based component-hour clients remain supported without rewriting
-    // their persisted semantics until a planner explicitly edits those schedules.
-    let selectedMeter: { id: string; value: number; meterName: string; unit: string } | null = null;
+    // A canonical Meter PM may start from a registered asset meter with no
+    // readings yet (for example 0 tonnes before the first operator shift).
+    // Existing reading-backed schedules retain their exact previous baseline.
+    let selectedMeter: { id: string | null; value: number; meterName: string; unit: string } | null = null;
     if (canonicalFrequency.frequencyType === 'meter' && canonicalFrequency.meterName) {
       selectedMeter = await db.meterReading.findFirst({
         where: {
@@ -313,8 +313,25 @@ export async function POST(request: NextRequest) {
         select: { id: true, value: true, meterName: true, unit: true },
       });
       if (!selectedMeter) {
+        const registered = await db.assetMeter.findFirst({
+          where: {
+            assetId,
+            name: canonicalFrequency.meterName,
+            unit: canonicalFrequency.frequencyUnit,
+            isActive: true,
+          },
+          select: { currentValue: true, name: true, unit: true },
+        });
+        if (registered) selectedMeter = {
+          id: null,
+          value: registered.currentValue,
+          meterName: registered.name,
+          unit: registered.unit,
+        };
+      }
+      if (!selectedMeter) {
         return NextResponse.json(
-          { success: false, error: 'Selected meter has no reading for this asset' },
+          { success: false, error: 'Selected meter is not registered on this asset and has no reading' },
           { status: 400 },
         );
       }

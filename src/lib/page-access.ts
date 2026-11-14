@@ -79,6 +79,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'operations-checklists': ['work_orders.view'],
   // Production
   'production-work-centers': ['work_centers.view'],
+  'production-survey': ['production_surveys.view'],
   'production-resource-planning': ['production.view'],
   'production-scheduling': ['production.view'],
   'production-capacity': ['production.view'],
@@ -215,6 +216,7 @@ export const PAGE_MODULES: Record<string, string | string[]> = {
   'inventory-purchase-orders': 'inventory',
   'inventory-receiving': 'inventory',
   'production-work-centers': 'production',
+  'production-survey': 'production',
   'production-resource-planning': 'production',
   'production-scheduling': 'production',
   'production-capacity': 'production',

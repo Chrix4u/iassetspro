@@ -62,6 +62,7 @@ const API_MODULE_RULES: ReadonlyArray<{ prefix: string; modules: string[] }> = [
   { prefix: '/api/pm-triggers', modules: ['pm_schedules'] },
   { prefix: '/api/pm-analytics', modules: ['pm_schedules', 'analytics'] },
   { prefix: '/api/analytics', modules: ['analytics'] },
+  { prefix: '/api/production-surveys', modules: ['production'] },
   { prefix: '/api/production-orders', modules: ['production'] },
   { prefix: '/api/production-batches', modules: ['production'] },
   { prefix: '/api/work-centers', modules: ['production'] },

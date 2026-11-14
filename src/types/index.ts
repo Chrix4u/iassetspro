@@ -651,6 +651,7 @@ export type PageName =
   | 'historian-dashboard'
   // Production (8 subpages)
   | 'production-work-centers'
+  | 'production-survey'
   | 'production-resource-planning'
   | 'production-scheduling'
   | 'production-capacity'

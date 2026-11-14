@@ -712,9 +712,13 @@ async function seedPermissionsOnly() {
   // ══════════════════════════════════════════════════════════════════════════
   console.log('🔗 Syncing role-permission mappings...');
 
-  // Clear ALL existing mappings
-  const deleted = await db.rolePermission.deleteMany();
-  console.log(`  🗑️  Cleared ${deleted.count} existing mappings`);
+  // Rebuild only the predefined role grants. Plant-specific/custom roles must
+  // retain their mappings when a new release seeds production permissions.
+  const managedRoleIds = Object.values(createdRoles);
+  const deleted = await db.rolePermission.deleteMany({
+    where: { roleId: { in: managedRoleIds } },
+  });
+  console.log(`  🗑️  Cleared ${deleted.count} managed-role mappings (custom roles preserved)`);
 
   // Admin gets ALL permissions
   const allPermIds = Object.values(permissionMap);
@@ -759,12 +763,21 @@ async function seedPermissionsOnly() {
   const totalPerms = await db.permission.count();
   const totalRoles = await db.role.count();
   const totalMappingsDb = await db.rolePermission.count();
+  const seededRolesDb = await db.role.count({
+    where: { slug: { in: roleDefinitions.map((role) => role.slug) } },
+  });
+  const seededRoleMappingsDb = await db.rolePermission.count({
+    where: { roleId: { in: managedRoleIds } },
+  });
+  const expectedSeededMappings = totalMappings + allPermIds.length;
 
   console.log(`  Permissions in DB: ${totalPerms}`);
-  console.log(`  Roles in DB: ${totalRoles}`);
-  console.log(`  Role-permission mappings in DB: ${totalMappingsDb}`);
+  console.log(`  Roles in DB: ${totalRoles} (managed: ${seededRolesDb}, additional roles preserved: ${totalRoles - seededRolesDb})`);
+  console.log(`  Role-permission mappings in DB: ${totalMappingsDb} (managed: ${seededRoleMappingsDb})`);
 
-  if (totalPerms === createdCount && totalRoles === roleDefinitions.length) {
+  if (totalPerms >= createdCount
+    && seededRolesDb === roleDefinitions.length
+    && seededRoleMappingsDb === expectedSeededMappings) {
     console.log('\n✅ ═════════════════════════════════════════════════════════════');
     console.log('   PERMISSION SEED COMPLETE — All users should re-login');
     console.log('══════════════════════════════════════════════════════════════ ✅\n');

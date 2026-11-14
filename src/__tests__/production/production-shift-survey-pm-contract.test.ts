@@ -10,6 +10,7 @@ const schema=file('prisma/schema.prisma');
 const migration=file('prisma/migrations/20261114105000_production_shift_survey_pm_meter/migration.sql');
 const sidebar=file('src/components/shared/Sidebar.tsx');
 const proxy=file('src/proxy.ts');
+const access=file('src/lib/page-access.ts');
 const frontend=file('src/components/modules/ProductionSurveyPage.tsx');
 const defaultInput={
   assetId:'machine-1',shiftTemplateId:'morning-id',productionDate:'2026-11-14',
@@ -71,7 +72,7 @@ describe('production survey and PM usage integration',()=>{
    expect(review).toContain('consumption:row.outputQuantity');
    expect(review).toContain('readingDate:at');
    expect(review).toContain('currentValue:newValue');
-   expect(review).toContain('meterReadingId:');
+   expect(review).toContain('meterReadingId=reading.id');
    expect(entry).not.toContain('meterReading.create(');
    expect(migration).toContain('production_shift_records_meterReadingId_key');
  });
@@ -84,6 +85,8 @@ describe('production survey and PM usage integration',()=>{
    expect(frontend).toContain('Shift production entry');
    expect(sidebar).toContain("page: 'production-survey'");
    expect(proxy).toContain("{ prefix: '/api/production-surveys', modules: ['production'] }");
+   expect(access).toContain("'production-survey': ['production.view']");
+   expect(access).toContain("'production-survey': 'production'");
    const pm=file('src/services/pm/meterTriggerEngine.ts');
    expect(pm).toContain("config.source === 'asset_meter_reading'");
    expect(pm).toContain('tx.meterReading.findFirst');

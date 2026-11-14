@@ -321,9 +321,9 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             <CardDescription>{mode === 'action-lists' ? 'Print and transcribe paper Action Lists by machine and Running/Standstill state. Inspection points, individual readings and scheduled tasks are available in separate PM pages.' : 'Review and record each configured machine/part inspection point individually, including measured values, findings and corrective follow-up. For printable machine-wide worksheets and batch paper entry, use Machine Action Lists; both use the same inspection history.'}</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
-              <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Generate List
-            </Button>
+            {mode === 'full' && <Button type="button" size="sm" variant="outline" onClick={() => void refresh()} disabled={loading}>
+              <RefreshCw className={`mr-1.5 h-4 w-4 ${loading ? 'animate-spin' : ''}`}/>Refresh Inspection Points
+            </Button>}
             {mode === 'full' && <Button type="button" size="sm" variant={exceptionsOpen ? 'default' : 'outline'}
               aria-pressed={exceptionsOpen} onClick={() => {
                 setExceptionsOpen((current) => !current);
@@ -334,7 +334,7 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             {mode === 'full' && <Button type="button" size="sm" variant="outline" onClick={exportVisiblePage} disabled={loading || rows.length === 0} title="Export only the filtered inspection points shown on this page">
               <Download className="mr-1.5 h-4 w-4"/>Export Page CSV
             </Button>}
-            {canPlan && <Button size="sm" onClick={() => setPlanOpen(true)}><Plus className="mr-1 h-4 w-4"/>Plan Inspection</Button>}
+            {mode === 'full' && canPlan && <Button size="sm" onClick={() => setPlanOpen(true)}><Plus className="mr-1 h-4 w-4"/>Add Inspection Point</Button>}
           </div>
         </div>
         {mode === 'full' && <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -457,17 +457,6 @@ export function PmInspectionWorksheetPanel({ mode = 'full' }: { mode?: 'full' | 
             reloadKey={machineChecklistRevision}
             onClose={() => setMachineChecklistOpen(false)}
             onRecorded={() => { void refresh(); }}
-            onConfigure={(task: MachineChecklistTask) => {
-              if (!task.componentId) return;
-              setPlanAssetId(filters.assetId);
-              setPlanComponentId(task.componentId);
-              setPlan({
-                ...DEFAULT_PLAN,
-                name: task.pmTask.description,
-                method: task.pmTask.taskType === 'measure' ? 'measurement' : 'visual',
-              });
-              setPlanOpen(true);
-            }}
           />
         )}
         {mode === 'full' && !machineChecklistOpen && <>

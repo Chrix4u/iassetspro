@@ -91,6 +91,14 @@ describe('production survey and PM usage integration',()=>{
    expect(frontend).toContain('mixed units');
    expect(frontend).toContain('reportSingleUnit');
  });
+ it('lets asset engineers create a production-output meter, instead of only a general meter',()=>{
+   const assetMeters=file('src/components/assets/AssetMetersPanel.tsx');
+   expect(assetMeters).toContain('meterType,');
+   expect(assetMeters).toContain('<SelectItem value="production">Production Output</SelectItem>');
+   expect(assetMeters).toContain('tonnes, yards, pieces');
+   const createMeter=file('src/services/assets/assetMeter.service.ts');
+   expect(createMeter).toContain('meterType,');
+ });
  it('can register a 5,000-unit PM cadence before the first approved output reading',()=>{
    const sources=file('src/app/api/pm-schedules/meter-sources/route.ts');
    const create=file('src/app/api/pm-schedules/route.ts');

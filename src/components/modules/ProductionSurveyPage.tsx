@@ -19,7 +19,7 @@ type Shift = {id:string;code:string;name:string;startsAt:string|null;endsAt:stri
 type Meter = {id:string;name:string;unit:string;currentValue:number};
 type Setup = {asset:{id:string;name:string;assetTag:string;plantId:string};shifts:Shift[];meters:Meter[]};
 type Row = {
- id:string;productionDate:string;outputQuantity:number;unit:string;targetQuantity:number|null;
+ id:string;assetId:string;shiftTemplateId:string;productionDate:string;outputQuantity:number;unit:string;targetQuantity:number|null;notes:string|null;
  availableMinutes:number;breakMinutes:number;repairMinutes:number;inputDeliveryMinutes:number;
  changeoverMinutes:number;startupCleaningMinutes:number;otherMinutes:number;preventiveMinutes:number;
  status:string;reviewNote:string|null;meterReadingId:string|null;assetMeterId:string|null;
@@ -74,6 +74,7 @@ export default function ProductionSurveyPage(){
  const [reports,setReports]=useState<ReportRow[]>([]);
  const [loading,setLoading]=useState(false);
  const [saving,setSaving]=useState(false);
+ const [editingId,setEditingId]=useState<string|null>(null);
  const [reviewing,setReviewing]=useState<string|null>(null);
  const [shiftName,setShiftName]=useState('');
  const [shiftCode,setShiftCode]=useState('');
@@ -108,7 +109,7 @@ export default function ProductionSurveyPage(){
    if(res.success&&res.data)setSetup(res.data);
    else{setSetup(null);toast.error(res.error||'Unable to load machine shift and meters');}
  },[assetId]);
- useEffect(()=>{void loadSetup();setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',unit:''}));},[loadSetup]);
+ useEffect(()=>{void loadSetup();if(!editingId)setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',unit:''}));},[loadSetup,editingId]);
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
  const chosenUnit=selectedMeter?.unit||form.unit;
  const available=Number(form.availableMinutes)||0;
@@ -141,14 +142,29 @@ export default function ProductionSurveyPage(){
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
        unit:chosenUnit,outputQuantity:form.outputQuantity,targetQuantity:form.targetQuantity,
      };
-     const res=await api.post('/api/production-surveys',payload);
+     const res=editingId?await api.put('/api/production-surveys/'+encodeURIComponent(editingId),payload):await api.post('/api/production-surveys',payload);
      if(!res.success)throw new Error(res.error||'Failed to submit shift production');
      toast.success('Shift production submitted for independent verification. The PM meter has not changed.');
+     setEditingId(null);
      setForm(current=>({...freshForm(),productionDate:current.productionDate,
        shiftTemplateId:current.shiftTemplateId,assetMeterId:current.assetMeterId,unit:current.unit}));
      await refresh();
    }catch(error){toast.error(error instanceof Error?error.message:'Failed to submit shift production');}
    finally{setSaving(false);}
+ };
+ const beginCorrection=(row:Row)=>{
+   setEditingId(row.id);
+   setAssetId(row.assetId);
+   setForm({
+     productionDate:row.productionDate.slice(0,10),shiftTemplateId:row.shiftTemplateId,
+     assetMeterId:row.assetMeterId||'none',unit:row.unit,
+     outputQuantity:String(row.outputQuantity),targetQuantity:row.targetQuantity==null?'':String(row.targetQuantity),
+     availableMinutes:String(row.availableMinutes),breakMinutes:String(row.breakMinutes),repairMinutes:String(row.repairMinutes),
+     inputDeliveryMinutes:String(row.inputDeliveryMinutes),changeoverMinutes:String(row.changeoverMinutes),
+     startupCleaningMinutes:String(row.startupCleaningMinutes),otherMinutes:String(row.otherMinutes),
+     preventiveMinutes:String(row.preventiveMinutes),notes:row.notes||'',
+   });
+   window.scrollTo({top:0,behavior:'smooth'});
  };
  const review=async(row:Row,action:'approve'|'reject')=>{
    if(!canManage)return;
@@ -216,11 +232,15 @@ export default function ProductionSurveyPage(){
          </div>
        </div>
        <div className="space-y-1"><Label>Operator notes / observations</Label><Textarea rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Abnormal sound, input shortage, breakdown, production constraints..."/></div>
+       {editingId&&<p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Correcting a rejected shift. Submit again for a different production manager to verify. This does not touch any approved meter reading.</p>}
        <div className="flex flex-wrap justify-between gap-2">
          <p className="max-w-xl text-xs text-muted-foreground">{selectedMeter?'After independent approval, output increments the selected meter; existing usage-based PM tasks read its cumulative value.':'No production meter selected. This record will appear in reports but cannot trigger a quantity-based PM schedule.'}</p>
-         {canEnter&&<Button onClick={()=>void submit()} disabled={saving||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
-           <ClipboardCheck className="mr-2 h-4 w-4"/>{saving?'Submitting…':'Submit shift production'}
-         </Button>}
+         <div className="flex flex-wrap gap-2">
+           {editingId&&<Button variant="outline" onClick={()=>{setEditingId(null);setForm(freshForm());}}>Cancel correction</Button>}
+           {canEnter&&<Button onClick={()=>void submit()} disabled={saving||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
+             <ClipboardCheck className="mr-2 h-4 w-4"/>{saving?'Submitting…':editingId?'Resubmit corrected shift':'Submit shift production'}
+           </Button>}
+         </div>
        </div>
        {canManage&&<div className="rounded-lg border p-3 space-y-2"><p className="text-sm font-semibold">Configure another shift (optional)</p>
          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
@@ -274,6 +294,9 @@ export default function ProductionSurveyPage(){
          <td className="p-2">{canManage&&row.status==='submitted'&&row.recordedById!==useAuthStore.getState().user?.id?
            <div className="flex gap-1"><Button disabled={reviewing===row.id} size="sm" onClick={()=>void review(row,'approve')}>Approve</Button>
              <Button disabled={reviewing===row.id} variant="outline" size="sm" onClick={()=>void review(row,'reject')}>Reject</Button></div>:
+           row.status==='rejected'&&row.recordedById===useAuthStore.getState().user?.id?
+             <div className="space-y-1"><p className="max-w-48 break-words text-xs text-destructive">{row.reviewNote}</p>
+               <Button size="sm" variant="outline" onClick={()=>beginCorrection(row)}>Correct & Resubmit</Button></div>:
            <span className="text-xs text-muted-foreground">{row.reviewedBy?.fullName||'Awaiting other reviewer'}</span>}</td>
        </tr>)}</tbody></table>
        {!rows.length&&<p className="p-4 text-sm text-muted-foreground">No shift entries for this selection. This does not prove that production was zero.</p>}

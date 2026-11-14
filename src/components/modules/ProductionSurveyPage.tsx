@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -90,6 +90,8 @@ export default function ProductionSurveyPage(){
  const [pmProgressError,setPmProgressError]=useState<string|null>(null);
  const [pmProgressLoading,setPmProgressLoading]=useState(false);
  const [meterChoiceTouched,setMeterChoiceTouched]=useState(false);
+ const setupRequestRef=useRef(0);
+ const pmProgressRequestRef=useRef(0);
 
  const searchMachines=useCallback(async(search:string):Promise<SearchableOption[]>=>{
    const res=await api.get<Array<{id:string;name:string;assetTag:string}>>('/api/assets?limit=100&search='+encodeURIComponent(search));
@@ -115,9 +117,12 @@ export default function ProductionSurveyPage(){
  },[assetId,from,to,period]);
  useEffect(()=>{void refresh();},[refresh]);
  const loadSetup=useCallback(async()=>{
+   const requestId=++setupRequestRef.current;
    if(!assetId){setSetup(null);return;}
+   setSetup(previous=>previous?.asset.id===assetId?previous:null);
    const res=await api.get<Setup>('/api/production-surveys/setup?assetId='+encodeURIComponent(assetId));
-   if(res.success&&res.data)setSetup(res.data);
+   if(requestId!==setupRequestRef.current)return;
+   if(res.success&&res.data&&res.data.asset.id===assetId)setSetup(res.data);
    else{setSetup(null);toast.error(res.error||'Unable to load machine shift and meters');}
  },[assetId]);
  useEffect(()=>{void loadSetup();if(!editingId)setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',unit:''}));},[loadSetup,editingId]);
@@ -131,16 +136,19 @@ export default function ProductionSurveyPage(){
    }
  },[setup,editingId,meterChoiceTouched]);
  const loadPmProgress=useCallback(async()=>{
-   if(!assetId){setPmProgress(null);setPmProgressError(null);return;}
-   setPmProgressLoading(true);
+   const requestId=++pmProgressRequestRef.current;
+   if(!assetId){setPmProgress(null);setPmProgressError(null);setPmProgressLoading(false);return;}
+   setPmProgress(null);setPmProgressError(null);setPmProgressLoading(true);
    try{
      const response=await api.get<PmProgress>('/api/production-surveys/pm-progress?assetId='+encodeURIComponent(assetId));
+     if(requestId!==pmProgressRequestRef.current)return;
      if(!response.success||!response.data)throw new Error(response.error||'Could not load PM usage progress');
      setPmProgress(response.data);setPmProgressError(null);
    }catch(error){
+     if(requestId!==pmProgressRequestRef.current)return;
      setPmProgress(null);
      setPmProgressError(error instanceof Error?error.message:'Could not load PM usage progress');
-   }finally{setPmProgressLoading(false);}
+   }finally{if(requestId===pmProgressRequestRef.current)setPmProgressLoading(false);}
  },[assetId]);
  useEffect(()=>{void loadPmProgress();},[loadPmProgress]);
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
@@ -158,7 +166,7 @@ export default function ProductionSurveyPage(){
  const postedSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
 
  const configure=async(initialize:boolean)=>{
-   if(!setup||!canManage)return;
+   if(!setup||setup.asset.id!==assetId||!canManage)return;
    setConfiguring(true);
    try{
      const payload=initialize?{plantId:setup.asset.plantId,initialize:true}:{
@@ -172,7 +180,7 @@ export default function ProductionSurveyPage(){
    finally{setConfiguring(false);}
  };
  const submit=async()=>{
-   if(!setup||!canEnter)return;
+   if(!setup||setup.asset.id!==assetId||!canEnter)return;
    setSaving(true);
    try{
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
@@ -189,6 +197,9 @@ export default function ProductionSurveyPage(){
    finally{setSaving(false);}
  };
  const beginCorrection=(row:Row)=>{
+   setupRequestRef.current+=1;
+   pmProgressRequestRef.current+=1;
+   setSetup(null);setPmProgress(null);
    setEditingId(row.id);
    setMeterChoiceTouched(true);
    setAssetId(row.assetId);
@@ -235,9 +246,9 @@ export default function ProductionSurveyPage(){
    </div>
    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Factory className="h-4 w-4"/>Select machine</CardTitle>
      <CardDescription>Use a registered asset, not an unlinked text work-centre code, so its production can contribute to meter-based PM.</CardDescription></CardHeader>
-     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={value=>{setMeterChoiceTouched(false);setAssetId(value);}} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
+     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={value=>{setupRequestRef.current+=1;pmProgressRequestRef.current+=1;setSetup(null);setPmProgress(null);setPmProgressError(null);setEditingId(null);setForm(freshForm());setMeterChoiceTouched(false);setAssetId(value);}} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
    </Card>
-   {assetId&&setup&&<div data-testid="production-pm-progress">
+   {assetId&&setup?.asset.id===assetId&&<div data-testid="production-pm-progress">
      <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
        <div><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Production output → PM thresholds</CardTitle>
        <CardDescription>Read-only status from your registered machine meters. Recalculates after a manager approves a shift.</CardDescription></div>
@@ -279,7 +290,7 @@ export default function ProductionSurveyPage(){
        <p className="text-xs text-muted-foreground">A due meter reading does not prove that a PM work order has already been created or completed. Use PM → Work Orders to confirm the work order and next cycle.</p>
      </CardContent></Card>
    </div>}
-   {assetId&&setup&&<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Shift production entry</CardTitle>
+   {assetId&&setup?.asset.id===assetId&&<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Shift production entry</CardTitle>
      <CardDescription>{setup.asset.name} · {setup.asset.assetTag}. Submit one record per machine, shift and production date. A reviewer verifies it before PM meters advance.</CardDescription></CardHeader>
      <CardContent className="space-y-4">
        {setup.shifts.length===0&&<div className="rounded-lg border border-amber-300 p-3 text-sm">

@@ -23,6 +23,9 @@ describe('production reporting completeness guards', () => {
     expect(page).toContain('if(requestId===refreshRequestRef.current)setLoading(false)');
     expect(page).toContain('setRows([]);');
     expect(page).toContain('setReports([]);');
+    expect(page).toContain('setReportError(message);toast.error(message);');
+    expect(page).toContain('!reports.length&&!loading&&!reportError');
+    expect(page).toContain('role="alert"');
     expect(page).toContain('onValueChange={value=>{refreshRequestRef.current+=1;');
   });
 

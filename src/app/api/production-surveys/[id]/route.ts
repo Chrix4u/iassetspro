@@ -9,7 +9,7 @@ import { allowedProductionMeter,parseProductionSurveyInput } from '@/lib/product
 export async function PUT(request:NextRequest,{params}:{params:Promise<{id:string}>}) {
   const session=getSession(request);
   if(!session)return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if(!isAdmin(session)&&!hasPermission(session,'production.create'))
+  if(!isAdmin(session)&&!hasPermission(session,'production_surveys.update'))
     return NextResponse.json({success:false,error:'Production entry permission is required'},{status:403});
   try {
     const {id}=await params;

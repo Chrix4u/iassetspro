@@ -62,8 +62,8 @@ const pct=(number:number|null)=>number==null?'—':number.toFixed(1)+'%';
 
 export default function ProductionSurveyPage(){
  const {hasPermission,isAdmin}=useAuthStore();
- const canEnter=isAdmin()||hasPermission('production.create');
- const canManage=isAdmin()||hasPermission('production.manage');
+ const canEnter=isAdmin()||hasPermission('production_surveys.create');
+ const canManage=isAdmin()||hasPermission('production_surveys.manage');
  const [assetId,setAssetId]=useState('');
  const [setup,setSetup]=useState<Setup|null>(null);
  const [form,setForm]=useState(freshForm);

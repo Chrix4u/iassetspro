@@ -9,7 +9,7 @@ import { reportingWeekStart,surveyTotals } from '@/lib/production-shift-survey';
 export async function GET(request:NextRequest) {
   const session=getSession(request);
   if(!session)return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if(!isAdmin(session)&&!hasPermission(session,'production.view'))return NextResponse.json({success:false,error:'Forbidden'},{status:403});
+  if(!isAdmin(session)&&!hasPermission(session,'production_surveys.view'))return NextResponse.json({success:false,error:'Forbidden'},{status:403});
   try{
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});

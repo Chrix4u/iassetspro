@@ -79,7 +79,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'operations-checklists': ['work_orders.view'],
   // Production
   'production-work-centers': ['work_centers.view'],
-  'production-survey': ['production.view'],
+  'production-survey': ['production_surveys.view'],
   'production-resource-planning': ['production.view'],
   'production-scheduling': ['production.view'],
   'production-capacity': ['production.view'],

@@ -63,7 +63,7 @@ describe('production survey and PM usage integration',()=>{
    expect(migration).toContain('production_shift_records_assetId_productionDate_shiftTemplateId_key');
  });
  it('posts output only after an independent, idempotent manager review',()=>{
-   expect(review).toContain("hasPermission(session,'production.manage')");
+   expect(review).toContain("hasPermission(session,'production_surveys.manage')");
    expect(review).toContain("row.recordedById===session.userId");
    expect(review).toContain("row.status==='approved'");
    expect(review).toContain("row.status!=='submitted'");
@@ -75,6 +75,8 @@ describe('production survey and PM usage integration',()=>{
    expect(review).toContain('currentValue:newValue');
    expect(review).toContain('meterReadingId=reading.id');
    expect(entry).not.toContain('meterReading.create(');
+   expect(entry).toContain("hasPermission(session,'production_surveys.create')");
+   expect(correction).toContain("hasPermission(session,'production_surveys.update')");
    expect(migration).toContain('production_shift_records_meterReadingId_key');
  });
  it('allows rejected operator corrections without rewriting an approved or posted meter',()=>{
@@ -96,9 +98,14 @@ describe('production survey and PM usage integration',()=>{
    expect(frontend).toContain('Daily / weekly production reports');
    expect(frontend).toContain('Export CSV');
    expect(frontend).toContain('Shift production entry');
+   const seed=file('prisma/seed.ts');
+   expect(seed).toContain("production_operator: [");
+   expect(seed).toContain("'production_surveys.create'");
+   expect(seed).toContain("production_manager: [");
+   expect(seed).toContain("'production_surveys.manage'");
    expect(sidebar).toContain("page: 'production-survey'");
    expect(proxy).toContain("{ prefix: '/api/production-surveys', modules: ['production'] }");
-   expect(access).toContain("'production-survey': ['production.view']");
+   expect(access).toContain("'production-survey': ['production_surveys.view']");
    expect(access).toContain("'production-survey': 'production'");
    const pm=file('src/services/pm/meterTriggerEngine.ts');
    expect(pm).toContain("config.source === 'asset_meter_reading'");

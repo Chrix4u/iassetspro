@@ -5,7 +5,7 @@ import { getSession,hasPermission,isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict,getPlantFilterWhere,getPlantScope } from '@/lib/plant-scope';
 import { allowedProductionMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
 
-const allowed = (session: NonNullable<ReturnType<typeof getSession>>) => isAdmin(session) || hasPermission(session,'production.view');
+const allowed = (session: NonNullable<ReturnType<typeof getSession>>) => isAdmin(session) || hasPermission(session,'production_surveys.view');
 export async function GET(request:NextRequest) {
   const session=getSession(request);
   if(!session)return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
@@ -40,7 +40,7 @@ export async function GET(request:NextRequest) {
 export async function POST(request:NextRequest) {
   const session=getSession(request);
   if(!session)return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if(!isAdmin(session)&&!hasPermission(session,'production.create'))return NextResponse.json({success:false,error:'Production entry permission is required'},{status:403});
+  if(!isAdmin(session)&&!hasPermission(session,'production_surveys.create'))return NextResponse.json({success:false,error:'Production entry permission is required'},{status:403});
   try {
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});

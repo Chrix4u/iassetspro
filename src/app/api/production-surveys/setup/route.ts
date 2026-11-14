@@ -7,7 +7,7 @@ import { allowedProductionMeter } from '@/lib/production-shift-survey';
 export async function GET(request: NextRequest) {
   const session = getSession(request);
   if (!session) return NextResponse.json({ success:false,error:'Not authenticated' },{status:401});
-  if (!isAdmin(session) && !hasPermission(session,'production.view'))
+  if (!isAdmin(session) && !hasPermission(session,'production_surveys.view'))
     return NextResponse.json({ success:false,error:'Insufficient permissions' },{status:403});
   try {
     const assetId = new URL(request.url).searchParams.get('assetId');
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSession(request);
   if (!session) return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if (!isAdmin(session) && !hasPermission(session,'production.manage'))
+  if (!isAdmin(session) && !hasPermission(session,'production_surveys.manage'))
     return NextResponse.json({success:false,error:'Production management permission is required'},{status:403});
   try {
     const scope = await getPlantScope(request,session);

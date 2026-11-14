@@ -9,7 +9,7 @@ import { allowedProductionMeter } from '@/lib/production-shift-survey';
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}) {
   const session=getSession(request);
   if(!session)return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if(!isAdmin(session)&&!hasPermission(session,'production.manage'))
+  if(!isAdmin(session)&&!hasPermission(session,'production_surveys.manage'))
     return NextResponse.json({success:false,error:'A production manager must review shift figures'},{status:403});
   try {
     const {id}=await params;

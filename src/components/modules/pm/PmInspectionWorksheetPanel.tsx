@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { buildPmInspectionPageCsv } from '@/lib/pm-inspection-export';
 import { PmMachineInspectionChecklistPanel } from './PmMachineInspectionChecklistPanel';
 import { PmInspectionExceptionsPanel } from './PmInspectionExceptionsPanel';
-import type { MachineChecklistTask, MachineInspectionState } from '@/lib/pm-machine-checklist';
+import type { MachineInspectionState } from '@/lib/pm-machine-checklist';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

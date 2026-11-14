@@ -818,7 +818,12 @@ async function seed() {
 
   // Admin gets ALL permissions
   const allPermIds = Object.values(permissionMap);
-  await db.rolePermission.deleteMany({}); // Clear stale permissions before re-assigning
+  // Only rebuild grants for the roles explicitly owned by this seed.
+  // A full seed must not erase plant-specific/custom role permissions.
+  const managedRoleIds = Object.values(createdRoles);
+  await db.rolePermission.deleteMany({
+    where: { roleId: { in: managedRoleIds } },
+  });
   await db.rolePermission.createMany({
     data: allPermIds.map((pid) => ({
       roleId: createdRoles['admin'],

@@ -57,11 +57,17 @@ export async function POST(request:NextRequest) {
       if(!meter||!allowedProductionMeter(meter.meterType)||meter.unit!==parsed.unit)
         return NextResponse.json({success:false,error:'Select an active production meter on this machine with matching units'},{status:400});
     }
-    const record=await db.productionShiftRecord.create({data:{
-      ...parsed,plantId:asset.plantId,recordedById:session.userId,status:'submitted',
-    }});
-    await db.auditLog.create({data:{userId:session.userId,action:'create',entityType:'production_shift_record',entityId:record.id,
-      newValues:JSON.stringify({assetId:record.assetId,shiftTemplateId:record.shiftTemplateId,date:record.productionDate,output:record.outputQuantity,unit:record.unit,meterId:record.assetMeterId})}});
+    // Entry and audit must commit together; a failed audit must not leave
+    // a saved record that appears as a duplicate on operator retry.
+    const record=await db.$transaction(async(tx)=>{
+      const created=await tx.productionShiftRecord.create({data:{
+        ...parsed,plantId:asset.plantId,recordedById:session.userId,status:'submitted',
+      }});
+      await tx.auditLog.create({data:{userId:session.userId,action:'create',entityType:'production_shift_record',entityId:created.id,
+        newValues:JSON.stringify({assetId:created.assetId,shiftTemplateId:created.shiftTemplateId,date:created.productionDate,
+          output:created.outputQuantity,unit:created.unit,meterId:created.assetMeterId})}});
+      return created;
+    });
     return NextResponse.json({success:true,data:record},{status:201});
   }catch(error){
     const msg=error instanceof Error?error.message:'Could not submit survey';

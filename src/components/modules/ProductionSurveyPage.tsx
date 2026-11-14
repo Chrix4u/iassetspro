@@ -79,6 +79,7 @@ export default function ProductionSurveyPage(){
  const [period,setPeriod]=useState<'day'|'week'>('day');
  const [rows,setRows]=useState<Row[]>([]);
  const [reports,setReports]=useState<ReportRow[]>([]);
+ const [reportError,setReportError]=useState<string|null>(null);
  const [loading,setLoading]=useState(false);
  const [saving,setSaving]=useState(false);
  const [editingId,setEditingId]=useState<string|null>(null);
@@ -104,6 +105,7 @@ export default function ProductionSurveyPage(){
    setLoading(true);
    setRows([]);
    setReports([]);
+   setReportError(null);
    try{
      const query=new URLSearchParams({from,to,group:period});
      if(assetId)query.set('assetId',assetId);
@@ -117,7 +119,10 @@ export default function ProductionSurveyPage(){
      if(!records.success||!report.success)throw new Error(records.error||report.error||'Unable to load the production survey');
      setRows(Array.isArray(records.data)?records.data:[]);
      setReports(Array.isArray(report.data)?report.data:[]);
-   }catch(error){if(requestId===refreshRequestRef.current)toast.error(error instanceof Error?error.message:'Unable to load production survey');}
+   }catch(error){if(requestId===refreshRequestRef.current){
+     const message=error instanceof Error?error.message:'Unable to load production survey';
+     setReportError(message);toast.error(message);
+   }}
    finally{if(requestId===refreshRequestRef.current)setLoading(false);}
  },[assetId,from,to,period]);
  useEffect(()=>{void refresh();},[refresh]);
@@ -346,6 +351,7 @@ export default function ProductionSurveyPage(){
          </div><p className="text-xs text-muted-foreground">Shifts can be configured without forcing production entries for every shift every day.</p>
        </div>}
      </CardContent></Card>}
+   {reportError&&<div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Production records and report figures could not be loaded: {reportError}</div>}
    <Card><CardHeader><CardTitle className="text-base">Daily / weekly production reports</CardTitle>
      <CardDescription>Approved production only. Sunday–Saturday weekly groups follow the engineer's workbook. A missing shift is not a zero.</CardDescription></CardHeader>
      <CardContent className="space-y-3">
@@ -372,7 +378,7 @@ export default function ProductionSurveyPage(){
            <td className="p-2 text-right tabular-nums">{r.productiveMinutes}</td><td className="p-2">{pct(r.utilizationPct)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
-         {!reports.length&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}
+         {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}
        </div>
      </CardContent></Card>
    <Card><CardHeader><CardTitle className="text-base">Recorded shifts & independent approval</CardTitle>

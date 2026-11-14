@@ -102,6 +102,8 @@ export default function ProductionSurveyPage(){
  const refresh=useCallback(async()=>{
    const requestId=++refreshRequestRef.current;
    setLoading(true);
+   setRows([]);
+   setReports([]);
    try{
      const query=new URLSearchParams({from,to,group:period});
      if(assetId)query.set('assetId',assetId);

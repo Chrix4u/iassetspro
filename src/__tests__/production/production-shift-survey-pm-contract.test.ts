@@ -81,7 +81,7 @@ describe('production survey and PM usage integration',()=>{
    expect(report).toContain('meterLinkedOutput');
    expect(frontend).toContain('Daily / weekly production reports');
    expect(frontend).toContain('Export CSV');
-   expect(frontend).toContain('Shift Production');
+   expect(frontend).toContain('Shift production entry');
    expect(sidebar).toContain("page: 'production-survey'");
    expect(proxy).toContain("{ prefix: '/api/production-surveys', modules: ['production'] }");
    const pm=file('src/services/pm/meterTriggerEngine.ts');

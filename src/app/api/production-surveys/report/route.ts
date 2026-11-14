@@ -28,7 +28,12 @@ export async function GET(request:NextRequest) {
       productionDate:{gte:first,lte:last},...(assetId?{assetId}:{})};
     const records=await db.productionShiftRecord.findMany({where,include:{
       asset:{select:{name:true,assetTag:true,id:true}},shift:{select:{name:true,code:true}},
-    },orderBy:[{productionDate:'asc'},{createdAt:'asc'}],take:20000});
+    },orderBy:[{productionDate:'asc'},{createdAt:'asc'}],take:20001});
+    // Never return apparently authoritative production totals from a partial read.
+    // Fetch one extra row to detect when a plant/date selection exceeds this bound.
+    if(records.length>20000)return NextResponse.json({success:false,
+      error:'More than 20,000 approved shifts match the report. Narrow the date range or select a machine; no partial totals were returned.',
+      meta:{limit:20000,truncated:true}}, {status:422});
     const grouped=new Map<string,{period:string;assetId:string;machine:string;assetTag:string;unit:string;
       shifts:number;output:number;target:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
       repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;shiftNames:Set<string>}>();
@@ -53,6 +58,6 @@ export async function GET(request:NextRequest) {
       targetAchievementPct:item.target>0?100*item.output/item.target:null,
     }));
     return NextResponse.json({success:true,data,meta:{group,from,to,recordCount:records.length,
-      truncated:records.length>=20000,note:'Only approved shift records are counted. No entry means no reported shift, not zero production.'}});
+      truncated:false,note:'Only approved shift records are counted. No entry means no reported shift, not zero production.'}});
   }catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Could not create report'},{status:500});}
 }

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       db.assetMeter.findMany({
         where: { assetId, isActive: true },
         select: { id: true, name: true, unit: true, meterType: true, currentValue: true, lastReadingAt: true },
-        orderBy: [{ name: 'asc' }, { unit: 'asc' }], take: 100,
+        orderBy: [{ name: 'asc' }, { unit: 'asc' }], take: 101,
       }),
       db.pmScheduleTask.findMany({
         where: { assetId, isActive: true, OR: [{ pmType: 'ubm' }, { basis: 'meter' }] },
@@ -39,16 +39,25 @@ export async function GET(request: NextRequest) {
           pmTask: { select: { description: true } },
           schedule: { select: { id: true, title: true, isActive: true, autoGenerateWO: true, recurrenceAuthority: true } },
         },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], take: 200,
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], take: 201,
       }),
       db.pmSchedule.findMany({
         where: { assetId, isActive: true, frequencyType: 'meter', recurrenceAuthority: { not: 'task' } },
         select: {
           id: true, title: true, autoGenerateWO: true, frequencyValue: true, frequencyUnit: true,
           meterName: true, trigger: { select: { id: true, isActive: true, triggerType: true, triggerConfig: true, triggerValue: true } },
-        }, take: 100,
+        }, take: 101,
       }),
     ]);
+    // Do not silently omit PM tasks or schedules on machines with many parts.
+    // Deliberately request one extra record per category to detect truncation.
+    if (registeredMeters.length > 100 || taskAssignments.length > 200 || headerSchedules.length > 100) {
+      return NextResponse.json({
+        success: false,
+        error: 'This machine has more meter or PM assignments than the current dashboard can display accurately. Please use PM Planning or ask the administrator to increase the supported limit.',
+        meta: { truncated: true, meterLimit: 100, taskLimit: 200, scheduleLimit: 100 },
+      }, { status: 422 });
+    }
     const meters = registeredMeters.filter((meter) => allowedProductionMeter(meter.meterType));
     const meterKeys = new Set(meters.map(meter => meter.name + '\u0000' + meter.unit));
     const readings = await Promise.all(meters.map(async meter => {

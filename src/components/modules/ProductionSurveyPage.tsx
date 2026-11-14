@@ -79,6 +79,7 @@ export default function ProductionSurveyPage(){
  const [period,setPeriod]=useState<'day'|'week'>('day');
  const [rows,setRows]=useState<Row[]>([]);
  const [reports,setReports]=useState<ReportRow[]>([]);
+ const [reportError,setReportError]=useState<string|null>(null);
  const [loading,setLoading]=useState(false);
  const [saving,setSaving]=useState(false);
  const [editingId,setEditingId]=useState<string|null>(null);
@@ -92,6 +93,7 @@ export default function ProductionSurveyPage(){
  const [meterChoiceTouched,setMeterChoiceTouched]=useState(false);
  const setupRequestRef=useRef(0);
  const pmProgressRequestRef=useRef(0);
+ const refreshRequestRef=useRef(0);
 
  const searchMachines=useCallback(async(search:string):Promise<SearchableOption[]>=>{
    const res=await api.get<Array<{id:string;name:string;assetTag:string}>>('/api/assets?limit=100&search='+encodeURIComponent(search));
@@ -99,7 +101,11 @@ export default function ProductionSurveyPage(){
      res.data.map(x=>({value:x.id,label:x.name+' ['+x.assetTag+']'})):[];
  },[]);
  const refresh=useCallback(async()=>{
+   const requestId=++refreshRequestRef.current;
    setLoading(true);
+   setRows([]);
+   setReports([]);
+   setReportError(null);
    try{
      const query=new URLSearchParams({from,to,group:period});
      if(assetId)query.set('assetId',assetId);
@@ -109,11 +115,15 @@ export default function ProductionSurveyPage(){
        api.get<Row[]>('/api/production-surveys?'+recordParams),
        api.get<ReportRow[]>('/api/production-surveys/report?'+query),
      ]);
+     if(requestId!==refreshRequestRef.current)return;
      if(!records.success||!report.success)throw new Error(records.error||report.error||'Unable to load the production survey');
      setRows(Array.isArray(records.data)?records.data:[]);
      setReports(Array.isArray(report.data)?report.data:[]);
-   }catch(error){toast.error(error instanceof Error?error.message:'Unable to load production survey');}
-   finally{setLoading(false);}
+   }catch(error){if(requestId===refreshRequestRef.current){
+     const message=error instanceof Error?error.message:'Unable to load production survey';
+     setReportError(message);toast.error(message);
+   }}
+   finally{if(requestId===refreshRequestRef.current)setLoading(false);}
  },[assetId,from,to,period]);
  useEffect(()=>{void refresh();},[refresh]);
  const loadSetup=useCallback(async()=>{
@@ -197,6 +207,7 @@ export default function ProductionSurveyPage(){
    finally{setSaving(false);}
  };
  const beginCorrection=(row:Row)=>{
+   refreshRequestRef.current+=1;
    setupRequestRef.current+=1;
    pmProgressRequestRef.current+=1;
    setSetup(null);setPmProgress(null);
@@ -246,7 +257,7 @@ export default function ProductionSurveyPage(){
    </div>
    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Factory className="h-4 w-4"/>Select machine</CardTitle>
      <CardDescription>Use a registered asset, not an unlinked text work-centre code, so its production can contribute to meter-based PM.</CardDescription></CardHeader>
-     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={value=>{setupRequestRef.current+=1;pmProgressRequestRef.current+=1;setSetup(null);setPmProgress(null);setPmProgressError(null);setEditingId(null);setForm(freshForm());setMeterChoiceTouched(false);setAssetId(value);}} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
+     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={value=>{refreshRequestRef.current+=1;setupRequestRef.current+=1;pmProgressRequestRef.current+=1;setSetup(null);setPmProgress(null);setPmProgressError(null);setEditingId(null);setForm(freshForm());setMeterChoiceTouched(false);setAssetId(value);}} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
    </Card>
    {assetId&&setup?.asset.id===assetId&&<div data-testid="production-pm-progress">
      <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
@@ -340,6 +351,7 @@ export default function ProductionSurveyPage(){
          </div><p className="text-xs text-muted-foreground">Shifts can be configured without forcing production entries for every shift every day.</p>
        </div>}
      </CardContent></Card>}
+   {reportError&&<div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Production records and report figures could not be loaded: {reportError}</div>}
    <Card><CardHeader><CardTitle className="text-base">Daily / weekly production reports</CardTitle>
      <CardDescription>Approved production only. Sunday–Saturday weekly groups follow the engineer's workbook. A missing shift is not a zero.</CardDescription></CardHeader>
      <CardContent className="space-y-3">
@@ -366,7 +378,7 @@ export default function ProductionSurveyPage(){
            <td className="p-2 text-right tabular-nums">{r.productiveMinutes}</td><td className="p-2">{pct(r.utilizationPct)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
-         {!reports.length&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}
+         {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}
        </div>
      </CardContent></Card>
    <Card><CardHeader><CardTitle className="text-base">Recorded shifts & independent approval</CardTitle>

@@ -89,6 +89,7 @@ export default function ProductionSurveyPage(){
  const [pmProgress,setPmProgress]=useState<PmProgress|null>(null);
  const [pmProgressError,setPmProgressError]=useState<string|null>(null);
  const [pmProgressLoading,setPmProgressLoading]=useState(false);
+ const [meterChoiceTouched,setMeterChoiceTouched]=useState(false);
 
  const searchMachines=useCallback(async(search:string):Promise<SearchableOption[]>=>{
    const res=await api.get<Array<{id:string;name:string;assetTag:string}>>('/api/assets?limit=100&search='+encodeURIComponent(search));
@@ -123,12 +124,12 @@ export default function ProductionSurveyPage(){
  // Help operators avoid accidentally leaving a single production-output meter unlinked.
  // They can still explicitly choose "Reporting only" for non-PM production figures.
  useEffect(()=>{
-   if(setup?.meters.length===1&&!editingId){
+   if(setup?.meters.length===1&&!editingId&&!meterChoiceTouched){
      const only=setup.meters[0];
      setForm(current=>current.assetMeterId==='none'
        ? {...current,assetMeterId:only.id,unit:only.unit}:current);
    }
- },[setup,editingId]);
+ },[setup,editingId,meterChoiceTouched]);
  const loadPmProgress=useCallback(async()=>{
    if(!assetId){setPmProgress(null);setPmProgressError(null);return;}
    setPmProgressLoading(true);
@@ -189,6 +190,7 @@ export default function ProductionSurveyPage(){
  };
  const beginCorrection=(row:Row)=>{
    setEditingId(row.id);
+   setMeterChoiceTouched(true);
    setAssetId(row.assetId);
    setForm({
      productionDate:row.productionDate.slice(0,10),shiftTemplateId:row.shiftTemplateId,
@@ -233,7 +235,7 @@ export default function ProductionSurveyPage(){
    </div>
    <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Factory className="h-4 w-4"/>Select machine</CardTitle>
      <CardDescription>Use a registered asset, not an unlinked text work-centre code, so its production can contribute to meter-based PM.</CardDescription></CardHeader>
-     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={setAssetId} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
+     <CardContent><AsyncSearchableSelect value={assetId} onValueChange={value=>{setMeterChoiceTouched(false);setAssetId(value);}} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
    </Card>
    {assetId&&setup&&<div data-testid="production-pm-progress">
      <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
@@ -290,7 +292,7 @@ export default function ProductionSurveyPage(){
            <SelectTrigger><SelectValue placeholder="Select recorded shift"/></SelectTrigger>
            <SelectContent>{setup.shifts.map(s=><SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
          </Select></div>
-         <div className="space-y-1"><Label>Production meter (optional)</Label><Select value={form.assetMeterId} onValueChange={v=>setForm(f=>({...f,assetMeterId:v,unit:setup.meters.find(m=>m.id===v)?.unit||f.unit}))}>
+         <div className="space-y-1"><Label>Production meter (optional)</Label><Select value={form.assetMeterId} onValueChange={v=>{setMeterChoiceTouched(true);setForm(f=>({...f,assetMeterId:v,unit:setup.meters.find(m=>m.id===v)?.unit||f.unit}));}}>
            <SelectTrigger><SelectValue placeholder="Select PM output meter"/></SelectTrigger><SelectContent>
              <SelectItem value="none">Reporting only · no PM posting</SelectItem>
              {setup.meters.map(m=><SelectItem key={m.id} value={m.id}>{m.name} ({m.unit}, current {amount(m.currentValue)})</SelectItem>)}

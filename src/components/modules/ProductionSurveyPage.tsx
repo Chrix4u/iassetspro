@@ -26,6 +26,13 @@ type Row = {
  recordedById:string;asset:{name:string;assetTag:string};shift:{name:string};
  recordedBy:{fullName:string};reviewedBy:{fullName:string}|null;
 };
+type PmThreshold = {
+ id:string; source:'task'|'schedule'; description:string; scheduleTitle:string|null;
+ meterId:string; meterName:string; unit:string;
+ autoGenerateWO:boolean; state:'due'|'approaching'|'upcoming'|'awaiting_reading';
+ currentValue:number|null; nextDueReading:number; remaining:number|null; progressPercent:number|null;
+};
+type PmProgress = {meters:Array<{id:string;name:string;unit:string;currentValue:number}>;thresholds:PmThreshold[]};
 type ReportRow = {
  period:string;assetId:string;machine:string;assetTag:string;unit:string;shifts:number;
  output:number;target:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
@@ -79,6 +86,9 @@ export default function ProductionSurveyPage(){
  const [shiftName,setShiftName]=useState('');
  const [shiftCode,setShiftCode]=useState('');
  const [configuring,setConfiguring]=useState(false);
+ const [pmProgress,setPmProgress]=useState<PmProgress|null>(null);
+ const [pmProgressError,setPmProgressError]=useState<string|null>(null);
+ const [pmProgressLoading,setPmProgressLoading]=useState(false);
 
  const searchMachines=useCallback(async(search:string):Promise<SearchableOption[]>=>{
    const res=await api.get<Array<{id:string;name:string;assetTag:string}>>('/api/assets?limit=100&search='+encodeURIComponent(search));
@@ -110,6 +120,28 @@ export default function ProductionSurveyPage(){
    else{setSetup(null);toast.error(res.error||'Unable to load machine shift and meters');}
  },[assetId]);
  useEffect(()=>{void loadSetup();if(!editingId)setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',unit:''}));},[loadSetup,editingId]);
+ // Help operators avoid accidentally leaving a single production-output meter unlinked.
+ // They can still explicitly choose "Reporting only" for non-PM production figures.
+ useEffect(()=>{
+   if(setup?.meters.length===1&&!editingId){
+     const only=setup.meters[0];
+     setForm(current=>current.assetMeterId==='none'
+       ? {...current,assetMeterId:only.id,unit:only.unit}:current);
+   }
+ },[setup,editingId]);
+ const loadPmProgress=useCallback(async()=>{
+   if(!assetId){setPmProgress(null);setPmProgressError(null);return;}
+   setPmProgressLoading(true);
+   try{
+     const response=await api.get<PmProgress>('/api/production-surveys/pm-progress?assetId='+encodeURIComponent(assetId));
+     if(!response.success||!response.data)throw new Error(response.error||'Could not load PM usage progress');
+     setPmProgress(response.data);setPmProgressError(null);
+   }catch(error){
+     setPmProgress(null);
+     setPmProgressError(error instanceof Error?error.message:'Could not load PM usage progress');
+   }finally{setPmProgressLoading(false);}
+ },[assetId]);
+ useEffect(()=>{void loadPmProgress();},[loadPmProgress]);
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
  const chosenUnit=selectedMeter?.unit||form.unit;
  const available=Number(form.availableMinutes)||0;
@@ -180,7 +212,7 @@ export default function ProductionSurveyPage(){
      if(!res.success)throw new Error(res.error||'Review failed');
      const data=res.data as {meterPosted?:boolean;duplicate?:boolean}|undefined;
      toast.success(action==='approve'?(data?.meterPosted?'Approved and posted to the PM production meter':'Approved for reporting (no PM meter selected)'):'Returned to production for correction');
-     await refresh();await loadSetup();
+     await refresh();await loadSetup();await loadPmProgress();
    }catch(error){toast.error(error instanceof Error?error.message:'Review failed');}
    finally{setReviewing(null);}
  };
@@ -203,6 +235,48 @@ export default function ProductionSurveyPage(){
      <CardDescription>Use a registered asset, not an unlinked text work-centre code, so its production can contribute to meter-based PM.</CardDescription></CardHeader>
      <CardContent><AsyncSearchableSelect value={assetId} onValueChange={setAssetId} fetchOptions={searchMachines} placeholder="Find machine by name or code"/></CardContent>
    </Card>
+   {assetId&&setup&&<div data-testid="production-pm-progress">
+     <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
+       <div><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Production output → PM thresholds</CardTitle>
+       <CardDescription>Read-only status from your registered machine meters. Recalculates after a manager approves a shift.</CardDescription></div>
+       <Button size="sm" variant="outline" disabled={pmProgressLoading} onClick={()=>void loadPmProgress()}><RefreshCw className="mr-1 h-4 w-4"/>Refresh usage</Button>
+     </div></CardHeader>
+     <CardContent className="space-y-3">
+       {pmProgressError&&<p role="alert" className="text-sm text-destructive">{pmProgressError}</p>}
+       {!pmProgressError&&pmProgressLoading&&!pmProgress&&<p className="text-sm text-muted-foreground">Loading maintenance meter thresholds…</p>}
+       {pmProgress?.meters.length===0&&<p className="text-sm text-muted-foreground">No production-output meter registered on this machine. The engineering team can add a Production Output meter under Assets → Meters, then choose it in this survey.</p>}
+       {pmProgress&&pmProgress.meters.length>0&&pmProgress.thresholds.length===0&&
+         <p className="text-sm text-muted-foreground">Production meters are registered, but no active usage-based PM threshold is linked. A maintenance planner can assign a meter-based task or schedule using these machine meters.</p>}
+       {pmProgress&&pmProgress.thresholds.length>0&&<div className="grid gap-3 sm:grid-cols-2">
+         {pmProgress.thresholds.map(item=><div key={item.source+':'+item.id} className="min-w-0 rounded-lg border p-3 space-y-2" data-testid="production-pm-threshold">
+           <div className="flex flex-wrap items-start justify-between gap-2">
+             <div className="min-w-0"><p className="font-semibold text-sm break-words">{item.description}</p>
+               <p className="text-xs text-muted-foreground">{item.source==='task'?'PM task':'Machine PM schedule'} · {item.meterName} ({item.unit})</p></div>
+             <Badge variant={item.state==='due'?'destructive':item.state==='approaching'?'outline':'secondary'}>
+               {item.state==='due'?'Threshold reached':item.state==='approaching'?'Approaching due':
+                 item.state==='awaiting_reading'?'Awaiting reading':'Upcoming'}
+             </Badge>
+           </div>
+           <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
+             <span>Approved meter: <strong>{item.currentValue===null?'No reading':amount(item.currentValue)+' '+item.unit}</strong></span>
+             <span>Next threshold: <strong>{amount(item.nextDueReading)} {item.unit}</strong></span>
+           </div>
+           {item.progressPercent!==null&&<div className="h-2 rounded-full bg-muted overflow-hidden" role="progressbar"
+             aria-label={'Progress toward '+item.description} aria-valuemin={0} aria-valuemax={100}
+             aria-valuenow={Math.round(item.progressPercent)}>
+             <div className="h-full bg-emerald-600" style={{width:item.progressPercent+'%'}}/>
+           </div>}
+           <p className="text-xs text-muted-foreground">
+             {item.remaining===null?'A reviewed first meter reading is needed before the due state can be evaluated.':
+               item.remaining===0?'The meter threshold has been reached. Check PM work-order status with the planner.':
+               amount(item.remaining)+' '+item.unit+' remaining before this PM threshold.'}
+             {!item.autoGenerateWO&&' Planner review may be required.'}
+           </p>
+         </div>)}
+       </div>}
+       <p className="text-xs text-muted-foreground">A due meter reading does not prove that a PM work order has already been created or completed. Use PM → Work Orders to confirm the work order and next cycle.</p>
+     </CardContent></Card>
+   </div>}
    {assetId&&setup&&<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Shift production entry</CardTitle>
      <CardDescription>{setup.asset.name} · {setup.asset.assetTag}. Submit one record per machine, shift and production date. A reviewer verifies it before PM meters advance.</CardDescription></CardHeader>
      <CardContent className="space-y-4">

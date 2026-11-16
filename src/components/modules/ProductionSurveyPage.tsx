@@ -18,6 +18,8 @@ import { ClipboardCheck, Factory, Gauge, Plus, RefreshCw, Download } from 'lucid
 type Shift = {id:string;code:string;name:string;startsAt:string|null;endsAt:string|null};
 type Meter = {id:string;name:string;unit:string;currentValue:number};
 type Setup = {asset:{id:string;name:string;assetTag:string;plantId:string};shifts:Shift[];meters:Meter[]};
+type ShiftPlan = {id:string;assetId:string;shiftTemplateId:string;productionDate:string;plannedShiftsPerDay:number;
+ shiftHours:number;availableMinutes:number;targetQuantity:number;unit:string;standardUtilizationPct:number|null;standardSpeed:number|null};
 type Row = {
  id:string;assetId:string;shiftTemplateId:string;productionDate:string;outputQuantity:number;unit:string;targetQuantity:number|null;notes:string|null;
  availableMinutes:number;breakMinutes:number;repairMinutes:number;inputDeliveryMinutes:number;
@@ -71,9 +73,16 @@ export default function ProductionSurveyPage(){
  const {hasPermission,isAdmin}=useAuthStore();
  const canEnter=isAdmin()||hasPermission('production_surveys.create');
  const canManage=isAdmin()||hasPermission('production_surveys.manage');
+ const canPlan=isAdmin()||hasPermission('production_surveys.plan');
  const [assetId,setAssetId]=useState('');
  const [setup,setSetup]=useState<Setup|null>(null);
  const [form,setForm]=useState(freshForm);
+ const [plans,setPlans]=useState<ShiftPlan[]>([]);
+ const [plansLoading,setPlansLoading]=useState(false);
+ const [planError,setPlanError]=useState<string|null>(null);
+ const [planning,setPlanning]=useState(false);
+ const [planDraft,setPlanDraft]=useState({plannedShiftsPerDay:'3',shiftHours:'8',availableMinutes:'480',
+   targetQuantity:'',unit:'yards',standardUtilizationPct:'',standardSpeed:''});
  const [from,setFrom]=useState(sixDaysAgo);
  const [to,setTo]=useState(today);
  const [period,setPeriod]=useState<'day'|'week'>('day');
@@ -91,6 +100,7 @@ export default function ProductionSurveyPage(){
  const [pmProgressError,setPmProgressError]=useState<string|null>(null);
  const [pmProgressLoading,setPmProgressLoading]=useState(false);
  const [meterChoiceTouched,setMeterChoiceTouched]=useState(false);
+ const planRequestRef=useRef(0);
  const setupRequestRef=useRef(0);
  const pmProgressRequestRef=useRef(0);
  const refreshRequestRef=useRef(0);
@@ -161,8 +171,51 @@ export default function ProductionSurveyPage(){
    }finally{if(requestId===pmProgressRequestRef.current)setPmProgressLoading(false);}
  },[assetId]);
  useEffect(()=>{void loadPmProgress();},[loadPmProgress]);
+ const loadPlans=useCallback(async()=>{
+   const requestId=++planRequestRef.current;
+   setPlans([]);setPlanError(null);
+   if(!assetId){setPlansLoading(false);return;}
+   setPlansLoading(true);
+   try{
+     const q=new URLSearchParams({assetId,date:form.productionDate});
+     const response=await api.get<ShiftPlan[]>('/api/production-surveys/plans?'+q);
+     if(requestId!==planRequestRef.current)return;
+     if(!response.success||!Array.isArray(response.data))throw new Error(response.error||'Could not load planner settings');
+     setPlans(response.data);
+   }catch(error){
+     if(requestId===planRequestRef.current)setPlanError(error instanceof Error?error.message:'Could not load planner settings');
+   }finally{if(requestId===planRequestRef.current)setPlansLoading(false);}
+ },[assetId,form.productionDate]);
+ useEffect(()=>{void loadPlans();},[loadPlans]);
+ const activePlan=plans.find(x=>x.shiftTemplateId===form.shiftTemplateId);
+ useEffect(()=>{
+   setPlanDraft(activePlan?{
+     plannedShiftsPerDay:String(activePlan.plannedShiftsPerDay),shiftHours:String(activePlan.shiftHours),
+     availableMinutes:String(activePlan.availableMinutes),targetQuantity:String(activePlan.targetQuantity),
+     unit:activePlan.unit,standardUtilizationPct:activePlan.standardUtilizationPct==null?'':String(activePlan.standardUtilizationPct),
+     standardSpeed:activePlan.standardSpeed==null?'':String(activePlan.standardSpeed),
+   }:{plannedShiftsPerDay:'3',shiftHours:'8',availableMinutes:'480',targetQuantity:'',unit:'yards',
+     standardUtilizationPct:'',standardSpeed:''});
+   if(!editingId)setForm(previous=>({...previous,
+     targetQuantity:activePlan?String(activePlan.targetQuantity):'',
+     availableMinutes:activePlan?String(activePlan.availableMinutes):'0',
+     unit:activePlan?.unit||''}));
+ },[activePlan,editingId]);
+ const savePlan=async()=>{
+   if(!canPlan||!setup||setup.asset.id!==assetId||!form.shiftTemplateId||!form.productionDate)return;
+   setPlanning(true);
+   try{
+     const payload={assetId,productionDate:form.productionDate,shiftTemplateId:form.shiftTemplateId,
+       ...planDraft};
+     const response=await api.post('/api/production-surveys/plans',payload);
+     if(!response.success)throw new Error(response.error||'Failed to save shift plan');
+     toast.success('Planner shift standards saved');
+     await loadPlans();
+   }catch(error){toast.error(error instanceof Error?error.message:'Failed to save shift plan');}
+   finally{setPlanning(false);}
+ };
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
- const chosenUnit=selectedMeter?.unit||form.unit;
+ const chosenUnit=activePlan?.unit||selectedMeter?.unit||form.unit;
  const available=Number(form.availableMinutes)||0;
  const stopped=stoppageFields.reduce((n,[key])=>n+(Number(form[key])||0),0);
  const productive=available-stopped;
@@ -190,7 +243,7 @@ export default function ProductionSurveyPage(){
    finally{setConfiguring(false);}
  };
  const submit=async()=>{
-   if(!setup||setup.asset.id!==assetId||!canEnter)return;
+   if(!setup||setup.asset.id!==assetId||!canEnter||!activePlan){toast.error('Planner must configure this shift before submission');return;}
    setSaving(true);
    try{
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
@@ -352,7 +405,7 @@ export default function ProductionSurveyPage(){
        </div>}
      </CardContent></Card>}
    {reportError&&<div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Production records and report figures could not be loaded: {reportError}</div>}
-   <Card><CardHeader><CardTitle className="text-base">Daily / weekly production reports</CardTitle>
+   <Card><CardHeader><CardTitle className="text-base">Production performance reports</CardTitle>
      <CardDescription>Approved production only. Sunday–Saturday weekly groups follow the engineer's workbook. A missing shift is not a zero.</CardDescription></CardHeader>
      <CardContent className="space-y-3">
        <div className="flex flex-wrap items-end gap-3">

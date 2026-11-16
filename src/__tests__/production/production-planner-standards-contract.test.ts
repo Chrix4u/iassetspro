@@ -9,8 +9,20 @@ const report=read('src/app/api/production-surveys/report/route.ts');
 const page=read('src/components/modules/ProductionSurveyPage.tsx');
 const schema=read('prisma/schema.prisma');
 const seed=read('prisma/seed.ts');
+const deployPermissionSeed=read('prisma/seed-permissions-only.ts');
+const referenceSeed=read('prisma/seed-reference-data.ts');
 
 describe('planner-owned shift standards and workbook calculations',()=>{
+  it('deploy-time RBAC seeding includes the new permission for authorized planners and managers',()=>{
+    expect(referenceSeed).toContain("runSeed('prisma/seed-permissions-only.ts')");
+    expect(deployPermissionSeed).toContain("production_surveys: ['view', 'create', 'update', 'manage', 'plan']");
+    const plannerRole=deployPermissionSeed.split('  maintenance_planner: [')[1]?.split('  maintenance_supervisor: [')[0];
+    const managerRole=deployPermissionSeed.split('  production_manager: [')[1]?.split('  production_operator: [')[0];
+    expect(plannerRole).toContain("'production_surveys.plan'");
+    expect(managerRole).toContain("'production_surveys.plan'");
+  });
+
+
   it('makes the production planner, not the operator, control targets, shift hours and standard speed',()=>{
     expect(schema).toContain('model ProductionShiftPlan');
     expect(schema).toContain('@@unique([assetId, productionDate, shiftTemplateId])');

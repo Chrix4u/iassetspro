@@ -7,6 +7,7 @@ import {
 const stamp = new Date('2026-10-25T00:00:00Z');
 const tx = {
   pmTask: { findMany: vi.fn() },
+  assetMeter: { findFirst: vi.fn() },
   meterReading: { findFirst: vi.fn() },
   componentConditionReading: { findFirst: vi.fn() },
   iotDevice: { findUnique: vi.fn() },
@@ -77,6 +78,7 @@ describe('pmScheduleTask.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tx.pmTask.findMany.mockResolvedValue([master('task-1')]);
+    tx.assetMeter.findFirst.mockResolvedValue(null);
     tx.pmScheduleTask.findMany.mockResolvedValue([]);
     tx.pmScheduleTask.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => existingRow({ id: `created-${data.pmTaskId}`, ...data }));
     tx.pmScheduleTask.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => existingRow(data));
@@ -239,6 +241,43 @@ describe('pmScheduleTask.service', () => {
       where: { assetId: 'asset-1', meterName: 'Operating Hours', unit: 'hours' },
     }));
     expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({ nextDueReading: 1750 }) });
+  });
+
+  it('makes a newly commissioned part meter an immediate scheduled UBM source without a second reading', async () => {
+    tx.assetMeter.findFirst.mockResolvedValue({
+      id: 'commissioned-meter-1', componentId: 'bearing-1', currentValue: 1250,
+    });
+    tx.meterReading.findFirst.mockResolvedValue(null);
+    await syncPmScheduledTasks(tx as never, {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: 'bearing-1',
+      tasks: [baseTbm({
+        maintenanceMode: 'ubm', frequencyInterval: 500, frequencyUnit: 'hours',
+        meterName: 'Motor running hours', nextDueDate: null, nextDueReading: null,
+      })],
+    });
+    expect(tx.assetMeter.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { assetId: 'asset-1', name: 'Motor running hours', unit: 'hours', isActive: true },
+    }));
+    expect(tx.meterReading.findFirst).not.toHaveBeenCalled();
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      assetMeterId: 'commissioned-meter-1', componentId: 'bearing-1', nextDueReading: 1750,
+    }) });
+  });
+
+  it('rejects using a meter from another part for a different component or the whole machine', async () => {
+    tx.assetMeter.findFirst.mockResolvedValue({
+      id: 'motor-meter', componentId: 'motor-1', currentValue: 300,
+    });
+    for (const componentId of ['bearing-1', null]) {
+      await expect(syncPmScheduledTasks(tx as never, {
+        scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId,
+        tasks: [baseTbm({
+          maintenanceMode: 'ubm', frequencyInterval: 100, frequencyUnit: 'hours',
+          meterName: 'Motor running hours', nextDueDate: null,
+        })],
+      })).rejects.toThrow(/part meter.*different component/i);
+    }
+    expect(tx.pmScheduleTask.create).not.toHaveBeenCalled();
   });
 
   it('rejects UBM when the selected meter does not exist on the schedule asset', async () => {

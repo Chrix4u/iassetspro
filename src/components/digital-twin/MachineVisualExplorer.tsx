@@ -3,6 +3,7 @@
 import { formatUiDate } from '@/lib/date-display';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
 import {
   Box, ChevronRight, Cpu, Focus, Image as ImageIcon, Layers3,
@@ -11,6 +12,9 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
@@ -95,6 +99,8 @@ type ComponentVisual = {
   visualType: string;
   title: string;
   imageUrl: string;
+  hotspotData?: string | null;
+  sourceProvider?: string | null;
   thumbnailUrl?: string | null;
   zoomLevel: number;
   isPrimary: boolean;
@@ -495,6 +501,8 @@ export function MachineVisualExplorer({
   selectionMode = false,
   onSelectionChange,
 }: MachineVisualExplorerProps) {
+  const {hasPermission,isAdmin}=useAuthStore();
+  const canManagePhotos=isAdmin()||hasPermission('digital_twin.manage')||hasPermission('assets.hierarchy');
   const [components, setComponents] = useState<MachineComponent[]>([]);
   const [visuals, setVisuals] = useState<ComponentVisual[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialComponentId);
@@ -514,6 +522,17 @@ export function MachineVisualExplorer({
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [photoTitle,setPhotoTitle]=useState('');
+  const [photoUrl,setPhotoUrl]=useState('');
+  const [photoFile,setPhotoFile]=useState<File|null>(null);
+  const [privatePhoto,setPrivatePhoto]=useState<{id:string;url:string}|null>(null);
+  const [photoSaving,setPhotoSaving]=useState(false);
+  const [markerEditing,setMarkerEditing]=useState(false);
+  const [markerTarget,setMarkerTarget]=useState('');
+  const [markersSaving,setMarkersSaving]=useState(false);
+  const [photoMarkers,setPhotoMarkers]=useState<Array<{componentId:string;x:number;y:number}>>([]);
+  const [tourActive,setTourActive]=useState(false);
+
   const [twinId, setTwinId] = useState<string | null>(null);
   const [twinName, setTwinName] = useState<string | null>(null);
   const [twinLoading, setTwinLoading] = useState(true);
@@ -734,7 +753,30 @@ export function MachineVisualExplorer({
     onSelectionChange?.({ component: selected, path });
   }, [loading, onSelectionChange, selected, path]);
 
-  const desiredType = mode === 'realistic'
+  const tourOrder=useMemo(()=>{
+    const result:MachineComponent[]=[],visited=new Set<string>();
+    const walk=(node:MachineComponent)=>{
+      if(visited.has(node.id))return;
+      visited.add(node.id);result.push(node);
+      (childrenByParent.get(node.id)||[]).forEach(walk);
+    };
+    roots.forEach(walk);
+    return result;
+  },[roots,childrenByParent]);
+  useEffect(()=>{
+    if(!tourActive||tourOrder.length===0)return;
+    const tick=window.setInterval(()=>setSelectedId(current=>{
+      const index=tourOrder.findIndex(item=>item.id===current);
+      if(index>=tourOrder.length-1){setTourActive(false);return current;}
+      return tourOrder[index+1].id;
+    }),2800);
+    return ()=>window.clearInterval(tick);
+  },[tourActive,tourOrder]);
+  const nextTourPart=()=>setSelectedId(current=>{
+    const index=tourOrder.findIndex(item=>item.id===current);
+    return tourOrder[(index+1)%tourOrder.length]?.id||null;
+  });
+  const desiredType = mode === 'photo' ? 'photo' : mode === 'realistic'
     ? 'ai_realistic'
     : mode === 'exploded'
       ? 'exploded'
@@ -744,11 +786,88 @@ export function MachineVisualExplorer({
       visual.visualType === desiredType
       && (selectedId ? visual.componentId === selectedId : !visual.componentId && visual.assetId === asset.id)
     );
-    return target.find((visual) => visual.isPrimary) || target[0] || null;
-  }, [visuals, desiredType, selectedId, asset.id]);
+    const matched=target.find((visual) => visual.isPrimary) || target[0] || null;
+    if(matched||mode!=='photo')return matched;
+    const machinePhotos=visuals.filter(v=>v.visualType==='photo'&&!v.componentId&&v.assetId===asset.id);
+    return machinePhotos.find(v=>v.isPrimary)||machinePhotos[0]||null;
+  }, [visuals, desiredType, selectedId, asset.id, mode]);
 
-  const fallbackImage = !selectedId && mode === 'realistic' ? asset.imageUrl || null : null;
-  const imageUrl = currentVisual?.imageUrl || fallbackImage;
+  const fallbackImage = mode === 'photo' || (!selectedId && mode === 'realistic') ? asset.imageUrl || null : null;
+  // Real factory photo bytes are plant-scoped and require an authenticated API fetch.
+  // The browser cannot attach the app's bearer token to an ordinary <img> request.
+  useEffect(()=>{
+    if(!currentVisual||currentVisual.sourceProvider!=='uploaded')return;
+    let cancelled=false,objectUrl:string|null=null;
+    const id=currentVisual.id;
+    void api.getRaw('/api/component-visuals/photo/'+encodeURIComponent(id),{cache:'no-store'})
+      .then(async response=>{
+        if(!response.ok)throw Error('Cannot load authorized factory photograph');
+        const blob=await response.blob();
+        const next=URL.createObjectURL(blob);
+        if(cancelled){URL.revokeObjectURL(next);return;}
+        objectUrl=next;
+        setPrivatePhoto({id,url:next});
+      }).catch(()=>{if(!cancelled)setPrivatePhoto(null);});
+    return ()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[currentVisual?.id,currentVisual?.sourceProvider]);
+  const imageUrl = currentVisual?.sourceProvider==='uploaded'
+    ? (privatePhoto?.id===currentVisual.id?privatePhoto.url:null)
+    : currentVisual?.imageUrl || fallbackImage;
+  const storedPhotoMarkers=useMemo(()=>{
+    if(!currentVisual?.hotspotData||mode!=='photo')return [];
+    try{
+      const data=JSON.parse(currentVisual.hotspotData) as Array<{componentId:string;x:number;y:number}>;
+      return Array.isArray(data)?data.filter(d=>componentMap.has(d.componentId)&&
+        Number.isFinite(d.x)&&d.x>=0&&d.x<=1&&Number.isFinite(d.y)&&d.y>=0&&d.y<=1):[];
+    }catch{return [];}
+  },[currentVisual,mode,componentMap]);
+  useEffect(()=>{setPhotoMarkers(storedPhotoMarkers);setMarkerEditing(false);},[storedPhotoMarkers,currentVisual?.id]);
+  const savePhoto=async()=>{
+    if(!/^https:\/\//i.test(photoUrl.trim())&&!photoUrl.trim().startsWith('/api/files/')){
+      toast.error('Enter an approved HTTPS image URL or stored file URL');return;
+    }
+    setPhotoSaving(true);
+    try{
+      const res=await api.post('/api/component-visuals',{assetId:asset.id,componentId:selectedId,
+        visualType:'photo',title:photoTitle.trim()||'Verified factory photo',
+        imageUrl:photoUrl.trim(),sourceProvider:'customer_supplied',isPrimary:true});
+      if(!res.success)throw Error(res.error||'Cannot attach photo');
+      toast.success('Factory photo registered; now place part markers on the image.');
+      setPhotoUrl('');setPhotoTitle('');await loadData();setMode('photo');
+    }catch(error){toast.error(error instanceof Error?error.message:'Cannot attach photo');}
+    finally{setPhotoSaving(false);}
+  };
+  const uploadPhoto=async()=>{
+    if(!photoFile){toast.error('Choose a factory photograph first');return;}
+    if(!['image/jpeg','image/png','image/webp'].includes(photoFile.type)||photoFile.size>10*1024*1024){
+      toast.error('Choose a JPEG, PNG or WebP photograph up to 10 MB');return;
+    }
+    setPhotoSaving(true);
+    try{
+      const form=new FormData();
+      form.append('assetId',asset.id);
+      if(selectedId)form.append('componentId',selectedId);
+      form.append('title',photoTitle.trim()||photoFile.name);
+      form.append('file',photoFile);
+      const res=await api.post('/api/component-visuals/upload',form,{timeout:60000});
+      if(!res.success)throw Error(res.error||'Factory photograph upload failed');
+      toast.success('Factory photo uploaded; link the actual registered assemblies using markers.');
+      setPhotoTitle('');setPhotoFile(null);
+      await loadData();setMode('photo');
+    }catch(error){toast.error(error instanceof Error?error.message:'Photo upload failed');}
+    finally{setPhotoSaving(false);}
+  };
+  const saveMarkers=async()=>{
+    if(!currentVisual||currentVisual.visualType!=='photo')return;
+    setMarkersSaving(true);
+    try{
+      const r=await api.patch('/api/component-visuals',{id:currentVisual.id,hotspotData:photoMarkers});
+      if(!r.success)throw Error(r.error||'Cannot save photo markers');
+      toast.success('Machine photo markers saved');setMarkerEditing(false);await loadData();
+    }catch(error){toast.error(error instanceof Error?error.message:'Cannot save photo markers');}
+    finally{setMarkersSaving(false);}
+  };
+
   const drillChildren = selectedId ? (childrenByParent.get(selectedId) || []) : roots;
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
@@ -852,13 +971,22 @@ export function MachineVisualExplorer({
         </CardHeader>
         <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
           <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
-            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-5">
+            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-6">
               <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
+              <TabsTrigger value="photo" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0"/>Site Photo</TabsTrigger>
               <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
               <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
               <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
               <TabsTrigger value="exploded" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Layers3 className="mr-1 h-3.5 w-3.5 shrink-0" />Exploded</TabsTrigger>
             </TabsList>
+            {tourOrder.length>0&&<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <Button type="button" size="sm" variant="outline" onClick={nextTourPart}>Next assembly / part</Button>
+              <Button type="button" size="sm" variant={tourActive?'default':'outline'} onClick={()=>{
+                if(!tourActive&&tourOrder.findIndex(p=>p.id===selectedId)===tourOrder.length-1)setSelectedId(null);
+                setTourActive(v=>!v);
+              }}>{tourActive?'Stop guided tour':'Play guided tour'}</Button>
+              <span className="text-muted-foreground">Step {Math.max(0,tourOrder.findIndex(x=>x.id===selectedId)+1)} / {tourOrder.length} · Uses verified hierarchy</span>
+            </div>}
             {mode !== 'model3d' && (
               <div role="group" aria-label="Diagram zoom controls" className="mt-2 flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-2 py-1.5">
                 <span className="min-w-0 text-[10px] text-muted-foreground">Drag to pan · Pinch to zoom</span>
@@ -910,8 +1038,43 @@ export function MachineVisualExplorer({
               </div>
             </TabsContent>
 
-            {['realistic', 'technical2d', 'exploded'].map((tabMode) => (
+            {['photo','realistic', 'technical2d', 'exploded'].map((tabMode) => (
               <TabsContent key={tabMode} value={tabMode} className="mt-3 space-y-2">
+                {tabMode==='photo'&&<div className="space-y-2">
+                  <p className="rounded-md border border-cyan-200 bg-cyan-50 p-2 text-xs text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-100">
+                    Factory/OEM photographs are factual references only for the photographed machine. Click marked assemblies to drill down; upload an OEM GLB model in 3D Model for actual mesh geometry and engineering explosions.
+                  </p>
+                  {canManagePhotos&&<div className="flex flex-wrap items-center gap-2">
+                    <Input className="min-w-0 flex-1 cursor-pointer" type="file" accept="image/jpeg,image/png,image/webp"
+                      aria-label="Choose genuine factory or OEM machine photograph"
+                      onChange={e=>setPhotoFile(e.target.files?.[0]||null)}/>
+                    <Button type="button" size="sm" disabled={photoSaving||!photoFile} onClick={()=>void uploadPhoto()}>
+                      {photoSaving?'Uploading...':'Upload real photo'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">JPEG/PNG/WebP up to 10 MB</span>
+                  </div>}
+                  {canManagePhotos&&<div className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
+                    <Input aria-label="Approved photograph title" placeholder="Actual installation photo title" value={photoTitle} onChange={e=>setPhotoTitle(e.target.value)}/>
+                    <Input aria-label="Approved photograph URL" placeholder="HTTPS URL to factory photograph or stored file" value={photoUrl} onChange={e=>setPhotoUrl(e.target.value)}/>
+                    <Button type="button" size="sm" disabled={photoSaving||!photoUrl.trim()} onClick={()=>void savePhoto()}>
+                      {photoSaving?'Saving...':'Attach photo'}
+                    </Button>
+                  </div>}
+                  {canManagePhotos&&currentVisual?.visualType==='photo'&&<div className="flex flex-wrap items-end gap-2 rounded-md border p-2">
+                    <div className="min-w-44 flex-1 space-y-1"><Label className="text-xs">Link photo hotspot to part</Label>
+                      <Select value={markerTarget} onValueChange={setMarkerTarget}><SelectTrigger><SelectValue placeholder="Choose assembly or part"/></SelectTrigger>
+                        <SelectContent>{components.map(c=><SelectItem key={c.id} value={c.id}>{c.componentCode} · {c.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" disabled={!markerTarget} onClick={()=>setMarkerEditing(v=>!v)}>
+                      {markerEditing?'Stop placing markers':'Place markers on photo'}
+                    </Button>
+                    <Button type="button" size="sm" disabled={markersSaving||photoMarkers.length===0} onClick={()=>void saveMarkers()}>
+                      {markersSaving?'Saving...':'Save '+photoMarkers.length+' markers'}
+                    </Button>
+                    {markerEditing&&<p className="basis-full text-xs text-muted-foreground">Click the exact location of the selected part on the photo. Select another part to place its marker. Nothing is guessed from the picture.</p>}
+                  </div>}
+                </div>}
                 {tabMode === 'realistic' && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
                     AI-generated reference visualization — not an OEM drawing or verified as-built photograph. Verify geometry, dimensions, clearances and procedures against approved engineering documents and the physical machine before maintenance.
@@ -923,10 +1086,38 @@ export function MachineVisualExplorer({
                 >
                   <div className="flex min-h-[330px] items-center justify-center p-2 sm:min-h-[500px] sm:p-6">
                     {imageUrl ? (
-                      <img src={imageUrl} alt={(selected?.name || asset.name) + ' visual'}
-                        className="max-h-[760px] origin-center select-none object-contain transition-transform duration-75"
-                        draggable={false}
-                        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} />
+                      <div className="relative inline-block max-w-full select-none transition-transform duration-75"
+                        style={{transform:`translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,transformOrigin:'center'}}>
+                        <img src={imageUrl} alt={(selected?.name || asset.name) + (tabMode==='photo'?' verified photo':' visualization')}
+                          className="block max-h-[760px] max-w-full object-contain" draggable={false}/>
+                        {tabMode==='photo'&&markerEditing&&markerTarget&&<button type="button"
+                          className="absolute inset-0 z-10 cursor-crosshair bg-transparent" aria-label="Place hotspot at clicked image position"
+                          onClick={e=>{
+                            const bounds=e.currentTarget.getBoundingClientRect();
+                            const x=(e.clientX-bounds.left)/bounds.width,y=(e.clientY-bounds.top)/bounds.height;
+                            if(x>=0&&x<=1&&y>=0&&y<=1)setPhotoMarkers(v=>[...v,{componentId:markerTarget,x,y}]);
+                          }}/>}
+                        {tabMode==='photo'&&(markerEditing?photoMarkers:storedPhotoMarkers).map((marker,i)=>
+                          <button type="button" key={i} onClick={e=>{e.stopPropagation();setSelectedId(marker.componentId);setTourActive(false);}}
+                            style={{left:(marker.x*100)+'%',top:(marker.y*100)+'%'}}
+                            aria-label={'Inspect '+(componentMap.get(marker.componentId)?.name||'part')}
+                            title={componentMap.get(marker.componentId)?.name||'Part'}
+                            className={'absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white px-2 py-1 text-[11px] font-bold shadow-lg '+
+                              (selectedId===marker.componentId?'bg-amber-500 text-black':'bg-cyan-500 text-slate-950')}>
+                            {i+1}
+                          </button>)}
+                      </div>
+                    ) : currentVisual?.sourceProvider==='uploaded'&&tabMode==='photo' ? (
+                      <div className="flex max-w-sm flex-col items-center gap-2 p-8 text-center text-slate-300">
+                        <Loader2 className="h-7 w-7 animate-spin text-cyan-400"/>
+                        <p className="text-xs">Loading authorized factory photograph...</p>
+                      </div>
+                    ) : tabMode==='photo' ? (
+                      <div className="flex max-w-sm flex-col items-center gap-2 p-8 text-center text-slate-300">
+                        <ImageIcon className="h-9 w-9 text-cyan-400"/>
+                        <p className="font-semibold">No as-built photo attached</p>
+                        <p className="text-xs">Attach a real OEM/site photograph, then mark its known assembly locations for clickable drilling. Generic 3D boxes are not presented as the real machine.</p>
+                      </div>
                     ) : tabMode === 'realistic' ? (
                       <div className="flex max-w-sm flex-col items-center gap-3 p-8 text-center text-slate-400">
                         <Sparkles className="h-10 w-10 text-cyan-400" />
@@ -948,12 +1139,12 @@ export function MachineVisualExplorer({
 
                   {renderDrillOverlay()}
 
-                  <div className="absolute bottom-3 right-3 flex gap-2">
+                  {tabMode!=='photo'&&<div className="absolute bottom-3 right-3 flex gap-2">
                     <Button size="sm" onClick={generateVisual} disabled={generating} className="cursor-pointer">
                       {generating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
                       {imageUrl ? 'Regenerate' : 'Generate AI visual'}
                     </Button>
-                  </div>
+                  </div>}
                 </div>
               </TabsContent>
             ))}

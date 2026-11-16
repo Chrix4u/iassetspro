@@ -40,7 +40,7 @@ import {
   GitBranch, Layers, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
   ChevronRight,
   Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2, Play,
-  FolderOpen, Sparkles, X, Download,
+  FolderOpen, Sparkles, X, Download, Upload,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
@@ -49,6 +49,9 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { AIAssetGenerator } from '@/components/shared/AIAssetGenerator';
 import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
+import { CommissioningParameterFields, CommissioningMeterFields, type ParameterDraft, type MeterDraft } from '@/components/assets/MachineCommissioningFields';
+import { readMachineParameters } from '@/lib/asset-onboarding';
+import { AssetBulkOnboarding } from '@/components/assets/AssetBulkOnboarding';
 
 export function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -69,6 +72,7 @@ export function AssetsPage() {
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
+  const [showBulkOnboarding,setShowBulkOnboarding]=useState(false);
   const { navigate, pageParams } = useNavigationStore();
   const { hasPermission, isAdmin } = useAuthStore();
   const canAssignFunctionalLocation = isAdmin() || hasPermission('assets.functional_locations.assign');
@@ -84,6 +88,10 @@ export function AssetsPage() {
 
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', acquisitionCondition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '', functionalLocationId: '' };
   const [form, setForm] = useState(emptyForm);
+  const [machineParameters, setMachineParameters] = useState<ParameterDraft[]>([]);
+  const [machineMeters, setMachineMeters] = useState<MeterDraft[]>([]);
+  const canCreateMeters=isAdmin()||hasPermission('meters.create');
+
 
   const [showAllAssets, setShowAllAssets] = useState(false);
 
@@ -168,10 +176,16 @@ export function AssetsPage() {
     critical: assets.filter(a => a.criticality === 'critical').length,
   }), [assets]);
 
-  const openCreate = () => { editLocationRequestRef.current += 1; setLocationAssignmentLoading(false); setEditId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openCreate = () => { editLocationRequestRef.current += 1; setLocationAssignmentLoading(false); setEditId(null); setForm(emptyForm); setMachineParameters([]); setMachineMeters([]); setDialogOpen(true); };
   const openEdit = async (a: any) => {
     const requestId = ++editLocationRequestRef.current;
     setEditId(a.id);
+    setMachineParameters(readMachineParameters(a.specification).map(p=>({
+      key:p.key,name:p.name,inspectionType:p.inspectionType,unit:p.unit,
+      min:p.min==null?'':String(p.min),max:p.max==null?'':String(p.max),reference:p.reference,
+    })));
+    setMachineMeters([]);
+
     setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', acquisitionCondition: a.acquisitionCondition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '', functionalLocationId: '' });
     setDialogOpen(true);
     if (!canAssignFunctionalLocation) {
@@ -192,9 +206,24 @@ export function AssetsPage() {
 
   const handleSave = async () => {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
+    if(canAssignFunctionalLocation&&!form.functionalLocationId&&!editId){
+      toast.error('Select the machine installation location using its full coded hierarchy path'); return;
+    }
+    if(machineParameters.some(p=>!p.name.trim()||(p.inspectionType==='measurement'&&!p.unit.trim()))){
+      toast.error('Complete parameter names and measurement units');return;
+    }
+    if(!editId&&machineMeters.some(m=>!m.name.trim()||!m.unit.trim())){
+      toast.error('Complete all meter names and units');return;
+    }
+
     setSaving(true);
-    const { functionalLocationId, ...assetForm } = form;
-    const payload: any = { ...assetForm, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
+    const { functionalLocationId, location, building, floor, area, ...assetForm } = form;
+    const payload: any = { ...assetForm,
+      machineParameters:machineParameters.map(p=>({...p,
+        min:p.min.trim()?Number(p.min):null,max:p.max.trim()?Number(p.max):null})),
+      ...(!editId&&canCreateMeters?{meters:machineMeters.map(m=>({...m,
+        initialValue:Number(m.initialValue||0)}))}:{ }),
+      ...(!editId?{functionalLocationId}:{}), purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
     const res = editId
       ? await api.put(`/api/assets/${editId}`, payload)
       : await api.post('/api/assets', payload, { headers: { 'x-plant-id': form.plantId } });
@@ -202,7 +231,7 @@ export function AssetsPage() {
     if (res.success) {
       const savedAssetId = editId || (res.data?.id ? String(res.data.id) : '');
       let locationAssignmentFailed = false;
-      if (savedAssetId && functionalLocationId && canAssignFunctionalLocation) {
+      if (editId && savedAssetId && functionalLocationId && canAssignFunctionalLocation) {
         const locationRes = await api.post(`/api/assets/${savedAssetId}/functional-locations`, {
           functionalLocationId,
           reason: editId ? 'Updated from Asset form' : 'Assigned during asset registration',
@@ -265,6 +294,7 @@ export function AssetsPage() {
             )}
             {(hasPermission('assets.create') || isAdmin()) && (
               <>
+                {isAdmin()&&<Button variant='outline' onClick={()=>setShowBulkOnboarding(x=>!x)} className='flex-1 sm:flex-none'><Upload className='mr-1.5 h-4 w-4'/>Import Excel</Button>}
                 <Button onClick={openCreate} className='flex-1 bg-emerald-600 hover:bg-emerald-700 text-white sm:flex-none'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
                 <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='flex-1 border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5 sm:flex-none'><Sparkles className='h-4 w-4' />AI Generate</Button>
               </>
@@ -272,6 +302,8 @@ export function AssetsPage() {
           </div>
         )}
       </div>
+
+      {showBulkOnboarding&&isAdmin()&&<AssetBulkOnboarding onImported={()=>{setShowBulkOnboarding(false);loadData();}}/>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
@@ -482,15 +514,9 @@ export function AssetsPage() {
                 disabled={locationAssignmentLoading}
               />
             )}
-            <div className="space-y-2 rounded-lg border border-dashed p-3">
-              <div><p className="text-xs font-medium">Legacy location details</p><p className="text-[11px] text-muted-foreground">Optional migration/fallback fields. Use Functional Location above for the authoritative asset path.</p></div>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
-                <div className="space-y-1.5"><Label>Building</Label><Input value={form.building} onChange={e => setForm(f => ({ ...f, building: e.target.value }))} /></div>
-                <div className="space-y-1.5"><Label>Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
-                <div className="space-y-1.5"><Label>Area</Label><Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} /></div>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground">The selected hierarchy code is the authoritative installation address. Legacy Location, Building, Floor and Area fields are intentionally not duplicated here.</p>
+            <CommissioningParameterFields items={machineParameters} onChange={setMachineParameters}/>
+            {!editId&&canCreateMeters&&<CommissioningMeterFields items={machineMeters} onChange={setMachineMeters}/>}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Assigned To</Label>
                 <AsyncSearchableSelect

@@ -77,7 +77,7 @@ export type NormalizePmScheduledTasksResult =
 
 type PmScheduleTaskClient = Pick<
   Prisma.TransactionClient,
-  'pmTask' | 'meterReading' | 'componentConditionReading' | 'iotDevice' | 'pmScheduleTask'
+  'pmTask' | 'assetMeter' | 'meterReading' | 'componentConditionReading' | 'iotDevice' | 'pmScheduleTask'
 >;
 
 function optionalText(value: unknown): string | null {
@@ -327,13 +327,27 @@ export async function syncPmScheduledTasks(
     }
     const existing = existingById || byTaskId.get(task.pmTaskId);
 
+    // A machine or part meter becomes a valid PM source immediately on
+    // commissioning, even before its first subsequent meter-reading record.
+    // Keep legacy reading-backed schedules working when no registered meter exists.
+    let selectedMeterId: string | null = null;
     if (task.maintenanceMode === 'ubm') {
-      const reading = await tx.meterReading.findFirst({
+      const registered = await tx.assetMeter.findFirst({
+        where: { assetId: input.assetId, name: task.meterName!, unit: task.frequencyUnit!, isActive: true },
+        select: { id: true, componentId: true, currentValue: true },
+      });
+      if (registered?.componentId && registered.componentId !== input.componentId) {
+        throw new PmScheduleTaskValidationError('Selected part meter belongs to a different component than this PM schedule target');
+      }
+      selectedMeterId = registered?.id ?? null;
+      const reading = registered ? null : await tx.meterReading.findFirst({
         where: { assetId: input.assetId, meterName: task.meterName!, unit: task.frequencyUnit! },
         orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
         select: { id: true, value: true, meterName: true, unit: true },
       });
-      if (!reading) throw new PmScheduleTaskValidationError('Selected UBM meter does not exist on the schedule asset');
+      if (!registered && !reading) {
+        throw new PmScheduleTaskValidationError('Selected UBM meter does not exist on the schedule asset');
+      }
       if (task.nextDueReading === null) {
         const preserved = existing?.maintenanceMode === 'ubm'
           && existing.meterName === task.meterName
@@ -342,7 +356,7 @@ export async function syncPmScheduledTasks(
           && existing.nextDueReading !== null
           ? Number(existing.nextDueReading)
           : null;
-        task.nextDueReading = preserved ?? (Number(reading.value) + Number(task.frequencyInterval));
+        task.nextDueReading = preserved ?? (Number(registered?.currentValue ?? reading!.value) + Number(task.frequencyInterval));
       }
     }
 
@@ -382,6 +396,7 @@ export async function syncPmScheduledTasks(
       pmType: task.maintenanceMode,
       activityMode: 'inspection',
       basis: task.maintenanceMode === 'ubm' ? 'meter' : task.maintenanceMode === 'tbm' ? 'calendar' : null,
+      assetMeterId: selectedMeterId,
     };
     if (existing) {
       keptIds.add(existing.id);

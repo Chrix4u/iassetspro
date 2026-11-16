@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     pmSchedule: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     pmScheduleTask: { findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     pmTask: { findMany: vi.fn() },
+    assetMeter: { findFirst: vi.fn() },
     meterReading: { findFirst: vi.fn() },
     componentConditionReading: { findFirst: vi.fn() },
     iotDevice: { findUnique: vi.fn() },
@@ -96,6 +97,7 @@ describe('PM scheduled-task API contract', () => {
       return mocks.createdRows[index];
     });
     mocks.tx.pmScheduleTask.updateMany.mockResolvedValue({ count: 0 });
+    mocks.tx.assetMeter.findFirst.mockResolvedValue(null);
     mocks.tx.meterReading.findFirst.mockResolvedValue({ id: 'reading-1', value: 1250, meterName: 'Operating Hours', unit: 'hours' });
     mocks.tx.iotDevice.findUnique.mockResolvedValue({ id: 'iot-1', assetId: 'asset-1', plantId: 'plant-1', parameter: 'Temperature', unit: '°C', isActive: true });
     mocks.tx.auditLog.create.mockResolvedValue({ id: 'audit-1' });

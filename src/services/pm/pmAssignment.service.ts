@@ -174,9 +174,12 @@ async function buildPersistenceData(client: PmAssignmentClient, plantId: string,
   if (plan.basis === 'meter') {
     const meter = await client.assetMeter.findUnique({
       where: { id: plan.assetMeterId! },
-      select: { id: true, assetId: true, name: true, unit: true, currentValue: true, isActive: true },
+      select: { id: true, assetId: true, componentId: true, name: true, unit: true, currentValue: true, isActive: true },
     });
     if (!meter || !meter.isActive || meter.assetId !== plan.assetId) throw new Error('Selected meter must be active and belong to the selected asset/machine');
+    if (meter.componentId && meter.componentId !== plan.componentId) {
+      throw new Error('Selected part meter must belong to the PM target component');
+    }
     meterName = meter.name;
     frequencyUnit = meter.unit;
     nextDueReading = Number(meter.currentValue) + Number(plan.value);

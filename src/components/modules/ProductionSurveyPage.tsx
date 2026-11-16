@@ -367,7 +367,7 @@ export default function ProductionSurveyPage(){
        {form.shiftTemplateId&&<div className="rounded-lg border p-3 space-y-3">
          <div className="flex flex-wrap items-center justify-between gap-2">
            <div><p className="font-semibold text-sm">Planner-owned shift standards</p>
-             <p className="text-xs text-muted-foreground">Set per machine, date and shift. Operators can view, but never edit, these values.</p></div>
+             <p className="text-xs text-muted-foreground">Set per machine, date and shift. Daily machine target equals the sum of shift targets. Operators can view, but never edit, these values.</p></div>
            {activePlan&&<Badge variant="secondary">Plan configured</Badge>}
          </div>
          {planError&&<p role="alert" className="text-sm text-destructive">{planError}</p>}
@@ -381,7 +381,7 @@ export default function ProductionSurveyPage(){
                ['plannedShiftsPerDay','Number of shifts per day','1','8','1'],
                ['shiftHours','Hours per shift','0.01','24','any'],
                ['availableMinutes','Available minutes','0','1440','1'],
-               ['targetQuantity','Production target','0',undefined,'any'],
+               ['targetQuantity','Target for this shift','0',undefined,'any'],
                ['unit','Production unit',undefined,undefined,undefined],
                ['standardUtilizationPct','Standard utilization %','0','100','any'],
                ['standardSpeed','Standard speed (units/min)','0',undefined,'any'],

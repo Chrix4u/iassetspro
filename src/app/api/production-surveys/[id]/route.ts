@@ -2,7 +2,7 @@ import { NextRequest,NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession,hasPermission,isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict,getPlantScope } from '@/lib/plant-scope';
-import { allowedProductionMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
+import { allowedProductionMeter,allowedRuntimeMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
 
 // Only the original operator may correct a REJECTED shift.
 // Approved production remains immutable; meter corrections need a separate audited adjustment.
@@ -16,12 +16,12 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});
     const original=await db.productionShiftRecord.findUnique({where:{id},select:{
-      id:true,plantId:true,status:true,recordedById:true,meterReadingId:true,
+      id:true,plantId:true,status:true,recordedById:true,meterReadingId:true,runtimeMeterReadingId:true,
     }});
     if(!original)return NextResponse.json({success:false,error:'Shift record not found'},{status:404});
     if(!canAccessPlantStrict(scope,original.plantId)||original.recordedById!==session.userId)
       return NextResponse.json({success:false,error:'Only the original operator may correct a rejected record'},{status:403});
-    if(original.status!=='rejected'||original.meterReadingId)
+    if(original.status!=='rejected'||original.meterReadingId||original.runtimeMeterReadingId)
       return NextResponse.json({success:false,error:'Only unposted, rejected records may be corrected'},{status:409});
     const raw=await request.json() as Record<string,unknown>;
     let parsed:ReturnType<typeof parseProductionSurveyInput>;
@@ -42,7 +42,7 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const record=await db.$transaction(async(tx)=>{
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))','iassetspro:production-survey:'+id);
       const latest=await tx.productionShiftRecord.findUnique({where:{id}});
-      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.recordedById!==session.userId)
+      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.runtimeMeterReadingId||latest.recordedById!==session.userId)
         throw new Error('Shift correction status changed; reload before editing');
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
         'iassetspro:production-plan:'+parsed.assetId+':'+parsed.productionDate.toISOString().slice(0,10)+':'+parsed.shiftTemplateId);
@@ -58,6 +58,15 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
         if(!meter||!allowedProductionMeter(meter.meterType)||meter.unit!==plan.unit)
           throw new Error('Select a production meter matching the planner-approved machine and unit');
       }
+      if(fromPlan.runtimeMeterId){
+        const runtimeMeter=await tx.assetMeter.findFirst({where:{
+          id:fromPlan.runtimeMeterId,assetId:fromPlan.assetId,isActive:true,
+        }});
+        if(!runtimeMeter||!allowedRuntimeMeter(runtimeMeter.meterType,runtimeMeter.unit))
+          throw new Error('Select an active operating-hours meter on this machine with hour units');
+        if(fromPlan.runtimeMeterId===fromPlan.assetMeterId)
+          throw new Error('Production and operating-hour meters must be different');
+      }
       const updated=await tx.productionShiftRecord.update({where:{id},data:{
         ...fromPlan,plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
         standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
@@ -65,9 +74,11 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'update',entityType:'production_shift_record',entityId:id,
         oldValues:JSON.stringify({assetId:latest.assetId,date:latest.productionDate,output:latest.outputQuantity,unit:latest.unit,
-          status:latest.status,meterId:latest.assetMeterId}),
+          status:latest.status,meterId:latest.assetMeterId,
+          runtimeMeterId:latest.runtimeMeterId,runtimeCounterHours:latest.runtimeCounterHours}),
         newValues:JSON.stringify({assetId:updated.assetId,date:updated.productionDate,output:updated.outputQuantity,unit:updated.unit,
-          status:updated.status,meterId:updated.assetMeterId})}});
+          status:updated.status,meterId:updated.assetMeterId,
+          runtimeMeterId:updated.runtimeMeterId,runtimeCounterHours:updated.runtimeCounterHours})}});
       return updated;
     },{timeout:15000});
     return NextResponse.json({success:true,data:record});

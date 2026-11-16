@@ -17,7 +17,7 @@ import { ClipboardCheck, Factory, Gauge, Plus, RefreshCw, Download } from 'lucid
 
 type Shift = {id:string;code:string;name:string;startsAt:string|null;endsAt:string|null};
 type Meter = {id:string;name:string;unit:string;currentValue:number};
-type Setup = {asset:{id:string;name:string;assetTag:string;plantId:string};shifts:Shift[];meters:Meter[]};
+type Setup = {asset:{id:string;name:string;assetTag:string;plantId:string};shifts:Shift[];meters:Meter[];runtimeMeters:Meter[]};
 type ShiftPlan = {id:string;assetId:string;shiftTemplateId:string;productionDate:string;plannedShiftsPerDay:number;
  shiftHours:number;availableMinutes:number;targetQuantity:number;unit:string;standardUtilizationPct:number|null;standardSpeed:number|null};
 type Row = {
@@ -25,6 +25,7 @@ type Row = {
  availableMinutes:number;breakMinutes:number;repairMinutes:number;inputDeliveryMinutes:number;
  changeoverMinutes:number;startupCleaningMinutes:number;otherMinutes:number;preventiveMinutes:number;
  status:string;reviewNote:string|null;meterReadingId:string|null;assetMeterId:string|null;
+ runtimeMeterId:string|null;runtimeCounterHours:number|null;runtimeEvidence:string|null;runtimeMeterReadingId:string|null;
  recordedById:string;asset:{name:string;assetTag:string};shift:{name:string};
  recordedBy:{fullName:string};reviewedBy:{fullName:string}|null;
 };
@@ -46,7 +47,8 @@ type ReportRow = {
 const today=()=>new Date().toISOString().slice(0,10);
 const sixDaysAgo=()=>new Date(Date.now()-6*86400000).toISOString().slice(0,10);
 const freshForm=()=>({
- productionDate:today(),shiftTemplateId:'',assetMeterId:'none',unit:'',outputQuantity:'',
+ productionDate:today(),shiftTemplateId:'',assetMeterId:'none',runtimeMeterId:'none',
+ runtimeCounterHours:'',runtimeEvidence:'',unit:'',outputQuantity:'',
  targetQuantity:'',availableMinutes:'480',breakMinutes:'0',repairMinutes:'0',
  inputDeliveryMinutes:'0',changeoverMinutes:'0',startupCleaningMinutes:'0',
  otherMinutes:'0',preventiveMinutes:'0',notes:'',
@@ -146,7 +148,7 @@ export default function ProductionSurveyPage(){
    if(res.success&&res.data&&res.data.asset.id===assetId)setSetup(res.data);
    else{setSetup(null);toast.error(res.error||'Unable to load machine shift and meters');}
  },[assetId]);
- useEffect(()=>{void loadSetup();if(!editingId)setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',unit:''}));},[loadSetup,editingId]);
+ useEffect(()=>{void loadSetup();if(!editingId)setForm(f=>({...f,shiftTemplateId:'',assetMeterId:'none',runtimeMeterId:'none',runtimeCounterHours:'',runtimeEvidence:'',unit:''}));},[loadSetup,editingId]);
  // Help operators avoid accidentally leaving a single production-output meter unlinked.
  // They can still explicitly choose "Reporting only" for non-PM production figures.
  useEffect(()=>{
@@ -253,6 +255,7 @@ export default function ProductionSurveyPage(){
    setSaving(true);
    try{
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
+       runtimeMeterId:form.runtimeMeterId==='none'?null:form.runtimeMeterId,
        unit:activePlan.unit,outputQuantity:form.outputQuantity,targetQuantity:activePlan.targetQuantity,
        availableMinutes:activePlan.availableMinutes,
      };
@@ -261,7 +264,8 @@ export default function ProductionSurveyPage(){
      toast.success('Shift production submitted for independent verification. The PM meter has not changed.');
      setEditingId(null);
      setForm(current=>({...freshForm(),productionDate:current.productionDate,
-       shiftTemplateId:current.shiftTemplateId,assetMeterId:current.assetMeterId,unit:current.unit}));
+       shiftTemplateId:current.shiftTemplateId,assetMeterId:current.assetMeterId,unit:current.unit,
+       runtimeMeterId:current.runtimeMeterId, runtimeCounterHours:'',runtimeEvidence:''}));
      await refresh();
    }catch(error){toast.error(error instanceof Error?error.message:'Failed to submit shift production');}
    finally{setSaving(false);}
@@ -276,7 +280,9 @@ export default function ProductionSurveyPage(){
    setAssetId(row.assetId);
    setForm({
      productionDate:row.productionDate.slice(0,10),shiftTemplateId:row.shiftTemplateId,
-     assetMeterId:row.assetMeterId||'none',unit:row.unit,
+     assetMeterId:row.assetMeterId||'none',runtimeMeterId:row.runtimeMeterId||'none',
+     runtimeCounterHours:row.runtimeCounterHours==null?'':String(row.runtimeCounterHours),
+     runtimeEvidence:row.runtimeEvidence||'',unit:row.unit,
      outputQuantity:String(row.outputQuantity),targetQuantity:row.targetQuantity==null?'':String(row.targetQuantity),
      availableMinutes:String(row.availableMinutes),breakMinutes:String(row.breakMinutes),repairMinutes:String(row.repairMinutes),
      inputDeliveryMinutes:String(row.inputDeliveryMinutes),changeoverMinutes:String(row.changeoverMinutes),
@@ -289,13 +295,13 @@ export default function ProductionSurveyPage(){
    if(!canManage)return;
    const note=action==='reject'?window.prompt('Reason for rejecting this production entry:'):'';
    if(action==='reject'&&!note?.trim())return;
-   if(action==='approve'&&!window.confirm('Approve '+amount(row.outputQuantity)+' '+row.unit+' for '+row.asset.name+'? This will advance its linked PM meter if configured.'))return;
+   if(action==='approve'&&!window.confirm('Approve '+amount(row.outputQuantity)+' '+row.unit+' for '+row.asset.name+'? This will advance linked output and independently reported hour meters, if configured.'))return;
    setReviewing(row.id);
    try{
      const res=await api.post('/api/production-surveys/'+encodeURIComponent(row.id)+'/review',{action,note});
      if(!res.success)throw new Error(res.error||'Review failed');
-     const data=res.data as {meterPosted?:boolean;duplicate?:boolean}|undefined;
-     toast.success(action==='approve'?(data?.meterPosted?'Approved and posted to the PM production meter':'Approved for reporting (no PM meter selected)'):'Returned to production for correction');
+     const data=res.data as {meterPosted?:boolean;runtimeMeterPosted?:boolean;duplicate?:boolean}|undefined;
+     toast.success(action==='approve'?(data?.meterPosted||data?.runtimeMeterPosted?'Approved and posted to verified PM meters':'Approved for reporting (no PM meter selected)'):'Returned to production for correction');
      await refresh();await loadSetup();await loadPmProgress();
    }catch(error){toast.error(error instanceof Error?error.message:'Review failed');}
    finally{setReviewing(null);}
@@ -323,16 +329,16 @@ export default function ProductionSurveyPage(){
    </Card>
    {assetId&&setup?.asset.id===assetId&&<div data-testid="production-pm-progress">
      <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
-       <div><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Production output → PM thresholds</CardTitle>
+       <div><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Approved production & runtime → PM thresholds</CardTitle>
        <CardDescription>Read-only status from your registered machine meters. Recalculates after a manager approves a shift.</CardDescription></div>
        <Button size="sm" variant="outline" disabled={pmProgressLoading} onClick={()=>void loadPmProgress()}><RefreshCw className="mr-1 h-4 w-4"/>Refresh usage</Button>
      </div></CardHeader>
      <CardContent className="space-y-3">
        {pmProgressError&&<p role="alert" className="text-sm text-destructive">{pmProgressError}</p>}
        {!pmProgressError&&pmProgressLoading&&!pmProgress&&<p className="text-sm text-muted-foreground">Loading maintenance meter thresholds…</p>}
-       {pmProgress?.meters.length===0&&<p className="text-sm text-muted-foreground">No production-output meter registered on this machine. The engineering team can add a Production Output meter under Assets → Meters, then choose it in this survey.</p>}
+       {pmProgress?.meters.length===0&&<p className="text-sm text-muted-foreground">No production-output or operating-hour meter registered. Engineers can create either meter under Assets → Meters.</p>}
        {pmProgress&&pmProgress.meters.length>0&&pmProgress.thresholds.length===0&&
-         <p className="text-sm text-muted-foreground">Production meters are registered, but no active usage-based PM threshold is linked. A maintenance planner can assign a meter-based task or schedule using these machine meters.</p>}
+         <p className="text-sm text-muted-foreground">Registered output/runtime meters have no active usage-based PM threshold linked. A maintenance planner can assign a meter-based task or schedule using these machine meters.</p>}
        {pmProgress&&pmProgress.thresholds.length>0&&<div className="grid gap-3 sm:grid-cols-2">
          {pmProgress.thresholds.map(item=><div key={item.source+':'+item.id} className="min-w-0 rounded-lg border p-3 space-y-2" data-testid="production-pm-threshold">
            <div className="flex flex-wrap items-start justify-between gap-2">
@@ -424,7 +430,26 @@ export default function ProductionSurveyPage(){
              <SelectItem value="none">Reporting only · no PM posting</SelectItem>
              {setup.meters.map(m=><SelectItem key={m.id} value={m.id}>{m.name} ({m.unit}, current {amount(m.currentValue)})</SelectItem>)}
            </SelectContent></Select></div>
-         <div className="space-y-1"><Label>Output unit (planner)</Label><Input value={activePlan?.unit||''} disabled placeholder="Planner will specify units"/></div>
+         <div className="space-y-1"><Label>Observed running-hour meter (optional)</Label>
+          <Select value={form.runtimeMeterId} onValueChange={v=>setForm(f=>({...f,runtimeMeterId:v,
+            runtimeCounterHours:v==='none'?'':f.runtimeCounterHours,
+            runtimeEvidence:v==='none'?'':f.runtimeEvidence}))}>
+            <SelectTrigger aria-label="Observed running-hour meter"><SelectValue placeholder="Select machine hour meter"/></SelectTrigger>
+            <SelectContent><SelectItem value="none">No actual hour-meter reading</SelectItem>
+              {(setup.runtimeMeters||[]).map(m=><SelectItem key={m.id} value={m.id}>{m.name} ({m.unit}; last approved {amount(m.currentValue)})</SelectItem>)}
+            </SelectContent>
+          </Select></div>
+        <div className="space-y-1"><Label>Actual cumulative hour-meter reading</Label>
+          <Input type="number" min="0" step="any" value={form.runtimeCounterHours}
+            disabled={form.runtimeMeterId==='none'} placeholder="As observed on physical meter"
+            onChange={e=>setForm(f=>({...f,runtimeCounterHours:e.target.value}))}/>
+        </div>
+        <div className="space-y-1"><Label>Hour-meter source / evidence</Label>
+          <Input value={form.runtimeEvidence} maxLength={255} disabled={form.runtimeMeterId==='none'}
+            placeholder="Panel hour meter, SCADA tag..."
+            onChange={e=>setForm(f=>({...f,runtimeEvidence:e.target.value}))}/>
+        </div>
+        <div className="space-y-1"><Label>Output unit (planner)</Label><Input value={activePlan?.unit||''} disabled placeholder="Planner will specify units"/></div>
          <div className="space-y-1"><Label>Actual production *</Label><Input type="number" min="0" step="any" value={form.outputQuantity} onChange={e=>setForm(f=>({...f,outputQuantity:e.target.value}))}/></div>
          <div className="space-y-1"><Label>Production target (planner)</Label><Input type="number" value={activePlan?.targetQuantity??''} disabled/></div>
          <div className="space-y-1"><Label>Available minutes (planner)</Label><Input type="number" value={activePlan?.availableMinutes??''} disabled/></div>
@@ -437,6 +462,7 @@ export default function ProductionSurveyPage(){
              <Input type="number" min="0" max="1440" step="1" value={form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}/></div>)}
          </div>
        </div>
+       <p className="text-xs text-muted-foreground">Actual running hours must be read independently from a physical operating-hours counter or validated telemetry. The counter is cumulative, not a per-shift estimate. The recorded value remains pending until a different user approves it. Never substitute calculated productive minutes.</p>
        <div className="space-y-1"><Label>Operator notes / observations</Label><Textarea rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Abnormal sound, input shortage, breakdown, production constraints..."/></div>
        {editingId&&<p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">Correcting a rejected shift. Submit again for a different production manager to verify. This does not touch any approved meter reading.</p>}
        <div className="flex flex-wrap justify-between gap-2">
@@ -506,7 +532,10 @@ export default function ProductionSurveyPage(){
          <td className="p-2">{row.asset.name}<span className="block text-xs text-muted-foreground">{row.asset.assetTag}</span></td>
          <td className="p-2">{row.shift.name}</td><td className="p-2 tabular-nums">{amount(row.outputQuantity)}</td><td className="p-2">{row.unit}</td>
          <td className="p-2"><Badge variant={row.status==='approved'?'secondary':row.status==='rejected'?'destructive':'outline'}>{row.status}</Badge></td>
-         <td className="p-2">{row.meterReadingId?'Posted':row.assetMeterId?'Pending approval':'Not linked'}</td>
+         <td className="p-2">{row.meterReadingId?'Output posted':row.assetMeterId?'Output pending':'Output not linked'}
+          {row.runtimeMeterId&&<span className="block text-xs">{row.runtimeMeterReadingId
+            ? 'Hour meter posted ('+amount(row.runtimeCounterHours??0)+' h)'
+            : 'Hour meter pending ('+amount(row.runtimeCounterHours??0)+' h)'}</span>}</td>
          <td className="p-2">{row.recordedBy.fullName}</td>
          <td className="p-2">{canManage&&row.status==='submitted'&&row.recordedById!==useAuthStore.getState().user?.id?
            <div className="flex gap-1"><Button disabled={reviewing===row.id} size="sm" onClick={()=>void review(row,'approve')}>Approve</Button>

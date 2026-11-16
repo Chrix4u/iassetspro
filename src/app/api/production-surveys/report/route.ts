@@ -77,9 +77,21 @@ export async function GET(request:NextRequest) {
       if(row.meterReadingId)item.meterLinkedOutput+=row.outputQuantity;
       item.shiftNames.add(row.shift.name);
     }
+    // Query one aggregate baseline for all selected machine/unit pairs, so the cumulative
+    // result includes approved output recorded before the visible date range.
+    const earlier=await db.productionShiftRecord.groupBy({
+      by:['assetId','unit'],
+      where:{...getPlantFilterWhere(scope),status:'approved',
+        productionDate:{lt:first},...(assetId?{assetId}:{})},
+      _sum:{outputQuantity:true},
+    });
+    const runningCumulative=new Map(earlier.map(x=>[x.assetId+'|'+x.unit,Number(x._sum.outputQuantity||0)]));
     const data=[...grouped.values()].map(({shiftNames,weightedStandardUtilization,standardUtilizationWeight,
-      weightedStandardSpeed,standardSpeedWeight,...item})=>({
-      ...item,shiftNames:[...shiftNames],
+      weightedStandardSpeed,standardSpeedWeight,...item})=>{
+      const key=item.assetId+'|'+item.unit;
+      const cumulativeProduction=(runningCumulative.get(key)||0)+item.output;
+      runningCumulative.set(key,cumulativeProduction);
+      return {...item,cumulativeProduction,shiftNames:[...shiftNames],
       utilizationPct:item.availableMinutes>0?100*item.productiveMinutes/item.availableMinutes:null,
       standardUtilizationPct:standardUtilizationWeight>0?weightedStandardUtilization/standardUtilizationWeight:null,
       speedPerMinute:item.productiveMinutes>0?item.output/item.productiveMinutes:null,
@@ -87,7 +99,7 @@ export async function GET(request:NextRequest) {
       productivityPerMinute:item.availableMinutes>0?item.output/item.availableMinutes:null,
       engineeringEfficiencyPct:item.availableMinutes>0?100*(item.availableMinutes-item.repairMinutes)/item.availableMinutes:null,
       targetAchievementPct:item.target>0?100*item.output/item.target:null,
-    }));
+    };});
     return NextResponse.json({success:true,data,meta:{group,from,to,recordCount:records.length,
       truncated:false,note:'Only approved shift records are counted. No entry means no reported shift, not zero production.'}});
   }catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Could not create report'},{status:500});}

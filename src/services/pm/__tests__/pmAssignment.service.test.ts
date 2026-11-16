@@ -96,6 +96,19 @@ describe('direct PM assignment service', () => {
     expect(batchTx.auditLog.create).toHaveBeenCalledTimes(2);
   });
 
+  it('does not allow a PM planner to bind a different component meter to this target', async () => {
+    tx.assetMeter.findUnique.mockResolvedValue({
+      id: 'meter-1', assetId: 'asset-1', componentId: 'motor-1',
+      name: 'Motor running hours', unit: 'hours', currentValue: 1200, isActive: true,
+    });
+    await expect(createPmAssignment(tx as never, {
+      plantId: 'plant-1', actorId: 'planner-1',
+      input: { ...base, componentId: 'bearing-1', pmType: 'ubm',
+        basis: 'meter', assetMeterId: 'meter-1', value: 500, unit: null, nextDueDate: null },
+    })).rejects.toThrow(/part meter.*target component/i);
+    expect(tx.pmScheduleTask.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a meter assigned to another machine', async () => {
     tx.assetMeter.findUnique.mockResolvedValueOnce({ id: 'meter-x', assetId: 'asset-other', name: 'Hours', unit: 'h', currentValue: 100, isActive: true });
     await expect(createPmAssignment(tx as never, {

@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from 'next/server';
 import {db} from '@/lib/db';
 import {getSession,isAdmin} from '@/lib/auth';
 import {getPlantScope,canAccessPlant} from '@/lib/plant-scope';
-import {normalizeCommissioningParameters,normalizeCommissioningMeters,mergeMachineSpecification} from '@/lib/asset-onboarding';
+import {normalizeCommissioningParameters,normalizeCommissioningMeters,mergeMachineSpecification,partMeterName} from '@/lib/asset-onboarding';
 
 type Row=Record<string,unknown>;
 const str=(v:unknown)=>typeof v==='string'?v.trim():v==null?'':String(v).trim();

@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
-import { allowedProductionMeter } from '@/lib/production-shift-survey';
+import { allowedProductionMeter,allowedRuntimeMeter } from '@/lib/production-shift-survey';
 import { calculateProductionPmProgress } from '@/lib/production-pm-progress';
 
-/** Read-only: projected PM thresholds from current production output.
+/** Read-only: projected PM thresholds from approved production output and measured runtime.
  * Uses the same source value as each existing PM engine, but never evaluates
  * triggers or promises that a work order has already been generated.
  */
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         meta: { truncated: true, meterLimit: 100, taskLimit: 200, scheduleLimit: 100 },
       }, { status: 422 });
     }
-    const meters = registeredMeters.filter((meter) => allowedProductionMeter(meter.meterType));
+    const meters = registeredMeters.filter((meter) => allowedProductionMeter(meter.meterType) || allowedRuntimeMeter(meter.meterType,meter.unit));
     const meterKeys = new Set(meters.map(meter => meter.name + '\u0000' + meter.unit));
     const readings = await Promise.all(meters.map(async meter => {
       const reading = await db.meterReading.findFirst({
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         meters: meters.map(meter => ({
-          id: meter.id, name: meter.name, unit: meter.unit, currentValue: meter.currentValue,
+          id: meter.id, name: meter.name, unit: meter.unit, meterType: meter.meterType, currentValue: meter.currentValue,
           lastReadingAt: meter.lastReadingAt,
         })),
         thresholds: rows,

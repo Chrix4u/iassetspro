@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
-import { allowedProductionMeter } from '@/lib/production-shift-survey';
+import { allowedProductionMeter, allowedRuntimeMeter } from '@/lib/production-shift-survey';
 
 export async function GET(request: NextRequest) {
   const session = getSession(request);
@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
       db.productionShiftTemplate.findMany({where:{plantId:asset.plantId,isActive:true},orderBy:[{sortOrder:'asc'},{name:'asc'}]}),
       db.assetMeter.findMany({where:{assetId:asset.id,isActive:true},select:{id:true,name:true,unit:true,meterType:true,currentValue:true},orderBy:{name:'asc'}}),
     ]);
-    return NextResponse.json({success:true,data:{asset,shifts,meters:allMeters.filter(m=>allowedProductionMeter(m.meterType))}});
+    return NextResponse.json({success:true,data:{asset,shifts,meters:allMeters.filter(m=>allowedProductionMeter(m.meterType)),
+      runtimeMeters:allMeters.filter(m=>allowedRuntimeMeter(m.meterType,m.unit))}});
   } catch (error) {return NextResponse.json({success:false,error:error instanceof Error?error.message:'Could not load shift setup'},{status:500});}
 }
 

@@ -5,6 +5,7 @@ export type ProductionSurveyInput = {
   breakMinutes: number; repairMinutes: number; inputDeliveryMinutes: number;
   changeoverMinutes: number; startupCleaningMinutes: number; otherMinutes: number;
   preventiveMinutes: number; notes: string | null;
+  runtimeMeterId: string | null; runtimeCounterHours: number | null; runtimeEvidence: string | null;
 };
 export const STOPPAGE_FIELDS = ['breakMinutes','repairMinutes','inputDeliveryMinutes',
   'changeoverMinutes','startupCleaningMinutes','otherMinutes','preventiveMinutes'] as const;
@@ -51,11 +52,24 @@ export function parseProductionSurveyInput(raw: unknown): ProductionSurveyInput 
   const downtime = Object.values(stops).reduce((sum,value)=>sum+value,0);
   if (downtime > availableMinutes) throw new Error('Stoppage minutes cannot exceed available time');
   if (outputQuantity > 0 && availableMinutes === downtime) throw new Error('Positive production needs positive productive time');
+  // Physical hour-meter observation only, not estimated productive minutes.
+  const runtimeMeterId = typeof body.runtimeMeterId === 'string' && body.runtimeMeterId.trim()
+    && body.runtimeMeterId !== 'none' ? body.runtimeMeterId.trim() : null;
+  const hasRuntimeValue = body.runtimeCounterHours !== '' && body.runtimeCounterHours != null;
+  if (Boolean(runtimeMeterId) !== hasRuntimeValue)
+    throw new Error('Select an operating-hour meter and enter its actual cumulative reading together');
+  const runtimeCounterHours = hasRuntimeValue
+    ? nonnegativeNumber(body.runtimeCounterHours, 'Actual cumulative running hours', 1e12 - 1) : null;
+  const runtimeEvidence = typeof body.runtimeEvidence === 'string' ? body.runtimeEvidence.trim() : '';
+  if (runtimeMeterId && (runtimeEvidence.length < 4 || runtimeEvidence.length > 255))
+    throw new Error('Runtime meter source/evidence must be 4–255 characters');
+  if (!runtimeMeterId && runtimeEvidence) throw new Error('Runtime evidence requires an operating-hour meter');
   const notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim().slice(0,2000) : null;
   return { productionDate,assetId,shiftTemplateId,assetMeterId,outputQuantity,unit,targetQuantity,availableMinutes,
     breakMinutes:stops.breakMinutes,repairMinutes:stops.repairMinutes,inputDeliveryMinutes:stops.inputDeliveryMinutes,
     changeoverMinutes:stops.changeoverMinutes,startupCleaningMinutes:stops.startupCleaningMinutes,
-    otherMinutes:stops.otherMinutes,preventiveMinutes:stops.preventiveMinutes,notes };
+    otherMinutes:stops.otherMinutes,preventiveMinutes:stops.preventiveMinutes,notes,
+    runtimeMeterId,runtimeCounterHours,runtimeEvidence:runtimeMeterId?runtimeEvidence:null };
 }
 export function reportingWeekStart(date: Date): string {
   const d = new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate()));
@@ -65,4 +79,22 @@ export function reportingWeekStart(date: Date): string {
 }
 export function allowedProductionMeter(type: string) {
   return ['production','production_output','output'].includes(type.trim().toLowerCase());
+}
+
+/** Actual cumulative hour-meter readings only; no productive-time substitution. */
+export function allowedRuntimeMeter(type: string, unit: string): boolean {
+  return type.trim().toLowerCase() === 'runtime' &&
+    ['h','hr','hrs','hour','hours'].includes(unit.trim().toLowerCase());
+}
+
+/** Reject stale, reset or fabricated cumulative readings before any transaction can post them. */
+export function validateVerifiedRuntimeCounter(input: {
+  observed: number; previous: number; lastReadingAt: Date | null; recordedAt: Date;
+}): number {
+  const { observed, previous, lastReadingAt, recordedAt } = input;
+  if (!Number.isFinite(previous) || previous < 0 || !Number.isFinite(observed) || observed < previous)
+    throw new Error('Hour-meter reading cannot be below its last approved value; investigate reset or backdated data');
+  if (lastReadingAt && lastReadingAt > recordedAt)
+    throw new Error('A newer hour-meter reading exists; reconcile this historical shift before approving');
+  return Math.round((observed - previous) * 1e6) / 1e6;
 }

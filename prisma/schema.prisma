@@ -2210,6 +2210,7 @@ model AssetMeter {
   readings      MeterReading[]
   pmAssignments PmScheduleTask[]
   productionShiftRecords ProductionShiftRecord[]
+  productionRuntimeShiftRecords ProductionShiftRecord[] @relation("ProductionSurveyRuntimeMeter")
 
   @@unique([assetId, name, unit])
   @@index([assetId, isActive])
@@ -2236,6 +2237,7 @@ model MeterReading {
   assetMeter AssetMeter? @relation(fields: [assetMeterId], references: [id], onDelete: SetNull)
   readBy     User        @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
   productionShiftRecord ProductionShiftRecord? @relation("ProductionSurveyMeterReading")
+  productionRuntimeShiftRecord ProductionShiftRecord? @relation("ProductionSurveyRuntimeMeterReading")
 
   @@index([assetMeterId, readingDate])
   @@map("meter_readings")
@@ -5542,6 +5544,10 @@ model ProductionShiftRecord {
   reviewNote           String?  @db.Text
   assetMeterId         String?
   meterReadingId       String?  @unique
+  runtimeMeterId       String?
+  runtimeCounterHours  Float?
+  runtimeEvidence      String? @db.VarChar(255)
+  runtimeMeterReadingId String? @unique
   recordedById         String
   reviewedById         String?
   reviewedAt           DateTime?
@@ -5552,6 +5558,8 @@ model ProductionShiftRecord {
   asset        Asset                   @relation(fields: [assetId], references: [id], onDelete: Restrict)
   shift        ProductionShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Restrict)
   meter        AssetMeter?             @relation(fields: [assetMeterId], references: [id], onDelete: Restrict)
+  runtimeMeter AssetMeter?             @relation("ProductionSurveyRuntimeMeter", fields: [runtimeMeterId], references: [id], onDelete: Restrict)
+  runtimeMeterReading MeterReading?    @relation("ProductionSurveyRuntimeMeterReading", fields: [runtimeMeterReadingId], references: [id], onDelete: SetNull)
   meterReading MeterReading?           @relation("ProductionSurveyMeterReading", fields: [meterReadingId], references: [id], onDelete: SetNull)
   recordedBy   User                    @relation("ProductionShiftRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
   reviewedBy   User?                   @relation("ProductionShiftReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
@@ -5559,6 +5567,7 @@ model ProductionShiftRecord {
   @@unique([assetId, productionDate, shiftTemplateId])
   @@index([plantId, productionDate, status])
   @@index([assetMeterId, status])
+  @@index([runtimeMeterId, status])
   @@map("production_shift_records")
 }
 

@@ -216,8 +216,13 @@ export default function ProductionSurveyPage(){
    finally{setPlanning(false);}
  };
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
+ const planUnit=plans[0]?.unit;
+ const plansUseSameUnit=plans.every(p=>p.unit===planUnit);
+ const dailyConfiguredTarget=plansUseSameUnit?plans.reduce((total,p)=>total+p.targetQuantity,0):null;
+ const plannedShiftCountsMatch=plans.every(p=>p.plannedShiftsPerDay===plans[0]?.plannedShiftsPerDay);
  const chosenUnit=activePlan?.unit||selectedMeter?.unit||form.unit;
- const available=Number(form.availableMinutes)||0;
+ // Live preview must use the immutable planner plan, not a stale form default after submission.
+ const available=activePlan?.availableMinutes??0;
  const stopped=stoppageFields.reduce((n,[key])=>n+(Number(form[key])||0),0);
  const productive=available-stopped;
  const preparedReport=useMemo(()=>reports.reduce((sum,row)=>({
@@ -248,7 +253,8 @@ export default function ProductionSurveyPage(){
    setSaving(true);
    try{
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
-       unit:chosenUnit,outputQuantity:form.outputQuantity,targetQuantity:form.targetQuantity,
+       unit:activePlan.unit,outputQuantity:form.outputQuantity,targetQuantity:activePlan.targetQuantity,
+       availableMinutes:activePlan.availableMinutes,
      };
      const res=editingId?await api.put('/api/production-surveys/'+encodeURIComponent(editingId),payload):await api.post('/api/production-surveys',payload);
      if(!res.success)throw new Error(res.error||'Failed to submit shift production');
@@ -355,6 +361,7 @@ export default function ProductionSurveyPage(){
          </div>)}
        </div>}
        <p className="text-xs text-muted-foreground">A due meter reading does not prove that a PM work order has already been created or completed. Use PM → Work Orders to confirm the work order and next cycle.</p>
+       <p className="text-xs text-muted-foreground">Productive time is calculated as available minutes minus stoppages, not independently measured machine running hours. Runtime-based PM must use a separately verified runtime meter; do not post calculated productive minutes as an actual run-hour reading.</p>
      </CardContent></Card>
    </div>}
    {assetId&&setup?.asset.id===assetId&&<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Shift production entry</CardTitle>
@@ -372,6 +379,14 @@ export default function ProductionSurveyPage(){
          </div>
          {planError&&<p role="alert" className="text-sm text-destructive">{planError}</p>}
          {plansLoading&&<p className="text-sm text-muted-foreground">Loading planner standards…</p>}
+         {!plansLoading&&plans.length>0&&<p className="text-sm text-muted-foreground">
+           Configured shift targets for this machine/date: {plans.length} shift(s),
+           {' '}{dailyConfiguredTarget===null?'mixed production units':amount(dailyConfiguredTarget)+' '+planUnit}.
+           {' '}This is the sum of configured shift targets, not a daily target repeated for each shift.
+           {plannedShiftCountsMatch&&plans.length<(plans[0]?.plannedShiftsPerDay??0)&&
+             ' Some planned shifts have no standards configured yet.'}
+           {!plannedShiftCountsMatch&&' The planned shift count differs between shift plans; review the settings.'}
+         </p>}
          {!plansLoading&&!activePlan&&!canPlan&&<p role="alert" className="text-sm text-amber-700 dark:text-amber-300">
            No plan exists for this machine, date and shift. Ask a planner to set targets before entering production.
          </p>}

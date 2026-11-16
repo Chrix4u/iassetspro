@@ -18,7 +18,7 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  const plant=plants[0],category=categories[0],suffix=String(Date.now());
  const hierarchy=await request.post('/api/hierarchy-systems',{headers,data:{
   name:'CI Commissioning '+suffix,code:'CI'+suffix,purpose:'functional_location',
-  codeMode:'manual',isPrimary:false,levels:[{order:1,label:'CI Machine Location',allowAssetAssignment:true}],
+  codeMode:'generated',isPrimary:false,levels:[{order:1,label:'CI Machine Location',allowAssetAssignment:true}],
  }});
  expect(hierarchy.status()).toBe(201);
  const system=(await hierarchy.json()).data as {id:string;levels:Array<{id:string}>};
@@ -27,7 +27,7 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
   hierarchySystemId:system.id,hierarchyLevelId:system.levels[0].id,
   name:'CI Test Installation '+suffix,codeSegment:'CI'+suffix,plantId:plant.id,
  }});
- expect(loc.status()).toBe(201);
+ expect(loc.status(),await loc.text()).toBe(201);
  const locationCode=(await loc.json()).data.locationCode as string;
  const machineCode='CI-ONB-'+suffix,partCode='CI-ONB-MOTOR-'+suffix;
  const data={
@@ -50,10 +50,10 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  const missing=await request.get('/api/assets?search='+machineCode,{headers});
  expect((await missing.json()).data.some((a:{assetTag:string})=>a.assetTag===machineCode)).toBe(false);
  const dry=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:true}});
- expect(dry.status()).toBe(200);
+ expect(dry.status(),await dry.text()).toBe(200);
  expect((await dry.json()).data.counts).toMatchObject({machines:1,parts:1,parameters:2,meters:1});
  const commit=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
- expect(commit.status()).toBe(201);
+ expect(commit.status(),await commit.text()).toBe(201);
  const imported=(await commit.json()).data;
  expect(imported.counts.machines).toBe(1);
  const machineId=imported.machineIds[0] as string;
@@ -68,11 +68,11 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  const part=parts.find(p=>p.componentCode===partCode);
  expect(part?.id).toBeTruthy();
  const checks=await request.get('/api/component-registry/'+part!.id+'/inspections',{headers});
- expect(checks.status()).toBe(200);
+ expect(checks.status(),await checks.text()).toBe(200);
  const rows=(await checks.json()).data;
  expect(rows.some((row:{name:string;normalRange:string})=>row.name==='Vibration'&&JSON.parse(row.normalRange).max===4.2)).toBe(true);
  const meter=await request.get('/api/assets/'+machineId+'/meters',{headers});
- expect(meter.status()).toBe(200);
+ expect(meter.status(),await meter.text()).toBe(200);
  expect((await meter.json()).data.some((r:{componentId:string;currentValue:number})=>r.componentId===part!.id&&r.currentValue===155)).toBe(true);
  const duplicate=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(duplicate.status()).toBe(409);

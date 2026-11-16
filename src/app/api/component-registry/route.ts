@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canCreateComponentHierarchy } from '@/lib/component-registry-permissions';
-import { createAuditLog } from '@/lib/audit';
 import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+import { normalizeCommissioningParameters, normalizeCommissioningMeters } from '@/lib/asset-onboarding';
 
 export async function GET(request: NextRequest) {
   try {

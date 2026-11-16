@@ -524,6 +524,7 @@ export function MachineVisualExplorer({
   const [generating, setGenerating] = useState(false);
   const [photoTitle,setPhotoTitle]=useState('');
   const [photoUrl,setPhotoUrl]=useState('');
+  const [photoFile,setPhotoFile]=useState<File|null>(null);
   const [photoSaving,setPhotoSaving]=useState(false);
   const [markerEditing,setMarkerEditing]=useState(false);
   const [markerTarget,setMarkerTarget]=useState('');
@@ -816,6 +817,26 @@ export function MachineVisualExplorer({
     }catch(error){toast.error(error instanceof Error?error.message:'Cannot attach photo');}
     finally{setPhotoSaving(false);}
   };
+  const uploadPhoto=async()=>{
+    if(!photoFile){toast.error('Choose a factory photograph first');return;}
+    if(!['image/jpeg','image/png','image/webp'].includes(photoFile.type)||photoFile.size>10*1024*1024){
+      toast.error('Choose a JPEG, PNG or WebP photograph up to 10 MB');return;
+    }
+    setPhotoSaving(true);
+    try{
+      const form=new FormData();
+      form.append('assetId',asset.id);
+      if(selectedId)form.append('componentId',selectedId);
+      form.append('title',photoTitle.trim()||photoFile.name);
+      form.append('file',photoFile);
+      const res=await api.post('/api/component-visuals/upload',form,{timeout:60000});
+      if(!res.success)throw Error(res.error||'Factory photograph upload failed');
+      toast.success('Factory photo uploaded; link the actual registered assemblies using markers.');
+      setPhotoTitle('');setPhotoFile(null);
+      await loadData();setMode('photo');
+    }catch(error){toast.error(error instanceof Error?error.message:'Photo upload failed');}
+    finally{setPhotoSaving(false);}
+  };
   const saveMarkers=async()=>{
     if(!currentVisual||currentVisual.visualType!=='photo')return;
     setMarkersSaving(true);
@@ -1003,6 +1024,15 @@ export function MachineVisualExplorer({
                   <p className="rounded-md border border-cyan-200 bg-cyan-50 p-2 text-xs text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-100">
                     Factory/OEM photographs are factual references only for the photographed machine. Click marked assemblies to drill down; upload an OEM GLB model in 3D Model for actual mesh geometry and engineering explosions.
                   </p>
+                  {canManagePhotos&&<div className="flex flex-wrap items-center gap-2">
+                    <Input className="min-w-0 flex-1 cursor-pointer" type="file" accept="image/jpeg,image/png,image/webp"
+                      aria-label="Choose genuine factory or OEM machine photograph"
+                      onChange={e=>setPhotoFile(e.target.files?.[0]||null)}/>
+                    <Button type="button" size="sm" disabled={photoSaving||!photoFile} onClick={()=>void uploadPhoto()}>
+                      {photoSaving?'Uploading...':'Upload real photo'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">JPEG/PNG/WebP up to 10 MB</span>
+                  </div>}
                   {canManagePhotos&&<div className="grid gap-2 sm:grid-cols-[1fr_2fr_auto]">
                     <Input aria-label="Approved photograph title" placeholder="Actual installation photo title" value={photoTitle} onChange={e=>setPhotoTitle(e.target.value)}/>
                     <Input aria-label="Approved photograph URL" placeholder="HTTPS URL to factory photograph or stored file" value={photoUrl} onChange={e=>setPhotoUrl(e.target.value)}/>

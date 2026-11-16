@@ -361,6 +361,40 @@ export default function ProductionSurveyPage(){
          No shifts have been configured for this plant. Morning, Afternoon and Night are optional templates, not mandatory daily entries.
          {canManage&&<Button className="ml-2" size="sm" variant="outline" disabled={configuring} onClick={()=>void configure(true)}>Create standard shifts</Button>}
        </div>}
+       {form.shiftTemplateId&&<div className="rounded-lg border p-3 space-y-3">
+         <div className="flex flex-wrap items-center justify-between gap-2">
+           <div><p className="font-semibold text-sm">Planner-owned shift standards</p>
+             <p className="text-xs text-muted-foreground">Set per machine, date and shift. Operators can view, but never edit, these values.</p></div>
+           {activePlan&&<Badge variant="secondary">Plan configured</Badge>}
+         </div>
+         {planError&&<p role="alert" className="text-sm text-destructive">{planError}</p>}
+         {plansLoading&&<p className="text-sm text-muted-foreground">Loading planner standards…</p>}
+         {!plansLoading&&!activePlan&&!canPlan&&<p role="alert" className="text-sm text-amber-700 dark:text-amber-300">
+           No plan exists for this machine, date and shift. Ask a planner to set targets before entering production.
+         </p>}
+         {canPlan&&<div className="space-y-3">
+           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+             {([
+               ['plannedShiftsPerDay','Number of shifts per day','1','8','1'],
+               ['shiftHours','Hours per shift','0.01','24','any'],
+               ['availableMinutes','Available minutes','0','1440','1'],
+               ['targetQuantity','Production target','0',undefined,'any'],
+               ['unit','Production unit',undefined,undefined,undefined],
+               ['standardUtilizationPct','Standard utilization %','0','100','any'],
+               ['standardSpeed','Standard speed (units/min)','0',undefined,'any'],
+             ] as const).map(([key,label,min,max,step])=><div className="space-y-1" key={key}>
+               <Label>{label}</Label><Input type={key==='unit'?'text':'number'} min={min} max={max} step={step}
+                 value={planDraft[key]} onChange={e=>setPlanDraft(p=>({...p,[key]:e.target.value}))}/>
+             </div>)}
+           </div>
+           <Button size="sm" variant="outline" disabled={planning||!planDraft.targetQuantity||!planDraft.unit.trim()}
+             onClick={()=>void savePlan()}>{planning?'Saving…':activePlan?'Update planner standards':'Save planner standards'}</Button>
+         </div>}
+         {activePlan&&!canPlan&&<p className="text-sm">
+           {activePlan.plannedShiftsPerDay} planned shift(s) · {activePlan.shiftHours} hours/shift ·
+           Target {amount(activePlan.targetQuantity)} {activePlan.unit} · {activePlan.availableMinutes} available minutes
+         </p>}
+       </div>}
        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
          <div className="space-y-1"><Label>Production date</Label><Input type="date" value={form.productionDate} onChange={e=>setForm(f=>({...f,productionDate:e.target.value}))}/></div>
          <div className="space-y-1"><Label>Shift / session</Label><Select value={form.shiftTemplateId} onValueChange={v=>setForm(f=>({...f,shiftTemplateId:v}))}>
@@ -372,10 +406,10 @@ export default function ProductionSurveyPage(){
              <SelectItem value="none">Reporting only · no PM posting</SelectItem>
              {setup.meters.map(m=><SelectItem key={m.id} value={m.id}>{m.name} ({m.unit}, current {amount(m.currentValue)})</SelectItem>)}
            </SelectContent></Select></div>
-         <div className="space-y-1"><Label>Output unit</Label><Input value={chosenUnit} disabled={Boolean(selectedMeter)} onChange={e=>setForm(f=>({...f,unit:e.target.value}))} placeholder="tonnes, yards, pieces"/></div>
+         <div className="space-y-1"><Label>Output unit (planner)</Label><Input value={activePlan?.unit||''} disabled placeholder="Planner will specify units"/></div>
          <div className="space-y-1"><Label>Actual production *</Label><Input type="number" min="0" step="any" value={form.outputQuantity} onChange={e=>setForm(f=>({...f,outputQuantity:e.target.value}))}/></div>
-         <div className="space-y-1"><Label>Production target (optional)</Label><Input type="number" min="0" step="any" value={form.targetQuantity} onChange={e=>setForm(f=>({...f,targetQuantity:e.target.value}))}/></div>
-         <div className="space-y-1"><Label>Available minutes *</Label><Input type="number" min="0" max="1440" step="1" value={form.availableMinutes} onChange={e=>setForm(f=>({...f,availableMinutes:e.target.value}))}/></div>
+         <div className="space-y-1"><Label>Production target (planner)</Label><Input type="number" value={activePlan?.targetQuantity??''} disabled/></div>
+         <div className="space-y-1"><Label>Available minutes (planner)</Label><Input type="number" value={activePlan?.availableMinutes??''} disabled/></div>
          <div className="rounded-lg bg-muted/40 p-3 text-sm"><p>Productive time</p><strong>{productive>=0?productive.toLocaleString()+' min':'Invalid stoppage totals'}</strong>
            <p className="text-xs text-muted-foreground">Downtime: {stopped} min</p></div>
        </div>
@@ -391,7 +425,7 @@ export default function ProductionSurveyPage(){
          <p className="max-w-xl text-xs text-muted-foreground">{selectedMeter?'After independent approval, output increments the selected meter; existing usage-based PM tasks read its cumulative value.':'No production meter selected. This record will appear in reports but cannot trigger a quantity-based PM schedule.'}</p>
          <div className="flex flex-wrap gap-2">
            {editingId&&<Button variant="outline" onClick={()=>{setEditingId(null);setForm(freshForm());}}>Cancel correction</Button>}
-           {canEnter&&<Button onClick={()=>void submit()} disabled={saving||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
+           {canEnter&&<Button onClick={()=>void submit()} disabled={saving||plansLoading||!activePlan||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
              <ClipboardCheck className="mr-2 h-4 w-4"/>{saving?'Submitting…':editingId?'Resubmit corrected shift':'Submit shift production'}
            </Button>}
          </div>

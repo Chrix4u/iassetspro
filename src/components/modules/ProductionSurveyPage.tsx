@@ -37,7 +37,7 @@ type PmThreshold = {
 type PmProgress = {meters:Array<{id:string;name:string;unit:string;currentValue:number}>;thresholds:PmThreshold[]};
 type ReportRow = {
  period:string;assetId:string;machine:string;assetTag:string;unit:string;shifts:number;
- output:number;target:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
+ output:number;target:number;cumulativeProduction:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
  repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;
  utilizationPct:number|null;standardUtilizationPct:number|null;speedPerMinute:number|null;standardSpeedPerMinute:number|null;
  productivityPerMinute:number|null;engineeringEfficiencyPct:number|null;targetAchievementPct:number|null;
@@ -295,10 +295,10 @@ export default function ProductionSurveyPage(){
    finally{setReviewing(null);}
  };
  const exportCsv=()=>{
-   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Standard Utilization %','Actual Speed per Min','Standard Speed per Min','Productivity per Min','Engineering Efficiency %','Target Achievement %','Repair Min','PM Min','PM Meter Output'];
+   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Standard Utilization %','Actual Speed per Min','Standard Speed per Min','Productivity per Min','Engineering Efficiency %','Target Achievement %','Cumulative Production','Repair Min','PM Min','PM Meter Output'];
    const lines=[headers,...reports.map(r=>[dayLabel(r.period),r.machine,r.assetTag,r.shifts,r.shiftNames.join(' / '),r.unit,r.output,r.target,r.availableMinutes,r.downtimeMinutes,r.productiveMinutes,
      r.utilizationPct??'',r.standardUtilizationPct??'',r.speedPerMinute??'',r.standardSpeedPerMinute??'',
-     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',
+     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',r.cumulativeProduction,
      r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
    const blob=new Blob(['\uFEFF'+lines.map(x=>x.map(csvValue).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
    const url=URL.createObjectURL(blob),a=document.createElement('a');
@@ -463,7 +463,7 @@ export default function ProductionSurveyPage(){
        </div>
        <div className="overflow-x-auto rounded-lg border">
          <table className="w-full min-w-[900px] text-sm"><thead className="bg-muted/50 text-left"><tr>
-           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','Std Util.','Actual Speed','Std Speed','Productivity','Engineering Eff.','Target %','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
+           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','Std Util.','Actual Speed','Std Speed','Productivity','Engineering Eff.','Target %','Cumulative','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
          </tr></thead><tbody>{reports.map(r=><tr key={r.period+':'+r.assetId+':'+r.unit} className="border-t">
            <td className="p-2 whitespace-nowrap">{dayLabel(r.period)}</td><td className="p-2">{r.machine}<span className="block text-xs text-muted-foreground">{r.assetTag}</span></td>
            <td className="p-2">{r.shifts}<span className="block text-xs text-muted-foreground">{r.shiftNames.join(', ')}</span></td>
@@ -475,6 +475,7 @@ export default function ProductionSurveyPage(){
            <td className="p-2 text-right tabular-nums">{r.standardSpeedPerMinute==null?'—':amount(r.standardSpeedPerMinute)}</td>
            <td className="p-2 text-right tabular-nums">{r.productivityPerMinute==null?'—':amount(r.productivityPerMinute)}</td>
            <td className="p-2">{pct(r.engineeringEfficiencyPct)}</td><td className="p-2">{pct(r.targetAchievementPct)}</td>
+           <td className="p-2 text-right tabular-nums">{amount(r.cumulativeProduction)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
          {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}

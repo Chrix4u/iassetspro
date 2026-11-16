@@ -34,7 +34,9 @@ export async function GET(request:NextRequest) {
     if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to))
       return NextResponse.json({success:false,error:'Dates must be yyyy-mm-dd'},{status:400});
     const first=new Date(from+'T00:00:00Z'),last=new Date(to+'T00:00:00Z');
-    if(Number.isNaN(first.getTime())||Number.isNaN(last.getTime())||first>last||last.getTime()-first.getTime()>366*86400000)
+    if(Number.isNaN(first.getTime())||Number.isNaN(last.getTime())||
+      first.toISOString().slice(0,10)!==from||last.toISOString().slice(0,10)!==to||
+      first>last||last.getTime()-first.getTime()>366*86400000)
       return NextResponse.json({success:false,error:'Report window must be 0–366 days'},{status:400});
     const assetId=q.get('assetId')||undefined;
     const where:Prisma.ProductionShiftRecordWhereInput={...getPlantFilterWhere(scope),status:'approved',

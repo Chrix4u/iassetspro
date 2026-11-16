@@ -39,7 +39,8 @@ type ReportRow = {
  period:string;assetId:string;machine:string;assetTag:string;unit:string;shifts:number;
  output:number;target:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
  repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;
- utilizationPct:number|null;speedPerMinute:number|null;targetAchievementPct:number|null;
+ utilizationPct:number|null;standardUtilizationPct:number|null;speedPerMinute:number|null;standardSpeedPerMinute:number|null;
+ productivityPerMinute:number|null;engineeringEfficiencyPct:number|null;targetAchievementPct:number|null;
  shiftNames:string[];
 };
 const today=()=>new Date().toISOString().slice(0,10);
@@ -85,7 +86,7 @@ export default function ProductionSurveyPage(){
    targetQuantity:'',unit:'yards',standardUtilizationPct:'',standardSpeed:''});
  const [from,setFrom]=useState(sixDaysAgo);
  const [to,setTo]=useState(today);
- const [period,setPeriod]=useState<'day'|'week'>('day');
+ const [period,setPeriod]=useState<'day'|'week'|'month'|'quarter'|'year'>('day');
  const [rows,setRows]=useState<Row[]>([]);
  const [reports,setReports]=useState<ReportRow[]>([]);
  const [reportError,setReportError]=useState<string|null>(null);
@@ -294,9 +295,11 @@ export default function ProductionSurveyPage(){
    finally{setReviewing(null);}
  };
  const exportCsv=()=>{
-   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Speed per Min','Repair Min','PM Min','PM Meter Output'];
+   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Standard Utilization %','Actual Speed per Min','Standard Speed per Min','Productivity per Min','Engineering Efficiency %','Target Achievement %','Repair Min','PM Min','PM Meter Output'];
    const lines=[headers,...reports.map(r=>[dayLabel(r.period),r.machine,r.assetTag,r.shifts,r.shiftNames.join(' / '),r.unit,r.output,r.target,r.availableMinutes,r.downtimeMinutes,r.productiveMinutes,
-     r.utilizationPct??'',r.speedPerMinute??'',r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
+     r.utilizationPct??'',r.standardUtilizationPct??'',r.speedPerMinute??'',r.standardSpeedPerMinute??'',
+     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',
+     r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
    const blob=new Blob(['\uFEFF'+lines.map(x=>x.map(csvValue).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
    const url=URL.createObjectURL(blob),a=document.createElement('a');
    a.href=url;a.download='production-survey-'+period+'-'+from+'-'+to+'.csv';
@@ -440,13 +443,17 @@ export default function ProductionSurveyPage(){
      </CardContent></Card>}
    {reportError&&<div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Production records and report figures could not be loaded: {reportError}</div>}
    <Card><CardHeader><CardTitle className="text-base">Production performance reports</CardTitle>
-     <CardDescription>Approved production only. Sunday–Saturday weekly groups follow the engineer's workbook. A missing shift is not a zero.</CardDescription></CardHeader>
+     <CardDescription>Approved production only. Daily, Sunday–Saturday weekly, monthly, quarterly and yearly summaries; missing shifts are not zero.</CardDescription></CardHeader>
      <CardContent className="space-y-3">
        <div className="flex flex-wrap items-end gap-3">
          <div className="space-y-1"><Label>From</Label><Input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></div>
          <div className="space-y-1"><Label>To</Label><Input type="date" value={to} onChange={e=>setTo(e.target.value)}/></div>
-         <div className="space-y-1"><Label>Report period</Label><Select value={period} onValueChange={v=>setPeriod(v as 'day'|'week')}>
-           <SelectTrigger className="w-36"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="day">Daily</SelectItem><SelectItem value="week">Weekly</SelectItem></SelectContent>
+         <div className="space-y-1"><Label>Report period</Label><Select value={period} onValueChange={v=>setPeriod(v as 'day'|'week'|'month'|'quarter'|'year')}>
+           <SelectTrigger className="w-40"><SelectValue/></SelectTrigger><SelectContent>
+             <SelectItem value="day">Daily</SelectItem><SelectItem value="week">Weekly</SelectItem>
+             <SelectItem value="month">Monthly</SelectItem><SelectItem value="quarter">Quarterly</SelectItem>
+             <SelectItem value="year">Yearly</SelectItem>
+           </SelectContent>
          </Select></div>
          <Button variant="outline" onClick={exportCsv} disabled={!reports.length}><Download className="mr-2 h-4 w-4"/>Export CSV</Button>
        </div>
@@ -456,13 +463,18 @@ export default function ProductionSurveyPage(){
        </div>
        <div className="overflow-x-auto rounded-lg border">
          <table className="w-full min-w-[900px] text-sm"><thead className="bg-muted/50 text-left"><tr>
-           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
+           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','Std Util.','Actual Speed','Std Speed','Productivity','Engineering Eff.','Target %','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
          </tr></thead><tbody>{reports.map(r=><tr key={r.period+':'+r.assetId+':'+r.unit} className="border-t">
            <td className="p-2 whitespace-nowrap">{dayLabel(r.period)}</td><td className="p-2">{r.machine}<span className="block text-xs text-muted-foreground">{r.assetTag}</span></td>
            <td className="p-2">{r.shifts}<span className="block text-xs text-muted-foreground">{r.shiftNames.join(', ')}</span></td>
            <td className="p-2 text-right tabular-nums">{amount(r.output)}</td><td className="p-2 text-right tabular-nums">{amount(r.target)}</td>
            <td className="p-2">{r.unit}</td><td className="p-2 text-right tabular-nums">{r.downtimeMinutes}</td>
            <td className="p-2 text-right tabular-nums">{r.productiveMinutes}</td><td className="p-2">{pct(r.utilizationPct)}</td>
+           <td className="p-2">{pct(r.standardUtilizationPct)}</td>
+           <td className="p-2 text-right tabular-nums">{r.speedPerMinute==null?'—':amount(r.speedPerMinute)}</td>
+           <td className="p-2 text-right tabular-nums">{r.standardSpeedPerMinute==null?'—':amount(r.standardSpeedPerMinute)}</td>
+           <td className="p-2 text-right tabular-nums">{r.productivityPerMinute==null?'—':amount(r.productivityPerMinute)}</td>
+           <td className="p-2">{pct(r.engineeringEfficiencyPct)}</td><td className="p-2">{pct(r.targetAchievementPct)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
          {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}

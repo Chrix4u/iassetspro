@@ -119,7 +119,7 @@ const modulePermissions: Record<string, string[]> = {
 
   // ── MPMP / PRODUCTION (~27) ──
   production: ['view', 'create', 'update', 'manage'],
-  production_surveys: ['view', 'create', 'update', 'manage'],
+  production_surveys: ['view', 'create', 'update', 'manage', 'plan'],
   oee: ['view', 'manage'],
   downtime: ['view', 'create', 'manage'],
   quality_checks: ['view', 'create', 'update'],
@@ -367,6 +367,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'reports.view', 'reports.export', 'reports.generate',
     'analytics.view', 'operations.view',
     'pm_tasks.view', 'pm_tasks.create', 'pm_tasks.update', 'pm_tasks.delete', 'pm_tasks.import',
+    'production_surveys.view', 'production_surveys.plan',
   ],
 
   // ── 5. MAINTENANCE SUPERVISOR: RWOP manage + execute ──
@@ -444,7 +445,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'facilities.view',
     'work_centers.view', 'work_centers.create', 'work_centers.update',
     'production.view', 'production.create', 'production.update', 'production.manage',
-    'production_surveys.view', 'production_surveys.create', 'production_surveys.update', 'production_surveys.manage',
+    'production_surveys.view', 'production_surveys.create', 'production_surveys.update', 'production_surveys.manage', 'production_surveys.plan',
     'oee.view', 'oee.manage',
     'downtime.view', 'downtime.create', 'downtime.manage',
     'quality_checks.view', 'quality_checks.create', 'quality_checks.update',

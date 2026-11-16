@@ -73,7 +73,8 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(rows.some((row:{name:string;normalRange:string})=>row.name==='Vibration'&&JSON.parse(row.normalRange).max===4.2)).toBe(true);
  const meter=await request.get('/api/assets/'+machineId+'/meters',{headers});
  expect(meter.status(),await meter.text()).toBe(200);
- expect((await meter.json()).data.some((r:{componentId:string;currentValue:number})=>r.componentId===part!.id&&r.currentValue===155)).toBe(true);
+ expect((await meter.json()).data.some((r:{componentId:string;currentValue:number;name:string})=>
+  r.componentId===part!.id&&r.currentValue===155&&r.name.startsWith(partCode+' · '))).toBe(true);
  const duplicate=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(duplicate.status()).toBe(409);
 });

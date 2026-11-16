@@ -75,3 +75,14 @@ export function readMachineParameters(value:unknown):CommissioningParameter[]{
     return normalizeCommissioningParameters((parsed as {inspectionParameters?:unknown})?.inspectionParameters||[]);
   }catch{return [];}
 }
+
+/**
+ * Part counters live in the asset-level canonical meter registry. Qualify their
+ * source names by the immutable component code to prevent two bearings/motors
+ * from sharing an ambiguous UBM source or violating the per-asset uniqueness key.
+ */
+export function partMeterName(componentCode:string, meterName:string):string {
+  const code=componentCode.trim(),name=meterName.trim();
+  if(!code||!name)throw new Error('Component code and meter name are required');
+  return code+' · '+name;
+}

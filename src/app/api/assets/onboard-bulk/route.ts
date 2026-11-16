@@ -112,7 +112,8 @@ export async function POST(request:NextRequest){
   // Asset-meter names must stay unique per machine; PM uses these names as canonical sources.
   for(const machineCode of machineCodes){
     const all=[...(machineMeters.get(machineCode)||[])];
-    for(const part of parts.filter(p=>str(p.machineCode)===machineCode))all.push(...(partMeters.get(str(part.componentCode))||[]));
+    for(const part of parts.filter(p=>str(p.machineCode)===machineCode))
+      all.push(...(partMeters.get(str(part.componentCode))||[]).map(m=>({...m,name:partMeterName(str(part.componentCode),m.name)})));
     normalizeCommissioningMeters(all);
   }
   for(const visual of visuals){owner(visual,'Visuals');validateVisual(visual);}
@@ -158,7 +159,7 @@ export async function POST(request:NextRequest){
       const defsMeter=partMeters.get(code)||[];
       if(defsMeter.length)await tx.assetMeter.createMany({data:defsMeter.map(d=>({
        assetId:assetIds.get(str(p.machineCode))!,componentId:created.id,
-       name:d.name,meterType:d.meterType,unit:d.unit,currentValue:d.initialValue,
+       name:partMeterName(code,d.name),meterType:d.meterType,unit:d.unit,currentValue:d.initialValue,
        lastReadingAt:d.initialValue?new Date():null,createdById:session.userId,
       }))});
     }

@@ -49,7 +49,7 @@ export function CommissioningMeterFields({items,onChange,subject='machine'}:{
 }){
   return <section className="space-y-3 rounded-lg border p-3" data-testid="commissioning-meters">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><h3 className="text-sm font-semibold">{subject==='machine'?'Machine':'Part'} meters</h3><p className="text-xs text-muted-foreground">Register physical cumulative counters for hours, cycles, production, energy or other usage-based PM; initial values must come from an actual reading.</p></div>
+      <div><h3 className="text-sm font-semibold">{subject==='machine'?'Machine':'Part'} meters</h3><p className="text-xs text-muted-foreground">Register physical cumulative counters for usage-based PM; initial values must be measured. Part meters are uniquely identified by their part code in the PM meter list.</p></div>
       <Button size="sm" type="button" variant="outline" onClick={()=>onChange([...items,blankMeter()])}><Plus className="mr-1 h-3.5 w-3.5"/>Add meter</Button>
     </div>
     {items.map((m,i)=><div key={i} className="grid gap-2 rounded-md border p-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">

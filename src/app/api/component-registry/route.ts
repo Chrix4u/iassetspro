@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canCreateComponentHierarchy } from '@/lib/component-registry-permissions';
 import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
-import { normalizeCommissioningParameters, normalizeCommissioningMeters } from '@/lib/asset-onboarding';
+import { normalizeCommissioningParameters, normalizeCommissioningMeters, partMeterName } from '@/lib/asset-onboarding';
 
 export async function GET(request: NextRequest) {
   try {
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
       const duplicate=await db.assetMeter.findMany({where:{assetId},
         select:{name:true,unit:true}});
       const keys=new Set(duplicate.map(m=>m.name.toLowerCase()+'|'+m.unit.toLowerCase()));
-      if(parsedMeters.some(m=>keys.has(m.name.toLowerCase()+'|'+m.unit.toLowerCase())))
+      if(parsedMeters.some(m=>keys.has(partMeterName(String(componentCode),m.name).toLowerCase()+'|'+m.unit.toLowerCase())))
         return NextResponse.json({success:false,error:'A meter with this name and unit already exists on the machine'},{status:409});
     }
     const component = await db.$transaction(async tx=>{
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
 
     if(parsedMeters.length&&assetId){
       await tx.assetMeter.createMany({data:parsedMeters.map(m=>({
-        assetId,componentId:created.id,name:m.name,unit:m.unit,meterType:m.meterType,
+        assetId,componentId:created.id,name:partMeterName(String(componentCode),m.name),unit:m.unit,meterType:m.meterType,
         currentValue:m.initialValue,lastReadingAt:m.initialValue!==0?new Date():null,
         createdById:session.userId,
       }))});

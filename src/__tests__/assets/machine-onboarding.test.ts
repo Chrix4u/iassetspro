@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {readFileSync} from 'node:fs';
-import {normalizeCommissioningParameters,normalizeCommissioningMeters,mergeMachineSpecification,readMachineParameters} from '@/lib/asset-onboarding';
+import {normalizeCommissioningParameters,normalizeCommissioningMeters,mergeMachineSpecification,readMachineParameters,partMeterName} from '@/lib/asset-onboarding';
 import {ONBOARDING_SHEETS} from '@/lib/asset-onboarding-workbook';
 const source=(path:string)=>readFileSync(path,'utf8');
 describe('factory machine onboarding — OEM standards and coded hierarchy',()=>{
@@ -17,6 +17,16 @@ describe('factory machine onboarding — OEM standards and coded hierarchy',()=>
   expect(()=>normalizeCommissioningParameters([{name:'Temperature',unit:'°C',min:100,max:50}])).toThrow('minimum exceeds');
   expect(()=>normalizeCommissioningParameters([{name:'Sound',unit:'dB'},{name:'Sound',unit:'dB'}])).toThrow('unique');
   expect(normalizeCommissioningParameters([{name:'Corrosion observation',inspectionType:'visual',unit:'',reference:'Inspect coating visually'}])[0].inspectionType).toBe('visual');
+ });
+ it('distinguishes identically named run-hour meters on different parts of a machine',()=>{
+  const a=partMeterName('MOTOR-01','Running Hours');
+  const b=partMeterName('MOTOR-02','Running Hours');
+  expect(a).toBe('MOTOR-01 · Running Hours');
+  expect(a).not.toBe(b);
+  expect(normalizeCommissioningMeters([
+    {name:a,meterType:'runtime',unit:'hours',initialValue:250},
+    {name:b,meterType:'runtime',unit:'hours',initialValue:70},
+  ])).toHaveLength(2);
  });
  it('does not confuse cumulative running-hours meters with calculated production time',()=>{
   expect(normalizeCommissioningMeters([{name:'Motor running hours',unit:'hours',meterType:'runtime',initialValue:250}])[0].initialValue).toBe(250);

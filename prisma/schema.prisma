@@ -2196,6 +2196,7 @@ model ProductionBatch {
 model AssetMeter {
   id            String    @id @default(cuid())
   assetId       String
+  componentId   String?
   name          String
   unit          String
   meterType     String    @default("general") // runtime, distance, cycles, production, energy, general
@@ -2207,6 +2208,7 @@ model AssetMeter {
   updatedAt     DateTime  @updatedAt
 
   asset         Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  component     ComponentRegistry? @relation("ComponentAssignedMeters",fields: [componentId],references: [id],onDelete: Restrict)
   readings      MeterReading[]
   pmAssignments PmScheduleTask[]
   productionShiftRecords ProductionShiftRecord[]
@@ -2214,6 +2216,7 @@ model AssetMeter {
 
   @@unique([assetId, name, unit])
   @@index([assetId, isActive])
+  @@index([componentId])
   @@map("asset_meters")
 }
 
@@ -3243,6 +3246,7 @@ model ComponentRegistry {
 
   // Component Maintenance Intelligence relations
   runtimeCounters      ComponentRuntimeCounter[]
+  assetMeters          AssetMeter[] @relation("ComponentAssignedMeters")
   conditionReadings    ComponentConditionReading[]
   maintenanceHistory   ComponentMaintenanceHistory[]
   pmSchedules          PmSchedule[]                   @relation("PmScheduleComponent")

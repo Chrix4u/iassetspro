@@ -29,6 +29,7 @@ import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualEx
 import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel';
 import { AssetMetersPanel } from '@/components/assets/AssetMetersPanel';
+import { CommissioningParameterFields,CommissioningMeterFields,type ParameterDraft,type MeterDraft } from '@/components/assets/MachineCommissioningFields';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -101,6 +102,8 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Component form
   const [compForm, setCompForm] = useState({ componentCode: '', name: '', componentType: 'component', parentId: '', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
+  const [componentParameters,setComponentParameters]=useState<ParameterDraft[]>([]);
+  const [componentMeters,setComponentMeters]=useState<MeterDraft[]>([]);
   // Twin form
   const [twinForm, setTwinForm] = useState({ name: '', type: 'pump', syncInterval: '5min' });
   // Diagram form
@@ -370,6 +373,10 @@ export function AssetDetailPage({ id }: { id: string }) {
         ...compForm,
         parentId: compForm.parentId || null,
         assetId: id,
+        inspectionParameters:componentParameters.map(p=>({...p,
+          min:p.min.trim()?Number(p.min):null,max:p.max.trim()?Number(p.max):null})),
+        ...(canCreateMeters?{componentMeters:componentMeters.map(m=>({...m,
+          initialValue:Number(m.initialValue||0)}))}:{ }),
         healthScore: 100,
         lifecycleStatus: 'operational',
         expectedLifeHours: compForm.expectedLifeHours ? parseFloat(compForm.expectedLifeHours) : null,
@@ -378,6 +385,7 @@ export function AssetDetailPage({ id }: { id: string }) {
       if (res.success) {
         toast.success('Component registered successfully');
         setShowComponentForm(false);
+        setComponentParameters([]);setComponentMeters([]);
         setCompForm({ componentCode: '', name: '', componentType: 'component', parentId: '', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
         reloadComponents();
       } else {
@@ -1128,6 +1136,9 @@ export function AssetDetailPage({ id }: { id: string }) {
                       <div className="space-y-1"><Label className="text-xs">Operating Hours</Label><Input type="number" className="h-8 text-sm" placeholder="e.g. 5000" value={compForm.operatingHours} onChange={e => setCompForm(f => ({ ...f, operatingHours: e.target.value }))} /></div>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">Description</Label><Textarea className="text-sm" rows={2} placeholder="Brief description..." value={compForm.description} onChange={e => setCompForm(f => ({ ...f, description: e.target.value }))} /></div>
+                    <CommissioningParameterFields items={componentParameters} onChange={setComponentParameters} subject="part"/>
+                    {canCreateMeters&&<CommissioningMeterFields items={componentMeters} onChange={setComponentMeters} subject="part"/>}
+
                     <div className="flex justify-end gap-2 pt-1">
                       <Button variant="outline" size="sm" onClick={() => setShowComponentForm(false)}>Cancel</Button>
                       <Button size="sm" onClick={handleCreateComponent} disabled={saving || !compForm.componentCode.trim() || !compForm.name.trim()}>

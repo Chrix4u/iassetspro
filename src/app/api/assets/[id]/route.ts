@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant } from '@/lib/plant-scope';
+import { normalizeCommissioningParameters,mergeMachineSpecification } from '@/lib/asset-onboarding';
 
 export async function GET(
   request: NextRequest,
@@ -167,6 +168,14 @@ export async function PUT(
       if (body[field] !== undefined) updateData[field] = body[field] !== null && body[field] !== '' ? Number(body[field]) : null;
     }
 
+    if(body.machineParameters!==undefined){
+      try {
+        updateData.specification=mergeMachineSpecification(
+          body.specification===undefined?existing.specification:body.specification,
+          normalizeCommissioningParameters(body.machineParameters));
+      }catch(error){return NextResponse.json({success:false,
+        error:error instanceof Error?error.message:'Invalid machine parameters'},{status:400});}
+    }
     // Prevent self-parent
     if (body.parentId === id) {
       return NextResponse.json(

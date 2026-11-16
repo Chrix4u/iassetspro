@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlant, applyPlantScope } from '@/lib/plant-scope';
+import { normalizeCommissioningParameters, normalizeCommissioningMeters, mergeMachineSpecification } from '@/lib/asset-onboarding';
 import {
   findAssetIdsByLiveLocationSearch,
   getAssetIdsInFunctionalLocationSubtree,
@@ -181,6 +182,9 @@ export async function POST(request: NextRequest) {
       specification,
       parentId,
       assignedToId,
+      functionalLocationId,
+      machineParameters,
+      meters,
     } = body;
 
     if (!name) {
@@ -232,6 +236,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Asset tag already exists' }, { status: 409 });
     }
 
+    let commissioningParameters, commissioningMeters;
+    try {
+      commissioningParameters=normalizeCommissioningParameters(machineParameters);
+      commissioningMeters=normalizeCommissioningMeters(meters);
+    } catch(error) {
+      return NextResponse.json({success:false,error:error instanceof Error?error.message:'Invalid machine standards'},{status:400});
+    }
+    if(commissioningMeters.length>0&&!isAdmin(session)&&!hasPermission(session,'meters.create'))
+      return NextResponse.json({success:false,error:'Meter creation permission required'},{status:403});
+    let targetLocation: {id:string;hierarchySystemId:string}|null=null;
+    if(functionalLocationId){
+      if(!isAdmin(session)&&!hasPermission(session,'assets.functional_locations.assign'))
+        return NextResponse.json({success:false,error:'Location assignment permission required'},{status:403});
+      const location=await db.functionalLocation.findUnique({where:{id:String(functionalLocationId)},
+        include:{hierarchySystem:true,hierarchyLevel:true}});
+      if(!location||location.status!=='active'||!location.hierarchySystem.isActive||
+        !location.hierarchyLevel.isActive||!location.hierarchyLevel.allowAssetAssignment||
+        location.hierarchyLevel.hierarchySystemId!==location.hierarchySystemId||location.plantId!==plantId)
+        return NextResponse.json({success:false,error:'Select an active assignable location from the machine plant hierarchy'},{status:400});
+      targetLocation={id:location.id,hierarchySystemId:location.hierarchySystemId};
+    }
+
     // Build relation connections
     const categoryConnect = { connect: { id: categoryId } };
     const plantConnect = { connect: { id: plantId } };
@@ -239,7 +265,8 @@ export async function POST(request: NextRequest) {
     const assignedToConnect = assignedToId ? { connect: { id: assignedToId } } : undefined;
     const parentConnect = parentId ? { connect: { id: parentId } } : undefined;
 
-    const asset = await db.asset.create({
+    const asset = await db.$transaction(async tx=>{
+    const created=await tx.asset.create({
       data: {
         assetTag,
         name,
@@ -269,10 +296,20 @@ export async function POST(request: NextRequest) {
         imageUrl: imageUrl || null,
         drawingsUrl: drawingsUrl || null,
         manualUrl: manualUrl || null,
-        specification: specification || '{}',
+        specification: machineParameters!==undefined?mergeMachineSpecification(specification,commissioningParameters):specification || '{}',
         parent: parentConnect,
         createdBy: { connect: { id: session.userId } },
         assignedTo: assignedToConnect,
+        ...(targetLocation ? {functionalLocationAssignments:{create:{
+          hierarchySystemId:targetLocation.hierarchySystemId,
+          functionalLocationId:targetLocation.id,
+          reason:'Selected during machine registration',
+          assignedById:session.userId,
+        }}} : {}),
+        ...(commissioningMeters.length?{assetMeters:{create:commissioningMeters.map(m=>({
+          name:m.name,unit:m.unit,meterType:m.meterType,currentValue:m.initialValue,
+          lastReadingAt:m.initialValue!==0?new Date():null,createdById:session.userId,
+        }))}}:{}),
       },
       include: {
         category: { select: { id: true, name: true, code: true } },
@@ -283,16 +320,20 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Create audit log
-    await db.auditLog.create({
+    // Audit the machine identity, commissioned standards and meters in the same transaction.
+    await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
         entityType: 'asset',
-        entityId: asset.id,
-        newValues: JSON.stringify({ assetTag, name, categoryId, plantId }),
+        entityId: created.id,
+        newValues: JSON.stringify({assetTag,name,categoryId,plantId,
+          functionalLocationId:targetLocation?.id||null,
+          parameterCount:commissioningParameters.length,meterCount:commissioningMeters.length}),
       },
     });
+    return created;
+    },{timeout:20000});
 
     return NextResponse.json({ success: true, data: asset }, { status: 201 });
   } catch (error: unknown) {

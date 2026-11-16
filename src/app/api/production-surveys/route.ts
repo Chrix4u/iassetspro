@@ -44,33 +44,52 @@ export async function POST(request:NextRequest) {
   try {
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});
-    let parsed:ReturnType<typeof parseProductionSurveyInput>;
-    try {parsed=parseProductionSurveyInput(await request.json());}
-    catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Invalid survey'},{status:400});}
-    const asset=await db.asset.findUnique({where:{id:parsed.assetId},select:{id:true,plantId:true}});
+    const raw=await request.json() as Record<string,unknown>;
+    const assetId=typeof raw.assetId==='string'?raw.assetId.trim():'';
+    const shiftTemplateId=typeof raw.shiftTemplateId==='string'?raw.shiftTemplateId.trim():'';
+    const productionDateText=typeof raw.productionDate==='string'?raw.productionDate:'';
+    if(!assetId||!shiftTemplateId||!/^\d{4}-\d{2}-\d{2}$/.test(productionDateText))
+      return NextResponse.json({success:false,error:'Machine, production date and shift are required'},{status:400});
+    const productionDate=new Date(productionDateText+'T00:00:00.000Z');
+    if(Number.isNaN(productionDate.getTime())||productionDate.toISOString().slice(0,10)!==productionDateText)
+      return NextResponse.json({success:false,error:'Production date is invalid'},{status:400});
+    const asset=await db.asset.findUnique({where:{id:assetId},select:{id:true,plantId:true}});
     if(!asset)return NextResponse.json({success:false,error:'Machine not found'},{status:404});
     if(!canAccessPlantStrict(scope,asset.plantId))return NextResponse.json({success:false,error:'Forbidden'},{status:403});
-    const shift=await db.productionShiftTemplate.findFirst({where:{id:parsed.shiftTemplateId,plantId:asset.plantId,isActive:true}});
+    const shift=await db.productionShiftTemplate.findFirst({where:{id:shiftTemplateId,plantId:asset.plantId,isActive:true}});
     if(!shift)return NextResponse.json({success:false,error:'Shift is not configured for this plant'},{status:400});
-    if(parsed.assetMeterId){
-      const meter=await db.assetMeter.findFirst({where:{id:parsed.assetMeterId,assetId:asset.id,isActive:true}});
-      if(!meter||!allowedProductionMeter(meter.meterType)||meter.unit!==parsed.unit)
-        return NextResponse.json({success:false,error:'Select an active production meter on this machine with matching units'},{status:400});
-    }
-    // Entry and audit must commit together; a failed audit must not leave
-    // a saved record that appears as a duplicate on operator retry.
-    const record=await db.$transaction(async(tx)=>{
+
+    // Lock planner settings while creating the record. Never trust client-supplied targets or minutes.
+    const record=await db.$transaction(async tx=>{
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
+        'iassetspro:production-plan:'+assetId+':'+productionDateText+':'+shiftTemplateId);
+      const plan=await tx.productionShiftPlan.findUnique({
+        where:{assetId_productionDate_shiftTemplateId:{assetId,productionDate,shiftTemplateId}}});
+      if(!plan)throw new Error('Planner must configure this machine, date and shift before operators can report');
+      const parsed=parseProductionSurveyInput({...raw,assetId,shiftTemplateId,productionDate:productionDateText,
+        unit:plan.unit,targetQuantity:plan.targetQuantity,availableMinutes:plan.availableMinutes});
+      if(parsed.assetMeterId){
+        const meter=await tx.assetMeter.findFirst({where:{id:parsed.assetMeterId,assetId:asset.id,isActive:true}});
+        if(!meter||!allowedProductionMeter(meter.meterType)||meter.unit!==plan.unit)
+          throw new Error('Select an active production meter on this machine with the planner-approved unit');
+      }
       const created=await tx.productionShiftRecord.create({data:{
         ...parsed,plantId:asset.plantId,recordedById:session.userId,status:'submitted',
+        plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
+        standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'create',entityType:'production_shift_record',entityId:created.id,
         newValues:JSON.stringify({assetId:created.assetId,shiftTemplateId:created.shiftTemplateId,date:created.productionDate,
-          output:created.outputQuantity,unit:created.unit,meterId:created.assetMeterId})}});
+          output:created.outputQuantity,unit:created.unit,target:created.targetQuantity,
+          availableMinutes:created.availableMinutes,planId:plan.id,meterId:created.assetMeterId})}});
       return created;
-    });
+    },{timeout:15000});
     return NextResponse.json({success:true,data:record},{status:201});
   }catch(error){
     const msg=error instanceof Error?error.message:'Could not submit survey';
-    return NextResponse.json({success:false,error:/Unique constraint|P2002/i.test(msg)?'This machine already has a record for the selected shift and day':msg},{status:/Unique constraint|P2002/i.test(msg)?409:500});
+    const duplicate=/Unique constraint|P2002/i.test(msg);
+    const invalid=/Planner must configure|Select an active production meter|Production date|must be|stoppage|positive production|required|invalid/i.test(msg);
+    return NextResponse.json({success:false,error:duplicate?'This machine already has a record for the selected shift and day':msg},
+      {status:duplicate?409:invalid?400:500});
   }
 }

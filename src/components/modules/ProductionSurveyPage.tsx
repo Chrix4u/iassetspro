@@ -18,6 +18,8 @@ import { ClipboardCheck, Factory, Gauge, Plus, RefreshCw, Download } from 'lucid
 type Shift = {id:string;code:string;name:string;startsAt:string|null;endsAt:string|null};
 type Meter = {id:string;name:string;unit:string;currentValue:number};
 type Setup = {asset:{id:string;name:string;assetTag:string;plantId:string};shifts:Shift[];meters:Meter[]};
+type ShiftPlan = {id:string;assetId:string;shiftTemplateId:string;productionDate:string;plannedShiftsPerDay:number;
+ shiftHours:number;availableMinutes:number;targetQuantity:number;unit:string;standardUtilizationPct:number|null;standardSpeed:number|null};
 type Row = {
  id:string;assetId:string;shiftTemplateId:string;productionDate:string;outputQuantity:number;unit:string;targetQuantity:number|null;notes:string|null;
  availableMinutes:number;breakMinutes:number;repairMinutes:number;inputDeliveryMinutes:number;
@@ -35,9 +37,10 @@ type PmThreshold = {
 type PmProgress = {meters:Array<{id:string;name:string;unit:string;currentValue:number}>;thresholds:PmThreshold[]};
 type ReportRow = {
  period:string;assetId:string;machine:string;assetTag:string;unit:string;shifts:number;
- output:number;target:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
+ output:number;target:number;cumulativeProduction:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
  repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;
- utilizationPct:number|null;speedPerMinute:number|null;targetAchievementPct:number|null;
+ utilizationPct:number|null;standardUtilizationPct:number|null;speedPerMinute:number|null;standardSpeedPerMinute:number|null;
+ productivityPerMinute:number|null;engineeringEfficiencyPct:number|null;targetAchievementPct:number|null;
  shiftNames:string[];
 };
 const today=()=>new Date().toISOString().slice(0,10);
@@ -71,12 +74,19 @@ export default function ProductionSurveyPage(){
  const {hasPermission,isAdmin}=useAuthStore();
  const canEnter=isAdmin()||hasPermission('production_surveys.create');
  const canManage=isAdmin()||hasPermission('production_surveys.manage');
+ const canPlan=isAdmin()||hasPermission('production_surveys.plan');
  const [assetId,setAssetId]=useState('');
  const [setup,setSetup]=useState<Setup|null>(null);
  const [form,setForm]=useState(freshForm);
+ const [plans,setPlans]=useState<ShiftPlan[]>([]);
+ const [plansLoading,setPlansLoading]=useState(false);
+ const [planError,setPlanError]=useState<string|null>(null);
+ const [planning,setPlanning]=useState(false);
+ const [planDraft,setPlanDraft]=useState({plannedShiftsPerDay:'3',shiftHours:'8',availableMinutes:'480',
+   targetQuantity:'',unit:'yards',standardUtilizationPct:'',standardSpeed:''});
  const [from,setFrom]=useState(sixDaysAgo);
  const [to,setTo]=useState(today);
- const [period,setPeriod]=useState<'day'|'week'>('day');
+ const [period,setPeriod]=useState<'day'|'week'|'month'|'quarter'|'year'>('day');
  const [rows,setRows]=useState<Row[]>([]);
  const [reports,setReports]=useState<ReportRow[]>([]);
  const [reportError,setReportError]=useState<string|null>(null);
@@ -91,6 +101,7 @@ export default function ProductionSurveyPage(){
  const [pmProgressError,setPmProgressError]=useState<string|null>(null);
  const [pmProgressLoading,setPmProgressLoading]=useState(false);
  const [meterChoiceTouched,setMeterChoiceTouched]=useState(false);
+ const planRequestRef=useRef(0);
  const setupRequestRef=useRef(0);
  const pmProgressRequestRef=useRef(0);
  const refreshRequestRef=useRef(0);
@@ -161,9 +172,57 @@ export default function ProductionSurveyPage(){
    }finally{if(requestId===pmProgressRequestRef.current)setPmProgressLoading(false);}
  },[assetId]);
  useEffect(()=>{void loadPmProgress();},[loadPmProgress]);
+ const loadPlans=useCallback(async()=>{
+   const requestId=++planRequestRef.current;
+   setPlans([]);setPlanError(null);
+   if(!assetId){setPlansLoading(false);return;}
+   setPlansLoading(true);
+   try{
+     const q=new URLSearchParams({assetId,date:form.productionDate});
+     const response=await api.get<ShiftPlan[]>('/api/production-surveys/plans?'+q);
+     if(requestId!==planRequestRef.current)return;
+     if(!response.success||!Array.isArray(response.data))throw new Error(response.error||'Could not load planner settings');
+     setPlans(response.data);
+   }catch(error){
+     if(requestId===planRequestRef.current)setPlanError(error instanceof Error?error.message:'Could not load planner settings');
+   }finally{if(requestId===planRequestRef.current)setPlansLoading(false);}
+ },[assetId,form.productionDate]);
+ useEffect(()=>{void loadPlans();},[loadPlans]);
+ const activePlan=plans.find(x=>x.shiftTemplateId===form.shiftTemplateId);
+ useEffect(()=>{
+   setPlanDraft(activePlan?{
+     plannedShiftsPerDay:String(activePlan.plannedShiftsPerDay),shiftHours:String(activePlan.shiftHours),
+     availableMinutes:String(activePlan.availableMinutes),targetQuantity:String(activePlan.targetQuantity),
+     unit:activePlan.unit,standardUtilizationPct:activePlan.standardUtilizationPct==null?'':String(activePlan.standardUtilizationPct),
+     standardSpeed:activePlan.standardSpeed==null?'':String(activePlan.standardSpeed),
+   }:{plannedShiftsPerDay:'3',shiftHours:'8',availableMinutes:'480',targetQuantity:'',unit:'yards',
+     standardUtilizationPct:'',standardSpeed:''});
+   if(!editingId)setForm(previous=>({...previous,
+     targetQuantity:activePlan?String(activePlan.targetQuantity):'',
+     availableMinutes:activePlan?String(activePlan.availableMinutes):'0',
+     unit:activePlan?.unit||''}));
+ },[activePlan,editingId]);
+ const savePlan=async()=>{
+   if(!canPlan||!setup||setup.asset.id!==assetId||!form.shiftTemplateId||!form.productionDate)return;
+   setPlanning(true);
+   try{
+     const payload={assetId,productionDate:form.productionDate,shiftTemplateId:form.shiftTemplateId,
+       ...planDraft};
+     const response=await api.post('/api/production-surveys/plans',payload);
+     if(!response.success)throw new Error(response.error||'Failed to save shift plan');
+     toast.success('Planner shift standards saved');
+     await loadPlans();
+   }catch(error){toast.error(error instanceof Error?error.message:'Failed to save shift plan');}
+   finally{setPlanning(false);}
+ };
  const selectedMeter=setup?.meters.find(x=>x.id===form.assetMeterId);
- const chosenUnit=selectedMeter?.unit||form.unit;
- const available=Number(form.availableMinutes)||0;
+ const planUnit=plans[0]?.unit;
+ const plansUseSameUnit=plans.every(p=>p.unit===planUnit);
+ const dailyConfiguredTarget=plansUseSameUnit?plans.reduce((total,p)=>total+p.targetQuantity,0):null;
+ const plannedShiftCountsMatch=plans.every(p=>p.plannedShiftsPerDay===plans[0]?.plannedShiftsPerDay);
+ const chosenUnit=activePlan?.unit||selectedMeter?.unit||form.unit;
+ // Live preview must use the immutable planner plan, not a stale form default after submission.
+ const available=activePlan?.availableMinutes??0;
  const stopped=stoppageFields.reduce((n,[key])=>n+(Number(form[key])||0),0);
  const productive=available-stopped;
  const preparedReport=useMemo(()=>reports.reduce((sum,row)=>({
@@ -190,11 +249,12 @@ export default function ProductionSurveyPage(){
    finally{setConfiguring(false);}
  };
  const submit=async()=>{
-   if(!setup||setup.asset.id!==assetId||!canEnter)return;
+   if(!setup||setup.asset.id!==assetId||!canEnter||!activePlan){toast.error('Planner must configure this shift before submission');return;}
    setSaving(true);
    try{
      const payload={...form,assetId:setup.asset.id,assetMeterId:form.assetMeterId==='none'?null:form.assetMeterId,
-       unit:chosenUnit,outputQuantity:form.outputQuantity,targetQuantity:form.targetQuantity,
+       unit:activePlan.unit,outputQuantity:form.outputQuantity,targetQuantity:activePlan.targetQuantity,
+       availableMinutes:activePlan.availableMinutes,
      };
      const res=editingId?await api.put('/api/production-surveys/'+encodeURIComponent(editingId),payload):await api.post('/api/production-surveys',payload);
      if(!res.success)throw new Error(res.error||'Failed to submit shift production');
@@ -241,9 +301,11 @@ export default function ProductionSurveyPage(){
    finally{setReviewing(null);}
  };
  const exportCsv=()=>{
-   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Speed per Min','Repair Min','PM Min','PM Meter Output'];
+   const headers=['Period','Machine','Machine Code','Shifts Entered','Shift Names','Unit','Output','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Standard Utilization %','Actual Speed per Min','Standard Speed per Min','Productivity per Min','Engineering Efficiency %','Target Achievement %','Cumulative Production','Repair Min','PM Min','PM Meter Output'];
    const lines=[headers,...reports.map(r=>[dayLabel(r.period),r.machine,r.assetTag,r.shifts,r.shiftNames.join(' / '),r.unit,r.output,r.target,r.availableMinutes,r.downtimeMinutes,r.productiveMinutes,
-     r.utilizationPct??'',r.speedPerMinute??'',r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
+     r.utilizationPct??'',r.standardUtilizationPct??'',r.speedPerMinute??'',r.standardSpeedPerMinute??'',
+     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',r.cumulativeProduction,
+     r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
    const blob=new Blob(['\uFEFF'+lines.map(x=>x.map(csvValue).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
    const url=URL.createObjectURL(blob),a=document.createElement('a');
    a.href=url;a.download='production-survey-'+period+'-'+from+'-'+to+'.csv';
@@ -299,6 +361,7 @@ export default function ProductionSurveyPage(){
          </div>)}
        </div>}
        <p className="text-xs text-muted-foreground">A due meter reading does not prove that a PM work order has already been created or completed. Use PM → Work Orders to confirm the work order and next cycle.</p>
+       <p className="text-xs text-muted-foreground">Productive time is calculated as available minutes minus stoppages, not independently measured machine running hours. Runtime-based PM must use a separately verified runtime meter; do not post calculated productive minutes as an actual run-hour reading.</p>
      </CardContent></Card>
    </div>}
    {assetId&&setup?.asset.id===assetId&&<Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Shift production entry</CardTitle>
@@ -307,6 +370,48 @@ export default function ProductionSurveyPage(){
        {setup.shifts.length===0&&<div className="rounded-lg border border-amber-300 p-3 text-sm">
          No shifts have been configured for this plant. Morning, Afternoon and Night are optional templates, not mandatory daily entries.
          {canManage&&<Button className="ml-2" size="sm" variant="outline" disabled={configuring} onClick={()=>void configure(true)}>Create standard shifts</Button>}
+       </div>}
+       {form.shiftTemplateId&&<div className="rounded-lg border p-3 space-y-3">
+         <div className="flex flex-wrap items-center justify-between gap-2">
+           <div><p className="font-semibold text-sm">Planner-owned shift standards</p>
+             <p className="text-xs text-muted-foreground">Set per machine, date and shift. Daily machine target equals the sum of shift targets. Operators can view, but never edit, these values.</p></div>
+           {activePlan&&<Badge variant="secondary">Plan configured</Badge>}
+         </div>
+         {planError&&<p role="alert" className="text-sm text-destructive">{planError}</p>}
+         {plansLoading&&<p className="text-sm text-muted-foreground">Loading planner standards…</p>}
+         {!plansLoading&&plans.length>0&&<p className="text-sm text-muted-foreground">
+           Configured shift targets for this machine/date: {plans.length} shift(s),
+           {' '}{dailyConfiguredTarget===null?'mixed production units':amount(dailyConfiguredTarget)+' '+planUnit}.
+           {' '}This is the sum of configured shift targets, not a daily target repeated for each shift.
+           {plannedShiftCountsMatch&&plans.length<(plans[0]?.plannedShiftsPerDay??0)&&
+             ' Some planned shifts have no standards configured yet.'}
+           {!plannedShiftCountsMatch&&' The planned shift count differs between shift plans; review the settings.'}
+         </p>}
+         {!plansLoading&&!activePlan&&!canPlan&&<p role="alert" className="text-sm text-amber-700 dark:text-amber-300">
+           No plan exists for this machine, date and shift. Ask a planner to set targets before entering production.
+         </p>}
+         {canPlan&&<div className="space-y-3">
+           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+             {([
+               ['plannedShiftsPerDay','Number of shifts per day','1','8','1'],
+               ['shiftHours','Hours per shift','0.01','24','any'],
+               ['availableMinutes','Available minutes','0','1440','1'],
+               ['targetQuantity','Target for this shift','0',undefined,'any'],
+               ['unit','Production unit',undefined,undefined,undefined],
+               ['standardUtilizationPct','Standard utilization %','0','100','any'],
+               ['standardSpeed','Standard speed (units/min)','0',undefined,'any'],
+             ] as const).map(([key,label,min,max,step])=><div className="space-y-1" key={key}>
+               <Label>{label}</Label><Input type={key==='unit'?'text':'number'} min={min} max={max} step={step}
+                 value={planDraft[key]} onChange={e=>setPlanDraft(p=>({...p,[key]:e.target.value}))}/>
+             </div>)}
+           </div>
+           <Button size="sm" variant="outline" disabled={planning||!planDraft.targetQuantity||!planDraft.unit.trim()}
+             onClick={()=>void savePlan()}>{planning?'Saving…':activePlan?'Update planner standards':'Save planner standards'}</Button>
+         </div>}
+         {activePlan&&!canPlan&&<p className="text-sm">
+           {activePlan.plannedShiftsPerDay} planned shift(s) · {activePlan.shiftHours} hours/shift ·
+           Target {amount(activePlan.targetQuantity)} {activePlan.unit} · {activePlan.availableMinutes} available minutes
+         </p>}
        </div>}
        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
          <div className="space-y-1"><Label>Production date</Label><Input type="date" value={form.productionDate} onChange={e=>setForm(f=>({...f,productionDate:e.target.value}))}/></div>
@@ -319,10 +424,10 @@ export default function ProductionSurveyPage(){
              <SelectItem value="none">Reporting only · no PM posting</SelectItem>
              {setup.meters.map(m=><SelectItem key={m.id} value={m.id}>{m.name} ({m.unit}, current {amount(m.currentValue)})</SelectItem>)}
            </SelectContent></Select></div>
-         <div className="space-y-1"><Label>Output unit</Label><Input value={chosenUnit} disabled={Boolean(selectedMeter)} onChange={e=>setForm(f=>({...f,unit:e.target.value}))} placeholder="tonnes, yards, pieces"/></div>
+         <div className="space-y-1"><Label>Output unit (planner)</Label><Input value={activePlan?.unit||''} disabled placeholder="Planner will specify units"/></div>
          <div className="space-y-1"><Label>Actual production *</Label><Input type="number" min="0" step="any" value={form.outputQuantity} onChange={e=>setForm(f=>({...f,outputQuantity:e.target.value}))}/></div>
-         <div className="space-y-1"><Label>Production target (optional)</Label><Input type="number" min="0" step="any" value={form.targetQuantity} onChange={e=>setForm(f=>({...f,targetQuantity:e.target.value}))}/></div>
-         <div className="space-y-1"><Label>Available minutes *</Label><Input type="number" min="0" max="1440" step="1" value={form.availableMinutes} onChange={e=>setForm(f=>({...f,availableMinutes:e.target.value}))}/></div>
+         <div className="space-y-1"><Label>Production target (planner)</Label><Input type="number" value={activePlan?.targetQuantity??''} disabled/></div>
+         <div className="space-y-1"><Label>Available minutes (planner)</Label><Input type="number" value={activePlan?.availableMinutes??''} disabled/></div>
          <div className="rounded-lg bg-muted/40 p-3 text-sm"><p>Productive time</p><strong>{productive>=0?productive.toLocaleString()+' min':'Invalid stoppage totals'}</strong>
            <p className="text-xs text-muted-foreground">Downtime: {stopped} min</p></div>
        </div>
@@ -338,7 +443,7 @@ export default function ProductionSurveyPage(){
          <p className="max-w-xl text-xs text-muted-foreground">{selectedMeter?'After independent approval, output increments the selected meter; existing usage-based PM tasks read its cumulative value.':'No production meter selected. This record will appear in reports but cannot trigger a quantity-based PM schedule.'}</p>
          <div className="flex flex-wrap gap-2">
            {editingId&&<Button variant="outline" onClick={()=>{setEditingId(null);setForm(freshForm());}}>Cancel correction</Button>}
-           {canEnter&&<Button onClick={()=>void submit()} disabled={saving||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
+           {canEnter&&<Button onClick={()=>void submit()} disabled={saving||plansLoading||!activePlan||!form.shiftTemplateId||!form.outputQuantity||!chosenUnit||productive<0}>
              <ClipboardCheck className="mr-2 h-4 w-4"/>{saving?'Submitting…':editingId?'Resubmit corrected shift':'Submit shift production'}
            </Button>}
          </div>
@@ -352,14 +457,18 @@ export default function ProductionSurveyPage(){
        </div>}
      </CardContent></Card>}
    {reportError&&<div role="alert" className="rounded-md border border-destructive/40 p-3 text-sm text-destructive">Production records and report figures could not be loaded: {reportError}</div>}
-   <Card><CardHeader><CardTitle className="text-base">Daily / weekly production reports</CardTitle>
-     <CardDescription>Approved production only. Sunday–Saturday weekly groups follow the engineer's workbook. A missing shift is not a zero.</CardDescription></CardHeader>
+   <Card><CardHeader><CardTitle className="text-base">Production performance reports</CardTitle>
+     <CardDescription>Approved production only. Daily, Sunday–Saturday weekly, monthly, quarterly and yearly summaries; missing shifts are not zero.</CardDescription></CardHeader>
      <CardContent className="space-y-3">
        <div className="flex flex-wrap items-end gap-3">
          <div className="space-y-1"><Label>From</Label><Input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></div>
          <div className="space-y-1"><Label>To</Label><Input type="date" value={to} onChange={e=>setTo(e.target.value)}/></div>
-         <div className="space-y-1"><Label>Report period</Label><Select value={period} onValueChange={v=>setPeriod(v as 'day'|'week')}>
-           <SelectTrigger className="w-36"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="day">Daily</SelectItem><SelectItem value="week">Weekly</SelectItem></SelectContent>
+         <div className="space-y-1"><Label>Report period</Label><Select value={period} onValueChange={v=>setPeriod(v as 'day'|'week'|'month'|'quarter'|'year')}>
+           <SelectTrigger className="w-40"><SelectValue/></SelectTrigger><SelectContent>
+             <SelectItem value="day">Daily</SelectItem><SelectItem value="week">Weekly</SelectItem>
+             <SelectItem value="month">Monthly</SelectItem><SelectItem value="quarter">Quarterly</SelectItem>
+             <SelectItem value="year">Yearly</SelectItem>
+           </SelectContent>
          </Select></div>
          <Button variant="outline" onClick={exportCsv} disabled={!reports.length}><Download className="mr-2 h-4 w-4"/>Export CSV</Button>
        </div>
@@ -369,13 +478,19 @@ export default function ProductionSurveyPage(){
        </div>
        <div className="overflow-x-auto rounded-lg border">
          <table className="w-full min-w-[900px] text-sm"><thead className="bg-muted/50 text-left"><tr>
-           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
+           {['Period','Machine','Shifts','Output','Target','Unit','Downtime','Productive','Utilization','Std Util.','Actual Speed','Std Speed','Productivity','Engineering Eff.','Target %','Cumulative','PM-linked'].map(name=><th key={name} className="p-2 font-semibold">{name}</th>)}
          </tr></thead><tbody>{reports.map(r=><tr key={r.period+':'+r.assetId+':'+r.unit} className="border-t">
            <td className="p-2 whitespace-nowrap">{dayLabel(r.period)}</td><td className="p-2">{r.machine}<span className="block text-xs text-muted-foreground">{r.assetTag}</span></td>
            <td className="p-2">{r.shifts}<span className="block text-xs text-muted-foreground">{r.shiftNames.join(', ')}</span></td>
            <td className="p-2 text-right tabular-nums">{amount(r.output)}</td><td className="p-2 text-right tabular-nums">{amount(r.target)}</td>
            <td className="p-2">{r.unit}</td><td className="p-2 text-right tabular-nums">{r.downtimeMinutes}</td>
            <td className="p-2 text-right tabular-nums">{r.productiveMinutes}</td><td className="p-2">{pct(r.utilizationPct)}</td>
+           <td className="p-2">{pct(r.standardUtilizationPct)}</td>
+           <td className="p-2 text-right tabular-nums">{r.speedPerMinute==null?'—':amount(r.speedPerMinute)}</td>
+           <td className="p-2 text-right tabular-nums">{r.standardSpeedPerMinute==null?'—':amount(r.standardSpeedPerMinute)}</td>
+           <td className="p-2 text-right tabular-nums">{r.productivityPerMinute==null?'—':amount(r.productivityPerMinute)}</td>
+           <td className="p-2">{pct(r.engineeringEfficiencyPct)}</td><td className="p-2">{pct(r.targetAchievementPct)}</td>
+           <td className="p-2 text-right tabular-nums">{amount(r.cumulativeProduction)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
          {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}

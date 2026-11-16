@@ -115,9 +115,9 @@ describe('production survey and PM usage integration',()=>{
  });
  it('reports approved day/week amounts only and reuses existing canonical meter PM source',()=>{
    expect(report).toContain("status:'approved'");
-   expect(report).toContain("group==='week'?reportingWeekStart");
+   expect(report).toContain('periodKey(row.productionDate,group)');
    expect(report).toContain('meterLinkedOutput');
-   expect(frontend).toContain('Daily / weekly production reports');
+   expect(frontend).toContain('Production performance reports');
    expect(frontend).toContain('Export CSV');
    expect(frontend).toContain('Shift production entry');
    const seed=file('prisma/seed.ts');

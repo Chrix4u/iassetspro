@@ -389,6 +389,7 @@ model Plant {
 
   productionShiftTemplates ProductionShiftTemplate[]
   productionShiftRecords ProductionShiftRecord[]
+  productionShiftPlans ProductionShiftPlan[]
   departments         Department[]
   plantAccess         UserPlant[]
   assets              Asset[]
@@ -1111,6 +1112,7 @@ model Asset {
   pmAssignments                 PmScheduleTask[]                    @relation("PmAssignmentAsset")
   assetMeters                   AssetMeter[]
   productionShiftRecords       ProductionShiftRecord[]
+  productionShiftPlans         ProductionShiftPlan[]
   iotDevices                    IotDevice[]
   bomAsParent                   BillOfMaterial[]                    @relation("BomParent")
   bomAsChild                    BillOfMaterial[]                    @relation("BomChild")
@@ -5507,6 +5509,7 @@ model ProductionShiftTemplate {
 
   plant    Plant                   @relation(fields: [plantId], references: [id], onDelete: Restrict)
   records  ProductionShiftRecord[]
+  plans    ProductionShiftPlan[]
 
   @@unique([plantId, code])
   @@index([plantId, isActive, sortOrder])
@@ -5522,6 +5525,10 @@ model ProductionShiftRecord {
   outputQuantity       Float
   unit                 String
   targetQuantity       Float?
+  standardUtilizationPct Float?
+  standardSpeed        Float?
+  plannedShiftsPerDay  Int?
+  shiftHours           Float?
   availableMinutes     Int
   breakMinutes         Int      @default(0)
   repairMinutes        Int      @default(0)
@@ -5553,4 +5560,31 @@ model ProductionShiftRecord {
   @@index([plantId, productionDate, status])
   @@index([assetMeterId, status])
   @@map("production_shift_records")
+}
+
+model ProductionShiftPlan {
+  id                     String   @id @default(cuid())
+  plantId                String
+  assetId                String
+  shiftTemplateId        String
+  productionDate         DateTime @db.Date
+  plannedShiftsPerDay    Int
+  shiftHours             Float
+  availableMinutes       Int
+  targetQuantity         Float
+  unit                   String
+  standardUtilizationPct Float?
+  standardSpeed          Float?
+  createdById            String
+  updatedById            String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  plant Plant @relation(fields: [plantId], references: [id], onDelete: Restrict)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  shift ProductionShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, productionDate, shiftTemplateId])
+  @@index([plantId, productionDate])
+  @@map("production_shift_plans")
 }

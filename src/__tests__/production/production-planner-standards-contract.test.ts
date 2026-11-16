@@ -49,6 +49,21 @@ describe('planner-owned shift standards and workbook calculations',()=>{
     expect(report).toContain('item.availableMinutes-item.repairMinutes');
     expect(report).toContain('item.output/item.availableMinutes');
   });
+  it('keeps operator preview and submission tied to the planner plan after form reset',()=>{
+    expect(page).toContain('const available=activePlan?.availableMinutes??0;');
+    expect(page).toContain('availableMinutes:activePlan.availableMinutes');
+    expect(page).toContain('targetQuantity:activePlan.targetQuantity');
+    expect(page).toContain('dailyConfiguredTarget');
+    expect(page).toContain('sum of configured shift targets');
+  });
+  it('does not accept impossible report calendar days',()=>{
+    expect(report).toContain("first.toISOString().slice(0,10)!==from");
+    expect(report).toContain("last.toISOString().slice(0,10)!==to");
+  });
+  it('does not conflate estimated productive minutes with actual machine run hours',()=>{
+    expect(page).toContain('Runtime-based PM must use a separately verified runtime meter');
+    expect(page).toContain('not independently measured machine running hours');
+  });
   it('supports grouping across day, Sunday-Saturday week, month, quarter, year',()=>{
     expect(report).toContain("['day','week','month','quarter','year']");
     expect(report).toContain("return reportingWeekStart(date)");

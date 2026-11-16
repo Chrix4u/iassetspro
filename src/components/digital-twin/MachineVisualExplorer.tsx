@@ -525,6 +525,7 @@ export function MachineVisualExplorer({
   const [photoTitle,setPhotoTitle]=useState('');
   const [photoUrl,setPhotoUrl]=useState('');
   const [photoFile,setPhotoFile]=useState<File|null>(null);
+  const [privatePhoto,setPrivatePhoto]=useState<{id:string;url:string}|null>(null);
   const [photoSaving,setPhotoSaving]=useState(false);
   const [markerEditing,setMarkerEditing]=useState(false);
   const [markerTarget,setMarkerTarget]=useState('');
@@ -792,7 +793,26 @@ export function MachineVisualExplorer({
   }, [visuals, desiredType, selectedId, asset.id, mode]);
 
   const fallbackImage = mode === 'photo' || (!selectedId && mode === 'realistic') ? asset.imageUrl || null : null;
-  const imageUrl = currentVisual?.imageUrl || fallbackImage;
+  // Real factory photo bytes are plant-scoped and require an authenticated API fetch.
+  // The browser cannot attach the app's bearer token to an ordinary <img> request.
+  useEffect(()=>{
+    if(!currentVisual||currentVisual.sourceProvider!=='uploaded')return;
+    let cancelled=false,objectUrl:string|null=null;
+    const id=currentVisual.id;
+    void api.getRaw('/api/component-visuals/photo/'+encodeURIComponent(id),{cache:'no-store'})
+      .then(async response=>{
+        if(!response.ok)throw Error('Cannot load authorized factory photograph');
+        const blob=await response.blob();
+        const next=URL.createObjectURL(blob);
+        if(cancelled){URL.revokeObjectURL(next);return;}
+        objectUrl=next;
+        setPrivatePhoto({id,url:next});
+      }).catch(()=>{if(!cancelled)setPrivatePhoto(null);});
+    return ()=>{cancelled=true;if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[currentVisual?.id,currentVisual?.sourceProvider]);
+  const imageUrl = currentVisual?.sourceProvider==='uploaded'
+    ? (privatePhoto?.id===currentVisual.id?privatePhoto.url:null)
+    : currentVisual?.imageUrl || fallbackImage;
   const storedPhotoMarkers=useMemo(()=>{
     if(!currentVisual?.hotspotData||mode!=='photo')return [];
     try{
@@ -1086,6 +1106,11 @@ export function MachineVisualExplorer({
                               (selectedId===marker.componentId?'bg-amber-500 text-black':'bg-cyan-500 text-slate-950')}>
                             {i+1}
                           </button>)}
+                      </div>
+                    ) : currentVisual?.sourceProvider==='uploaded'&&tabMode==='photo' ? (
+                      <div className="flex max-w-sm flex-col items-center gap-2 p-8 text-center text-slate-300">
+                        <Loader2 className="h-7 w-7 animate-spin text-cyan-400"/>
+                        <p className="text-xs">Loading authorized factory photograph...</p>
                       </div>
                     ) : tabMode==='photo' ? (
                       <div className="flex max-w-sm flex-col items-center gap-2 p-8 text-center text-slate-300">

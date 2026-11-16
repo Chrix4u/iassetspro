@@ -1,8 +1,8 @@
 import {NextRequest,NextResponse} from 'next/server';
 import {mkdir,writeFile,unlink} from 'node:fs/promises';
-import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {db} from '@/lib/db';
+import {privateComponentPhotoRoot} from '@/lib/component-private-photos';
 import {getSession,hasPermission,isAdmin} from '@/lib/auth';
 import {getPlantScope,canAccessPlantStrict} from '@/lib/plant-scope';
 
@@ -42,10 +42,9 @@ export async function POST(request:NextRequest){
     if(!component||component.assetId!==asset.id)
       return NextResponse.json({success:false,error:'Photo assembly is not part of this machine'},{status:400});
   }
-  const generatedRoot=path.resolve(process.env.GENERATED_ASSETS_DIR||path.join(process.cwd(),'public','generated-assets'));
-  const folder=path.join(generatedRoot,'component-visuals');
+  const folder=privateComponentPhotoRoot();
   const filename='factory-photo-'+randomUUID()+'.'+format.extension;
-  const fullPath=path.join(folder,filename);
+  const fullPath=folder+'/'+filename;
   await mkdir(folder,{recursive:true});
   await writeFile(fullPath,data,{flag:'wx',mode:0o644});
   try {
@@ -56,7 +55,7 @@ export async function POST(request:NextRequest){
       });
       const created=await tx.componentVisual.create({data:{
         assetId:asset.id,componentId,visualType:'photo',title,
-        imageUrl:'/api/generated-assets/component-visuals/'+filename,
+        imageUrl:'/private-component-photos/'+filename,
         sourceProvider:'uploaded',isPrimary:true,createdById:session.userId,
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'create',

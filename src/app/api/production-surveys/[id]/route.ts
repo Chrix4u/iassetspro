@@ -23,8 +23,9 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
       return NextResponse.json({success:false,error:'Only the original operator may correct a rejected record'},{status:403});
     if(original.status!=='rejected'||original.meterReadingId)
       return NextResponse.json({success:false,error:'Only unposted, rejected records may be corrected'},{status:409});
+    const raw=await request.json() as Record<string,unknown>;
     let parsed:ReturnType<typeof parseProductionSurveyInput>;
-    try{parsed=parseProductionSurveyInput(await request.json());}
+    try{parsed=parseProductionSurveyInput(raw);}
     catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Invalid correction'},{status:400});}
     const asset=await db.asset.findUnique({where:{id:parsed.assetId},select:{id:true,plantId:true}});
     if(!asset||asset.plantId!==original.plantId)
@@ -43,8 +44,24 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
       const latest=await tx.productionShiftRecord.findUnique({where:{id}});
       if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.recordedById!==session.userId)
         throw new Error('Shift correction status changed; reload before editing');
+      await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
+        'iassetspro:production-plan:'+parsed.assetId+':'+parsed.productionDate.toISOString().slice(0,10)+':'+parsed.shiftTemplateId);
+      const plan=await tx.productionShiftPlan.findUnique({where:{
+        assetId_productionDate_shiftTemplateId:{assetId:parsed.assetId,productionDate:parsed.productionDate,
+          shiftTemplateId:parsed.shiftTemplateId}}});
+      if(!plan)throw new Error('Planner must configure this shift before it can be resubmitted');
+      const fromPlan=parseProductionSurveyInput({...raw,assetId:parsed.assetId,
+        productionDate:parsed.productionDate.toISOString().slice(0,10),shiftTemplateId:parsed.shiftTemplateId,
+        unit:plan.unit,targetQuantity:plan.targetQuantity,availableMinutes:plan.availableMinutes});
+      if(fromPlan.assetMeterId){
+        const meter=await tx.assetMeter.findFirst({where:{id:fromPlan.assetMeterId,assetId:parsed.assetId,isActive:true}});
+        if(!meter||!allowedProductionMeter(meter.meterType)||meter.unit!==plan.unit)
+          throw new Error('Select a production meter matching the planner-approved machine and unit');
+      }
       const updated=await tx.productionShiftRecord.update({where:{id},data:{
-        ...parsed,status:'submitted',reviewNote:null,reviewedById:null,reviewedAt:null,
+        ...fromPlan,plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
+        standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
+        status:'submitted',reviewNote:null,reviewedById:null,reviewedAt:null,
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'update',entityType:'production_shift_record',entityId:id,
         oldValues:JSON.stringify({assetId:latest.assetId,date:latest.productionDate,output:latest.outputQuantity,unit:latest.unit,

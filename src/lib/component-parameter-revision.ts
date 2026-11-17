@@ -11,6 +11,19 @@ export type ExistingPoint = {
   _count: { records: number; pmTaskLinks: number };
 };
 
+/**
+ * Optimistic concurrency token for a complete part's active checkpoint set.
+ * Reject stale forms so one planner cannot silently retire another's changes.
+ */
+export function parameterRevisionSnapshot(points: Array<
+  Pick<ExistingPoint, 'id' | 'name' | 'parameterKey' | 'inspectionType' | 'normalRange' | 'description'>
+>): string {
+  return JSON.stringify(points.map(point => [
+    point.id, point.name, point.parameterKey, point.inspectionType,
+    point.normalRange, point.description,
+  ]).sort((left, right) => String(left[0]).localeCompare(String(right[0]))));
+}
+
 export function parameterRange(param: CommissioningParameter): string {
   return JSON.stringify({ min: param.min, max: param.max, unit: param.unit });
 }

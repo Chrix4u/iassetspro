@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { assertPointRevisionAllowed, hasPermanentPointEvidence, parameterRange, pointChanges } from '@/lib/component-parameter-revision';
+import { assertPointRevisionAllowed, hasPermanentPointEvidence, parameterRange, pointChanges, parameterRevisionSnapshot } from '@/lib/component-parameter-revision';
 const base={id:'p-1',name:'Motor vibration',parameterKey:'vibration',inspectionType:'measurement',
   description:'OEM manual section 4',normalRange:'{"unit":"mm/s","max":4.5,"min":0}',
   _count:{records:0,pmTaskLinks:0}};
 const next={key:'vibration',name:'Motor vibration',inspectionType:'measurement' as const,
   unit:'mm/s',min:0,max:4.5,reference:'OEM manual section 4'};
 describe('OEM part parameter revision safety',()=>{
+  it('rejects stale versions of part checkpoints without relying on row order',()=>{
+    const first=parameterRevisionSnapshot([base,{...base,id:'p-2',name:'Sound'}]);
+    const reordered=parameterRevisionSnapshot([{...base,id:'p-2',name:'Sound'},base]);
+    expect(first).toBe(reordered);
+    expect(parameterRevisionSnapshot([base])).not.toBe(first);
+    expect(parameterRevisionSnapshot([{...base,normalRange:'{"min":0,"max":9,"unit":"mm/s"}'}]))
+      .not.toBe(parameterRevisionSnapshot([base]));
+  });
   it('ignores JSON field order and does not modify unchanged calibrated ranges',()=>{
     expect(pointChanges(base,next)).toBe(false);
     expect(parameterRange(next)).toBe('{"min":0,"max":4.5,"unit":"mm/s"}');
@@ -41,5 +49,7 @@ describe('OEM part parameter revision safety',()=>{
     expect(api).toContain('tx.auditLog.create');
     expect(api).toContain('Serializable');
     expect(api).toContain('getComponentPlantAccess');
+    expect(api).toContain('parameterRevisionSnapshot(existing) !== payload.expectedSnapshot');
+    expect(ui).toContain('unsupportedMethods.length > 0');
   });
 });

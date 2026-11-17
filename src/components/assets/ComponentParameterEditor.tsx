@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CommissioningParameterFields, type ParameterDraft } from '@/components/assets/MachineCommissioningFields';
+import { parameterRevisionSnapshot } from '@/lib/component-parameter-revision';
 
 type PointRow = {
   id: string; name: string; parameterKey: string | null;
@@ -23,6 +24,8 @@ export function ComponentParameterEditor({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [expectedSnapshot, setExpectedSnapshot] = useState('');
+  const [unsupportedMethods, setUnsupportedMethods] = useState<string[]>([]);
 
   const reload = async () => {
     setLoading(true);
@@ -30,6 +33,10 @@ export function ComponentParameterEditor({
     try {
       const response = await api.get<PointRow[]>(`/api/component-registry/${componentId}/inspections`);
       if (!response.success || !response.data) throw Error(response.error || 'Unable to load inspection parameters');
+      const unsupported = [...new Set(response.data.filter(point =>
+        !['visual', 'measurement'].includes(point.inspectionType)).map(point => point.inspectionType))];
+      setUnsupportedMethods(unsupported);
+      setExpectedSnapshot(parameterRevisionSnapshot(response.data));
       const drafts = response.data.map(point => {
         let min: string = '', max: string = '', unit = '';
         if (point.normalRange) {
@@ -56,7 +63,9 @@ export function ComponentParameterEditor({
     setSaving(true);
     setError('');
     try {
+      if (unsupportedMethods.length) throw Error('This part has specialized inspection methods. Edit those checkpoints in the engineering inspection workflow.');
       const result = await api.patch(`/api/component-registry/${componentId}/inspections`, {
+        expectedSnapshot,
         parameters: parameters.map(p => ({
           id: p.id, key: p.key, name: p.name, inspectionType: p.inspectionType,
           unit: p.unit, min: p.min.trim() === '' ? null : Number(p.min),
@@ -85,13 +94,14 @@ export function ComponentParameterEditor({
       {loading ? <div className="flex gap-2 items-center py-4 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin"/>Loading recorded part standards...
       </div> : <>
-        <CommissioningParameterFields subject="part" items={parameters} onChange={setParameters}/>
+        {unsupportedMethods.length > 0 ? <p role="alert" className="text-sm text-amber-700">This part contains specialized inspection methods ({unsupportedMethods.join(", ")}). Its checkpoints are read-only here to protect their method and history; use the dedicated inspection workflow.</p> :
+          <CommissioningParameterFields subject="part" items={parameters} onChange={setParameters}/> }
         {error && <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
           <ShieldAlert className="h-4 w-4 shrink-0"/>{error}
         </p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Close</Button>
-          <Button type="button" onClick={() => void save()} disabled={saving}>
+          <Button type="button" onClick={() => void save()} disabled={saving || unsupportedMethods.length > 0 || !expectedSnapshot}>
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin"/>}Save parameters
           </Button>
         </div>

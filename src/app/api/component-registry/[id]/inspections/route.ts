@@ -5,7 +5,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getComponentPlantAccess } from '@/lib/component-plant-access';
 import { canUpdateComponentHierarchy, canViewComponentHierarchy } from '@/lib/component-registry-permissions';
 import { normalizeCommissioningParameters } from '@/lib/asset-onboarding';
-import { assertPointRevisionAllowed, parameterRange, pointChanges } from '@/lib/component-parameter-revision';
+import { assertPointRevisionAllowed, parameterRange, pointChanges, parameterRevisionSnapshot } from '@/lib/component-parameter-revision';
 
 class PointRevisionConflict extends Error {}
 import { POST as recordPmInspection } from '@/app/api/pm-inspections/[pointId]/records/route';
@@ -109,6 +109,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!Array.isArray(payload.parameters) || payload.parameters.length > 40) {
       return NextResponse.json({ success: false, error: 'Provide an array of up to 40 part parameters' }, { status: 400 });
     }
+    if (typeof payload.expectedSnapshot !== 'string' || payload.expectedSnapshot.length > 20000) {
+      return NextResponse.json({ success: false, error: 'Reload the part before updating its inspection settings' }, { status: 400 });
+    }
     const rows = payload.parameters as Array<Record<string, unknown>>;
     if (rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
       return NextResponse.json({ success: false, error: 'Invalid parameter row' }, { status: 400 });
@@ -133,6 +136,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           parameterKey: true, normalRange: true,
           _count: { select: { records: true, pmTaskLinks: true } } },
       });
+      if (parameterRevisionSnapshot(existing) !== payload.expectedSnapshot) {
+        throw new PointRevisionConflict('This part’s inspection parameters changed after you opened the editor. Reload before saving');
+      }
       const byId = new Map(existing.map(p => [p.id, p]));
       for (const pointId of ids.filter(Boolean)) {
         if (!byId.has(pointId)) {

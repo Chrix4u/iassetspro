@@ -28,6 +28,13 @@ describe('factory machine onboarding — OEM standards and coded hierarchy',()=>
     {name:b,meterType:'runtime',unit:'hours',initialValue:70},
   ])).toHaveLength(2);
  });
+ it('does not confuse an explicitly observed zero with an unrecorded opening value',()=>{
+  const zero=normalizeCommissioningMeters([{name:'Motor Hours',unit:'hours',meterType:'runtime',initialValue:0}])[0];
+  const blank=normalizeCommissioningMeters([{name:'Motor Hours',unit:'hours',meterType:'runtime',initialValue:''}])[0];
+  expect(zero).toMatchObject({initialValue:0,initialReadingProvided:true});
+  expect(blank).toMatchObject({initialValue:0,initialReadingProvided:false});
+  expect(normalizeCommissioningMeters([{name:'Motor Hours',unit:'hours',meterType:'runtime'}])[0].initialReadingProvided).toBe(false);
+ });
  it('does not confuse cumulative running-hours meters with calculated production time',()=>{
   expect(normalizeCommissioningMeters([{name:'Motor running hours',unit:'hours',meterType:'runtime',initialValue:250}])[0].initialValue).toBe(250);
   expect(()=>normalizeCommissioningMeters([{name:'Runtime',unit:'minutes',meterType:'runtime'}])).toThrow('hours');
@@ -58,6 +65,9 @@ describe('factory machine onboarding — OEM standards and coded hierarchy',()=>
   const migration=source('prisma/migrations/20261116180000_asset_meter_component_binding/migration.sql');
   expect(api).toContain('inspectionPoints:{create:');
   expect(api).toContain('tx.assetMeter.createMany');
+  expect(api).toContain('lastReadingAt:m.initialReadingProvided?new Date():null');
+  expect(source('src/app/api/assets/onboard-bulk/route.ts')).toContain('lastReadingAt:d.initialReadingProvided?new Date():null');
+  expect(source('src/components/assets/MachineCommissioningFields.tsx')).toContain("initialValue:''");
   expect(api).toContain('db.$transaction');
   expect(schema).toContain('componentId   String?');
   expect(migration).toContain('FOREIGN KEY ("componentId")');

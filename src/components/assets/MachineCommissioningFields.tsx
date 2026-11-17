@@ -14,7 +14,7 @@ export type MeterDraft={name:string;meterType:string;unit:string;initialValue:st
 export const blankParameter=():ParameterDraft=>({
   key:'',name:'',inspectionType:'measurement',unit:'',min:'',max:'',reference:'',
 });
-export const blankMeter=():MeterDraft=>({name:'',meterType:'runtime',unit:'hours',initialValue:'0'});
+export const blankMeter=():MeterDraft=>({name:'',meterType:'runtime',unit:'hours',initialValue:''});
 const updateAt=<T,>(items:T[],index:number,patch:Partial<T>)=>items.map((item,i)=>i===index?{...item,...patch}:item);
 
 export function CommissioningParameterFields({items,onChange,subject='machine'}:{
@@ -49,14 +49,14 @@ export function CommissioningMeterFields({items,onChange,subject='machine'}:{
 }){
   return <section className="space-y-3 rounded-lg border p-3" data-testid="commissioning-meters">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><h3 className="text-sm font-semibold">{subject==='machine'?'Machine':'Part'} meters</h3><p className="text-xs text-muted-foreground">Register physical cumulative counters for usage-based PM; initial values must be measured. Part meters are uniquely identified by their part code in the PM meter list.</p></div>
+      <div><h3 className="text-sm font-semibold">{subject==='machine'?'Machine':'Part'} meters</h3><p className="text-xs text-muted-foreground">Register cumulative counters for usage-based PM. Leave the opening reading blank if unknown; enter 0 only when actually observed. Part meters are uniquely identified by their part code in the PM meter list.</p></div>
       <Button size="sm" type="button" variant="outline" onClick={()=>onChange([...items,blankMeter()])}><Plus className="mr-1 h-3.5 w-3.5"/>Add meter</Button>
     </div>
     {items.map((m,i)=><div key={i} className="grid gap-2 rounded-md border p-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
       <div className="space-y-1"><Label>Meter name *</Label><Input value={m.name} placeholder="Motor run hours" onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
       <div className="space-y-1"><Label>Type</Label><Select value={m.meterType} onValueChange={v=>onChange(updateAt(items,i,{meterType:v,unit:v==='runtime'?'hours':m.unit}))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{['runtime','cycles','production','energy','distance','general'].map(v=><SelectItem key={v} value={v}>{v==='runtime'?'Running hours':v}</SelectItem>)}</SelectContent></Select></div>
       <div className="space-y-1"><Label>Unit *</Label><Input value={m.unit} onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
-      <div className="space-y-1"><Label>Observed initial reading</Label><Input type="number" min="0" step="any" value={m.initialValue} onChange={e=>onChange(updateAt(items,i,{initialValue:e.target.value}))}/></div>
+      <div className="space-y-1"><Label>Observed initial reading (optional)</Label><Input type="number" min="0" step="any" placeholder="Blank = not yet measured" value={m.initialValue} onChange={e=>onChange(updateAt(items,i,{initialValue:e.target.value}))}/></div>
       <Button type="button" variant="ghost" size="icon" className="self-end" aria-label={'Remove meter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
     </div>)}
     {!items.length&&<p className="text-sm text-muted-foreground">No meters yet. You can add them later under the asset's Meters tab.</p>}

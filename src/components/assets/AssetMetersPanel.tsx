@@ -43,7 +43,7 @@ export function AssetMetersPanel({
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('');
   const [meterType, setMeterType] = useState('general');
-  const [initialReading, setInitialReading] = useState('0');
+  const [initialReading, setInitialReading] = useState('');
   const [readingMeterId, setReadingMeterId] = useState<string | null>(null);
   const [readingValue, setReadingValue] = useState('');
   const [readingDate, setReadingDate] = useState('');
@@ -67,8 +67,8 @@ export function AssetMetersPanel({
 
   const addMeter = async () => {
     if (!name.trim() || !unit.trim()) { toast.error('Meter name and unit are required'); return; }
-    const initialValue = Number(initialReading || 0);
-    if (!Number.isFinite(initialValue)) { toast.error('Initial reading must be numeric'); return; }
+    const initialValue = initialReading.trim() === '' ? null : Number(initialReading);
+    if (initialValue !== null && (!Number.isFinite(initialValue) || initialValue < 0)) { toast.error('Initial reading must be a nonnegative number'); return; }
     setSaving(true);
     try {
       const response = await api.post(`/api/assets/${encodeURIComponent(assetId)}/meters`, {
@@ -79,7 +79,7 @@ export function AssetMetersPanel({
       });
       if (!response.success) throw new Error(response.error || 'Failed to add meter');
       toast.success('Asset meter added');
-      setName(''); setUnit(''); setMeterType('general'); setInitialReading('0');
+      setName(''); setUnit(''); setMeterType('general'); setInitialReading('');
       await loadMeters();
       onChanged?.();
     } catch (error) {
@@ -138,7 +138,7 @@ export function AssetMetersPanel({
             </Select>
           </div>
           <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Unit</Label><Input className="h-8 text-xs" value={unit} onChange={(event) => setUnit(event.target.value)} placeholder={meterType === 'production' ? 'tonnes, yards, pieces' : 'hours'} /></div>
-          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Initial reading</Label><Input className="h-8 text-xs" type="number" step="any" value={initialReading} onChange={(event) => setInitialReading(event.target.value)} /></div>
+          <div className="space-y-1"><Label className="text-[10px] uppercase text-muted-foreground">Observed initial reading (blank if unknown)</Label><Input className="h-8 text-xs" type="number" step="any" value={initialReading} onChange={(event) => setInitialReading(event.target.value)} /></div>
           <div className="flex items-end"><Button type="button" size="sm" className="h-8 w-full" onClick={addMeter} disabled={saving || !assetId}><Plus className="mr-1 h-3.5 w-3.5" />Add Meter</Button></div>
         </div>
       )}

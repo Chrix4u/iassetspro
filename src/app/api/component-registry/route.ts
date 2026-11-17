@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
     if(parsedMeters.length&&assetId){
       await tx.assetMeter.createMany({data:parsedMeters.map(m=>({
         assetId,componentId:created.id,name:partMeterName(String(componentCode),m.name),unit:m.unit,meterType:m.meterType,
-        currentValue:m.initialValue,lastReadingAt:m.initialValue!==0?new Date():null,
+        currentValue:m.initialValue,lastReadingAt:m.initialReadingProvided?new Date():null,
         createdById:session.userId,
       }))});
     }

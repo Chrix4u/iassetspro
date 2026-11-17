@@ -126,6 +126,9 @@ async function evaluateUbm(input: ScheduledTaskDueInput): Promise<ScheduledTaskD
     if (!meter || !meter.isActive || meter.assetId !== input.assetId || meter.name !== task.meterName || meter.unit !== task.frequencyUnit || value === null) {
       return result(task, false, 'ubm_source_unavailable', cycleKey);
     }
+    if (!meter.lastReadingAt) {
+      return result(task, false, 'ubm_source_unobserved', cycleKey);
+    }
     const source: ScheduledTaskDueSource = {
       type: 'meter',
       sourceId: meter.id,

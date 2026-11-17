@@ -327,17 +327,22 @@ export async function syncPmScheduledTasks(
     }
     const existing = existingById || byTaskId.get(task.pmTaskId);
 
-    // A machine or part meter becomes a valid PM source immediately on
-    // commissioning, even before its first subsequent meter-reading record.
+    // An explicitly observed opening value (including 0) is usable before
+    // subsequent readings. An unobserved default 0 is NOT a PM baseline.
     // Keep legacy reading-backed schedules working when no registered meter exists.
     let selectedMeterId: string | null = null;
     if (task.maintenanceMode === 'ubm') {
       const registered = await tx.assetMeter.findFirst({
         where: { assetId: input.assetId, name: task.meterName!, unit: task.frequencyUnit!, isActive: true },
-        select: { id: true, componentId: true, currentValue: true },
+        select: { id: true, componentId: true, currentValue: true, lastReadingAt: true },
       });
       if (registered?.componentId && registered.componentId !== input.componentId) {
         throw new PmScheduleTaskValidationError('Selected part meter belongs to a different component than this PM schedule target');
+      }
+      if (registered && !registered.lastReadingAt) {
+        throw new PmScheduleTaskValidationError(
+          'Record an observed opening meter reading before scheduling usage-based PM for this machine or part',
+        );
       }
       selectedMeterId = registered?.id ?? null;
       const reading = registered ? null : await tx.meterReading.findFirst({

@@ -142,8 +142,8 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  const decrease=await request.patch(meterUrl,{headers,data:{value:5}});
  expect(decrease.status(),await decrease.text()).toBe(400);
  const oldDate=new Date(new Date(observed.lastReadingAt).getTime()-60_000).toISOString();
- const stale=await request.patch(meterUrl,{headers,data:{value:12,readingDate:oldDate}});
- expect(stale.status(),await stale.text()).toBe(400);
+ const staleMeterReading=await request.patch(meterUrl,{headers,data:{value:12,readingDate:oldDate}});
+ expect(staleMeterReading.status(),await staleMeterReading.text()).toBe(400);
  const missingValue=await request.patch(meterUrl,{headers,data:{value:''}});
  expect(missingValue.status(),await missingValue.text()).toBe(400);
  const after=await request.get('/api/assets/'+machineId+'/meters',{headers});

@@ -71,6 +71,36 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(checks.status(),await checks.text()).toBe(200);
  const rows=(await checks.json()).data;
  expect(rows.some((row:{name:string;normalRange:string})=>row.name==='Vibration'&&JSON.parse(row.normalRange).max===4.2)).toBe(true);
+
+ // Authoritative parameter editing reuses the exact commissioned part and
+ // does not require a second machine registration or overwrite field evidence.
+ const vibration=rows.find((row:{name:string})=>row.name==='Vibration') as {
+   id:string;name:string;parameterKey:string;inspectionType:string;normalRange:string;
+ };
+ expect(vibration?.id).toBeTruthy();
+ const revisionData={parameters:[{
+   id:vibration.id,key:vibration.parameterKey,name:vibration.name,
+   inspectionType:'measurement',unit:'mm/s',min:0,max:5.2,
+   reference:'CI-approved simulated engineering revision before first field reading',
+ }]};
+ const changed=await request.patch('/api/component-registry/'+part!.id+'/inspections',{
+   headers,data:revisionData,
+ });
+ expect(changed.status(),await changed.text()).toBe(200);
+ expect((await changed.json()).data).toMatchObject({revised:1});
+ const revised=await request.get('/api/component-registry/'+part!.id+'/inspections',{headers});
+ expect(revised.status()).toBe(200);
+ expect((await revised.json()).data.some((point:{id:string;normalRange:string})=>
+   point.id===vibration.id&&JSON.parse(point.normalRange).max===5.2)).toBe(true);
+ const rejected=await request.patch('/api/component-registry/'+part!.id+'/inspections',{
+   headers,data:{parameters:[{...revisionData.parameters[0],min:30,max:4}]},
+ });
+ expect(rejected.status()).toBe(400);
+ const anonymous=await request.patch('/api/component-registry/'+part!.id+'/inspections',{
+   data:revisionData,
+ });
+ expect(anonymous.status()).toBe(401);
+
  const meter=await request.get('/api/assets/'+machineId+'/meters',{headers});
  expect(meter.status(),await meter.text()).toBe(200);
  expect((await meter.json()).data.some((r:{componentId:string;currentValue:number;name:string})=>

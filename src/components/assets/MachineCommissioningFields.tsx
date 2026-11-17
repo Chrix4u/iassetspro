@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ParameterDraft={
-  key:string;name:string;inspectionType:'measurement'|'visual';unit:string;
+  id?:string;key:string;name:string;inspectionType:'measurement'|'visual';unit:string;
   min:string;max:string;reference:string;
 };
 export type MeterDraft={name:string;meterType:string;unit:string;initialValue:string};

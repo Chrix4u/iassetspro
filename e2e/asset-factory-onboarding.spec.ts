@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {parameterRevisionSnapshot} from '../src/lib/component-parameter-revision';
 
 test('isolated UAT: factory workbook atomically commissions machine, coded location, parts, OEM limits and part meters',async ({request})=>{
  test.skip(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
@@ -71,6 +72,54 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(checks.status(),await checks.text()).toBe(200);
  const rows=(await checks.json()).data;
  expect(rows.some((row:{name:string;normalRange:string})=>row.name==='Vibration'&&JSON.parse(row.normalRange).max===4.2)).toBe(true);
+ // Controlled part commissioning: add a new OEM checkpoint without rebuilding the part.
+ const vibration=rows.find((row:{name:string})=>row.name==='Vibration');
+ expect(vibration?.id).toBeTruthy();
+ const baseline=parameterRevisionSnapshot(rows);
+ const revisedDefinition={
+  id:vibration.id,key:vibration.parameterKey||'vibration',name:vibration.name,
+  inspectionType:'measurement',unit:'mm/s',min:0,max:4.2,reference:'CI-only threshold',
+ };
+ const revision=await request.patch('/api/component-registry/'+part!.id+'/inspections',{headers,data:{
+  expectedSnapshot:baseline,parameters:[
+   revisedDefinition,
+   {name:'Sound',inspectionType:'measurement',unit:'dB',min:0,max:85,reference:'CI-only acoustic limit'},
+  ],
+ }});
+ expect(revision.status(),await revision.text()).toBe(200);
+ expect((await revision.json()).data).toMatchObject({added:1,retained:1});
+ const stale=await request.patch('/api/component-registry/'+part!.id+'/inspections',{headers,data:{
+  expectedSnapshot:baseline,parameters:[revisedDefinition],
+ }});
+ expect(stale.status(),await stale.text()).toBe(409);
+ const revisedRead=await request.get('/api/component-registry/'+part!.id+'/inspections',{headers});
+ expect(revisedRead.status()).toBe(200);
+ const revisedPoints=(await revisedRead.json()).data;
+ expect(revisedPoints.some((row:{name:string})=>row.name==='Sound')).toBe(true);
+ const recorded=await request.post('/api/component-registry/'+part!.id+'/inspections',{headers,data:{
+  inspectionPointId:vibration.id,result:'pass',value:'2.5',findings:'Isolated CI verified instrument check',
+ }});
+ expect(recorded.status(),await recorded.text()).toBe(201);
+ const locked=await request.patch('/api/component-registry/'+part!.id+'/inspections',{headers,data:{
+  expectedSnapshot:parameterRevisionSnapshot(revisedPoints),
+  parameters:[{...revisedDefinition,max:8},{
+   name:'Sound',inspectionType:'measurement',unit:'dB',min:0,max:85,reference:'CI-only acoustic limit',
+   id:revisedPoints.find((row:{name:string})=>row.name==='Sound').id,
+  }],
+ }});
+ expect(locked.status(),await locked.text()).toBe(409);
+
+ // Rejected engineering limits must not modify recorded checkpoints.
+ const rejected=await request.patch('/api/component-registry/'+part!.id+'/inspections',{
+  headers,data:{expectedSnapshot:parameterRevisionSnapshot(revisedPoints),
+   parameters:[{...revisedDefinition,min:30,max:4}]},
+ });
+ expect(rejected.status(),await rejected.text()).toBe(400);
+ const anonymous=await request.patch('/api/component-registry/'+part!.id+'/inspections',{
+  data:{expectedSnapshot:parameterRevisionSnapshot(revisedPoints),parameters:[revisedDefinition]},
+ });
+ expect(anonymous.status()).toBe(401);
+
  const meter=await request.get('/api/assets/'+machineId+'/meters',{headers});
  expect(meter.status(),await meter.text()).toBe(200);
  expect((await meter.json()).data.some((r:{componentId:string;currentValue:number;name:string})=>

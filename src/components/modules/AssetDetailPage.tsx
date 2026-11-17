@@ -30,6 +30,7 @@ import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel';
 import { AssetMetersPanel } from '@/components/assets/AssetMetersPanel';
 import { CommissioningParameterFields,CommissioningMeterFields,type ParameterDraft,type MeterDraft } from '@/components/assets/MachineCommissioningFields';
+import { ComponentParameterEditor } from '@/components/assets/ComponentParameterEditor';
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -67,6 +68,10 @@ export function AssetDetailPage({ id }: { id: string }) {
     || hasPermission('digital_twin.manage')
     || (hasPermission('assets.hierarchy')
       && (hasPermission('assets.create') || hasPermission('assemblies.create')));
+  const canEditComponentParameters = isAdmin()
+    || hasPermission('digital_twin.manage')
+    || (hasPermission('assets.hierarchy')
+      && (hasPermission('assets.update') || hasPermission('assemblies.update')));
 
   const [activeTab, setActiveTab] = useState('overview');
   const [asset, setAsset] = useState<any>(null);
@@ -95,6 +100,7 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Create dialogs
   const [showComponentForm, setShowComponentForm] = useState(false);
+  const [editingParameterComponent,setEditingParameterComponent] = useState<{id:string;code:string}|null>(null);
   const [showHierarchyCommissioning, setShowHierarchyCommissioning] = useState(false);
   const [showTwinForm, setShowTwinForm] = useState(false);
   const [showDiagramForm, setShowDiagramForm] = useState(false);
@@ -125,6 +131,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     setSelectedComponentId('');
     setVisualFocusId(null);
     setShowComponentForm(false);
+    setEditingParameterComponent(null);
     setShowHierarchyCommissioning(false);
     setComponentSpareParts([]);
     setComponentTools([]);
@@ -1069,6 +1076,13 @@ export function AssetDetailPage({ id }: { id: string }) {
                 />
               )}
 
+              {editingParameterComponent && canEditComponentParameters && (
+                <ComponentParameterEditor key={editingParameterComponent.id}
+                  componentId={editingParameterComponent.id}
+                  componentCode={editingParameterComponent.code}
+                  onClose={() => setEditingParameterComponent(null)}/>
+              )}
+
               {/* Add Component Form */}
               {showComponentForm && canCreateComponent && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -1241,6 +1255,13 @@ export function AssetDetailPage({ id }: { id: string }) {
                                   >
                                     Explore
                                   </Button>
+                                  {canEditComponentParameters && (
+                                    <Button variant="outline" size="sm" onClick={() => {
+                                      setEditingParameterComponent({id:c.id,code:c.componentCode});
+                                      setShowComponentForm(false);
+                                      setShowHierarchyCommissioning(false);
+                                    }}>Parameters</Button>
+                                  )}
                                   <Button variant="ghost" size="sm" onClick={() => printComponentLabel(c)}>Print Label</Button>
                                   <Button
                                     variant="outline"

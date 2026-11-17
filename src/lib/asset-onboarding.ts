@@ -13,6 +13,8 @@ export type CommissioningMeter = {
   meterType: string;
   unit: string;
   initialValue: number;
+  /** Explicit opening observation, including a verified zero. */
+  initialReadingProvided: boolean;
 };
 const types = new Set(['general', 'runtime', 'cycles', 'production', 'energy', 'distance']);
 const text=(value:unknown)=>typeof value === 'string'?value.trim():'';
@@ -50,7 +52,8 @@ export function normalizeCommissioningMeters(value:unknown):CommissioningMeter[]
   return value.map((item,index)=>{
     if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid meter at row '+(index+1));
     const r=item as Record<string,unknown>,name=text(r.name),unit=text(r.unit),meterType=(text(r.meterType)||'general').toLowerCase();
-    const initialValue=r.initialValue==null||r.initialValue===''?0:Number(r.initialValue);
+    const initialReadingProvided=r.initialValue!==null&&r.initialValue!==undefined&&r.initialValue!=='';
+    const initialValue=initialReadingProvided?Number(r.initialValue):0;
     if(!name||!unit||name.length>120||unit.length>32||!types.has(meterType)||!Number.isFinite(initialValue)||initialValue<0)
       throw new Error('Invalid meter name, type, unit or initial value at row '+(index+1));
     if(meterType==='runtime'&&!['h','hr','hrs','hour','hours'].includes(unit.toLowerCase()))
@@ -58,7 +61,7 @@ export function normalizeCommissioningMeters(value:unknown):CommissioningMeter[]
     const key=name.toLowerCase()+'|'+unit.toLowerCase();
     if(seen.has(key))throw new Error('Duplicate meter '+name+' ('+unit+')');
     seen.add(key);
-    return {name,unit,meterType,initialValue};
+    return {name,unit,meterType,initialValue,initialReadingProvided};
   });
 }
 export function mergeMachineSpecification(current:unknown,params:CommissioningParameter[]):string {

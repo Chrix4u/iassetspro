@@ -42,7 +42,11 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
     unit:'°C',min:0,max:90,reference:'CI reference only'},
    {ownerType:'part',ownerCode:partCode,name:'Vibration',inspectionType:'measurement',
     unit:'mm/s',min:0,max:4.2,reference:'CI-only threshold'}],
-  Meters:[{ownerType:'part',ownerCode:partCode,name:'Motor running hours '+suffix,meterType:'runtime',unit:'hours',initialValue:155}],
+  Meters:[
+   {ownerType:'part',ownerCode:partCode,name:'Motor running hours '+suffix,meterType:'runtime',unit:'hours',initialValue:155},
+   {ownerType:'part',ownerCode:partCode,name:'Zero running hours '+suffix,meterType:'runtime',unit:'hours',initialValue:0},
+   {ownerType:'machine',ownerCode:machineCode,name:'Unobserved hours '+suffix,meterType:'runtime',unit:'hours',initialValue:''},
+  ],
   Visuals:[],
  };
  const invalid=await request.post('/api/assets/onboard-bulk',{headers,data:{
@@ -52,7 +56,7 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect((await missing.json()).data.some((a:{assetTag:string})=>a.assetTag===machineCode)).toBe(false);
  const dry=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:true}});
  expect(dry.status(),await dry.text()).toBe(200);
- expect((await dry.json()).data.counts).toMatchObject({machines:1,parts:1,parameters:2,meters:1});
+ expect((await dry.json()).data.counts).toMatchObject({machines:1,parts:1,parameters:2,meters:3});
  const commit=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(commit.status(),await commit.text()).toBe(201);
  const imported=(await commit.json()).data;
@@ -124,6 +128,13 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(meter.status(),await meter.text()).toBe(200);
  expect((await meter.json()).data.some((r:{componentId:string;currentValue:number;name:string})=>
   r.componentId===part!.id&&r.currentValue===155&&r.name.startsWith(partCode+' · '))).toBe(true);
+ const registered=(await meter.json()).data;
+ const observed=registered.find((x:{name:string})=>x.name===partCode+' · Zero running hours '+suffix);
+ const unobserved=registered.find((x:{name:string})=>x.name==='Unobserved hours '+suffix);
+ expect(observed?.currentValue).toBe(0);
+ expect(observed?.lastReadingAt).toBeTruthy();
+ expect(unobserved?.currentValue).toBe(0);
+ expect(unobserved?.lastReadingAt).toBeNull();
  const duplicate=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(duplicate.status()).toBe(409);
 });

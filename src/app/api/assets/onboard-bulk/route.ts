@@ -137,7 +137,7 @@ export async function POST(request:NextRequest){
         reason:'Verified factory onboarding workbook'}},
        ...(meterDefs.length?{assetMeters:{create:meterDefs.map(d=>({
          name:d.name,meterType:d.meterType,unit:d.unit,currentValue:d.initialValue,
-         lastReadingAt:d.initialValue?new Date():null,createdById:session.userId,
+         lastReadingAt:d.initialReadingProvided?new Date():null,createdById:session.userId,
        }))}}:{}),
       },select:{id:true}});
       assetIds.set(code,asset.id);
@@ -160,7 +160,7 @@ export async function POST(request:NextRequest){
       if(defsMeter.length)await tx.assetMeter.createMany({data:defsMeter.map(d=>({
        assetId:assetIds.get(str(p.machineCode))!,componentId:created.id,
        name:partMeterName(code,d.name),meterType:d.meterType,unit:d.unit,currentValue:d.initialValue,
-       lastReadingAt:d.initialValue?new Date():null,createdById:session.userId,
+       lastReadingAt:d.initialReadingProvided?new Date():null,createdById:session.userId,
       }))});
     }
     for(const v of visuals){

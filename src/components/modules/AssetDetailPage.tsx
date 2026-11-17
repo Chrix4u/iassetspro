@@ -383,7 +383,7 @@ export function AssetDetailPage({ id }: { id: string }) {
         inspectionParameters:componentParameters.map(p=>({...p,
           min:p.min.trim()?Number(p.min):null,max:p.max.trim()?Number(p.max):null})),
         ...(canCreateMeters?{componentMeters:componentMeters.map(m=>({...m,
-          initialValue:Number(m.initialValue||0)}))}:{ }),
+          initialValue:m.initialValue.trim()===''?null:Number(m.initialValue)}))}:{ }),
         healthScore: 100,
         lifecycleStatus: 'operational',
         expectedLifeHours: compForm.expectedLifeHours ? parseFloat(compForm.expectedLifeHours) : null,

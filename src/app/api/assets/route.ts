@@ -308,7 +308,7 @@ export async function POST(request: NextRequest) {
         }}} : {}),
         ...(commissioningMeters.length?{assetMeters:{create:commissioningMeters.map(m=>({
           name:m.name,unit:m.unit,meterType:m.meterType,currentValue:m.initialValue,
-          lastReadingAt:m.initialValue!==0?new Date():null,createdById:session.userId,
+          lastReadingAt:m.initialReadingProvided?new Date():null,createdById:session.userId,
         }))}}:{}),
       },
       include: {

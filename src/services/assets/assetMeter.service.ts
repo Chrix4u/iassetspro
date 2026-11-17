@@ -7,6 +7,7 @@ export type NormalizedAssetMeterInput = {
   unit: string;
   meterType: string;
   initialValue: number;
+  initialReadingProvided: boolean;
 };
 
 export type NormalizeAssetMeterInputResult =
@@ -27,11 +28,10 @@ export function normalizeAssetMeterInput(input: unknown): NormalizeAssetMeterInp
   const unit = text(raw.unit);
   if (!unit) return { ok: false, error: 'Meter unit is required' };
   const meterType = text(raw.meterType).toLowerCase() || 'general';
-  const initialRaw = raw.initialValue === undefined || raw.initialValue === null || raw.initialValue === ''
-    ? 0
-    : Number(raw.initialValue);
-  if (!Number.isFinite(initialRaw)) return { ok: false, error: 'Initial reading must be numeric' };
-  return { ok: true, value: { name, unit, meterType, initialValue: initialRaw } };
+  const initialReadingProvided = raw.initialValue !== undefined && raw.initialValue !== null && raw.initialValue !== '';
+  const initialRaw = initialReadingProvided ? Number(raw.initialValue) : 0;
+  if (!Number.isFinite(initialRaw) || initialRaw < 0) return { ok: false, error: 'Initial reading must be a nonnegative number' };
+  return { ok: true, value: { name, unit, meterType, initialValue: initialRaw, initialReadingProvided } };
 }
 
 export async function listAssetMeters(client: AssetMeterClient, assetId: string) {
@@ -47,7 +47,7 @@ export async function createAssetMeter(
 ) {
   const normalized = normalizeAssetMeterInput(input.definition);
   if (!normalized.ok) throw new Error(normalized.error);
-  const { name, unit, meterType, initialValue } = normalized.value;
+  const { name, unit, meterType, initialValue, initialReadingProvided } = normalized.value;
   return client.assetMeter.create({
     data: {
       assetId: input.assetId,
@@ -55,7 +55,7 @@ export async function createAssetMeter(
       unit,
       meterType,
       currentValue: initialValue,
-      lastReadingAt: initialValue !== 0 ? new Date() : null,
+      lastReadingAt: initialReadingProvided ? new Date() : null,
       createdById: input.actorId,
     },
   });

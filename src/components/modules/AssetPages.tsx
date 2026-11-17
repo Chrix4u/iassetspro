@@ -222,7 +222,7 @@ export function AssetsPage() {
       machineParameters:machineParameters.map(p=>({...p,
         min:p.min.trim()?Number(p.min):null,max:p.max.trim()?Number(p.max):null})),
       ...(!editId&&canCreateMeters?{meters:machineMeters.map(m=>({...m,
-        initialValue:Number(m.initialValue||0)}))}:{ }),
+        initialValue:m.initialValue.trim()===''?null:Number(m.initialValue)}))}:{ }),
       ...(!editId?{functionalLocationId}:{}), purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
     const res = editId
       ? await api.put(`/api/assets/${editId}`, payload)

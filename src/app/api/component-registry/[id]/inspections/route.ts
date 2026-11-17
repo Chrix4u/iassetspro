@@ -129,6 +129,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const plant = await db.componentRegistry.findUnique({
       where: { id }, select: { asset: { select: { plantId: true } } },
     });
+    // A maintainable checkpoint must belong to a real machine/plant.
+    // Generic canAccessPlant tolerates null for shared catalog records; this
+    // operational editor must fail closed for orphaned parts.
+    if (!plant?.asset?.plantId) {
+      return NextResponse.json({ success: false,
+        error: 'Part must be assigned to a machine and plant before configuring inspection parameters' },
+        { status: 422 });
+    }
     const result = await db.$transaction(async tx => {
       const existing = await tx.componentInspectionPoint.findMany({
         where: { componentId: id, isActive: true },

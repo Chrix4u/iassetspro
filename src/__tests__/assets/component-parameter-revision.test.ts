@@ -49,6 +49,7 @@ describe('OEM part parameter revision safety',()=>{
     expect(api).toContain('tx.auditLog.create');
     expect(api).toContain('Serializable');
     expect(api).toContain('getComponentPlantAccess');
+    expect(api).toContain('if (!plant?.asset?.plantId)');
     expect(api).toContain('parameterRevisionSnapshot(existing) !== payload.expectedSnapshot');
     expect(ui).toContain('unsupportedMethods.length > 0');
   });

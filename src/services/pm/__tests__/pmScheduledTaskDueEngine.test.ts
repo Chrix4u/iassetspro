@@ -175,6 +175,26 @@ describe('pmScheduledTaskDueEngine', () => {
     expect(client.componentConditionReading.findFirst).not.toHaveBeenCalled();
   });
 
+  it('never makes a PM cycle due from an unobserved default zero', async () => {
+    const meter = { id: 'meter-1', assetId: 'asset-1', name: 'Running Hours',
+      unit: 'h', currentValue: 0, lastReadingAt: null, isActive: true };
+    const input = baseInput({ task: task({
+      scheduleId: null, assetId: 'asset-1', assetMeterId: 'meter-1', basis: 'meter',
+      maintenanceMode: 'ubm', meterName: 'Running Hours',
+      frequencyUnit: 'h', nextDueReading: 100, nextDueDate: null,
+    }) });
+    client.assetMeter.findUnique.mockResolvedValue(meter);
+    expect(await evaluate(input)).toMatchObject({
+      due: false, reason: 'ubm_source_unobserved', currentValue: null,
+    });
+    client.assetMeter.findUnique.mockResolvedValue({
+      ...meter, lastReadingAt: new Date('2026-10-26T11:30:00Z'),
+    });
+    expect(await evaluate(input)).toMatchObject({
+      due: false, reason: 'ubm_not_due', currentValue: 0,
+    });
+  });
+
   it('fails closed when the persisted UBM meter is unavailable', async () => {
     client.meterReading.findFirst.mockResolvedValue(null);
     const result = await evaluate(baseInput({

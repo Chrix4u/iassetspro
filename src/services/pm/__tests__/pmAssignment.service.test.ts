@@ -21,7 +21,7 @@ describe('direct PM assignment service', () => {
     tx.asset.findUnique.mockResolvedValue({ id: 'asset-1', plantId: 'plant-1' });
     tx.componentRegistry.findUnique.mockResolvedValue({ id: 'component-1', assetId: 'asset-1' });
     tx.pmTask.findUnique.mockResolvedValue({ id: 'task-1', plantId: 'plant-1', isActive: true });
-    tx.assetMeter.findUnique.mockResolvedValue({ id: 'meter-1', assetId: 'asset-1', name: 'Running Hours', unit: 'h', currentValue: 3240, isActive: true });
+    tx.assetMeter.findUnique.mockResolvedValue({ id: 'meter-1', assetId: 'asset-1', name: 'Running Hours', unit: 'h', currentValue: 3240, lastReadingAt: new Date('2026-11-16T10:00:00Z'), isActive: true });
     tx.pmScheduleTask.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'assignment-1', ...data }));
   });
 
@@ -94,6 +94,27 @@ describe('direct PM assignment service', () => {
     expect(batchTx.pmScheduleTask.create.mock.calls[0][0].data).toEqual(expect.objectContaining({ assetId: 'asset-1', componentId: 'component-1', pmTaskId: 'task-1', frequencyInterval: 30 }));
     expect(batchTx.pmScheduleTask.create.mock.calls[1][0].data).toEqual(expect.objectContaining({ assetId: 'asset-1', componentId: 'component-1', pmTaskId: 'task-1', frequencyInterval: 90 }));
     expect(batchTx.auditLog.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a meter whose opening value was never observed; allows an explicitly recorded zero', async () => {
+    const data = { ...base, pmType: 'ubm', basis: 'meter',
+      assetMeterId: 'meter-1', value: 500, unit: null, nextDueDate: null };
+    tx.assetMeter.findUnique.mockResolvedValueOnce({
+      id: 'meter-1', assetId: 'asset-1', name: 'Run Hours', unit: 'hours',
+      currentValue: 0, isActive: true, lastReadingAt: null,
+    });
+    await expect(createPmAssignment(tx as never, {
+      plantId: 'plant-1', actorId: 'planner-1', input: data,
+    })).rejects.toThrow(/observed opening meter reading/i);
+    expect(tx.pmScheduleTask.create).not.toHaveBeenCalled();
+    tx.assetMeter.findUnique.mockResolvedValueOnce({
+      id: 'meter-1', assetId: 'asset-1', name: 'Run Hours', unit: 'hours',
+      currentValue: 0, isActive: true, lastReadingAt: new Date('2026-11-16T10:00:00Z'),
+    });
+    await createPmAssignment(tx as never, { plantId: 'plant-1', actorId: 'planner-1', input: data });
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ meterName: 'Run Hours', nextDueReading: 500 }),
+    });
   });
 
   it('does not allow a PM planner to bind a different component meter to this target', async () => {

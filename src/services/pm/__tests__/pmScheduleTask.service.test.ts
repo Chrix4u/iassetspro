@@ -245,7 +245,7 @@ describe('pmScheduleTask.service', () => {
 
   it('makes a newly commissioned part meter an immediate scheduled UBM source without a second reading', async () => {
     tx.assetMeter.findFirst.mockResolvedValue({
-      id: 'commissioned-meter-1', componentId: 'bearing-1', currentValue: 1250,
+      id: 'commissioned-meter-1', componentId: 'bearing-1', currentValue: 1250, lastReadingAt: stamp,
     });
     tx.meterReading.findFirst.mockResolvedValue(null);
     await syncPmScheduledTasks(tx as never, {
@@ -262,6 +262,25 @@ describe('pmScheduleTask.service', () => {
     expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       assetMeterId: 'commissioned-meter-1', componentId: 'bearing-1', nextDueReading: 1750,
     }) });
+  });
+
+  it('rejects an unobserved default zero as a PM baseline but accepts a measured zero', async () => {
+    const zero = { id: 'meter-zero', componentId: null, currentValue: 0, lastReadingAt: null };
+    tx.assetMeter.findFirst.mockResolvedValue(zero);
+    const input = {
+      scheduleId: 'schedule-1', plantId: 'plant-1', assetId: 'asset-1', componentId: null,
+      tasks: [baseTbm({
+        maintenanceMode: 'ubm', frequencyInterval: 100, frequencyUnit: 'hours',
+        meterName: 'Running hours', nextDueDate: null, nextDueReading: null,
+      })],
+    };
+    await expect(syncPmScheduledTasks(tx as never, input)).rejects.toThrow(/observed opening meter reading/i);
+    expect(tx.pmScheduleTask.create).not.toHaveBeenCalled();
+    tx.assetMeter.findFirst.mockResolvedValue({ ...zero, lastReadingAt: stamp });
+    await syncPmScheduledTasks(tx as never, input);
+    expect(tx.pmScheduleTask.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ assetMeterId: 'meter-zero', nextDueReading: 100 }),
+    });
   });
 
   it('rejects using a meter from another part for a different component or the whole machine', async () => {

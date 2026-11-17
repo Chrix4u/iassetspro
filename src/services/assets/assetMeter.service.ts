@@ -61,6 +61,42 @@ export async function createAssetMeter(
   });
 }
 
+/**
+ * Authoritative cumulative meters must progress in value and observation time.
+ * Never turn an empty or invalid reading into zero. A physical counter reset
+ * requires a separately audited replacement workflow, not a normal reading.
+ */
+export function validateAssetMeterReading(
+  meter: { currentValue: number; lastReadingAt: Date | null },
+  rawValue: unknown,
+  rawDate?: unknown,
+  now = new Date(),
+): { value: number; readingDate: Date; previousValue: number } {
+  if (rawValue === undefined || rawValue === null
+    || (typeof rawValue === 'string' && rawValue.trim() === '')) {
+    throw new Error('Reading value is required');
+  }
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error('Reading value must be a nonnegative number');
+  }
+  const readingDate = rawDate === undefined || rawDate === null || rawDate === ''
+    ? now : new Date(String(rawDate));
+  if (Number.isNaN(readingDate.getTime())) throw new Error('Reading date is invalid');
+  if (readingDate.getTime() > now.getTime() + 5 * 60_000) {
+    throw new Error('Reading date cannot be more than five minutes in the future');
+  }
+  if (meter.lastReadingAt && readingDate.getTime() <= meter.lastReadingAt.getTime()) {
+    throw new Error('Reading date must be later than the previous meter observation');
+  }
+  const previousValue = Number(meter.currentValue);
+  if (!Number.isFinite(previousValue)) throw new Error('Stored meter value is invalid');
+  if (value < previousValue) {
+    throw new Error('Cumulative meter reading cannot decrease; use a controlled meter replacement process');
+  }
+  return { value, readingDate, previousValue };
+}
+
 export async function recordAssetMeterReading(
   client: AssetMeterClient,
   input: {
@@ -78,11 +114,22 @@ export async function recordAssetMeterReading(
   if (!meter || meter.assetId !== input.assetId || !meter.isActive) {
     throw new Error('Meter does not belong to this asset or is inactive');
   }
-  const value = Number(input.value);
-  if (!Number.isFinite(value)) throw new Error('Reading value must be numeric');
-  const readingDate = input.readingDate ? new Date(String(input.readingDate)) : new Date();
-  if (Number.isNaN(readingDate.getTime())) throw new Error('Reading date is invalid');
-  const previousValue = Number(meter.currentValue);
+  const { value, readingDate, previousValue } = validateAssetMeterReading(
+    meter, input.value, input.readingDate,
+  );
+  // Compare-and-swap prevents concurrent shift submissions from silently
+  // overwriting one another. The API wraps this and the reading insert in one
+  // database transaction; a rejected insert also rolls the value update back.
+  const claimed = await client.assetMeter.updateMany({
+    where: {
+      id: meter.id, assetId: input.assetId, isActive: true,
+      currentValue: meter.currentValue, lastReadingAt: meter.lastReadingAt,
+    },
+    data: { currentValue: value, lastReadingAt: readingDate },
+  });
+  if (claimed.count !== 1) {
+    throw new Error('Meter reading conflict: a newer observation was recorded. Refresh and retry');
+  }
   const reading = await client.meterReading.create({
     data: {
       readingNumber: input.readingNumber,
@@ -98,10 +145,6 @@ export async function recordAssetMeterReading(
       notes: text(input.notes) || null,
       readById: input.actorId,
     },
-  });
-  await client.assetMeter.update({
-    where: { id: meter.id },
-    data: { currentValue: value, lastReadingAt: readingDate },
   });
   return reading;
 }

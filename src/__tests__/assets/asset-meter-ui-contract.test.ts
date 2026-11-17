@@ -36,6 +36,9 @@ describe('first-class asset meter UI contract', () => {
     expect(panelSource).toContain('api.patch');
     expect(panelSource).toContain('readingDate');
     expect(panelSource).toContain('Record Reading');
+    expect(panelSource).toContain("readingValue.trim() === ''");
+    expect(panelSource).toContain("observedAt?.toISOString()");
+    expect(panelSource).toContain("meter.lastReadingAt ? String(meter.currentValue) : ''");
   });
 
   it('keeps meter administration on the asset instead of embedding it in PM assignment authoring', () => {

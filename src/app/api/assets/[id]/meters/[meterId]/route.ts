@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { recordAssetMeterReading } from '@/services/assets/assetMeter.service';
@@ -36,7 +37,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     const body = await request.json();
     if (body.value !== undefined) {
-      const reading = await recordAssetMeterReading(db, {
+      const reading = await db.$transaction(async tx => recordAssetMeterReading(tx, {
         assetId: scoped.asset.id,
         meterId: scoped.meter.id,
         value: body.value,
@@ -45,7 +46,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         actorId: scoped.session.userId,
         plantId: scoped.asset.plantId,
         readingNumber: readingNumber(),
-      });
+      }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
       return NextResponse.json({ success: true, data: reading });
     }
     const data: { name?: string; unit?: string; meterType?: string; isActive?: boolean } = {};
@@ -57,7 +58,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ success: true, data: meter });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update asset meter';
-    return NextResponse.json({ success: false, error: message }, { status: /numeric|invalid|required/i.test(message) ? 400 : 500 });
+    return NextResponse.json({ success: false, error: message }, {
+      status: /conflict|P2034/i.test(message) ? 409
+        : /numeric|invalid|required|nonnegative|decrease|later than|future/i.test(message) ? 400 : 500,
+    });
   }
 }
 

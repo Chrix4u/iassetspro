@@ -90,13 +90,27 @@ export function AssetMetersPanel({
   };
 
   const recordReading = async (meter: AssetMeterRecord) => {
+    if (readingValue.trim() === '') {
+      toast.error('Enter an observed meter reading; blank is not zero');
+      return;
+    }
     const value = Number(readingValue);
-    if (!Number.isFinite(value)) { toast.error('Reading must be numeric'); return; }
+    if (!Number.isFinite(value) || value < 0) {
+      toast.error('Reading must be a nonnegative number');
+      return;
+    }
+    // datetime-local values have no offset. Convert in the operator's own
+    // timezone rather than interpreting the local wall-clock time on the server.
+    const observedAt = readingDate ? new Date(readingDate) : null;
+    if (observedAt && Number.isNaN(observedAt.getTime())) {
+      toast.error('Reading date is invalid');
+      return;
+    }
     setSaving(true);
     try {
       const response = await api.patch(`/api/assets/${encodeURIComponent(assetId)}/meters/${encodeURIComponent(meter.id)}`, {
         value,
-        readingDate: readingDate || undefined,
+        readingDate: observedAt?.toISOString(),
       });
       if (!response.success) throw new Error(response.error || 'Failed to record meter reading');
       toast.success('Meter reading recorded');
@@ -154,7 +168,11 @@ export function AssetMetersPanel({
                 <Badge variant="outline" className="text-[10px]">{meter.unit}</Badge>
                 <Badge variant="outline" className="text-[10px]">{meter.meterType === 'production' ? 'Production Output' : meter.meterType}</Badge>
                 {canRecordReading && (
-                  <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => { setReadingMeterId(readingMeterId === meter.id ? null : meter.id); setReadingValue(String(meter.currentValue)); }}>Record Reading</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => {
+                      setReadingMeterId(readingMeterId === meter.id ? null : meter.id);
+                      setReadingValue(meter.lastReadingAt ? String(meter.currentValue) : '');
+                      setReadingDate('');
+                    }}>Record Reading</Button>
                 )}
               </div>
             </div>

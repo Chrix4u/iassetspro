@@ -135,6 +135,21 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(observed?.lastReadingAt).toBeTruthy();
  expect(unobserved?.currentValue).toBe(0);
  expect(unobserved?.lastReadingAt).toBeNull();
+ // Real cumulative readings are authoritative only if chronological and nondecreasing.
+ const meterUrl='/api/assets/'+machineId+'/meters/'+observed.id;
+ const accepted=await request.patch(meterUrl,{headers,data:{value:10}});
+ expect(accepted.status(),await accepted.text()).toBe(200);
+ const decrease=await request.patch(meterUrl,{headers,data:{value:5}});
+ expect(decrease.status(),await decrease.text()).toBe(400);
+ const oldDate=new Date(new Date(observed.lastReadingAt).getTime()-60_000).toISOString();
+ const staleMeterReading=await request.patch(meterUrl,{headers,data:{value:12,readingDate:oldDate}});
+ expect(staleMeterReading.status(),await staleMeterReading.text()).toBe(400);
+ const missingValue=await request.patch(meterUrl,{headers,data:{value:''}});
+ expect(missingValue.status(),await missingValue.text()).toBe(400);
+ const after=await request.get('/api/assets/'+machineId+'/meters',{headers});
+ expect(after.status()).toBe(200);
+ const retained=(await after.json()).data.find((row:{id:string})=>row.id===observed.id);
+ expect(retained.currentValue).toBe(10);
  const duplicate=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(duplicate.status()).toBe(409);
 });

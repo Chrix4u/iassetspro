@@ -1,7 +1,7 @@
 /** Shared, pure production-survey rules; a missing shift is never imputed as zero. */
 export type ProductionSurveyInput = {
   productionDate: Date; assetId: string; shiftTemplateId: string; assetMeterId: string | null;
-  outputQuantity: number; unit: string; targetQuantity: number | null; availableMinutes: number;
+  outputQuantity: number; defectiveQuantity: number; startDelayMinutes: number; unit: string; targetQuantity: number | null; availableMinutes: number;
   breakMinutes: number; repairMinutes: number; inputDeliveryMinutes: number;
   changeoverMinutes: number; startupCleaningMinutes: number; otherMinutes: number;
   preventiveMinutes: number; notes: string | null;
@@ -40,6 +40,10 @@ export function parseProductionSurveyInput(raw: unknown): ProductionSurveyInput 
   const unit = String(body.unit || '').trim();
   if (!unit || unit.length > 32 || !/^[a-zA-Z0-9°µ%/_ .-]+$/.test(unit)) throw new Error('A valid output unit is required');
   const outputQuantity = nonnegativeNumber(body.outputQuantity, 'Production output', 1e12 - 1);
+  const defectiveQuantity = nonnegativeNumber(body.defectiveQuantity ?? 0, 'Defective production', 1e12 - 1);
+  if (defectiveQuantity > outputQuantity) throw new Error('Defective production cannot exceed total production');
+  const startDelayMinutes = nonnegativeNumber(body.startDelayMinutes ?? 0, 'Shift start delay', 1440);
+  if (!Number.isInteger(startDelayMinutes)) throw new Error('Shift start delay must be whole minutes');
   const targetQuantity = body.targetQuantity === '' || body.targetQuantity == null ? null : nonnegativeNumber(body.targetQuantity, 'Production target', 1e12 - 1);
   const availableMinutes = nonnegativeNumber(body.availableMinutes, 'Available minutes', 1440);
   if (!Number.isInteger(availableMinutes)) throw new Error('Available minutes must be a whole number');
@@ -65,7 +69,7 @@ export function parseProductionSurveyInput(raw: unknown): ProductionSurveyInput 
     throw new Error('Runtime meter source/evidence must be 4–255 characters');
   if (!runtimeMeterId && runtimeEvidence) throw new Error('Runtime evidence requires an operating-hour meter');
   const notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim().slice(0,2000) : null;
-  return { productionDate,assetId,shiftTemplateId,assetMeterId,outputQuantity,unit,targetQuantity,availableMinutes,
+  return { productionDate,assetId,shiftTemplateId,assetMeterId,outputQuantity,defectiveQuantity,startDelayMinutes,unit,targetQuantity,availableMinutes,
     breakMinutes:stops.breakMinutes,repairMinutes:stops.repairMinutes,inputDeliveryMinutes:stops.inputDeliveryMinutes,
     changeoverMinutes:stops.changeoverMinutes,startupCleaningMinutes:stops.startupCleaningMinutes,
     otherMinutes:stops.otherMinutes,preventiveMinutes:stops.preventiveMinutes,notes,

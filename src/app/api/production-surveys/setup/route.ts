@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { requiresCrewScope } from '@/lib/production-shift-access';
 import { allowedProductionMeter, allowedRuntimeMeter } from '@/lib/production-shift-survey';
 
 export async function GET(request: NextRequest) {
@@ -10,7 +11,8 @@ export async function GET(request: NextRequest) {
   if (!isAdmin(session) && !hasPermission(session,'production_surveys.view'))
     return NextResponse.json({ success:false,error:'Insufficient permissions' },{status:403});
   try {
-    const assetId = new URL(request.url).searchParams.get('assetId');
+    const params = new URL(request.url).searchParams;
+    const assetId = params.get('assetId');
     if (!assetId) return NextResponse.json({ success:false,error:'Select a machine first' },{status:400});
     const scope = await getPlantScope(request,session);
     if (scope.denyAccess) return NextResponse.json({success:false,error:'Forbidden'},{status:403});
@@ -21,7 +23,19 @@ export async function GET(request: NextRequest) {
       db.productionShiftTemplate.findMany({where:{plantId:asset.plantId,isActive:true},orderBy:[{sortOrder:'asc'},{name:'asc'}]}),
       db.assetMeter.findMany({where:{assetId:asset.id,isActive:true},select:{id:true,name:true,unit:true,meterType:true,currentValue:true},orderBy:{name:'asc'}}),
     ]);
-    return NextResponse.json({success:true,data:{asset,shifts,meters:allMeters.filter(m=>allowedProductionMeter(m.meterType)),
+    const date=params.get('date');
+    let visibleShifts=shifts;
+    if(requiresCrewScope(session)){
+      if(!date||!/^\d{4}-\d{2}-\d{2}$/.test(date)||
+        Number.isNaN(new Date(date+'T00:00:00Z').getTime())||
+        new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)
+        return NextResponse.json({success:false,error:'Select a valid production date to view assigned shifts'},{status:400});
+      const plans=await db.productionShiftPlan.findMany({where:{assetId,productionDate:new Date(date+'T00:00:00Z'),
+        crew:{some:{userId:session.userId}}},select:{shiftTemplateId:true}});
+      const permitted=new Set(plans.map(x=>x.shiftTemplateId));
+      visibleShifts=shifts.filter(shift=>permitted.has(shift.id));
+    }
+    return NextResponse.json({success:true,data:{asset,shifts:visibleShifts,meters:allMeters.filter(m=>allowedProductionMeter(m.meterType)),
       runtimeMeters:allMeters.filter(m=>allowedRuntimeMeter(m.meterType,m.unit))}});
   } catch (error) {return NextResponse.json({success:false,error:error instanceof Error?error.message:'Could not load shift setup'},{status:500});}
 }
@@ -29,7 +43,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = getSession(request);
   if (!session) return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
-  if (!isAdmin(session) && !hasPermission(session,'production_surveys.manage'))
+  if (!isAdmin(session) && !hasPermission(session,'production_surveys.manage') && !hasPermission(session,'production_surveys.plan'))
     return NextResponse.json({success:false,error:'Production management permission is required'},{status:403});
   try {
     const scope = await getPlantScope(request,session);
@@ -55,6 +69,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({success:false,error:'A valid shift name and code are required'},{status:400});
     const startsAt = typeof body.startsAt==='string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.startsAt)?body.startsAt:null;
     const endsAt = typeof body.endsAt==='string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.endsAt)?body.endsAt:null;
+    if(Boolean(startsAt)!==Boolean(endsAt)|| (startsAt&&startsAt===endsAt))
+      return NextResponse.json({success:false,error:'Enter distinct shift start and end times together, or leave both blank'},{status:400});
     const shift=await db.productionShiftTemplate.create({data:{
       plantId,code,name,startsAt,endsAt,sortOrder:Number.isInteger(body.sortOrder)?Number(body.sortOrder):50,
       createdById:session.userId,

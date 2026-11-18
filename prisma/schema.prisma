@@ -60,6 +60,7 @@ model RolePermission {
 model User {
   productionShiftEntries ProductionShiftRecord[] @relation("ProductionShiftRecorder")
   productionShiftReviews ProductionShiftRecord[] @relation("ProductionShiftReviewer")
+  productionCrewAssignments ProductionShiftAssignment[]
   id                      String    @id @default(cuid())
   username                String    @unique
   email                   String    @unique
@@ -390,6 +391,7 @@ model Plant {
   productionShiftTemplates ProductionShiftTemplate[]
   productionShiftRecords ProductionShiftRecord[]
   productionShiftPlans ProductionShiftPlan[]
+  productionMachineProducts ProductionMachineProduct[]
   departments         Department[]
   plantAccess         UserPlant[]
   assets              Asset[]
@@ -1113,6 +1115,7 @@ model Asset {
   assetMeters                   AssetMeter[]
   productionShiftRecords       ProductionShiftRecord[]
   productionShiftPlans         ProductionShiftPlan[]
+  productionMachineProducts    ProductionMachineProduct[]
   iotDevices                    IotDevice[]
   bomAsParent                   BillOfMaterial[]                    @relation("BomParent")
   bomAsChild                    BillOfMaterial[]                    @relation("BomChild")
@@ -5528,6 +5531,10 @@ model ProductionShiftRecord {
   assetId              String
   shiftTemplateId      String
   productionDate       DateTime @db.Date
+  planId               String?
+  productCode          String? @db.VarChar(80)
+  defectiveQuantity    Float @default(0)
+  startDelayMinutes    Int @default(0)
   outputQuantity       Float
   unit                 String
   targetQuantity       Float?
@@ -5561,6 +5568,7 @@ model ProductionShiftRecord {
   plant        Plant                   @relation(fields: [plantId], references: [id], onDelete: Restrict)
   asset        Asset                   @relation(fields: [assetId], references: [id], onDelete: Restrict)
   shift        ProductionShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Restrict)
+  plan         ProductionShiftPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
   meter        AssetMeter?             @relation(fields: [assetMeterId], references: [id], onDelete: Restrict)
   runtimeMeter AssetMeter?             @relation("ProductionSurveyRuntimeMeter", fields: [runtimeMeterId], references: [id], onDelete: Restrict)
   runtimeMeterReading MeterReading?    @relation("ProductionSurveyRuntimeMeterReading", fields: [runtimeMeterReadingId], references: [id], onDelete: SetNull)
@@ -5569,6 +5577,7 @@ model ProductionShiftRecord {
   reviewedBy   User?                   @relation("ProductionShiftReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   @@unique([assetId, productionDate, shiftTemplateId])
+  @@index([planId, status])
   @@index([plantId, productionDate, status])
   @@index([assetMeterId, status])
   @@index([runtimeMeterId, status])
@@ -5584,6 +5593,10 @@ model ProductionShiftPlan {
   plannedShiftsPerDay    Int
   shiftHours             Float
   availableMinutes       Int
+  plannedBreakMinutes    Int @default(0)
+  startsAt               String?
+  endsAt                 String?
+  productCode            String? @db.VarChar(80)
   targetQuantity         Float
   unit                   String
   standardUtilizationPct Float?
@@ -5596,8 +5609,47 @@ model ProductionShiftPlan {
   plant Plant @relation(fields: [plantId], references: [id], onDelete: Restrict)
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
   shift ProductionShiftTemplate @relation(fields: [shiftTemplateId], references: [id], onDelete: Restrict)
+  crew ProductionShiftAssignment[]
+  records ProductionShiftRecord[]
 
   @@unique([assetId, productionDate, shiftTemplateId])
   @@index([plantId, productionDate])
   @@map("production_shift_plans")
+}
+
+// A planner publishes a date-specific roster. Operators may submit only shifts to
+// which they are explicitly assigned; role permissions alone do not grant entry.
+model ProductionShiftAssignment {
+  id         String   @id @default(cuid())
+  planId     String
+  userId     String
+  isLeader   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  plan ProductionShiftPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([planId, userId])
+  @@index([userId, planId])
+  @@map("production_shift_assignments")
+}
+
+// Design codes are machine-specific products, not inferred from the machine tag.
+model ProductionMachineProduct {
+  id          String @id @default(cuid())
+  plantId     String
+  assetId     String
+  code        String @db.VarChar(80)
+  name        String @db.VarChar(160)
+  unit        String @db.VarChar(32)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plant Plant @relation(fields: [plantId], references: [id], onDelete: Restrict)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, code])
+  @@index([plantId, assetId, isActive])
+  @@map("production_machine_products")
 }

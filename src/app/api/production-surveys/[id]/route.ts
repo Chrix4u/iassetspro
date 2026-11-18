@@ -2,6 +2,7 @@ import { NextRequest,NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession,hasPermission,isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict,getPlantScope } from '@/lib/plant-scope';
+import { requiresCrewScope } from '@/lib/production-shift-access';
 import { allowedProductionMeter,allowedRuntimeMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
 
 // Only the original operator may correct a REJECTED shift.
@@ -50,6 +51,11 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
         assetId_productionDate_shiftTemplateId:{assetId:parsed.assetId,productionDate:parsed.productionDate,
           shiftTemplateId:parsed.shiftTemplateId}}});
       if(!plan)throw new Error('Planner must configure this shift before it can be resubmitted');
+      if(requiresCrewScope(session)){
+        const assigned=await tx.productionShiftAssignment.findUnique({
+          where:{planId_userId:{planId:plan.id,userId:session.userId}}});
+        if(!assigned)throw new Error('You are no longer assigned to this shift; ask a planner to review the correction');
+      }
       const fromPlan=parseProductionSurveyInput({...raw,assetId:parsed.assetId,
         productionDate:parsed.productionDate.toISOString().slice(0,10),shiftTemplateId:parsed.shiftTemplateId,
         unit:plan.unit,targetQuantity:plan.targetQuantity,availableMinutes:plan.availableMinutes});
@@ -68,7 +74,8 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
           throw new Error('Production and operating-hour meters must be different');
       }
       const updated=await tx.productionShiftRecord.update({where:{id},data:{
-        ...fromPlan,plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
+        ...fromPlan,planId:plan.id,productCode:plan.productCode,
+        plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
         standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
         status:'submitted',reviewNote:null,reviewedById:null,reviewedAt:null,
       }});
@@ -77,7 +84,7 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
           status:latest.status,meterId:latest.assetMeterId,
           runtimeMeterId:latest.runtimeMeterId,runtimeCounterHours:latest.runtimeCounterHours}),
         newValues:JSON.stringify({assetId:updated.assetId,date:updated.productionDate,output:updated.outputQuantity,unit:updated.unit,
-          status:updated.status,meterId:updated.assetMeterId,
+          status:updated.status,meterId:updated.assetMeterId,defective:updated.defectiveQuantity,productCode:updated.productCode,
           runtimeMeterId:updated.runtimeMeterId,runtimeCounterHours:updated.runtimeCounterHours})}});
       return updated;
     },{timeout:15000});
@@ -86,6 +93,6 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const message=error instanceof Error?error.message:'Failed to correct survey';
     return NextResponse.json({success:false,error:/P2002|Unique constraint/i.test(message)?
       'This machine already has a record for the selected shift and day':message},
-      {status:/P2002|Unique constraint|status changed/i.test(message)?409:500});
+      {status:/P2002|Unique constraint|status changed/i.test(message)?409:/assigned|must|required|invalid/i.test(message)?400:500});
   }
 }

@@ -108,7 +108,7 @@ export async function POST(request:NextRequest){
     const dates:Date[]=[];
     for(let time=first.getTime();time<=last.getTime();time+=86400000)dates.push(new Date(time));
     const result=await db.$transaction(async tx=>{
-      const saved=[];
+      const saved:Array<{id:string;assetId:string;productionDate:Date;shiftTemplateId:string}>=[];
       for(const productionDate of dates){
         const day=productionDate.toISOString().slice(0,10);
         await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',

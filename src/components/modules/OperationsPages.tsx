@@ -89,14 +89,10 @@ export function OperationsMeterReadingsPage() {
 
   const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'warning' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
   const handleCreate = async () => {
-    if (form.value.trim() === '' || !Number.isFinite(Number(form.value)) || Number(form.value) < 0) {
-      toast.error('Enter a valid meter reading. Blank values are not zero.');
-      return;
-    }
     setSaving(true);
     const res = await api.post('/api/meter-readings', {
       meterName: form.meter,
-      value: form.value,
+      value: Number(form.value),
       unit: form.unit,
       readingDate: form.readingDate || new Date().toISOString().split('T')[0],
       notes: form.notes || undefined,
@@ -198,7 +194,7 @@ export function OperationsMeterReadingsPage() {
             <DatePicker label="Reading Date" value={form.readingDate || undefined} onChange={v => setForm(f => ({ ...f, readingDate: v || '' }))} />
             <div><Label>Notes</Label><Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
-          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter.trim() || !form.value.trim()}>{saving ? 'Saving...' : 'Record Reading'}</Button></div>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></div>
         
       </ResponsiveDialog>
       <ResponsiveDialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>

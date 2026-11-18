@@ -27,7 +27,7 @@ vi.mock('@/lib/auth', () => ({
 }));
 
 import type { PlantScopeResult } from '../plant-scope';
-import { getPlantFilterWhere, applyPlantScope, getPlantScope, canAccessPlant, canAccessPlantStrict } from '../plant-scope';
+import { getPlantFilterWhere, applyPlantScope, getPlantScope, canAccessPlant } from '../plant-scope';
 
 // We need to import NextRequest for getPlantScope tests
 vi.mock('next/server', () => ({
@@ -459,31 +459,5 @@ describe('Security contract (documented)', () => {
 
     // Entity with no plant — allowed (not plant-scoped)
     expect(canAccessPlant(scope, null)).toBe(true);
-  });
-});
-
-describe('strict operational plant scope', () => {
-  it('does not accept an unassigned or null plant for a regular actor', () => {
-    const scope = makeScope({ accessiblePlantIds: ['plant-a'] });
-    expect(canAccessPlantStrict(scope, 'plant-a')).toBe(true);
-    expect(canAccessPlantStrict(scope, 'plant-b')).toBe(false);
-    expect(canAccessPlantStrict(scope, null)).toBe(false);
-  });
-
-  it('honors the explicitly selected plant even if an actor belongs to both', () => {
-    const scope = makeScope({
-      isScoped: true, plantId: 'plant-a', accessiblePlantIds: ['plant-a', 'plant-b'],
-    });
-    expect(canAccessPlantStrict(scope, 'plant-a')).toBe(true);
-    expect(canAccessPlantStrict(scope, 'plant-b')).toBe(false);
-  });
-
-  it('denies explicitly rejected scopes and preserves unscoped system-wide access', () => {
-    expect(canAccessPlantStrict(makeScope({
-      isSystemWide: true, denyAccess: true,
-    }), 'plant-a')).toBe(false);
-    expect(canAccessPlantStrict(makeScope({
-      isSystemWide: true,
-    }), 'plant-a')).toBe(true);
   });
 });

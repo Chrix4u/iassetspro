@@ -116,9 +116,10 @@ export async function GET(request:NextRequest) {
       const key=item.assetId+'|'+item.unit;
       const cumulativeProduction=(runningCumulative.get(key)||0)+item.output;
       const planned=plannedByPeriod.get([item.period,item.assetId,item.unit].join('|'));
+      const reportTarget=planned?.target??item.target;
       runningCumulative.set(key,cumulativeProduction);
       return {...item,cumulativeProduction,workbookCumulativeProduction:item.output,
-        target:planned?.target??item.target,plannedShifts:planned?.shifts??0,
+        target:reportTarget,plannedShifts:planned?.shifts??0,
         unapprovedOrMissingShifts:Math.max(0,(planned?.shifts??0)-item.shifts),
         shiftNames:[...shiftNames],productCodes:[...productCodes],
       goodOutput:item.output-item.defects,
@@ -129,7 +130,7 @@ export async function GET(request:NextRequest) {
       standardSpeedPerMinute:standardSpeedWeight>0?weightedStandardSpeed/standardSpeedWeight:null,
       productivityPerMinute:item.availableMinutes>0?item.output/item.availableMinutes:null,
       engineeringEfficiencyPct:item.availableMinutes>0?100*(item.availableMinutes-item.repairMinutes)/item.availableMinutes:null,
-      targetAchievementPct:item.target>0?100*item.output/item.target:null,
+      targetAchievementPct:reportTarget>0?100*item.output/reportTarget:null,
     };});
     return NextResponse.json({success:true,data,meta:{group,from,to,recordCount:records.length,
       truncated:false,plannedShiftCount:scheduled.length,

@@ -85,6 +85,19 @@ export async function PUT(
     if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
+    if (existing.filePath.startsWith('/api/smart-anatomy/models/')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Reviewed CAD provenance and geometry are immutable; upload a new revision',
+      }, { status: 409 });
+    }
+    if (typeof body.filePath === 'string' &&
+        /^\/api\/smart-anatomy\/models(?:\/|$)/i.test(body.filePath)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD namespace cannot be assigned by the legacy asset-model editor',
+      }, { status: 409 });
+    }
 
     const updateData: Record<string, unknown> = {};
     const allowedFields = ['name', 'fileName', 'fileSize', 'fileType', 'filePath', 'format', 'meshCount', 'vertexCount'];
@@ -158,6 +171,13 @@ export async function DELETE(
     }
     if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    if (existing.filePath.startsWith('/api/smart-anatomy/models/')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Protected CAD cannot be deleted from the legacy editor; withdraw engineering approval instead',
+      }, { status: 409 });
     }
 
     // Delete associated mesh bindings first

@@ -16,6 +16,7 @@ import {
   ChevronsDownUp,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { buildImportedAnatomyTree, type ImportedAnatomyMesh, type AnatomyTreeNode } from './anatomyBindings';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,9 @@ interface TreeNode {
   assetId?: string;
   assetName?: string;
   healthStatus?: MeshHealthEntry['status'];
+  sourcePath?: string;
+  componentCode?: string;
+  verified?: boolean;
   children: TreeNode[];
   isExpanded?: boolean;
 }
@@ -51,6 +55,11 @@ export interface SceneTreePanelProps {
   onMeshSelect?: (meshName: string, assetId?: string) => void;
   /** External tree data (optional, auto-derived from scene if not provided) */
   treeData?: TreeNode[];
+  /** Imported GLB/glTF hierarchy; populated only from actual CAD nodes. */
+  anatomyMeshes?: ImportedAnatomyMesh[];
+  anatomyTitle?: string;
+  /** Never show a stale tenant's previous scene while loading conceptual demo geometry. */
+  suppressSceneFallback?: boolean;
 }
 
 // ============================================================================
@@ -103,6 +112,21 @@ function buildTreeFromScene(
       isExpanded: true,
     },
   ];
+}
+
+function treeFromAnatomy(nodes: ReadonlyArray<AnatomyTreeNode>): TreeNode[] {
+  return nodes.map(node=>({
+    id:node.id,
+    name:node.name,
+    ...(node.mesh?{
+      meshName:node.mesh.selectionKey,
+      assetId:node.mesh.assetId || undefined,
+      sourcePath:node.mesh.path,
+      componentCode:node.mesh.componentCode,
+      verified:node.mesh.verified,
+    }:{}),
+    children:treeFromAnatomy(node.children),
+  }));
 }
 
 // ============================================================================
@@ -229,6 +253,14 @@ function TreeNodeItem({
                 {node.name}
               </span>
 
+              {node.meshName && node.sourcePath && (
+                <span className={node.verified
+                    ? 'shrink-0 rounded bg-emerald-500/15 px-1 text-[9px] text-emerald-300'
+                    : 'shrink-0 rounded bg-slate-700 px-1 text-[9px] text-slate-400'}>
+                  {node.verified ? 'Linked' : 'Visual'}
+                </span>
+              )}
+
               {/* Component count badge */}
               {hasChildren && !isExpanded && (
                 <ComponentCountBadge count={childCount} />
@@ -247,7 +279,14 @@ function TreeNodeItem({
             <div>
               <p className="font-medium">{node.name}</p>
               {node.meshName && (
-                <p className="text-[10px] text-slate-400 mt-0.5">Mesh: {node.meshName}</p>
+                <>
+                  <p className="text-[10px] text-slate-400 mt-0.5 break-all">Source: {node.sourcePath || node.meshName}</p>
+                  <p className="text-[10px] mt-1 text-slate-300">
+                    {node.verified
+                      ? `Linked to verified component ${node.componentCode || ''}`
+                      : 'Visual geometry only · not a verified maintenance part'}
+                  </p>
+                </>
               )}
               {node.healthStatus && (
                 <p className="text-[10px] mt-0.5">
@@ -298,6 +337,9 @@ export function SceneTreePanel({
   onToggle,
   onMeshSelect,
   treeData: externalTreeData,
+  anatomyMeshes,
+  anatomyTitle,
+  suppressSceneFallback = false,
 }: SceneTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['root']));
@@ -309,8 +351,15 @@ export function SceneTreePanel({
   // Build tree data
   const treeData = useMemo(() => {
     if (externalTreeData) return externalTreeData;
+    if (suppressSceneFallback && !anatomyMeshes?.length) return [];
+    if (anatomyMeshes?.length) {
+      return [{
+        id:'root', name:anatomyTitle || currentScene?.name || 'Imported CAD Assembly',
+        children:treeFromAnatomy(buildImportedAnatomyTree(anatomyMeshes)),
+      }];
+    }
     return buildTreeFromScene(currentScene, iotHealthMap);
-  }, [externalTreeData, currentScene, iotHealthMap]);
+  }, [externalTreeData, anatomyMeshes, anatomyTitle, suppressSceneFallback, currentScene, iotHealthMap]);
 
   // Filter tree by search query
   const filteredTree = useMemo(() => {
@@ -320,7 +369,8 @@ export function SceneTreePanel({
 
     function filterNodes(nodes: TreeNode[]): TreeNode[] {
       return nodes.reduce<TreeNode[]>((acc, node) => {
-        const nameMatch = node.name.toLowerCase().includes(query);
+        const nameMatch = [node.name,node.meshName,node.sourcePath,node.componentCode]
+          .some(value=>value?.toLowerCase().includes(query));
         const filteredChildren = filterNodes(node.children);
 
         if (nameMatch || filteredChildren.length > 0) {
@@ -400,9 +450,9 @@ export function SceneTreePanel({
   const handleSelect = useCallback(
     (node: TreeNode) => {
       if (onMeshSelect && node.meshName) {
-        onMeshSelect(node.meshName, node.assetId);
+        onMeshSelect(node.meshName, node.assetId || '');
       } else if (node.meshName) {
-        selectMesh(node.meshName, node.assetId);
+        selectMesh(node.meshName, node.assetId || '');
       }
     },
     [onMeshSelect, selectMesh],
@@ -453,7 +503,7 @@ export function SceneTreePanel({
         <div className="flex items-center gap-2">
           <TreePine className="h-4 w-4 text-cyan-400" />
           <span className="text-xs font-semibold text-slate-200 tracking-wide uppercase">
-            Scene Tree
+            {anatomyMeshes?.length ? 'Imported CAD Anatomy' : 'Scene Tree'}
           </span>
         </div>
         <div className="flex items-center gap-1">

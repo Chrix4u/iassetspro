@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { isPrivateSmartAnatomyModel, reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
 
 export async function GET(
   request: NextRequest,
@@ -113,8 +114,14 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const updateData: Record<string, unknown> = {};
-    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'componentId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
+    if (await reviewedCadMappingsAreFrozen(existing.model)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
+      }, { status: 409 });
+    }
+
+    const updateData: Record<string, unknown> = {};    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'componentId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -128,16 +135,31 @@ export async function PUT(
       }
     }
 
-    if (updateData.meshName && updateData.meshName !== existing.meshName) {
-      const duplicate = await db.assetMeshBinding.findFirst({
-        where: { modelId: existing.modelId, meshName: updateData.meshName as string },
-      });
-      if (duplicate) {
-        return NextResponse.json({ success: false, error: 'A binding for this mesh name already exists on this model' }, { status: 409 });
-      }
+    const newName = updateData.meshName ?? existing.meshName;
+    const newPath = updateData.meshPath !== undefined ? updateData.meshPath : existing.meshPath;
+    if (typeof newName !== 'string' || !newName.trim() || newName.length > 600 ||
+        (newPath != null && (typeof newPath !== 'string' || !newPath.trim() || newPath.length > 600))) {
+      return NextResponse.json({success:false,error:'Invalid CAD mesh name or source path'}, {status:400});
+    }
+    const duplicate = await db.assetMeshBinding.findFirst({
+      where: {modelId:existing.modelId,id:{not:existing.id},OR:[
+        {meshName:newName},
+        ...(typeof newPath === 'string' ? [{meshPath:newPath}] : []),
+      ]},
+      select:{id:true},
+    });
+    if (duplicate) {
+      return NextResponse.json({success:false,
+        error:'A binding for this CAD name or exact source path already exists on this model'}, {status:409});
     }
 
     const targetAssetId = (updateData.assetId as string | undefined) || existing.assetId;
+    if (isPrivateSmartAnatomyModel(existing.model) && targetAssetId !== existing.model.assetId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD mesh mapping must belong to the source machine asset',
+      }, { status: 400 });
+    }
     if (updateData.assetId) {
       const asset = await db.asset.findUnique({
         where: { id: targetAssetId },
@@ -235,8 +257,14 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    await db.assetMeshBinding.delete({ where: { id } });
+    if (await reviewedCadMappingsAreFrozen(existing.model)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
+      }, { status: 409 });
+    }
 
+    await db.assetMeshBinding.delete({ where: { id } });
     await db.auditLog.create({
       data: {
         userId: session.userId,

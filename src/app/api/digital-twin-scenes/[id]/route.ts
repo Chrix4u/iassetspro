@@ -44,6 +44,7 @@ export async function GET(
             format: true,
             filePath: true,
             fileName: true,
+            isActive: true,
             bindings: {
               include: {
                 asset: { select: { id: true, name: true, assetTag: true, status: true, condition: true, criticality: true } },
@@ -77,6 +78,13 @@ export async function GET(
     }
     if (!canAccessPlantStrict(plantScope, scene.twin.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (scene.model.filePath.startsWith('/api/smart-anatomy/models/') &&
+        (!scene.model.isActive || !scene.isActive)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Engineering approval for this private CAD scene has been withdrawn',
+      }, { status: 409 });
     }
 
     const { bindings, ...model } = scene.model;
@@ -155,6 +163,14 @@ export async function PUT(
       }
       if (model.assetId !== existing.twin.assetId) {
         return NextResponse.json({ success: false, error: 'Asset model does not belong to the twin asset' }, { status: 400 });
+      }
+      // Editing an older Digital Twin scene must not bypass the private CAD
+      // engineer-commissioning gate enforced on scene creation.
+      if (model.filePath.startsWith('/api/smart-anatomy/models/') && !model.isActive) {
+        return NextResponse.json({
+          success: false,
+          error: 'Private CAD must pass engineering review before attachment to a Digital Twin scene',
+        }, { status: 409 });
       }
     }
 

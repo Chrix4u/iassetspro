@@ -387,8 +387,14 @@ jobs:
           test -f .next/standalone/server.js
           rm build-output.tar.gz
 
-      - name: Install Playwright Chromium browser with system dependencies
-        run: bunx playwright install --with-deps chromium
+      # Hosted Ubuntu runners include the Chromium shared-library baseline.
+      # Avoid an unrelated apt transaction: Ubuntu mirrors intermittently
+      # return 503 and prevent both UAT suites from starting.
+      - name: Install pinned Playwright Chromium without apt
+        env:
+          CI: 'true'
+          RUNNER_OS: Linux
+        run: bash scripts/smart-anatomy/install-ci-chromium.sh
 
       - name: Run Repairs/RWOP Playwright UAT
         run: bun run test:repairs-uat
@@ -502,8 +508,14 @@ jobs:
           test -f .next/standalone/server.js
           rm build-output.tar.gz
 
-      - name: Install Playwright Chromium browser with system dependencies
-        run: bunx playwright install --with-deps chromium
+      # Hosted Ubuntu runners include the Chromium shared-library baseline.
+      # Avoid an unrelated apt transaction: Ubuntu mirrors intermittently
+      # return 503 and prevent both UAT suites from starting.
+      - name: Install pinned Playwright Chromium without apt
+        env:
+          CI: 'true'
+          RUNNER_OS: Linux
+        run: bash scripts/smart-anatomy/install-ci-chromium.sh
 
       - name: Run platform Playwright E2E (Chromium only)
         run: bun run test:e2e --project=chromium

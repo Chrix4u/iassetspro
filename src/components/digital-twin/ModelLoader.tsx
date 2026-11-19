@@ -11,6 +11,9 @@ import {
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
+import { buildImportedNodePaths, cloneImportedAnatomyMesh } from './anatomyModelMesh';
+import { matchImportedMeshBinding, type ImportedAnatomyMesh } from './anatomyBindings';
+import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 
 // ============================================================================
 // Types
@@ -35,6 +38,10 @@ export interface ModelLoaderProps {
   maxDimension?: number;
   /** Asset-mesh bindings from the store or external source */
   bindings?: AssetMeshBinding[];
+  /** Number of actual imported glTF meshes (never inferred from an asset description). */
+  onMeshCount?: (count: number) => void;
+  /** Exact imported glTF nodes, not inferred or generated machine anatomy. */
+  onAnatomyManifest?: (meshes: ImportedAnatomyMesh[]) => void;
   /** Children rendered after the model */
   children?: ReactNode;
 }
@@ -437,6 +444,8 @@ function PerformanceMonitor({ enabled }: { enabled: boolean }) {
 interface ProcessedModelProps {
   scene: THREE.Group;
   bindings: AssetMeshBinding[];
+  onMeshCount?: (count: number) => void;
+  onAnatomyManifest?: (meshes: ImportedAnatomyMesh[]) => void;
   maxDimension: number;
   autoCenter: boolean;
   autoScale: boolean;
@@ -445,20 +454,13 @@ interface ProcessedModelProps {
 function ProcessedModel({
   scene,
   bindings,
+  onMeshCount,
+  onAnatomyManifest,
   maxDimension,
   autoCenter,
   autoScale,
 }: ProcessedModelProps) {
   const groupRef = useRef<THREE.Group>(null);
-
-  // Build a lookup map from binding meshName → binding
-  const bindingMap = useMemo(() => {
-    const map = new Map<string, AssetMeshBinding>();
-    for (const b of bindings) {
-      map.set(b.meshName, b);
-    }
-    return map;
-  }, [bindings]);
 
   // Collect interactive and static meshes from the scene
   const { interactiveMeshes, staticMeshes } = useMemo(() => {
@@ -468,11 +470,26 @@ function ProcessedModel({
     }> = [];
     const staticList: THREE.Mesh[] = [];
 
+    // The original GLB tree is never reparented. Use display meshes with
+    // imported world transforms baked into their local coordinates.
+    scene.updateWorldMatrix(true, true);
+    const sourcePaths = buildImportedNodePaths(scene);
+    const nameCount = new Map<string, number>();
+    scene.traverse(child => {
+      if (!(child as THREE.Mesh).isMesh) return;
+      nameCount.set(child.name, (nameCount.get(child.name) ?? 0) + 1);
+    });
+
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
+      const originalMesh = child as THREE.Mesh;
+      const mesh = cloneImportedAnatomyMesh(originalMesh, scene, sourcePaths.get(originalMesh), true);
 
-      const binding = bindingMap.get(mesh.name);
+      // Engineer-approved source path takes precedence. A duplicated CAD name
+      // is never an authoritative PM target unless its exact path is mapped.
+      const sourcePath = sourcePaths.get(originalMesh) || originalMesh.name;
+      const binding = matchImportedMeshBinding(originalMesh.name, sourcePath,
+        (nameCount.get(originalMesh.name) ?? 0) > 1, bindings);
       if (binding) {
         applyBindingToMesh(mesh, binding);
         interactive.push({ mesh, binding });
@@ -482,7 +499,38 @@ function ProcessedModel({
     });
 
     return { interactiveMeshes: interactive, staticMeshes: staticList };
-  }, [scene, bindingMap]);
+  }, [scene, bindings]);
+
+  const anatomyManifest = useMemo<ImportedAnatomyMesh[]>(() => [
+    ...interactiveMeshes.map(({mesh,binding})=>({
+      id:mesh.userData.__iAssetsSourceMeshUUID as string || mesh.uuid,
+      path:String(mesh.userData.__iAssetsSourceNodePath || mesh.name),
+      meshName:mesh.name,
+      selectionKey:binding.meshName,
+      componentId:binding.componentId ?? null,
+      assetId:binding.assetId ?? null,
+      componentCode:binding.componentCode,
+      verified:Boolean(binding.componentId),
+    })),
+    ...staticMeshes.map(mesh=>({
+      id:mesh.userData.__iAssetsSourceMeshUUID as string || mesh.uuid,
+      path:String(mesh.userData.__iAssetsSourceNodePath || mesh.name),
+      meshName:mesh.name,
+      selectionKey:String(mesh.userData.__iAssetsSourceNodePath || mesh.name),
+      componentId:null,
+      assetId:null,
+      verified:false,
+    })),
+  ].sort((a,b)=>a.path.localeCompare(b.path)), [interactiveMeshes,staticMeshes]);
+
+  // Canvas rendering is isolated from the main React reconciler.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onMeshCount?.(anatomyManifest.length);
+      onAnatomyManifest?.(anatomyManifest);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [onMeshCount, onAnatomyManifest, anatomyManifest]);
 
   // Compute model bounds for LOD and auto-scale
   const modelBounds = useMemo(() => {
@@ -510,7 +558,19 @@ function ProcessedModel({
     }
   }, [scene, autoCenter, autoScale, maxDimension]);
 
-  // Dispose scene on unmount
+  // Viewer meshes own cloned materials so highlights never mutate the cached
+  // manufacturer source. Release those lightweight clones when bindings or
+  // models change; textures and geometry remain owned by the source cache.
+  useEffect(() => {
+    return () => {
+      for (const mesh of [...interactiveMeshes.map(item => item.mesh), ...staticMeshes]) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const material of materials) material?.dispose();
+      }
+    };
+  }, [interactiveMeshes, staticMeshes]);
+
+  // Dispose source scene cache only when the actual model changes/unmounts.
   useEffect(() => {
     return () => {
       releaseToCache(scene.userData.__sourceUrl || '');
@@ -519,7 +579,7 @@ function ProcessedModel({
 
   return (
     <>
-      <group ref={groupRef}>
+      <group ref={groupRef} userData={{ __iAssetsModelRoot: true }}>
         {/* Render interactive meshes with binding behavior */}
         {interactiveMeshes.map(({ mesh, binding }) => (
           <InteractiveMesh
@@ -534,6 +594,11 @@ function ProcessedModel({
           <primitive
             key={`static-${mesh.uuid}`}
             object={mesh}
+            onClick={event=>{
+              event.stopPropagation();
+              const path=String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+              setTimeout(()=>useDigitalTwinStore.getState().selectMesh(path, ''),0);
+            }}
             castShadow
             receiveShadow
           />
@@ -598,6 +663,8 @@ export function ModelLoader({
   autoScale = true,
   maxDimension = 8,
   bindings: externalBindings,
+  onMeshCount,
+  onAnatomyManifest,
   children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
@@ -682,6 +749,8 @@ export function ModelLoader({
       <ProcessedModel
         scene={scene}
         bindings={bindings}
+        onMeshCount={onMeshCount}
+        onAnatomyManifest={onAnatomyManifest}
         maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}

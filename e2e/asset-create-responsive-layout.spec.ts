@@ -47,28 +47,32 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
     // when their viewport changes; separate boundingBox calls can capture
     // different animation frames and report a false vertical mismatch.
     // The geometry threshold remains strict (3px); poll until layout settles.
-    await expect.poll(async () => form.evaluate(node => {
+    await expect.poll(async () => form.evaluate((node, width) => {
       const inputs = node.querySelectorAll('input');
       const name = inputs[0]?.getBoundingClientRect();
       const tag = inputs[1]?.getBoundingClientRect();
       if (!name || !tag) return false;
-      return viewport.width === 390
+      return width === 390
         ? tag.y > name.y + 8
         : Math.abs(tag.y - name.y) <= 3 && tag.x > name.x;
-    }), { message: 'Asset name and tag inputs must align at settled viewport width', timeout: 8000 }).toBe(true);
+    }, viewport.width), { message: 'Asset name and tag inputs must align at settled viewport width', timeout: 8000 }).toBe(true);
 
-    await expect.poll(async () => form.evaluate(node => {
-      const meterName = node.querySelector<HTMLInputElement>('input[placeholder="Motor run hours"]');
-      // Target the input itself. Reconstructing its locator from a Radix Label
-      // may resolve the wrong ancestor after the responsive modal remounts.
-      const observed = node.querySelector<HTMLInputElement>('input[placeholder="Blank = not yet measured"]');
-      if (!meterName || !observed) return false;
-      const first = meterName.getBoundingClientRect();
-      const second = observed.getBoundingClientRect();
+    // Locate the actual fields by their accessible placeholders, not by a
+    // label ancestor inside the dynamic dialog. Measure real browser boxes
+    // directly so the test reports the pixel offset if alignment regresses.
+    const meters = form.getByTestId('commissioning-meters');
+    const meterName = meters.getByPlaceholder('Motor run hours', { exact: true });
+    const openingReading = meters.getByPlaceholder('Blank = not yet measured', { exact: true });
+    await expect(meterName).toHaveCount(1);
+    await expect(openingReading).toHaveCount(1);
+    await expect.poll(async () => {
+      const [first, second] = await Promise.all([meterName.boundingBox(), openingReading.boundingBox()]);
+      if (!first || !second) return Number.POSITIVE_INFINITY;
       return viewport.width === 1440
-        ? Math.abs(second.y - first.y) <= 3
-        : second.y > first.y + 8;
-    }), { message: `Machine meter inputs must align at settled ${viewport.width}px viewport width`, timeout: 8000 }).toBe(true);
+        ? Math.abs(second.y - first.y)
+        : first.y + 8 - second.y;
+    }, { message: `Machine meter vertical offset at ${viewport.width}px width`, timeout: 8000 })
+      .toBeLessThanOrEqual(viewport.width === 1440 ? 3 : -0.01);
 
     const scroll = await dialog.evaluate(node => ({
       scrollWidth: node.scrollWidth,

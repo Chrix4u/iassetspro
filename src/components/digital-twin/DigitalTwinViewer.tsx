@@ -85,6 +85,8 @@ export interface DigitalTwinViewerProps {
   onComponentSelect?: (componentId: string, meshName: string) => void;
   /** Inform asset explorer of inspected real geometry (mapped or visual-only). */
   onAnatomySelection?: (mesh: (ImportedAnatomyMesh & { modelId?: string }) | null) => void;
+  /** Expose factual imported CAD nodes for optional engineer-reviewed mapping suggestions. */
+  onAnatomyMeshList?: (meshes: ImportedAnatomyMesh[], modelId?: string) => void;
   /** Reload bindings after an authorized mapping change; does not reload CAD bytes. */
   anatomyRevision?: number;
   /** AssetModel ID for an authorized but not yet commissioned private CAD preview. */
@@ -346,6 +348,7 @@ export function DigitalTwinViewer({
   errorComponent,
   onComponentSelect,
   onAnatomySelection,
+  onAnatomyMeshList,
   anatomyRevision = 0,
   previewAssetModelId,
 }: DigitalTwinViewerProps) {
@@ -408,7 +411,8 @@ export function DigitalTwinViewer({
       })) return previous;
       return next;
     });
-  }, []);
+    onAnatomyMeshList?.(next, previewAssetModelId || currentScene?.modelId);
+  }, [onAnatomyMeshList, previewAssetModelId, currentScene?.modelId]);
   const [retryCount, setRetryCount] = useState(0);
 
   // Scene resolution state (when twinId is used without sceneId)

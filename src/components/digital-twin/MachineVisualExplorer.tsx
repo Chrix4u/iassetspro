@@ -22,6 +22,7 @@ import { PrivateCadUploader, type PrivateCadModel } from './PrivateCadUploader';
 import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
 import type { AssetMeshBinding } from './InteractiveMesh';
 import type { ImportedAnatomyMesh } from './anatomyBindings';
+import { suggestAnatomyMappings } from './anatomyMappingSuggestions';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
 
 type MachineComponent = {
@@ -542,6 +543,16 @@ export function MachineVisualExplorer({
   const [twinLoading, setTwinLoading] = useState(true);
   const canLinkAnatomy = isAdmin() || hasPermission('digital_twin.manage');
   const [inspectedAnatomy, setInspectedAnatomy] = useState<(ImportedAnatomyMesh & {modelId?: string}) | null>(null);
+  const [importedAnatomy, setImportedAnatomy] = useState<ImportedAnatomyMesh[]>([]);
+  const [importedAnatomyModelId, setImportedAnatomyModelId] = useState<string | undefined>();
+  const [showMappingSuggestions, setShowMappingSuggestions] = useState(false);
+  const onAnatomyMeshList = useCallback((next: ImportedAnatomyMesh[], modelId?: string) => {
+    setImportedAnatomy(previous => previous.length===next.length &&
+      previous.every((item,index)=>item.id===next[index].id &&
+        item.componentId===next[index].componentId && item.path===next[index].path)
+      ? previous : next);
+    setImportedAnatomyModelId(modelId);
+  }, []);
   const [anatomyTargetId, setAnatomyTargetId] = useState('');
   const [anatomyMappingSaving, setAnatomyMappingSaving] = useState(false);
   const [anatomyRevision, setAnatomyRevision] = useState(0);
@@ -602,6 +613,9 @@ export function MachineVisualExplorer({
     setAnatomyTargetId('');
     setDemoModel(null);
     setPrivateCadModel(null);
+    setImportedAnatomy([]);
+    setImportedAnatomyModelId(undefined);
+    setShowMappingSuggestions(false);
   }, [asset.id]);
 
   useEffect(() => {
@@ -742,6 +756,8 @@ export function MachineVisualExplorer({
   }, [selectedId]);
 
   const componentMap = useMemo(() => new Map(components.map((item) => [item.id, item])), [components]);
+  const anatomyCoverage = useMemo(
+    () => suggestAnatomyMappings(importedAnatomy, components), [importedAnatomy, components]);
   const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
     if (!componentMap.has(componentId)) {
       toast.error(`3D mesh ${meshName} is not mapped to a registered component on this machine`);
@@ -1129,6 +1145,9 @@ export function MachineVisualExplorer({
                 selected={privateCadModel} onSelect={model=>{
                   setPrivateCadModel(model);
                   setInspectedAnatomy(null);
+                  setImportedAnatomy([]);
+                  setImportedAnatomyModelId(undefined);
+                  setShowMappingSuggestions(false);
                 }} />
               {canLinkAnatomy && privateCadModel?.isActive && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/30 p-2">
@@ -1157,6 +1176,7 @@ export function MachineVisualExplorer({
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
                     onAnatomySelection={onAnatomySelection}
+                    onAnatomyMeshList={onAnatomyMeshList}
                     anatomyRevision={anatomyRevision}
                   />
                 </div>
@@ -1176,6 +1196,7 @@ export function MachineVisualExplorer({
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
                     onAnatomySelection={onAnatomySelection}
+                    onAnatomyMeshList={onAnatomyMeshList}
                     anatomyRevision={anatomyRevision}
                   />
                 </div>
@@ -1215,6 +1236,60 @@ export function MachineVisualExplorer({
                   <p className="text-[11px] text-amber-800 dark:text-amber-200">
                     Each example has real separate CAD meshes for training interaction but is NOT a verified OEM drawing or safe disassembly plan.
                   </p>
+                </div>
+              )}
+              {importedAnatomyModelId && importedAnatomy.length > 0 && (twinId || privateCadModel) && (
+                <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+                  data-testid="smart-anatomy-mapping-coverage">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">CAD-to-asset mapping coverage</p>
+                      <p className="text-xs text-slate-400">
+                        {anatomyCoverage.linked.toLocaleString()} of {anatomyCoverage.total.toLocaleString()} imported mesh nodes linked
+                        {' · '}{anatomyCoverage.visualOnly.toLocaleString()} visual only
+                        {' · '}{anatomyCoverage.candidates.length} reviewable matches
+                      </p>
+                    </div>
+                    <Button size="sm" type="button" variant="outline"
+                      onClick={()=>setShowMappingSuggestions(show=>!show)}>
+                      {showMappingSuggestions?'Hide proposals':'Review proposals'}
+                    </Button>
+                  </div>
+                  {showMappingSuggestions && (
+                    <div className="max-h-64 space-y-2 overflow-y-auto overscroll-contain">
+                      {anatomyCoverage.candidates.length===0 ?
+                        <p className="text-xs text-slate-400">No unambiguous name or part-code matches. Select CAD nodes manually in the 3D assembly tree.</p> :
+                        anatomyCoverage.candidates.slice(0,50).map(candidate=>(
+                          <div key={candidate.mesh.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 p-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold">{candidate.mesh.meshName}</p>
+                              <p className="break-all font-mono text-[10px] text-slate-400">{candidate.mesh.path}</p>
+                              <p className="text-xs text-cyan-300">
+                                Suggested: {candidate.target.componentCode} · {candidate.target.name}
+                                {' · '}{Math.round(candidate.confidence*100)}% text match
+                              </p>
+                            </div>
+                            {canLinkAnatomy && <Button size="sm" type="button" variant="outline"
+                              onClick={()=>{
+                                setInspectedAnatomy({...candidate.mesh,modelId:importedAnatomyModelId});
+                                setAnatomyTargetId(candidate.target.id);
+                              }}>
+                              Review proposed link
+                            </Button>}
+                          </div>
+                        ))
+                      }
+                      {anatomyCoverage.candidates.length>50 && (
+                        <p className="text-[11px] text-slate-400">
+                          Showing the first 50 of {anatomyCoverage.candidates.length} proposals. Use the imported CAD tree to review other nodes.
+                        </p>
+                      )}
+                      <p className="text-[11px] text-amber-300">
+                        Suggestions compare source names to registered codes/descriptions. They are NOT verified mechanical identities and never save without a manager reviewing each link.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {inspectedAnatomy && (twinId || privateCadModel) && (

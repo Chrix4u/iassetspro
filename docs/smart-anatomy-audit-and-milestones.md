@@ -412,3 +412,32 @@ This change is for hosted Ubuntu 24.04 runners only. If the runner lacks
 required shared libraries, browser launch will still fail visibly and
 must be corrected using a reproducible runner image, not by silently
 disabling the suite.
+
+### Encrypted CAD backup evidence — read-only local integrity gate
+
+Run `IASSETSPRO_CAD_BACKUP_EVIDENCE=/absolute/path/evidence.json node
+scripts/smart-anatomy/verify-backup-evidence.mjs` after the infrastructure
+operator creates a genuine encrypted backup and evidence manifest. The
+manifest is private (0600) and uses the following schema:
+
+```json
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-19T12:00:00Z",
+  "sourceCadRoot": "/absolute/private/cad-root",
+  "encryption": {"enabled": true, "format": "age", "recipientCount": 1},
+  "encryptedArtifact": {
+    "path": "/absolute/secure/backups/cad-backup.age",
+    "sizeBytes": 123456,
+    "sha256": "64-lowercase-or-uppercase-hex-characters"
+  }
+}
+```
+
+The script **does not make backups, read or write live CAD, connect to
+PostgreSQL, decrypt data or change file permissions**. It refuses nonprivate
+or symlinked artifacts, mismatched size/digest, stale manifests, invalid
+encryption metadata and backup artifacts placed within the live CAD root.
+A pass proves **only** local artifact integrity and the declared encryption metadata; it does not cryptographically verify encryption. Off-site
+replication, encryption-key escrow, a tested restore drill, database snapshot
+consistency and manufacturer licensing remain separate mandatory gates.

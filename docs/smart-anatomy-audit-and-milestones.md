@@ -219,3 +219,51 @@ These tests cover both original training GLBs and maliciously modified
 fixtures. This is **input validation**, not a substitute for isolated
 workers and specialist format-conversion security scans; arbitrary STEP,
 IGES, IFC, STL and OBJ uploads are still deliberately not accepted.
+
+
+## Milestone 14 — offline STL workshop scan handoff (real triangles, no invented assemblies)
+
+A standalone, explicitly **offline** binary/ASCII STL → GLB 2.0 converter
+prepares restricted engineering-owned workshop scans for the existing private
+GLB upload endpoint. It performs no database writes, remote requests,
+automatic part registration, or maintenance action. The source unit is
+mandatory: `mm`, `cm`, `m`, `in`, or `ft`. The converted geometry is
+written in glTF-standard meters, preserving the source orientation and
+triangle topology. Face normals are recomputed from the actual vertices.
+
+Sample invocation from the iAssetsPro repository root:
+
+```bash
+bun scripts/smart-anatomy/convert-offline-stl.ts \
+  --input /secure/source/workshop-scan.stl \
+  --output /secure/review/workshop-scan.glb \
+  --units mm \
+  --origin site-owned-scan \
+  --source-note "Authorized site workshop scan, verify units and orientation"
+```
+
+The CLI rejects nonregular files, source files exceeding 25 MB, malformed
+binary/ASCII triangles, nonfinite coordinates, degenerate faces, excessive
+triangle counts or a GLB conversion exceeding 25 MB. It creates the GLB
+and a sidecar `workshop-scan.glb.source.json` under restrictive 0600 file
+permissions, without overwriting existing files. The sidecar records the
+original STL SHA-256, converted GLB SHA-256, legal-source category, documented
+origin, declared source units, original format, triangle count and explicit
+lack of engineer sign-off. Keep both the original source STL and the sidecar
+outside public web storage.
+
+An engineer may inspect the GLB locally and then upload it to the plant's
+private model library, documenting the source checksum and units in the upload
+source note. The app independently computes and records its own GLB checksum
+and requires mapping/approval by **another authorized engineer**.
+
+**Crucial format limitation:** STL is a triangle surface, not a manufacturer
+assembly tree. The converter emits **exactly one** unverified source mesh per
+STL. It does not infer component separations, explode the STL into fake parts,
+invent OEM identifiers, reverse engineer a spare-parts BOM, or approve
+physical disassembly. For an authentic multipart exploded view, obtain
+assembly-preserving OEM CAD or an independently reviewed multi-part model.
+
+This milestone is an offline preparation utility, **not** a live STL upload
+API or isolated asynchronous STEP/IGES/IFC conversion service. The latter
+remains a separate enterprise deployment requirement.

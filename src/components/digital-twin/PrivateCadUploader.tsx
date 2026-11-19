@@ -286,6 +286,13 @@ export function PrivateCadUploader({
 
       {showUpload && canManage && (
         <div className="grid gap-3 border-t border-slate-700 pt-3 sm:grid-cols-2">
+          <p className="sm:col-span-2 text-[11px] leading-relaxed text-slate-300">
+            STL workshop scans must first be converted to GLB offline by an engineer
+            with explicit source units and documented origin. Retain the generated
+            SHA-256 provenance manifest and record its source details below.
+            A single STL has no genuine assembly hierarchy or OEM part identity;
+            its preview cannot substitute for a manufacturer-reviewed exploded CAD.
+          </p>
           <div className="space-y-1">
             <Label className="text-xs text-slate-300">Self-contained glTF binary (GLB · max 25 MB)</Label>
             <Input aria-label="Choose private CAD GLB file" type="file"

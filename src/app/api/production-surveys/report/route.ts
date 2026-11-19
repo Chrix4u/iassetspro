@@ -60,7 +60,7 @@ export async function GET(request:NextRequest) {
         ...(requiresCrewScope(session)?{OR:[
           {crew:{some:{userId:session.userId}}},
           {records:{some:{recordedById:session.userId}}},
-        ]}:{}),}
+        ]}:{}),},
       select:{id:true,assetId:true,unit:true,productionDate:true,targetQuantity:true,
         asset:{select:{name:true,assetTag:true}}},
       orderBy:[{productionDate:'asc'},{assetId:'asc'}],take:20001,

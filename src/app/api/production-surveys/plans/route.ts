@@ -43,7 +43,7 @@ export async function GET(request:NextRequest){
           // Keep original operators able to inspect legacy shifts recorded
           // before date-specific crew assignments existed.
           {records:{some:{recordedById:session.userId}}},
-        ]}:{}),}
+        ]}:{}),},
       include:{crew:{include:{user:{select:{id:true,fullName:true,username:true,staffId:true,status:true}}}}},
       orderBy:[{productionDate:'asc'},{createdAt:'asc'}],take:1000,
     });

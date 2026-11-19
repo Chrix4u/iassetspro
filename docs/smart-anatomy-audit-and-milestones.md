@@ -184,3 +184,16 @@ server records are created. Source-provided cell text is quoted and sanitized
 against spreadsheet formula injection, and exported filenames contain only
 safe characters. Engineers may review the worksheet externally, but there is
 no automatic import or bulk mapping approval yet.
+
+
+## Milestone 12 — protected CAD asset ownership
+
+The older mesh-binding API supported plant-wide scene models that may refer to
+multiple machines. That general behavior is retained for legacy nonprivate
+Digital Twins. A **private Smart Anatomy model**, however, is an immutable
+provenance record for one installed machine; its source-node links must never
+be remapped to a different asset, even if the other asset is in the same
+plant. Both create and edit routes now enforce this model-to-asset identity
+on the server, in addition to plant authorization and registered-component
+ownership checks. Unit tests exercise cross-machine attempts and ensure a
+draft model can still be mapped to its actual owning machine.

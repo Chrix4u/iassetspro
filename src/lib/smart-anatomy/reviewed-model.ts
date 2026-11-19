@@ -14,10 +14,14 @@ interface ReviewableModel {
  * Uncommissioned uploads may be mapped by an authorized engineer. Withdrawn
  * revisions remain immutable for forensic and technical traceability.
  */
+export function isPrivateSmartAnatomyModel(model: Pick<ReviewableModel, 'filePath'>): boolean {
+  return model.filePath.startsWith('/api/smart-anatomy/models/');
+}
+
 export async function reviewedCadMappingsAreFrozen(
   model: ReviewableModel,
 ): Promise<boolean> {
-  if (!model.filePath.startsWith('/api/smart-anatomy/models/')) return false;
+  if (!isPrivateSmartAnatomyModel(model)) return false;
   if (model.isActive) return true;
   const withdrawal = await db.auditLog.findFirst({
     where: {

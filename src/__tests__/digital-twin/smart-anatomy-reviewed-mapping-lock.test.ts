@@ -109,6 +109,26 @@ describe('approved CAD exact component mapping immutability',()=>{
     expect(mocked.bindingCreate).toHaveBeenCalledOnce();
   });
 
+  it('rejects draft private CAD mappings to a different machine in the same plant',async()=>{
+    mocked.modelFindUnique.mockResolvedValue(model(false));
+    const res=await POST(request('POST','/api/mesh-bindings',{
+      ...payload,assetId:'asset-2',componentId:'part-2',
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('source machine asset');
+    expect(mocked.bindingCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects editing a draft private CAD link to target another machine',async()=>{
+    mocked.bindingFindUnique.mockResolvedValue(existing(false));
+    const res=await PUT(request('PUT','/api/mesh-bindings/binding-1',{
+      assetId:'asset-2',componentId:'part-2',
+    }),context);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('source machine asset');
+    expect(mocked.bindingUpdate).not.toHaveBeenCalled();
+  });
+
   it('keeps legacy non-private digital-twin mapping behavior unchanged',async()=>{
     expect(await reviewedCadMappingsAreFrozen(model(true,'/uploads/legacy-pump.glb'))).toBe(false);
     expect(mocked.auditFindFirst).not.toHaveBeenCalled();

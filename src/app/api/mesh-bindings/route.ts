@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
-import { reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
+import { isPrivateSmartAnatomyModel, reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
 
 export async function GET(request: NextRequest) {
   try {
@@ -119,6 +119,15 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
       }, { status: 409 });
+    }
+    // A protected source CAD file documents one installed machine. Unlike
+    // legacy plant-wide scenes, it may not silently target other machines
+    // even when both machines belong to the same plant.
+    if (isPrivateSmartAnatomyModel(model) && model.assetId !== assetId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD mesh mapping must belong to the source machine asset',
+      }, { status: 400 });
     }
 
     const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });

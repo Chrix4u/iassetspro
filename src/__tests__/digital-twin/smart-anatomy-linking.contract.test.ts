@@ -29,6 +29,8 @@ describe('Smart Anatomy imported CAD-to-registered-component workflow',()=>{
     expect(create).toContain('...(meshPath ? [{ meshPath }] : [])');
     expect(create).toContain('component.assetId !== assetId');
     expect(create).toContain('reviewedCadMappingsAreFrozen(model)');
+    expect(create).toContain('model.assetId !== assetId');
+    expect(edit).toContain('targetAssetId !== existing.model.assetId');
     expect(edit).toContain('id:{not:existing.id}');
     expect(edit).toContain('meshPath:newPath');
     expect(edit).toContain('component.assetId !== targetAssetId');

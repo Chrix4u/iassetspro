@@ -392,3 +392,23 @@ This is a **pre-UAT smoke gate**, not a substitute for authenticated
 cross-plant testing, independent engineering acceptance, licensed OEM
 source files, encrypted off-server backup evidence or a verified recovery
 drill. Do not point it at the live production origin.
+
+### CI infrastructure repair — Chromium installation without apt
+
+GitHub Actions run `44523189937` on 19 November 2026 passed
+TypeScript, unit tests, lint, application build and container build, but
+both Playwright jobs failed **before any browser tests ran**. The Ubuntu
+package mirror returned HTTP 503 and timeouts during `playwright install
+--with-deps chromium`; this was not an application test failure.
+
+Both browser jobs now install the pinned Chromium binary using
+`scripts/smart-anatomy/install-ci-chromium.sh`, without mutating the
+Ubuntu apt package set. The installer is restricted to Linux CI, retries
+one transient download failure and exits nonzero if Chromium cannot be
+installed. The browser test suites and required CI gate remain mandatory:
+**no skip, ignored failure or weakened acceptance threshold**.
+
+This change is for hosted Ubuntu 24.04 runners only. If the runner lacks
+required shared libraries, browser launch will still fail visibly and
+must be corrected using a reproducible runner image, not by silently
+disabling the suite.

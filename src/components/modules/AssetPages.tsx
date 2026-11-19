@@ -411,17 +411,31 @@ export function AssetsPage() {
         </div>
       </Card>
 
-      <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        
-          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{editId ? 'Edit Asset' : 'Create Asset'}</h2><p className="text-sm text-muted-foreground">{editId ? 'Update asset information.' : 'Register a new asset.'}</p></div>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Asset Tag *</Label><Input value={form.assetTag} onChange={e => setForm(f => ({ ...f, assetTag: e.target.value }))} /></div>
+      <ResponsiveDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        size="extra-wide"
+        desktopMaxWidth="sm:max-w-[94vw] xl:max-w-[68rem]"
+        title={editId ? 'Edit Asset' : 'Create Asset'}
+        description={editId ? 'Update asset information.' : 'Register a new asset.'}
+        footer={
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {saving ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              {editId ? 'Save Changes' : 'Create Asset'}
+            </Button>
+          </div>
+        }
+      >
+          <div className="grid min-w-0 gap-4 py-2" data-testid="asset-create-form">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Asset Tag *</Label><Input value={form.assetTag} onChange={e => setForm(f => ({ ...f, assetTag: e.target.value }))} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Serial Number</Label><Input value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Category</Label>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Serial Number</Label><Input value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Category</Label>
                 <AsyncSearchableSelect
                   value={form.categoryId}
                   onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}
@@ -440,33 +454,33 @@ export function AssetsPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Manufacturer</Label><Input value={form.manufacturer} onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Model</Label><Input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Year</Label><Input value={form.yearManufactured} onChange={e => setForm(f => ({ ...f, yearManufactured: e.target.value }))} placeholder="2024" /></div>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="min-w-0 space-y-1.5"><Label>Manufacturer</Label><Input value={form.manufacturer} onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Model</Label><Input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Year</Label><Input value={form.yearManufactured} onChange={e => setForm(f => ({ ...f, yearManufactured: e.target.value }))} placeholder="2024" /></div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Condition</Label>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="min-w-0 space-y-1.5"><Label>Condition</Label>
                 <Select value={form.acquisitionCondition} onValueChange={v => setForm(f => ({ ...f, acquisitionCondition: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="used">Used</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>Status</Label>
+              <div className="min-w-0 space-y-1.5"><Label>Status</Label>
                 <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>Criticality</Label>
+              <div className="min-w-0 space-y-1.5"><Label>Criticality</Label>
                 <Select value={form.criticality} onValueChange={v => setForm(f => ({ ...f, criticality: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Plant</Label>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Plant</Label>
                 <AsyncSearchableSelect
                   value={form.plantId}
                   onValueChange={v => setForm(f => ({ ...f, plantId: v, functionalLocationId: '' }))}
@@ -485,7 +499,7 @@ export function AssetsPage() {
                   searchPlaceholder="Search plants..."
                 />
               </div>
-              <div className="space-y-1.5"><Label>Department</Label>
+              <div className="min-w-0 space-y-1.5"><Label>Department</Label>
                 <AsyncSearchableSelect
                   value={form.departmentId}
                   onValueChange={v => setForm(f => ({ ...f, departmentId: v }))}
@@ -517,8 +531,8 @@ export function AssetsPage() {
             <p className="text-xs text-muted-foreground">The selected hierarchy code is the authoritative installation address. Legacy Location, Building, Floor and Area fields are intentionally not duplicated here.</p>
             <CommissioningParameterFields items={machineParameters} onChange={setMachineParameters}/>
             {!editId&&canCreateMeters&&<CommissioningMeterFields items={machineMeters} onChange={setMachineMeters}/>}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Assigned To</Label>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Assigned To</Label>
                 <AsyncSearchableSelect
                   value={form.assignedToId}
                   onValueChange={v => setForm(f => ({ ...f, assignedToId: v }))}
@@ -536,7 +550,7 @@ export function AssetsPage() {
                   searchPlaceholder="Search users..."
                 />
               </div>
-              <div className="space-y-1.5"><Label>Parent Asset</Label>
+              <div className="min-w-0 space-y-1.5"><Label>Parent Asset</Label>
                 <AsyncSearchableSelect
                   value={form.parentId}
                   onValueChange={v => setForm(f => ({ ...f, parentId: v }))}
@@ -555,18 +569,13 @@ export function AssetsPage() {
                 />
               </div>
             </div>
-            <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <DatePicker label="Purchase Date" value={form.purchaseDate || undefined} onChange={v => setForm(f => ({ ...f, purchaseDate: v || '' }))} />
-              <div className="space-y-1.5"><Label>Purchase Cost</Label><Input type="number" value={form.purchaseCost} onChange={e => setForm(f => ({ ...f, purchaseCost: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Expected Life (years)</Label><Input type="number" value={form.expectedLifeYears} onChange={e => setForm(f => ({ ...f, expectedLifeYears: e.target.value }))} /></div>
+            <div className="min-w-0 space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <DatePicker className="min-w-0 space-y-1.5" label="Purchase Date" value={form.purchaseDate || undefined} onChange={v => setForm(f => ({ ...f, purchaseDate: v || '' }))} />
+              <div className="min-w-0 space-y-1.5"><Label>Purchase Cost</Label><Input className="h-11 w-full min-w-0" type="number" value={form.purchaseCost} onChange={e => setForm(f => ({ ...f, purchaseCost: e.target.value }))} /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Expected Life (years)</Label><Input className="h-11 w-full min-w-0" type="number" value={form.expectedLifeYears} onChange={e => setForm(f => ({ ...f, expectedLifeYears: e.target.value }))} /></div>
             </div>
           </div>
-          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save Changes' : 'Create Asset'}</Button>
-          </div>
-        
       </ResponsiveDialog>
 
       {/* Delete Confirmation Dialog */}

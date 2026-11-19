@@ -41,7 +41,7 @@ export async function GET(request:NextRequest) {
       return NextResponse.json({success:false,error:'Report window must be 0–366 days'},{status:400});
     const assetId=q.get('assetId')||undefined;
     const crewFilter:Prisma.ProductionShiftRecordWhereInput=requiresCrewScope(session)
-      ?{plan:{crew:{some:{userId:session.userId}}}}:{};
+      ?{OR:[{plan:{crew:{some:{userId:session.userId}}}},{recordedById:session.userId}]}:{};
     const where:Prisma.ProductionShiftRecordWhereInput={...getPlantFilterWhere(scope),...crewFilter,status:'approved',
       productionDate:{gte:first,lte:last},...(assetId?{assetId}:{})};
     const records=await db.productionShiftRecord.findMany({where,include:{
@@ -57,7 +57,10 @@ export async function GET(request:NextRequest) {
     const scheduled=await db.productionShiftPlan.findMany({
       where:{...getPlantFilterWhere(scope),productionDate:{gte:first,lte:last},
         ...(assetId?{assetId}:{}),
-        ...(requiresCrewScope(session)?{crew:{some:{userId:session.userId}}}:{})},
+        ...(requiresCrewScope(session)?{OR:[
+          {crew:{some:{userId:session.userId}}},
+          {records:{some:{recordedById:session.userId}}},
+        ]}:{}),}
       select:{id:true,assetId:true,unit:true,productionDate:true,targetQuantity:true,
         asset:{select:{name:true,assetTag:true}}},
       orderBy:[{productionDate:'asc'},{assetId:'asc'}],take:20001,

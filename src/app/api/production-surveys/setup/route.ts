@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
         new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)
         return NextResponse.json({success:false,error:'Select a valid production date to view assigned shifts'},{status:400});
       const plans=await db.productionShiftPlan.findMany({where:{assetId,productionDate:new Date(date+'T00:00:00Z'),
-        crew:{some:{userId:session.userId}}},select:{shiftTemplateId:true}});
+        OR:[{crew:{some:{userId:session.userId}}},
+          {records:{some:{recordedById:session.userId}}}]},select:{shiftTemplateId:true}});
       const permitted=new Set(plans.map(x=>x.shiftTemplateId));
       visibleShifts=shifts.filter(shift=>permitted.has(shift.id));
     }

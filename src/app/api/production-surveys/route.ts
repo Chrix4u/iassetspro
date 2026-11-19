@@ -25,7 +25,10 @@ export async function GET(request:NextRequest) {
     const limit=Math.max(1,Math.min(Number(q.get('limit'))||40,100));
     const where:Prisma.ProductionShiftRecordWhereInput={
       ...getPlantFilterWhere(scope),...(assetId?{assetId}:{}),...(status?{status}:{}),
-      ...(requiresCrewScope(session)?{plan:{crew:{some:{userId:session.userId}}}}:{}),
+      ...(requiresCrewScope(session)?{OR:[
+        {plan:{crew:{some:{userId:session.userId}}}},
+        {recordedById:session.userId},
+      ]}:{}),
       ...(from||to?{productionDate:{...(parse(from)?{gte:parse(from)!}:{}),...(parse(to)?{lte:parse(to)!}:{})}}:{}),
     };
     const [records,total]=await Promise.all([

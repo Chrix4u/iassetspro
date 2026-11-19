@@ -38,6 +38,11 @@ describe('production survey shift crew, defects and product safety',()=>{
    expect(plans).toContain('existingRecord');
    expect(create).toContain('planId:plan.id');
    expect(create).toContain('productCode:plan.productCode');
+   expect(update).toContain('assignedCount>0');
+   expect(text('src/app/api/production-surveys/setup/route.ts'))
+     .toContain('records:{some:{recordedById:session.userId}}');
+   expect(text('src/app/api/production-surveys/report/route.ts'))
+     .toContain('recordedById:session.userId');
  });
  it('reports approved gross, defects, good output and actual meter totals separately',()=>{
    const report=text('src/app/api/production-surveys/report/route.ts');

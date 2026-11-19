@@ -54,7 +54,13 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
       if(requiresCrewScope(session)){
         const assigned=await tx.productionShiftAssignment.findUnique({
           where:{planId_userId:{planId:plan.id,userId:session.userId}}});
-        if(!assigned)throw new Error('You are no longer assigned to this shift; ask a planner to review the correction');
+        if(!assigned){
+          // Legacy shift records predate crew rosters. The original recorder
+          // may still correct a rejected record if no roster has ever existed.
+          const assignedCount=await tx.productionShiftAssignment.count({where:{planId:plan.id}});
+          if(assignedCount>0)
+            throw new Error('You are no longer assigned to this shift; ask a planner to review the correction');
+        }
       }
       const fromPlan=parseProductionSurveyInput({...raw,assetId:parsed.assetId,
         productionDate:parsed.productionDate.toISOString().slice(0,10),shiftTemplateId:parsed.shiftTemplateId,

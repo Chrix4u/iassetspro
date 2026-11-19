@@ -541,7 +541,8 @@ export function ProductionCapacityPage() {
           const utilization = totalCapacity > 0 ? Math.round((planned / totalCapacity) * 100) : 0;
           const efficiency = planned > 0 ? Math.round((completed / planned) * 100) : 0;
           const status = utilization > 100 ? 'critical' : utilization > 90 ? 'warning' : 'optimal';
-          return { name: wc.name, totalCapacity, planned: Math.round(planned * 0.8), actual: Math.round(completed * 0.8), utilization, efficiency: Math.min(efficiency, 100), trend: (utilization > 80 ? 'up' : utilization > 50 ? 'stable' : 'down') as const, status };
+          const trend: 'up' | 'stable' | 'down' = utilization > 80 ? 'up' : utilization > 50 ? 'stable' : 'down';
+          return { name: wc.name, totalCapacity, planned: Math.round(planned * 0.8), actual: Math.round(completed * 0.8), utilization, efficiency: Math.min(efficiency, 100), trend, status };
         });
         setCapacityData(data);
         const totalCap = data.reduce((s: number, d: any) => s + d.totalCapacity, 0);
@@ -629,7 +630,7 @@ export function ProductionEfficiencyPage() {
           const total = wcOrders.length;
           const oee = total > 0 ? Math.round((completed / total) * 100) : 0;
           return { name: wc.name, oee };
-        }).filter(w => wc.oee > 0 || wc.oee === 0).sort((a, b) => b.oee - a.oee);
+        }).filter(w => w.oee >= 0).sort((a, b) => b.oee - a.oee);
         setTopPerformers(wcEfficiency.slice(0, 5));
         setBottomPerformers(wcEfficiency.slice(-3).reverse());
         // Build monthly data from actual orders grouped by scheduledStart (or createdAt fallback)

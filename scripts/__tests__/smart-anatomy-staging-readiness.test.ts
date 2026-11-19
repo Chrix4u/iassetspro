@@ -22,7 +22,8 @@ describe('read-only Smart Anatomy staging gate',()=>{
     const fetcher=vi.fn().mockImplementation(async(url:string)=>({
       status:url.endsWith('/api/health')?200:401,
       url,redirected:false,
-      json:async()=>({status:'healthy',checks:{database:{status:'healthy'}},uptime:15}),
+      headers:{get:()=> 'application/json; charset=utf-8'},
+      json:async()=>url.endsWith('/api/health')?({status:'healthy',checks:{database:{status:'healthy'}},uptime:15}):({error:'Not authenticated'}),
       body:{cancel:vi.fn()},
     }));
     const output={log:vi.fn()} as unknown as Console;
@@ -34,6 +35,28 @@ describe('read-only Smart Anatomy staging gate',()=>{
       expect(options.credentials).toBe('omit');
     }
     expect(output.log).toHaveBeenCalledWith(expect.stringContaining('Read-only smoke checks passed'));
+  });
+
+  it('rejects proxy or SSO 401 responses that are not the application denial JSON',async()=>{
+    const origin='https://uat.lightworldtech.com';
+    const output={log:vi.fn()} as unknown as Console;
+    for(const [contentType,denial] of [
+      ['text/html',{error:'Not authenticated'}],
+      ['application/json',{error:'Unauthorized'}],
+      ['application/json',{}],
+    ] as const){
+      const fetcher=vi.fn().mockImplementation(async(url:string)=>({
+        status:url.endsWith('/api/health')?200:401,
+        url,redirected:false,
+        headers:{get:()=>contentType},
+        json:async()=>url.endsWith('/api/health')
+          ? {status:'healthy',checks:{database:{status:'healthy'}},uptime:15}
+          : denial,
+        body:{cancel:vi.fn()},
+      }));
+      await expect(runStagingReadiness({origin,fetcher,output}))
+        .rejects.toThrow('Staging readiness failed');
+    }
   });
 
   it('rejects a health 200 that is HTML, degraded, or lacks a healthy database',async()=>{

@@ -38,10 +38,24 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
     await page.setViewportSize(viewport);
     const dialog = page.getByRole('dialog').filter({ has: form });
     await expect(dialog).toBeVisible({ timeout: 10_000 });
-    const rect = await dialog.boundingBox();
-    expect(rect).not.toBeNull();
-    if (viewport.width === 1440) expect(rect!.width).toBeGreaterThan(950);
-    expect(rect!.width).toBeLessThanOrEqual(viewport.width + 1);
+    // Chromium can keep the prior width for a frame immediately after
+    // page.setViewportSize(). The CSS cap must settle to the NEW viewport;
+    // poll the real DOM box instead of sampling a single transition frame.
+    await expect.poll(() => page.evaluate(() => window.innerWidth), {
+      message: `Browser viewport must settle at ${viewport.width}px`, timeout: 10_000,
+    }).toBe(viewport.width);
+    await expect.poll(async () => {
+      const rect = await dialog.boundingBox();
+      return rect?.width ?? Number.POSITIVE_INFINITY;
+    }, {
+      message: `Machine modal must fit within ${viewport.width}px after viewport change`,
+      timeout: 10_000,
+    }).toBeLessThanOrEqual(viewport.width + 1);
+    if (viewport.width === 1440) {
+      const rect = await dialog.boundingBox();
+      expect(rect).not.toBeNull();
+      expect(rect!.width).toBeGreaterThan(950);
+    }
 
     // Measure each pair in one animation frame. Radix dialogs/sheets animate
     // when their viewport changes; separate boundingBox calls can capture

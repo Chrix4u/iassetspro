@@ -29,10 +29,10 @@ export function CommissioningParameterFields({items,onChange,subject='machine'}:
       <Button type="button" size="sm" variant="outline" onClick={()=>onChange([...items,blankParameter()])}><Plus className="mr-1 h-3.5 w-3.5"/>Add parameter</Button>
     </div>
     {items.map((p,i)=><div key={i} className="space-y-2 rounded-md border bg-muted/20 p-2.5">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[10rem] flex-1 space-y-1"><Label>Parameter name *</Label><Input value={p.name} placeholder="Temperature, vibration, sound, pressure..." onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
-        <div className="w-36 space-y-1"><Label>Inspection</Label><Select value={p.inspectionType} onValueChange={v=>onChange(updateAt(items,i,{inspectionType:v as ParameterDraft['inspectionType']}))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="measurement">Instrument</SelectItem><SelectItem value="visual">Visual</SelectItem></SelectContent></Select></div>
-        <Button type="button" variant="ghost" size="icon" aria-label={'Remove parameter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>i!==j))}><Trash2 className="h-4 w-4"/></Button>
+      <div className="grid min-w-0 grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+        <div className="min-w-0 space-y-1"><Label>Parameter name *</Label><Input value={p.name} placeholder="Temperature, vibration, sound, pressure..." onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
+        <div className="min-w-0 space-y-1"><Label>Inspection</Label><Select value={p.inspectionType} onValueChange={v=>onChange(updateAt(items,i,{inspectionType:v as ParameterDraft['inspectionType']}))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="measurement">Instrument</SelectItem><SelectItem value="visual">Visual</SelectItem></SelectContent></Select></div>
+        <Button type="button" variant="ghost" size="icon" className="justify-self-end" aria-label={'Remove parameter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>i!==j))}><Trash2 className="h-4 w-4"/></Button>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="space-y-1"><Label>Unit {p.inspectionType==='measurement'?'*':''}</Label><Input value={p.unit} placeholder="°C, mm/s, dB, bar, A..." onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
@@ -52,12 +52,12 @@ export function CommissioningMeterFields({items,onChange,subject='machine'}:{
       <div><h3 className="text-sm font-semibold">{subject==='machine'?'Machine':'Part'} meters</h3><p className="text-xs text-muted-foreground">Register cumulative counters for usage-based PM. Leave the opening reading blank if unknown; enter 0 only when actually observed. Part meters are uniquely identified by their part code in the PM meter list.</p></div>
       <Button size="sm" type="button" variant="outline" onClick={()=>onChange([...items,blankMeter()])}><Plus className="mr-1 h-3.5 w-3.5"/>Add meter</Button>
     </div>
-    {items.map((m,i)=><div key={i} className="grid gap-2 rounded-md border p-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr_auto]">
-      <div className="space-y-1"><Label>Meter name *</Label><Input value={m.name} placeholder="Motor run hours" onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
-      <div className="space-y-1"><Label>Type</Label><Select value={m.meterType} onValueChange={v=>onChange(updateAt(items,i,{meterType:v,unit:v==='runtime'?'hours':m.unit}))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{['runtime','cycles','production','energy','distance','general'].map(v=><SelectItem key={v} value={v}>{v==='runtime'?'Running hours':v}</SelectItem>)}</SelectContent></Select></div>
-      <div className="space-y-1"><Label>Unit *</Label><Input value={m.unit} onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
-      <div className="space-y-1"><Label>Observed initial reading (optional)</Label><Input type="number" min="0" step="any" placeholder="Blank = not yet measured" value={m.initialValue} onChange={e=>onChange(updateAt(items,i,{initialValue:e.target.value}))}/></div>
-      <Button type="button" variant="ghost" size="icon" className="self-end" aria-label={'Remove meter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
+    {items.map((m,i)=><div key={i} className="grid min-w-0 grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1.15fr)_minmax(0,0.75fr)_minmax(0,1.3fr)_auto]">
+      <div className="flex min-w-0 flex-col"><Label className="flex h-12 shrink-0 items-end leading-tight">Meter name *</Label><Input className="mt-1 w-full min-w-0" value={m.name} placeholder="Motor run hours" onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
+      <div className="flex min-w-0 flex-col"><Label className="flex h-12 shrink-0 items-end leading-tight">Type</Label><Select value={m.meterType} onValueChange={v=>onChange(updateAt(items,i,{meterType:v,unit:v==='runtime'?'hours':m.unit}))}><SelectTrigger className="mt-1 w-full min-w-0"><SelectValue/></SelectTrigger><SelectContent>{['runtime','cycles','production','energy','distance','general'].map(v=><SelectItem key={v} value={v}>{v==='runtime'?'Running hours':v}</SelectItem>)}</SelectContent></Select></div>
+      <div className="flex min-w-0 flex-col"><Label className="flex h-12 shrink-0 items-end leading-tight">Unit *</Label><Input className="mt-1 w-full min-w-0" value={m.unit} onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
+      <div className="flex min-w-0 flex-col"><Label className="flex h-12 shrink-0 items-end leading-tight">Observed initial reading (optional)</Label><Input className="mt-1 w-full min-w-0" type="number" min="0" step="any" placeholder="Blank = not yet measured" value={m.initialValue} onChange={e=>onChange(updateAt(items,i,{initialValue:e.target.value}))}/></div>
+      <Button type="button" variant="ghost" size="icon" className="justify-self-end self-end" aria-label={'Remove meter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>j!==i))}><Trash2 className="h-4 w-4"/></Button>
     </div>)}
     {!items.length&&<p className="text-sm text-muted-foreground">No meters yet. You can add them later under the asset's Meters tab.</p>}
   </section>;

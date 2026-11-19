@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession,hasPermission,isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict,getPlantFilterWhere,getPlantScope } from '@/lib/plant-scope';
+import { requiresCrewScope } from '@/lib/production-shift-access';
 import { allowedProductionMeter,allowedRuntimeMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
 
 const allowed = (session: NonNullable<ReturnType<typeof getSession>>) => isAdmin(session) || hasPermission(session,'production_surveys.view');
@@ -24,12 +25,17 @@ export async function GET(request:NextRequest) {
     const limit=Math.max(1,Math.min(Number(q.get('limit'))||40,100));
     const where:Prisma.ProductionShiftRecordWhereInput={
       ...getPlantFilterWhere(scope),...(assetId?{assetId}:{}),...(status?{status}:{}),
+      ...(requiresCrewScope(session)?{OR:[
+        {plan:{crew:{some:{userId:session.userId}}}},
+        {recordedById:session.userId},
+      ]}:{}),
       ...(from||to?{productionDate:{...(parse(from)?{gte:parse(from)!}:{}),...(parse(to)?{lte:parse(to)!}:{})}}:{}),
     };
     const [records,total]=await Promise.all([
       db.productionShiftRecord.findMany({where,include:{
         asset:{select:{id:true,name:true,assetTag:true}},shift:{select:{id:true,name:true,code:true}},
         recordedBy:{select:{id:true,fullName:true}},reviewedBy:{select:{id:true,fullName:true}},
+        plan:{include:{crew:{include:{user:{select:{id:true,fullName:true}}}}}},
         meter:{select:{id:true,name:true,unit:true}},
       },orderBy:[{productionDate:'desc'},{createdAt:'desc'}],skip:(page-1)*limit,take:limit}),
       db.productionShiftRecord.count({where}),
@@ -66,6 +72,20 @@ export async function POST(request:NextRequest) {
       const plan=await tx.productionShiftPlan.findUnique({
         where:{assetId_productionDate_shiftTemplateId:{assetId,productionDate,shiftTemplateId}}});
       if(!plan)throw new Error('Planner must configure this machine, date and shift before operators can report');
+      if(requiresCrewScope(session)){
+        const assigned=await tx.productionShiftAssignment.findUnique({
+          where:{planId_userId:{planId:plan.id,userId:session.userId}}});
+        if(!assigned)throw new Error('You are not assigned to this machine and shift on the selected date');
+      }
+      const scheduledStart=plan.startsAt||shift.startsAt;
+      const scheduledEnd=plan.endsAt||shift.endsAt;
+      if(scheduledStart&&scheduledEnd){
+        // Production date identifies shift START; night shifts end the next day in Ghana (GMT).
+        const day=productionDateText;
+        const end=new Date(day+'T'+scheduledEnd+':00.000Z');
+        if(scheduledEnd<=scheduledStart)end.setUTCDate(end.getUTCDate()+1);
+        if(Date.now()<end.getTime())throw new Error('This shift has not ended; enter production after the shift is over');
+      }
       const parsed=parseProductionSurveyInput({...raw,assetId,shiftTemplateId,productionDate:productionDateText,
         unit:plan.unit,targetQuantity:plan.targetQuantity,availableMinutes:plan.availableMinutes});
       if(parsed.assetMeterId){
@@ -83,13 +103,15 @@ export async function POST(request:NextRequest) {
           throw new Error('Production and operating-hour meters must be different');
       }
       const created=await tx.productionShiftRecord.create({data:{
-        ...parsed,plantId:asset.plantId,recordedById:session.userId,status:'submitted',
+        ...parsed,plantId:asset.plantId,planId:plan.id,productCode:plan.productCode,
+        recordedById:session.userId,status:'submitted',
         plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
         standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'create',entityType:'production_shift_record',entityId:created.id,
         newValues:JSON.stringify({assetId:created.assetId,shiftTemplateId:created.shiftTemplateId,date:created.productionDate,
-          output:created.outputQuantity,unit:created.unit,target:created.targetQuantity,
+          output:created.outputQuantity,defective:created.defectiveQuantity,
+          productCode:created.productCode,unit:created.unit,target:created.targetQuantity,
           availableMinutes:created.availableMinutes,planId:plan.id,meterId:created.assetMeterId,
           runtimeMeterId:created.runtimeMeterId,runtimeCounterHours:created.runtimeCounterHours})}});
       return created;
@@ -98,7 +120,7 @@ export async function POST(request:NextRequest) {
   }catch(error){
     const msg=error instanceof Error?error.message:'Could not submit survey';
     const duplicate=/Unique constraint|P2002/i.test(msg);
-    const invalid=/Planner must configure|Select an active production meter|Production date|operating-hours meter|must be|stoppage|positive production|required|invalid/i.test(msg);
+    const invalid=/Planner must configure|not assigned|not ended|Defective production|Select an active production meter|Production date|operating-hours meter|must be|stoppage|positive production|required|invalid/i.test(msg);
     return NextResponse.json({success:false,error:duplicate?'This machine already has a record for the selected shift and day':msg},
       {status:duplicate?409:invalid?400:500});
   }

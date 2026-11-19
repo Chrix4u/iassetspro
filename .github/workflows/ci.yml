@@ -388,7 +388,16 @@ jobs:
           rm build-output.tar.gz
 
       - name: Install Playwright Chromium browser with system dependencies
-        run: bunx playwright install --with-deps chromium
+        run: |
+          set -euo pipefail
+          # GitHub-hosted Ubuntu mirrors can intermittently return HTTP 503 or time out.
+          # Preserve the hard browser gate while retrying transient APT downloads.
+          sudo tee /etc/apt/apt.conf.d/90-iassets-ci-network >/dev/null <<'APT'
+          Acquire::Retries "5";
+          Acquire::http::Timeout "45";
+          Acquire::https::Timeout "45";
+          APT
+          bunx playwright install --with-deps chromium
 
       - name: Run Repairs/RWOP Playwright UAT
         run: bun run test:repairs-uat

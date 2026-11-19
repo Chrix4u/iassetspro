@@ -26,9 +26,9 @@ describe('planner-owned shift standards and workbook calculations',()=>{
   it('makes the production planner, not the operator, control targets, shift hours and standard speed',()=>{
     expect(schema).toContain('model ProductionShiftPlan');
     expect(schema).toContain('@@unique([assetId, productionDate, shiftTemplateId])');
-    expect(planner).toContain("hasPermission(session, 'production_surveys.plan')");
+    expect(planner).toContain("hasPermission(session,'production_surveys.plan')");
     expect(planner).toContain("existingRecord");
-    expect(planner).toContain("A shift record already exists");
+    expect(planner).toContain("Cannot change an already recorded shift");
     expect(seed).toContain("'production_surveys.plan'");
     expect(page).toContain('Planner-owned shift standards');
     expect(page).toContain('Production target (planner)');

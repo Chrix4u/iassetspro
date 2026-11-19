@@ -65,3 +65,11 @@ Before a model is marked active for technical **visual inspection**, a Digital T
 **Required server configuration before enabling uploads:** set `IASSETSPRO_CAD_STORAGE_ROOT` to an absolute, non-public, persistent directory, for example `/home/lightworld/shared/iassetspro/private-cad`. The directory must be writable only by the application service user, **must not** sit under `public/`, and must not be symlinked into a public uploads directory. Missing configuration returns HTTP 503 and does not fall back to public storage. Apply an Nginx/request-body limit for upload routes; configure backups, malware scanning and a restricted CAD conversion worker before accepting untrusted manufacturer files at scale. There is **no production migration** for this milestone.
 
 The existing Model Library job-history GET route has also been hardened: it now requires a valid session, Digital Twin read permission, owning-plant scope and consistent asset/model plant IDs before reading potentially sensitive CAD processing results.
+
+### Private CAD deployment preflight
+
+Once the operator has provisioned an isolated, persistent directory owned by the application service user, run `IASSETSPRO_CAD_STORAGE_ROOT=/absolute/private/path node scripts/smart-anatomy/check-private-cad-storage.mjs`. This gate rejects missing/relative paths, symlinked or public directories, group/world-readable mode, inaccessible directories and failed controlled write tests. It does not write permanent data. Require a successful result before enabling private CAD uploads; do **not** circumvent this gate by placing CAD under a public uploads directory.
+
+### Publishing reviewed private CAD into the installed asset's 3D scene
+
+After the source, geometry and registered-component mappings are approved, the asset explorer provides a separate **Publish to asset 3D scene** action. This reuses the existing Digital Twin and Digital Twin Scene APIs (creating the asset twin only if absent), attaches the exact already-registered `AssetModel`, refreshes the existing 3D viewer, and never creates an unverified component or work order. The Digital Twin Scene POST endpoint additionally rejects unreviewed private CAD even when an unauthorized caller bypasses the UI. This is publication for technical *visual inspection*, not permission to mechanically dismantle equipment.

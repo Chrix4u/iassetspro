@@ -146,6 +146,15 @@ export async function POST(request: NextRequest) {
     if (model.assetId !== twin.assetId) {
       return NextResponse.json({ success: false, error: 'Asset model does not belong to the twin asset' }, { status: 400 });
     }
+    // A proprietary CAD upload is never an approved Digital Twin scene until
+    // its engineering source, geometry and registered-component links have
+    // passed the separate Smart Anatomy commissioning action.
+    if (model.filePath.startsWith('/api/smart-anatomy/models/') && !model.isActive) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD must pass engineering review before attachment to a Digital Twin scene',
+      }, { status: 409 });
+    }
 
     const scene = await db.digitalTwinScene.create({
       data: {

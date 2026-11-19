@@ -548,6 +548,8 @@ export function MachineVisualExplorer({
   const [demoModel, setDemoModel] = useState<'pump' | 'gearbox' | null>(null);
   const [privateCadModel, setPrivateCadModel] = useState<PrivateCadModel | null>(null);
   const [privateBindings, setPrivateBindings] = useState<AssetMeshBinding[]>([]);
+  const [publishingCadScene, setPublishingCadScene] = useState(false);
+  const [twinRevision, setTwinRevision] = useState(0);
   useEffect(() => {
     if (!privateCadModel?.id) {
       setPrivateBindings([]);
@@ -772,6 +774,50 @@ export function MachineVisualExplorer({
     }catch(error){toast.error(error instanceof Error?error.message:'Could not save component link');}
     finally{setAnatomyMappingSaving(false);}
   }, [inspectedAnatomy,canLinkAnatomy,anatomyTargetId,components,asset.id]);
+
+  const publishReviewedCadScene = useCallback(async () => {
+    const selectedModel = privateCadModel;
+    if (!canLinkAnatomy || !selectedModel?.isActive || !selectedModel.id || publishingCadScene) return;
+    setPublishingCadScene(true);
+    try {
+      let effectiveTwinId = twinId;
+      let effectiveTwinName = twinName;
+      if (!effectiveTwinId) {
+        const createdTwin = await api.post<{id:string;name:string}>('/api/digital-twins', {
+          assetId:asset.id, name:asset.name+' Digital Twin', type:'other',
+          description:'Asset digital twin with reviewed Smart Anatomy CAD',
+        });
+        if (createdTwin.success && createdTwin.data?.id) {
+          effectiveTwinId=createdTwin.data.id;
+          effectiveTwinName=createdTwin.data.name;
+        } else {
+          // Another authorized engineer may have commissioned the same asset.
+          const existing = await api.get<Array<{id:string;name:string}>>(
+            '/api/digital-twins?assetId='+encodeURIComponent(asset.id)+'&limit=1');
+          effectiveTwinId=existing.success ? existing.data?.[0]?.id || null : null;
+          effectiveTwinName=existing.success ? existing.data?.[0]?.name || null : null;
+        }
+      }
+      if (!effectiveTwinId) throw new Error('Unable to resolve the Digital Twin for this machine');
+      const scene = await api.post<{id:string}>('/api/digital-twin-scenes', {
+        twinId:effectiveTwinId,
+        modelId:selectedModel.id,
+        name:selectedModel.name+' · Engineer-reviewed CAD',
+        description:'Private, source-reviewed model for 3D technical inspection only',
+        sceneType:'3d', environment:'industrial',
+      });
+      if (!scene.success || !scene.data?.id) throw new Error(scene.error || 'Could not publish approved CAD scene');
+      setTwinId(effectiveTwinId);
+      setTwinName(effectiveTwinName);
+      setTwinRevision(revision=>revision+1);
+      setPrivateCadModel(null);
+      setInspectedAnatomy(null);
+      setDemoModel(null);
+      toast.success('Reviewed CAD is now available in this asset’s Digital Twin. Physical maintenance instructions remain separately controlled.');
+    } catch(error) {
+      toast.error(error instanceof Error?error.message:'Unable to commission the Digital Twin scene');
+    } finally { setPublishingCadScene(false); }
+  },[privateCadModel,canLinkAnatomy,publishingCadScene,twinId,twinName,asset.id,asset.name]);
 
   const childrenByParent = useMemo(() => {
     const map = new Map<string, MachineComponent[]>();
@@ -1080,7 +1126,21 @@ export function MachineVisualExplorer({
                 Smart Anatomy moves actual imported GLB/glTF mesh geometry for exploded views, without inventing hidden machine parts. A single-piece model cannot be disassembled. Only engineer-mapped meshes may become PM or repair targets; unverified geometry stays visual-only.
               </div>
               <PrivateCadUploader assetId={asset.id} canManage={canLinkAnatomy}
-                selected={privateCadModel} onSelect={setPrivateCadModel} />
+                selected={privateCadModel} onSelect={model=>{
+                  setPrivateCadModel(model);
+                  setInspectedAnatomy(null);
+                }} />
+              {canLinkAnatomy && privateCadModel?.isActive && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/30 p-2">
+                  <p className="text-xs text-emerald-200">
+                    This CAD passed engineering review for inspection. Publish it to the existing asset Digital Twin scene when ready.
+                  </p>
+                  <Button size="sm" type="button" disabled={publishingCadScene}
+                    onClick={()=>void publishReviewedCadScene()}>
+                    {publishingCadScene?'Publishing approved CAD…':'Publish to asset 3D scene'}
+                  </Button>
+                </div>
+              )}
               {privateCadModel ? (
                 <div className="space-y-2">
                   <p className="rounded-lg border border-amber-600/50 bg-amber-950/50 p-2 text-xs text-amber-200">
@@ -1107,6 +1167,7 @@ export function MachineVisualExplorer({
               ) : twinId ? (
                 <div className="overflow-hidden rounded-xl border bg-slate-950">
                   <DigitalTwinViewer
+                    key={twinId+'-'+twinRevision}
                     twinId={twinId}
                     twinName={twinName}
                     assetId={asset.id}

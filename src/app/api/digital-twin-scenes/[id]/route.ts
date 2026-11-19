@@ -156,6 +156,14 @@ export async function PUT(
       if (model.assetId !== existing.twin.assetId) {
         return NextResponse.json({ success: false, error: 'Asset model does not belong to the twin asset' }, { status: 400 });
       }
+      // Editing an older Digital Twin scene must not bypass the private CAD
+      // engineer-commissioning gate enforced on scene creation.
+      if (model.filePath.startsWith('/api/smart-anatomy/models/') && !model.isActive) {
+        return NextResponse.json({
+          success: false,
+          error: 'Private CAD must pass engineering review before attachment to a Digital Twin scene',
+        }, { status: 409 });
+      }
     }
 
     const updated = await db.digitalTwinScene.update({

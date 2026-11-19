@@ -79,7 +79,7 @@ export class EdgeGatewayService extends EventEmitter {
           plant: { select: { id: true, name: true, code: true } },
           createdBy: { select: { id: true, fullName: true } },
           sources: { select: { id: true, name: true, sourceType: true, status: true } },
-          connections: { where: { status: 'connected' }, select: { id: true, protocol, connectedAt } },
+          connections: { where: { status: 'connected' }, select: { id: true, protocol: true, connectedAt: true } },
           _count: { select: { sources: true, connections: true } },
         },
         orderBy: { createdAt: 'desc' },

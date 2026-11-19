@@ -166,3 +166,21 @@ changes during commissioning; ordinary legacy asset models are unaffected.
 The asset explorer explains that a newly uploaded revision must be reviewed
 for any subsequent technical mapping change. No new database table or PM
 frequency type was introduced.
+
+## Milestone 11 — export factual CAD-to-registered-part review for engineers
+
+A Digital Twin manager can export the currently imported source GLB mesh manifest
+as an Excel-compatible UTF-8 CSV. The export includes the registered machine
+tag, CAD model identifier, review date (DD-MM-YYYY), the exact imported node
+path, actual source assembly ancestry, confirmed registered component links,
+and separately labelled **unapproved** text-match proposals with scores and
+review basis. Unknown or ambiguous mesh identities stay `Visual-only; needs
+manual review`; the exporter never treats a suggestion as engineering
+approval, inventory ownership or an OEM bill of materials.
+
+The CSV is assembled locally from the permissioned loaded asset's existing
+registered parts and imported mesh geometry; no new file table or unsanctioned
+server records are created. Source-provided cell text is quoted and sanitized
+against spreadsheet formula injection, and exported filenames contain only
+safe characters. Engineers may review the worksheet externally, but there is
+no automatic import or bulk mapping approval yet.

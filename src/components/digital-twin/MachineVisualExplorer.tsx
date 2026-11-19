@@ -18,6 +18,7 @@ import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/com
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
+import { buildAnatomyReviewCsv, safeAnatomyExportFilename } from './anatomyReviewExport';
 import { PrivateCadUploader, type PrivateCadModel } from './PrivateCadUploader';
 import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
 import type { AssetMeshBinding } from './InteractiveMesh';
@@ -758,6 +759,32 @@ export function MachineVisualExplorer({
   const componentMap = useMemo(() => new Map(components.map((item) => [item.id, item])), [components]);
   const anatomyCoverage = useMemo(
     () => suggestAnatomyMappings(importedAnatomy, components), [importedAnatomy, components]);
+
+  const exportAnatomyReview = useCallback(() => {
+    if (!canLinkAnatomy || !importedAnatomyModelId || !importedAnatomy.length) return;
+    const date = new Intl.DateTimeFormat('en-GB', {
+      day:'2-digit',month:'2-digit',year:'numeric',
+    }).format(new Date()).replaceAll('/', '-');
+    const contents = buildAnatomyReviewCsv({
+      assetTag: asset.assetTag,
+      modelId: importedAnatomyModelId,
+      reportDate: date,
+      meshes: importedAnatomy,
+      candidates: anatomyCoverage.candidates,
+      components,
+    });
+    const blobUrl = URL.createObjectURL(new Blob([contents], {
+      type: 'text/csv;charset=utf-8',
+    }));
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = safeAnatomyExportFilename(asset.assetTag, date);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
+    toast.success('Source-backed CAD mapping review exported. Proposed identities still require engineer approval.');
+  }, [asset.assetTag, importedAnatomyModelId, importedAnatomy, components, anatomyCoverage, canLinkAnatomy]);
   const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
     if (!componentMap.has(componentId)) {
       toast.error(`3D mesh ${meshName} is not mapped to a registered component on this machine`);
@@ -1257,10 +1284,18 @@ export function MachineVisualExplorer({
                         {' · '}{anatomyCoverage.candidates.length} reviewable matches
                       </p>
                     </div>
-                    <Button size="sm" type="button" variant="outline"
-                      onClick={()=>setShowMappingSuggestions(show=>!show)}>
-                      {showMappingSuggestions?'Hide proposals':'Review proposals'}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canLinkAnatomy && (
+                        <Button size="sm" type="button" variant="outline"
+                          onClick={exportAnatomyReview}>
+                          Export mapping review CSV
+                        </Button>
+                      )}
+                      <Button size="sm" type="button" variant="outline"
+                        onClick={()=>setShowMappingSuggestions(show=>!show)}>
+                        {showMappingSuggestions?'Hide proposals':'Review proposals'}
+                      </Button>
+                    </div>
                   </div>
                   {showMappingSuggestions && (
                     <div className="max-h-64 space-y-2 overflow-y-auto overscroll-contain">

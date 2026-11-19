@@ -23,7 +23,7 @@ describe('read-only Smart Anatomy staging gate',()=>{
       status:url.endsWith('/api/health')?200:401,
       body:{cancel:vi.fn()},
     }));
-    const output={log:vi.fn()};
+    const output={log:vi.fn()} as unknown as Console;
     await runStagingReadiness({origin:'https://uat.lightworldtech.com',fetcher,output});
     expect(fetcher).toHaveBeenCalledTimes(3);
     for (const [,options] of fetcher.mock.calls){
@@ -35,7 +35,7 @@ describe('read-only Smart Anatomy staging gate',()=>{
   });
 
   it('fails closed for redirects, unexpected status and unavailable staging',async()=>{
-    const output={log:vi.fn()};
+    const output={log:vi.fn()} as unknown as Console;
     for (const status of [200,302,403,500]){
       const fetcher=vi.fn().mockResolvedValue({status,body:{cancel:vi.fn()}});
       await expect(runStagingReadiness({

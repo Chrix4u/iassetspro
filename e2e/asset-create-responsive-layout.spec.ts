@@ -15,6 +15,9 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
 
   await page.goto('/');
   await page.evaluate((token: string) => localStorage.setItem('eam_token', token), session.data.token);
+  // Reload so the SPA initializes its auth store from the persisted token.
+  // A same-document hash navigation may preserve the unauthenticated store.
+  await page.reload();
   await page.goto('/#/assets-machines');
   await expect(page.getByRole('heading', { name: 'Asset Register' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Add Asset', exact: true }).click();

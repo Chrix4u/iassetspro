@@ -118,6 +118,15 @@ export async function GET(
         record.reviewedById !== model.uploadedById;
     } catch { /* treat invalid engineering review as unapproved */ }
 
+    // Work-order titles and status must obey the Work Orders module's
+    // independent permission model. The technician role is intentionally
+    // excluded here even when it holds a broad permission: its actual work
+    // order list is further restricted to assigned/team positions.
+    const canViewWorkOrderEvidence = isAdmin(session) ||
+      ((hasPermission(session,'work_orders.view') ||
+        hasPermission(session,'work_orders.view_all')) &&
+        !session.roles?.includes('maintenance_technician'));
+
     const bindings = await db.assetMeshBinding.findMany({
       where:{modelId:id,assetId:model.assetId,componentId:{not:null}},
       select: {
@@ -195,10 +204,12 @@ export async function GET(
           requirementId:tool.id,code:tool.toolCode,name:tool.toolName,
           quantityRequired:tool.quantityRequired,toolId:tool.toolId,
         })),
-        workOrders:component.workOrderComponents.map(link=>({
-          id:link.workOrder.id,woNumber:link.workOrder.woNumber,
-          title:link.workOrder.title,status:link.workOrder.status,type:link.workOrder.type,
-        })),
+        workOrders:canViewWorkOrderEvidence
+          ? component.workOrderComponents.map(link=>({
+            id:link.workOrder.id,woNumber:link.workOrder.woNumber,
+            title:link.workOrder.title,status:link.workOrder.status,type:link.workOrder.type,
+          }))
+          : [],
       });
     }
 

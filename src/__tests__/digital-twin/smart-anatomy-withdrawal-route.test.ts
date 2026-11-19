@@ -7,6 +7,7 @@ const mocked = vi.hoisted(() => ({
   getPlantScope: vi.fn(), canAccessPlantStrict: vi.fn(),
   findUnique: vi.fn(), modelUpdate: vi.fn(),
   sceneUpdateMany: vi.fn(), auditCreate: vi.fn(), transaction: vi.fn(),
+  queryRaw: vi.fn(), auditFindFirst: vi.fn(),
 }));
 
 vi.mock('@/lib/auth',()=>({
@@ -22,7 +23,7 @@ vi.mock('@/lib/db',()=>({
   db:{
     assetModel:{findUnique:mocked.findUnique,update:mocked.modelUpdate},
     digitalTwinScene:{updateMany:mocked.sceneUpdateMany},
-    auditLog:{create:mocked.auditCreate},
+    auditLog:{create:mocked.auditCreate,findFirst:mocked.auditFindFirst},
     $transaction:mocked.transaction,
   },
 }));
@@ -48,7 +49,15 @@ beforeEach(()=>{
   mocked.modelUpdate.mockResolvedValue({id,isActive:false});
   mocked.sceneUpdateMany.mockResolvedValue({count:2});
   mocked.auditCreate.mockResolvedValue({id:'audit-1'});
-  mocked.transaction.mockImplementation(async (ops:Promise<unknown>[])=>Promise.all(ops));
+  mocked.auditFindFirst.mockResolvedValue(null);
+  mocked.queryRaw.mockResolvedValue([{id}]);
+  mocked.transaction.mockImplementation(async (callback:(tx:unknown)=>Promise<unknown>)=>
+    callback({
+      $queryRaw:mocked.queryRaw,
+      assetModel:{findUnique:mocked.findUnique,update:mocked.modelUpdate},
+      digitalTwinScene:{updateMany:mocked.sceneUpdateMany},
+      auditLog:{findFirst:mocked.auditFindFirst,create:mocked.auditCreate},
+    }));
 });
 
 describe('Smart Anatomy reviewed CAD withdrawal',()=>{
@@ -84,6 +93,25 @@ describe('Smart Anatomy reviewed CAD withdrawal',()=>{
     expect(audit.action).toBe('withdraw');
     expect(JSON.parse(audit.newValues).sourceBytesRetained).toBe(true);
   });
+  it('refuses to repeat the withdrawal if another engineer changes approval before lock',async()=>{
+    mocked.findUnique.mockResolvedValueOnce({
+      id,assetId:'machine-1',filePath:'/api/smart-anatomy/models/'+id+'/file',
+      isActive:true,asset:{plantId:'plant-1'},
+    }).mockResolvedValueOnce({isActive:false});
+    const response=await POST(request(),context);
+    expect(response.status).toBe(409);
+    expect(mocked.queryRaw).toHaveBeenCalledOnce();
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.sceneUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses withdrawal if the audit is already retired after the precheck',async()=>{
+    mocked.auditFindFirst.mockResolvedValue({id:'retired'});
+    const response=await POST(request(),context);
+    expect(response.status).toBe(409);
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+  });
+
   it('does not allow an already withdrawn or wrong-namespace CAD to be withdrawn again',async()=>{
     mocked.findUnique.mockResolvedValue({
       id,filePath:'/api/smart-anatomy/models/'+id+'/file',

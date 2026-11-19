@@ -334,3 +334,38 @@ users can open the existing PM Schedules, Work Orders, and Inventory modules
 using the application's canonical hash routes. Navigation is to the full
 existing module list; it does not pretend to open an unimplemented
 record-specific deep link or automatically transfer editing permissions.
+
+## Milestone 17 — serializable engineering approval/withdrawal lifecycle
+
+Approval and withdrawal previously used an initial source-status check and
+then unconditional batched writes, leaving a window in which a retiring
+engineer could withdraw CAD while another stale approval request reactivated
+the same model. Both actions now use a **PostgreSQL interactive transaction**
+and acquire a database `FOR UPDATE` lock on the exact protected
+`asset_models` row before committing changes.
+
+After acquiring the shared revision lock, commissioning rechecks the
+withdrawal audit and `isActive` flag, then writes the final active status and
+independent engineer-review audit in the same transaction. Withdrawal uses
+the same lock, rechecks the active flag and retirement audit, then atomically
+disables the model and its published scenes and records its reason.
+
+Tests specifically simulate withdrawal completing after the earlier initial
+approval check, a competing engineering sign-off, repeated withdrawal and
+withdrawal audit overlap. The system refuses stale transitions and does not
+delete the original CAD, mapped registered parts or PM records.
+
+**Boundary:** This milestone serializes the approval-vs-withdrawal
+transitions. Concurrent draft-mapping edits are a separate problem; full
+industrial commissioning acceptance still requires a live PostgreSQL
+concurrency/UAT test plus mapping-write coordination before rollout.
+
+### Work order permission separation
+
+The CAD trace service also honors the Work Orders module's separate
+authorization. Read-only Digital Twin access alone does not expose work order
+identifiers, descriptions or status. Users lacking broad Work Order view
+permission receive an empty work-order evidence list, and maintenance
+technicians are likewise excluded from this aggregate because their actual
+Work Order visibility is assignment/team-scoped. Their authorized individual
+work orders remain available through the normal Work Orders module.

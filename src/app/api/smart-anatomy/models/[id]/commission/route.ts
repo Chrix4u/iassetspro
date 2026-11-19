@@ -152,9 +152,25 @@ export async function POST(
     }
     const linkedComponents = verifiedBindings.length;
 
-    const [updated] = await db.$transaction([
-      db.assetModel.update({ where: { id }, data: { isActive: true } }),
-      db.auditLog.create({
+    // Serialize reviewer approval with engineering withdrawal using a
+    // PostgreSQL row lock. A withdrawal committed after the initial
+    // source inspection must never be silently reactivated.
+    const outcome = await db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "asset_models" WHERE id = ${id} FOR UPDATE`;
+      const current = await tx.assetModel.findUnique({
+        where: { id }, select: { isActive: true },
+      });
+      const latestWithdrawal = await tx.auditLog.findFirst({
+        where: { entityType: 'asset_model', entityId: id, action: 'withdraw' },
+        select: { id: true },
+      });
+      if (!current || latestWithdrawal) return { status: 'withdrawn' as const };
+      if (current.isActive) return { status: 'already-approved' as const };
+
+      const updated = await tx.assetModel.update({
+        where: { id }, data: { isActive: true },
+      });
+      await tx.auditLog.create({
         data: {
           userId: session.userId, action: 'update', entityType: 'asset_model', entityId: id,
           oldValues: JSON.stringify({ isActive: false }),
@@ -172,11 +188,22 @@ export async function POST(
             maintenanceProcedureApproved: false,
           }),
         },
-      }),
-    ]);
+      });
+      return { status: 'approved' as const, updated };
+    });
+    if (outcome.status==='withdrawn') {
+      return NextResponse.json({
+        success:false,error:'This CAD revision was withdrawn; import and review a new revision',
+      }, {status:409});
+    }
+    if (outcome.status==='already-approved') {
+      return NextResponse.json({
+        success:false,error:'CAD was approved by another engineer; refresh the review state',
+      }, {status:409});
+    }
     return NextResponse.json({
       success: true,
-      data: { id: updated.id, isActive: updated.isActive, linkedComponents },
+      data: { id: outcome.updated.id, isActive: outcome.updated.isActive, linkedComponents },
     });
   } catch (error) {
     console.error('[POST /api/smart-anatomy/models/:id/commission]', error);

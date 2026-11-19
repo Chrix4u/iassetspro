@@ -54,10 +54,27 @@ export async function POST(
       }, { status: 409 });
     }
 
-    const [updated, closed] = await db.$transaction([
-      db.assetModel.update({ where: { id }, data: { isActive: false } }),
-      db.digitalTwinScene.updateMany({ where: { modelId: id, isActive: true }, data: { isActive: false } }),
-      db.auditLog.create({
+    // Lock the model revision while checking its current approval state and
+    // recording withdrawal. Concurrent commissioner requests use the same
+    // row lock, so a retired source cannot be reactivated by an older request.
+    const outcome = await db.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "asset_models" WHERE id = ${id} FOR UPDATE`;
+      const current = await tx.assetModel.findUnique({
+        where: { id }, select: { isActive: true },
+      });
+      const retired = await tx.auditLog.findFirst({
+        where: { entityType:'asset_model', entityId:id, action:'withdraw' },
+        select: { id:true },
+      });
+      if (!current?.isActive || retired) return { status:'already-withdrawn' as const };
+
+      const updated = await tx.assetModel.update({
+        where: { id }, data: { isActive: false },
+      });
+      const closed = await tx.digitalTwinScene.updateMany({
+        where: { modelId: id, isActive: true }, data: { isActive: false },
+      });
+      await tx.auditLog.create({
         data: {
           userId: session.userId,
           action: 'withdraw',
@@ -70,12 +87,17 @@ export async function POST(
             scenePublicationRevoked: true, maintenanceProcedureApproved: false,
           }),
         },
-      }),
-    ]);
-
+      });
+      return { status:'withdrawn' as const, updated, closed };
+    });
+    if (outcome.status==='already-withdrawn') {
+      return NextResponse.json({
+        success:false,error:'CAD approval has already been withdrawn or changed',
+      },{status:409});
+    }
     return NextResponse.json({
       success: true,
-      data: { id: updated.id, isActive: false, scenesWithdrawn: closed.count },
+      data: { id: outcome.updated.id, isActive: false, scenesWithdrawn: outcome.closed.count },
     });
   } catch (error) {
     console.error('[POST /api/smart-anatomy/models/:id/withdraw]', error);

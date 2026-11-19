@@ -20,7 +20,7 @@ describe('Smart Anatomy approval lifecycle cannot be bypassed through legacy rou
     const commission=source('src/app/api/smart-anatomy/models/[id]/commission/route.ts');
     expect(sceneList).toContain("filePath: { not: { startsWith: '/api/smart-anatomy/models/' } }");
     expect(sceneDetail).toContain('Engineering approval for this private CAD scene has been withdrawn');
-    expect(revoke).toContain('db.digitalTwinScene.updateMany');
+    expect(revoke).toContain('tx.digitalTwinScene.updateMany');
     expect(revoke).toContain("action: 'withdraw'");
     expect(status).toContain("action: 'withdraw'");
     expect(commission).toContain("action: 'withdraw'");

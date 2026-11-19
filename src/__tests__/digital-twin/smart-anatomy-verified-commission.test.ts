@@ -13,7 +13,7 @@ const mocked=vi.hoisted(()=>({
   getSession:vi.fn(),hasPermission:vi.fn(),isAdmin:vi.fn(),
   getPlantScope:vi.fn(),canAccessPlantStrict:vi.fn(),
   findUnique:vi.fn(),auditFindFirst:vi.fn(),bindingFindMany:vi.fn(),
-  modelUpdate:vi.fn(),auditCreate:vi.fn(),transaction:vi.fn(),
+  modelUpdate:vi.fn(),auditCreate:vi.fn(),transaction:vi.fn(),queryRaw:vi.fn(),
 }));
 vi.mock('@/lib/auth',()=>({
   getSession:mocked.getSession,hasPermission:mocked.hasPermission,isAdmin:mocked.isAdmin,
@@ -79,7 +79,13 @@ beforeEach(()=>{
   }]);
   mocked.modelUpdate.mockResolvedValue({id,isActive:true});
   mocked.auditCreate.mockResolvedValue({id:'audit-approved'});
-  mocked.transaction.mockImplementation(async(ops:Promise<unknown>[])=>Promise.all(ops));
+  mocked.queryRaw.mockResolvedValue([{id}]);
+  mocked.transaction.mockImplementation(async(callback:(tx:unknown)=>Promise<unknown>)=>
+    callback({
+      $queryRaw:mocked.queryRaw,
+      assetModel:{findUnique:mocked.findUnique,update:mocked.modelUpdate},
+      auditLog:{findFirst:mocked.auditFindFirst,create:mocked.auditCreate},
+    }));
 });
 
 describe('Smart Anatomy source-backed engineering commissioning',()=>{
@@ -134,6 +140,34 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     } finally {
       await writeFile(join(folder,id+'.glb'),bytes);
     }
+  });
+
+  it('does not resurrect a withdrawn revision if withdrawal commits after the initial check',async()=>{
+    let withdrawnChecks=0;
+    mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>{
+      if(where.action==='withdraw') {
+        withdrawnChecks++;
+        return Promise.resolve(withdrawnChecks===1?null:{id:'withdrawn-in-race'});
+      }
+      return Promise.resolve({newValues:JSON.stringify({checksum:sha256})});
+    });
+    const response=await POST(request(),ctx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('withdrawn');
+    expect(mocked.queryRaw).toHaveBeenCalledOnce();
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('does not duplicate an engineering approval if another engineer wins the lock',async()=>{
+    mocked.findUnique.mockResolvedValueOnce({
+      id,assetId:'asset1',uploadedById:'uploader1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,asset:{plantId:'plant1'},
+    }).mockResolvedValueOnce({isActive:true});
+    const response=await POST(request(),ctx);
+    expect(response.status).toBe(409);
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
   });
 
   it('prohibits approving CAD uploaded by the same engineer, even with full manager permissions',async()=>{

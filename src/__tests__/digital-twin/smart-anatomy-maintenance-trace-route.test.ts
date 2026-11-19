@@ -108,6 +108,22 @@ describe('plant-scoped source-verified CAD to maintenance trace',()=>{
     }));
   });
 
+  it('redacts work orders when the viewer lacks independent WO view permission',async()=>{
+    mocks.session.mockReturnValue({userId:'engineer-checker',roles:['asset_inspector']});
+    mocks.permission.mockImplementation((_session:unknown,name:string)=>
+      name==='digital_twin.view');
+    const response=await GET(request(),ctx);
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.entries[0].workOrders).toEqual([]);
+  });
+
+  it('redacts WO evidence for technicians whose access is limited by assignment',async()=>{
+    mocks.session.mockReturnValue({userId:'engineer-checker',roles:['maintenance_technician']});
+    const response=await GET(request(),ctx);
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.entries[0].workOrders).toEqual([]);
+  });
+
   it('does not query CAD or report mappings for anonymous or unprivileged sessions',async()=>{
     mocks.session.mockReturnValue(null);
     expect((await GET(request(),ctx)).status).toBe(401);

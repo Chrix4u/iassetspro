@@ -50,7 +50,7 @@ describe('Smart Anatomy protected GLB commissioning and access contracts', () =>
     expect(commission).toContain('geometryReviewed !== true');
     expect(commission).toContain('componentMappingReviewed !== true');
     expect(commission).toContain('maintenanceProcedureApproved: false');
-    expect(commission).toContain('db.auditLog.create');
+    expect(commission).toContain('tx.auditLog.create');
   });
 
   it('loads private CAD through authenticated blob URLs without leaking tenant telemetry', () => {

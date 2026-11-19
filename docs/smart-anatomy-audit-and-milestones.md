@@ -292,3 +292,36 @@ Before production activation, document **encrypted off-server backups,
 recovery drills, retention, alerting, HTTP upload limits and staging UAT**.
 The application continues to reject private CAD writes until its dedicated
 runtime environment variable is securely configured.
+
+## Milestone 16 — actual CAD-to-PM/WO/spare traceability, read-only
+
+For authorized plant users, the existing 3D machine explorer now offers
+**Export CAD maintenance trace** on a selected privately imported model. It
+calls `GET /api/smart-anatomy/models/:id/maintenance-trace` and saves a
+machine-readable JSON report locally. The new service:
+
+- Refuses missing sessions, insufficient Digital Twin permissions, denied
+  plant scope, nonprivate models and invalid model identifiers.
+- Validates the actual original GLB binary against the initial immutable
+  SHA-256 source audit and derives its real importable source node paths.
+- Rejects fictitious, duplicate, missing or cross-machine mesh/component
+  mappings, and refuses incorrectly cross-planted spare inventory records or
+  work orders linked to a different installed machine.
+- Reports the registered component code/name, already linked PM schedules,
+  current store-linked spares, tool requirements and **existing** work order
+  references for each verified source path, including mapping coverage.
+- Distinguishes draft, independently approved and withdrawn CAD revisions.
+  The HTTP response is `private, no-store` and explicitly states that the
+  exported evidence does **not** authorize physical maintenance procedures.
+
+This is true auditable information linkage into iAssetsPro's existing PM,
+repairs, work orders and stock systems. It is not a separate replacement
+module, speculative AI-generated BOM, automatic work order, or automatic
+maintenance approval. The existing registered machine relationships remain
+the system of record.
+
+Executable route tests cover authorized proof, authentication, cross-plant
+denial, tampering, invented and duplicate paths, wrong-asset component
+links, cross-plant stock/work-order joins, historical withdrawal and
+missing original source audit. The explorer contract test ensures the
+download action is actually wired into the existing application.

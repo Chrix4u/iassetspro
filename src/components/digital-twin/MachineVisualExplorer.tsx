@@ -561,6 +561,7 @@ export function MachineVisualExplorer({
   const [privateCadModel, setPrivateCadModel] = useState<PrivateCadModel | null>(null);
   const [privateBindings, setPrivateBindings] = useState<AssetMeshBinding[]>([]);
   const [publishingCadScene, setPublishingCadScene] = useState(false);
+  const [exportingCadMaintenanceTrace, setExportingCadMaintenanceTrace] = useState(false);
   const [twinRevision, setTwinRevision] = useState(0);
   useEffect(() => {
     if (!privateCadModel?.id) {
@@ -785,6 +786,41 @@ export function MachineVisualExplorer({
     window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
     toast.success('Source-backed CAD mapping review exported. Proposed identities still require engineer approval.');
   }, [asset.assetTag, importedAnatomyModelId, importedAnatomy, components, anatomyCoverage, canLinkAnatomy]);
+  const exportCadMaintenanceTrace = useCallback(async () => {
+    if (!privateCadModel?.id || !canLinkAnatomy || exportingCadMaintenanceTrace) return;
+    setExportingCadMaintenanceTrace(true);
+    try {
+      const result=await api.get<unknown>(
+        '/api/smart-anatomy/models/' + encodeURIComponent(privateCadModel.id) + '/maintenance-trace',
+      );
+      if (!result.success || !result.data) {
+        toast.error(result.error || 'Unable to verify the CAD maintenance trace');
+        return;
+      }
+      const date = new Intl.DateTimeFormat('en-GB', {
+        day:'2-digit',month:'2-digit',year:'numeric',
+      }).format(new Date()).replaceAll('/', '-');
+      const fileName = safeAnatomyExportFilename(asset.assetTag, date)
+        .replace('CAD-Review-', 'CAD-Maintenance-Trace-').replace(/\.csv$/i,'.json');
+      const body = JSON.stringify(result.data,null,2) + '\n';
+      const url = URL.createObjectURL(new Blob([body],{
+        type:'application/json;charset=utf-8',
+      }));
+      const anchor = document.createElement('a');
+      anchor.href=url;
+      anchor.download=fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1200);
+      toast.success('Source-verified CAD links and existing PM, work order, spare and tool references exported.');
+    } catch {
+      toast.error('Unable to export source-verified CAD maintenance trace');
+    } finally {
+      setExportingCadMaintenanceTrace(false);
+    }
+  }, [privateCadModel,canLinkAnatomy,exportingCadMaintenanceTrace,asset.assetTag]);
+
   const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
     if (!componentMap.has(componentId)) {
       toast.error(`3D mesh ${meshName} is not mapped to a registered component on this machine`);
@@ -1191,6 +1227,20 @@ export function MachineVisualExplorer({
                   <Button size="sm" type="button" disabled={publishingCadScene}
                     onClick={()=>void publishReviewedCadScene()}>
                     {publishingCadScene?'Publishing approved CAD…':'Publish to asset 3D scene'}
+                  </Button>
+                </div>
+              )}
+              {privateCadModel && canLinkAnatomy && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950/95 p-2">
+                  <p className="max-w-lg text-xs text-slate-300">
+                    Source-verified maintenance evidence · registered parts, existing PM schedules,
+                    work orders, spares and tools. Export is read-only and cannot authorize maintenance.
+                  </p>
+                  <Button size="sm" type="button" variant="outline"
+                    data-testid="smart-anatomy-maintenance-trace-export"
+                    disabled={exportingCadMaintenanceTrace}
+                    onClick={() => void exportCadMaintenanceTrace()}>
+                    {exportingCadMaintenanceTrace?'Verifying CAD links…':'Export CAD maintenance trace'}
                   </Button>
                 </div>
               )}

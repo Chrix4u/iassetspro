@@ -267,3 +267,28 @@ assembly-preserving OEM CAD or an independently reviewed multi-part model.
 This milestone is an offline preparation utility, **not** a live STL upload
 API or isolated asynchronous STEP/IGES/IFC conversion service. The latter
 remains a separate enterprise deployment requirement.
+
+## Milestone 15 — private CAD storage deployment preflight parity
+
+The standalone storage preflight now enforces the same source-security invariants
+as the runtime: absolute private path, owner-only `0700` mode, ownership by the
+effective runtime user, no symlinks in any ancestor, and no folder under the
+public web root. The preflight verifies actual write/read/execute access by
+creating and deleting a private temporary test file. It does **not** create
+the storage root or touch any tenant's proprietary source models.
+
+Four executable CLI tests verify safe root success, unsafe `0755` mode
+rejection, a symlinked ancestor rejection, and failure when the configuration
+is missing. The existing runtime authorization tests are retained.
+
+VPS preparation, completed on 19-11-2026 without altering the live iAssetsPro
+service: a dedicated owner-only directory was provisioned at
+`/var/lib/iassetspro/private-cad`; the storage preflight passed when executed
+as the same operating-system user as the existing Next.js process. Merely
+provisioning an empty private directory does **not** enable private CAD
+uploads or amount to deployment acceptance.
+
+Before production activation, document **encrypted off-server backups,
+recovery drills, retention, alerting, HTTP upload limits and staging UAT**.
+The application continues to reject private CAD writes until its dedicated
+runtime environment variable is securely configured.

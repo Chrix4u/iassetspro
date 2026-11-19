@@ -21,6 +21,12 @@ try{
     throw new Error('Storage root must be a real directory, not a symlink');
   }
   const realRoot=await realpath(path);
+  if (realRoot!==path){
+    throw new Error('Private CAD storage path must not contain symlinks in any ancestor');
+  }
+  if(typeof process.getuid==='function' && stat.uid!==process.getuid()){
+    throw new Error('Storage root must be owned by the application runtime user');
+  }
   const publicRoot=await realpath(join(process.cwd(),'public'));
   if(realRoot===publicRoot || realRoot.startsWith(publicRoot+sep)){
     throw new Error('Private CAD cannot be stored beneath the public web root');

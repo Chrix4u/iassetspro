@@ -41,7 +41,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const where = { twinId };
+    // Withdrawn private CAD scenes are retained for audit history but must
+    // not reappear as the installed machine's commissioned 3D scene.
+    const where = {
+      twinId,
+      isActive: true,
+      model: {
+        OR: [
+          { isActive: true },
+          { filePath: { not: { startsWith: '/api/smart-anatomy/models/' } } },
+        ],
+      },
+    };
 
     const [scenes, total] = await Promise.all([
       db.digitalTwinScene.findMany({

@@ -1143,6 +1143,9 @@ export function MachineVisualExplorer({
               </div>
               <PrivateCadUploader assetId={asset.id} canManage={canLinkAnatomy}
                 selected={privateCadModel} onSelect={model=>{
+                  if (privateCadModel?.id !== model?.id || privateCadModel?.isActive !== model?.isActive) {
+                    setTwinRevision(previous => previous + 1);
+                  }
                   setPrivateCadModel(model);
                   setInspectedAnatomy(null);
                   setImportedAnatomy([]);

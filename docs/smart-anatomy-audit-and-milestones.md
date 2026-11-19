@@ -104,3 +104,21 @@ uploads. Nginx body-size and request-rate limits and a malware scanning
 pipeline are still required when enabling uploads for untrusted external users.
 Tests cover cross-plant denial, tampered bytes, missing source provenance,
 unsafe permissions, symlinks and chunked upload limits.
+
+
+## Milestone 8 — reviewed CAD withdrawal, revision immutability and scene safety
+
+A CAD can be withdrawn through an explicit confirmation, with a documented engineering
+reason, by an authorized manager in the owning plant. The withdrawal transaction changes
+the model to inactive, disables all its published Digital Twin scenes, and preserves its
+private source bytes, original fingerprint, component mappings and full audit record.
+The platform refuses to silently reapprove a withdrawn file: an independent newly
+uploaded source revision must go through a fresh engineering review.
+
+The legacy `/api/asset-models` form now explicitly rejects a forged private CAD
+file path, mutation of a protected source, or deletion that would orphan source
+evidence. Digital Twin scene list/detail APIs hide/reject withdrawn private CAD
+instead of continuing to advertise it as a commissioned as-built model.
+The private CAD upload selector loads the plant-scoped review status and distinguishes
+awaiting-review models from withdrawn revisions. Neither action deletes historical
+maintenance, changes PM schedules, or approves physical disassembly.

@@ -44,6 +44,18 @@ export async function POST(
     if (model.isActive) {
       return NextResponse.json({ success: true, data: { id, isActive: true } });
     }
+    // A withdrawn engineering revision must not silently be reactivated.
+    // Require an independently uploaded file with new source provenance.
+    const withdrawn = await db.auditLog.findFirst({
+      where: { entityType: 'asset_model', entityId: id, action: 'withdraw' },
+      select: { id: true },
+    });
+    if (withdrawn) {
+      return NextResponse.json({
+        success: false,
+        error: 'This CAD revision was withdrawn; import and review a new revision',
+      }, { status: 409 });
+    }
 
     const linkedComponents = await db.assetMeshBinding.count({
       where: { modelId: id, assetId: model.assetId, componentId: { not: null } },

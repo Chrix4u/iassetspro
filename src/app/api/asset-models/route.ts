@@ -127,6 +127,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'File type is required' }, { status: 400 });
     }
 
+    // The generic legacy form must not forge a protected CAD URL: it has
+    // no source fingerprint, engineer review or binary validation. Only the
+    // dedicated private CAD endpoint can create models in this namespace.
+    if (typeof filePath === 'string' &&
+        /^\/api\/smart-anatomy\/models(?:\/|$)/i.test(filePath)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Use the protected Smart Anatomy upload for private CAD models',
+      }, { status: 409 });
+    }
+
     const plantScope = await getPlantScope(request, session);
     if (plantScope.denyAccess) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });

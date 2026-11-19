@@ -8,6 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api } from '@/lib/api';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export interface PrivateCadModel {
   id: string;
@@ -38,6 +43,30 @@ export function PrivateCadUploader({
   const [geometryReviewed, setGeometryReviewed] = useState(false);
   const [componentMappingReviewed, setComponentMappingReviewed] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawNote, setWithdrawNote] = useState('');
+  const [reviewStatus, setReviewStatus] = useState<'checking' | 'awaiting-review' | 'withdrawn'>('checking');
+
+  useEffect(() => {
+    if (!selected?.id || selected.isActive) {
+      setReviewStatus('checking');
+      return;
+    }
+    let cancelled=false;
+    setReviewStatus('checking');
+    void api.get<{status:'withdrawn'|'approved'|'awaiting-review'}>(
+      '/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/status',
+    ).then(result => {
+      if(cancelled) return;
+      if(!result.success) {
+        setReviewStatus('checking');
+        return;
+      }
+      setReviewStatus(result.data?.status==='withdrawn' ? 'withdrawn' : 'awaiting-review');
+    }).catch(()=>{if(!cancelled)setReviewStatus('checking');});
+    return ()=>{cancelled=true;};
+  }, [selected?.id, selected?.isActive]);
 
   const loadModels = useCallback(async () => {
     try {
@@ -108,6 +137,31 @@ export function PrivateCadUploader({
     }
   };
 
+  const withdraw = async () => {
+    if (!selected?.isActive || !canManage || withdrawing || withdrawNote.trim().length < 15) return;
+    setWithdrawing(true);
+    try {
+      const res = await api.post<{id:string;isActive:boolean;scenesWithdrawn:number}>(
+        '/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/withdraw',
+        { reason: withdrawNote.trim() });
+      if (!res.success || res.data?.isActive !== false) {
+        throw new Error(res.error || 'Engineering approval could not be withdrawn');
+      }
+      onSelect({ ...selected, isActive: false });
+      setReviewStatus('withdrawn');
+      setWithdrawOpen(false);
+      setWithdrawNote('');
+      await loadModels();
+      toast.success(
+        `CAD withdrawn from ${res.data.scenesWithdrawn} active scene(s). History retained; import a new revision.`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to withdraw CAD approval');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   return (
     <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-950 p-3"
       data-testid="smart-anatomy-private-cad">
@@ -139,10 +193,56 @@ export function PrivateCadUploader({
 
       {selected && <Badge variant="outline"
         className="border-amber-600 text-amber-300">
-        {selected.isActive ? 'Model active · verify component mappings' : 'Uncommissioned private CAD'}
+        {selected.isActive ? 'Model active · verify component mappings'
+          : reviewStatus==='withdrawn' ? 'Withdrawn CAD · not approved'
+            : reviewStatus==='checking' ? 'Checking CAD approval history…'
+              : 'Uncommissioned private CAD'}
       </Badge>}
 
-      {selected && !selected.isActive && canManage && (
+      {selected?.isActive && canManage && (
+        <AlertDialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+          <AlertDialogTrigger asChild>
+            <Button type="button" variant="outline" size="sm"
+              className="border-amber-600 text-amber-300">
+              Withdraw engineering CAD approval
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Withdraw this CAD revision?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The model and its source evidence remain in the private archive,
+                but its published 3D scenes become inactive. A new uploaded
+                revision and engineering review are required to restore inspection.
+                PM schedules and maintenance history are not deleted.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1">
+              <Label htmlFor="cad-withdraw-note">Engineering withdrawal reason (minimum 15 characters)</Label>
+              <Input id="cad-withdraw-note" value={withdrawNote}
+                placeholder="Incorrect model version, source, dimension or part mapping"
+                onChange={event => setWithdrawNote(event.target.value)} />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={withdrawing}>Keep approved</AlertDialogCancel>
+              <AlertDialogAction disabled={withdrawing || withdrawNote.trim().length < 15}
+                onClick={event => { event.preventDefault(); void withdraw(); }}>
+                {withdrawing ? 'Withdrawing…' : 'Confirm withdrawal'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {selected && !selected.isActive && reviewStatus==='withdrawn' && (
+        <div className="rounded-md border border-amber-700 bg-amber-950/40 p-3 text-xs text-amber-100">
+          This CAD revision was withdrawn from active inspection. Its source and audit evidence
+          remain available. Import and independently review a new revision; withdrawn files
+          cannot be commissioned again.
+        </div>
+      )}
+
+      {selected && !selected.isActive && reviewStatus==='awaiting-review' && canManage && (
         <div className="space-y-2 rounded-md border border-amber-700/40 bg-amber-950/30 p-3">
           <p className="text-xs font-semibold text-amber-200">Engineering source review · approval for 3D inspection only</p>
           <p className="text-[11px] text-slate-300">

@@ -369,3 +369,26 @@ permission receive an empty work-order evidence list, and maintenance
 technicians are likewise excluded from this aggregate because their actual
 Work Order visibility is assignment/team-scoped. Their authorized individual
 work orders remain available through the normal Work Orders module.
+
+## Milestone 17 — non-mutating staging readiness gate
+
+The standalone `scripts/smart-anatomy/check-staging-readiness.mjs` accepts
+**only an explicitly configured staging/UAT/test origin**, refuses the known
+production domains, embedded credentials, redirects, arbitrary internet
+hosts and non-TLS remote targets. It performs three GET-only checks: health
+must be HTTP 200, anonymous private CAD source access must be HTTP 401, and
+anonymous maintenance trace access must be HTTP 401. It never sends
+credentials or imports CAD, creates PM/work orders or alters the database.
+A redirect, unavailable service or unexpected status fails closed.
+
+Run only after a separate staging environment exists:
+
+```bash
+IASSETSPRO_STAGING_URL=https://staging.example.com \
+  node scripts/smart-anatomy/check-staging-readiness.mjs
+```
+
+This is a **pre-UAT smoke gate**, not a substitute for authenticated
+cross-plant testing, independent engineering acceptance, licensed OEM
+source files, encrypted off-server backup evidence or a verified recovery
+drill. Do not point it at the live production origin.

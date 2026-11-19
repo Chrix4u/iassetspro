@@ -54,10 +54,10 @@ describe('rejected production survey corrections preserve scheduled shift identi
   });
 
   it.each([
-    [{assetId:'asset-B'},'machine'],
-    [{productionDate:'2026-11-17'},'date'],
-    [{shiftTemplateId:'night'},'shift'],
-  ])('rejects a changed %s without looking up another asset or updating history',async(change)=>{
+    {change:{assetId:'asset-B'},field:'machine'},
+    {change:{productionDate:'2026-11-17'},field:'date'},
+    {change:{shiftTemplateId:'night'},field:'shift'},
+  ])('rejects a changed $field without looking up another asset or updating history',async({change})=>{
     const response=await PUT(request(change),context);
     expect(response.status).toBe(409);
     expect((await response.json()).error).toMatch(/cannot be changed/i);
@@ -93,7 +93,7 @@ describe('rejected production survey corrections preserve scheduled shift identi
       productionShiftAssignment:{findUnique:vi.fn().mockResolvedValue({userId:'operator-1'})},
       auditLog:{create:vi.fn().mockResolvedValue({id:'audit-one'})},
     };
-    mocks.transaction.mockImplementation(async(fn:(tx:typeof tx)=>Promise<unknown>)=>fn(tx));
+    mocks.transaction.mockImplementation(async(fn:(transaction:typeof tx)=>Promise<unknown>)=>fn(tx));
     const response=await PUT(request({targetQuantity:9999,outputQuantity:100,defectiveQuantity:5}),context);
     expect(response.status).toBe(200);
     const body=await response.json();

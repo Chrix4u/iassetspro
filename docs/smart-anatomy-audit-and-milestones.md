@@ -122,3 +122,27 @@ instead of continuing to advertise it as a commissioned as-built model.
 The private CAD upload selector loads the plant-scoped review status and distinguishes
 awaiting-review models from withdrawn revisions. Neither action deletes historical
 maintenance, changes PM schedules, or approves physical disassembly.
+
+## Milestone 9 — source-backed engineering review, not checkbox-only approval
+
+The commissioning endpoint now reads the stored GLB from the configured private
+directory, checks its exact source SHA-256 fingerprint against the original
+immutable creation audit, validates the GLB structure and derives actual
+renderable source mesh paths. Engineers cannot approve a file merely by
+ticking the three review boxes and linking a fictitious mesh name.
+
+Every link used for engineering approval must (a) resolve to a source node
+in the actual uploaded GLB default scene, (b) belong to the correct registered
+machine, (c) be unique among mapped components and (d) refer to a
+single-primitive imported mesh whose source ancestry is unambiguous. A wrong
+source path, cross-machine component, duplicate mapping, missing attestation,
+tampered bytes or unsafe storage fails closed. The resulting audit records
+both the number of linked components and the number of exact source-path
+matches; physical maintenance instructions remain unapproved.
+
+For conservative correctness, the authoritative path parser recognizes
+single-primitive mesh nodes using the same sanitized names as Three.js
+GLTFLoader. More complex skins, multi-primitive groups and instancing require
+an independent, reviewed import/conversion process before authorizing their
+maintenance identity. The importer can still display those geometries for
+visual inspection without granting them a maintenance-component link.

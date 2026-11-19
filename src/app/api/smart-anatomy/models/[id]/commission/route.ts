@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
+import { auditedGlbMeshPaths } from '@/lib/smart-anatomy/mesh-source-paths';
+import { MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
@@ -31,7 +36,7 @@ export async function POST(
 
     const model = await db.assetModel.findUnique({
       where: { id },
-      select: { id: true, assetId: true, filePath: true, isActive: true,
+      select: { id: true, assetId: true, filePath: true, fileSize: true, isActive: true,
         asset: { select: { plantId: true } } },
     });
     if (!model || !/^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(model.filePath) ||
@@ -57,14 +62,85 @@ export async function POST(
       }, { status: 409 });
     }
 
-    const linkedComponents = await db.assetMeshBinding.count({
-      where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
+    const storedSource = await db.auditLog.findFirst({
+      where: { entityType: 'asset_model', entityId: id, action: 'create' },
+      select: { newValues: true },
+      orderBy: { createdAt: 'asc' },
     });
-    if (linkedComponents < 1) {
+    let expectedChecksum: string | null = null;
+    try {
+      const source = JSON.parse(storedSource?.newValues || '{}') as { checksum?: unknown };
+      if (typeof source.checksum === 'string' && /^[0-9a-f]{64}$/i.test(source.checksum)) {
+        expectedChecksum = source.checksum;
+      }
+    } catch {
+      // Corrupt or missing original source attestation is never safe to approve.
+    }
+    if (!expectedChecksum) {
+      return NextResponse.json({
+        success: false, error: 'Original CAD checksum attestation is missing',
+      }, { status: 409 });
+    }
+
+    const root = privateCadStorageRoot();
+    if (!root) {
+      return NextResponse.json({
+        success: false, error: 'Private CAD storage is not configured',
+      }, { status: 503 });
+    }
+    try {
+      await assertPrivateCadStorageReady(root);
+    } catch {
+      return NextResponse.json({
+        success: false, error: 'Private CAD storage is not safely provisioned',
+      }, { status: 503 });
+    }
+
+    let importedPaths: Set<string>;
+    try {
+      const file = await readFile(privateCadFilePath(root, id));
+      if (file.byteLength !== model.fileSize ||
+          file.byteLength > MAX_PRIVATE_CAD_UPLOAD_BYTES ||
+          !timingSafeEqual(
+            createHash('sha256').update(file).digest(),
+            Buffer.from(expectedChecksum, 'hex'),
+          )) throw new Error('CAD source checksum mismatch');
+      importedPaths = auditedGlbMeshPaths(file);
+    } catch {
+      return NextResponse.json({
+        success: false,
+        error: 'CAD source could not be verified against its original geometry and fingerprint',
+      }, { status: 409 });
+    }
+
+    const verifiedBindings = await db.assetMeshBinding.findMany({
+      where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
+      select: {
+        meshPath: true, meshName: true, componentId: true,
+        component: { select: { assetId: true } },
+      },
+    });
+    if (!verifiedBindings.length) {
       return NextResponse.json({
         success: false, error: 'Link at least one exact CAD node to a registered component before commissioning',
       }, { status: 409 });
     }
+
+    // Review checkboxes alone are insufficient. All maintenance-authoritative
+    // component mappings must actually exist in the source GLB scene graph.
+    const mappedPaths = new Set<string>();
+    for (const binding of verifiedBindings) {
+      if (!binding.meshPath || !importedPaths.has(binding.meshPath) ||
+          binding.component?.assetId !== model.assetId ||
+          mappedPaths.has(binding.meshPath)) {
+        return NextResponse.json({
+          success: false,
+          error: 'A mapped CAD node does not exist in the reviewed GLB or conflicts with another component',
+        }, { status: 409 });
+      }
+      mappedPaths.add(binding.meshPath);
+    }
+    const linkedComponents = verifiedBindings.length;
 
     const [updated] = await db.$transaction([
       db.assetModel.update({ where: { id }, data: { isActive: true } }),
@@ -75,7 +151,9 @@ export async function POST(
           newValues: JSON.stringify({
             isActive: true, reviewNote: note, sourceReviewed: true,
             geometryReviewed: true, componentMappingReviewed: true,
-            linkedComponents,
+            linkedComponents, importedMeshPaths: importedPaths.size,
+            exactSourcePathMatches: mappedPaths.size,
+            originalSourceIntegrityVerified: true,
             // Technical review does not approve any particular physical
             // disassembly instructions or automated maintenance.
             maintenanceProcedureApproved: false,

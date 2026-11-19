@@ -5,6 +5,7 @@
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
 import { EventEmitter } from 'events';
+import type { Prisma } from '@prisma/client';
 
 const log = createLogger('EdgeGatewayService');
 
@@ -35,6 +36,16 @@ export class EdgeGatewayService extends EventEmitter {
     if (!data.name?.trim()) throw new Error('Gateway name is required');
     if (!data.gatewayCode?.trim()) throw new Error('Gateway code is required');
 
+    const rawConfig = data.config ?? {};
+    if (typeof rawConfig !== 'object' || Array.isArray(rawConfig))
+      throw new Error('Gateway configuration must be a JSON object');
+    let config: Prisma.InputJsonObject;
+    try {
+      config = JSON.parse(JSON.stringify(rawConfig)) as Prisma.InputJsonObject;
+    } catch {
+      throw new Error('Gateway configuration must be JSON serializable');
+    }
+
     const existing = await db.edgeGateway.findUnique({ where: { gatewayCode: data.gatewayCode } });
     if (existing) throw new Error(`Gateway with code "${data.gatewayCode}" already exists`);
 
@@ -46,7 +57,7 @@ export class EdgeGatewayService extends EventEmitter {
         ipAddress: data.ipAddress,
         firmwareVersion: data.firmwareVersion,
         capabilities: data.capabilities || [],
-        config: data.config || {},
+        config,
         createdById: data.createdById,
         status: 'offline',
       },
@@ -66,10 +77,11 @@ export class EdgeGatewayService extends EventEmitter {
     return gateway;
   }
 
-  async listGateways(params: { plantId?: string; status?: string; page?: number; limit?: number } = {}) {
+  async listGateways(params: { plantId?: string; plantIds?: string[]; status?: string; page?: number; limit?: number } = {}) {
     const { plantId, status, page = 1, limit = 50 } = params;
     const where: Record<string, unknown> = {};
     if (plantId) where.plantId = plantId;
+    if (params.plantIds) where.AND = [{ plantId: { in: params.plantIds } }];
     if (status) where.status = status;
 
     const [gateways, total] = await Promise.all([
@@ -156,9 +168,20 @@ export class EdgeGatewayService extends EventEmitter {
     for (let i = 0; i < batchCount; i++) {
       const batch = readings.slice(i * state.batchSize, (i + 1) * state.batchSize);
       try {
+        // Each stream row requires the source registered to its exact mapping.
+        // A mapping ID is not interchangeable with a telemetry source ID.
+        const mappingIds = [...new Set(batch.map(r => r.mappingId))];
+        const mappings = await db.telemetryMapping.findMany({
+          where: { id: { in: mappingIds } },
+          select: { id: true, sourceId: true },
+        });
+        const sourceByMapping = new Map(mappings.map(mapping => [mapping.id, mapping.sourceId]));
+        if (batch.some(reading => !sourceByMapping.has(reading.mappingId)))
+          throw new Error('Cannot sync readings for an unknown telemetry mapping');
         await db.telemetryStream.createMany({
           data: batch.map(r => ({
             mappingId: r.mappingId,
+            sourceId: sourceByMapping.get(r.mappingId)!,
             value: r.value,
             quality: r.quality,
             timestamp: r.timestamp,
@@ -172,7 +195,7 @@ export class EdgeGatewayService extends EventEmitter {
         if (i === 0) {
           await db.telemetryBatch.create({
             data: {
-              sourceId: readings[0].mappingId, // primary source
+              sourceId: sourceByMapping.get(readings[0].mappingId)!, // primary source
               gatewayId,
               batchNumber: Math.floor(Date.now() / 1000),
               status: 'completed',

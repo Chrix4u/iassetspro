@@ -50,12 +50,12 @@ function mesh(parent,name,geometry,material,position=[0,0,0],rotation=[0,0,0]){
 function box(parent,name,dims,material,at){
   return mesh(parent,name,new THREE.BoxGeometry(...dims),material,at);
 }
-function cyl(parent,name,r1,r2,length,material,at,axis='y',segments=40){
+function cyl(parent,name,r1,r2,length,material,at,axis='y',segments=24){
   const rotation=axis==='z'?[Math.PI/2,0,0]:axis==='x'?[0,0,Math.PI/2]:[0,0,0];
   return mesh(parent,name,new THREE.CylinderGeometry(r1,r2,length,segments),material,at,rotation);
 }
 function ring(parent,name,r,tube,material,at,axis='z'){
-  return mesh(parent,name,new THREE.TorusGeometry(r,tube,16,64),material,at,
+  return mesh(parent,name,new THREE.TorusGeometry(r,tube,10,28),material,at,
     axis==='y'?[Math.PI/2,0,0]:axis==='x'?[0,Math.PI/2,0]:[0,0,0]);
 }
 function baseScene(label,description){
@@ -145,12 +145,12 @@ function gearboxModel(){
   box(frame,'Removable Inspection Cover',[4.75,2.75,.09],materials.window,[0,-.1,1.20]);
   const input=assembly(root,'Input Shaft Assembly');
   cyl(input,'Input Shaft',.18,.18,3.9,materials.silver,[-1.05,0,0],'z');
-  spurGear(input,'Input Pinion',.64,17,.47,materials.gear,[-1.05,0,0]);
+  spurGear(input,'Input Pinion',.64,12,.47,materials.gear,[-1.05,0,0]);
   ring(input,'Bearing',.29,.08,materials.bearing,[-1.05,0,-1.10]);
   ring(input,'Bearing',.29,.08,materials.bearing,[-1.05,0,1.10]);
   const output=assembly(root,'Output Shaft Assembly');
   cyl(output,'Output Shaft',.23,.23,4.25,materials.silver,[.99,0,0],'z');
-  spurGear(output,'Output Gear',1.31,37,.49,materials.copper,[.99,0,0]);
+  spurGear(output,'Output Gear',1.31,24,.49,materials.copper,[.99,0,0]);
   ring(output,'Bearing',.37,.08,materials.bearing,[.99,0,-1.10]);
   ring(output,'Bearing',.37,.08,materials.bearing,[.99,0,1.10]);
   const ancillary=assembly(root,'Service and Lubrication');

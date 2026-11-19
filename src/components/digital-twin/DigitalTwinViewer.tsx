@@ -323,10 +323,14 @@ BackgroundClickHandler.displayName = 'BackgroundClickHandler';
 // CRITICAL: Set displayName on ALL components so React's error boundaries
 // show real names in production builds (instead of minified rA, nm, etc.)
 
+// A stable singleton avoids rebaking every imported CAD mesh when the viewer
+// receives an implicit empty binding collection on each React render.
+const EMPTY_ANATOMY_BINDINGS: AssetMeshBinding[] = [];
+
 export function DigitalTwinViewer({
   sceneId = null,
   modelUrl: propModelUrl,
-  bindings: propBindings = [],
+  bindings: propBindings = EMPTY_ANATOMY_BINDINGS,
   assetId = null,
   twinId = null,
   twinName = null,
@@ -663,9 +667,11 @@ export function DigitalTwinViewer({
   // ── Bindings for exploded view and maintenance-component handoff ───────
   // An original/demo model URL is strictly visual-only. Do not accidentally
   // apply another installed asset's cached Digital Twin component bindings.
-  const effectiveBindings: AssetMeshBinding[] = propModelUrl
-    ? propBindings
-    : propBindings.length > 0 ? propBindings : (currentScene?.meshBindings ?? []);
+  const effectiveBindings = useMemo<AssetMeshBinding[]>(() => (
+    propModelUrl ? propBindings :
+      propBindings.length > 0 ? propBindings :
+        (currentScene?.meshBindings ?? EMPTY_ANATOMY_BINDINGS)
+  ), [propModelUrl, propBindings, currentScene?.meshBindings]);
   const selectedBinding = useMemo(
     () => effectiveBindings.find((binding) => binding.meshName === selectedMeshName) ?? null,
     [effectiveBindings, selectedMeshName],

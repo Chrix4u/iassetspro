@@ -1,279 +1,139 @@
 'use client';
 
-import { useRef, useMemo, useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { Html } from '@react-three/drei';
 import { useStoreSelector } from '@/hooks/useDigitalTwin';
+import { buildAnatomyExplosion, type AnatomyExplosionPart } from './anatomyExplosion';
 import type { AssetMeshBinding } from './InteractiveMesh';
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export interface ExplodedViewProps {
-  /** Available mesh bindings for explosion offset calculation */
   bindings: AssetMeshBinding[];
-  /** Animation speed factor (default: 0.05) */
   animationSpeed?: number;
-  /** Show component labels during exploded view (default: true) */
   showLabels?: boolean;
 }
 
-// ============================================================================
-// Spring physics for smooth animation
-// ============================================================================
-
-interface SpringState {
-  current: number;
-  velocity: number;
-}
-
-function springStep(
-  state: SpringState,
-  target: number,
-  stiffness: number = 0.06,
-  damping: number = 0.72,
-): SpringState {
-  const force = (target - state.current) * stiffness;
-  state.velocity = (state.velocity + force) * damping;
-  state.current += state.velocity;
-
-  // Snap when close enough
-  if (Math.abs(state.current - target) < 0.0001 && Math.abs(state.velocity) < 0.0001) {
-    state.current = target;
-    state.velocity = 0;
-  }
-
-  return state;
-}
-
-// ============================================================================
-// Component
-// ============================================================================
-//
-// CRITICAL: No useState is updated directly from useFrame. Label data is
-// accumulated in a ref by useFrame and flushed to React state via a
-// separate requestAnimationFrame loop, completely decoupled from R3F's
-// frame loop. This eliminates React Error #185.
-// ============================================================================
-
-interface LabelData {
-  meshName: string;
-  assetName: string;
+/**
+ * Real mesh decomposition of a commissioned GLB/glTF model.  This works even
+ * before engineers bind meshes to asset parts, but unmapped meshes remain
+ * VISUAL ONLY and never become PM/work-order targets.
+ */
+interface AnatomyLabel {
+  id: string;
+  text: string;
   position: [number, number, number];
-  progress: number;
 }
 
-export function ExplodedView({
-  bindings,
-  animationSpeed = 0.05,
-  showLabels = true,
-}: ExplodedViewProps) {
-  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
-  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
-  const explodeMode = useStoreSelector((s) => s.explodeMode);
-  const explodeAssemblyId = useStoreSelector((s) => s.explodeAssemblyId);
+export function ExplodedView({ bindings, animationSpeed = 0.08, showLabels = true }: ExplodedViewProps) {
+  const explodeMode = useStoreSelector(state => state.explodeMode);
+  const explodeProgress = useStoreSelector(state => state.explodeProgress);
+  const explodeAssemblyId = useStoreSelector(state => state.explodeAssemblyId);
+  const modelRef = useRef<THREE.Object3D | null>(null);
+  const planRef = useRef<AnatomyExplosionPart[]>([]);
+  const bindingsRef = useRef(bindings);
+  const targetRef = useRef(new THREE.Vector3());
+  const tickRef = useRef(0);
+  const [labels, setLabels] = useState<AnatomyLabel[]>([]);
+  const pendingLabelsRef = useRef<AnatomyLabel[] | null>(null);
 
-  // Spring state for the overall explode progress
-  const springRef = useRef<SpringState>({ current: 0, velocity: 0 });
-
-  // Per-mesh spring states for smooth individual transitions
-  const meshSpringsRef = useRef<Map<string, SpringState>>(new Map());
-
-  // Build lookup of binding offsets
-  const bindingOffsets = useMemo(() => {
-    const map = new Map<string, [number, number, number]>();
-    for (const binding of bindings) {
-      if (binding.explodeOffset) {
-        map.set(binding.meshName, binding.explodeOffset);
-      }
-    }
-    return map;
-  }, [bindings]);
-
-  // Filter to only explode the target assembly (or all if no assembly specified)
-  const targetMeshes = useMemo(() => {
-    if (explodeAssemblyId) {
-      return bindings.filter((b) => b.assetId === explodeAssemblyId);
-    }
-    return bindings;
-  }, [bindings, explodeAssemblyId]);
-
-  // React state for label rendering — updated from a decoupled rAF loop, NEVER from useFrame
-  const [activeLabels, setActiveLabels] = useState<LabelData[]>([]);
-
-  // Ref to accumulate labels from useFrame — the rAF sync loop reads from this
-  const pendingLabelsRef = useRef<LabelData[] | null>(null);
-
-  // Animate explosion progress — drive the spring
-  // CRITICAL: No store updates from useFrame. React.startTransition does NOT
-  // prevent Error #185 for Zustand set() calls — it only affects React's own
-  // setState. The visual animation is driven entirely by the local spring ref.
-  useFrame(() => {
-
-
-    const target = explodeMode ? 1 : 0;
-    springRef.current = springStep(springRef.current, target);
-  });
-
-  // Apply spring-based offsets to mesh objects in the scene
-  useFrame(({ scene }) => {
-    const springValue = springRef.current.current;
-    const labels: LabelData[] = [];
-
-    scene.traverse((child) => {
-      if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
-
-      const offset = bindingOffsets.get(mesh.name);
-      if (!offset) return;
-
-      const isTarget = targetMeshes.some((b) => b.meshName === mesh.name);
-      if (!isTarget) return;
-
-      // Store original position
-      if (!mesh.userData.__originalPosition) {
-        mesh.userData.__originalPosition = mesh.position.clone();
-      }
-
-      const original = mesh.userData.__originalPosition as THREE.Vector3;
-
-      // Initialize per-mesh spring if needed
-      if (!meshSpringsRef.current.has(mesh.name)) {
-        meshSpringsRef.current.set(mesh.name, { current: 0, velocity: 0 });
-      }
-
-      // Step per-mesh spring towards global spring value
-      const meshSpring = meshSpringsRef.current.get(mesh.name)!;
-      const targetValue = springValue;
-      const stepped = springStep(meshSpring, targetValue, 0.08, 0.75);
-
-      // Calculate target position with spring-animated offset
-      const targetX = original.x + offset[0] * stepped.current;
-      const targetY = original.y + offset[1] * stepped.current;
-      const targetZ = original.z + offset[2] * stepped.current;
-
-      // Smooth position update
-      mesh.position.x += (targetX - mesh.position.x) * 0.15;
-      mesh.position.y += (targetY - mesh.position.y) * 0.15;
-      mesh.position.z += (targetZ - mesh.position.z) * 0.15;
-
-      // Track for labels when significantly exploded
-      if (showLabels && stepped.current > 0.3) {
-        const binding = targetMeshes.find((b) => b.meshName === mesh.name);
-        if (binding) {
-          labels.push({
-            meshName: mesh.name,
-            assetName: binding.assetName,
-            position: [mesh.position.x, mesh.position.y, mesh.position.z],
-            progress: stepped.current,
-          });
-        }
-      }
-    });
-
-    // Store labels in a ref — the decoupled rAF loop will flush to React state.
-    // This completely avoids setState during R3F's frame loop.
-    pendingLabelsRef.current = labels;
-  });
-
-  // Reset positions and springs when explode mode is off
-  useFrame(({ scene }) => {
-    if (explodeMode) return;
-    if (springRef.current.current > 0.001) return; // Wait for spring to settle
-
-    scene.traverse((child) => {
-      if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
-
-      if (mesh.userData.__originalPosition) {
-        const original = mesh.userData.__originalPosition as THREE.Vector3;
-        mesh.position.lerp(original, 0.15);
-
-        if (mesh.position.distanceTo(original) < 0.001) {
-          mesh.position.copy(original);
-          delete mesh.userData.__originalPosition;
-        }
-      }
-    });
-
-    // Clear per-mesh springs and labels
-    meshSpringsRef.current.clear();
-    pendingLabelsRef.current = [];
-  });
-
-  // Decoupled sync loop: reads from pendingLabelsRef and flushes to React state.
-  // CRITICAL FIX: The loop now STOPS when explode mode is off AND there are no
-  // pending labels. Previously it ran unconditionally via requestAnimationFrame,
-  // scheduling setActiveLabels on every frame even when pendingLabelsRef was null.
-  // While it had a JSON comparison guard, the continuous rAF scheduling could
-  // interleave with React concurrent rendering during Canvas init, contributing
-  // to Error #185. Now it self-terminates and is restarted by a lightweight
-  // useEffect when explode mode changes.
+  // Changes to engineer-approved part links rebuild the motion plan while
+  // keeping the source model's original assembled coordinates.
+  const bindingSignature = useMemo(() => JSON.stringify(bindings.map(binding =>
+    [binding.meshName, binding.assetId, binding.componentId, binding.explodeOffset]
+  )), [bindings]);
   useEffect(() => {
-    // Only run the rAF loop when explode mode is active
-    if (!explodeMode) {
-      setActiveLabels([]);
+    bindingsRef.current = bindings;
+    for (const part of planRef.current) part.mesh.position.copy(part.original);
+    planRef.current = [];
+    modelRef.current = null;
+    // React 19 forbids ref writes during render. Only rebuild when the
+    // semantic mesh mappings change, not on every caller re-render.
+  }, [bindingSignature]);
+
+  useFrame(({ scene }, delta) => {
+    // Never move scene lights, inspection labels, IoT overlays or ground plane.
+    let model: THREE.Object3D | null = modelRef.current?.parent ? modelRef.current : null;
+    if (!model) {
+      scene.traverse(object => {
+        if (!model && object.userData.__iAssetsModelRoot === true) model = object;
+      });
+    }
+
+    if (model !== modelRef.current) {
+      // Restore previous model before switching to avoid corrupting cached glTF.
+      for (const part of planRef.current) part.mesh.position.copy(part.original);
+      modelRef.current = model ?? null;
+      planRef.current = model ? buildAnatomyExplosion(model, bindingsRef.current) : [];
+    }
+    if (!planRef.current.length) return;
+
+    const amount = explodeMode ? Math.max(0, Math.min(1, explodeProgress)) : 0;
+    const damping = 1 - Math.exp(-Math.max(1, animationSpeed * 100) * Math.min(delta, 0.1));
+    const visibleLabels: AnatomyLabel[] = [];
+    const refreshLabels = ++tickRef.current % 10 === 0;
+    for (const part of planRef.current) {
+      const scoped = !explodeAssemblyId ||
+        part.componentId === explodeAssemblyId ||
+        part.assetId === explodeAssemblyId ||
+        part.name === explodeAssemblyId;
+      const target = targetRef.current.copy(part.original)
+        .addScaledVector(part.offset, scoped ? amount : 0);
+      part.mesh.position.lerp(target, damping);
+      if (part.mesh.position.distanceToSquared(target) < 0.00000001) {
+        part.mesh.position.copy(target);
+      }
+      // Only explicitly mapped parts may receive names that suggest they are
+      // registered asset anatomy. Unmapped geometry remains visual only.
+      if (refreshLabels && showLabels && amount > 0.2 && scoped &&
+        (part.componentId || part.assetId) && visibleLabels.length < 40) {
+        const position = part.mesh.getWorldPosition(new THREE.Vector3());
+        visibleLabels.push({id:part.id, text:part.name,
+          position:[position.x,position.y + 0.25,position.z]});
+      }
+    }
+    if (refreshLabels) pendingLabelsRef.current = visibleLabels;
+  });
+
+  // The HTML labels are synchronized outside the R3F frame reconciler.
+  // Updating React state directly in useFrame would cause update-depth crashes.
+  useEffect(() => {
+    if (!explodeMode || !showLabels) {
+      setLabels([]);
       return;
     }
-
-    let animId: number;
-    let lastLabelsJson = '';
-
-    const sync = () => {
+    let animationId: number;
+    let previous = '';
+    const flush = () => {
       const pending = pendingLabelsRef.current;
-      if (pending !== null) {
-        // Only update React state if labels actually changed (avoid re-render spam)
-        const json = JSON.stringify(pending);
-        if (json !== lastLabelsJson) {
-          lastLabelsJson = json;
-          requestAnimationFrame(() => {
-            setActiveLabels(pending);
-          });
+      if (pending) {
+        const serialized = JSON.stringify(pending);
+        if (serialized !== previous) {
+          previous = serialized;
+          setLabels(pending);
         }
         pendingLabelsRef.current = null;
       }
-      animId = requestAnimationFrame(sync);
+      animationId = requestAnimationFrame(flush);
     };
+    animationId = requestAnimationFrame(flush);
+    return () => cancelAnimationFrame(animationId);
+  }, [explodeMode, showLabels]);
 
-    animId = requestAnimationFrame(sync);
-    return () => cancelAnimationFrame(animId);
-  }, [explodeMode]);
+  useEffect(() => () => {
+    for (const part of planRef.current) part.mesh.position.copy(part.original);
+    planRef.current = [];
+    modelRef.current = null;
+  }, []);
 
-  // Label renderer — renders HTML labels for exploded components
-  const isVisible = explodeMode && showLabels;
-
-  return (
-    <group>
-      {isVisible && activeLabels.map((label) => (
-        <Html
-          key={label.meshName}
-          position={[
-            label.position[0],
-            label.position[1] + 0.6,
-            label.position[2],
-          ]}
-          center
-          distanceFactor={15}
-          style={{ pointerEvents: 'none' }}
-        >
-          <div
-            className="px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap shadow-lg border transition-opacity duration-300"
-            style={{
-              background: 'rgba(15,15,25,0.85)',
-              color: '#94a3b8',
-              borderColor: 'rgba(148,163,184,0.2)',
-              backdropFilter: 'blur(8px)',
-              opacity: Math.min(label.progress * 1.5, 1),
-            }}
-          >
-            {label.assetName}
-          </div>
-        </Html>
-      ))}
-    </group>
-  );
+  return <group>{labels.map(label => (
+    <Html key={label.id} position={label.position} center distanceFactor={15}
+      style={{pointerEvents:'none'}}>
+      <span className="rounded border border-cyan-400/30 bg-slate-950/85 px-2 py-1 text-[10px] font-medium text-cyan-100 shadow-lg">
+        {label.text}
+      </span>
+    </Html>
+  ))}</group>;
 }
 
 export default ExplodedView;

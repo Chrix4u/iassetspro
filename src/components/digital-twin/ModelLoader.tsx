@@ -35,6 +35,8 @@ export interface ModelLoaderProps {
   maxDimension?: number;
   /** Asset-mesh bindings from the store or external source */
   bindings?: AssetMeshBinding[];
+  /** Number of actual imported glTF meshes (never inferred from an asset description). */
+  onMeshCount?: (count: number) => void;
   /** Children rendered after the model */
   children?: ReactNode;
 }
@@ -437,6 +439,7 @@ function PerformanceMonitor({ enabled }: { enabled: boolean }) {
 interface ProcessedModelProps {
   scene: THREE.Group;
   bindings: AssetMeshBinding[];
+  onMeshCount?: (count: number) => void;
   maxDimension: number;
   autoCenter: boolean;
   autoScale: boolean;
@@ -445,6 +448,7 @@ interface ProcessedModelProps {
 function ProcessedModel({
   scene,
   bindings,
+  onMeshCount,
   maxDimension,
   autoCenter,
   autoScale,
@@ -468,11 +472,19 @@ function ProcessedModel({
     }> = [];
     const staticList: THREE.Mesh[] = [];
 
+    const nameCount = new Map<string, number>();
+    scene.traverse(child => {
+      if (!(child as THREE.Mesh).isMesh) return;
+      nameCount.set(child.name, (nameCount.get(child.name) ?? 0) + 1);
+    });
+
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
       const mesh = child as THREE.Mesh;
 
-      const binding = bindingMap.get(mesh.name);
+      // A duplicated mesh name is not a trustworthy asset-part identity.
+      // Preserve its geometry as visual-only until mesh-path mapping is available.
+      const binding = nameCount.get(mesh.name) === 1 ? bindingMap.get(mesh.name) : undefined;
       if (binding) {
         applyBindingToMesh(mesh, binding);
         interactive.push({ mesh, binding });
@@ -483,6 +495,14 @@ function ProcessedModel({
 
     return { interactiveMeshes: interactive, staticMeshes: staticList };
   }, [scene, bindingMap]);
+
+  // Report only imported geometry. Defer to the main React reconciler; the
+  // callback must never synchronously mutate viewer state during Canvas render.
+  useEffect(() => {
+    if (!onMeshCount) return;
+    const timer = setTimeout(() => onMeshCount(interactiveMeshes.length + staticMeshes.length), 0);
+    return () => clearTimeout(timer);
+  }, [onMeshCount, interactiveMeshes.length, staticMeshes.length]);
 
   // Compute model bounds for LOD and auto-scale
   const modelBounds = useMemo(() => {
@@ -519,7 +539,7 @@ function ProcessedModel({
 
   return (
     <>
-      <group ref={groupRef}>
+      <group ref={groupRef} userData={{ __iAssetsModelRoot: true }}>
         {/* Render interactive meshes with binding behavior */}
         {interactiveMeshes.map(({ mesh, binding }) => (
           <InteractiveMesh
@@ -598,6 +618,7 @@ export function ModelLoader({
   autoScale = true,
   maxDimension = 8,
   bindings: externalBindings,
+  onMeshCount,
   children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
@@ -682,6 +703,7 @@ export function ModelLoader({
       <ProcessedModel
         scene={scene}
         bindings={bindings}
+        onMeshCount={onMeshCount}
         maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}

@@ -466,7 +466,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
 
       setExplodeProgress: (progress: number) => {
         const clamped = Math.max(0, Math.min(1, progress));
-        set({ explodeProgress: clamped }, false, 'digitalTwin/setExplodeProgress');
+        set({ explodeProgress: clamped, explodeMode: clamped > 0 }, false, 'digitalTwin/setExplodeProgress');
       },
 
       setExplodeAssembly: (assemblyId: string | null) => {

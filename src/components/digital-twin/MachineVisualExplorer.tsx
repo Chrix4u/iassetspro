@@ -1004,7 +1004,7 @@ export function MachineVisualExplorer({
 
             <TabsContent value="model3d" className="mt-3 space-y-2">
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
-                3D meshes are maintenance targets only when explicitly mapped to the registered machine hierarchy. Unmapped geometry stays visual and cannot silently become a PM or repair component.
+                Smart Anatomy moves actual imported GLB/glTF mesh geometry for exploded views, without inventing hidden machine parts. A single-piece model cannot be disassembled. Only engineer-mapped meshes may become PM or repair targets; unverified geometry stays visual-only.
               </div>
               {twinLoading ? (
                 <div className="flex min-h-[480px] items-center justify-center rounded-xl border bg-slate-950">

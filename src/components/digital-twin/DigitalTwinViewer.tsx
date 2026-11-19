@@ -242,19 +242,17 @@ ErrorStateOverlay.displayName = 'ErrorStateOverlay';
 // ============================================================================
 
 function CameraController({ locked2D = false }: { locked2D?: boolean }) {
-  const { cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
+  const { cameraPosition, cameraTarget } = useCameraControls();
   const controlsRef = useRef<any>(null);
-  // Use refs to avoid unstable deps in useEffect.
-  // cameraPosition/cameraTarget are arrays that change reference on each
-  // animation frame — putting them directly in deps causes Error #185.
+  // Synchronize camera references after commit, never mutate refs during React
+  // rendering. This avoids the React 19 refs lint error and does not update
+  // component state or cause a Canvas render loop.
   const positionRef = useRef(cameraPosition);
   const targetRef = useRef(cameraTarget);
-  const transitioningRef = useRef(isTransitioning);
-
-  // Sync refs without causing re-renders
-  positionRef.current = cameraPosition;
-  targetRef.current = cameraTarget;
-  transitioningRef.current = isTransitioning;
+  useEffect(() => {
+    positionRef.current = cameraPosition;
+    targetRef.current = cameraTarget;
+  }, [cameraPosition, cameraTarget]);
 
   // Update OrbitControls once after mount.
   // Subsequent position updates happen via R3F's internal frame loop,
@@ -268,7 +266,6 @@ function CameraController({ locked2D = false }: { locked2D?: boolean }) {
     ctrl.object.position.set(position[0], position[1], position[2]);
     ctrl.update();
     // Only run once after mount — subsequent updates happen via R3F's frame loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -384,6 +381,7 @@ export function DigitalTwinViewer({
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [anatomyMeshCount, setAnatomyMeshCount] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
 
   // Scene resolution state (when twinId is used without sceneId)
@@ -533,6 +531,7 @@ export function DigitalTwinViewer({
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  useEffect(() => setAnatomyMeshCount(0), [effectiveModelUrl]);
 
   // ── Error handling ──────────────────────────────────────────────────────
   const effectiveError = sceneError || hookError || modelError;
@@ -686,6 +685,7 @@ export function DigitalTwinViewer({
                   bindings={effectiveBindings}
                   onLoadingStart={handleModelLoadingStart}
                   onLoadingComplete={handleModelLoadingComplete}
+                  onMeshCount={setAnatomyMeshCount}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
@@ -775,6 +775,13 @@ export function DigitalTwinViewer({
             <Monitor className="h-3 w-3 text-cyan-400" />
             <span className="text-[10px] text-slate-400">Digital Twin Viewer · {viewMode === '3d' ? '3D' : viewMode.replace('2d-', '2D ').replace(/^2D /, '2D ').replace(/\b\w/g, c => c.toUpperCase())}</span>
           </div>
+          {effectiveModelUrl && anatomyMeshCount > 0 && (
+            <span className="text-[10px] text-slate-400" aria-live="polite">
+              {anatomyMeshCount === 1
+                ? 'Single imported mesh · no separable mechanical parts'
+                : anatomyMeshCount.toLocaleString() + ' imported meshes · geometry-backed explosion'}
+            </span>
+          )}
           {currentScene && (
             <>
               <span className="text-slate-700">•</span>
@@ -805,6 +812,7 @@ export function DigitalTwinViewer({
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
+          anatomyMeshCount={anatomyMeshCount}
         />
       )}
 

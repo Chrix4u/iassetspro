@@ -182,7 +182,17 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         const toolbar = currentDialog.getByTestId('pm-assignment-task-toolbar');
         const shortcut = currentDialog.getByTestId('pm-sticky-add-task');
         const total = currentDialog.getByTestId('pm-assignment-footer-total');
-        await toolbar.scrollIntoViewIfNeeded();
+        // ResponsiveDialog may remount when changing the desktop/mobile layout.
+        // Resolve the *current* toolbar inside the scroll container and scroll
+        // synchronously; Playwright's scrollIntoViewIfNeeded can hold a detached
+        // element from the previous viewport during this transition.
+        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+          const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
+          if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
+          currentToolbar.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+          scrollArea.dispatchEvent(new Event('scroll'));
+        });
+        await expect(toolbar).toBeVisible({ timeout: 10_000 });
         await expect(shortcut).toHaveCount(0);
         const totalBefore = await total.innerText();
 
@@ -212,7 +222,17 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await expect(taskPicker).toBeHidden();
         await expect(total).toHaveText(totalBefore);
 
-        await toolbar.scrollIntoViewIfNeeded();
+        // ResponsiveDialog may remount when changing the desktop/mobile layout.
+        // Resolve the *current* toolbar inside the scroll container and scroll
+        // synchronously; Playwright's scrollIntoViewIfNeeded can hold a detached
+        // element from the previous viewport during this transition.
+        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+          const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
+          if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
+          currentToolbar.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+          scrollArea.dispatchEvent(new Event('scroll'));
+        });
+        await expect(toolbar).toBeVisible({ timeout: 10_000 });
         await expect(shortcut).toHaveCount(0);
       }
       await page.setViewportSize({ width: 1280, height: 800 });

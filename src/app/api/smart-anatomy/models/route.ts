@@ -1,11 +1,12 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { writeFile, unlink } from 'node:fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
-import { privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
+import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
+import { MultipartUploadError, MAX_CAD_MULTIPART_OVERHEAD, readBoundedMultipart } from '@/lib/smart-anatomy/limited-multipart';
 
 export const runtime = 'nodejs';
 
@@ -34,9 +35,24 @@ export async function POST(req: NextRequest) {
     }, { status: 503 });
   }
 
+  // Never create a directory with implicit parent permissions. An operator
+  // must provision owner-only persistent storage outside all public roots.
+  try {
+    await assertPrivateCadStorageReady(root);
+  } catch {
+    return NextResponse.json({
+      success: false, error: 'Private CAD storage is not safely provisioned',
+    }, { status: 503 });
+  }
+
   let storedFile: string | null = null;
   try {
-    const form = await req.formData();
+    // Hard cap the streamed body before calling FormData's buffering parser,
+    // including when the client uses chunked transfer with no Content-Length.
+    const form = await readBoundedMultipart(
+      req,
+      MAX_PRIVATE_CAD_UPLOAD_BYTES + MAX_CAD_MULTIPART_OVERHEAD,
+    );
     const file = form.get('file');
     const assetId = String(form.get('assetId') || '');
     const name = String(form.get('name') || '').trim();
@@ -72,7 +88,6 @@ export async function POST(req: NextRequest) {
     const id = randomUUID();
     const filePath = '/api/smart-anatomy/models/' + id + '/file';
     storedFile = privateCadFilePath(root, id);
-    await mkdir(root, { recursive: true, mode: 0o700 });
     await writeFile(storedFile, bytes, { mode: 0o600, flag: 'wx' });
 
     try {
@@ -112,6 +127,12 @@ export async function POST(req: NextRequest) {
       throw error;
     }
   } catch (error: unknown) {
+    if (error instanceof MultipartUploadError) {
+      if (storedFile) await unlink(storedFile).catch(() => {});
+      return NextResponse.json({
+        success: false, error: error.message,
+      }, { status: error.status });
+    }
     const message = error instanceof Error ? error.message : '';
     const isInvalid = message.startsWith('GLB ') || message.startsWith('Only glTF') ||
       message.startsWith('Invalid ') || message.startsWith('GLB cannot');

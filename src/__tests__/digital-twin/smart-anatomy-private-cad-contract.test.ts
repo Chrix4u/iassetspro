@@ -30,6 +30,10 @@ describe('Smart Anatomy protected GLB commissioning and access contracts', () =>
     expect(content).toContain('privateCadFilePath(root, id)');
     expect(content).toContain("'Cache-Control': 'private, no-store, max-age=0'");
     expect(content).toContain('X-Content-Type-Options');
+    expect(content).toContain('assertPrivateCadStorageReady(root)');
+    expect(content).toContain("createHash('sha256')");
+    expect(content).toContain('timingSafeEqual');
+    expect(content).toContain("entityType: 'asset_model'");
     expect(content).not.toContain("join(process.cwd(), 'public'");
   });
 

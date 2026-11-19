@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { NextRequest } from 'next/server';
 
 const mocked = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const mocked = vi.hoisted(() => ({
   getPlantScope: vi.fn(),
   canAccessPlantStrict: vi.fn(),
   findUnique: vi.fn(),
+  auditFindFirst: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -24,7 +26,10 @@ vi.mock('@/lib/plant-scope', () => ({
   canAccessPlantStrict: mocked.canAccessPlantStrict,
 }));
 vi.mock('@/lib/db', () => ({
-  db: { assetModel: { findUnique: mocked.findUnique } },
+  db: {
+    assetModel: { findUnique: mocked.findUnique },
+    auditLog: { findFirst: mocked.auditFindFirst },
+  },
 }));
 
 import { GET } from '@/app/api/smart-anatomy/models/[id]/file/route';
@@ -61,6 +66,12 @@ beforeEach(() => {
   mocked.findUnique.mockResolvedValue({
     id, filePath, fileSize: fixture.length,
     asset: { plantId: 'plant-a' },
+  });
+  mocked.auditFindFirst.mockResolvedValue({
+    newValues: JSON.stringify({
+      checksum: createHash('sha256').update(fixture).digest('hex'),
+      sourceOrigin: 'original-training',
+    }),
   });
 });
 
@@ -106,6 +117,33 @@ describe('private CAD binary access, end-to-end route behavior with mocked ident
     expect(response.headers.get('content-type')).toContain('gltf-binary');
     const received = Buffer.from(await response.arrayBuffer());
     expect(received.equals(fixture)).toBe(true);
+  });
+
+  it('fails closed when the uploaded CAD source audit fingerprint is unavailable', async () => {
+    mocked.auditFindFirst.mockResolvedValue(null);
+    const response = await GET(req(), params);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('integrity');
+  });
+
+  it('rejects a same-size on-disk replacement with a different SHA256', async () => {
+    const altered = Buffer.from(fixture);
+    altered[altered.length - 1] ^= 0xff;
+    await writeFile(join(directory, id + '.glb'), altered);
+    try {
+      const response = await GET(req(), params);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toContain('checksum');
+    } finally {
+      await writeFile(join(directory, id + '.glb'), fixture);
+    }
+  });
+
+  it('does not inspect source audit until after authorization', async () => {
+    mocked.getSession.mockReturnValue(null);
+    const response = await GET(req(), params);
+    expect(response.status).toBe(401);
+    expect(mocked.auditFindFirst).not.toHaveBeenCalled();
   });
 
   it('refuses to serve mismatched bytes when metadata or disk content differs', async () => {

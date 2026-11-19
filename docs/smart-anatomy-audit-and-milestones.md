@@ -79,3 +79,28 @@ After the source, geometry and registered-component mappings are approved, the a
 Smart Anatomy now reports the number of factual imported GLB/glTF mesh nodes, linked registered components, unlinked visual-only nodes, and suggested candidate matches. A deterministic **offline name/code matcher** compares each imported source-node name to the existing registered component codes and descriptions (exact part code > exact component name > sufficiently matching descriptive terms), while suppressing ties and ambiguous part identities. It does not use externally generated AI claims, manufacturer part data or fabricated geometry.
 
 The asset explorer offers a bounded, independently scrollable **Review proposals** list (first 50 results), with the source mesh path, target registered code/description, text-match score and review control. The engineer must explicitly select a proposed pairing; saving still runs through the existing, permissioned, plant-scoped link API with exact imported source paths. No proposal automatically creates component registry entries, changes maintenance frequencies, approves disassembly or modifies PM/work orders. When changing models, the existing proposals and selection are cleared to prevent misleading cross-model links.
+
+
+## Milestone 7 — private model integrity and bounded upload hardening
+
+Private CAD storage now has a mandatory runtime guard in **both** file upload and
+file download routes. The application requires a pre-provisioned, readable and
+writable **owner-only directory** with no symlink in its configured path, and
+refuses to create or silently fall back to a public uploads directory. The
+separate release preflight remains required; changing permissions after deploy
+will fail closed on the next request.
+
+Every authorized private CAD file download is SHA-256 checked against the exact
+checksum recorded in the original source-provenance audit log. Missing or
+malformed source attestation, changed bytes (even of the same size), and broken
+storage permissions fail closed. This is filesystem-integrity protection; it
+does not certify the manufacturer's engineering correctness or safety of
+physical disassembly.
+
+Multipart upload requests are read under a fixed 25 MB plus 1 MB form-field
+overhead cap **before** parsing `FormData`, including if HTTP `Content-Length`
+is missing or incorrect. This reduces memory-exhaustion exposure from chunked
+uploads. Nginx body-size and request-rate limits and a malware scanning
+pipeline are still required when enabling uploads for untrusted external users.
+Tests cover cross-plant denial, tampered bytes, missing source provenance,
+unsafe permissions, symlinks and chunked upload limits.

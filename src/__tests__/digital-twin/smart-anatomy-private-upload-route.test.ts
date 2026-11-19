@@ -107,6 +107,19 @@ describe('Smart Anatomy private GLB upload API, executable multipart tests', () 
     expect(await readdir(storage)).toHaveLength(0);
   });
 
+  it('refuses any upload if the private directory becomes group or world readable', async () => {
+    const { chmod } = await import('node:fs/promises');
+    await chmod(storage, 0o755);
+    try {
+      const res=await POST(request());
+      expect(res.status).toBe(503);
+      expect(mocked.assetFindUnique).not.toHaveBeenCalled();
+      expect(await readdir(storage)).toHaveLength(0);
+    } finally {
+      await chmod(storage, 0o700);
+    }
+  });
+
   it('writes real GLB to private UUID storage and registers an inactive audited asset model', async () => {
     const res=await POST(request());
     expect(res.status).toBe(201);

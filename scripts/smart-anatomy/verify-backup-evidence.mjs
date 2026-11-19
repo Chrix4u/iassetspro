@@ -52,6 +52,7 @@ async function openPrivateRegularFile(path,label){
 }
 export async function verifyBackupEvidence(manifestPath,{
   output=console, now=new Date(),
+  expectedCadRoot=process.env.IASSETSPRO_CAD_STORAGE_ROOT,
 }={}){
   const manifest=requireAbsolute(manifestPath,'Backup evidence path');
   const openedManifest=await openPrivateRegularFile(manifest,'Evidence manifest');
@@ -79,6 +80,19 @@ export async function verifyBackupEvidence(manifestPath,{
     throw new Error('Evidence explicitly contains prohibited credentials');
   }
   const source=requireAbsolute(evidence.sourceCadRoot,'Source CAD root');
+  // A self-authored manifest must not define its own trust boundary. The
+  // expected root comes from the runtime configuration, never the manifest.
+  const configuredRoot=requireAbsolute(expectedCadRoot,'Configured private CAD root');
+  if(configuredRoot===sep || source!==configuredRoot){
+    throw new Error('Backup source CAD root does not match configured private CAD storage');
+  }
+  const sourceStat=await lstat(configuredRoot);
+  if(!sourceStat.isDirectory() || sourceStat.isSymbolicLink() ||
+     (sourceStat.mode & 0o077)!==0 ||
+     (typeof process.getuid==='function' && sourceStat.uid!==process.getuid()) ||
+     await realpath(configuredRoot)!==configuredRoot){
+    throw new Error('Configured private CAD root must be a real owner-only directory without symlink ancestors');
+  }
   const archive=requireAbsolute(evidence.encryptedArtifact?.path,'Encrypted artifact');
   // Backup evidence must never be written inside the live imported CAD source.
   if(source===sep||manifest===source||manifest.startsWith(source+sep)){

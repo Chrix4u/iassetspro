@@ -469,3 +469,15 @@ A verified decryption and off-site restoration drill are still required.
 ### Backup evidence manifest isolation
 
 The verifier rejects evidence manifests inside the declared live CAD source root, including a root-wide (`/`) source declaration. This read-only check prevents backup metadata from polluting the source geometry tree. It does not establish off-site replication, cryptographic decryption or restore success.
+
+
+### Configured CAD root binding for backup evidence
+
+The backup evidence verifier now **fails closed** unless
+`IASSETSPRO_CAD_STORAGE_ROOT` is configured to an absolute, owner-only,
+non-symlinked directory owned by the verifier. Its normalized path must
+match `sourceCadRoot` in the manifest exactly. This prevents a self-authored
+manifest from redefining the live CAD source boundary and then claiming a
+file from the real source directory is an off-source encrypted backup.
+This still does not establish remote replication or successful decryption.
+The check does not write to the source, PostgreSQL or production.

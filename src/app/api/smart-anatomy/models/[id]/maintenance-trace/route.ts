@@ -161,7 +161,7 @@ export async function GET(
       },{status:409});
     }
     const paths=new Set<string>();
-    const entries=[];
+    const entries: Array<Record<string, unknown>>=[];
     for (const binding of bindings) {
       const component=binding.component;
       if (!component || component.assetId!==model.assetId || !binding.meshPath ||

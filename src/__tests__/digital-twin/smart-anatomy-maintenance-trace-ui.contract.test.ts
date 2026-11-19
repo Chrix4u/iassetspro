@@ -11,6 +11,10 @@ describe('existing digital twin to PM/work order trace review',()=>{
     expect(explorer).toContain("'/maintenance-trace'");
     expect(explorer).toContain("JSON.stringify(result.data,null,2)");
     expect(explorer).toContain('disabled={exportingCadMaintenanceTrace}');
+    expect(explorer).toContain('canViewPrivateCadTrace');
+    expect(explorer).toContain('href="/#/pm-schedules"');
+    expect(explorer).toContain('href="/#/maintenance-work-orders"');
+    expect(explorer).toContain('href="/#/inventory-items"');
   });
   it('does not use client text matches to claim the source model or work orders are verified',()=>{
     expect(route).toContain('auditedGlbMeshPaths(bytes)');

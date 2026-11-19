@@ -325,3 +325,12 @@ denial, tampering, invented and duplicate paths, wrong-asset component
 links, cross-plant stock/work-order joins, historical withdrawal and
 missing original source audit. The explorer contract test ensures the
 download action is actually wired into the existing application.
+
+### Maintenance navigation and read-only access
+
+The trace export is available to authorized Digital Twin **view** users as
+well as managers. From a registered component selected in the 3D explorer,
+users can open the existing PM Schedules, Work Orders, and Inventory modules
+using the application's canonical hash routes. Navigation is to the full
+existing module list; it does not pretend to open an unimplemented
+record-specific deep link or automatically transfer editing permissions.

@@ -543,6 +543,8 @@ export function MachineVisualExplorer({
   const [twinName, setTwinName] = useState<string | null>(null);
   const [twinLoading, setTwinLoading] = useState(true);
   const canLinkAnatomy = isAdmin() || hasPermission('digital_twin.manage');
+  const canViewPrivateCadTrace = isAdmin() || hasPermission('digital_twin.view') ||
+    hasPermission('digital_twin.manage');
   const [inspectedAnatomy, setInspectedAnatomy] = useState<(ImportedAnatomyMesh & {modelId?: string}) | null>(null);
   const [importedAnatomy, setImportedAnatomy] = useState<ImportedAnatomyMesh[]>([]);
   const [importedAnatomyModelId, setImportedAnatomyModelId] = useState<string | undefined>();
@@ -787,7 +789,7 @@ export function MachineVisualExplorer({
     toast.success('Source-backed CAD mapping review exported. Proposed identities still require engineer approval.');
   }, [asset.assetTag, importedAnatomyModelId, importedAnatomy, components, anatomyCoverage, canLinkAnatomy]);
   const exportCadMaintenanceTrace = useCallback(async () => {
-    if (!privateCadModel?.id || !canLinkAnatomy || exportingCadMaintenanceTrace) return;
+    if (!privateCadModel?.id || !canViewPrivateCadTrace || exportingCadMaintenanceTrace) return;
     setExportingCadMaintenanceTrace(true);
     try {
       const result=await api.get<unknown>(
@@ -819,7 +821,7 @@ export function MachineVisualExplorer({
     } finally {
       setExportingCadMaintenanceTrace(false);
     }
-  }, [privateCadModel,canLinkAnatomy,exportingCadMaintenanceTrace,asset.assetTag]);
+  }, [privateCadModel,canViewPrivateCadTrace,exportingCadMaintenanceTrace,asset.assetTag]);
 
   const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
     if (!componentMap.has(componentId)) {
@@ -1230,7 +1232,7 @@ export function MachineVisualExplorer({
                   </Button>
                 </div>
               )}
-              {privateCadModel && canLinkAnatomy && (
+              {privateCadModel && canViewPrivateCadTrace && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950/95 p-2">
                   <p className="max-w-lg text-xs text-slate-300">
                     Source-verified maintenance evidence · registered parts, existing PM schedules,
@@ -1598,9 +1600,13 @@ export function MachineVisualExplorer({
               ) : (
                 <>
                   <div>
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">Preventive maintenance</span>
-                      <Badge variant="outline">{detail?.pmSchedules?.length || 0}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/pm-schedules" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open full PM schedules module">Open PM list</a>
+                        <Badge variant="outline">{detail?.pmSchedules?.length || 0}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.pmSchedules || []).slice(0, 5).map((schedule) => (
@@ -1618,9 +1624,13 @@ export function MachineVisualExplorer({
                   </div>
 
                   <div className="border-t pt-3">
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 font-semibold"><PackageCheck className="h-3.5 w-3.5" />Store-linked spares</span>
-                      <Badge variant="outline">{detail?.sparePartLinks?.length || 0}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/inventory-items" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open inventory items module">Open stock</a>
+                        <Badge variant="outline">{detail?.sparePartLinks?.length || 0}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.sparePartLinks || []).slice(0, 5).map((link) => (
@@ -1659,9 +1669,13 @@ export function MachineVisualExplorer({
                   </div>
 
                   <div className="border-t pt-3">
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">Recent maintenance & work orders</span>
-                      <Badge variant="outline">{(detail?.maintenanceHistory?.length || 0) + (detail?.workOrderComponents?.length || 0)}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/maintenance-work-orders" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open work orders module">Open WO list</a>
+                        <Badge variant="outline">{(detail?.maintenanceHistory?.length || 0) + (detail?.workOrderComponents?.length || 0)}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.maintenanceHistory || []).slice(0, 4).map((entry) => (

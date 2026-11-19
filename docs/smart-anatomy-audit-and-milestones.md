@@ -197,3 +197,25 @@ plant. Both create and edit routes now enforce this model-to-asset identity
 on the server, in addition to plant authorization and registered-component
 ownership checks. Unit tests exercise cross-machine attempts and ensure a
 draft model can still be mapped to its actual owning machine.
+
+## Milestone 13 — reject malformed self-contained GLB source geometry early
+
+The private GLB import validator now checks the complete supported GLB 2.0
+binary structure, not just the magic/version and JSON segment:
+
+- A single JSON chunk followed by at most one valid aligned BIN chunk;
+  rejects truncation, trailing data and unsupported extra chunk types.
+- The JSON-declared internal buffer must reference the available binary
+  payload within glTF's allowed three-byte padding, and buffer views must
+  be bounded by their backing buffer.
+- Model source hierarchy references must remain in range, and circular or
+  duplicated child structures are rejected before storage, rather than
+  failing later during an engineering approval.
+- Source geometry intake remains capped at 25 MB; plant permissions, private
+  nonpublic storage, checksum attestation and independent engineer approval
+  remain mandatory.
+
+These tests cover both original training GLBs and maliciously modified
+fixtures. This is **input validation**, not a substitute for isolated
+workers and specialist format-conversion security scans; arbitrary STEP,
+IGES, IFC, STL and OBJ uploads are still deliberately not accepted.

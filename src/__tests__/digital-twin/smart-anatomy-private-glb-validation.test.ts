@@ -5,6 +5,20 @@ import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/sma
 const pump = () => readFileSync('public/smart-anatomy-demos/original-centrifugal-pump.glb');
 const gearbox = () => readFileSync('public/smart-anatomy-demos/original-conveyor-gearbox.glb');
 
+function fixture(json: unknown): Buffer {
+  const source = Buffer.from(JSON.stringify(json), 'utf8');
+  const padded = Buffer.alloc(Math.ceil(source.length / 4) * 4, 0x20);
+  source.copy(padded);
+  const bytes = Buffer.alloc(20 + padded.length);
+  bytes.write('glTF', 0);
+  bytes.writeUInt32LE(2, 4);
+  bytes.writeUInt32LE(bytes.length, 8);
+  bytes.writeUInt32LE(padded.length, 12);
+  bytes.write('JSON', 16);
+  padded.copy(bytes, 20);
+  return bytes;
+}
+
 describe('Smart Anatomy private CAD binary validation', () => {
   it('accepts self-contained original GLB geometry and counts real meshes', () => {
     expect(inspectSelfContainedGlb(pump()).meshCount).toBe(30);
@@ -28,7 +42,7 @@ describe('Smart Anatomy private CAD binary validation', () => {
         nodes: [{ mesh: 0 }],
         meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
         accessors: [{ count: 3 }],
-        buffers: [{ uri }],
+        buffers: [{ uri, byteLength: 3 }],
       }), 'utf8');
       const padded = Buffer.alloc(Math.ceil(data.length / 4) * 4, 0x20);
       data.copy(padded);
@@ -47,6 +61,38 @@ describe('Smart Anatomy private CAD binary validation', () => {
       .toThrow('external URLs');
     expect(inspectSelfContainedGlb(makeFixture('data:application/octet-stream;base64,AAAA')).meshCount)
       .toBe(1);
+  });
+
+  it('rejects tampered BIN chunk sizes and unsupported extra chunks', () => {
+    const wrong = Buffer.from(pump());
+    const jsonLength = wrong.readUInt32LE(12);
+    const binStart = 20 + jsonLength;
+    wrong.writeUInt32LE(wrong.readUInt32LE(binStart) + 4, binStart);
+    expect(() => inspectSelfContainedGlb(wrong)).toThrow('binary chunk layout');
+
+    const wrongType = Buffer.from(gearbox());
+    const secondChunk = 20 + wrongType.readUInt32LE(12);
+    wrongType.write('EVIL', secondChunk + 4);
+    expect(() => inspectSelfContainedGlb(wrongType)).toThrow('binary chunk layout');
+  });
+
+  it('validates binary buffer offsets rather than trusting JSON alone', () => {
+    const valid = Buffer.from(pump());
+    const json = JSON.parse(valid.subarray(20, 20 + valid.readUInt32LE(12)).toString());
+    expect(json.bufferViews.length).toBeGreaterThan(0);
+    json.bufferViews[0].byteOffset = json.buffers[0].byteLength + 1;
+    expect(() => inspectSelfContainedGlb(fixture(json))).toThrow('buffer');
+  });
+
+  it('rejects cycles and out-of-bounds child references at intake', () => {
+    const json = {
+      asset: {version:'2.0'}, nodes: [{mesh:0,children:[1]}, {children:[0]}],
+      meshes: [{primitives:[{attributes:{POSITION:0}}]}],
+      accessors:[{count:3}],
+    };
+    expect(() => inspectSelfContainedGlb(fixture(json))).toThrow('cyclic scene');
+    json.nodes[1].children = [999];
+    expect(() => inspectSelfContainedGlb(fixture(json))).toThrow('child index');
   });
 
   it('rejects invalid JSON chunks and malformed glTF version', () => {

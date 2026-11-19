@@ -39,6 +39,7 @@ export interface CameraPreset {
 export interface DigitalTwinMeshBinding {
   id?: string;
   meshName: string;
+  meshPath?: string;
   assetId: string;
   assetName: string;
   componentId?: string | null;

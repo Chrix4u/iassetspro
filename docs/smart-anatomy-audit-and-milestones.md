@@ -1,6 +1,6 @@
 # iAssetsPro Smart Anatomy™ — Existing-system audit and delivery milestones
 
-Status: **Milestone 1 implementation branch**; not released to production.
+Status: **Milestones 1 and 2 on a draft feature branch**; not released to production.
 
 ## Existing modules inspected
 
@@ -25,9 +25,17 @@ The new `anatomyExplosion` logic:
 
 These displacements are for *inspection visualization*, **not manufacturer-specified mechanical disassembly sequences**. Engineers should rely on approved OEM work instructions before physical maintenance.
 
+## Milestone 2 — source-path navigation and existing component mapping
+
+The same 3D viewer now delivers an independently scrollable **imported CAD source tree** generated from the actual GLB hierarchy, not a fictional bill of materials. Engineers can search by source node, part name, or registered component code, select mapped and visual-only geometry, inspect its exact source path, and see the selected geometry highlighted. Source-path matching distinguishes duplicate part names, while name-only legacy bindings are retained only for unambiguous names.
+
+Authorized users with existing Digital Twin manage permissions can select a registered iAssetsPro asset component (Assembly → Subassembly → Component → Part) and link that exact CAD node through the existing, plant-scoped asset mesh binding endpoint. The UI verifies previous mappings first and reloads the existing digital twin scene after saving. This does **not** certify that the file is a manufacturer-authorized model or approve an unsafe maintenance instruction. Duplicate source-path links are rejected by the existing endpoints on create and update; no new model/asset tables or tenant-bypass paths were introduced.
+
+Tests cover exact-path disambiguation, nested source-tree construction, visual-only selection, mapping endpoint contracts, transform preservation and source material isolation.
+
 ## Remaining work (not yet implemented)
 
-- **Imported CAD assembly hierarchy**: preserve original glTF node ancestry through loading, matching duplicate mesh names by node path rather than merely names, and synchronize that tree with the registered Asset → Assembly → Subassembly → Component → Part hierarchy.
+- **Hierarchical model import and commissioning**: source node ancestry and manual exact path links are now present; still needed are engineer-reviewable bulk BOM-to-asset proposals, incomplete mapping reports, revision conflict handling, and formal approval of technical anatomy.
 - **Industrial CAD conversion**: authenticated object storage, malware/file validation, asynchronous FreeCAD/Open CASCADE STEP assembly extraction, source+revision provenance, licensed OBJ/STL/IFC pipelines and isolation of untrusted conversions. Converters must run in restricted workers, not in web requests.
 - **Template and equipment approval**: model revision review, installed-asset to OEM-template separation, provenance and engineer approval, conflicting mapping detection and role/tenant enforcement.
 - **Maintenance integration**: allow approved component mappings to prepopulate all existing PM, repairs, work order and inventory dialogs. Existing time-based and meter/usage-based PM options remain unchanged.

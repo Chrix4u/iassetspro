@@ -89,6 +89,10 @@ export async function POST(request: NextRequest) {
     if (!meshName) {
       return NextResponse.json({ success: false, error: 'Mesh name is required' }, { status: 400 });
     }
+    if (typeof meshName !== 'string' || meshName.length > 600 ||
+      (meshPath != null && (typeof meshPath !== 'string' || !meshPath.trim() || meshPath.length > 600))) {
+      return NextResponse.json({ success: false, error: 'Valid CAD mesh name/path (up to 600 characters) required' }, { status: 400 });
+    }
 
     if (!assetId) {
       return NextResponse.json({ success: false, error: 'Asset ID is required' }, { status: 400 });
@@ -135,10 +139,14 @@ export async function POST(request: NextRequest) {
     }
 
     const existing = await db.assetMeshBinding.findFirst({
-      where: { modelId, meshName },
+      where: { modelId, OR: [
+        { meshName },
+        ...(meshPath ? [{ meshPath }] : []),
+      ] },
     });
     if (existing) {
-      return NextResponse.json({ success: false, error: 'A binding for this mesh name already exists on this model' }, { status: 409 });
+      return NextResponse.json({ success: false,
+        error: 'A binding for this CAD name or exact source path already exists on this model' }, { status: 409 });
     }
 
     const binding = await db.assetMeshBinding.create({

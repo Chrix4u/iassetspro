@@ -128,13 +128,22 @@ export async function PUT(
       }
     }
 
-    if (updateData.meshName && updateData.meshName !== existing.meshName) {
-      const duplicate = await db.assetMeshBinding.findFirst({
-        where: { modelId: existing.modelId, meshName: updateData.meshName as string },
-      });
-      if (duplicate) {
-        return NextResponse.json({ success: false, error: 'A binding for this mesh name already exists on this model' }, { status: 409 });
-      }
+    const newName = updateData.meshName ?? existing.meshName;
+    const newPath = updateData.meshPath !== undefined ? updateData.meshPath : existing.meshPath;
+    if (typeof newName !== 'string' || !newName.trim() || newName.length > 600 ||
+        (newPath != null && (typeof newPath !== 'string' || !newPath.trim() || newPath.length > 600))) {
+      return NextResponse.json({success:false,error:'Invalid CAD mesh name or source path'}, {status:400});
+    }
+    const duplicate = await db.assetMeshBinding.findFirst({
+      where: {modelId:existing.modelId,id:{not:existing.id},OR:[
+        {meshName:newName},
+        ...(typeof newPath === 'string' ? [{meshPath:newPath}] : []),
+      ]},
+      select:{id:true},
+    });
+    if (duplicate) {
+      return NextResponse.json({success:false,
+        error:'A binding for this CAD name or exact source path already exists on this model'}, {status:409});
     }
 
     const targetAssetId = (updateData.assetId as string | undefined) || existing.assetId;

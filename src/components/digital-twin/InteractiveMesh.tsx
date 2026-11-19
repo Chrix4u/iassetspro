@@ -14,6 +14,8 @@ import { useStoreSelector } from '@/hooks/useDigitalTwin';
 /** Binding data linking a mesh to an asset */
 export interface AssetMeshBinding {
   meshName: string;
+  /** Exact imported glTF ancestry (preserves duplicate manufacturer node names). */
+  meshPath?: string;
   assetId: string;
   assetName: string;
   componentId?: string | null;

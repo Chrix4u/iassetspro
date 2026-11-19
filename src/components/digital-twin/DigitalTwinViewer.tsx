@@ -24,6 +24,7 @@ import { api } from '@/lib/api';
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
 import { ModelLoader } from './ModelLoader';
+import type { ImportedAnatomyMesh } from './anatomyBindings';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { IoTOverlayLayer } from './IoTOverlayLayer';
 import { SectionPlane } from './SectionPlane';
@@ -82,6 +83,10 @@ export interface DigitalTwinViewerProps {
   errorComponent?: (error: string, retry: () => void) => React.ReactNode;
   /** Called when a mesh explicitly mapped to a maintainable component is selected. */
   onComponentSelect?: (componentId: string, meshName: string) => void;
+  /** Inform asset explorer of inspected real geometry (mapped or visual-only). */
+  onAnatomySelection?: (mesh: (ImportedAnatomyMesh & { modelId?: string }) | null) => void;
+  /** Reload bindings after an authorized mapping change; does not reload CAD bytes. */
+  anatomyRevision?: number;
 }
 
 // ============================================================================
@@ -334,6 +339,8 @@ export function DigitalTwinViewer({
   loadingComponent,
   errorComponent,
   onComponentSelect,
+  onAnatomySelection,
+  anatomyRevision = 0,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -382,6 +389,17 @@ export function DigitalTwinViewer({
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [anatomyMeshCount, setAnatomyMeshCount] = useState(0);
+  const [anatomyMeshes, setAnatomyMeshes] = useState<ImportedAnatomyMesh[]>([]);
+  const onAnatomyManifest = useCallback((next: ImportedAnatomyMesh[])=>{
+    setAnatomyMeshes(previous=>{
+      if(previous.length===next.length && previous.every((item,index)=>{
+        const newer=next[index];
+        return item.id===newer.id && item.path===newer.path &&
+          item.selectionKey===newer.selectionKey && item.componentId===newer.componentId;
+      })) return previous;
+      return next;
+    });
+  }, []);
   const [retryCount, setRetryCount] = useState(0);
 
   // Scene resolution state (when twinId is used without sceneId)
@@ -531,7 +549,16 @@ export function DigitalTwinViewer({
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
-  useEffect(() => setAnatomyMeshCount(0), [effectiveModelUrl]);
+  const previousAnatomyRevisionRef = useRef(anatomyRevision);
+  useEffect(() => {
+    if (previousAnatomyRevisionRef.current === anatomyRevision) return;
+    previousAnatomyRevisionRef.current = anatomyRevision;
+    if (effectiveSceneId) void loadScene(effectiveSceneId);
+  }, [anatomyRevision, effectiveSceneId, loadScene]);
+  useEffect(() => {
+    setAnatomyMeshCount(0);
+    setAnatomyMeshes([]);
+  }, [effectiveModelUrl]);
 
   // ── Error handling ──────────────────────────────────────────────────────
   const effectiveError = sceneError || hookError || modelError;
@@ -610,8 +637,9 @@ export function DigitalTwinViewer({
   const handleMeshSelectFromTree = useCallback(
     (meshName: string, assetId?: string) => {
       // Use the already-subscribed actions instead of getState()
-      selectMesh(meshName, assetId);
-      setInfoPanelOpen(true);
+      // Visual-only CAD nodes must not inherit the previously selected asset.
+      selectMesh(meshName, assetId || '');
+      setInfoPanelOpen(Boolean(assetId));
     },
     [selectMesh, setInfoPanelOpen],
   );
@@ -632,6 +660,11 @@ export function DigitalTwinViewer({
     [effectiveBindings, selectedMeshName],
   );
   const lastComponentSelectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onAnatomySelection) return;
+    const inspected = anatomyMeshes.find(mesh => mesh.selectionKey === selectedMeshName);
+    onAnatomySelection(inspected ? {...inspected,modelId:currentScene?.modelId} : null);
+  }, [onAnatomySelection, selectedMeshName, anatomyMeshes, currentScene?.modelId]);
 
   useEffect(() => {
     if (!selectedBinding?.componentId || !onComponentSelect) {
@@ -686,6 +719,7 @@ export function DigitalTwinViewer({
                   onLoadingStart={handleModelLoadingStart}
                   onLoadingComplete={handleModelLoadingComplete}
                   onMeshCount={setAnatomyMeshCount}
+                  onAnatomyManifest={onAnatomyManifest}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
@@ -821,6 +855,7 @@ export function DigitalTwinViewer({
         isOpen={isTreeOpen}
         onToggle={handleToggleTree}
         onMeshSelect={handleMeshSelectFromTree}
+        anatomyMeshes={anatomyMeshes}
       />
 
       {/* ── Component Info Panel (right) ─────────────────────────────────── */}

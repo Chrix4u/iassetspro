@@ -18,6 +18,7 @@ import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/com
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
+import type { ImportedAnatomyMesh } from './anatomyBindings';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
 
 type MachineComponent = {
@@ -536,6 +537,19 @@ export function MachineVisualExplorer({
   const [twinId, setTwinId] = useState<string | null>(null);
   const [twinName, setTwinName] = useState<string | null>(null);
   const [twinLoading, setTwinLoading] = useState(true);
+  const canLinkAnatomy = isAdmin() || hasPermission('digital_twin.manage');
+  const [inspectedAnatomy, setInspectedAnatomy] = useState<(ImportedAnatomyMesh & {modelId?: string}) | null>(null);
+  const [anatomyTargetId, setAnatomyTargetId] = useState('');
+  const [anatomyMappingSaving, setAnatomyMappingSaving] = useState(false);
+  const [anatomyRevision, setAnatomyRevision] = useState(0);
+  const onAnatomySelection = useCallback((mesh: (ImportedAnatomyMesh & {modelId?:string}) | null) => {
+    setInspectedAnatomy(previous => {
+      if(previous?.id === mesh?.id && previous?.componentId === mesh?.componentId &&
+         previous?.modelId === mesh?.modelId) return previous;
+      return mesh;
+    });
+    setAnatomyTargetId(mesh?.componentId || '');
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -555,6 +569,8 @@ export function MachineVisualExplorer({
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
+  useEffect(() => { setInspectedAnatomy(null); setAnatomyTargetId(''); }, [asset.id]);
+
   useEffect(() => {
     let cancelled = false;
     setTwinLoading(true);
@@ -700,6 +716,32 @@ export function MachineVisualExplorer({
     }
     setSelectedId(componentId);
   }, [componentMap]);
+  const mapInspectedAnatomy = useCallback(async () => {
+    const mesh=inspectedAnatomy;
+    if(!canLinkAnatomy || !mesh?.modelId || !anatomyTargetId ||
+      !components.some(component=>component.id===anatomyTargetId)) return;
+    setAnatomyMappingSaving(true);
+    try {
+      const query=new URLSearchParams({modelId:mesh.modelId,assetId:asset.id});
+      const existingResponse=await api.get<Array<{id:string;meshName:string;meshPath?:string|null}>>(
+        '/api/mesh-bindings?'+query);
+      if(!existingResponse.success) throw new Error(existingResponse.error || 'Cannot verify existing part mappings');
+      const existing=(existingResponse.data||[]).find(binding=>
+        binding.meshPath===mesh.path || binding.meshName===mesh.path);
+      // Canonical source-path identifier supports duplicate OEM mesh names
+      // with the existing unique(modelId,meshName) schema.
+      const payload={assetId:asset.id,componentId:anatomyTargetId,meshType:'component',
+        meshName:mesh.path,meshPath:mesh.path,isClickable:true};
+      const result=existing
+        ? await api.put('/api/mesh-bindings/'+encodeURIComponent(existing.id),payload)
+        : await api.post('/api/mesh-bindings',{modelId:mesh.modelId,...payload});
+      if(!result.success) throw new Error(result.error || 'Could not link geometry to component');
+      toast.success('CAD node linked to the existing registered machine component');
+      setAnatomyRevision(value=>value+1);
+    }catch(error){toast.error(error instanceof Error?error.message:'Could not save component link');}
+    finally{setAnatomyMappingSaving(false);}
+  }, [inspectedAnatomy,canLinkAnatomy,anatomyTargetId,components,asset.id]);
+
   const childrenByParent = useMemo(() => {
     const map = new Map<string, MachineComponent[]>();
     components.forEach((item) => {
@@ -1017,9 +1059,11 @@ export function MachineVisualExplorer({
                     twinName={twinName}
                     assetId={asset.id}
                     height={selectionMode ? '480px' : '620px'}
-                    showSceneTree={false}
+                    showSceneTree
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
+                    onAnatomySelection={onAnatomySelection}
+                    anatomyRevision={anatomyRevision}
                   />
                 </div>
               ) : (
@@ -1027,6 +1071,50 @@ export function MachineVisualExplorer({
                   <Box className="h-10 w-10 text-cyan-400" />
                   <div className="mt-3 text-sm font-semibold text-slate-200">No 3D model commissioned for this machine</div>
                   <p className="mt-1 max-w-md text-xs leading-relaxed">Upload or link a GLB/glTF model in Digital Twin and bind its meshes to verified machine components. Diagram, Engineering 2D, Exploded and image views remain available now.</p>
+                </div>
+              )}
+              {inspectedAnatomy && twinId && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 space-y-2" data-testid="smart-anatomy-selected-node">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{inspectedAnatomy.meshName}</p>
+                      <p className="break-all font-mono text-[11px] text-slate-400">
+                        CAD source: {inspectedAnatomy.path}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className={inspectedAnatomy.verified ?
+                      'border-emerald-500 text-emerald-300' : 'border-amber-500 text-amber-300'}>
+                      {inspectedAnatomy.verified ? 'Linked to asset component' : 'Visual-only · unverified'}
+                    </Badge>
+                  </div>
+                  {inspectedAnatomy.componentId && (
+                    <p className="text-xs text-emerald-300">
+                      Linked component: {componentMap.get(inspectedAnatomy.componentId)?.componentCode || inspectedAnatomy.componentId}
+                    </p>
+                  )}
+                  {canLinkAnatomy && inspectedAnatomy.modelId && (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-56 flex-1 space-y-1">
+                        <Label className="text-xs text-slate-300">Link this exact CAD node to a registered machine component</Label>
+                        <Select value={anatomyTargetId} onValueChange={setAnatomyTargetId}>
+                          <SelectTrigger className="border-slate-600 text-slate-100"><SelectValue placeholder="Select existing part or assembly"/></SelectTrigger>
+                          <SelectContent>{components.map(component=>(
+                            <SelectItem key={component.id} value={component.id}>
+                              {component.componentCode} · {component.name}
+                            </SelectItem>
+                          ))}</SelectContent>
+                        </Select>
+                      </div>
+                      <Button size="sm" type="button"
+                        disabled={!anatomyTargetId || anatomyMappingSaving}
+                        onClick={()=>void mapInspectedAnatomy()}>
+                        {anatomyMappingSaving?'Saving link…':'Save component link'}
+                      </Button>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-400">
+                    This is a mapping to an existing registered component, not certification of a manufacturer model or an approved disassembly procedure.
+                  </p>
                 </div>
               )}
             </TabsContent>

@@ -29,10 +29,13 @@ export function ExplodedView({ bindings, animationSpeed = 0.08, showLabels = tru
   const explodeMode = useStoreSelector(state => state.explodeMode);
   const explodeProgress = useStoreSelector(state => state.explodeProgress);
   const explodeAssemblyId = useStoreSelector(state => state.explodeAssemblyId);
+  const selectedMeshName = useStoreSelector(state => state.selectedMeshName);
   const modelRef = useRef<THREE.Object3D | null>(null);
   const planRef = useRef<AnatomyExplosionPart[]>([]);
   const bindingsRef = useRef(bindings);
   const targetRef = useRef(new THREE.Vector3());
+  const selectedOutline = useMemo(()=>new THREE.BoxHelper(new THREE.Object3D(), '#22d3ee'),[]);
+  const selectedOutlineRef = useRef<THREE.BoxHelper | null>(null);
   const tickRef = useRef(0);
   const [labels, setLabels] = useState<AnatomyLabel[]>([]);
   const pendingLabelsRef = useRef<AnatomyLabel[] | null>(null);
@@ -66,7 +69,27 @@ export function ExplodedView({ bindings, animationSpeed = 0.08, showLabels = tru
       modelRef.current = model ?? null;
       planRef.current = model ? buildAnatomyExplosion(model, bindingsRef.current) : [];
     }
-    if (!planRef.current.length) return;
+    const highlight=selectedOutlineRef.current;
+    if (!planRef.current.length) {
+      if(highlight) highlight.visible = false;
+      return;
+    }
+
+    // A single lightweight outline follows the selected *actual* imported mesh.
+    const selected = selectedMeshName
+      ? planRef.current.find(part => {
+          const sourcePath=String(part.mesh.userData.__iAssetsSourceNodePath || part.name);
+          return part.name===selectedMeshName || sourcePath===selectedMeshName ||
+            bindingsRef.current.some(binding =>
+              binding.meshName===selectedMeshName &&
+              (binding.meshPath===sourcePath ||
+                (!binding.meshPath && binding.meshName===part.name)));
+        })
+      : undefined;
+    if(highlight) {
+      highlight.visible=Boolean(selected);
+      if(selected) highlight.setFromObject(selected.mesh);
+    }
 
     const amount = explodeMode ? Math.max(0, Math.min(1, explodeProgress)) : 0;
     const damping = 1 - Math.exp(-Math.max(1, animationSpeed * 100) * Math.min(delta, 0.1));
@@ -124,9 +147,11 @@ export function ExplodedView({ bindings, animationSpeed = 0.08, showLabels = tru
     for (const part of planRef.current) part.mesh.position.copy(part.original);
     planRef.current = [];
     modelRef.current = null;
-  }, []);
+    selectedOutline.geometry.dispose();
+    (selectedOutline.material as THREE.Material).dispose();
+  }, [selectedOutline]);
 
-  return <group>{labels.map(label => (
+  return <group><primitive object={selectedOutline} ref={selectedOutlineRef} />{labels.map(label => (
     <Html key={label.id} position={label.position} center distanceFactor={15}
       style={{pointerEvents:'none'}}>
       <span className="rounded border border-cyan-400/30 bg-slate-950/85 px-2 py-1 text-[10px] font-medium text-cyan-100 shadow-lg">

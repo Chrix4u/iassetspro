@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { AssetMeshBinding } from './InteractiveMesh';
+import { matchImportedMeshBinding } from './anatomyBindings';
 
 /**
  * Geometry-backed motion plan.  Exploding a model translates meshes already
@@ -39,7 +40,6 @@ export function buildAnatomyExplosion(
   const assemblyCenter = assembledBounds.getCenter(new THREE.Vector3());
   const assemblyExtent = assembledBounds.getSize(new THREE.Vector3()).length();
   const spread = Math.max(assemblyExtent * 0.28, 0.01);
-  const bindingsByName = new Map(bindings.map(binding => [binding.meshName, binding]));
   const nameCount = new Map<string, number>();
   for (const mesh of meshes) nameCount.set(mesh.name, (nameCount.get(mesh.name) ?? 0) + 1);
 
@@ -56,9 +56,9 @@ export function buildAnatomyExplosion(
     }
     relative.normalize();
 
-    // A name-only binding is ambiguous when imported CAD nodes reuse names.
-    // Such meshes are visually explodable, but not maintenance-authoritative.
-    const binding = nameCount.get(mesh.name) === 1 ? bindingsByName.get(mesh.name) : undefined;
+    const sourcePath = String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+    const binding = matchImportedMeshBinding(
+      mesh.name, sourcePath, (nameCount.get(mesh.name) ?? 0) > 1, bindings);
     let localOffset: THREE.Vector3;
     if (binding?.explodeOffset?.every(Number.isFinite)) {
       // Explicit engineer-defined offset retains its existing parent-local meaning.

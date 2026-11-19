@@ -130,7 +130,12 @@ export async function GET(request:NextRequest) {
       _sum:{outputQuantity:true},
     });
     const runningCumulative=new Map(earlier.map(x=>[x.assetId+'|'+x.unit,Number(x._sum.outputQuantity||0)]));
-    const data=[...grouped.values()].map(({shiftNames,productCodes,weightedStandardUtilization,standardUtilizationWeight,
+    // Maps are populated with planner shifts first and legacy/unplanned approved
+    // records afterward, so insertion order is not always chronological.
+    // Sort before rolling all-time cumulative output forward per machine/unit.
+    const orderedGroups=[...grouped.values()].sort((a,b)=>
+      a.period.localeCompare(b.period)||a.assetId.localeCompare(b.assetId)||a.unit.localeCompare(b.unit));
+    const data=orderedGroups.map(({shiftNames,productCodes,weightedStandardUtilization,standardUtilizationWeight,
       weightedStandardSpeed,standardSpeedWeight,...item})=>{
       const key=item.assetId+'|'+item.unit;
       const cumulativeProduction=(runningCumulative.get(key)||0)+item.output;

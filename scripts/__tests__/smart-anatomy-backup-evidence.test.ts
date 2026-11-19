@@ -28,7 +28,7 @@ async function fixture(){
   return {root,artifact,manifest,evidence,save};
 }
 const now=new Date('2026-11-19T14:00:00.000Z');
-const output={log:()=>{}};
+const output: Console={...console,log:()=>{}};
 describe('non-destructive encrypted CAD backup evidence gate',()=>{
   it('verifies local encrypted artifact and explicitly refuses offsite/restore claims',async()=>{
     const f=await fixture();

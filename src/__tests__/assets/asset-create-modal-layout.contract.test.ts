@@ -29,7 +29,8 @@ describe('create/edit machine modal responsive layout', () => {
   });
 
   it('gives inspection parameters a predictable grid instead of wrapping fixed-width controls', () => {
-    expect(machineFields).toContain('sm:grid-cols-[minmax(0,1fr)_9rem_auto]');
+    expect(machineFields).toContain('grid-cols-[minmax(0,1fr)_auto]');
+    expect(machineFields).toContain('sm:grid-cols-[minmax(0,1fr)_10rem_auto]');
     expect(machineFields).not.toContain('min-w-[10rem] flex-1');
   });
 

@@ -634,8 +634,10 @@ export function AssetDetailPage({ id }: { id: string }) {
   if (loading) return <LoadingSkeleton />;
   if (!asset) return <div className="p-6">Asset not found</div>;
 
-  let specs: Record<string, string> = {};
+  let specs: Record<string, unknown> = {};
   try { if (asset.specification) specs = JSON.parse(asset.specification); } catch (_e) { specs = {}; }
+  const specificationEntries = Object.entries(specs).filter(([key]) =>
+    !['uat', 'displaypath', 'display_path'].includes(key.toLowerCase()));
   const statusColors: Record<string, string> = { operational: 'bg-emerald-100 text-emerald-700 border-emerald-200', under_maintenance: 'bg-amber-100 text-amber-700 border-amber-200', standby: 'bg-sky-100 text-sky-700 border-sky-200', decommissioned: 'bg-slate-100 text-slate-600 border-slate-200', disposed: 'bg-red-100 text-red-600 border-red-200' };
   const criticalityColors: Record<string, string> = { low: 'bg-slate-100 text-slate-600 border-slate-200', medium: 'bg-sky-100 text-sky-700 border-sky-200', high: 'bg-amber-100 text-amber-700 border-amber-200', critical: 'bg-red-100 text-red-700 border-red-200' };
   const condColors: Record<string, string> = { new: 'bg-emerald-100 text-emerald-700 border-emerald-200', good: 'bg-emerald-100 text-emerald-700 border-emerald-200', fair: 'bg-amber-100 text-amber-700 border-amber-200', poor: 'bg-red-100 text-red-700 border-red-200', out_of_service: 'bg-red-100 text-red-800 border-red-300' };
@@ -662,8 +664,8 @@ export function AssetDetailPage({ id }: { id: string }) {
     <>
       {/* Header */}
       <SheetHeader className="px-4 pt-5 pb-0 sm:px-6 sm:pt-6">
-        <SheetTitle>{asset.name}</SheetTitle>
-        <SheetDescription>{asset.assetTag} · {asset.category?.name || 'Asset'}</SheetDescription>
+        <SheetTitle className="min-w-0 break-words text-lg leading-snug">{asset.name}</SheetTitle>
+        <SheetDescription className="min-w-0 break-words">{asset.assetTag} · {asset.category?.name || 'Asset'}</SheetDescription>
       </SheetHeader>
       <div className="flex items-center gap-2 flex-wrap mt-3 px-4 sm:px-6">
         <Badge variant="outline" className={`capitalize ${statusColors[asset.status] || ''}`}>{(asset.status || '').replace(/_/g, ' ')}</Badge>
@@ -694,20 +696,25 @@ export function AssetDetailPage({ id }: { id: string }) {
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
               {asset.description && (
-                <Card className="border-0 shadow-sm">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
-                  <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{asset.description}</p></CardContent>
+                <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6">
+                  <CardHeader className="px-4 pb-0 sm:px-6"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
+                  <CardContent className="min-w-0 px-4 sm:px-6"><p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{asset.description}</p></CardContent>
                 </Card>
               )}
-              {Object.keys(specs).length > 0 && (
-                <Card className="border-0 shadow-sm">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Specifications</CardTitle></CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-x-6">
-                      {Object.entries(specs).map(([key, value]) => (
-                        <DetailRow key={key} label={key.replace(/_/g, ' ')} value={String(value)} />
+              {specificationEntries.length > 0 && (
+                <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6">
+                  <CardHeader className="px-4 pb-0 sm:px-6"><CardTitle className="text-sm">Specifications</CardTitle></CardHeader>
+                  <CardContent className="min-w-0 px-4 sm:px-6">
+                    <dl className="grid min-w-0 grid-cols-1 gap-x-6 lg:grid-cols-2">
+                      {specificationEntries.map(([key, value]) => (
+                        <div key={key} className="min-w-0 border-b border-border/50 py-2.5 last:border-0 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] sm:items-start sm:gap-3">
+                          <dt className="text-sm text-muted-foreground">{key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</dt>
+                          <dd className="mt-1 min-w-0 text-sm font-medium [overflow-wrap:anywhere] sm:mt-0 sm:text-right">
+                            {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value == null ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </dd>
+                        </div>
                       ))}
-                    </div>
+                    </dl>
                   </CardContent>
                 </Card>
               )}
@@ -732,14 +739,14 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-              <Card className="border-0 shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-600" />Installed At / Asset Path</CardTitle></CardHeader>
-                <CardContent>
+              <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6">
+                <CardHeader className="px-4 pb-0 sm:px-6"><CardTitle className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 shrink-0 text-emerald-600" />Installed At / Asset Path</CardTitle></CardHeader>
+                <CardContent className="min-w-0 px-4 sm:px-6">
                   {primaryFunctionalLocation ? (
                     <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="max-w-full whitespace-normal break-all text-left font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        {(functionalLocationPath.length > 0 ? functionalLocationPath : [primaryFunctionalLocation]).map((item: any, index: number, items: any[]) => <React.Fragment key={item.id}><span className="break-words">{item.locationCode ? `${item.locationCode} · ${item.name}` : item.name}</span>{index < items.length - 1 && <ChevronRight className="h-3 w-3 shrink-0" />}</React.Fragment>)}
+                        {(functionalLocationPath.length > 0 ? functionalLocationPath : [primaryFunctionalLocation]).map((item: any, index: number, items: any[]) => <React.Fragment key={item.id}><span className="min-w-0 [overflow-wrap:anywhere]">{item.locationCode ? `${item.locationCode} · ${item.name}` : item.name}</span>{index < items.length - 1 && <ChevronRight className="h-3 w-3 shrink-0" />}</React.Fragment>)}
                       </div>
                     </div>
                   ) : legacyLocationParts.length > 0 ? (
@@ -850,7 +857,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <CardContent>
                   {primaryFunctionalLocation ? (
                     <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
+                      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className="max-w-full whitespace-normal break-all text-left font-mono">{primaryFunctionalLocation.locationCode}</Badge><span className="text-sm font-medium">{primaryFunctionalLocation.name}</span></div>
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">{(functionalLocationPath.length > 0 ? functionalLocationPath : [primaryFunctionalLocation]).map((item: any, index: number, items: any[]) => <React.Fragment key={item.id}><span>{item.locationCode ? `${item.locationCode} · ${item.name}` : item.name}</span>{index < items.length - 1 && <ChevronRight className="h-3 w-3" />}</React.Fragment>)}</div>
                     </div>
                   ) : legacyLocationParts.length > 0 ? (

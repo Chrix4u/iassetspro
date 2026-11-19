@@ -48,13 +48,13 @@ export async function GET(request: NextRequest) {
 
     const [workCenters, total] = await Promise.all([
       db.workCenter.findMany({
-        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       db.workCenter.count({
-        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
+        where,
       }),
     ]);
 
@@ -117,6 +117,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Type is required' }, { status: 400 });
     }
 
+    const numericCapacity = capacity == null || capacity === '' ? null : Number(capacity);
+    if (numericCapacity !== null && (!Number.isInteger(numericCapacity) || numericCapacity < 0)) {
+      return NextResponse.json({ success: false, error: 'Capacity must be a nonnegative whole number' }, { status: 400 });
+    }
+
     const code = await generateWCCode();
 
     const workCenter = await db.workCenter.create({
@@ -127,7 +132,7 @@ export async function POST(request: NextRequest) {
         type,
         status: status || 'active',
         location: location || null,
-        capacity: capacity ? parseInt(capacity, 10) : null,
+        capacity: numericCapacity,
         capacityUnit: capacityUnit || 'units/hour',
         createdById: session.userId,
       },

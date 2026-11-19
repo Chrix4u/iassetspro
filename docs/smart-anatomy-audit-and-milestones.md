@@ -1,6 +1,6 @@
 # iAssetsPro Smart Anatomy™ — Existing-system audit and delivery milestones
 
-Status: **Milestones 1 and 2 on a draft feature branch**; not released to production.
+Status: **Milestones 1–3 on a draft feature branch**; not released to production.
 
 ## Existing modules inspected
 
@@ -32,6 +32,14 @@ The same 3D viewer now delivers an independently scrollable **imported CAD sourc
 Authorized users with existing Digital Twin manage permissions can select a registered iAssetsPro asset component (Assembly → Subassembly → Component → Part) and link that exact CAD node through the existing, plant-scoped asset mesh binding endpoint. The UI verifies previous mappings first and reloads the existing digital twin scene after saving. This does **not** certify that the file is a manufacturer-authorized model or approve an unsafe maintenance instruction. Duplicate source-path links are rejected by the existing endpoints on create and update; no new model/asset tables or tenant-bypass paths were introduced.
 
 Tests cover exact-path disambiguation, nested source-tree construction, visual-only selection, mapping endpoint contracts, transform preservation and source material isolation.
+
+## Milestone 3 — physically separate original illustrative training models
+
+Added an original conceptual centrifugal-pump GLB with 30 meshes and a conveyor-gearbox GLB with 20 meshes. Each retains genuine independent mesh geometry, nested named source nodes, and embedded provenance metadata declaring `manufacturerApproved:false`. Source generator lives in `scripts/smart-anatomy/generate-original-demo-models.mjs`; files and licensing disclaimers live in `public/smart-anatomy-demos`. Both fixtures have been loaded successfully using the actual Three.js `GLTFLoader`, not only checked for a file signature.
+
+On machine assets without an approved model, the existing 3D explorer provides **explicit sample preview** controls. Demo geometry is isolated from the installed asset's digital-twin bindings and flagged as illustrative, not its OEM CAD, maintenance history, PM instructions or valid production anatomy. No production seeding, fake serial numbers, or fabricated work orders are introduced.
+
+The illustrated models are for testing exploded animation, source tree selection, and user onboarding only. They do not satisfy the requirement for **manufacturer-accurate certified pump and gearbox anatomy**, which will require licensed/verifiable CAD and engineer review.
 
 ## Remaining work (not yet implemented)
 

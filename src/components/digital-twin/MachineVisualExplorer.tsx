@@ -542,6 +542,7 @@ export function MachineVisualExplorer({
   const [anatomyTargetId, setAnatomyTargetId] = useState('');
   const [anatomyMappingSaving, setAnatomyMappingSaving] = useState(false);
   const [anatomyRevision, setAnatomyRevision] = useState(0);
+  const [demoModel, setDemoModel] = useState<'pump' | 'gearbox' | null>(null);
   const onAnatomySelection = useCallback((mesh: (ImportedAnatomyMesh & {modelId?:string}) | null) => {
     setInspectedAnatomy(previous => {
       if(previous?.id === mesh?.id && previous?.componentId === mesh?.componentId &&
@@ -569,7 +570,7 @@ export function MachineVisualExplorer({
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
-  useEffect(() => { setInspectedAnatomy(null); setAnatomyTargetId(''); }, [asset.id]);
+  useEffect(() => { setInspectedAnatomy(null); setAnatomyTargetId(''); setDemoModel(null); }, [asset.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1071,6 +1072,37 @@ export function MachineVisualExplorer({
                   <Box className="h-10 w-10 text-cyan-400" />
                   <div className="mt-3 text-sm font-semibold text-slate-200">No 3D model commissioned for this machine</div>
                   <p className="mt-1 max-w-md text-xs leading-relaxed">Upload or link a GLB/glTF model in Digital Twin and bind its meshes to verified machine components. Diagram, Engineering 2D, Exploded and image views remain available now.</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel('pump')}>
+                      Preview example pump
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel('gearbox')}>
+                      Preview example gearbox
+                    </Button>
+                  </div>
+                  <p className="mt-2 max-w-md text-[11px] leading-relaxed text-amber-300">
+                    Examples are original illustrative training geometry only, not this installed machine or manufacturer-approved CAD.
+                  </p>
+                </div>
+              )}
+              {!twinId && !twinLoading && demoModel && (
+                <div className="space-y-2" data-testid="smart-anatomy-original-concept-demo">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-700 bg-amber-950/60 px-3 py-2 text-amber-100">
+                    <p className="text-xs">Original conceptual {demoModel === 'pump'?'centrifugal pump':'conveyor gearbox'} anatomy · not linked to {asset.assetTag} or maintenance records</p>
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel(null)}>Close example</Button>
+                  </div>
+                  <DigitalTwinViewer
+                    modelUrl={demoModel==='pump'
+                      ? '/smart-anatomy-demos/original-centrifugal-pump.glb'
+                      : '/smart-anatomy-demos/original-conveyor-gearbox.glb'}
+                    bindings={[]}
+                    height={selectionMode ? '480px' : '620px'}
+                    showSceneTree
+                    showInfoPanel={false}
+                  />
+                  <p className="text-[11px] text-amber-800 dark:text-amber-200">
+                    Each example has real separate CAD meshes for training interaction but is NOT a verified OEM drawing or safe disassembly plan.
+                  </p>
                 </div>
               )}
               {inspectedAnatomy && twinId && (

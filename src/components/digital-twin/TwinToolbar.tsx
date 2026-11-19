@@ -70,6 +70,7 @@ export interface TwinToolbarProps {
   isTreeOpen?: boolean;
   /** Exact number of actual meshes in the imported model; single-mesh files cannot explode. */
   anatomyMeshCount?: number;
+  isIllustrativeDemo?: boolean;
 }
 
 // ============================================================================
@@ -315,6 +316,7 @@ export function TwinToolbar({
   onViewModeChange,
   isTreeOpen = false,
   anatomyMeshCount,
+  isIllustrativeDemo = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
   const sectionMode = useDigitalTwinStore(s => s.sectionMode);
@@ -407,13 +409,13 @@ export function TwinToolbar({
           isActive={!!isolationAssetId}
           onClick={handleIsolationToggle}
         />
-        <ToolbarButton
+        {!isIllustrativeDemo && <ToolbarButton
           icon={<Activity className="h-4 w-4" />}
           label="IoT Overlay"
           shortcut="O"
           isActive={iotOverlayEnabled}
           onClick={toggleIoTOverlay}
-        />
+        />}
 
         <ToolbarDivider />
 

@@ -57,6 +57,9 @@ export interface SceneTreePanelProps {
   treeData?: TreeNode[];
   /** Imported GLB/glTF hierarchy; populated only from actual CAD nodes. */
   anatomyMeshes?: ImportedAnatomyMesh[];
+  anatomyTitle?: string;
+  /** Never show a stale tenant's previous scene while loading conceptual demo geometry. */
+  suppressSceneFallback?: boolean;
 }
 
 // ============================================================================
@@ -335,6 +338,8 @@ export function SceneTreePanel({
   onMeshSelect,
   treeData: externalTreeData,
   anatomyMeshes,
+  anatomyTitle,
+  suppressSceneFallback = false,
 }: SceneTreePanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['root']));
@@ -346,14 +351,15 @@ export function SceneTreePanel({
   // Build tree data
   const treeData = useMemo(() => {
     if (externalTreeData) return externalTreeData;
+    if (suppressSceneFallback && !anatomyMeshes?.length) return [];
     if (anatomyMeshes?.length) {
       return [{
-        id:'root', name:currentScene?.name || 'Imported CAD Assembly',
+        id:'root', name:anatomyTitle || currentScene?.name || 'Imported CAD Assembly',
         children:treeFromAnatomy(buildImportedAnatomyTree(anatomyMeshes)),
       }];
     }
     return buildTreeFromScene(currentScene, iotHealthMap);
-  }, [externalTreeData, anatomyMeshes, currentScene, iotHealthMap]);
+  }, [externalTreeData, anatomyMeshes, anatomyTitle, suppressSceneFallback, currentScene, iotHealthMap]);
 
   // Filter tree by search query
   const filteredTree = useMemo(() => {

@@ -360,12 +360,13 @@ export function DigitalTwinViewer({
   // Scene identity resolved from twinId when no explicit sceneId is supplied.
   const [resolvedSceneId, setResolvedSceneId] = useState<string | null>(null);
   const effectiveSceneId = sceneId ?? resolvedSceneId;
+  const isIllustrativeDemo = Boolean(propModelUrl && !sceneId && !twinId);
 
   // ── Hooks ────────────────────────────────────────────────────────────────
   const { resetCamera, setCameraPosition, setCameraTarget } = useCameraControls();
   const { error: hookError, refresh } = useDigitalTwinScene(effectiveSceneId, {
-    iotPollInterval,
-    enableRealtime,
+    iotPollInterval: isIllustrativeDemo ? 0 : iotPollInterval,
+    enableRealtime: !isIllustrativeDemo && enableRealtime,
   });
 
   // ── Load asset data when scene loads or selection changes ──────────────
@@ -375,11 +376,12 @@ export function DigitalTwinViewer({
   // Using useEffect ensures loadAssetData fires AFTER the render is committed,
   // completely eliminating the cascading setState issue.
   useEffect(() => {
+    if (isIllustrativeDemo) return; // Never fetch live asset data for sample geometry.
     const assetId = selectedAssetId ?? currentScene?.assetId;
     if (assetId) {
       loadAssetData(assetId);
     }
-  }, [selectedAssetId, currentScene?.assetId, loadAssetData]);
+  }, [selectedAssetId, currentScene?.assetId, loadAssetData, isIllustrativeDemo]);
 
   // ── Local UI state ──────────────────────────────────────────────────────
   const [isTreeOpen, setIsTreeOpen] = useState(showSceneTree);
@@ -549,6 +551,13 @@ export function DigitalTwinViewer({
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  useEffect(()=>{
+    if (isIllustrativeDemo) {
+      const store=useDigitalTwinStore.getState();
+      store.selectMesh(null, null);
+      store.setExplodeProgress(0);
+    }
+  },[isIllustrativeDemo,propModelUrl]);
   const previousAnatomyRevisionRef = useRef(anatomyRevision);
   useEffect(() => {
     if (previousAnatomyRevisionRef.current === anatomyRevision) return;
@@ -652,9 +661,11 @@ export function DigitalTwinViewer({
   );
 
   // ── Bindings for exploded view and maintenance-component handoff ───────
-  const effectiveBindings: AssetMeshBinding[] = propBindings.length > 0
+  // An original/demo model URL is strictly visual-only. Do not accidentally
+  // apply another installed asset's cached Digital Twin component bindings.
+  const effectiveBindings: AssetMeshBinding[] = propModelUrl
     ? propBindings
-    : (currentScene?.meshBindings ?? []);
+    : propBindings.length > 0 ? propBindings : (currentScene?.meshBindings ?? []);
   const selectedBinding = useMemo(
     () => effectiveBindings.find((binding) => binding.meshName === selectedMeshName) ?? null,
     [effectiveBindings, selectedMeshName],
@@ -731,14 +742,10 @@ export function DigitalTwinViewer({
               {/* Section plane */}
               <SectionPlane />
 
-              {/* IoT overlay */}
-              <IoTOverlayLayer />
-
-              {/* Hotspots */}
-              <HotspotLayer />
-
-              {/* Annotations */}
-              <AnnotationLayer />
+              {/* Original illustrative demo files must not show previous asset telemetry. */}
+              {!isIllustrativeDemo && <IoTOverlayLayer />}
+              {!isIllustrativeDemo && <HotspotLayer />}
+              {!isIllustrativeDemo && <AnnotationLayer />}
 
               {/* Background click handler (deselect) */}
               <BackgroundClickHandler />
@@ -816,7 +823,7 @@ export function DigitalTwinViewer({
                 : anatomyMeshCount.toLocaleString() + ' imported meshes · geometry-backed explosion'}
             </span>
           )}
-          {currentScene && (
+          {!propModelUrl && currentScene && (
             <>
               <span className="text-slate-700">•</span>
               <span className="text-[10px] text-slate-400">{currentScene.name}</span>
@@ -847,6 +854,7 @@ export function DigitalTwinViewer({
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
           anatomyMeshCount={anatomyMeshCount}
+          isIllustrativeDemo={isIllustrativeDemo}
         />
       )}
 
@@ -856,6 +864,8 @@ export function DigitalTwinViewer({
         onToggle={handleToggleTree}
         onMeshSelect={handleMeshSelectFromTree}
         anatomyMeshes={anatomyMeshes}
+        anatomyTitle={isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
+        suppressSceneFallback={isIllustrativeDemo}
       />
 
       {/* ── Component Info Panel (right) ─────────────────────────────────── */}

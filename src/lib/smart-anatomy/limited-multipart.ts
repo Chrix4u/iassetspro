@@ -43,7 +43,10 @@ export async function readBoundedMultipart(
       if (!value || !value.byteLength) continue;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel().catch(() => {});
+        // Do not cancel Undici's multipart-backed ReadableStream from the
+        // consumer: in Node, an asynchronous enqueue racing with cancellation
+        // can reject with ERR_INVALID_STATE outside this try/catch. Return
+        // 413 immediately; the HTTP server owns disposal of the request body.
         throw new MultipartUploadError(413, 'CAD upload exceeds 25 MB');
       }
       parts.push(value);

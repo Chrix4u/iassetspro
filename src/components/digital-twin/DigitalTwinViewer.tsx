@@ -87,6 +87,8 @@ export interface DigitalTwinViewerProps {
   onAnatomySelection?: (mesh: (ImportedAnatomyMesh & { modelId?: string }) | null) => void;
   /** Reload bindings after an authorized mapping change; does not reload CAD bytes. */
   anatomyRevision?: number;
+  /** AssetModel ID for an authorized but not yet commissioned private CAD preview. */
+  previewAssetModelId?: string;
 }
 
 // ============================================================================
@@ -345,6 +347,7 @@ export function DigitalTwinViewer({
   onComponentSelect,
   onAnatomySelection,
   anatomyRevision = 0,
+  previewAssetModelId,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -555,6 +558,42 @@ export function DigitalTwinViewer({
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  const isPrivateCad = Boolean(effectiveModelUrl &&
+    /^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(effectiveModelUrl));
+  const [privateCad, setPrivateCad] = useState<{source: string; url: string} | null>(null);
+  const [privateCadLoading, setPrivateCadLoading] = useState(false);
+  useEffect(() => {
+    if (!isPrivateCad || !effectiveModelUrl) return;
+    let cancelled=false;
+    let objectUrl: string | null=null;
+    setPrivateCadLoading(true);
+    setModelError(null);
+    void api.getRaw(effectiveModelUrl, { cache: 'no-store' })
+      .then(async response=>{
+        if(!response.ok) throw new Error('Private CAD access denied or model file unavailable');
+        const blob=await response.blob();
+        if(blob.type && !blob.type.includes('gltf-binary') && !blob.type.includes('octet-stream')){
+          throw new Error('Private CAD endpoint returned an unexpected content type');
+        }
+        const next=URL.createObjectURL(blob);
+        if(cancelled){URL.revokeObjectURL(next);return;}
+        objectUrl=next;
+        setPrivateCad({source:effectiveModelUrl,url:next});
+      })
+      .catch(error=>{
+        if(!cancelled)setModelError(error instanceof Error?error.message:'Cannot load private CAD');
+      })
+      .finally(()=>{if(!cancelled)setPrivateCadLoading(false);});
+    return ()=>{
+      cancelled=true;
+      if(objectUrl)URL.revokeObjectURL(objectUrl);
+    };
+  },[isPrivateCad,effectiveModelUrl]);
+  // GLTFLoader cannot send app bearer tokens; retrieve private model using the
+  // authenticated API client, then hand it a short-lived local object URL.
+  const renderedModelUrl = isPrivateCad
+    ? (privateCad?.source===effectiveModelUrl ? privateCad.url : null)
+    : effectiveModelUrl;
   useEffect(()=>{
     if (isIllustrativeDemo) {
       const store=useDigitalTwinStore.getState();
@@ -680,8 +719,8 @@ export function DigitalTwinViewer({
   useEffect(() => {
     if (!onAnatomySelection) return;
     const inspected = anatomyMeshes.find(mesh => mesh.selectionKey === selectedMeshName);
-    onAnatomySelection(inspected ? {...inspected,modelId:currentScene?.modelId} : null);
-  }, [onAnatomySelection, selectedMeshName, anatomyMeshes, currentScene?.modelId]);
+    onAnatomySelection(inspected ? {...inspected,modelId:previewAssetModelId || currentScene?.modelId} : null);
+  }, [onAnatomySelection, selectedMeshName, anatomyMeshes, currentScene?.modelId, previewAssetModelId]);
 
   useEffect(() => {
     if (!selectedBinding?.componentId || !onComponentSelect) {
@@ -729,9 +768,9 @@ export function DigitalTwinViewer({
               <GroundPlane />
 
               {/* Model */}
-              {effectiveModelUrl && (
+              {renderedModelUrl && (
                 <ModelLoader
-                  modelUrl={effectiveModelUrl}
+                  modelUrl={renderedModelUrl}
                   bindings={effectiveBindings}
                   onLoadingStart={handleModelLoadingStart}
                   onLoadingComplete={handleModelLoadingComplete}
@@ -763,7 +802,7 @@ export function DigitalTwinViewer({
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}
-      {(isLoadingScene || isResolvingScene || (isModelLoading && loadingProgress < 100)) && (
+      {(isLoadingScene || isResolvingScene || privateCadLoading || (isModelLoading && loadingProgress < 100)) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3">
             <div className="relative">
@@ -870,7 +909,8 @@ export function DigitalTwinViewer({
         onToggle={handleToggleTree}
         onMeshSelect={handleMeshSelectFromTree}
         anatomyMeshes={anatomyMeshes}
-        anatomyTitle={isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
+        anatomyTitle={isPrivateCad ? 'Private CAD · pending commissioning' :
+          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
         suppressSceneFallback={isIllustrativeDemo}
       />
 

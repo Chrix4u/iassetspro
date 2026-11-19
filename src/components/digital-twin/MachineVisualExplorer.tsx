@@ -18,6 +18,9 @@ import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/com
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
+import { PrivateCadUploader, type PrivateCadModel } from './PrivateCadUploader';
+import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
+import type { AssetMeshBinding } from './InteractiveMesh';
 import type { ImportedAnatomyMesh } from './anatomyBindings';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
 
@@ -543,6 +546,28 @@ export function MachineVisualExplorer({
   const [anatomyMappingSaving, setAnatomyMappingSaving] = useState(false);
   const [anatomyRevision, setAnatomyRevision] = useState(0);
   const [demoModel, setDemoModel] = useState<'pump' | 'gearbox' | null>(null);
+  const [privateCadModel, setPrivateCadModel] = useState<PrivateCadModel | null>(null);
+  const [privateBindings, setPrivateBindings] = useState<AssetMeshBinding[]>([]);
+  useEffect(() => {
+    if (!privateCadModel?.id) {
+      setPrivateBindings([]);
+      return;
+    }
+    let cancelled = false;
+    void api.get<Array<Record<string, unknown>>>('/api/mesh-bindings?modelId=' +
+      encodeURIComponent(privateCadModel.id) + '&assetId=' + encodeURIComponent(asset.id))
+      .then(response => {
+        if (cancelled) return;
+        if (!response.success) throw new Error(response.error || 'Failed to load private CAD mappings');
+        const scene = normalizeDigitalTwinScene({
+          id: 'private-' + privateCadModel.id, assetId: asset.id,
+          model: { meshBindings: response.data || [] },
+        });
+        setPrivateBindings(scene.meshBindings || []);
+      })
+      .catch(() => { if(!cancelled) setPrivateBindings([]); });
+    return () => { cancelled = true; };
+  }, [privateCadModel?.id, anatomyRevision, asset.id]);
   const onAnatomySelection = useCallback((mesh: (ImportedAnatomyMesh & {modelId?:string}) | null) => {
     setInspectedAnatomy(previous => {
       if(previous?.id === mesh?.id && previous?.componentId === mesh?.componentId &&
@@ -570,7 +595,12 @@ export function MachineVisualExplorer({
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
-  useEffect(() => { setInspectedAnatomy(null); setAnatomyTargetId(''); setDemoModel(null); }, [asset.id]);
+  useEffect(() => {
+    setInspectedAnatomy(null);
+    setAnatomyTargetId('');
+    setDemoModel(null);
+    setPrivateCadModel(null);
+  }, [asset.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1049,7 +1079,28 @@ export function MachineVisualExplorer({
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
                 Smart Anatomy moves actual imported GLB/glTF mesh geometry for exploded views, without inventing hidden machine parts. A single-piece model cannot be disassembled. Only engineer-mapped meshes may become PM or repair targets; unverified geometry stays visual-only.
               </div>
-              {twinLoading ? (
+              <PrivateCadUploader assetId={asset.id} canManage={canLinkAnatomy}
+                selected={privateCadModel} onSelect={setPrivateCadModel} />
+              {privateCadModel ? (
+                <div className="space-y-2">
+                  <p className="rounded-lg border border-amber-600/50 bg-amber-950/50 p-2 text-xs text-amber-200">
+                    Private imported CAD · {privateCadModel.name} · pending engineer review.
+                    Link exact CAD nodes only to existing registered asset parts. This is not
+                    an approved maintenance or disassembly instruction.
+                  </p>
+                  <DigitalTwinViewer
+                    previewAssetModelId={privateCadModel.id}
+                    modelUrl={privateCadModel.filePath}
+                    bindings={privateBindings}
+                    height={selectionMode ? '480px' : '620px'}
+                    showSceneTree
+                    showInfoPanel={false}
+                    onComponentSelect={handle3DComponentSelect}
+                    onAnatomySelection={onAnatomySelection}
+                    anatomyRevision={anatomyRevision}
+                  />
+                </div>
+              ) : twinLoading ? (
                 <div className="flex min-h-[480px] items-center justify-center rounded-xl border bg-slate-950">
                   <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
                 </div>
@@ -1085,7 +1136,7 @@ export function MachineVisualExplorer({
                   </p>
                 </div>
               )}
-              {!twinId && !twinLoading && demoModel && (
+              {!twinId && !twinLoading && !privateCadModel && demoModel && (
                 <div className="space-y-2" data-testid="smart-anatomy-original-concept-demo">
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-700 bg-amber-950/60 px-3 py-2 text-amber-100">
                     <p className="text-xs">Original conceptual {demoModel === 'pump'?'centrifugal pump':'conveyor gearbox'} anatomy · not linked to {asset.assetTag} or maintenance records</p>
@@ -1105,7 +1156,7 @@ export function MachineVisualExplorer({
                   </p>
                 </div>
               )}
-              {inspectedAnatomy && twinId && (
+              {inspectedAnatomy && (twinId || privateCadModel) && (
                 <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 space-y-2" data-testid="smart-anatomy-selected-node">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">

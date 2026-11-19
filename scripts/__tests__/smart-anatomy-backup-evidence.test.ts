@@ -1,5 +1,5 @@
 import { describe,expect,it,afterEach } from 'vitest';
-import { mkdtemp,chmod,writeFile,rm,symlink } from 'node:fs/promises';
+import { mkdtemp,chmod,writeFile,rm,symlink,link,mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -79,6 +79,35 @@ describe('non-destructive encrypted CAD backup evidence gate',()=>{
     await f.save();
     await chmod(f.artifact,0o644);
     await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('owner-only');
+  });
+  it('rejects hard-linked backup artifacts even when their digest matches',async()=>{
+    const f=await fixture();
+    const other=join(f.root,'second-name.age');
+    await link(f.artifact,other);
+    await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('non-symlink file');
+  });
+  it('rejects symlinked parent directories for the encrypted artifact',async()=>{
+    const f=await fixture();
+    const actual=join(f.root,'real-private');
+    await mkdir(actual,{mode:0o700});
+    const file=join(actual,'backup.age');
+    const bytes=Buffer.from('synthetic encrypted backup fixture, not real OEM data');
+    await writeFile(file,bytes,{mode:0o600});
+    const alias=join(f.root,'alias-private');
+    await symlink(actual,alias);
+    f.evidence.encryptedArtifact.path=join(alias,'backup.age');
+    await f.save();
+    await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('symlinked ancestor');
+  });
+  it('rejects future evidence dates and malformed hash fields',async()=>{
+    const f=await fixture();
+    f.evidence.createdAt='2026-11-20T00:00:00Z';
+    await f.save();
+    await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('30 days');
+    f.evidence.createdAt='2026-11-19T12:00:00Z';
+    f.evidence.encryptedArtifact.sha256='not-a-digest';
+    await f.save();
+    await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('SHA-256');
   });
   it('rejects missing or relative manifest paths',async()=>{
     await expect(verifyBackupEvidence('relative.json',{now,output})).rejects.toThrow('absolute');

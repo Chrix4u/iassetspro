@@ -441,3 +441,15 @@ encryption metadata and backup artifacts placed within the live CAD root.
 A pass proves **only** local artifact integrity and the declared encryption metadata; it does not cryptographically verify encryption. Off-site
 replication, encryption-key escrow, a tested restore drill, database snapshot
 consistency and manufacturer licensing remain separate mandatory gates.
+
+### Backup evidence file-descriptor safety hardening
+
+The local evidence gate now opens the manifest and encrypted artifact using
+`O_NOFOLLOW` and `O_NONBLOCK`, retains the opened descriptor through
+reading/hashing, and verifies device/inode identity against the inspected
+path. It also checks size and modification/change timestamps after reading,
+rejecting files that change during verification. This narrows the risk of a
+local attacker replacing a private backup with a symlink or switching a file
+between metadata validation and hashing. The checker still does **not**
+verify real cryptographic encryption, off-site copies or restore success.
+It does not read or modify the live CAD directory or PostgreSQL.

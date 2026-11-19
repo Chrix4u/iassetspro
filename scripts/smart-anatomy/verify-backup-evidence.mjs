@@ -8,8 +8,8 @@
  *   node scripts/smart-anatomy/verify-backup-evidence.mjs
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, resolve, dirname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -23,8 +23,7 @@ function assertHash(value){
   }
   return Buffer.from(value,'hex');
 }
-async function assertPrivateRegularFile(path,label){
-  const stat=await lstat(path);
+function assertPrivateStat(stat,label){
   if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1){
     throw new Error(label+' must be a regular, unlinked, non-symlink file');
   }
@@ -34,18 +33,40 @@ async function assertPrivateRegularFile(path,label){
   if(typeof process.getuid==='function'&&stat.uid!==process.getuid()){
     throw new Error(label+' must be owned by the verifying runtime user');
   }
+}
+async function openPrivateRegularFile(path,label){
+  // O_NOFOLLOW blocks a swapped final-component symlink at open time.
+  // Keep the descriptor open through hashing to prevent path-swap races.
+  const stat=await lstat(path);
+  assertPrivateStat(stat,label);
   if(await realpath(path)!==path)throw new Error(label+' has a symlinked ancestor');
-  return stat;
+  const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const opened=await handle.stat();
+    assertPrivateStat(opened,label);
+    if(opened.dev!==stat.dev||opened.ino!==stat.ino){
+      throw new Error(label+' changed during verification');
+    }
+    return {handle,stat:opened};
+  }catch(error){await handle.close();throw error;}
 }
 export async function verifyBackupEvidence(manifestPath,{
   output=console, now=new Date(),
 }={}){
   const manifest=requireAbsolute(manifestPath,'Backup evidence path');
-  const manifestStat=await assertPrivateRegularFile(manifest,'Evidence manifest');
-  if(manifestStat.size>64*1024)throw new Error('Evidence manifest is too large');
+  const openedManifest=await openPrivateRegularFile(manifest,'Evidence manifest');
   let evidence;
-  try{evidence=JSON.parse(await readFile(manifest,'utf8'));}
-  catch{throw new Error('Evidence manifest must contain valid JSON');}
+  try{
+    if(openedManifest.stat.size>64*1024)throw new Error('Evidence manifest is too large');
+    try{evidence=JSON.parse(await openedManifest.handle.readFile('utf8'));}
+    catch{throw new Error('Evidence manifest must contain valid JSON');}
+    const after=await openedManifest.handle.stat();
+    if(after.size!==openedManifest.stat.size||
+       after.mtimeMs!==openedManifest.stat.mtimeMs||
+       after.ctimeMs!==openedManifest.stat.ctimeMs){
+      throw new Error('Evidence manifest changed during verification');
+    }
+  }finally{await openedManifest.handle.close();}
   if(evidence?.schemaVersion!==1||evidence.encryption?.enabled!==true||
       !['age','gpg','restic'].includes(evidence.encryption?.format)){
     throw new Error('A supported encrypted backup artifact is required');
@@ -66,22 +87,32 @@ export async function verifyBackupEvidence(manifestPath,{
     throw new Error('Invalid backup artifact path');
   }
   const expected=assertHash(evidence.encryptedArtifact?.sha256);
-  const stat=await assertPrivateRegularFile(archive,'Encrypted artifact');
-  if(!Number.isSafeInteger(evidence.encryptedArtifact?.sizeBytes)||
-      evidence.encryptedArtifact.sizeBytes<=0||
-      stat.size!==evidence.encryptedArtifact.sizeBytes){
-    throw new Error('Encrypted artifact size mismatch');
-  }
   const timestamp=new Date(evidence.createdAt);
   if(!Number.isFinite(timestamp.getTime())||timestamp>now ||
       now.getTime()-timestamp.getTime()>30*24*3600*1000){
     throw new Error('Backup timestamp must be within the last 30 days');
   }
-  const digest=createHash('sha256');
-  for await(const chunk of createReadStream(archive)){digest.update(chunk);}
-  if(!timingSafeEqual(digest.digest(),expected)){
-    throw new Error('Encrypted artifact SHA-256 mismatch');
-  }
+  const openedArtifact=await openPrivateRegularFile(archive,'Encrypted artifact');
+  try{
+    const stat=openedArtifact.stat;
+    if(!Number.isSafeInteger(evidence.encryptedArtifact?.sizeBytes)||
+        evidence.encryptedArtifact.sizeBytes<=0||
+        stat.size!==evidence.encryptedArtifact.sizeBytes){
+      throw new Error('Encrypted artifact size mismatch');
+    }
+    const digest=createHash('sha256');
+    for await(const chunk of openedArtifact.handle.createReadStream({autoClose:false})){
+      digest.update(chunk);
+    }
+    const after=await openedArtifact.handle.stat();
+    if(after.dev!==stat.dev||after.ino!==stat.ino||after.size!==stat.size||
+       after.mtimeMs!==stat.mtimeMs||after.ctimeMs!==stat.ctimeMs){
+      throw new Error('Encrypted artifact changed during verification');
+    }
+    if(!timingSafeEqual(digest.digest(),expected)){
+      throw new Error('Encrypted artifact SHA-256 mismatch');
+    }
+  }finally{await openedArtifact.handle.close();}
   output.log('[CAD backup] PASS: local artifact privacy, declared encryption metadata, size and SHA-256 match');
   output.log('[CAD backup] NOT VERIFIED: cryptographic encryption validity, remote/off-site replication, decryption, PostgreSQL consistency, restore drill or actual OEM provenance');
   return {verifiedLocalEncryptedArtifact:true,verifiedOffsite:false,verifiedRestore:false};

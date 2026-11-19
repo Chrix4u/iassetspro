@@ -17,7 +17,7 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});
     const original=await db.productionShiftRecord.findUnique({where:{id},select:{
-      id:true,plantId:true,status:true,recordedById:true,meterReadingId:true,runtimeMeterReadingId:true,
+      id:true,plantId:true,assetId:true,shiftTemplateId:true,productionDate:true,status:true,recordedById:true,meterReadingId:true,runtimeMeterReadingId:true,
     }});
     if(!original)return NextResponse.json({success:false,error:'Shift record not found'},{status:404});
     if(!canAccessPlantStrict(scope,original.plantId)||original.recordedById!==session.userId)
@@ -28,6 +28,14 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     let parsed:ReturnType<typeof parseProductionSurveyInput>;
     try{parsed=parseProductionSurveyInput(raw);}
     catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Invalid correction'},{status:400});}
+    // A correction edits measured values, never the scheduled machine/date/shift.
+    // Moving a rejected record between plans could misattribute output or PM usage.
+    if(parsed.assetId!==original.assetId||
+       parsed.shiftTemplateId!==original.shiftTemplateId||
+       parsed.productionDate.getTime()!==original.productionDate.getTime())
+      return NextResponse.json({success:false,
+        error:'Machine, production date and shift cannot be changed when correcting a rejected record'},
+        {status:409});
     const asset=await db.asset.findUnique({where:{id:parsed.assetId},select:{id:true,plantId:true}});
     if(!asset||asset.plantId!==original.plantId)
       return NextResponse.json({success:false,error:'Corrected machine must belong to the original plant'},{status:400});
@@ -43,7 +51,9 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const record=await db.$transaction(async(tx)=>{
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))','iassetspro:production-survey:'+id);
       const latest=await tx.productionShiftRecord.findUnique({where:{id}});
-      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.runtimeMeterReadingId||latest.recordedById!==session.userId)
+      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.runtimeMeterReadingId||latest.recordedById!==session.userId||
+         latest.assetId!==original.assetId||latest.shiftTemplateId!==original.shiftTemplateId||
+         latest.productionDate.getTime()!==original.productionDate.getTime())
         throw new Error('Shift correction status changed; reload before editing');
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
         'iassetspro:production-plan:'+parsed.assetId+':'+parsed.productionDate.toISOString().slice(0,10)+':'+parsed.shiftTemplateId);

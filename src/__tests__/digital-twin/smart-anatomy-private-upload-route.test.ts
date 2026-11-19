@@ -49,7 +49,9 @@ function request(data = file, name = 'OriginalPump.glb') {
   form.set('name', 'Plant Pump · authorized original training model');
   form.set('sourceOrigin', 'original-training');
   form.set('sourceNote', 'Original training geometry created by this organization');
-  form.set('file', new NodeFile([new Uint8Array(data)], name, { type: 'model/gltf-binary' }));
+  // Node's runtime File is correct for multipart serialization; TS' DOM FormData
+  // overload declares a different Blob interface in this mixed test project.
+  form.set('file', new NodeFile([new Uint8Array(data)], name, { type: 'model/gltf-binary' }) as unknown as Blob, name);
   return new NextRequest('http://localhost/api/smart-anatomy/models', {
     method: 'POST', body: form,
   });

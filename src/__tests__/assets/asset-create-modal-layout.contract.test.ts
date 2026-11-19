@@ -3,11 +3,16 @@ import { describe, expect, it } from 'vitest';
 
 const assetForm = readFileSync('src/components/modules/AssetPages.tsx', 'utf8');
 const machineFields = readFileSync('src/components/assets/MachineCommissioningFields.tsx', 'utf8');
+const responsiveDialog = readFileSync('src/components/shared/ResponsiveDialog.tsx', 'utf8');
 
 describe('create/edit machine modal responsive layout', () => {
   it('uses a wider dialog with one fixed header and footer for both create and edit', () => {
     expect(assetForm).toContain('size="extra-wide"');
     expect(assetForm).toContain('desktopMaxWidth="sm:max-w-[94vw] xl:max-w-[68rem]"');
+    // The CSS cap must be enforced even before Tailwind responsive breakpoint
+    // styles settle, so 850px tablet dialogs never remain 1068px wide.
+    expect(assetForm).toContain('desktopMaxWidthCss="min(68rem, calc(100vw - 2rem))"');
+    expect(responsiveDialog).toContain('style={desktopMaxWidthCss ? { maxWidth: desktopMaxWidthCss } : undefined}');
     expect(assetForm).toContain("title={editId ? 'Edit Asset' : 'Create Asset'}");
     expect(assetForm).toContain('footer={');
     expect(assetForm).toContain('data-testid="asset-create-form"');

@@ -59,6 +59,8 @@ export interface ResponsiveDialogProps {
   footer?: React.ReactNode;
   className?: string;
   desktopMaxWidth?: string;
+  /** Hard CSS cap for selected dialogs, including during viewport resizing. */
+  desktopMaxWidthCss?: string;
   size?: ResponsiveDialogSize;
   large?: boolean;
   extraLarge?: boolean;
@@ -77,6 +79,7 @@ export function ResponsiveDialog({
   footer,
   className,
   desktopMaxWidth,
+  desktopMaxWidthCss,
   size,
   large = false,
   extraLarge = false,
@@ -162,6 +165,7 @@ export function ResponsiveDialog({
           className,
         )}
         onPointerDownOutside={handlePointerDownOutside}
+        style={desktopMaxWidthCss ? { maxWidth: desktopMaxWidthCss } : undefined}
       >
         <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
           <DialogHeader className={cn("min-w-0 flex-1", !(title || description) && "sr-only")}>

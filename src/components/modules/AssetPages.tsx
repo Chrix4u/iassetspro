@@ -416,6 +416,7 @@ export function AssetsPage() {
         onOpenChange={setDialogOpen}
         size="extra-wide"
         desktopMaxWidth="sm:max-w-[94vw] xl:max-w-[68rem]"
+        desktopMaxWidthCss="min(68rem, calc(100vw - 2rem))"
         title={editId ? 'Edit Asset' : 'Create Asset'}
         description={editId ? 'Update asset information.' : 'Register a new asset.'}
         footer={

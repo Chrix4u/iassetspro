@@ -11,6 +11,7 @@ import {
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
+import { buildImportedNodePaths, cloneImportedAnatomyMesh } from './anatomyModelMesh';
 
 // ============================================================================
 // Types
@@ -472,6 +473,10 @@ function ProcessedModel({
     }> = [];
     const staticList: THREE.Mesh[] = [];
 
+    // The original GLB tree is never reparented. Use display meshes with
+    // imported world transforms baked into their local coordinates.
+    scene.updateWorldMatrix(true, true);
+    const sourcePaths = buildImportedNodePaths(scene);
     const nameCount = new Map<string, number>();
     scene.traverse(child => {
       if (!(child as THREE.Mesh).isMesh) return;
@@ -480,11 +485,12 @@ function ProcessedModel({
 
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
+      const originalMesh = child as THREE.Mesh;
+      const mesh = cloneImportedAnatomyMesh(originalMesh, scene, sourcePaths.get(originalMesh), true);
 
       // A duplicated mesh name is not a trustworthy asset-part identity.
       // Preserve its geometry as visual-only until mesh-path mapping is available.
-      const binding = nameCount.get(mesh.name) === 1 ? bindingMap.get(mesh.name) : undefined;
+      const binding = nameCount.get(originalMesh.name) === 1 ? bindingMap.get(originalMesh.name) : undefined;
       if (binding) {
         applyBindingToMesh(mesh, binding);
         interactive.push({ mesh, binding });
@@ -530,7 +536,19 @@ function ProcessedModel({
     }
   }, [scene, autoCenter, autoScale, maxDimension]);
 
-  // Dispose scene on unmount
+  // Viewer meshes own cloned materials so highlights never mutate the cached
+  // manufacturer source. Release those lightweight clones when bindings or
+  // models change; textures and geometry remain owned by the source cache.
+  useEffect(() => {
+    return () => {
+      for (const mesh of [...interactiveMeshes.map(item => item.mesh), ...staticMeshes]) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const material of materials) material?.dispose();
+      }
+    };
+  }, [interactiveMeshes, staticMeshes]);
+
+  // Dispose source scene cache only when the actual model changes/unmounts.
   useEffect(() => {
     return () => {
       releaseToCache(scene.userData.__sourceUrl || '');

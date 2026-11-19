@@ -69,6 +69,26 @@ export async function PUT(
         updateData[field] = body[field];
       }
     }
+    if ('name' in updateData) {
+      if (typeof updateData.name !== 'string' || !updateData.name.trim()) {
+        return NextResponse.json({ success: false, error: 'Work center name is required' }, { status: 400 });
+      }
+      updateData.name = updateData.name.trim();
+    }
+    if ('type' in updateData && !['production', 'assembly', 'packaging', 'testing'].includes(String(updateData.type))) {
+      return NextResponse.json({ success: false, error: 'Invalid work center type' }, { status: 400 });
+    }
+    if ('status' in updateData && !['active', 'inactive', 'maintenance'].includes(String(updateData.status))) {
+      return NextResponse.json({ success: false, error: 'Invalid work center status' }, { status: 400 });
+    }
+    if ('capacity' in updateData) {
+      const raw = updateData.capacity;
+      const capacity = raw === null || raw === '' ? null : Number(raw);
+      if (capacity !== null && (!Number.isInteger(capacity) || capacity < 0)) {
+        return NextResponse.json({ success: false, error: 'Capacity must be a nonnegative whole number' }, { status: 400 });
+      }
+      updateData.capacity = capacity;
+    }
 
     const updated = await db.workCenter.update({
       where: { id },

@@ -28,18 +28,18 @@ export function CommissioningParameterFields({items,onChange,subject='machine'}:
       </div>
       <Button type="button" size="sm" variant="outline" onClick={()=>onChange([...items,blankParameter()])}><Plus className="mr-1 h-3.5 w-3.5"/>Add parameter</Button>
     </div>
-    {items.map((p,i)=><div key={i} className="space-y-2 rounded-md border bg-muted/20 p-2.5">
-      <div className="grid min-w-0 grid-cols-1 items-end gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
-        <div className="min-w-0 space-y-1"><Label>Parameter name *</Label><Input value={p.name} placeholder="Temperature, vibration, sound, pressure..." onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
-        <div className="min-w-0 space-y-1"><Label>Inspection</Label><Select value={p.inspectionType} onValueChange={v=>onChange(updateAt(items,i,{inspectionType:v as ParameterDraft['inspectionType']}))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="measurement">Instrument</SelectItem><SelectItem value="visual">Visual</SelectItem></SelectContent></Select></div>
-        <Button type="button" variant="ghost" size="icon" className="justify-self-end" aria-label={'Remove parameter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>i!==j))}><Trash2 className="h-4 w-4"/></Button>
+    {items.map((p,i)=><div key={i} className="min-w-0 space-y-3 rounded-md border bg-muted/20 p-3">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
+        <div className="col-span-2 min-w-0 space-y-1 sm:col-span-1"><Label>Parameter name *</Label><Input className="w-full min-w-0" value={p.name} placeholder="Temperature, vibration, sound..." onChange={e=>onChange(updateAt(items,i,{name:e.target.value}))}/></div>
+        <div className="min-w-0 space-y-1"><Label>Inspection</Label><Select value={p.inspectionType} onValueChange={v=>onChange(updateAt(items,i,{inspectionType:v as ParameterDraft['inspectionType']}))}><SelectTrigger className="w-full min-w-0"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="measurement">Instrument</SelectItem><SelectItem value="visual">Visual</SelectItem></SelectContent></Select></div>
+        <Button type="button" variant="ghost" size="icon" className="shrink-0 justify-self-end" aria-label={'Remove parameter '+(i+1)} onClick={()=>onChange(items.filter((_,j)=>i!==j))}><Trash2 className="h-4 w-4"/></Button>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <div className="space-y-1"><Label>Unit {p.inspectionType==='measurement'?'*':''}</Label><Input value={p.unit} placeholder="°C, mm/s, dB, bar, A..." onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
-        <div className="space-y-1"><Label>Acceptable minimum</Label><Input type="number" step="any" value={p.min} onChange={e=>onChange(updateAt(items,i,{min:e.target.value}))}/></div>
-        <div className="space-y-1"><Label>Acceptable maximum</Label><Input type="number" step="any" value={p.max} onChange={e=>onChange(updateAt(items,i,{max:e.target.value}))}/></div>
+      <div className="grid min-w-0 grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="col-span-2 min-w-0 space-y-1 md:col-span-1"><Label>Unit {p.inspectionType==='measurement'?'*':''}</Label><Input className="w-full min-w-0" value={p.unit} placeholder="°C, mm/s, dB..." onChange={e=>onChange(updateAt(items,i,{unit:e.target.value}))}/></div>
+        <div className="min-w-0 space-y-1"><Label>Minimum</Label><Input className="w-full min-w-0" type="number" step="any" value={p.min} onChange={e=>onChange(updateAt(items,i,{min:e.target.value}))}/></div>
+        <div className="min-w-0 space-y-1"><Label>Maximum</Label><Input className="w-full min-w-0" type="number" step="any" value={p.max} onChange={e=>onChange(updateAt(items,i,{max:e.target.value}))}/></div>
       </div>
-      <div className="space-y-1"><Label>OEM specification or engineering reference</Label><Input value={p.reference} placeholder="Manufacturer manual, section / document reference" onChange={e=>onChange(updateAt(items,i,{reference:e.target.value}))}/></div>
+      <div className="min-w-0 space-y-1"><Label>OEM reference</Label><Input className="w-full min-w-0" value={p.reference} placeholder="Manual / specification reference" onChange={e=>onChange(updateAt(items,i,{reference:e.target.value}))}/></div>
     </div>)}
     {!items.length&&<p className="text-sm text-muted-foreground">No parameters yet. Add only those specified for this equipment; they may be configured later.</p>}
   </section>;

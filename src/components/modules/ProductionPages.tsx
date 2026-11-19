@@ -40,29 +40,62 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+type WorkCenterRecord = {
+  id: string; code: string; name: string; type: string; status: string;
+  location?: string | null; description?: string | null; capacity?: number | null;
+  capacityUnit?: string | null; createdAt?: string;
+};
+type WorkCenterForm = {
+  name: string; type: string; location: string; capacity: string;
+  capacityUnit: string; status: string; description: string;
+};
+const blankWorkCenterForm = (): WorkCenterForm => ({
+  name: '', type: 'production', location: '', capacity: '',
+  capacityUnit: 'units/hour', status: 'active', description: '',
+});
+const toWorkCenterForm = (r: WorkCenterRecord): WorkCenterForm => ({
+  name: r.name || '', type: r.type || 'production', location: r.location || '',
+  capacity: r.capacity == null ? '' : String(r.capacity),
+  capacityUnit: r.capacityUnit || 'units/hour',
+  status: r.status || 'active', description: r.description || '',
+});
+
 export function ProductionWorkCentersPage() {
   const [search, setSearch] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [form, setForm] = useState({ name: '', type: 'production', location: '', capacity: '', description: '' });
-  const [wcData, setWcData] = useState<any[]>([]);
+  const [dialogMode, setDialogMode] = useState<'create' | 'view' | 'edit' | null>(null);
+  const [selectedWorkCenter, setSelectedWorkCenter] = useState<WorkCenterRecord | null>(null);
+  const [form, setForm] = useState<WorkCenterForm>(blankWorkCenterForm);
+  const [wcData, setWcData] = useState<WorkCenterRecord[]>([]);
   const [kpisData, setKpisData] = useState({ total: 0, active: 0, idle: 0, maintenance: 0 });
-  const { hasPermission, isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => {
-      const res = await api.get('/api/work-centers');
+  const [saving, setSaving] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const { hasPermission, isAdmin } = useAuthStore();
+  const canCreate = isAdmin() || hasPermission('work_centers.create');
+  const canEdit = isAdmin() || hasPermission('work_centers.update');
+
+  const refreshWorkCenters = React.useCallback(async () => {
+    try {
+      const res = await api.get('/api/work-centers?limit=500');
       if (res.success) {
-        setWcData(res.data || []);
-        if (res.kpis) setKpisData(res.kpis as any);
+        setWcData((res.data || []) as WorkCenterRecord[]);
+        if (res.kpis) setKpisData(res.kpis as typeof kpisData);
+      } else {
+        toast.error(res.error || 'Could not load work centers');
       }
+    } catch {
+      toast.error('Could not load work centers');
+    } finally {
       setLoading(false);
-    })();
+    }
   }, []);
+  useEffect(() => { void refreshWorkCenters(); }, [refreshWorkCenters]);
+
   const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', inactive: 'bg-amber-50 text-amber-700 border-amber-200', maintenance: 'bg-slate-100 text-slate-600 border-slate-200' };
   const typeColors: Record<string, string> = { production: 'bg-sky-50 text-sky-700', assembly: 'bg-amber-50 text-amber-700', packaging: 'bg-teal-50 text-teal-700', testing: 'bg-violet-50 text-violet-700' };
-  const filtered = wcData.filter((r: any) => {
+  const filtered = wcData.filter(r => {
     if (filterType !== 'all' && r.type !== filterType) return false;
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.name.toLowerCase().includes(search.toLowerCase()) && !r.code.toLowerCase().includes(search.toLowerCase())) return false;
@@ -74,73 +107,178 @@ export function ProductionWorkCentersPage() {
     { label: 'Idle', value: kpisData.idle, icon: Pause, color: 'text-amber-600 bg-amber-50' },
     { label: 'Under Maintenance', value: kpisData.maintenance, icon: Wrench, color: 'text-slate-600 bg-slate-100' },
   ];
-  const handleCreate = async () => {
-    if (!form.name || !form.type) { toast.error('Name and type are required'); return; }
-    const res = await api.post('/api/work-centers', form);
-    if (res.success) {
-      toast.success('Work center created');
-      setCreateOpen(false);
-      setForm({ name: '', type: 'production', location: '', capacity: '', description: '' });
-      const listRes = await api.get('/api/work-centers');
-      if (listRes.success) { setWcData(listRes.data || []); if (listRes.kpis) setKpisData(listRes.kpis as any); }
-    } else { toast.error(res.error || 'Failed to create work center'); }
+
+  const startCreate = () => {
+    setSelectedWorkCenter(null);
+    setForm(blankWorkCenterForm());
+    setDialogMode('create');
   };
-  const handleDelete = async (id: string) => {
-    const res = await api.delete(`/api/work-centers/${id}`);
-    if (res.success) {
-      toast.success('Work center deleted');
-      const listRes = await api.get('/api/work-centers');
-      if (listRes.success) { setWcData(listRes.data || []); if (listRes.kpis) setKpisData(listRes.kpis as any); }
-    } else { toast.error(res.error || 'Failed to delete'); }
+  const openWorkCenter = async (r: WorkCenterRecord, mode: 'view' | 'edit') => {
+    setOpeningId(r.id);
+    try {
+      const res = await api.get('/api/work-centers/' + encodeURIComponent(r.id));
+      if (!res.success || !res.data) {
+        toast.error(res.error || 'Could not load work center');
+        return;
+      }
+      const record = res.data as WorkCenterRecord;
+      setSelectedWorkCenter(record);
+      setForm(toWorkCenterForm(record));
+      setDialogMode(mode);
+    } catch {
+      toast.error('Could not load work center');
+    } finally {
+      setOpeningId(null);
+    }
   };
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.type) {
+      toast.error('Name and type are required');
+      return;
+    }
+    if (form.capacity.trim() && (!Number.isInteger(Number(form.capacity)) || Number(form.capacity) < 0)) {
+      toast.error('Capacity must be a positive whole number or zero');
+      return;
+    }
+    if (dialogMode === 'edit' && !selectedWorkCenter) return;
+    const payload = {
+      ...form, name: form.name.trim(), description: form.description.trim(),
+      location: form.location.trim(), capacityUnit: form.capacityUnit.trim() || 'units/hour',
+      capacity: form.capacity.trim() ? Number(form.capacity) : null,
+    };
+    setSaving(true);
+    try {
+      const res = dialogMode === 'edit'
+        ? await api.put('/api/work-centers/' + encodeURIComponent(selectedWorkCenter!.id), payload)
+        : await api.post('/api/work-centers', payload);
+      if (res.success) {
+        toast.success(dialogMode === 'edit' ? 'Work center updated' : 'Work center created');
+        setDialogMode(null);
+        setSelectedWorkCenter(null);
+        await refreshWorkCenters();
+      } else {
+        toast.error(res.error || 'Could not save work center');
+      }
+    } catch {
+      toast.error('Could not save work center');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleDelete = async (r: WorkCenterRecord) => {
+    if (!window.confirm('Deactivate work center ' + r.code + '?')) return;
+    const res = await api.delete('/api/work-centers/' + encodeURIComponent(r.id));
+    if (res.success) {
+      toast.success('Work center deactivated');
+      await refreshWorkCenters();
+    } else {
+      toast.error(res.error || 'Could not deactivate work center');
+    }
+  };
+
   return (
     <div className="page-content">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Work Centers</h1><p className="text-muted-foreground text-sm mt-1">Define and manage production work centers, lines, and cells</p></div>
-        {(hasPermission('production.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Center</Button>}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Work Centers</h1><p className="mt-1 text-sm text-muted-foreground">Define and manage production work centers, lines, and cells</p></div>
+        {canCreate && <Button onClick={startCreate} className="bg-emerald-600 text-white hover:bg-emerald-700"><Plus className="mr-1.5 h-4 w-4" />New Work Center</Button>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="rounded-xl border border-border/60 bg-card text-card-foreground shadow-sm">
+            <CardContent className="p-5"><div className="flex items-center gap-4"><div className={'flex h-11 w-11 items-center justify-center rounded-xl ' + k.color}><Icon className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent>
+          </Card>
+        ); })}
       </div>
-      <div className="filter-row flex items-center gap-3 flex-wrap">
-        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+      <div className="filter-row flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem><SelectItem value="testing">Testing</SelectItem></SelectContent></Select>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem></SelectContent></Select>
       </div>
-      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+      <Card className="rounded-xl border border-border/60 bg-card text-card-foreground shadow-sm"><CardContent className="p-0">
         <div className="overflow-x-auto">
-          <Table><TableHeader><TableRow><TableHead className="w-[100px]">Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Capacity</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-            {loading ? (<TableRow><TableCell colSpan={7} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (<TableRow><TableCell colSpan={7} className="h-48 text-center text-muted-foreground">No work centers found</TableCell></TableRow>) : filtered.map((r: any) => (
-              <TableRow key={r.code}>
-                <TableCell className="font-mono text-xs font-medium">{r.code}</TableCell>
-                <TableCell className="font-medium text-sm">{r.name}</TableCell>
-                <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type.replace(/_/g, ' ')}</Badge></TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.location || '—'}</TableCell>
-                <TableCell className="text-right text-sm font-medium">{r.capacity ? `${r.capacity} ${r.capacityUnit || 'units/hour'}` : '—'}</TableCell>
-                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('production.update') || isAdmin()) && <DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('production.manage') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
-              </TableRow>
-            ))}
+          <Table><TableHeader><TableRow><TableHead className="w-[100px]">Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Capacity</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]">Actions</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? <TableRow><TableCell colSpan={7} className="h-48 text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></TableCell></TableRow>
+              : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="h-48 text-center text-muted-foreground">No work centers found</TableCell></TableRow>
+              : filtered.map(r => (
+                <TableRow key={r.id}>
+                  <TableCell className="font-mono text-xs font-medium">{r.code}</TableCell>
+                  <TableCell className="text-sm font-medium">{r.name}</TableCell>
+                  <TableCell><Badge variant="secondary" className={'text-[11px] ' + (typeColors[r.type] || '')}>{r.type.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{r.location || '—'}</TableCell>
+                  <TableCell className="text-right text-sm font-medium">{r.capacity == null ? '—' : r.capacity + ' ' + (r.capacityUnit || 'units/hour')}</TableCell>
+                  <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                  <TableCell>
+                    <DropdownMenu><DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-9 w-9" aria-label={'Actions for ' + r.name} disabled={openingId === r.id}>
+                        {openingId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                      </Button>
+                    </DropdownMenuTrigger><DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => void openWorkCenter(r, 'view')}><Eye className="mr-2 h-4 w-4" />View</DropdownMenuItem>
+                      {canEdit && <DropdownMenuItem onSelect={() => void openWorkCenter(r, 'edit')}><Pencil className="mr-2 h-4 w-4" />Edit</DropdownMenuItem>}
+                      {isAdmin() && <DropdownMenuItem className="text-red-600" onSelect={() => void handleDelete(r)}><Trash2 className="mr-2 h-4 w-4" />Deactivate</DropdownMenuItem>}
+                    </DropdownMenuContent></DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Work Center</h2><p className="text-sm text-muted-foreground">Add a new production work center.</p></div>
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Type *</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem><SelectItem value="testing">Testing</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Location" /></div>
+      <ResponsiveDialog
+        open={dialogMode !== null}
+        onOpenChange={open => { if (!open && !saving) setDialogMode(null); }}
+        size="wide"
+        title={dialogMode === 'view' ? 'Work Center Details' : dialogMode === 'edit' ? 'Edit Work Center' : 'New Work Center'}
+        description={dialogMode === 'view' ? selectedWorkCenter?.code : dialogMode === 'edit' ? selectedWorkCenter?.code : 'Register a production work center.'}
+        footer={
+          <>
+            <Button variant="outline" disabled={saving} onClick={() => setDialogMode(null)}>{dialogMode === 'view' ? 'Close' : 'Cancel'}</Button>
+            {dialogMode === 'view' && canEdit && <Button onClick={() => setDialogMode('edit')}><Pencil className="mr-1.5 h-4 w-4" />Edit</Button>}
+            {dialogMode !== 'view' && <Button disabled={saving} onClick={handleSave} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              {dialogMode === 'edit' ? 'Save Changes' : 'Create Work Center'}
+            </Button>}
+          </>
+        }
+      >
+        {dialogMode === 'view' ? (
+          <dl className="grid min-w-0 grid-cols-1 gap-4 py-2 sm:grid-cols-2" data-testid="work-center-details">
+            {([
+              ['Code', selectedWorkCenter?.code],
+              ['Name', selectedWorkCenter?.name],
+              ['Type', selectedWorkCenter?.type?.replace(/_/g, ' ')],
+              ['Status', selectedWorkCenter?.status?.replace(/_/g, ' ')],
+              ['Location', selectedWorkCenter?.location],
+              ['Capacity', selectedWorkCenter?.capacity == null ? null : selectedWorkCenter.capacity + ' ' + (selectedWorkCenter.capacityUnit || 'units/hour')],
+              ['Description', selectedWorkCenter?.description],
+            ] as Array<[string, string | null | undefined]>).map(([label, value]) => (
+              <div key={label} className="min-w-0 border-b border-border/50 pb-2">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="mt-1 min-w-0 text-sm font-medium [overflow-wrap:anywhere]">{value || '—'}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <div className="min-w-0 space-y-4" data-testid="work-center-form">
+            <div className="min-w-0 space-y-1.5">
+              <Label>Name *</Label><Input className="w-full min-w-0" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" />
             </div>
-            <div className="space-y-2"><Label>Capacity (units/hr)</Label><Input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="0" /></div>
-            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description..." rows={2} /></div>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Type *</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem><SelectItem value="testing">Testing</SelectItem></SelectContent></Select></div>
+              <div className="min-w-0 space-y-1.5"><Label>Status</Label><Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}><SelectTrigger className="w-full min-w-0"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="min-w-0 space-y-1.5"><Label>Location</Label><Input className="w-full min-w-0" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Production area or line" /></div>
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0 space-y-1.5"><Label>Capacity</Label><Input className="w-full min-w-0" type="number" min="0" step="1" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="0" /></div>
+              <div className="min-w-0 space-y-1.5"><Label>Capacity unit</Label><Input className="w-full min-w-0" value={form.capacityUnit} onChange={e => setForm(f => ({ ...f, capacityUnit: e.target.value }))} placeholder="units/hour" /></div>
+            </div>
+            <div className="min-w-0 space-y-1.5"><Label>Description</Label><Textarea className="w-full min-w-0" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description" rows={3} /></div>
           </div>
-          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button></div>
-        
+        )}
       </ResponsiveDialog>
     </div>
   );
 }
+
 export function ProductionResourcePlanningPage() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');

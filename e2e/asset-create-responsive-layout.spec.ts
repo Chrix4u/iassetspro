@@ -59,16 +59,16 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
 
     await expect.poll(async () => form.evaluate(node => {
       const meterName = node.querySelector<HTMLInputElement>('input[placeholder="Motor run hours"]');
-      const observed = [...node.querySelectorAll('label')]
-        .find(label => label.textContent?.trim() === 'Observed initial reading (optional)')
-        ?.parentElement?.querySelector('input');
+      // Target the input itself. Reconstructing its locator from a Radix Label
+      // may resolve the wrong ancestor after the responsive modal remounts.
+      const observed = node.querySelector<HTMLInputElement>('input[placeholder="Blank = not yet measured"]');
       if (!meterName || !observed) return false;
       const first = meterName.getBoundingClientRect();
       const second = observed.getBoundingClientRect();
       return viewport.width === 1440
         ? Math.abs(second.y - first.y) <= 3
         : second.y > first.y + 8;
-    }), { message: 'Machine meter inputs must align at settled viewport width', timeout: 8000 }).toBe(true);
+    }), { message: `Machine meter inputs must align at settled ${viewport.width}px viewport width`, timeout: 8000 }).toBe(true);
 
     const scroll = await dialog.evaluate(node => ({
       scrollWidth: node.scrollWidth,

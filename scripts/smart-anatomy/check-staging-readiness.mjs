@@ -60,6 +60,20 @@ export async function runStagingReadiness({origin, fetcher=fetch, output=console
             (typeof response.url==='string' && response.url!==expectedUrl)){
           status=0;
         }
+        // A proxy, CDN or SSO layer may return its own generic 401 page.
+        // Require the application's JSON authentication error, not merely
+        // the HTTP status, before accepting anonymous access protection.
+        if(check.allowed.includes(401) && status===401){
+          try{
+            const type=response.headers?.get('content-type') || '';
+            if(!/^application\/json(?:\s*;|\s*$)/i.test(type)){
+              status=0;
+            }else{
+              const denial=await response.json();
+              if(!denial || denial.error!=='Not authenticated') status=0;
+            }
+          }catch{status=0;}
+        }
         if(check.path==='/api/health' && status===200){
           // A bare HTTP 200 may be a CDN landing page, an SSO page, or a
           // degraded deployment. Require the actual iAssetsPro health JSON

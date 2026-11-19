@@ -105,6 +105,20 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
       estimatedDuration:1,autoGenerateWO:false,leadDays:0,
     }});
   expect(pmSchedule.status()).toBe(201);
+  // An assigned operator cannot submit a shift before its scheduled end.
+  // Use tomorrow, independent of the CI runner's execution time.
+  const futurePlan={...plan,productionDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
+  const futureSchedule=await request.post('/api/production-surveys/plans',{
+    headers:manager,data:futurePlan,
+  });
+  expect(futureSchedule.status()).toBe(200);
+  const prematureEntry=await request.post('/api/production-surveys',{headers:operator,data:{
+    ...futurePlan,outputQuantity:10,defectiveQuantity:0,
+    breakMinutes:0,repairMinutes:0,inputDeliveryMinutes:0,
+    changeoverMinutes:0,startupCleaningMinutes:0,otherMinutes:0,preventiveMinutes:0,
+  }});
+  expect(prematureEntry.status()).toBe(400);
+  expect((await prematureEntry.json()).error).toMatch(/shift has not ended/i);
   const unauthorizedShift=await request.post('/api/production-surveys',{headers:operator,data:{
     ...otherPlan,outputQuantity:10,defectiveQuantity:0,
     breakMinutes:0,repairMinutes:0,inputDeliveryMinutes:0,

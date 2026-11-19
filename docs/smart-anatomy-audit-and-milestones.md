@@ -481,3 +481,17 @@ manifest from redefining the live CAD source boundary and then claiming a
 file from the real source directory is an off-source encrypted backup.
 This still does not establish remote replication or successful decryption.
 The check does not write to the source, PostgreSQL or production.
+
+
+### Staging smoke-gate response authenticity
+
+The read-only staging smoke check no longer accepts an arbitrary HTTP 200
+for `/api/health`: it requires the iAssetsPro health JSON to report
+`status: healthy`, a healthy database check, and a numeric uptime. This
+prevents an SSO landing page, a degraded database or a generic proxy
+success page from passing staging readiness. The checker also rejects a
+response marked redirected or with a final URL different from the exact
+requested staging endpoint, even if a custom fetcher silently follows
+redirects. These are **staging smoke** assertions only: they do not
+replace authenticated cross-plant UAT, real CAD acceptance or disaster
+recovery evidence.

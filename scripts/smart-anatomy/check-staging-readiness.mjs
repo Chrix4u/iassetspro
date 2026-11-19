@@ -52,6 +52,27 @@ export async function runStagingReadiness({origin, fetcher=fetch, output=console
           signal:controller.signal,
         });
         status=response.status;
+        // A mocked fetch, proxy or custom fetch implementation can follow
+        // redirects even when redirect:manual is requested. Never count a
+        // response that came from a different endpoint or origin as staging.
+        const expectedUrl=base+check.path;
+        if(response.redirected===true ||
+            (typeof response.url==='string' && response.url!==expectedUrl)){
+          status=0;
+        }
+        if(check.path==='/api/health' && status===200){
+          // A bare HTTP 200 may be a CDN landing page, an SSO page, or a
+          // degraded deployment. Require the actual iAssetsPro health JSON
+          // with a functioning staging database before accepting the gate.
+          try{
+            const health=await response.json();
+            if(!health || health.status!=='healthy' ||
+                health.checks?.database?.status!=='healthy' ||
+                !Number.isFinite(health.uptime)){
+              status=0;
+            }
+          }catch{status=0;}
+        }
         await response.body?.cancel();
       } finally { clearTimeout(timeout); }
     } catch {

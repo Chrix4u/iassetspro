@@ -179,7 +179,7 @@ export function convertStlToGlb(input: Uint8Array, units: StlUnit): ConvertedStl
     if (!/^outer\s+loop$/i.test(rows[row++] ?? '')) bad('malformed ASCII outer loop');
     for (let vertex = 0; vertex < 3; vertex++) {
       const match = vertexPattern.exec(rows[row++] ?? '');
-      if (!match) bad('malformed ASCII triangle vertex');
+      if (!match) throw new Error('Invalid STL: malformed ASCII triangle vertex');
       vertexLines.push([Number(match[1]), Number(match[2]), Number(match[3])]);
     }
     if (!/^endloop$/i.test(rows[row++] ?? '') ||

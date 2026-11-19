@@ -7,6 +7,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { auditedGlbMeshPaths } from '@/lib/smart-anatomy/mesh-source-paths';
+import { convertStlToGlb } from '@/lib/smart-anatomy/offline-stl-converter';
 
 const mocked=vi.hoisted(()=>({
   getSession:vi.fn(),hasPermission:vi.fn(),isAdmin:vi.fn(),
@@ -91,6 +92,48 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect(audit.originalSourceIntegrityVerified).toBe(true);
     expect(audit.exactSourcePathMatches).toBe(1);
     expect(audit.maintenanceProcedureApproved).toBe(false);
+  });
+
+  it('accepts a real offline STL conversion only through the separate manual engineer-review path',async()=>{
+    const input = new TextEncoder().encode([
+      'solid workshop-scan',
+      'facet normal 0 0 1',
+      'outer loop',
+      'vertex 0 0 0',
+      'vertex 1000 0 0',
+      'vertex 0 1000 0',
+      'endloop',
+      'endfacet',
+      'endsolid workshop-scan',
+    ].join('\n'));
+    const converted = convertStlToGlb(input, 'mm');
+    const checksum=createHash('sha256').update(converted.glb).digest('hex');
+    await writeFile(join(folder,id+'.glb'),converted.glb);
+    try {
+      mocked.findUnique.mockResolvedValue({
+        id,assetId:'asset1',uploadedById:'uploader1',
+        filePath:'/api/smart-anatomy/models/'+id+'/file',
+        fileSize:converted.glb.byteLength,isActive:false,asset:{plantId:'plant1'},
+      });
+      mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
+        where.action==='withdraw'?null:{newValues:JSON.stringify({checksum})},
+      ));
+      const authenticPaths=[...auditedGlbMeshPaths(converted.glb)];
+      expect(authenticPaths).toEqual(['STL_Geometry_unverified_single_solid']);
+      mocked.bindingFindMany.mockResolvedValue([{
+        meshPath:authenticPaths[0],meshName:authenticPaths[0],
+        componentId:'registered-part',component:{assetId:'asset1'},
+      }]);
+      const response=await POST(request(),ctx);
+      expect(response.status).toBe(200);
+      const audit=JSON.parse(mocked.auditCreate.mock.calls[0][0].data.newValues);
+      expect(audit.independentEngineerReview).toBe(true);
+      expect(audit.maintenanceProcedureApproved).toBe(false);
+      expect(audit.exactSourcePathMatches).toBe(1);
+      expect(audit.originalSourceIntegrityVerified).toBe(true);
+    } finally {
+      await writeFile(join(folder,id+'.glb'),bytes);
+    }
   });
 
   it('prohibits approving CAD uploaded by the same engineer, even with full manager permissions',async()=>{

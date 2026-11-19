@@ -37,7 +37,8 @@ describe('bounded offline STL to inspection-only GLB converter',()=>{
 
   it('produces real Three.js mesh vertex coordinates in glTF meters',async()=>{
     const output=convertStlToGlb(sourceBinary(),'mm');
-    const buffer=output.glb.buffer.slice(output.glb.byteOffset,output.glb.byteOffset+output.glb.byteLength);
+    const buffer=new ArrayBuffer(output.glb.byteLength);
+    new Uint8Array(buffer).set(output.glb);
     const scene=await new Promise<import('three').Group>((resolve,reject)=>
       new GLTFLoader().parse(buffer,'',gltf=>resolve(gltf.scene),reject));
     const mesh=scene.getObjectByName('STL_Geometry_unverified_single_solid') as import('three').Mesh;

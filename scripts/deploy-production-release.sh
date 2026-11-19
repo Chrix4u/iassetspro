@@ -152,10 +152,16 @@ echo
 echo "[3/12] Prepare dependencies and build"
 cd "$NEW_RELEASE"
 
+# Old releases can have Bun's Prisma bin copied as a standalone JS file rather
+# than a symlink. Such a wrapper looks valid but fails at runtime because its
+# WASM dependencies are resolved relative to node_modules/.bin instead of the
+# prisma/build package directory. Do not propagate that broken dependency tree.
 if [[ -d "$OLD_RELEASE/node_modules" ]] && \
    cmp -s "$OLD_RELEASE/package.json" "$NEW_RELEASE/package.json" && \
-   cmp -s "$OLD_RELEASE/bun.lock" "$NEW_RELEASE/bun.lock"; then
-  echo "Reusing dependency tree because package.json and bun.lock are unchanged."
+   cmp -s "$OLD_RELEASE/bun.lock" "$NEW_RELEASE/bun.lock" && \
+   [[ -L "$OLD_RELEASE/node_modules/.bin/prisma" ]] && \
+   [[ -e "$OLD_RELEASE/node_modules/.bin/prisma" ]]; then
+  echo "Reusing verified dependency tree because lockfile and Prisma wrapper are healthy."
   cp -a "$OLD_RELEASE/node_modules" "$NEW_RELEASE/node_modules"
 else
   echo "Dependency graph changed or reusable node_modules is unavailable."

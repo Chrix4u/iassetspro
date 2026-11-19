@@ -43,27 +43,32 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
     if (viewport.width === 1440) expect(rect!.width).toBeGreaterThan(950);
     expect(rect!.width).toBeLessThanOrEqual(viewport.width + 1);
 
-    const name = await form.locator('input').first().boundingBox();
-    const tag = await form.locator('input').nth(1).boundingBox();
-    expect(name).not.toBeNull();
-    expect(tag).not.toBeNull();
-    if (viewport.width === 390) {
-      expect(tag!.y).toBeGreaterThan(name!.y + 8);
-    } else {
-      expect(Math.abs(tag!.y - name!.y)).toBeLessThanOrEqual(3);
-      expect(tag!.x).toBeGreaterThan(name!.x);
-    }
+    // Measure each pair in one animation frame. Radix dialogs/sheets animate
+    // when their viewport changes; separate boundingBox calls can capture
+    // different animation frames and report a false vertical mismatch.
+    // The geometry threshold remains strict (3px); poll until layout settles.
+    await expect.poll(async () => form.evaluate(node => {
+      const inputs = node.querySelectorAll('input');
+      const name = inputs[0]?.getBoundingClientRect();
+      const tag = inputs[1]?.getBoundingClientRect();
+      if (!name || !tag) return false;
+      return viewport.width === 390
+        ? tag.y > name.y + 8
+        : Math.abs(tag.y - name.y) <= 3 && tag.x > name.x;
+    }), { message: 'Asset name and tag inputs must align at settled viewport width', timeout: 8000 }).toBe(true);
 
-    const meterName = await form.getByPlaceholder('Motor run hours').boundingBox();
-    const observed = await form.getByText('Observed initial reading (optional)', { exact: true })
-      .locator('..').locator('input').boundingBox();
-    expect(meterName).not.toBeNull();
-    expect(observed).not.toBeNull();
-    if (viewport.width === 1440) {
-      expect(Math.abs(observed!.y - meterName!.y)).toBeLessThanOrEqual(3);
-    } else {
-      expect(observed!.y).toBeGreaterThan(meterName!.y + 8);
-    }
+    await expect.poll(async () => form.evaluate(node => {
+      const meterName = node.querySelector<HTMLInputElement>('input[placeholder="Motor run hours"]');
+      const observed = [...node.querySelectorAll('label')]
+        .find(label => label.textContent?.trim() === 'Observed initial reading (optional)')
+        ?.parentElement?.querySelector('input');
+      if (!meterName || !observed) return false;
+      const first = meterName.getBoundingClientRect();
+      const second = observed.getBoundingClientRect();
+      return viewport.width === 1440
+        ? Math.abs(second.y - first.y) <= 3
+        : second.y > first.y + 8;
+    }), { message: 'Machine meter inputs must align at settled viewport width', timeout: 8000 }).toBe(true);
 
     const scroll = await dialog.evaluate(node => ({
       scrollWidth: node.scrollWidth,

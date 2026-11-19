@@ -28,10 +28,12 @@ describe('Smart Anatomy imported CAD-to-registered-component workflow',()=>{
     expect(create).toContain('meshPath.length > 600');
     expect(create).toContain('...(meshPath ? [{ meshPath }] : [])');
     expect(create).toContain('component.assetId !== assetId');
+    expect(create).toContain('reviewedCadMappingsAreFrozen(model)');
     expect(edit).toContain('id:{not:existing.id}');
     expect(edit).toContain('meshPath:newPath');
     expect(edit).toContain('component.assetId !== targetAssetId');
     expect(edit).toContain('canAccessPlantStrict');
+    expect(edit).toContain('reviewedCadMappingsAreFrozen(existing.model)');
   });
 
   it('does not inherit previous asset permissions when selecting unbound visual-only meshes',()=>{

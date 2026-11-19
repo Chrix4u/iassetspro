@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
 
 export async function GET(request: NextRequest) {
   try {
@@ -112,6 +113,12 @@ export async function POST(request: NextRequest) {
     }
     if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (await reviewedCadMappingsAreFrozen(model)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
+      }, { status: 409 });
     }
 
     const asset = await db.asset.findUnique({ where: { id: assetId }, select: { plantId: true } });

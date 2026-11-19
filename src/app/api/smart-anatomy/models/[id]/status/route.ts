@@ -20,7 +20,7 @@ export async function GET(
     const model = await db.assetModel.findUnique({
       where: { id },
       select: {
-        id: true, filePath: true, isActive: true,
+        id: true, uploadedById: true, filePath: true, isActive: true,
         asset: { select: { plantId: true } },
       },
     });
@@ -40,6 +40,9 @@ export async function GET(
       data: {
         id, isActive: model.isActive,
         withdrawn: Boolean(retired),
+        independentReviewerEligible:
+          !retired && model.uploadedById !== session.userId && Boolean(model.uploadedById) &&
+          (isAdmin(session) || hasPermission(session, 'digital_twin.manage')),
         status: retired ? 'withdrawn' : model.isActive ? 'approved' : 'awaiting-review',
       },
     }, { headers: { 'Cache-Control': 'private, no-store' } });

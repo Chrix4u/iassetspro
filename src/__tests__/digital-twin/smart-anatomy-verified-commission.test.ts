@@ -65,7 +65,8 @@ beforeEach(()=>{
   mocked.getPlantScope.mockResolvedValue({denyAccess:false,plantId:'plant1'});
   mocked.canAccessPlantStrict.mockImplementation((_scope:unknown,plantId:string)=>plantId==='plant1');
   mocked.findUnique.mockResolvedValue({
-    id,assetId:'asset1',filePath:'/api/smart-anatomy/models/'+id+'/file',
+    id,assetId:'asset1',uploadedById:'uploader1',
+    filePath:'/api/smart-anatomy/models/'+id+'/file',
     fileSize:bytes.length,isActive:false,asset:{plantId:'plant1'},
   });
   mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
@@ -90,6 +91,28 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect(audit.originalSourceIntegrityVerified).toBe(true);
     expect(audit.exactSourcePathMatches).toBe(1);
     expect(audit.maintenanceProcedureApproved).toBe(false);
+  });
+
+  it('prohibits approving CAD uploaded by the same engineer, even with full manager permissions',async()=>{
+    mocked.findUnique.mockResolvedValue({
+      id,assetId:'asset1',uploadedById:'engineer1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,asset:{plantId:'plant1'},
+    });
+    const response=await POST(request(),ctx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('different authorized engineer');
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects models with no verifiable uploader identity',async()=>{
+    mocked.findUnique.mockResolvedValue({
+      id,assetId:'asset1',uploadedById:null,
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,asset:{plantId:'plant1'},
+    });
+    expect((await POST(request(),ctx)).status).toBe(409);
   });
 
   it('refuses fictitious parts absent from the actual uploaded GLB',async()=>{

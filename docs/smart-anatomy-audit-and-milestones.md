@@ -146,3 +146,23 @@ GLTFLoader. More complex skins, multi-primitive groups and instancing require
 an independent, reviewed import/conversion process before authorizing their
 maintenance identity. The importer can still display those geometries for
 visual inspection without granting them a maintenance-component link.
+
+## Milestone 10 — independent reviewer and frozen commissioned mappings
+
+A privately uploaded CAD model now requires independent **maker/checker** engineering
+sign-off: the original uploader (including an administrator) may not approve
+their own GLB file. The server verifies the immutable original `uploadedById`
+against the approving session and records both user identifiers in the
+commissioning audit. A missing uploader ID fails closed. The restricted
+review-status endpoint returns only an eligibility flag (not the uploader's
+identity), and the model selector explains when a second authorized engineer
+must review the file.
+
+Once a private CAD is engineering-approved, all existing mesh-binding
+POST/PUT/DELETE routes refuse edits to that model's component mapping.
+Withdrawn revisions remain immutable as evidence even though their active flag
+is false. New, unapproved private CAD may still receive authorized mapping
+changes during commissioning; ordinary legacy asset models are unaffected.
+The asset explorer explains that a newly uploaded revision must be reviewed
+for any subsequent technical mapping change. No new database table or PM
+frequency type was introduced.

@@ -36,7 +36,8 @@ export async function POST(
 
     const model = await db.assetModel.findUnique({
       where: { id },
-      select: { id: true, assetId: true, filePath: true, fileSize: true, isActive: true,
+      select: { id: true, assetId: true, uploadedById: true,
+        filePath: true, fileSize: true, isActive: true,
         asset: { select: { plantId: true } } },
     });
     if (!model || !/^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(model.filePath) ||
@@ -45,6 +46,15 @@ export async function POST(
     }
     if (!canAccessPlantStrict(scope, model.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    // Independent engineer sign-off is mandatory, even for administrators:
+    // no user may approve a private CAD file that they uploaded themselves.
+    // A missing uploader identity is not proof of independent review.
+    if (!model.uploadedById || model.uploadedById === session.userId) {
+      return NextResponse.json({
+        success: false,
+        error: 'CAD must be reviewed by a different authorized engineer from the uploader',
+      }, { status: 409 });
     }
     if (model.isActive) {
       return NextResponse.json({ success: true, data: { id, isActive: true } });
@@ -149,7 +159,10 @@ export async function POST(
           userId: session.userId, action: 'update', entityType: 'asset_model', entityId: id,
           oldValues: JSON.stringify({ isActive: false }),
           newValues: JSON.stringify({
-            isActive: true, reviewNote: note, sourceReviewed: true,
+            isActive: true, reviewedById: session.userId,
+            uploadedById: model.uploadedById,
+            independentEngineerReview: true,
+            reviewNote: note, sourceReviewed: true,
             geometryReviewed: true, componentMappingReviewed: true,
             linkedComponents, importedMeshPaths: importedPaths.size,
             exactSourcePathMatches: mappedPaths.size,

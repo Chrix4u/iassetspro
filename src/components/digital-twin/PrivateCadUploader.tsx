@@ -47,15 +47,21 @@ export function PrivateCadUploader({
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawNote, setWithdrawNote] = useState('');
   const [reviewStatus, setReviewStatus] = useState<'checking' | 'awaiting-review' | 'withdrawn'>('checking');
+  const [independentReviewerEligible, setIndependentReviewerEligible] = useState(false);
 
   useEffect(() => {
     if (!selected?.id || selected.isActive) {
       setReviewStatus('checking');
+      setIndependentReviewerEligible(false);
       return;
     }
     let cancelled=false;
     setReviewStatus('checking');
-    void api.get<{status:'withdrawn'|'approved'|'awaiting-review'}>(
+    setIndependentReviewerEligible(false);
+    void api.get<{
+      status:'withdrawn'|'approved'|'awaiting-review';
+      independentReviewerEligible:boolean;
+    }>(
       '/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/status',
     ).then(result => {
       if(cancelled) return;
@@ -64,6 +70,7 @@ export function PrivateCadUploader({
         return;
       }
       setReviewStatus(result.data?.status==='withdrawn' ? 'withdrawn' : 'awaiting-review');
+      setIndependentReviewerEligible(result.data?.independentReviewerEligible === true);
     }).catch(()=>{if(!cancelled)setReviewStatus('checking');});
     return ()=>{cancelled=true;};
   }, [selected?.id, selected?.isActive]);
@@ -112,7 +119,8 @@ export function PrivateCadUploader({
   };
 
   const approve = async () => {
-    if (!selected || !canManage || approving || selected.isActive ||
+    if (!selected || !canManage || !independentReviewerEligible ||
+        approving || selected.isActive ||
         !sourceReviewed || !geometryReviewed || !componentMappingReviewed ||
         reviewNote.trim().length < 12) return;
     setApproving(true);
@@ -248,6 +256,12 @@ export function PrivateCadUploader({
           <p className="text-[11px] text-slate-300">
             Inspect the actual file and registered component links below. This does not authorize physical disassembly or automatically create PM and work orders.
           </p>
+          {!independentReviewerEligible && (
+            <p className="rounded-md border border-amber-700/60 p-2 text-xs text-amber-200">
+              Independent engineering sign-off is required. The uploader cannot approve their
+              own CAD file. Ask a different authorized Digital Twin manager to review it.
+            </p>
+          )}
           {[
             {label:'Model origin, licence or site ownership checked',checked:sourceReviewed,change:setSourceReviewed},
             {label:'Imported geometry reviewed for the selected machine',checked:geometryReviewed,change:setGeometryReviewed},
@@ -263,8 +277,8 @@ export function PrivateCadUploader({
             value={reviewNote} onChange={event=>setReviewNote(event.target.value)}
             className="border-slate-700 text-slate-100"/>
           <Button type="button" size="sm" onClick={()=>void approve()}
-            disabled={approving || !sourceReviewed || !geometryReviewed ||
-              !componentMappingReviewed || reviewNote.trim().length < 12}>
+            disabled={!independentReviewerEligible || approving || !sourceReviewed ||
+              !geometryReviewed || !componentMappingReviewed || reviewNote.trim().length < 12}>
             {approving?'Recording engineer review…':'Approve model for visual inspection'}
           </Button>
         </div>

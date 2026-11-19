@@ -33,7 +33,8 @@ beforeEach(()=>{
   mocked.getPlantScope.mockResolvedValue({denyAccess:false,plantId:'plant-1'});
   mocked.canAccessPlantStrict.mockImplementation((_scope:unknown,plantId:string)=>plantId==='plant-1');
   mocked.modelFindUnique.mockResolvedValue({
-    id,filePath:'/api/smart-anatomy/models/'+id+'/file',
+    id,uploadedById:'uploader-1',
+    filePath:'/api/smart-anatomy/models/'+id+'/file',
     isActive:false,asset:{plantId:'plant-1'},
   });
   mocked.auditFindFirst.mockResolvedValue(null);
@@ -61,6 +62,17 @@ describe('private CAD review status, permission and history',()=>{
     response=await GET(req(),ctx);
     expect((await response.json()).data.status).toBe('withdrawn');
     expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+  it('reports reviewer eligibility without permitting the uploader to self-approve',async()=>{
+    let response=await GET(req(),ctx);
+    expect((await response.json()).data.independentReviewerEligible).toBe(true);
+    mocked.modelFindUnique.mockResolvedValue({
+      id,uploadedById:'tech-1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      isActive:false,asset:{plantId:'plant-1'},
+    });
+    response=await GET(req(),ctx);
+    expect((await response.json()).data.independentReviewerEligible).toBe(false);
   });
   it('reports approved active CAD without implying physical maintenance approval',async()=>{
     mocked.modelFindUnique.mockResolvedValue({

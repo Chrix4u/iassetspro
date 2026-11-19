@@ -31,6 +31,7 @@ describe('Smart Anatomy approval lifecycle cannot be bypassed through legacy rou
     const uploader=source('src/components/digital-twin/PrivateCadUploader.tsx');
     const explorer=source('src/components/digital-twin/MachineVisualExplorer.tsx');
     expect(uploader).toContain('AlertDialogContent');
+    expect(uploader).toContain('!independentReviewerEligible');
     expect(uploader).toContain("reviewStatus==='withdrawn'");
     expect(uploader).toContain('withdrawNote.trim().length < 15');
     expect(uploader).toContain('scenesWithdrawn');

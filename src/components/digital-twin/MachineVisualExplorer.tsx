@@ -769,6 +769,10 @@ export function MachineVisualExplorer({
     const mesh=inspectedAnatomy;
     if(!canLinkAnatomy || !mesh?.modelId || !anatomyTargetId ||
       !components.some(component=>component.id===anatomyTargetId)) return;
+    if (privateCadModel?.id === mesh.modelId && privateCadModel.isActive) {
+      toast.error('Approved CAD links are frozen. Import a new revision to change component mappings.');
+      return;
+    }
     setAnatomyMappingSaving(true);
     try {
       const query=new URLSearchParams({modelId:mesh.modelId,assetId:asset.id});
@@ -789,7 +793,7 @@ export function MachineVisualExplorer({
       setAnatomyRevision(value=>value+1);
     }catch(error){toast.error(error instanceof Error?error.message:'Could not save component link');}
     finally{setAnatomyMappingSaving(false);}
-  }, [inspectedAnatomy,canLinkAnatomy,anatomyTargetId,components,asset.id]);
+  }, [inspectedAnatomy,canLinkAnatomy,anatomyTargetId,components,asset.id,privateCadModel]);
 
   const publishReviewedCadScene = useCallback(async () => {
     const selectedModel = privateCadModel;
@@ -1314,7 +1318,15 @@ export function MachineVisualExplorer({
                       Linked component: {componentMap.get(inspectedAnatomy.componentId)?.componentCode || inspectedAnatomy.componentId}
                     </p>
                   )}
-                  {canLinkAnatomy && inspectedAnatomy.modelId && (
+                  {canLinkAnatomy && inspectedAnatomy.modelId &&
+                    privateCadModel?.id === inspectedAnatomy.modelId && privateCadModel.isActive && (
+                      <p className="text-xs text-amber-300">
+                        Engineering-approved component mappings are locked. Upload a new CAD revision
+                        for any further engineering changes.
+                      </p>
+                    )}
+                  {canLinkAnatomy && inspectedAnatomy.modelId &&
+                    !(privateCadModel?.id === inspectedAnatomy.modelId && privateCadModel.isActive) && (
                     <div className="flex flex-wrap items-end gap-2">
                       <div className="min-w-56 flex-1 space-y-1">
                         <Label className="text-xs text-slate-300">Link this exact CAD node to a registered machine component</Label>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
+import { reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
 
 export async function GET(
   request: NextRequest,
@@ -113,8 +114,14 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const updateData: Record<string, unknown> = {};
-    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'componentId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
+    if (await reviewedCadMappingsAreFrozen(existing.model)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
+      }, { status: 409 });
+    }
+
+    const updateData: Record<string, unknown> = {};    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'componentId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -244,8 +251,14 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    await db.assetMeshBinding.delete({ where: { id } });
+    if (await reviewedCadMappingsAreFrozen(existing.model)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Approved or withdrawn CAD mappings are immutable. Import and review a new revision.',
+      }, { status: 409 });
+    }
 
+    await db.assetMeshBinding.delete({ where: { id } });
     await db.auditLog.create({
       data: {
         userId: session.userId,

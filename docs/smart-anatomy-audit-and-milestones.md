@@ -453,3 +453,15 @@ local attacker replacing a private backup with a symlink or switching a file
 between metadata validation and hashing. The checker still does **not**
 verify real cryptographic encryption, off-site copies or restore success.
 It does not read or modify the live CAD directory or PostgreSQL.
+
+
+### Age backup format sanity gate
+
+The read-only evidence verifier additionally rejects an artifact declared
+`encryption.format: "age"` if its bytes do not begin with the native age
+`age-encryption.org/v1` envelope or the standard ASCII-armored age header.
+This prevents an ordinary plaintext file with a matching declared SHA-256
+from passing as an age archive. It is deliberately **not** a cryptographic
+decryption test: synthetic test fixtures can carry a valid header without
+valid encrypted contents. GPG/restic remain metadata-only format checks.
+A verified decryption and off-site restoration drill are still required.

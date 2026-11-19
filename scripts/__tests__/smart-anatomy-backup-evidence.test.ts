@@ -12,7 +12,7 @@ async function fixture(){
   roots.push(root);
   const artifact=join(root,'cad-20261119.age');
   const manifest=join(root,'evidence.json');
-  const data=Buffer.from('synthetic encrypted backup fixture, not real OEM data');
+  const data=Buffer.from('age-encryption.org/v1\nsynthetic age envelope fixture, NOT real encrypted data');
   await writeFile(artifact,data,{mode:0o600});
   const evidence={
     schemaVersion:1,createdAt:'2026-11-19T12:00:00.000Z',
@@ -36,11 +36,31 @@ describe('non-destructive encrypted CAD backup evidence gate',()=>{
       verifiedLocalEncryptedArtifact:true,verifiedOffsite:false,verifiedRestore:false,
     });
   });
+  it('rejects a matching digest for plaintext mislabeled as an age encrypted artifact',async()=>{
+    const f=await fixture();
+    const plaintext=Buffer.from('plain tar archive, not an encrypted age file');
+    await writeFile(f.artifact,plaintext,{mode:0o600});
+    f.evidence.encryptedArtifact.sizeBytes=plaintext.length;
+    f.evidence.encryptedArtifact.sha256=createHash('sha256').update(plaintext).digest('hex');
+    await f.save();
+    await expect(verifyBackupEvidence(f.manifest,{now,output}))
+      .rejects.toThrow('age encrypted-file envelope');
+  });
+  it('accepts age ASCII-armored envelope syntax as a format sanity check only',async()=>{
+    const f=await fixture();
+    const armored=Buffer.from('-----BEGIN AGE ENCRYPTED FILE-----\nsynthetic fixture, not a valid encrypted backup');
+    await writeFile(f.artifact,armored,{mode:0o600});
+    f.evidence.encryptedArtifact.sizeBytes=armored.length;
+    f.evidence.encryptedArtifact.sha256=createHash('sha256').update(armored).digest('hex');
+    await f.save();
+    expect((await verifyBackupEvidence(f.manifest,{now,output})).verifiedRestore).toBe(false);
+  });
   it('rejects modified or truncated encrypted backups',async()=>{
     const f=await fixture();
-    await writeFile(f.artifact,'altered bytes',{mode:0o600});
+    const altered=Buffer.from('age-encryption.org/v1\naltered body');
+    await writeFile(f.artifact,altered,{mode:0o600});
     await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('size mismatch');
-    f.evidence.encryptedArtifact.sizeBytes=13;
+    f.evidence.encryptedArtifact.sizeBytes=altered.length;
     await f.save();
     await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('SHA-256 mismatch');
   });
@@ -91,7 +111,7 @@ describe('non-destructive encrypted CAD backup evidence gate',()=>{
     const actual=join(f.root,'real-private');
     await mkdir(actual,{mode:0o700});
     const file=join(actual,'backup.age');
-    const bytes=Buffer.from('synthetic encrypted backup fixture, not real OEM data');
+    const bytes=Buffer.from('age-encryption.org/v1\nsynthetic age envelope fixture, NOT real encrypted data');
     await writeFile(file,bytes,{mode:0o600});
     const alias=join(f.root,'alias-private');
     await symlink(actual,alias);

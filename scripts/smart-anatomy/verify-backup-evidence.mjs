@@ -101,8 +101,26 @@ export async function verifyBackupEvidence(manifestPath,{
       throw new Error('Encrypted artifact size mismatch');
     }
     const digest=createHash('sha256');
+    // A manifest alone cannot turn a plaintext archive into an age file.
+    // Check the public age file envelope before accepting an age declaration.
+    // This is a format sanity check, NOT decryption or proof of encryption.
+    const agePrefix=Buffer.from('age-encryption.org/v1\n');
+    const armoredPrefix=Buffer.from('-----BEGIN AGE ENCRYPTED FILE-----');
+    const prefixLength=Math.max(agePrefix.length,armoredPrefix.length);
+    const prefix=Buffer.alloc(prefixLength);
+    let prefixBytes=0;
     for await(const chunk of openedArtifact.handle.createReadStream({autoClose:false})){
+      if(prefixBytes<prefixLength){
+        const count=Math.min(chunk.length,prefixLength-prefixBytes);
+        chunk.copy(prefix,prefixBytes,0,count);
+        prefixBytes+=count;
+      }
       digest.update(chunk);
+    }
+    if(evidence.encryption.format==='age' &&
+        !(prefix.subarray(0,agePrefix.length).equals(agePrefix) ||
+          prefix.subarray(0,armoredPrefix.length).equals(armoredPrefix))){
+      throw new Error('Artifact does not have an age encrypted-file envelope');
     }
     const after=await openedArtifact.handle.stat();
     if(after.dev!==stat.dev||after.ino!==stat.ino||after.size!==stat.size||

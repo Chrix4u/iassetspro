@@ -28,9 +28,11 @@ describe('create/edit machine modal responsive layout', () => {
     expect(machineFields).not.toContain('min-w-[10rem] flex-1');
   });
 
-  it('keeps meter names, types, units and readings aligned with equal label heights', () => {
+  it('keeps meter names, types, units and readings aligned with stretched flex columns', () => {
     expect(machineFields).toContain('sm:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1.15fr)_minmax(0,0.75fr)_minmax(0,1.3fr)_auto]');
-    expect(machineFields.match(/<Label className="flex h-14 items-end leading-tight">/g)).toHaveLength(4);
+    expect(machineFields.match(/<Label className="flex flex-1 items-end leading-tight">/g)).toHaveLength(4);
+    expect(machineFields.match(/className="flex min-w-0 flex-col"/g)).toHaveLength(4);
+    expect(machineFields).not.toContain("xl:items-end");
     expect(machineFields).toContain('className="justify-self-end self-end"');
   });
 });

@@ -58,7 +58,8 @@ export async function GET(request:NextRequest) {
       where:{...getPlantFilterWhere(scope),productionDate:{gte:first,lte:last},
         ...(assetId?{assetId}:{}),
         ...(requiresCrewScope(session)?{crew:{some:{userId:session.userId}}}:{})},
-      select:{id:true,assetId:true,unit:true,productionDate:true,targetQuantity:true},
+      select:{id:true,assetId:true,unit:true,productionDate:true,targetQuantity:true,
+        asset:{select:{name:true,assetTag:true}}},
       orderBy:[{productionDate:'asc'},{assetId:'asc'}],take:20001,
     });
     if(scheduled.length>20000)return NextResponse.json({success:false,
@@ -76,6 +77,21 @@ export async function GET(request:NextRequest) {
       repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;
       weightedStandardUtilization:number;standardUtilizationWeight:number;
       weightedStandardSpeed:number;standardSpeedWeight:number;shiftNames:Set<string>;productCodes:Set<string>}>();
+    // Planned-only groups must appear with their targets and missing-shift count,
+    // even if no shift has been approved. Do not represent absent readings as
+    // observed zero production.
+    for(const plan of scheduled){
+      const period=periodKey(plan.productionDate,group);
+      const key=[period,plan.assetId,plan.unit].join('|');
+      if(!grouped.has(key))grouped.set(key,{
+        period,assetId:plan.assetId,machine:plan.asset.name,assetTag:plan.asset.assetTag,unit:plan.unit,
+        shifts:0,output:0,defects:0,startDelayMinutes:0,target:0,availableMinutes:0,
+        downtimeMinutes:0,productiveMinutes:0,repairMinutes:0,preventiveMinutes:0,
+        breakMinutes:0,meterLinkedOutput:0,weightedStandardUtilization:0,
+        standardUtilizationWeight:0,weightedStandardSpeed:0,standardSpeedWeight:0,
+        shiftNames:new Set<string>(),productCodes:new Set<string>(),
+      });
+    }
     for(const row of records){
       const period=periodKey(row.productionDate,group);
       const key=[period,row.assetId,row.unit].join('|');
@@ -119,6 +135,7 @@ export async function GET(request:NextRequest) {
       const reportTarget=planned?.target??item.target;
       runningCumulative.set(key,cumulativeProduction);
       return {...item,cumulativeProduction,workbookCumulativeProduction:item.output,
+        approvedOutputReported:item.shifts>0,
         target:reportTarget,plannedShifts:planned?.shifts??0,
         unapprovedOrMissingShifts:Math.max(0,(planned?.shifts??0)-item.shifts),
         shiftNames:[...shiftNames],productCodes:[...productCodes],
@@ -130,7 +147,7 @@ export async function GET(request:NextRequest) {
       standardSpeedPerMinute:standardSpeedWeight>0?weightedStandardSpeed/standardSpeedWeight:null,
       productivityPerMinute:item.availableMinutes>0?item.output/item.availableMinutes:null,
       engineeringEfficiencyPct:item.availableMinutes>0?100*(item.availableMinutes-item.repairMinutes)/item.availableMinutes:null,
-      targetAchievementPct:reportTarget>0?100*item.output/reportTarget:null,
+      targetAchievementPct:item.shifts>0&&reportTarget>0?100*item.output/reportTarget:null,
     };});
     return NextResponse.json({success:true,data,meta:{group,from,to,recordCount:records.length,
       truncated:false,plannedShiftCount:scheduled.length,

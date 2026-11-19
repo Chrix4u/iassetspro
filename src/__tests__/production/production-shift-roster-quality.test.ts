@@ -41,6 +41,9 @@ describe('production survey shift crew, defects and product safety',()=>{
  });
  it('reports approved gross, defects, good output and actual meter totals separately',()=>{
    const report=text('src/app/api/production-surveys/report/route.ts');
+   expect(report).toContain('for(const plan of scheduled)');
+   expect(report).toContain('approvedOutputReported:item.shifts>0');
+   expect(report).toContain('targetAchievementPct:item.shifts>0');
    expect(report).toContain('goodOutput:item.output-item.defects');
    expect(report).toContain('defectRatePct:');
    expect(report).toContain('meterLinkedOutput');

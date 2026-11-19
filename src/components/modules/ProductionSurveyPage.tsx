@@ -44,7 +44,8 @@ type PmProgress = {meters:Array<{id:string;name:string;unit:string;currentValue:
 type ReportRow = {
  period:string;assetId:string;machine:string;assetTag:string;unit:string;shifts:number;
  output:number;goodOutput:number;defects:number;defectRatePct:number|null;startDelayMinutes:number;productCodes:string[];
- target:number;cumulativeProduction:number;workbookCumulativeProduction:number;plannedShifts:number;unapprovedOrMissingShifts:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
+ target:number;cumulativeProduction:number;workbookCumulativeProduction:number;approvedOutputReported:boolean;
+ plannedShifts:number;unapprovedOrMissingShifts:number;availableMinutes:number;downtimeMinutes:number;productiveMinutes:number;
  repairMinutes:number;preventiveMinutes:number;breakMinutes:number;meterLinkedOutput:number;
  utilizationPct:number|null;standardUtilizationPct:number|null;speedPerMinute:number|null;standardSpeedPerMinute:number|null;
  productivityPerMinute:number|null;engineeringEfficiencyPct:number|null;targetAchievementPct:number|null;
@@ -281,10 +282,11 @@ export default function ProductionSurveyPage(){
    }),{output:0,good:0,defects:0,shifts:0,stoppage:0,linked:0}),[reports]);
  const reportSingleUnit=reports.length>0&&reports.every(x=>x.unit===reports[0].unit);
  const reportUnit=reportSingleUnit?reports[0].unit:'';
- const outputSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.output)+' '+reportUnit:'See machine rows · mixed units';
- const postedSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
- const goodSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.good)+' '+reportUnit:'See machine rows · mixed units';
- const defectSummary=reports.length===0?'—':reportSingleUnit?amount(preparedReport.defects)+' '+reportUnit:'See machine rows · mixed units';
+ const approvedReportRows=reports.filter(row=>row.approvedOutputReported);
+ const outputSummary=approvedReportRows.length===0?'No approved output':reportSingleUnit?amount(preparedReport.output)+' '+reportUnit:'See machine rows · mixed units';
+ const postedSummary=approvedReportRows.length===0?'—':reportSingleUnit?amount(preparedReport.linked)+' '+reportUnit:'See machine rows · mixed units';
+ const goodSummary=approvedReportRows.length===0?'—':reportSingleUnit?amount(preparedReport.good)+' '+reportUnit:'See machine rows · mixed units';
+ const defectSummary=approvedReportRows.length===0?'—':reportSingleUnit?amount(preparedReport.defects)+' '+reportUnit:'See machine rows · mixed units';
 
  const configure=async(initialize:boolean)=>{
    if(!setup||setup.asset.id!==assetId||!canManage)return;
@@ -645,9 +647,9 @@ export default function ProductionSurveyPage(){
            <td className="p-2">{r.shifts} / {r.plannedShifts}
              <span className="block text-xs text-muted-foreground">{r.shiftNames.join(', ')}</span>
              {r.unapprovedOrMissingShifts>0&&<span className="block text-xs text-amber-700 dark:text-amber-300">{r.unapprovedOrMissingShifts} awaiting approval or unreported</span>}</td>
-           <td className="p-2 text-right tabular-nums">{amount(r.output)}</td>
-           <td className="p-2 text-right tabular-nums">{amount(r.defects)}</td>
-           <td className="p-2 text-right tabular-nums">{amount(r.goodOutput)}</td>
+           <td className="p-2 text-right tabular-nums">{r.approvedOutputReported?amount(r.output):'—'}</td>
+           <td className="p-2 text-right tabular-nums">{r.approvedOutputReported?amount(r.defects):'—'}</td>
+           <td className="p-2 text-right tabular-nums">{r.approvedOutputReported?amount(r.goodOutput):'—'}</td>
            <td className="p-2">{pct(r.defectRatePct)}</td><td className="p-2 text-right tabular-nums">{amount(r.target)}</td>
            <td className="p-2">{r.unit}</td><td className="p-2 text-right tabular-nums">{r.downtimeMinutes}</td>
            <td className="p-2 text-right tabular-nums">{r.productiveMinutes}</td><td className="p-2">{pct(r.utilizationPct)}</td>
@@ -656,11 +658,11 @@ export default function ProductionSurveyPage(){
            <td className="p-2 text-right tabular-nums">{r.standardSpeedPerMinute==null?'—':amount(r.standardSpeedPerMinute)}</td>
            <td className="p-2 text-right tabular-nums">{r.productivityPerMinute==null?'—':amount(r.productivityPerMinute)}</td>
            <td className="p-2">{pct(r.engineeringEfficiencyPct)}</td><td className="p-2">{pct(r.targetAchievementPct)}</td>
-           <td className="p-2 text-right tabular-nums">{amount(r.workbookCumulativeProduction)}</td>
+           <td className="p-2 text-right tabular-nums">{r.approvedOutputReported?amount(r.workbookCumulativeProduction):'—'}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.cumulativeProduction)}</td>
            <td className="p-2 text-right tabular-nums">{amount(r.meterLinkedOutput)}</td>
          </tr>)}</tbody></table>
-         {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No approved production entries match this report window. Unreported shifts are not counted as zero.</div>}
+         {!reports.length&&!loading&&!reportError&&<div className="p-6 text-center text-sm text-muted-foreground">No scheduled or approved production shifts match this report window.</div>}
        </div>
      </CardContent></Card>
    <Card><CardHeader><CardTitle className="text-base">Recorded shifts & independent approval</CardTitle>

@@ -80,6 +80,10 @@ export async function verifyBackupEvidence(manifestPath,{
   }
   const source=requireAbsolute(evidence.sourceCadRoot,'Source CAD root');
   const archive=requireAbsolute(evidence.encryptedArtifact?.path,'Encrypted artifact');
+  // Backup evidence must never be written inside the live imported CAD source.
+  if(source===sep||manifest===source||manifest.startsWith(source+sep)){
+    throw new Error('Backup evidence manifest cannot be stored inside the live CAD source directory');
+  }
   if(source===archive||archive.startsWith(source+sep)){
     throw new Error('Backup artifact cannot be stored inside the live CAD source directory');
   }

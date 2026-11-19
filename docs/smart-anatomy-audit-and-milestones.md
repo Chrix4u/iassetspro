@@ -465,3 +465,7 @@ from passing as an age archive. It is deliberately **not** a cryptographic
 decryption test: synthetic test fixtures can carry a valid header without
 valid encrypted contents. GPG/restic remain metadata-only format checks.
 A verified decryption and off-site restoration drill are still required.
+
+### Backup evidence manifest isolation
+
+The verifier rejects evidence manifests inside the declared live CAD source root, including a root-wide (`/`) source declaration. This read-only check prevents backup metadata from polluting the source geometry tree. It does not establish off-site replication, cryptographic decryption or restore success.

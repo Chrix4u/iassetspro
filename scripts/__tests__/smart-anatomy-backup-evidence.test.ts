@@ -88,6 +88,21 @@ describe('non-destructive encrypted CAD backup evidence gate',()=>{
     await f.save();
     await expect(verifyBackupEvidence(f.manifest,{now,output})).rejects.toThrow('credentials');
   });
+  it('rejects an evidence manifest inside the live CAD source',async()=>{
+    const f=await fixture();
+    await mkdir(f.evidence.sourceCadRoot,{mode:0o700});
+    const inside=join(f.evidence.sourceCadRoot,'backup-evidence.json');
+    await writeFile(inside,JSON.stringify(f.evidence),{mode:0o600});
+    await expect(verifyBackupEvidence(inside,{now,output}))
+      .rejects.toThrow('evidence manifest cannot be stored inside');
+  });
+  it('rejects a root-wide source declaration',async()=>{
+    const f=await fixture();
+    f.evidence.sourceCadRoot='/';
+    await f.save();
+    await expect(verifyBackupEvidence(f.manifest,{now,output}))
+      .rejects.toThrow('evidence manifest cannot be stored inside');
+  });
   it('rejects symlinks and nonprivate backup files',async()=>{
     const f=await fixture();
     const alias=join(f.root,'linked.age');

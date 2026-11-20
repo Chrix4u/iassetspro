@@ -38,4 +38,31 @@ describe('demo users only seed', () => {
     expect(seed).not.toContain('db.workOrder.create');
     expect(seed).not.toContain('db.inventoryItem.create');
   });
+
+  it('preserves canonical trade/skill metadata used for assignment', () => {
+    const trades = [...seed.matchAll(/primaryTrade:\\s*'([^']+)'/g)].map((match) => match[1]);
+
+    for (const trade of [
+      'Maintenance Management',
+      'Mechanical Engineer',
+      'Production Supervisor',
+      'Mechanical Fitter',
+      'Machine Operator',
+      'Operations Manager',
+      'Electrician',
+      'Production Manager',
+      'Supply Chain',
+      'Storekeeping',
+      'Quality Engineer',
+      'HSE Officer',
+      'Human Resources',
+      'Instrumentation Technician',
+      'Utility Technician',
+      'Workshop Technician',
+      'Instrumentation Fitter',
+      'Electrical Technician',
+    ]) {
+      expect(trades).toContain(trade);
+    }
+  });
 });

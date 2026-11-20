@@ -8,6 +8,7 @@ import {
   TimerReset, Trash2, Wrench, XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatUiDateTime } from '@/lib/date-display';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useAuthStore } from '@/stores/authStore';
 import { Badge } from '@/components/ui/badge';
@@ -138,8 +139,8 @@ function pretty(value?: string | null) {
 
 function fmt(value?: string | Date | null) {
   if (!value) return '-';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '-';
+  const rendered = formatUiDateTime(value);
+  return rendered === '—' ? '-' : rendered;
 }
 
 function toLocalInput(date = new Date()) {
@@ -726,9 +727,18 @@ export function TechnicianWorkOrderV11Panels({ workOrderId, workOrder, capabilit
     && Boolean(capabilities?.canRequestMaterials || capabilities?.canRequestTools);
 
   const canAddPersonalTool = Boolean(capabilities?.canLogOwnTime || capabilities?.canRequestMaterials || capabilities?.canRequestTools);
-  const teamTimeCandidates = Array.from(new Map([
-    ...(workOrder.assignee?.id ? [[workOrder.assignee.id, workOrder.assignee.fullName || 'Assigned technician']] : []),
-    ...(Array.isArray(workOrder.teamMembers) ? workOrder.teamMembers.map((member: any) => [member.userId || member.user?.id, member.user?.fullName || member.fullName || member.user?.username || member.userId]).filter((row: any[]) => row[0]) : []),
+  const teamTimeCandidates = Array.from(new Map<string, string>([
+    ...(workOrder.assignee?.id
+      ? [[String(workOrder.assignee.id), String(workOrder.assignee.fullName || 'Assigned technician')] as [string, string]]
+      : []),
+    ...(Array.isArray(workOrder.teamMembers)
+      ? workOrder.teamMembers
+        .map((member: any): [string, string] => [
+          String(member.userId || member.user?.id || ''),
+          String(member.user?.fullName || member.fullName || member.user?.username || member.userId || ''),
+        ])
+        .filter(([id]: [string, string]) => Boolean(id))
+      : []),
   ]).entries()).map(([id, name]) => ({ id, name }));
 
   const scrollToStage = (anchor: string) => {

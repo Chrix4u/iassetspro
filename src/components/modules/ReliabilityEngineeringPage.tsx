@@ -998,3 +998,377 @@ function WeibullTab() {
                         { label: 'Scale (η)', value: `${(result.scale as number)?.toFixed(1)} hrs` },
                         { label: 'B10 Life', value: `${(result.b10Life as number)?.toFixed(1)} hrs` },
                         { label: 'MTBF', value: `${(result.mtbf as number)?.toFixed(1)} hrs` },
+                        { label: 'Mean Life', value: `${(result.meanLife as number)?.toFixed(1)} hrs` },
+                        { label: 'Data Points', value: String(result.dataPoints || selectedAnalysis.sampleSize) },
+                      ].map((item) => (
+                        <div key={item.label} className="bg-muted/50 rounded-lg p-3">
+                          <p className="text-xs text-muted-foreground">{item.label}</p>
+                          <p className="font-mono font-semibold">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {result.interpretation && (
+                      <div className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-xs text-muted-foreground mb-1">Interpretation</p>
+                        <p className="font-medium">{result.interpretation as string}</p>
+                      </div>
+                    )}
+                    {result.reliabilityAtIntervals && Array.isArray(result.reliabilityAtIntervals) && (
+                      <div className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-xs text-muted-foreground mb-2">Reliability at Time Intervals</p>
+                        <div className="space-y-1">
+                          {(result.reliabilityAtIntervals as Array<{ hours: number; reliability: number }>).map((r) => (
+                            <div key={r.hours} className="flex justify-between text-xs">
+                              <span>{r.hours.toLocaleString()} hrs</span>
+                              <span className={`font-mono font-semibold ${r.reliability >= 90 ? 'text-green-600' : r.reliability >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                {r.reliability.toFixed(1)}%
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-muted-foreground">
+                    <p className="text-sm">{selectedAnalysis.description || 'No result summary available'}</p>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── DOWNTIME TAB ────────────────────────────────────────────────────────────
+
+function DowntimeTab() {
+  const [analyses, setAnalyses] = useState<DowntimeAnalysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [assetId, setAssetId] = useState('');
+  const [running, setRunning] = useState(false);
+  const [form, setForm] = useState({ assetId: '', periodStart: '', periodEnd: '' });
+
+  const loadAnalyses = useCallback(async () => {
+    if (!assetId) { setLoading(false); return; }
+    try {
+      setLoading(true);
+      const data = await api.get<DowntimeAnalysis[]>(`${API_BASE}/downtime/route?assetId=${assetId}`);
+      setAnalyses(data || []);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load downtime analyses');
+    } finally {
+      setLoading(false);
+    }
+  }, [assetId]);
+
+  useEffect(() => { loadAnalyses(); }, [loadAnalyses]);
+
+  const handleCompute = async () => {
+    try {
+      setRunning(true);
+      const result = await api.post<DowntimeAnalysis>(`${API_BASE}/downtime/route`, {
+        assetId: form.assetId,
+        periodStart: form.periodStart,
+        periodEnd: form.periodEnd,
+      });
+      toast.success('Downtime analysis computed');
+      setAssetId(form.assetId);
+      setAnalyses((prev) => [result, ...prev]);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Asset ID</Label>
+              <Input
+                placeholder="Enter asset ID..."
+                value={assetId}
+                onChange={(e) => setAssetId(e.target.value)}
+              />
+            </div>
+            <Button variant="outline" onClick={loadAnalyses} disabled={loading}>
+              <Search className="h-4 w-4 mr-1" /> Load
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Compute New */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Compute New Analysis</CardTitle>
+          <CardDescription className="text-xs">Calculate MTBF, MTTR, and availability for a time period</CardDescription>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Asset ID</Label>
+              <AsyncSearchableSelect value={form.assetId} onValueChange={(v) => setForm({ ...form, assetId: v })} fetchOptions={fetchAssetOptions} placeholder="Search asset..." />
+            </div>
+            <div>
+              <DatePicker label="Period Start" value={form.periodStart || undefined} onChange={v => setForm({ ...form, periodStart: v || '' })} />
+            </div>
+            <div>
+              <DatePicker label="Period End" value={form.periodEnd || undefined} onChange={v => setForm({ ...form, periodEnd: v || '' })} />
+            </div>
+          </div>
+          <Button className="mt-3" onClick={handleCompute} disabled={running || !form.assetId || !form.periodStart || !form.periodEnd}>
+            {running ? <><RefreshCw className="h-4 w-4 mr-1 animate-spin" /> Computing...</> : <><Clock className="h-4 w-4 mr-1" /> Compute Analysis</>}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      {analyses.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {analyses.slice(0, 1).map((a) => (
+            <>
+              <Card><CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">MTBF</p>
+                <p className="text-xl font-bold font-mono">{a.mtbf?.toFixed(1) ?? '—'}<span className="text-xs text-muted-foreground ml-1">hrs</span></p>
+              </CardContent></Card>
+              <Card><CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">MTTR</p>
+                <p className="text-xl font-bold font-mono">{a.mttr?.toFixed(1) ?? '—'}<span className="text-xs text-muted-foreground ml-1">hrs</span></p>
+              </CardContent></Card>
+              <Card><CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">Availability</p>
+                <p className="text-xl font-bold font-mono">{a.availability?.toFixed(1) ?? '—'}<span className="text-xs text-muted-foreground ml-1">%</span></p>
+              </CardContent></Card>
+              <Card><CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground">Total Downtime</p>
+                <p className="text-xl font-bold font-mono">{a.totalDowntime.toFixed(1)}<span className="text-xs text-muted-foreground ml-1">hrs</span></p>
+              </CardContent></Card>
+            </>
+          ))}
+        </div>
+      )}
+
+      {/* History Table */}
+      <Card>
+        <CardContent className="p-0">
+          {!assetId ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Clock className="h-10 w-10 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Enter an asset ID to view downtime analyses</p>
+            </div>
+          ) : analyses.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <p className="text-sm">No downtime analyses yet</p>
+            </div>
+          ) : (
+            <div className="max-h-[300px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Period</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Planned</TableHead>
+                    <TableHead>Unplanned</TableHead>
+                    <TableHead>MTBF</TableHead>
+                    <TableHead>MTTR</TableHead>
+                    <TableHead>Avail.</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analyses.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-xs">
+                        {formatUiDate(a.periodStart)} — {formatUiDate(a.periodEnd)}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.totalDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm text-green-600">{formatDuration(a.plannedDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm text-red-600">{formatDuration(a.unplannedDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.mtbf ?? 0)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.mttr ?? 0)}</TableCell>
+                      <TableCell className="font-mono text-sm font-semibold">{a.availability?.toFixed(1) ?? '—'}%</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── RUL TAB ─────────────────────────────────────────────────────────────────
+
+function RulTab() {
+  const [rulData, setRulData] = useState<RulData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [componentId, setComponentId] = useState('');
+  const [running, setRunning] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+
+  const loadRul = useCallback(async () => {
+    if (!componentId) { setLoading(false); return; }
+    try {
+      setLoading(true);
+      setNotFound(false);
+      const data = await api.get<RulData | null>(`${API_BASE}/rul/route?componentId=${componentId}`);
+      setRulData(data);
+      setNotFound(!data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [componentId]);
+
+  useEffect(() => { loadRul(); }, [loadRul]);
+
+  const handleCompute = async () => {
+    try {
+      setRunning(true);
+      const result = await api.post<RulData>(`${API_BASE}/rul/route`, { componentId });
+      toast.success('RUL estimate computed');
+      setRulData(result);
+      setNotFound(false);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const rulDays = rulData?.estimatedRul;
+  const rulLabel = rulDays
+    ? rulDays >= 365 ? `${(rulDays / 365).toFixed(1)} years`
+      : rulDays >= 30 ? `${(rulDays / 30).toFixed(1)} months`
+        : `${Math.round(rulDays)} days`
+    : null;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Component ID</Label>
+              <Input
+                placeholder="Enter component ID..."
+                value={componentId}
+                onChange={(e) => setComponentId(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <Button variant="outline" onClick={loadRul} disabled={loading}>
+                <Search className="h-4 w-4 mr-1" /> Load
+              </Button>
+              <Button onClick={handleCompute} disabled={running || !componentId}>
+                {running ? <><RefreshCw className="h-4 w-4 mr-1 animate-spin" /> Computing...</> : <><HeartPulse className="h-4 w-4 mr-1" /> Estimate RUL</>}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {!componentId ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <HeartPulse className="h-10 w-10 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Enter a component ID to estimate remaining useful life</p>
+          </CardContent>
+        </Card>
+      ) : loading ? (
+        <Card><CardContent className="p-6"><div className="space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-20 w-full" /></div></CardContent></Card>
+      ) : notFound || !rulData ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Info className="h-10 w-10 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No RUL estimate found. Click &quot;Estimate RUL&quot; to compute one.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {/* Health & RUL Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-2">Current Health</p>
+                <p className={`text-3xl font-bold ${healthColor(rulData.currentHealth)}`}>
+                  {rulData.currentHealth.toFixed(0)}
+                </p>
+                <Progress value={rulData.currentHealth} className="mt-2 h-2" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-2">Estimated RUL</p>
+                <p className={`text-3xl font-bold ${rulDays && rulDays < 30 ? 'text-red-600' : rulDays && rulDays < 90 ? 'text-orange-600' : 'text-emerald-600'}`}>
+                  {rulLabel ?? '—'}
+                </p>
+                {rulDays && (
+                  <p className="text-xs text-muted-foreground mt-1">{Math.round(rulDays)} days</p>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-xs text-muted-foreground mb-2">Confidence</p>
+                <p className="text-3xl font-bold">{(rulData.confidenceScore * 100).toFixed(0)}%</p>
+                <Progress value={rulData.confidenceScore * 100} className="mt-2 h-2" />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Details */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">RUL Estimation Details</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Component</p>
+                  <p className="font-medium">{rulData.component.name}</p>
+                  <p className="text-xs text-muted-foreground">{rulData.component.componentCode}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Health Score</p>
+                  <p className="font-mono">{rulData.component.healthScore ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Operating Hours</p>
+                  <p className="font-mono">{rulData.component.operatingHours?.toLocaleString() ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Expected Life</p>
+                  <p className="font-mono">{rulData.component.expectedLifeHours?.toLocaleString() ?? '—'} hrs</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Degradation Rate</p>
+                  <p className="font-mono">{rulData.degradationRate.toFixed(4)} pts/day</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Lifecycle Status</p>
+                  <Badge variant="secondary" className="capitalize">{rulData.component.lifecycleStatus?.replace('_', ' ')}</Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Last Updated</p>
+                  <p className="text-xs">{formatUiDateTime(rulData.lastUpdated)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

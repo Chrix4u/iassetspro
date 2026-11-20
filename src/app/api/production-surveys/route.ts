@@ -19,17 +19,28 @@ export async function GET(request:NextRequest) {
     const status=q.get('status')||undefined;
     if(status && !['submitted','approved','rejected'].includes(status))return NextResponse.json({success:false,error:'Invalid status'},{status:400});
     const from=q.get('from');const to=q.get('to');
-    const parse=(value:string|null)=>value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?new Date(value+'T00:00:00.000Z'):null;
-    if((from&&!parse(from))||(to&&!parse(to)))return NextResponse.json({success:false,error:'Dates must use yyyy-mm-dd'},{status:400});
-    const page=Math.max(1,Math.min(Number(q.get('page'))||1,100000));
-    const limit=Math.max(1,Math.min(Number(q.get('limit'))||40,100));
+    const parse=(value:string|null):Date|null=>{
+      if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+      const date=new Date(value+'T00:00:00.000Z');
+      return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value?date:null;
+    };
+    const fromDate=parse(from),toDate=parse(to);
+    if((from&&!fromDate)||(to&&!toDate))return NextResponse.json({success:false,error:'Dates must be valid yyyy-mm-dd calendar dates'},{status:400});
+    if(fromDate&&toDate&&fromDate>toDate)return NextResponse.json({success:false,error:'From date must not be later than to date'},{status:400});
+    const pageParam=q.get('page'),limitParam=q.get('limit');
+    const page=pageParam===null?1:Number(pageParam);
+    const requestedLimit=limitParam===null?40:Number(limitParam);
+    if(!Number.isSafeInteger(page)||page<1||page>100000
+      ||!Number.isSafeInteger(requestedLimit)||requestedLimit<1)
+      return NextResponse.json({success:false,error:'Page and limit must be positive whole numbers'},{status:400});
+    const limit=Math.min(requestedLimit,100);
     const where:Prisma.ProductionShiftRecordWhereInput={
       ...getPlantFilterWhere(scope),...(assetId?{assetId}:{}),...(status?{status}:{}),
       ...(requiresCrewScope(session)?{OR:[
         {plan:{crew:{some:{userId:session.userId}}}},
         {recordedById:session.userId},
       ]}:{}),
-      ...(from||to?{productionDate:{...(parse(from)?{gte:parse(from)!}:{}),...(parse(to)?{lte:parse(to)!}:{})}}:{}),
+      ...(fromDate||toDate?{productionDate:{...(fromDate?{gte:fromDate}:{}),...(toDate?{lte:toDate}:{})}}:{}),
     };
     const [records,total]=await Promise.all([
       db.productionShiftRecord.findMany({where,include:{

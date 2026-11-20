@@ -68,8 +68,19 @@ export async function POST(request: NextRequest) {
     const name = typeof body.name==='string'?body.name.trim():'';
     if (!/^[a-z][a-z0-9_-]{1,29}$/.test(code) || !name || name.length>80)
       return NextResponse.json({success:false,error:'A valid shift name and code are required'},{status:400});
-    const startsAt = typeof body.startsAt==='string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.startsAt)?body.startsAt:null;
-    const endsAt = typeof body.endsAt==='string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.endsAt)?body.endsAt:null;
+    // Optional clock times may be omitted for a reusable template, but explicit
+    // malformed values must never be silently stored as a blank schedule.
+    const normalizeClock=(raw:unknown):string|null|'invalid'=> {
+      if(raw==null)return null;
+      if(typeof raw!=='string')return 'invalid';
+      const value=raw.trim();
+      if(!value)return null;
+      return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)?value:'invalid';
+    };
+    const startsAt=normalizeClock(body.startsAt);
+    const endsAt=normalizeClock(body.endsAt);
+    if(startsAt==='invalid'||endsAt==='invalid')
+      return NextResponse.json({success:false,error:'Shift times must use valid 24-hour HH:mm values'},{status:400});
     if(Boolean(startsAt)!==Boolean(endsAt)|| (startsAt&&startsAt===endsAt))
       return NextResponse.json({success:false,error:'Enter distinct shift start and end times together, or leave both blank'},{status:400});
     const shift=await db.productionShiftTemplate.create({data:{

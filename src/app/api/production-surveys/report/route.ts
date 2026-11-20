@@ -69,8 +69,12 @@ export async function GET(request:NextRequest) {
       error:'More than 20,000 scheduled shifts match the report. Narrow your selection to prevent partial target totals.',
       meta:{limit:20000,truncated:true}}, {status:422});
     const plannedByPeriod=new Map<string,{target:number;shifts:number}>();
+    // Legacy/unplanned approved output is valid production evidence, but it
+    // cannot mark a different planner-scheduled shift as completed.
+    const scheduledPlanGroups=new Map<string,string>();
     for(const plan of scheduled){
       const key=[periodKey(plan.productionDate,group),plan.assetId,plan.unit].join('|');
+      scheduledPlanGroups.set(plan.id,key);
       const row=plannedByPeriod.get(key)||{target:0,shifts:0};
       row.target+=plan.targetQuantity;row.shifts++;
       plannedByPeriod.set(key,row);
@@ -95,9 +99,15 @@ export async function GET(request:NextRequest) {
         shiftNames:new Set<string>(),productCodes:new Set<string>(),
       });
     }
+    const approvedScheduledPlanIds=new Map<string,Set<string>>();
     for(const row of records){
       const period=periodKey(row.productionDate,group);
       const key=[period,row.assetId,row.unit].join('|');
+      if(row.planId && scheduledPlanGroups.get(row.planId)===key){
+        const approved=approvedScheduledPlanIds.get(key)||new Set<string>();
+        approved.add(row.planId);
+        approvedScheduledPlanIds.set(key,approved);
+      }
       let item=grouped.get(key);
       if(!item){item={period,assetId:row.assetId,machine:row.asset.name,assetTag:row.asset.assetTag,unit:row.unit,
         shifts:0,output:0,defects:0,startDelayMinutes:0,target:0,availableMinutes:0,downtimeMinutes:0,productiveMinutes:0,repairMinutes:0,
@@ -139,13 +149,14 @@ export async function GET(request:NextRequest) {
       weightedStandardSpeed,standardSpeedWeight,...item})=>{
       const key=item.assetId+'|'+item.unit;
       const cumulativeProduction=(runningCumulative.get(key)||0)+item.output;
-      const planned=plannedByPeriod.get([item.period,item.assetId,item.unit].join('|'));
+      const periodGroupKey=[item.period,item.assetId,item.unit].join('|');
+      const planned=plannedByPeriod.get(periodGroupKey);
       const reportTarget=planned?.target??item.target;
       runningCumulative.set(key,cumulativeProduction);
       return {...item,cumulativeProduction,workbookCumulativeProduction:item.output,
         approvedOutputReported:item.shifts>0,
         target:reportTarget,plannedShifts:planned?.shifts??0,
-        unapprovedOrMissingShifts:Math.max(0,(planned?.shifts??0)-item.shifts),
+        unapprovedOrMissingShifts:Math.max(0,(planned?.shifts??0)-(approvedScheduledPlanIds.get(periodGroupKey)?.size??0)),
         shiftNames:[...shiftNames],productCodes:[...productCodes],
       goodOutput:item.output-item.defects,
       defectRatePct:item.output>0?100*item.defects/item.output:null,

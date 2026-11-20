@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view')) {
+    // Production scheduling/order screens need read-only work center choices.
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'production.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     // A malformed or huge page/limit must not cause a DB error or an unbounded query.
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
-      ? Math.min(requestedLimit, 500) : 50;
+      ? Math.min(requestedLimit, 1000) : 50;
 
     const where: Record<string, unknown> = { isActive: true };
 

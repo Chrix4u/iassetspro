@@ -62,6 +62,12 @@ describe('Work Center endpoint authorization and data integrity', () => {
     expect(m.findUnique).not.toHaveBeenCalled();
   });
 
+  it('keeps read-only Work Center options available for production scheduling', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'production.view');
+    expect((await list(request())).status).toBe(200);
+    expect((await detail(request('/wc-1'), ctx)).status).toBe(403);
+  });
+
   it('permits an administrator to read even without a separate view grant', async () => {
     m.admin.mockReturnValue(true);
     m.permission.mockReturnValue(false);
@@ -74,13 +80,15 @@ describe('Work Center endpoint authorization and data integrity', () => {
     expect((await detail(request('/wc-1'), ctx)).status).toBe(404);
   });
 
-  it('bounds untrusted pagination parameters while retaining the 500-row UI limit', async () => {
+  it('bounds untrusted pagination while retaining the 999-row production selectors', async () => {
     const res = await list(request('?page=-2&limit=999999'));
     expect(res.status).toBe(200);
-    expect(m.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 500 }));
+    expect(m.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 1000 }));
     const body = await res.json();
     expect(body.pagination.page).toBe(1);
-    expect(body.pagination.limit).toBe(500);
+    expect(body.pagination.limit).toBe(1000);
+    await list(request('?limit=999'));
+    expect(m.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 999 }));
   });
 
   it('disallows changing active status through the normal edit API', async () => {

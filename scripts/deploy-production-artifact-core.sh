@@ -51,8 +51,11 @@ entrypoint_for() {
 health_check() {
   local url="$1" outfile="$2" attempts="${3:-18}" wait_seconds="${4:-5}" code=""
   for i in $(seq 1 "$attempts"); do
-    code="$(curl -sS -o "$outfile" -w '%{http_code}' --max-time 10 "$url" 2>/dev/null || true)"
+    code="$(curl --noproxy '*' --connect-timeout 3 --max-time 10 -sS -o "$outfile" -w '%{http_code}' "$url" 2>"${outfile}.curl-error" || true)"
     echo "Health attempt $i/$attempts -> HTTP ${code:-000}"
+    if [[ "$code" == "000" && -s "${outfile}.curl-error" ]]; then
+      sed -n '1,2p' "${outfile}.curl-error"
+    fi
     [[ "$code" == "200" ]] && return 0
     sleep "$wait_seconds"
   done
@@ -218,14 +221,20 @@ NODE_ENV=production node --env-file=.env scripts/production-redis-preflight.mjs
 
 echo "[4/10] Canary"
 for p in $(seq 3100 3199); do
-  if ! ss -ltnH | awk '{print $4}' | grep -Eq "[:.]${p}$"; then CANARY_PORT="$p"; break; fi
+  if ! ss -ltnH "( sport = :${p} )" | grep -q .; then CANARY_PORT="$p"; break; fi
 done
 [[ -n "$CANARY_PORT" ]] || { echo "STOP: no canary port"; exit 1; }
 pm2 delete "$CANARY_NAME" >/dev/null 2>&1 || true
-PORT="$CANARY_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
+# Only the canary skips queue consumers; the active and new production runtimes
+# continue registering background workers normally.
+IASSETSPRO_DEPLOY_CANARY=1 PORT="$CANARY_PORT" HOSTNAME=127.0.0.1 NODE_ENV=production \
   pm2 start "$NEW_ENTRY" --name "$CANARY_NAME" --cwd "$NEW_RELEASE" \
     --node-args="--env-file=$NEW_RELEASE/.env" --time
 health_check "http://127.0.0.1:${CANARY_PORT}/api/health" /tmp/iassetspro-canary-health.json 18 5 || {
+  echo "Canary socket check:"
+  ss -ltnp "( sport = :${CANARY_PORT} )" || true
+  echo "Canary PM2 state:"
+  pm2 describe "$CANARY_NAME" || true
   pm2 logs "$CANARY_NAME" --lines 100 --nostream || true
   echo "STOP: canary failed; existing production unchanged"
   exit 1

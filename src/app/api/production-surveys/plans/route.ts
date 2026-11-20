@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { canCoordinateProduction, requiresCrewScope, validateCrewSelection } from '@/lib/production-shift-access';
+import { findProductionShiftConflict } from '@/lib/production-shift-conflicts';
 
 function parseDate(value:unknown):Date {
   if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('Production date must be yyyy-mm-dd');
@@ -113,8 +114,49 @@ export async function POST(request:NextRequest){
     const dates:Date[]=[];
     for(let time=first.getTime();time<=last.getTime();time+=86400000)dates.push(new Date(time));
     const result=await db.$transaction(async tx=>{
+      // Serialize schedules that share a machine or a worker. The locks must
+      // be taken in stable order to protect against concurrent planners.
+      const scheduleLocks=[
+        'iassetspro:production-schedule-asset:'+assetId,
+        ...userIds.map(id=>'iassetspro:production-schedule-worker:'+id),
+      ].sort();
+      for(const key of scheduleLocks){
+        await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',key);
+      }
+      // Include the preceding day: night shifts can cross midnight. Also inspect
+      // other plants to prevent double-booking a worker assigned to multiple plants.
+      const relatedPlans=await tx.productionShiftPlan.findMany({
+        where:{
+          productionDate:{
+            gte:new Date(first.getTime()-86400000),
+            lte:new Date(last.getTime()+86400000),
+          },
+          OR:[
+            {assetId},
+            {crew:{some:{userId:{in:userIds}}}},
+          ],
+        },
+        select:{
+          id:true,assetId:true,shiftTemplateId:true,productionDate:true,
+          startsAt:true,endsAt:true,
+          shift:{select:{startsAt:true,endsAt:true}},
+          crew:{select:{userId:true}},
+        },
+        take:5001,
+      });
+      if(relatedPlans.length>5000)
+        throw new Error('More than 5,000 related shifts found; narrow the scheduling range');
       const saved:Array<{id:string;assetId:string;productionDate:Date;shiftTemplateId:string}>=[];
       for(const productionDate of dates){
+        const overlap=findProductionShiftConflict({
+          assetId,shiftTemplateId,productionDate,startsAt,endsAt,crewUserIds:userIds,
+        },relatedPlans);
+        if(overlap){
+          const dateLabel=overlap.date.split('-').reverse().join('-');
+          throw new Error(overlap.kind==='machine'
+            ? 'Machine already has an overlapping shift on '+dateLabel
+            : 'An assigned worker already has an overlapping shift on '+dateLabel);
+        }
         const day=productionDate.toISOString().slice(0,10);
         await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
           'iassetspro:production-plan:'+assetId+':'+day+':'+shiftTemplateId);
@@ -142,7 +184,7 @@ export async function POST(request:NextRequest){
     return NextResponse.json({success:true,data:result,meta:{scheduledDays:result.length}});
   }catch(error){
     const message=error instanceof Error?error.message:'Unable to schedule shifts';
-    const conflict=/Cannot change an already recorded|Unique constraint|P2002/.test(message);
+    const conflict=/Cannot change an already recorded|overlapping shift|Unique constraint|P2002/.test(message);
     return NextResponse.json({success:false,error:message},{status:conflict?409:/valid|required|must|select|choose|schedule|out of range|assign|date|days|code|unit|worker|minutes|shift/i.test(message)?400:500});
   }
 }

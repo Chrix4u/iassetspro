@@ -29,7 +29,7 @@ import { GET as list, POST as create } from '@/app/api/work-centers/route';
 import { GET as detail, PUT as edit, DELETE as deactivate } from '@/app/api/work-centers/[id]/route';
 
 const url = 'http://localhost/api/work-centers';
-const request = (path = '', init?: RequestInit) => new NextRequest(url + path, init);
+const request = (path = '', init?: ConstructorParameters<typeof NextRequest>[1]) => new NextRequest(url + path, init);
 const ctx = { params: Promise.resolve({ id: 'wc-1' }) };
 const wc = { id: 'wc-1', code: 'WC-0001', name: 'Packaging line', type: 'packaging', isActive: true, status: 'active', capacity: 10 };
 
